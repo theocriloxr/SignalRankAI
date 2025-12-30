@@ -175,8 +175,13 @@ def dispatch_signals(strategy_signals, regime):
     approved = controller.approve_signals(strategy_signals, regime)
     ranked = controller.rank_and_release(approved)
     # VIP: instant, all info
+    vip_user_ids = get_all_users_by_tier('VIP')
+    # Add owner to VIP recipients
+    from db.database import OWNER_TELEGRAM_ID
+    if OWNER_TELEGRAM_ID not in vip_user_ids:
+        vip_user_ids.append(OWNER_TELEGRAM_ID)
     for signal in ranked.get('vip', []):
-        for user_id in get_all_users_by_tier('VIP'):
+        for user_id in vip_user_ids:
             bot.send_message(chat_id=user_id, text=format_signal(signal))
     # Premium: instant, all info
     for signal in ranked.get('premium', []):
