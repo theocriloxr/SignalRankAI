@@ -47,9 +47,8 @@ def buy_extra_premium(update, context):
 		update.message.reply_text("Count must be a number.")
 		return
 	price = 300 * count
-	# Payment metadata for Paystack
-	metadata = {"telegram_id": user_id, "tier": "PREMIUM", "duration": "EXTRA", "extra_count": count}
-	paywall_link = f"https://paystack.com/pay/signalrankai?user={user_id}&price={price}&tier=PREMIUM&extra={count}"
+	from paystack.paystack import generate_paystack_link
+	paywall_link = generate_paystack_link(user_id, price, tier="PREMIUM", extra_count=count)
 	update.message.reply_text(
 		f"To unlock {count} extra Premium signals for today, pay ₦{price}: {paywall_link}\n"
 		"You will receive real-time Premium signals after payment."
@@ -73,8 +72,8 @@ def buy_extra_vip(update, context):
 		update.message.reply_text("Count must be a number.")
 		return
 	price = 500 * count
-	metadata = {"telegram_id": user_id, "tier": "VIP", "duration": "EXTRA", "extra_count": count}
-	paywall_link = f"https://paystack.com/pay/signalrankai?user={user_id}&price={price}&tier=VIP&extra={count}"
+	from paystack.paystack import generate_paystack_link
+	paywall_link = generate_paystack_link(user_id, price, tier="VIP", extra_count=count)
 	update.message.reply_text(
 		f"To unlock {count} extra VIP signals for today, pay ₦{price}: {paywall_link}\n"
 		"You will receive real-time VIP signals after payment."
