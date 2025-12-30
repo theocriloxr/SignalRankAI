@@ -4,7 +4,26 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, ContextTypes
 import os
 from paystack.paystack import verify_payment
-from db.database import has_full_access, get_user_tier, store_signal, auto_expire_subscriptions
+from db.database import has_full_access, get_user_tier, store_signal, auto_expire_subscriptions, get_extra_signals_left, increment_extra_signal_count, generate_referral_code, get_referral_by_code, record_referral_reward, get_referral_rewards
+async def referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    code = generate_referral_code(user.id)
+    await update.message.reply_text(
+        f"Your referral code: {code}\nShare this code. When someone subscribes using your code, you earn rewards!\nUse /my_referrals to view your rewards."
+    )
+
+async def my_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    rewards = get_referral_rewards(user.id)
+    if not rewards:
+        await update.message.reply_text("No referral rewards yet. Share your code to earn!")
+        return
+    msg = "Your referral rewards:\n"
+    for r in rewards:
+        _, referrer_id, referred_id, reward_type, reward_value, created_at = r
+        msg += f"Referred user {referred_id}: {reward_type} ({reward_value}) on {created_at}\n"
+    await update.message.reply_text(msg)
+from engine.signal_controller import SignalController
 import sqlite3
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN')
@@ -76,37 +95,49 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     app.add_handler(CommandHandler("revenue", revenue))
     app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("buy_extra", buy_extra))
+    app.add_handler(CommandHandler("referral", referral))
+    app.add_handler(CommandHandler("my_referrals", my_referrals))
     app.run_polling()
 
 import datetime
 from paystack.paystack import generate_paystack_link
 from db.database import get_free_signals_sent_today, increment_free_signal_count, unlock_paid_signal_for_user
 
-def dispatch_signals(ranked_signals):
+def dispatch_signals(strategy_signals, regime):
     bot = Bot(token=TELEGRAM_TOKEN)
+    controller = SignalController()
+    approved = controller.approve_signals(strategy_signals, regime)
+    ranked = controller.rank_and_release(approved)
     # VIP: instant, all info
-    for signal in ranked_signals.get('vip', []):
+    for signal in ranked.get('vip', []):
         for user_id in get_all_users_by_tier('VIP'):
             bot.send_message(chat_id=user_id, text=format_signal(signal))
     # Premium: instant, all info
-    for signal in ranked_signals.get('premium', []):
+    for signal in ranked.get('premium', []):
         for user_id in get_all_users_by_tier('PREMIUM'):
             bot.send_message(chat_id=user_id, text=format_signal(signal))
-    # Free: 1/day, delayed, stripped info, watermark, ₦300 per extra
-    if ranked_signals.get('premium'):
-        free_signal = ranked_signals['premium'][0]
+    # Free: 1/day, delayed, stripped info, watermark, ₦250 per extra
+    if ranked.get('premium'):
+        free_signal = ranked['premium'][0]
         for user_id in get_all_users_by_tier('FREE'):
             today_count = get_free_signals_sent_today(user_id)
+            extra_left = get_extra_signals_left(user_id)
             if today_count == 0:
                 msg = format_signal({**free_signal, 'score': None, 'strategy_name': None})
                 msg += f"\nUser: {hash(user_id) % 100000} (watermark)\nUpgrade for real-time, full info."
                 # TODO: Add delay logic (30-60 min)
                 bot.send_message(chat_id=user_id, text=msg)
                 increment_free_signal_count(user_id)
+            elif extra_left > 0:
+                # Send extra signal
+                extra_signal = ranked['premium'][min(today_count, len(ranked['premium'])-1)]
+                msg = format_signal({**extra_signal, 'score': None, 'strategy_name': None})
+                msg += f"\n(Extra signal unlocked)\nUpgrade for unlimited, real-time signals."
+                bot.send_message(chat_id=user_id, text=msg)
+                increment_extra_signal_count(user_id)
             else:
                 # Offer paywall for extra signals
-                extra_signal = ranked_signals['premium'][min(today_count, len(ranked_signals['premium'])-1)]
-                paywall_msg = f"You have used your free signal for today.\nUnlock extra signals for ₦250 each using /buy_extra <count>. Example: /buy_extra 3 for 3 signals."
+                paywall_msg = f"You have used your free and extra signals for today.\nUnlock more signals for ₦250 each using /buy_extra <count>. Example: /buy_extra 3 for 3 signals."
                 bot.send_message(chat_id=user_id, text=paywall_msg)
 
 # Webhook handler (to be called by Paystack webhook server)

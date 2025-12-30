@@ -119,7 +119,49 @@ def init_db():
             payment_ref TEXT,
             bypass_key_used INTEGER DEFAULT 0
         )''')
+        # Referral tables
+        c.execute('''CREATE TABLE IF NOT EXISTS referral_codes (
+            code TEXT PRIMARY KEY,
+            referrer_id INTEGER,
+            created_at TEXT
+        )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS referral_rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER,
+            referred_id INTEGER,
+            reward_type TEXT,
+            reward_value INTEGER,
+            created_at TEXT
+        )''')
         conn.commit()
+import random
+def generate_referral_code(referrer_id):
+    code = f"SRK{referrer_id}{random.randint(1000,9999)}"
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute('INSERT OR IGNORE INTO referral_codes (code, referrer_id, created_at) VALUES (?, ?, ?)', (code, referrer_id, datetime.now().isoformat()))
+        conn.commit()
+    return code
+
+def get_referral_by_code(code):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute('SELECT referrer_id FROM referral_codes WHERE code=?', (code,))
+        row = c.fetchone()
+        return row[0] if row else None
+
+def record_referral_reward(referrer_id, referred_id, reward_type, reward_value):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute('INSERT INTO referral_rewards (referrer_id, referred_id, reward_type, reward_value, created_at) VALUES (?, ?, ?, ?, ?)',
+                  (referrer_id, referred_id, reward_type, reward_value, datetime.now().isoformat()))
+        conn.commit()
+
+def get_referral_rewards(referrer_id):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute('SELECT * FROM referral_rewards WHERE referrer_id=?', (referrer_id,))
+        return c.fetchall()
 def has_full_access(user_id, provided_key=None):
     if user_id in OWNER_IDS:
         return True
