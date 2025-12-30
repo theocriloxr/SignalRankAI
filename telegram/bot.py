@@ -1,3 +1,19 @@
+def buy_extra(update: Update, context: CallbackContext):
+    user = update.effective_user
+    if len(context.args) != 1:
+        update.message.reply_text("Usage: /buy_extra <count>")
+        return
+    try:
+        count = int(context.args[0])
+        if count < 1:
+            update.message.reply_text("Count must be at least 1.")
+            return
+    except ValueError:
+        update.message.reply_text("Count must be a number.")
+        return
+    price = 300 * count
+    paywall_link = generate_paystack_link(user.id, price, extra_count=count)
+    update.message.reply_text(f"To unlock {count} extra signals for today, pay ₦{price}: {paywall_link}")
 
 
 
@@ -42,6 +58,7 @@ def run_bot():
     dp.add_handler(CommandHandler("users", users))
     dp.add_handler(CommandHandler("revenue", revenue))
     dp.add_handler(CommandHandler("approve", approve))
+    dp.add_handler(CommandHandler("buy_extra", buy_extra))
     updater.start_polling()
     updater.idle()
 
