@@ -11,6 +11,9 @@ def fetch_market_data(asset, timeframes):
     data = {}
     for tf in timeframes:
         candles = get_candles(asset, tf)
+        # Validate candles: must be non-empty and have 'close' key in first row
+        if not candles or 'close' not in candles[0]:
+            continue
         indicators = calculate_indicators(candles)
         data[tf] = {
             'candles': candles,
@@ -41,17 +44,25 @@ def get_crypto_candles(asset, timeframe):
     return candles
 
 def get_fx_candles(asset, timeframe):
-    from alpha_vantage.foreignexchange import ForeignExchange
-    key = os.getenv('ALPHA_VANTAGE_KEY', '')
-    fx = ForeignExchange(key)
+    import requests
+    import datetime
     base, quote = asset[:3], asset[3:]
-    tf_map = {'5m': 'FX_INTRADAY', '15m': 'FX_INTRADAY', '1h': 'FX_INTRADAY', '4h': 'FX_DAILY', '1d': 'FX_DAILY'}
-    if timeframe in ['5m', '15m', '1h']:
-        data, _ = fx.get_currency_exchange_intraday(from_symbol=base, to_symbol=quote, interval='5min', outputsize='compact')
-    else:
-        data, _ = fx.get_currency_exchange_daily(from_symbol=base, to_symbol=quote, outputsize='compact')
+    # Map timeframe to period (exchangerate.host supports 1m, 5m, 15m, 30m, 1h, 4h, 1d)
+    tf_map = {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}
+    period = tf_map.get(timeframe, '1h')
+    end = datetime.datetime.utcnow()
+    start = end - datetime.timedelta(days=5)  # last 5 days
+    url = f"https://api.exchangerate.host/timeseries?start_date={start.date()}&end_date={end.date()}&base={base}&symbols={quote}"
+    resp = requests.get(url)
+    data = resp.json()
     candles = []
-    for ts, v in list(data.items())[-100:]:
-        candles.append({'timestamp': ts, 'open': float(v['1. open']), 'high': float(v['2. high']), 'low': float(v['3. low']), 'close': float(v['4. close']), 'volume': 0})
-    candles = sorted(candles, key=lambda x: x['timestamp'])
+    if 'rates' not in data:
+        # API error or unsupported pair
+        return []
+    # Simulate OHLCV from daily close (exchangerate.host gives only close, so OHLC=close, V=0)
+    for ts, v in sorted(data['rates'].items()):
+        close = v.get(quote)
+        if close is None:
+            continue
+        candles.append({'timestamp': ts, 'open': close, 'high': close, 'low': close, 'close': close, 'volume': 0})
     return candles
