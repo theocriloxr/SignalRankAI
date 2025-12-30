@@ -1,23 +1,19 @@
-def dispatch_signals(ranked_signals):
-def send_to_vip_users(msg):
-def send_to_premium_users(msg):
-def send_delayed_to_free_users(msg):
+
+
 
 from .formatter import format_signal
 from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext
 import os
 from paystack.paystack import verify_payment
+from db.database import has_full_access, get_user_tier, store_signal, auto_expire_subscriptions
+import sqlite3
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN')
-VIP_USERS = set()
-PREMIUM_USERS = set()
-FREE_USERS = set()
 
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    FREE_USERS.add(user.id)
-    update.message.reply_text("Welcome to SignalRank AI! Use /subscribe to upgrade.")
+    update.message.reply_text("Welcome to SignalRank AI! Use /subscribe <paystack_reference> to upgrade.\n\nIf you pay the wrong amount, your money is NOT refunded. Pay the exact amount for your tier.")
 
 def subscribe(update: Update, context: CallbackContext):
     user = update.effective_user
@@ -25,21 +21,12 @@ def subscribe(update: Update, context: CallbackContext):
         update.message.reply_text("Send /subscribe <paystack_reference>")
         return
     reference = context.args[0]
-    verified, data = verify_payment(reference)
-    if verified:
-        PREMIUM_USERS.add(user.id)
-        update.message.reply_text("Payment verified! You are now a premium user.")
-    else:
-        update.message.reply_text("Payment not verified. Please try again.")
+    verified, msg, tier = verify_payment(reference, user.id)
+    update.message.reply_text(msg)
 
 def status(update: Update, context: CallbackContext):
     user = update.effective_user
-    if user.id in VIP_USERS:
-        tier = 'VIP'
-    elif user.id in PREMIUM_USERS:
-        tier = 'PREMIUM'
-    else:
-        tier = 'FREE'
+    tier = get_user_tier(user.id)
     update.message.reply_text(f"Your status: {tier}")
 
 def run_bot():
@@ -48,17 +35,100 @@ def run_bot():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CommandHandler("subscribe", subscribe))
     dp.add_handler(CommandHandler("status", status))
+    dp.add_handler(CommandHandler("force_signal", force_signal))
+    dp.add_handler(CommandHandler("stats", stats))
+    dp.add_handler(CommandHandler("weights", weights))
+    dp.add_handler(CommandHandler("pause", pause))
+    dp.add_handler(CommandHandler("resume", resume))
+    dp.add_handler(CommandHandler("users", users))
+    dp.add_handler(CommandHandler("revenue", revenue))
     updater.start_polling()
     updater.idle()
 
+import datetime
+from paystack.paystack import generate_paystack_link
+from db.database import get_free_signals_sent_today, increment_free_signal_count, unlock_paid_signal_for_user
+
 def dispatch_signals(ranked_signals):
     bot = Bot(token=TELEGRAM_TOKEN)
+    # VIP: instant, all info
     for signal in ranked_signals.get('vip', []):
-        for user_id in VIP_USERS:
+        for user_id in get_all_users_by_tier('VIP'):
             bot.send_message(chat_id=user_id, text=format_signal(signal))
+    # Premium: instant, all info
     for signal in ranked_signals.get('premium', []):
-        for user_id in PREMIUM_USERS:
+        for user_id in get_all_users_by_tier('PREMIUM'):
             bot.send_message(chat_id=user_id, text=format_signal(signal))
+    # Free: 1/day, delayed, stripped info, watermark, ₦300 per extra
     if ranked_signals.get('premium'):
-        for user_id in FREE_USERS:
-            bot.send_message(chat_id=user_id, text=format_signal(ranked_signals['premium'][0]))
+        free_signal = ranked_signals['premium'][0]
+        for user_id in get_all_users_by_tier('FREE'):
+            today_count = get_free_signals_sent_today(user_id)
+            if today_count == 0:
+                msg = format_signal({**free_signal, 'score': None, 'strategy_name': None})
+                msg += f"\nUser: {hash(user_id) % 100000} (watermark)\nUpgrade for real-time, full info."
+                # TODO: Add delay logic (30-60 min)
+                bot.send_message(chat_id=user_id, text=msg)
+                increment_free_signal_count(user_id)
+            else:
+                # Offer paywall for extra signals
+                extra_signal = ranked_signals['premium'][min(today_count, len(ranked_signals['premium'])-1)]
+                paywall_msg = f"You have used your free signal for today.\nUnlock this extra signal for ₦300: "
+                paywall_link = generate_paystack_link(user_id, 300, signal_id=extra_signal.get('id'))
+                bot.send_message(chat_id=user_id, text=paywall_msg + paywall_link)
+
+# Webhook handler (to be called by Paystack webhook server)
+def handle_paystack_webhook(event):
+    # event: dict from Paystack webhook
+    if event['event'] == 'charge.success':
+        user_id = event['data']['metadata']['user_id']
+        signal_id = event['data']['metadata'].get('signal_id')
+        if event['data']['amount'] == 30000:  # ₦300 in kobo
+            unlock_paid_signal_for_user(user_id, signal_id)
+            # Optionally, send the unlocked signal instantly
+
+def get_all_users_by_tier(tier):
+    # Query DB for all user_ids with current tier
+    import sqlite3
+    from db.database import DB_PATH
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute('SELECT user_id FROM subscriptions WHERE tier=?', (tier,))
+        return [row[0] for row in c.fetchall()]
+
+# OWNER-ONLY COMMANDS
+def owner_only(func):
+    def wrapper(update: Update, context: CallbackContext):
+        user = update.effective_user
+        if not has_full_access(user.id):
+            return  # Silently ignore
+        return func(update, context)
+    return wrapper
+
+@owner_only
+def force_signal(update: Update, context: CallbackContext):
+    update.message.reply_text("Test alert sent.")
+
+@owner_only
+def stats(update: Update, context: CallbackContext):
+    update.message.reply_text("Full performance stats.")
+
+@owner_only
+def weights(update: Update, context: CallbackContext):
+    update.message.reply_text("Strategy weights.")
+
+@owner_only
+def pause(update: Update, context: CallbackContext):
+    update.message.reply_text("Alerts paused.")
+
+@owner_only
+def resume(update: Update, context: CallbackContext):
+    update.message.reply_text("Alerts resumed.")
+
+@owner_only
+def users(update: Update, context: CallbackContext):
+    update.message.reply_text("Active users list.")
+
+@owner_only
+def revenue(update: Update, context: CallbackContext):
+    update.message.reply_text("Earnings summary.")
