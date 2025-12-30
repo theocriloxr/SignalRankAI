@@ -1,4 +1,5 @@
 from data.fetcher import fetch_market_data
+from data.pair_discovery import get_all_trending_pairs
 from engine.regime import detect_market_regime
 from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
