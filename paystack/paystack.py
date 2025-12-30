@@ -1,4 +1,3 @@
-def verify_payment(reference):
 import requests
 import os
 from db.database import set_subscription

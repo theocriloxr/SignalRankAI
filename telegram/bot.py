@@ -5,45 +5,7 @@ from .formatter import format_signal
 from paystack.paystack import verify_payment
 from db.database import has_full_access, get_user_tier, store_signal, auto_expire_subscriptions, get_extra_signals_left, increment_extra_signal_count, generate_referral_code, get_referral_by_code, record_referral_reward, get_referral_rewards
 
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("SignalRank AI: Get trading signals, upgrade plans, and view stats. Use /upgrade for premium access.")
 
-async def upgrade_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Upgrade to Premium or VIP for real-time signals and full analytics. Use /subscribe <paystack_reference>.")
-
-async def pricing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Pricing:\nPREMIUM MONTHLY: ₦10,000\nPREMIUM WEEKLY: ₦3,000\nVIP MONTHLY: ₦25,000\nVIP WEEKLY: ₦8,000\nExtra signals: ₦250 each.")
-
-async def performance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not has_full_access(user_id):
-        await update.message.reply_text("🔒 Performance analytics are for Premium users. Use /upgrade to unlock.")
-        return
-    await update.message.reply_text("Performance summary (stub).")
-
-async def signals_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not has_full_access(user_id):
-        await update.message.reply_text("🔒 Signals are for Premium users. Use /upgrade to unlock.")
-        return
-    await update.message.reply_text("Latest signals (stub).")
-
-async def risk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not has_full_access(user_id):
-        await update.message.reply_text("🔒 Risk analytics are for Premium users. Use /upgrade to unlock.")
-        return
-    await update.message.reply_text("Risk summary (stub).")
-
-async def history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not has_full_access(user_id):
-        await update.message.reply_text("🔒 Signal history is for Premium users. Use /upgrade to unlock.")
-        return
-    await update.message.reply_text("Last 10 trades (stub).")
-
-def is_owner(user_id):
-    return user_id == int(os.getenv("OWNER_TELEGRAM_ID", "123456789"))
 
 def owner_only(func):
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
