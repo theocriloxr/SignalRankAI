@@ -1,6 +1,6 @@
 def format_signal(signal):
 	tier = 'VIP' if signal.get('score', 0) >= 85 else 'PREMIUM'
-	return f"""
+	msg = f"""
 🚀 TRADE ALERT — {tier}
 
 Asset: {signal.get('asset')}
@@ -13,3 +13,7 @@ Risk/Reward: {signal.get('rr_ratio')}
 Confidence Score: {signal.get('score')}/100
 Market Regime: {signal.get('regime', 'N/A')}
 """
+	# Show ML confidence only for VIP/OWNER
+	if tier == 'VIP' and signal.get('ml_probability') is not None:
+		msg += f"\n📊 ML Confidence: {round(signal['ml_probability']*100, 1)}%"
+	return msg
