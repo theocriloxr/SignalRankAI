@@ -1,6 +1,7 @@
+import pandas as pd
+import numpy as np
+
 def calculate_indicators(candles):
-    import pandas as pd
-    import numpy as np
     df = pd.DataFrame(candles)
     indicators = {}
     indicators['ema_fast'] = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
