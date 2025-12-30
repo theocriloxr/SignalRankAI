@@ -8,14 +8,15 @@ class Subscription:
 
     def is_active(self):
         return datetime.utcnow() < self.expires_at
-    # --- Region-Optimized Weekly Plan ---
-    WEEKLY_PLAN = {
-        'name': 'Weekly Plan',
-        'price_ngn': 1500,  # Example: ₦1500 per week
-        'duration_days': 7,
-        'features': [
-            'Full access to all signals',
-            'Priority support',
-            'Region-optimized for Nigeria/West Africa',
-        ]
-    }
+
+# --- Region-Optimized Weekly Plan ---
+WEEKLY_PLAN = {
+    'name': 'Weekly Plan',
+    'price_ngn': 1500,  # Example: ₦1500 per week
+    'duration_days': 7,
+    'features': [
+        'Full access to all signals',
+        'Priority support',
+        'Region-optimized for Nigeria/West Africa',
+    ]
+}
