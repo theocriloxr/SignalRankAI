@@ -1,3 +1,79 @@
+async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("SignalRank AI: Get trading signals, upgrade plans, and view stats. Use /upgrade for premium access.")
+
+async def upgrade_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Upgrade to Premium or VIP for real-time signals and full analytics. Use /subscribe <paystack_reference>.")
+
+async def pricing_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Pricing:\nPREMIUM MONTHLY: ₦10,000\nPREMIUM WEEKLY: ₦3,000\nVIP MONTHLY: ₦25,000\nVIP WEEKLY: ₦8,000\nExtra signals: ₦250 each.")
+
+async def performance_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not has_full_access(user_id):
+        await update.message.reply_text("🔒 Performance analytics are for Premium users. Use /upgrade to unlock.")
+        return
+    await update.message.reply_text("Performance summary (stub).")
+
+async def signals_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not has_full_access(user_id):
+        await update.message.reply_text("🔒 Signals are for Premium users. Use /upgrade to unlock.")
+        return
+    await update.message.reply_text("Latest signals (stub).")
+
+async def risk_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not has_full_access(user_id):
+        await update.message.reply_text("🔒 Risk analytics are for Premium users. Use /upgrade to unlock.")
+        return
+    await update.message.reply_text("Risk summary (stub).")
+
+async def history_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not has_full_access(user_id):
+        await update.message.reply_text("🔒 Signal history is for Premium users. Use /upgrade to unlock.")
+        return
+    await update.message.reply_text("Last 10 trades (stub).")
+
+def is_owner(user_id):
+    return user_id == int(os.getenv("OWNER_TELEGRAM_ID", "123456789"))
+
+def owner_only(func):
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if not is_owner(user_id):
+            return
+        return await func(update, context)
+    return wrapper
+
+@owner_only
+async def dev_stats_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Internal stats (owner-only stub).")
+
+@owner_only
+async def dev_users_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("User list (owner-only stub).")
+
+@owner_only
+async def dev_revenue_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Revenue summary (owner-only stub).")
+
+@owner_only
+async def dev_force_signal_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Force signal sent (owner-only stub).")
+
+@owner_only
+async def dev_toggle_strategy_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Strategy toggled (owner-only stub).")
+
+@owner_only
+async def dev_pause_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot paused (owner-only stub).")
+
+@owner_only
+async def dev_resume_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Bot resumed (owner-only stub).")
+
 
 from .formatter import format_signal
 from telegram import Update, Bot
@@ -84,19 +160,25 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_handler))
+    app.add_handler(CommandHandler("upgrade", upgrade_handler))
+    app.add_handler(CommandHandler("pricing", pricing_handler))
     app.add_handler(CommandHandler("subscribe", subscribe))
     app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("force_signal", force_signal))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("weights", weights))
-    app.add_handler(CommandHandler("pause", pause))
-    app.add_handler(CommandHandler("resume", resume))
-    app.add_handler(CommandHandler("users", users))
-    app.add_handler(CommandHandler("revenue", revenue))
-    app.add_handler(CommandHandler("approve", approve))
+    app.add_handler(CommandHandler("performance", performance_handler))
+    app.add_handler(CommandHandler("signals", signals_handler))
+    app.add_handler(CommandHandler("risk", risk_handler))
+    app.add_handler(CommandHandler("history", history_handler))
     app.add_handler(CommandHandler("buy_extra", buy_extra))
     app.add_handler(CommandHandler("referral", referral))
     app.add_handler(CommandHandler("my_referrals", my_referrals))
+    app.add_handler(CommandHandler("dev_stats", dev_stats_handler))
+    app.add_handler(CommandHandler("dev_users", dev_users_handler))
+    app.add_handler(CommandHandler("dev_revenue", dev_revenue_handler))
+    app.add_handler(CommandHandler("dev_force_signal", dev_force_signal_handler))
+    app.add_handler(CommandHandler("dev_toggle_strategy", dev_toggle_strategy_handler))
+    app.add_handler(CommandHandler("dev_pause", dev_pause_handler))
+    app.add_handler(CommandHandler("dev_resume", dev_resume_handler))
     app.run_polling()
 
 import datetime
