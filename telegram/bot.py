@@ -77,7 +77,7 @@ async def dev_resume_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 from .formatter import format_signal
 from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, ContextTypes
 import os
 from paystack.paystack import verify_payment
 from db.database import has_full_access, get_user_tier, store_signal, auto_expire_subscriptions, get_extra_signals_left, increment_extra_signal_count, generate_referral_code, get_referral_by_code, record_referral_reward, get_referral_rewards
@@ -159,26 +159,10 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Your status: {tier}\nExample: /status")
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_handler))
-    app.add_handler(CommandHandler("upgrade", upgrade_handler))
-    app.add_handler(CommandHandler("pricing", pricing_handler))
-    app.add_handler(CommandHandler("subscribe", subscribe))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("performance", performance_handler))
-    app.add_handler(CommandHandler("signals", signals_handler))
-    app.add_handler(CommandHandler("risk", risk_handler))
-    app.add_handler(CommandHandler("history", history_handler))
-    app.add_handler(CommandHandler("buy_extra", buy_extra))
-    app.add_handler(CommandHandler("referral", referral))
-    app.add_handler(CommandHandler("my_referrals", my_referrals))
-    app.add_handler(CommandHandler("dev_stats", dev_stats_handler))
-    app.add_handler(CommandHandler("dev_users", dev_users_handler))
-    app.add_handler(CommandHandler("dev_revenue", dev_revenue_handler))
-    app.add_handler(CommandHandler("dev_force_signal", dev_force_signal_handler))
-    app.add_handler(CommandHandler("dev_toggle_strategy", dev_toggle_strategy_handler))
-    app.add_handler(CommandHandler("dev_pause", dev_pause_handler))
-    app.add_handler(CommandHandler("dev_resume", dev_resume_handler))
+    from telegram.commands import register_handlers, set_bot_commands
+    register_handlers(app)
+    import asyncio
+    asyncio.run(set_bot_commands(app))
     app.run_polling()
 
 import datetime
