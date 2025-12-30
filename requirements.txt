@@ -1,9 +1,10 @@
+python-telegram-bot>=20.0
 pandas
 numpy
-python-telegram-bot
 requests
 ccxt
 alpha_vantage
 flask
 gunicorn
 python-dotenv
+python-sqlite3
