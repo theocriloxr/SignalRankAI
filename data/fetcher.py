@@ -10,15 +10,19 @@ import time
 def fetch_market_data(asset, timeframes):
     data = {}
     for tf in timeframes:
-        candles = get_candles(asset, tf)
-        # Validate candles: must be non-empty and have 'close' key in first row
-        if not candles or 'close' not in candles[0]:
+        try:
+            candles = get_candles(asset, tf)
+            # Validate candles: must be non-empty and have 'close' key in first row
+            if not candles or 'close' not in candles[0]:
+                continue
+            indicators = calculate_indicators(candles)
+            data[tf] = {
+                'candles': candles,
+                'indicators': indicators
+            }
+        except Exception as e:
+            print(f"[WARN] Skipping {asset} {tf} due to error: {e}")
             continue
-        indicators = calculate_indicators(candles)
-        data[tf] = {
-            'candles': candles,
-            'indicators': indicators
-        }
     return data
 
 def get_candles(asset, timeframe):
@@ -34,14 +38,23 @@ def is_crypto(asset):
 
 def get_crypto_candles(asset, timeframe):
     import ccxt
+    import time
     exchange = ccxt.binance()
     symbol = asset.replace('USD', '/USDT') if not asset.endswith('USDT') else asset.replace('USDT', '/USDT')
     tf_map = {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}
-    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=tf_map.get(timeframe, '1h'), limit=100)
-    candles = []
-    for o in ohlcv:
-        candles.append({'timestamp': o[0], 'open': o[1], 'high': o[2], 'low': o[3], 'close': o[4], 'volume': o[5]})
-    return candles
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe=tf_map.get(timeframe, '1h'), limit=100)
+            candles = []
+            for o in ohlcv:
+                candles.append({'timestamp': o[0], 'open': o[1], 'high': o[2], 'low': o[3], 'close': o[4], 'volume': o[5]})
+            return candles
+        except Exception as e:
+            print(f"Error fetching candles for {symbol} (attempt {attempt+1}/{max_retries}): {e}")
+            time.sleep(2)
+    print(f"Failed to fetch candles for {symbol} after {max_retries} attempts.")
+    return []
 
 def get_fx_candles(asset, timeframe):
     import requests

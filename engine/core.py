@@ -31,4 +31,5 @@ def main_loop():
                 signal['risk_profile'] = risk_profile
                 store_signal(signal)
     ranked_signals = rank_signals()
-    dispatch_signals(ranked_signals)
+    all_signals = ranked_signals.get('vip', []) + ranked_signals.get('premium', [])
+    dispatch_signals(all_signals)

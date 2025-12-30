@@ -1,4 +1,6 @@
 def detect_market_regime(market_data):
+    if not isinstance(market_data, dict):
+        raise ValueError("market_data must be a dict")
     ht_tf = market_data.get('4h', {})
     indicators = ht_tf.get('indicators', {})
     adx = indicators.get('adx', 0)

@@ -6,11 +6,15 @@ FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apik
 
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
-    resp = requests.get(BINANCE_API)
-    data = resp.json()
-    # Sort by quoteVolume (trending)
-    sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
-    return [x['symbol'] for x in sorted_pairs[:top_n]]
+    try:
+        resp = requests.get(BINANCE_API, timeout=5)
+        data = resp.json()
+        # Sort by quoteVolume (trending)
+        sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
+        return [x['symbol'] for x in sorted_pairs[:top_n]]
+    except Exception as e:
+        print(f"[WARN] Could not fetch Binance pairs: {e}")
+        return []
 
 # Discover trending FX pairs (placeholder: use your own logic or API)
 def get_trending_fx_pairs():

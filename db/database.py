@@ -89,7 +89,7 @@ from dotenv import load_dotenv
 load_dotenv()
 DB_PATH = 'signals.db'
 OWNER_TELEGRAM_ID = int(os.getenv('OWNER_TELEGRAM_ID', '123456789'))
-BYPASS_KEY = os.getenv('BYPASS_KEY', 'SRK-OWNER-ONLY-948372')
+BYPASS_KEY = os.getenv('BYPASS_KEY')
 OWNER_IDS = [int(x) for x in os.getenv('OWNER_IDS', str(OWNER_TELEGRAM_ID)).split(',')]
 
 def init_db():
@@ -148,7 +148,9 @@ def get_referral_by_code(code):
         c = conn.cursor()
         c.execute('SELECT referrer_id FROM referral_codes WHERE code=?', (code,))
         row = c.fetchone()
-        return row[0] if row else None
+        if row:
+            return {'referrer_id': row[0]}
+        return None
 
 def record_referral_reward(referrer_id, referred_id, reward_type, reward_value):
     with closing(sqlite3.connect(DB_PATH)) as conn:
@@ -247,3 +249,16 @@ def mark_signals_released(ids):
         conn.commit()
 
 init_db()
+
+# --- STUBS FOR SIGNAL CONTROLLER ---
+def get_strategy_stats():
+    # Return dummy stats for testing
+    return {}
+
+def update_strategy_weight(strat, boost=False, degrade=False):
+    # Dummy function for testing
+    pass
+
+def disable_strategy(strat):
+    # Dummy function for testing
+    pass

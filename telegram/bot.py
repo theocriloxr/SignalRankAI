@@ -1,9 +1,149 @@
+
+
 import os
+import sys
+import time
+from functools import wraps
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from telegram import Update, Bot
-from telegram.ext import Application, ContextTypes
-from .formatter import format_signal
+from telegram.ext import Application, ContextTypes, CallbackContext, CommandHandler
+from engine.signal_controller import enable_kill_switch, disable_kill_switch, is_kill_switch_enabled, log_audit_event
+# Admin kill-switch command
+async def killswitch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if str(user_id) not in os.getenv('OWNER_IDS', '').split(','):
+        await update.message.reply_text("Unauthorized.")
+        return
+    args = context.args
+    if args and args[0].lower() == 'on':
+        reason = ' '.join(args[1:]) or 'No reason provided'
+        enable_kill_switch(reason, admin_id=user_id)
+        await update.message.reply_text(f"KILL SWITCH ENABLED. Reason: {reason}")
+    elif args and args[0].lower() == 'off':
+        disable_kill_switch(admin_id=user_id)
+        await update.message.reply_text("KILL SWITCH DISABLED.")
+    else:
+        await update.message.reply_text("Usage: /killswitch on <reason> | /killswitch off")
+    log_audit_event('admin_kill_switch', user_id=user_id, details={'args': args})
+
+# Check kill-switch before executing sensitive commands
+def check_kill_switch(update, context):
+    if is_kill_switch_enabled():
+        update.message.reply_text("🚨 The system is currently in emergency shutdown (kill-switch enabled). Please contact admin.")
+        return True
+    return False
+    app.add_handler(CommandHandler("killswitch", killswitch))
+
+    # Register owner/admin commands (not shown in /help)
+    app.add_handler(CommandHandler("admin_kill", admin_kill))
+    app.add_handler(CommandHandler("admin_revive", admin_revive))
+from formatter import format_signal
 from paystack.paystack import verify_payment
 from db.database import has_full_access, get_user_tier, store_signal, auto_expire_subscriptions, get_extra_signals_left, increment_extra_signal_count, generate_referral_code, get_referral_by_code, record_referral_reward, get_referral_rewards
+
+# --- Rate limiting decorator ---
+user_last_command = {}
+def rate_limited(seconds=2):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            user_id = update.effective_user.id
+            now = time.time()
+            last = user_last_command.get(user_id, 0)
+            if now - last < seconds:
+                await update.message.reply_text("⏳ Please wait before sending another command.")
+                return
+            user_last_command[user_id] = now
+            return await func(update, context)
+        return wrapper
+    return decorator
+
+# --- Access control decorators ---
+def owner_only(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        if not has_full_access(user_id):
+            return
+        return await func(update, context)
+    return wrapper
+
+def premium_only(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        tier = get_user_tier(user_id)
+        if tier not in ("PREMIUM", "VIP", "OWNER"):
+            await update.message.reply_text("This command is for premium users only.")
+            return
+        return await func(update, context)
+    return wrapper
+
+def vip_only(func):
+    @wraps(func)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
+        tier = get_user_tier(user_id)
+        if tier not in ("VIP", "OWNER"):
+            await update.message.reply_text("This command is for VIP users only.")
+            return
+        return await func(update, context)
+    return wrapper
+
+# --- Command Handlers ---
+@rate_limited()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if check_kill_switch(update, context):
+        return
+    await update.message.reply_text("Welcome to SignalRank AI! Use /status, /subscribe, /buy_extra, etc.")
+
+@rate_limited()
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if check_kill_switch(update, context):
+        return
+    tier = get_user_tier(update.effective_user.id)
+    await update.message.reply_text(f"Your status: {tier}")
+
+@rate_limited()
+async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if check_kill_switch(update, context):
+        return
+    # ...existing code for subscribe...
+    pass
+
+@rate_limited()
+async def buy_extra(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if check_kill_switch(update, context):
+        return
+    # ...existing code for buy_extra...
+    pass
+
+# --- Owner/Admin Commands (hidden from help) ---
+@owner_only
+async def admin_kill(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Set a global kill-switch (to be implemented)
+    await update.message.reply_text("Kill-switch activated. All signals paused.")
+
+@owner_only
+async def admin_revive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Kill-switch deactivated. Signals resumed.")
+
+if __name__ == "__main__":
+    TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN')
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Register public commands
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("subscribe", subscribe))
+    app.add_handler(CommandHandler("buy_extra", buy_extra))
+
+    # Register owner/admin commands (not shown in /help)
+    app.add_handler(CommandHandler("admin_kill", admin_kill))
+    app.add_handler(CommandHandler("admin_revive", admin_revive))
+
+    print("SignalRankAI Telegram bot is running. Press Ctrl+C to stop.")
+    app.run_polling()
 
 
 
@@ -44,7 +184,7 @@ async def dev_resume_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await update.message.reply_text("Bot resumed (owner-only stub).")
 
 
-from .formatter import format_signal
+from formatter import format_signal
 from telegram import Update, Bot
 from telegram.ext import Application, ContextTypes
 import os
