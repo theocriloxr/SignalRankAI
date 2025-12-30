@@ -13,8 +13,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN')
 
 def start(update: Update, context: CallbackContext):
     user = update.effective_user
-    update.message.reply_text("Welcome to SignalRank AI! Use /subscribe <paystack_reference> to upgrade.\n\nIf you pay the wrong amount, your money is NOT refunded. Pay the exact amount for your tier.")
-
+    update.message.reply_text("Welcome to SignalRank AI! Use /subscribe <paystack_reference> to upgrade.\n\nIf you pay the wrong amount, your money is NOT refunded. Pay the exact amount for your requested tier.")
 def subscribe(update: Update, context: CallbackContext):
     user = update.effective_user
     if len(context.args) != 1:
@@ -42,6 +41,7 @@ def run_bot():
     dp.add_handler(CommandHandler("resume", resume))
     dp.add_handler(CommandHandler("users", users))
     dp.add_handler(CommandHandler("revenue", revenue))
+    dp.add_handler(CommandHandler("approve", approve))
     updater.start_polling()
     updater.idle()
 
@@ -96,7 +96,10 @@ def get_all_users_by_tier(tier):
         c.execute('SELECT user_id FROM subscriptions WHERE tier=?', (tier,))
         return [row[0] for row in c.fetchall()]
 
+
 # OWNER-ONLY COMMANDS
+from db.database import set_subscription, downgrade_to_free
+
 def owner_only(func):
     def wrapper(update: Update, context: CallbackContext):
         user = update.effective_user
@@ -132,3 +135,15 @@ def users(update: Update, context: CallbackContext):
 @owner_only
 def revenue(update: Update, context: CallbackContext):
     update.message.reply_text("Earnings summary.")
+
+@owner_only
+def approve(update: Update, context: CallbackContext):
+    # Usage: /approve <user_id> <tier> <duration_days>
+    args = context.args
+    if len(args) != 3:
+        update.message.reply_text("Usage: /approve <user_id> <tier> <duration_days>")
+        return
+    user_id, tier, days = int(args[0]), args[1].upper(), int(args[2])
+    set_subscription(user_id, tier, days, payment_ref='MANUAL')
+    update.message.reply_text(f"User {user_id} upgraded to {tier} for {days} days.")
+

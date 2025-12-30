@@ -1,3 +1,59 @@
+def approve_extra_signals(user_id, count):
+    # Admin approves extra signals for a user for today
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute('''CREATE TABLE IF NOT EXISTS extra_signal_log (user_id INTEGER, date TEXT, count INTEGER, used INTEGER DEFAULT 0, PRIMARY KEY(user_id, date))''')
+        c.execute('REPLACE INTO extra_signal_log (user_id, date, count, used) VALUES (?, ?, ?, 0)', (user_id, today, count))
+        conn.commit()
+
+def get_extra_signals_left(user_id):
+    # Returns how many extra signals user has left for today
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute('''CREATE TABLE IF NOT EXISTS extra_signal_log (user_id INTEGER, date TEXT, count INTEGER, used INTEGER DEFAULT 0, PRIMARY KEY(user_id, date))''')
+        c.execute('SELECT count, used FROM extra_signal_log WHERE user_id=? AND date=?', (user_id, today))
+        row = c.fetchone()
+        if not row:
+            return 0
+        return max(0, row[0] - row[1])
+
+def increment_extra_signal_count(user_id):
+    # Increment used count for extra signals
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute('''UPDATE extra_signal_log SET used = used + 1 WHERE user_id=? AND date=?''', (user_id, today))
+        conn.commit()
+def approve_extra_signals(user_id, count):
+    # Admin approves extra signals for a user for today
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute('''CREATE TABLE IF NOT EXISTS extra_signal_log (user_id INTEGER, date TEXT, count INTEGER, used INTEGER DEFAULT 0, PRIMARY KEY(user_id, date))''')
+        c.execute('REPLACE INTO extra_signal_log (user_id, date, count, used) VALUES (?, ?, ?, 0)', (user_id, today, count))
+        conn.commit()
+
+def get_extra_signals_left(user_id):
+    # Returns how many extra signals user has left for today
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute('''CREATE TABLE IF NOT EXISTS extra_signal_log (user_id INTEGER, date TEXT, count INTEGER, used INTEGER DEFAULT 0, PRIMARY KEY(user_id, date))''')
+        c.execute('SELECT count, used FROM extra_signal_log WHERE user_id=? AND date=?', (user_id, today))
+        row = c.fetchone()
+        if not row:
+            return 0
+        return max(0, row[0] - row[1])
+
+def increment_extra_signal_count(user_id):
+    # Increment used count for extra signals
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        c.execute('''UPDATE extra_signal_log SET used = used + 1 WHERE user_id=? AND date=?''', (user_id, today))
+        conn.commit()
 def get_free_signals_sent_today(user_id):
     # Track free signals sent per user per day
     with closing(sqlite3.connect(DB_PATH)) as conn:
