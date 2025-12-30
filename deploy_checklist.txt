@@ -1,0 +1,51 @@
+SignalRankAI Deployment & Automation Checklist
+
+1. Environment Setup
+- Copy .env.example to .env and fill in secrets (TELEGRAM_TOKEN, PAYSTACK_SECRET_KEY, DATABASE_URL)
+- Add .env to .gitignore
+
+2. Dependency Installation
+- pip install -r requirements.txt
+
+3. Process Management
+- Use start.sh for local multi-process launch
+- Use Procfile for Heroku/Railway deployment
+- Use railway.json for Railway cloud deployment
+
+4. Bot & Engine Startup
+- python -m telegram.bot (Telegram bot)
+- python main.py (Signal engine)
+
+5. Payment & Monetization
+- Ensure Paystack webhook is set up and points to your server
+- Test /upgrade and /subscribe flows
+- Confirm subscription expiry and tier gating
+
+6. Automation & Scaling
+- Use supervisor, pm2, or systemd for process monitoring (optional)
+- Set up log rotation for error and activity logs
+- Schedule regular backups of database
+- Monitor uptime and error rates
+
+7. Security
+- Rotate secrets regularly
+- Restrict access to .env and database files
+- Enable HTTPS for any web endpoints
+
+8. Launch & Growth
+- Register commands with BotFather
+- Set bot description, about, and profile photo
+- Share bot link on social media and groups
+- Monitor user feedback and iterate
+
+9. Advanced Automation (Optional)
+- Add CI/CD pipeline for auto-deploy on git push
+- Integrate with monitoring tools (UptimeRobot, Grafana)
+- Schedule daily/weekly performance reports
+
+10. Post-Launch
+- Track user growth and retention
+- Review logs for errors and abuse
+- Plan next ML/data upgrades
+
+Ready to deploy and automate. Follow this checklist for a smooth launch and scale.
