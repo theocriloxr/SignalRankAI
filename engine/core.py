@@ -78,5 +78,7 @@ def main_loop(DRY_RUN=False):
             print("[DRY RUN]", signal)
     else:
         from signalrank_telegram.bot import dispatch_signals
-        # Replace with real user_id in production
-        dispatch_signals(all_signals, user_id=123456789)
+        from db.database import get_all_user_ids
+        user_ids = get_all_user_ids()
+        for user_id in user_ids:
+            dispatch_signals(all_signals, user_id=user_id)
