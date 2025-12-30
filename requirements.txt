@@ -2,3 +2,8 @@ pandas
 numpy
 python-telegram-bot
 requests
+ccxt
+alpha_vantage
+flask
+gunicorn
+python-dotenv
