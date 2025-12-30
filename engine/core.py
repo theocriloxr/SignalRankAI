@@ -71,7 +71,7 @@ def main_loop(DRY_RUN=False):
                 store_signal(signal)
     # Ranking and Dispatch
     from engine.ranking import rank_signals
-    ranked_signals = rank_signals()
+    ranked_signals = rank_signals(scored_signals)
     all_signals = ranked_signals.get('vip', []) + ranked_signals.get('premium', [])
     if DRY_RUN:
         for signal in all_signals:

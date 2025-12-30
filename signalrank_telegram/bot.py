@@ -1,3 +1,8 @@
+TIER_LIMITS = {
+    'free': 2,
+    'premium': 10,
+    'vip': 30
+}
 from core.performance import performance_tracker
 from db.database import get_all_user_ids
 
