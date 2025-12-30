@@ -16,7 +16,7 @@ def load_tradable_assets():
 
 def main_loop():
     timeframes = ['5m', '15m', '1h', '4h', '1d']
-        assets = get_all_trending_pairs()
+    assets = get_all_trending_pairs()
     for asset in assets:
         market_data = fetch_market_data(asset, timeframes)
         regime = detect_market_regime(market_data)

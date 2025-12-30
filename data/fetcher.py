@@ -1,5 +1,7 @@
-def fetch_market_data(asset, timeframes):
-def get_candles(asset, timeframe):
+import os
+from .indicators import calculate_indicators
+import pandas as pd
+import time
 import os
 from .indicators import calculate_indicators
 import pandas as pd

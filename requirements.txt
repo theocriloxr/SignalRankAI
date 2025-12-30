@@ -1,3 +1,4 @@
+
 python-telegram-bot>=20.0
 pandas
 numpy
@@ -7,4 +8,6 @@ alpha_vantage
 flask
 gunicorn
 python-dotenv
-python-sqlite3
+httpx>=0.24.0,<0.25.0
+pypaystack2>=2.0.1
+websockets
