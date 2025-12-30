@@ -6,7 +6,7 @@ from engine.risk import calculate_dynamic_risk
 from engine.scoring import calculate_signal_score
 from db.database import store_signal
 from engine.ranking import rank_signals
-from telegram.bot import dispatch_signals
+from signalrank_telegram.bot import dispatch_signals
 
 MIN_SCORE_THRESHOLD = 75
 
