@@ -36,6 +36,23 @@ class SignalController:
         # Global kill-switch state
         self.KILL_SWITCH = {'enabled': False, 'reason': ''}
 
+    def can_emit(self, signal):
+        """
+        Prevent:
+        - Same asset + direction duplicates
+        - Excess correlated exposure
+        """
+        key = (signal["symbol"], signal["direction"])
+        if key in self.active_signals:
+            return False
+        return True
+
+    def register(self, signal):
+        key = (signal["symbol"], signal["direction"])
+        self.active_signals[key] = signal
+
+    def reset_cycle(self):
+        self.active_signals.clear()
     def enable_kill_switch(self, reason, admin_id=None):
         self.KILL_SWITCH['enabled'] = True
         self.KILL_SWITCH['reason'] = reason

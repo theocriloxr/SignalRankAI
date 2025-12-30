@@ -1,11 +1,21 @@
-def apply_consensus_filter(signals):
-    # Placeholder: group by asset and direction
-    grouped = group_by_asset_and_direction(signals)
+
+def consensus_filter(signals, min_score=2.5):
+    """
+    Weighted consensus using strategy confidence.
+    Groups signals by (symbol, direction) and sums confidence.
+    Approves signals where total confidence >= min_score.
+    """
+    grouped = {}
+    for s in signals:
+        key = (s["symbol"], s["direction"])
+        grouped.setdefault(key, 0)
+        grouped[key] += s["confidence"]
+
     approved = []
-    for group in grouped.values():
-        strategies_used = unique_strategy_groups(group)
-        if len(group) >= 3 and contains_required_groups(strategies_used):
-            approved.append(best_signal_in_group(group))
+    for signal in signals:
+        key = (signal["symbol"], signal["direction"])
+        if grouped[key] >= min_score:
+            approved.append(signal)
     return approved
 
 def group_by_asset_and_direction(signals):
