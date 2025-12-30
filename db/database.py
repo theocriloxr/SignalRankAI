@@ -1,3 +1,41 @@
+def fetch_user_trades(user_id):
+    # Returns all trades (signals) for a user from the signals table
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset TEXT,
+            timeframe TEXT,
+            direction TEXT,
+            entry REAL,
+            stop_loss REAL,
+            take_profit REAL,
+            rr_ratio REAL,
+            strategy_name TEXT,
+            strategy_group TEXT,
+            strength REAL,
+            score INTEGER,
+            risk_profile TEXT,
+            released INTEGER DEFAULT 0,
+            user_id INTEGER
+        )''')
+        c.execute('SELECT * FROM signals WHERE user_id=?', (user_id,))
+        return c.fetchall()
+def get_all_user_ids():
+    # Returns a list of all user IDs with a subscription (active or expired)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            tier TEXT,
+            start_date TEXT,
+            expiry_date TEXT,
+            payment_ref TEXT,
+            bypass_key_used INTEGER DEFAULT 0
+        )''')
+        c.execute('SELECT user_id FROM subscriptions')
+        rows = c.fetchall()
+        return [row[0] for row in rows]
 def approve_extra_signals(user_id, count):
     # Admin approves extra signals for a user for today
     with closing(sqlite3.connect(DB_PATH)) as conn:

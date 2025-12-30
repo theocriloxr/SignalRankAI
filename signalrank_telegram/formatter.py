@@ -16,4 +16,6 @@ Market Regime: {signal.get('regime', 'N/A')}
 	# Show ML confidence only for VIP/OWNER
 	if tier == 'VIP' and signal.get('ml_probability') is not None:
 		msg += f"\n📊 ML Confidence: {round(signal['ml_probability']*100, 1)}%"
+	# Add short disclaimer
+	msg += "\n\n⚠️ Trade at your own risk. This is not financial advice."
 	return msg
