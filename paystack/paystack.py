@@ -1,5 +1,6 @@
 
 import requests
+from payments.models import WEEKLY_PLAN
 import os
 import hmac
 import hashlib
@@ -18,13 +19,15 @@ AMOUNTS = {
     'PREMIUM_MONTHLY': 10000,
     'PREMIUM_WEEKLY': 3000,
     'VIP_MONTHLY': 25000,
-    'VIP_WEEKLY': 8000
+    'VIP_WEEKLY': 8000,
+    'WEEKLY_PLAN': WEEKLY_PLAN['price_ngn']
 }
 DURATIONS = {
     'PREMIUM_MONTHLY': 30,
     'PREMIUM_WEEKLY': 7,
     'VIP_MONTHLY': 30,
-    'VIP_WEEKLY': 7
+    'VIP_WEEKLY': 7,
+    'WEEKLY_PLAN': WEEKLY_PLAN['duration_days']
 }
 
 def verify_payment(reference, user_id):
@@ -56,6 +59,17 @@ def verify_payment(reference, user_id):
             # Subscription purchase
             tier = metadata.get('tier')
             duration = metadata.get('duration')
+            # Support region-optimized weekly plan
+            if tier == 'WEEKLY_PLAN' or (tier and duration and tier.upper() == 'WEEKLY_PLAN'):
+                key = 'WEEKLY_PLAN'
+                expected_price = AMOUNTS.get(key)
+                expected_days = DURATIONS.get(key)
+                if amount != expected_price:
+                    logging.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
+                    return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your subscription.", None
+                set_subscription(user_id, key, expected_days, reference)
+                logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
+                return True, f"✅ Payment verified! Weekly Plan access granted.", key
             if not tier or not duration:
                 logging.warning(f"Subscription payment missing tier/duration: user {user_id}, amount {amount}")
                 return False, "❌ Payment missing required subscription details. Please use the official payment link.", None
@@ -89,12 +103,15 @@ def verify_webhook_signature(request_body, signature):
     return hmac.compare_digest(computed, signature)
 
 # --- STUB FOR TELEGRAM BOT ---
-def generate_paystack_link(user_id, price, tier=None, duration=None, extra_count=None):
+def generate_paystack_link(user_id, price, tier=None, duration=None, extra_count=None, plan_name=None):
     # Compose metadata for Paystack payment
     metadata = {
         "telegram_id": user_id
     }
-    if extra_count:
+    if plan_name == "Weekly Plan":
+        metadata["tier"] = "WEEKLY_PLAN"
+        metadata["duration"] = "WEEKLY"
+    elif extra_count:
         metadata["tier"] = tier or "PREMIUM"
         metadata["duration"] = "EXTRA"
         metadata["extra_count"] = extra_count

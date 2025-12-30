@@ -1,3 +1,30 @@
+# ML weighting: returns a dict of {strategy_name: weight}
+def get_strategy_weights():
+    # TODO: Replace with real ML/DB logic
+    return {
+        'EMA Trend': 1.0,
+        'Supertrend': 1.0,
+        'ADX Trend': 1.0,
+        'RSI Momentum': 1.0,
+        'MACD Momentum': 1.0,
+        'Stoch RSI Momentum': 1.0,
+        'ATR Breakout': 1.0,
+        'BB Width Volatility': 1.0,
+        'Keltner Volatility': 1.0,
+        'Structure Bull': 1.0,
+        'S/R Break + Retest': 1.0,
+        'Liquidity Sweep': 1.0
+    }
+
+# Regime-based strategy group activation
+def get_regime_strategies():
+    # TODO: Replace with real ML/DB logic
+    return {
+        'TRENDING': ['trend', 'structure'],
+        'RANGING': ['momentum', 'structure'],
+        'VOLATILE': ['volatility', 'structure'],
+        'NEUTRAL': ['structure']
+    }
 # ML auto-learning hook (weekly job)
 from db.database import get_unreleased_signals
 

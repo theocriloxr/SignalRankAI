@@ -4,17 +4,18 @@ def trend_strategies(asset, timeframe, market_data):
     signal = strat.evaluate(market_data)
     return [signal] if signal else []
 
+
 from .base import BaseStrategy
 
-class TrendStrategy(BaseStrategy):
+# --- Trend Strategies ---
+class EMATrendStrategy(BaseStrategy):
     name = "EMA Trend"
-
     def evaluate(self, market_data):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind['ema_fast'] > ind['ema_slow'] and ind['ema_slow'] > ind['ema_trend']:
             if candles:
-                signal = {
+                return {
                     'symbol': market_data['symbol'],
                     'direction': 'BUY',
                     'timeframe': market_data['timeframe'],
@@ -23,5 +24,47 @@ class TrendStrategy(BaseStrategy):
                     'targets': None,
                     'confidence': 0.9
                 }
-                return signal
         return None
+
+class SupertrendStrategy(BaseStrategy):
+    name = "Supertrend"
+    def evaluate(self, market_data):
+        ind = market_data['indicators']
+        candles = market_data['candles']
+        if ind.get('supertrend_signal') == 'BUY' and candles:
+            return {
+                'symbol': market_data['symbol'],
+                'direction': 'BUY',
+                'timeframe': market_data['timeframe'],
+                'entry': candles[-1]['close'],
+                'stop': candles[-1]['low'],
+                'targets': None,
+                'confidence': 0.85
+            }
+        return None
+
+class ADXTrendStrategy(BaseStrategy):
+    name = "ADX Trend"
+    def evaluate(self, market_data):
+        ind = market_data['indicators']
+        candles = market_data['candles']
+        if ind.get('adx', 0) > 25 and ind.get('di_plus', 0) > ind.get('di_minus', 0) and candles:
+            return {
+                'symbol': market_data['symbol'],
+                'direction': 'BUY',
+                'timeframe': market_data['timeframe'],
+                'entry': candles[-1]['close'],
+                'stop': candles[-1]['low'],
+                'targets': None,
+                'confidence': 0.8
+            }
+        return None
+
+def trend_strategies(asset, timeframe, market_data):
+    strategies = [EMATrendStrategy(), SupertrendStrategy(), ADXTrendStrategy()]
+    signals = []
+    for strat in strategies:
+        sig = strat.evaluate(market_data)
+        if sig:
+            signals.append(sig)
+    return signals

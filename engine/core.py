@@ -18,10 +18,14 @@ def load_tradable_assets():
 def main_loop(DRY_RUN=False):
     timeframes = ['5m', '15m', '1h', '4h', '1d']
     assets = get_all_trending_pairs()
+    # Example: fetch strategy weights and regime_strategies from ML/DB (stubbed here)
+    from engine.ml import get_strategy_weights, get_regime_strategies
+    strategy_weights = get_strategy_weights() if hasattr(get_strategy_weights, '__call__') else {}
+    regime_strategies = get_regime_strategies() if hasattr(get_regime_strategies, '__call__') else None
     for asset in assets:
         market_data = fetch_market_data(asset, timeframes)
         regime = detect_market_regime(market_data)
-        strategy_signals = run_all_strategies(asset, market_data, regime)
+        strategy_signals = run_all_strategies(asset, market_data, regime, strategy_weights=strategy_weights, regime_strategies=regime_strategies)
         # Signal Controller step (deduplication)
         from engine.signal_controller import SignalController
         controller = SignalController()

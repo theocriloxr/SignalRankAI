@@ -13,6 +13,7 @@ MIN_TRADES_EVAL = 30
 
 class SignalController:
     def __init__(self):
+        self.active_signals = {}
         self.min_score = MIN_SCORE_THRESHOLD
         self.kill_switch = False
         self.drawdown_threshold = 0.25  # Example: 25% loss triggers protection
