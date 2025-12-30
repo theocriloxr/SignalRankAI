@@ -59,6 +59,12 @@ def verify_payment(reference, user_id):
             if not tier or not duration:
                 logging.warning(f"Subscription payment missing tier/duration: user {user_id}, amount {amount}")
                 return False, "❌ Payment missing required subscription details. Please use the official payment link.", None
+            # Block repeat first-time VIP trial
+            if tier.upper() == 'VIP' and duration.lower() == 'trial':
+                from db.database import has_ever_had_vip
+                if has_ever_had_vip(user_id):
+                    logging.warning(f"Repeat VIP trial attempt: user {user_id}")
+                    return False, "❌ VIP trial is only available once per user. Please choose a regular VIP plan.", None
             # Validate amount for subscription
             key = f"{tier.upper()}_{duration.upper()}"
             expected_price = AMOUNTS.get(key)

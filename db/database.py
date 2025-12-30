@@ -235,14 +235,29 @@ def get_subscription(user_id):
         return sub
 
 def set_subscription(user_id, tier, duration_days, payment_ref, bypass_key_used=False):
-    start = datetime.now()
-    expiry = start + timedelta(days=duration_days)
+    now = datetime.now()
+    sub = get_subscription(user_id)
+    # If upgrading from Premium to VIP, extend from current expiry if still active
+    if tier.startswith('VIP') and sub and sub.get('tier', '').startswith('PREMIUM') and not sub.get('expired', True):
+        start = datetime.fromisoformat(sub['expiry_date'])
+        expiry = start + timedelta(days=duration_days)
+    else:
+        start = now
+        expiry = start + timedelta(days=duration_days)
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         c.execute('''REPLACE INTO subscriptions (user_id, tier, start_date, expiry_date, payment_ref, bypass_key_used)
             VALUES (?, ?, ?, ?, ?, ?)''',
             (user_id, tier, start.isoformat(), expiry.isoformat(), payment_ref, int(bypass_key_used)))
         conn.commit()
+
+# Helper: block repeat first-time VIP trial
+def has_ever_had_vip(user_id):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute("SELECT COUNT(*) FROM subscriptions WHERE user_id=? AND tier LIKE 'VIP%'", (user_id,))
+        row = c.fetchone()
+        return row[0] > 0
 
 def downgrade_to_free(user_id):
     with closing(sqlite3.connect(DB_PATH)) as conn:
