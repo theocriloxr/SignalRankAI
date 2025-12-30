@@ -33,10 +33,15 @@ def run_bot():
     application.add_handler(CommandHandler("faq", faq_command))
     application.add_handler(CommandHandler("disclaimer", disclaimer_command))
     application.add_handler(CommandHandler("performance", performance_command))
+
     application.add_handler(CommandHandler("pricing", pricing_command))
     application.add_handler(CommandHandler("policy", policy_command))
     application.add_handler(CommandHandler("refunds", policy_command))
     application.add_handler(CommandHandler("recap", recap_command))
+    # Extra signal purchase for free users
+    from .commands import buy_extra_premium, buy_extra_vip
+    application.add_handler(CommandHandler("buy_extra_premium", buy_extra_premium))
+    application.add_handler(CommandHandler("buy_extra_vip", buy_extra_vip))
 
     from db.database import fetch_user_trades
     def send_weekly_recap():
