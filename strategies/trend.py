@@ -1,3 +1,8 @@
+def trend_strategies(asset, timeframe, market_data):
+    # Returns a list of signals from all trend strategies for the given asset/timeframe
+    strat = TrendStrategy()
+    signal = strat.evaluate(market_data)
+    return [signal] if signal else []
 
 from .base import BaseStrategy
 

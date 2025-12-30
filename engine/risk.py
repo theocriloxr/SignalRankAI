@@ -1,3 +1,5 @@
+def calculate_dynamic_risk(signal, risk):
+    return calculate_position_size(signal, risk)
 
 MAX_VOLATILITY = 0.04
 MAX_DRAWDOWN = 0.20

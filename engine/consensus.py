@@ -1,4 +1,5 @@
 
+
 def consensus_filter(signals, min_score=2.5):
     """
     Weighted consensus using strategy confidence.
@@ -17,6 +18,8 @@ def consensus_filter(signals, min_score=2.5):
         if grouped[key] >= min_score:
             approved.append(signal)
     return approved
+
+apply_consensus_filter = consensus_filter
 
 def group_by_asset_and_direction(signals):
     # Group signals by (asset, direction)

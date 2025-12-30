@@ -1,3 +1,7 @@
+def volatility_strategies(asset, timeframe, market_data):
+    strat = VolatilityStrategy()
+    signal = strat.evaluate(market_data)
+    return [signal] if signal else []
 
 from .base import BaseStrategy
 

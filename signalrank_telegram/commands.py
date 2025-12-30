@@ -1,28 +1,34 @@
 # /pricing command
-def pricing_command(update, context):
+from telegram import Update
+from telegram.ext import CallbackContext
+
+def pricing_command(update: Update, context: CallbackContext):
 	msg = (
-		"\U0001F4B3 SignalRankAI Pricing\n\n"
-		"🆓 Free – ₦0\n"
-		"• Delayed daily summaries\n"
-		"• Example signals for learning\n\n"
-		"⭐ Premium\n"
-		"₦2,000 / week\n"
-		"₦6,000 / month\n"
-		"• Real-time ranked trade signals\n"
-		"• Clear entries, stops, and targets\n\n"
-		"🚀 VIP\n"
-		"₦5,000 / week\n"
-		"₦18,000 / month\n"
-		"• Early access to signals\n"
-		"• AI confidence display\n"
-		"• High-quality filtering\n\n"
+			"\U0001F4B3 SignalRankAI Pricing\n\n"
+        "🆓 Free – ₦0\n"
+        "• Delayed daily summaries (for learning)\n"
+        "• Example signals, not real-time\n\n"
+        "⭐ Premium\n"
+        "₦2,000 / week\n"
+        "₦6,000 / month\n"
+        "• Real-time ranked trade signals\n"
+        "• Clear entries, stops, and targets\n"
+        "• Designed for active traders\n\n"
+        "🚀 VIP\n"
+        "₦5,000 / week\n"
+        "₦18,000 / month\n"
+        "• Early access to all signals\n"
+		"• AI confidence and advanced filtering\n"
+		"• Highest quality, lowest noise\n\n"
 		"━━━━━━━━━━━━━━\n\n"
 		"\U0001F4B8 Need more signals as a Free user?\n"
 		"• Buy extra Premium signal: ₦300 each (/buy_extra_premium <count>)\n"
 		"• Buy extra VIP signal: ₦500 each (/buy_extra_vip <count>)\n\n"
-		"All subscriptions activate automatically after payment\n"
-		"and expire at the end of the selected period.\n\n"
-		"Use /faq to learn more."
+		"All payments are processed securely with Paystack.\n"
+		"Subscriptions activate automatically after payment verification\n"
+		"and expire at the end of the selected period. No auto-renewal.\n\n"
+		"Use /faq to learn more.\n\n"
+		"Honest, region-optimized pricing for Nigeria/West Africa.\n"
 	)
 	update.message.reply_text(msg)
 # --- Extra Signal Purchase Logic ---
@@ -33,15 +39,22 @@ def buy_extra_premium(update, context):
 	user_id = update.effective_user.id
 	tier = get_user_tier(user_id)
 	if tier != "FREE":
-		update.message.reply_text("Extra Premium signals are only for Free users. Upgrade for unlimited access.")
+		update.message.reply_text(
+			"Extra Premium signals are only available for Free users.\n"
+			"Upgrade to Premium or VIP for unlimited real-time access."
+		)
 		return
 	if not context.args or len(context.args) != 1:
-		update.message.reply_text("Usage: /buy_extra_premium <count>\nExample: /buy_extra_premium 2")
+		update.message.reply_text(
+			"Usage: /buy_extra_premium <count>\n"
+			"Example: /buy_extra_premium 2\n\n"
+			"You can buy up to 5 extra signals per day."
+		)
 		return
 	try:
 		count = int(context.args[0])
-		if count < 1:
-			update.message.reply_text("Count must be at least 1.")
+		if count < 1 or count > 5:
+			update.message.reply_text("Count must be between 1 and 5.")
 			return
 	except ValueError:
 		update.message.reply_text("Count must be a number.")
@@ -50,23 +63,32 @@ def buy_extra_premium(update, context):
 	from paystack.paystack import generate_paystack_link
 	paywall_link = generate_paystack_link(user_id, price, tier="PREMIUM", extra_count=count)
 	update.message.reply_text(
-		f"To unlock {count} extra Premium signals for today, pay ₦{price}: {paywall_link}\n"
-		"You will receive real-time Premium signals after payment."
+		f"To unlock {count} extra Premium signals for today, pay ₦{price}: {paywall_link}\n\n"
+		"After payment, your extra signals will be delivered instantly.\n"
+		"All payments are final and non-refundable.\n\n"
+		"For questions, use /faq or contact support."
 	)
 
 def buy_extra_vip(update, context):
 	user_id = update.effective_user.id
 	tier = get_user_tier(user_id)
 	if tier != "FREE":
-		update.message.reply_text("Extra VIP signals are only for Free users. Upgrade for unlimited access.")
+		update.message.reply_text(
+			"Extra VIP signals are only available for Free users.\n"
+			"Upgrade to VIP for unlimited real-time access."
+		)
 		return
 	if not context.args or len(context.args) != 1:
-		update.message.reply_text("Usage: /buy_extra_vip <count>\nExample: /buy_extra_vip 1")
+		update.message.reply_text(
+			"Usage: /buy_extra_vip <count>\n"
+			"Example: /buy_extra_vip 1\n\n"
+			"You can buy up to 3 extra VIP signals per day."
+		)
 		return
 	try:
 		count = int(context.args[0])
-		if count < 1:
-			update.message.reply_text("Count must be at least 1.")
+		if count < 1 or count > 3:
+			update.message.reply_text("Count must be between 1 and 3.")
 			return
 	except ValueError:
 		update.message.reply_text("Count must be a number.")
@@ -75,13 +97,15 @@ def buy_extra_vip(update, context):
 	from paystack.paystack import generate_paystack_link
 	paywall_link = generate_paystack_link(user_id, price, tier="VIP", extra_count=count)
 	update.message.reply_text(
-		f"To unlock {count} extra VIP signals for today, pay ₦{price}: {paywall_link}\n"
-		"You will receive real-time VIP signals after payment."
+		f"To unlock {count} extra VIP signals for today, pay ₦{price}: {paywall_link}\n\n"
+		"After payment, your extra signals will be delivered instantly.\n"
+		"All payments are final and non-refundable.\n\n"
+		"For questions, use /faq or contact support."
 	)
 
 # /policy or /refunds command
 def policy_command(update, context):
-	msg = (
+    msg = (
 		"\U0001F4DC Subscription & Refund Policy\n\n"
 		"• All payments to SignalRankAI are final.\n"
 		"• We do not offer refunds under any circumstances.\n"
@@ -90,7 +114,7 @@ def policy_command(update, context):
 		"Subscriptions activate automatically after successful payment verification and expire at the end of the purchased period.\n\n"
 		"By subscribing, you acknowledge and agree to this policy."
 	)
-	update.message.reply_text(msg)
+    update.message.reply_text(msg)
 
 # /recap command (weekly recap)
 def recap_command(update, context):
@@ -126,7 +150,6 @@ def recap_command(update, context):
 		)
 	update.message.reply_text(recap_msg)
 
-from telegram.access import resolve_user_tier
 
 TIER_RANKS = {
 	"FREE": 0,

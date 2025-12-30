@@ -1,3 +1,7 @@
+def momentum_strategies(asset, timeframe, market_data):
+    strat = MomentumStrategy()
+    signal = strat.evaluate(market_data)
+    return [signal] if signal else []
 
 from .base import BaseStrategy
 

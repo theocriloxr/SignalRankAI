@@ -1,3 +1,7 @@
+def structure_strategy(asset, timeframe, market_data):
+    strat = StructureStrategy()
+    signal = strat.evaluate(market_data)
+    return [signal] if signal else []
 
 from .base import BaseStrategy
 

@@ -1,4 +1,5 @@
 
+
 def score_signal(signal):
     """
     Honest heuristic scoring:
@@ -15,3 +16,5 @@ def score_signal(signal):
     score += min(rr, 3)
     score += (1 - signal.get("volatility", 0)) * 2
     return round(score, 2)
+
+calculate_signal_score = score_signal

@@ -4,7 +4,7 @@ from telegram.ext import Application, ContextTypes
 from .formatter import format_signal
 from paystack.paystack import verify_payment
 from db.database import store_signal
-from telegram.access import resolve_user_tier
+from signalrank_telegram.access import resolve_user_tier
 
 import os
 from telegram import Update, Bot
@@ -21,6 +21,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     limit = TIER_LIMITS.get(tier, 0)
     signals_sent = 0
     for signal in strategy_signals:
+        pass
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from db.database import get_all_user_ids
