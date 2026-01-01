@@ -44,6 +44,36 @@ class Subscription(Base):
     user: Mapped[User] = relationship(back_populates="subscriptions")
 
 
+class PaymentEvent(Base):
+    __tablename__ = "payment_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+
+    # subscription | extra_signals | other
+    kind: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="subscription")
+    tier: Mapped[Optional[str]] = mapped_column(String(32), index=True, nullable=True)
+    duration_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    plan_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+
+    amount_ngn: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    currency: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+
+    paystack_reference: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class BotEvent(Base):
+    __tablename__ = "bot_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
 class Signal(Base):
     __tablename__ = "signals"
 

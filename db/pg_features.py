@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import (
     AlertPreference,
     FreeSignalQueue,
+    BotEvent,
+    PaymentEvent,
     ReferralAttribution,
     ReferralCode,
     ReferralReward,
@@ -21,6 +23,25 @@ from db.models import (
     User,
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
+
+
+async def record_bot_event(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    event_type: str,
+    meta: Dict[str, Any] | None = None,
+    username: str | None = None,
+) -> None:
+    """Record a generic bot audit event (best-effort; caller commits)."""
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id), username=username)
+    ev = BotEvent(
+        user_id=int(user.id),
+        event_type=str(event_type or "unknown")[:64],
+        meta=dict(meta or {}),
+    )
+    session.add(ev)
+    await session.flush()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -397,6 +418,11 @@ async def mark_outcome_notified(session: AsyncSession, outcome_id: int) -> None:
     await session.flush()
 
 
+async def get_outcome_for_signal(session: AsyncSession, signal_id: str) -> Outcome | None:
+    res = await session.execute(select(Outcome).where(Outcome.signal_id == str(signal_id)).order_by(Outcome.id.desc()).limit(1))
+    return res.scalars().first()
+
+
 async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: str) -> list[tuple[int, str]]:
     """Return list of (telegram_user_id, tier_at_send) for users who received this signal."""
     res = await session.execute(
@@ -412,6 +438,46 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
 async def list_all_user_telegram_ids(session: AsyncSession) -> list[int]:
     res = await session.execute(select(User.telegram_user_id).order_by(User.telegram_user_id.asc()))
     return [int(x) for (x,) in (res.all() or [])]
+
+
+async def record_payment_event(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    paystack_reference: str,
+    amount_ngn: int,
+    currency: str | None = None,
+    kind: str = "subscription",
+    tier: str | None = None,
+    duration_days: int | None = None,
+    plan_code: str | None = None,
+    meta: dict | None = None,
+) -> PaymentEvent:
+    """Idempotently store a Paystack payment event for revenue analytics."""
+    ref = str(paystack_reference or "").strip()
+    if not ref:
+        raise ValueError("paystack_reference required")
+
+    res = await session.execute(select(PaymentEvent).where(PaymentEvent.paystack_reference == ref))
+    existing = res.scalars().first()
+    if existing is not None:
+        return existing
+
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    pe = PaymentEvent(
+        user_id=user.id,
+        kind=str(kind or "subscription")[:32],
+        tier=(str(tier).strip().lower()[:32] if tier is not None else None),
+        duration_days=int(duration_days) if duration_days is not None else None,
+        plan_code=(str(plan_code)[:128] if plan_code else None),
+        amount_ngn=max(0, int(amount_ngn)),
+        currency=(str(currency)[:8] if currency else None),
+        paystack_reference=ref,
+        meta=dict(meta or {}),
+    )
+    session.add(pe)
+    await session.flush()
+    return pe
 
 
 async def get_alert_prefs(session: AsyncSession, telegram_user_id: int) -> dict:

@@ -127,7 +127,47 @@ async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str
         # Not all Paystack webhook events contain our subscription metadata.
         # If the signature is valid, acknowledge receipt and simply skip persistence.
         return {"persisted": False, "reason": str(getattr(exc, "detail", "unable_to_persist"))}
+    data = event.get("data") or {}
+    meta_in = (data.get("metadata") or {}) if isinstance(data, dict) else {}
+    amount_kobo = 0
+    try:
+        amount_kobo = int(data.get("amount") or 0)
+    except Exception:
+        amount_kobo = 0
+    amount_ngn = max(0, int(amount_kobo) // 100)
+    currency = None
+    try:
+        currency = str(data.get("currency") or "").strip() or None
+    except Exception:
+        currency = None
+
     async with get_session() as session:
+        # Record payment event (best-effort; idempotent).
+        try:
+            from db.pg_features import record_payment_event
+
+            kind = "subscription"
+            try:
+                if (meta_in.get("duration") == "EXTRA") or (meta_in.get("extra_count") is not None):
+                    kind = "extra_signals"
+            except Exception:
+                kind = "subscription"
+
+            await record_payment_event(
+                session,
+                telegram_user_id=int(telegram_user_id),
+                paystack_reference=str(reference or ""),
+                amount_ngn=int(amount_ngn),
+                currency=currency,
+                kind=kind,
+                tier=str(tier).strip().lower(),
+                duration_days=int(duration_days) if duration_days is not None else None,
+                plan_code=(str(meta_in.get("plan_code")) if meta_in.get("plan_code") else None),
+                meta={"event": event.get("event"), "metadata": meta_in},
+            )
+        except Exception:
+            pass
+
         # VIP seats: max N active VIP subscribers (excludes owners + temp owner bypass)
         tier_norm = str(tier).strip().lower()
         if tier_norm == "vip":

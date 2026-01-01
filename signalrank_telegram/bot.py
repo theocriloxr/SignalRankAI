@@ -22,6 +22,7 @@ from .commands import (
     recap_command,
     signals_command,
     signal_command,
+    outcome_command,
     invite_command,
     stats_command,
     history_command,
@@ -34,7 +35,15 @@ from .commands import (
 )
 
 from core.redis_state import state
-from .owner_commands import unlock, dev_pause, dev_resume, dev_force_signal, dev_invalidate
+from .owner_commands import (
+    unlock,
+    dev_pause,
+    dev_resume,
+    dev_force_signal,
+    dev_invalidate,
+    owner_users,
+    owner_revenue,
+)
 
 TIER_LIMITS = {
     'free': 2,
@@ -42,6 +51,47 @@ TIER_LIMITS = {
     'vip': 30,
     'owner': 9999,
 }
+
+
+def _audit_handler(command_name: str, handler):
+    async def _inner(update, context):
+        try:
+            from db.session import ENGINE, get_session
+            if ENGINE is not None and getattr(update, "effective_user", None) is not None:
+                user_id = int(update.effective_user.id)
+                username = None
+                try:
+                    username = update.effective_user.username
+                except Exception:
+                    username = None
+
+                meta = {"command": str(command_name)}
+                # Avoid logging secrets (e.g., /unlock bypass key)
+                if str(command_name) not in {"unlock"}:
+                    try:
+                        meta["args"] = list(getattr(context, "args", None) or [])
+                    except Exception:
+                        meta["args"] = None
+
+                async with get_session() as session:
+                    try:
+                        from db.pg_features import record_bot_event
+
+                        await record_bot_event(
+                            session,
+                            telegram_user_id=user_id,
+                            username=username,
+                            event_type="command",
+                            meta=meta,
+                        )
+                        await session.commit()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return await handler(update, context)
+
+    return _inner
 
 
 def _require_telegram_token() -> str:
@@ -408,42 +458,44 @@ def run_bot():
 
     application.post_init = _post_init
 
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("about", about_command))
-    application.add_handler(CommandHandler("faq", faq_command))
-    application.add_handler(CommandHandler("disclaimer", disclaimer_command))
-    application.add_handler(CommandHandler("performance", performance_command))
-    application.add_handler(CommandHandler("pricing", pricing_command))
-    application.add_handler(CommandHandler("upgrade", upgrade_command))
-    application.add_handler(CommandHandler("signals", signals_command))
-    application.add_handler(CommandHandler("signal", signal_command))
-    application.add_handler(CommandHandler("invite", invite_command))
+    application.add_handler(CommandHandler("start", _audit_handler("start", start_command)))
+    application.add_handler(CommandHandler("help", _audit_handler("help", help_command)))
+    application.add_handler(CommandHandler("about", _audit_handler("about", about_command)))
+    application.add_handler(CommandHandler("faq", _audit_handler("faq", faq_command)))
+    application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
+    application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
+    application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
+    application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
+    application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
+    application.add_handler(CommandHandler("signal", _audit_handler("signal", signal_command)))
+    application.add_handler(CommandHandler("outcome", _audit_handler("outcome", outcome_command)))
+    application.add_handler(CommandHandler("invite", _audit_handler("invite", invite_command)))
 
     # Premium (not advertised)
-    application.add_handler(CommandHandler("stats", stats_command))
-    application.add_handler(CommandHandler("history", history_command))
-    application.add_handler(CommandHandler("risk", risk_command))
-    application.add_handler(CommandHandler("alerts", alerts_command))
+    application.add_handler(CommandHandler("stats", _audit_handler("stats", stats_command)))
+    application.add_handler(CommandHandler("history", _audit_handler("history", history_command)))
+    application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
+    application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
 
     # VIP (not advertised)
-    application.add_handler(CommandHandler("elite", elite_command))
-    application.add_handler(CommandHandler("early", early_command))
-    application.add_handler(CommandHandler("report", report_command))
+    application.add_handler(CommandHandler("elite", _audit_handler("elite", elite_command)))
+    application.add_handler(CommandHandler("early", _audit_handler("early", early_command)))
+    application.add_handler(CommandHandler("report", _audit_handler("report", report_command)))
 
-    application.add_handler(CommandHandler("policy", policy_command))
-    application.add_handler(CommandHandler("refunds", policy_command))
-    application.add_handler(CommandHandler("recap", recap_command))
-    application.add_handler(CommandHandler("buy_extra_signals", buy_extra_signals))
+    application.add_handler(CommandHandler("policy", _audit_handler("policy", policy_command)))
+    application.add_handler(CommandHandler("refunds", _audit_handler("refunds", policy_command)))
+    application.add_handler(CommandHandler("recap", _audit_handler("recap", recap_command)))
+    application.add_handler(CommandHandler("buy_extra_signals", _audit_handler("buy_extra_signals", buy_extra_signals)))
     # Backward compatible alias
-    application.add_handler(CommandHandler("buy_extra_premium", buy_extra_signals))
 
     # Hidden owner-only commands (silent for non-owners)
-    application.add_handler(CommandHandler("unlock", unlock))
-    application.add_handler(CommandHandler("dev_pause", dev_pause))
-    application.add_handler(CommandHandler("dev_resume", dev_resume))
-    application.add_handler(CommandHandler("dev_force_signal", dev_force_signal))
-    application.add_handler(CommandHandler("dev_invalidate", dev_invalidate))
+    application.add_handler(CommandHandler("unlock", _audit_handler("unlock", unlock)))
+    application.add_handler(CommandHandler("dev_pause", _audit_handler("dev_pause", dev_pause)))
+    application.add_handler(CommandHandler("dev_resume", _audit_handler("dev_resume", dev_resume)))
+    application.add_handler(CommandHandler("dev_force_signal", _audit_handler("dev_force_signal", dev_force_signal)))
+    application.add_handler(CommandHandler("dev_invalidate", _audit_handler("dev_invalidate", dev_invalidate)))
+    application.add_handler(CommandHandler("owner_users", _audit_handler("owner_users", owner_users)))
+    application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()

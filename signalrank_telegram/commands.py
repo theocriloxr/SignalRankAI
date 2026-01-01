@@ -88,6 +88,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		"/upgrade – Subscribe\n"
 		"/signals – Latest signals (limited for Free)\n"
 		"/signal – Lookup a signal by reference (/signal <ref> or /signal all)\n"
+		"/outcome – Check outcome by reference (/outcome <ref>)\n"
 		"/invite – Invite friends\n"
 		"/policy – Subscription & refund policy\n"
 		"/refunds – Same as /policy\n"
@@ -194,6 +195,93 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		await update.message.reply_text("Usage: /signal <reference> OR /signal all")
 		return
 
+	def _as_float(v):
+		try:
+			return float(v)
+		except Exception:
+			return None
+
+	def _parse_tp(tp_raw):
+		if tp_raw is None:
+			return None
+		if isinstance(tp_raw, (int, float)):
+			return float(tp_raw)
+		s = str(tp_raw).strip()
+		if not s:
+			return None
+		try:
+			import json
+			data = json.loads(s)
+			if isinstance(data, list) and data:
+				return float(data[0])
+			if isinstance(data, (int, float)):
+				return float(data)
+		except Exception:
+			pass
+		try:
+			return float(s)
+		except Exception:
+			return None
+
+	def _is_crypto(symbol: str) -> bool:
+		s = (symbol or "").upper().strip()
+		return s.endswith("USDT") or s.endswith("USDC") or s.endswith("BUSD")
+
+	def _binance_symbol(asset: str) -> str:
+		a = (asset or "").upper().strip()
+		# BTCUSDT -> BTC/USDT
+		if a.endswith("USDT"):
+			return a[:-4] + "/USDT"
+		if a.endswith("USDC"):
+			return a[:-4] + "/USDC"
+		if a.endswith("BUSD"):
+			return a[:-4] + "/BUSD"
+		# fallback
+		return a.replace("USD", "/USDT")
+
+	def _current_price(asset: str) -> float | None:
+		if not _is_crypto(asset):
+			return None
+		try:
+			import ccxt
+			ex = ccxt.binance({"enableRateLimit": True})
+			ticker = ex.fetch_ticker(_binance_symbol(asset))
+			last = ticker.get("last") or ticker.get("close")
+			return float(last) if last is not None else None
+		except Exception:
+			return None
+
+	def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
+		"""Return (advice_text, metrics)."""
+		direction = (direction or "").lower().strip()
+		risk = abs(entry - sl)
+		reward = abs(tp - entry)
+		metrics: dict = {"risk": risk, "reward": reward}
+		if risk <= 0 or reward <= 0:
+			return ("Manage risk carefully. Consider waiting for clearer conditions.", metrics)
+
+		if direction == "long":
+			pl_pct = ((price - entry) / entry) * 100.0
+			progress = (price - entry) / (tp - entry) if (tp - entry) != 0 else 0.0
+			dist_to_sl = (price - sl)
+		else:
+			pl_pct = ((entry - price) / entry) * 100.0
+			progress = (entry - price) / (entry - tp) if (entry - tp) != 0 else 0.0
+			dist_to_sl = (sl - price)
+
+		metrics.update({"pl_pct": pl_pct, "progress": progress})
+		near_sl = (dist_to_sl / risk) <= 0.2
+		if progress >= 1.0:
+			return ("✅ Target zone reached. Consider taking profit (full or partial) and managing trailing risk.", metrics)
+		if progress >= 0.75:
+			return ("📌 Close to TP. Consider partial take-profit and move SL to breakeven if your plan allows.", metrics)
+		if progress >= 0.30:
+			return ("⏳ In profit but not near TP yet. Consider waiting for full TP, or take partial if volatility is high.", metrics)
+		# Not in meaningful profit
+		if near_sl:
+			return ("⚠️ Price is close to SL zone. Consider reducing exposure or exiting early to avoid a full SL hit.", metrics)
+		return ("⏳ Still developing. Consider waiting; avoid moving SL further away.", metrics)
+
 	# Postgres-backed lookup (required for per-user delivery protection)
 	try:
 		from db.session import ENGINE, get_session
@@ -218,6 +306,13 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 		async with get_session() as session:
 			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
+			oc = None
+			if sig is not None:
+				try:
+					from db.pg_features import get_outcome_for_signal
+					oc = await get_outcome_for_signal(session, str(sig.signal_id))
+				except Exception:
+					oc = None
 			await session.commit()
 		if sig is None:
 			await update.message.reply_text("Signal not found (or not delivered to you).")
@@ -238,13 +333,119 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			"strategy_name": getattr(sig, "strategy_name", None),
 			"strategy_group": getattr(sig, "strategy_group", None),
 		}
+		# Enrich with outcome/live position (best-effort)
+		entry = _as_float(sig_dict.get("entry"))
+		sl = _as_float(sig_dict.get("stop_loss"))
+		tp = _parse_tp(sig_dict.get("take_profit"))
+		price = None
+		advice_line = None
+		position_lines: list[str] = []
+		if oc is not None:
+			status = str(getattr(oc, "status", "") or "").lower()
+			r = getattr(oc, "r_multiple", None)
+			pct = getattr(oc, "percent", None)
+			label = "PROFIT" if status.startswith("tp") else ("LOSS" if status == "sl" else status.upper())
+			position_lines.append(f"Outcome: {label} ({status})")
+			if r is not None:
+				position_lines.append(f"R-multiple: {float(r):.2f}R")
+			if pct is not None:
+				position_lines.append(f"Move: {float(pct):.2f}%")
+			advice_line = "This signal has a recorded outcome."
+		else:
+			# Live estimate (crypto only)
+			if entry is not None and sl is not None and tp is not None:
+				price = _current_price(str(sig_dict.get("asset") or ""))
+				if price is not None:
+					adv, metrics = _position_advice(
+						direction=str(sig_dict.get("direction") or ""),
+						entry=float(entry),
+						sl=float(sl),
+						tp=float(tp),
+						price=float(price),
+					)
+					position_lines.append(f"Current price: {price:.6g}")
+					try:
+						position_lines.append(f"P/L (est.): {float(metrics.get('pl_pct')):.2f}%")
+					except Exception:
+						pass
+					try:
+						position_lines.append(f"Progress to TP (est.): {max(0.0, min(1.0, float(metrics.get('progress')))) * 100.0:.0f}%")
+					except Exception:
+						pass
+					advice_line = adv
+				else:
+					position_lines.append("Live position: unavailable right now.")
+					advice_line = "Check later for a live update."
+
 		if tier_rank(tier) < tier_rank("PREMIUM"):
-			await update.message.reply_text(format_signal_free_limited(sig_dict))
+			base = format_signal_free_limited(sig_dict)
+			if position_lines or advice_line:
+				base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
+				if advice_line:
+					base += "\n\n🧠 Suggestion\n" + str(advice_line)
+			await update.message.reply_text(base)
 			return
-		await update.message.reply_text(format_signal(sig_dict))
+
+		base = format_signal(sig_dict)
+		if position_lines or advice_line:
+			base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
+			if advice_line:
+				base += "\n\n🧠 Suggestion\n" + str(advice_line)
+		await update.message.reply_text(base)
 		return
 	except Exception:
 		await update.message.reply_text("Signal lookup is temporarily unavailable.")
+		return
+
+
+async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	arg = (context.args[0] if context.args else "").strip() if context.args else ""
+	if not arg:
+		await update.message.reply_text("Usage: /outcome <reference>")
+		return
+
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is None:
+			raise RuntimeError("Postgres not configured")
+		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal
+		async with get_session() as session:
+			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
+			oc = await get_outcome_for_signal(session, str(sig.signal_id)) if sig is not None else None
+			await session.commit()
+		if sig is None:
+			await update.message.reply_text("Signal not found (or not delivered to you).")
+			return
+		if oc is None:
+			await update.message.reply_text(
+				"No outcome recorded yet for this signal.\n\n"
+				"Use /signal <ref> to see a live best-effort status."
+			)
+			return
+		status = str(getattr(oc, "status", "") or "").lower()
+		r = getattr(oc, "r_multiple", None)
+		pct = getattr(oc, "percent", None)
+		label = "PROFIT" if status.startswith("tp") else ("LOSS" if status == "sl" else status.upper())
+		lines = [
+			"📣 Outcome",
+			"",
+			f"Reference: {sig.signal_id}",
+			f"{sig.asset} {sig.timeframe} {sig.direction}",
+			f"Result: {label} ({status})",
+		]
+		if r is not None:
+			lines.append(f"R-multiple: {float(r):.2f}R")
+		if pct is not None:
+			lines.append(f"Move: {float(pct):.2f}%")
+		await update.message.reply_text("\n".join(lines))
+		return
+	except Exception:
+		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
 		return
 
 
@@ -445,8 +646,6 @@ async def buy_extra_signals(update, context):
 		"For questions, use /faq or contact support."
 	)
 
-# Backward compatible alias
-buy_extra_premium = buy_extra_signals
 
 # /policy or /refunds command
 async def policy_command(update, context):
@@ -594,50 +793,73 @@ async def start_command(update, context):
 		ref_token = None
 
 	is_new = False
-	# Prefer Postgres for "new user" determination when configured.
+	referral_outcome = None
+	# Prefer Postgres for user creation + referral attribution + audit (single session)
 	try:
 		from db.session import ENGINE, get_session
-		from db.models import User
-		from sqlalchemy import select
-		from db.repository import get_or_create_user
 		if ENGINE is not None:
+			from db.models import User
+			from sqlalchemy import select
+			from db.repository import get_or_create_user
+			from db.pg_features import record_bot_event
 			async with get_session() as session:
 				res = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 				existing = res.scalar_one_or_none()
 				is_new = existing is None
 				await get_or_create_user(session, telegram_user_id=user_id, username=username)
-				await session.commit()
-		else:
-			raise RuntimeError("no postgres")
-	except Exception:
-		try:
-			from db.database import record_user_seen
-			is_new = record_user_seen(user_id, username=username)
-		except Exception:
-			is_new = False
 
-	# Referral attribution (only for first-time users)
-	referral_outcome = None
-	if ref_token:
-		code = ref_token
-		if code.startswith("ref_"):
-			code = code[4:]
-		if code:
-			try:
-				from db.session import ENGINE, get_session
-				if ENGINE is not None:
-					from db.pg_features import process_referral_start as process_referral_start_pg
-					async with get_session() as session:
+				# Referral attribution (only for first-time users)
+				code = None
+				if ref_token:
+					code = str(ref_token)
+					if code.startswith("ref_"):
+						code = code[4:]
+					code = (code or "").strip() or None
+				if code:
+					try:
+						from db.pg_features import process_referral_start as process_referral_start_pg
 						referral_outcome = await process_referral_start_pg(
 							session,
 							referred_telegram_user_id=int(user_id),
 							referral_code=str(code),
 							is_new_user=bool(is_new),
 						)
-						await session.commit()
-				else:
-					raise RuntimeError("no postgres")
-			except Exception:
+					except Exception:
+					referral_outcome = None
+
+				# Audit: always record the start event when Postgres is available
+				try:
+					await record_bot_event(
+						session,
+						telegram_user_id=int(user_id),
+						username=username,
+						event_type="user_start",
+						meta={
+							"is_new": bool(is_new),
+							"ref_token": str(ref_token) if ref_token else None,
+							"referral": referral_outcome,
+						},
+					)
+				except Exception:
+					pass
+
+				await session.commit()
+		else:
+			raise RuntimeError("no postgres")
+	except Exception:
+		# SQLite fallback (legacy)
+		try:
+			from db.database import record_user_seen
+			is_new = record_user_seen(user_id, username=username)
+		except Exception:
+			is_new = False
+
+		# Referral attribution fallback
+		if ref_token:
+			code = ref_token
+			if code.startswith("ref_"):
+				code = code[4:]
+			if code:
 				try:
 					from db.database import process_referral_start
 					referral_outcome = process_referral_start(user_id, code, is_new_user=bool(is_new))
