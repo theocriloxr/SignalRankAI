@@ -2812,3 +2812,203 @@ telegram.error.NetworkError: Bad Gateway
 2026-01-01 16:38:09,188 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
 2026-01-01 16:38:19,449 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
 2026-01-01 16:38:29,627 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:38:39,782 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:38:49,959 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:00,146 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:10,307 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:20,483 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:30,671 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:44,345 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:54,924 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:55,367 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:39:58,335 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/sendMessage "HTTP/1.1 200 OK"
+2026-01-01 16:40:08,142 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:40:22,371 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:40:33,099 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:40:43,247 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:40:54,009 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:41:04,224 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:41:14,442 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:41:19,446 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 16:41:19,446 INFO KILL SWITCH DISABLED by 1
+2026-01-01 16:41:19,446 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 16:41:19,449 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 16:41:19,449 INFO KILL SWITCH DISABLED by 1
+2026-01-01 16:41:19,452 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 16:41:19,452 INFO KILL SWITCH DISABLED by 1
+2026-01-01 16:41:24,610 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:41:34,789 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:41:44,975 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:41:47,947 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 16:51:47 WAT)" (scheduled at 2026-01-01 16:41:47.939550+01:00)
+2026-01-01 16:41:47,951 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 16:51:47 WAT)" executed successfully
+2026-01-01 16:41:55,226 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:05,376 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:15,563 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:25,849 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:36,028 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:46,564 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:48,086 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:42:53,111 ERROR No error handlers are registered, logging exception.
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_transports\default.py", line 101, in map_httpcore_exceptions
+    yield
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_transports\default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        pool_request.request
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_async\connection.py", line 101, in handle_async_request
+    raise exc
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_async\connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_async\connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_backends\auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_backends\anyio.py", line 113, in connect_tcp
+    with map_exceptions(exc_map):
+         ~~~~~~~~~~~~~~^^^^^^^^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.2544.0_x64__qbz5n2kfra8p0\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpcore\_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\request\_httpxrequest.py", line 279, in do_request
+    res = await self._client.request(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_transports\default.py", line 393, in handle_async_request
+    with map_httpcore_exceptions():
+         ~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.2544.0_x64__qbz5n2kfra8p0\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\httpx\_transports\default.py", line 118, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectTimeout
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\ext\_application.py", line 1315, in process_update
+    await coroutine
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\ext\_handlers\basehandler.py", line 159, in handle_update
+    return await self.callback(update, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\sammm\Desktop\SignalRankAI\signalrank_telegram\commands.py", line 151, in invite_command
+    	if update.message is not None:
+    ...<4 lines>...
+    
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\_message.py", line 2060, in reply_text
+    return await self.get_bot().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<21 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\ext\_extbot.py", line 3107, in send_message
+    return await super().send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<23 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\_bot.py", line 1118, in send_message
+    return await self._send_message(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<21 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\ext\_extbot.py", line 634, in _send_message
+    result = await super()._send_message(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<23 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\_bot.py", line 819, in _send_message
+    result = await self._post(
+             ^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\_bot.py", line 703, in _post
+    return await self._do_post(
+           ^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\ext\_extbot.py", line 372, in _do_post
+    return await super()._do_post(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\_bot.py", line 732, in _do_post
+    result = await request.post(
+             ^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\request\_baserequest.py", line 198, in post
+    result = await self._request_wrapper(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\request\_baserequest.py", line 305, in _request_wrapper
+    code, payload = await self.do_request(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+    ...<7 lines>...
+    )
+    ^
+  File "C:\Users\sammm\Desktop\SignalRankAI\.venv\Lib\site-packages\telegram\request\_httpxrequest.py", line 296, in do_request
+    raise TimedOut from err
+telegram.error.TimedOut: Timed out
+2026-01-01 16:42:58,467 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:43:04,104 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:43:04,834 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/sendMessage "HTTP/1.1 200 OK"
+2026-01-01 16:43:14,318 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:43:24,490 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:43:35,218 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:43:45,446 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:43:55,697 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:44:05,908 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"

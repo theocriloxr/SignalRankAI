@@ -1,5 +1,7 @@
 import os
+import sys
 import threading
+import traceback
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -37,18 +39,31 @@ def main() -> None:
     if mode == "all":
         dry_run = _env_bool("DRY_RUN", False)
 
-        def _run_web() -> None:
+        def _run_thread(name: str, fn) -> None:
+            try:
+                print(f"[boot] RUN_MODE=all starting {name}", flush=True)
+                fn()
+                print(f"[boot] RUN_MODE=all {name} exited", flush=True)
+            except Exception as exc:
+                print(
+                    f"[boot] RUN_MODE=all {name} crashed: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                traceback.print_exc()
+
+        def _run_web_impl() -> None:
             import uvicorn
 
             port = int(os.getenv("PORT", "8000"))
             uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
 
-        def _run_worker() -> None:
+        def _run_worker_impl() -> None:
             from worker.worker import main as worker_main
 
             worker_main()
 
-        def _run_engine() -> None:
+        def _run_engine_impl() -> None:
             from engine.core import main_loop
 
             main_loop(dry_run)
@@ -56,16 +71,26 @@ def main() -> None:
         # Run web/worker/engine in background threads.
         # Keep the Telegram bot in the main thread (most predictable).
         threads = [
-            threading.Thread(target=_run_web, name="web", daemon=True),
-            threading.Thread(target=_run_worker, name="worker", daemon=True),
-            threading.Thread(target=_run_engine, name="engine", daemon=True),
+            threading.Thread(target=lambda: _run_thread("web", _run_web_impl), name="web", daemon=True),
+            threading.Thread(
+                target=lambda: _run_thread("worker", _run_worker_impl),
+                name="worker",
+                daemon=True,
+            ),
+            threading.Thread(
+                target=lambda: _run_thread("engine", _run_engine_impl),
+                name="engine",
+                daemon=True,
+            ),
         ]
         for t in threads:
             t.start()
 
         from signalrank_telegram.bot import run_bot as bot_main
 
+        print("[boot] RUN_MODE=all starting telegram bot", flush=True)
         bot_main()
+        print("[boot] RUN_MODE=all telegram bot exited", flush=True)
         return
 
     if mode == "web":
