@@ -248,6 +248,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			return None
 		try:
 			import requests
+			# First try Binance (fast, direct) then fall back to CryptoCompare when
+			# Binance is geo-blocked (HTTP 451) or otherwise unreachable.
 			sym = _binance_symbol_rest(asset)
 			if not sym:
 				return None
@@ -256,11 +258,47 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				params={"symbol": sym},
 				timeout=8,
 			)
-			if not resp.ok:
+			if resp.ok:
+				payload = resp.json() if resp.ok else {}
+				price = payload.get("price")
+				return float(price) if price is not None else None
+
+			# Fallback: CryptoCompare simple price endpoint.
+			base = sym
+			quote = "USDT"
+			for q in ("USDT", "USDC", "BUSD", "USD"):
+				if base.endswith(q) and len(base) > len(q):
+					base = base[: -len(q)]
+					quote = q
+					break
+			base = (base or "").upper().strip()
+			quote = (quote or "").upper().strip()
+			if not base or not quote:
 				return None
-			payload = resp.json() if resp.ok else {}
-			price = payload.get("price")
-			return float(price) if price is not None else None
+
+			headers = {}
+			api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+			if api_key:
+				headers["authorization"] = f"Apikey {api_key}"
+
+			url = "https://min-api.cryptocompare.com/data/price"
+			# Ask for a few quotes; use the first available.
+			params = {"fsym": base, "tsyms": ",".join([quote, "USDT", "USD", "USDC", "BUSD"])}
+			resp2 = requests.get(url, params=params, headers=headers, timeout=10)
+			if not resp2.ok:
+				return None
+			payload2 = resp2.json() if resp2.ok else {}
+			if not isinstance(payload2, dict):
+				return None
+			for q in (quote, "USDT", "USD", "USDC", "BUSD"):
+				try:
+					v = payload2.get(q)
+					if v is None:
+						continue
+					return float(v)
+				except Exception:
+					continue
+			return None
 		except Exception:
 			return None
 
@@ -876,10 +914,16 @@ async def start_command(update, context):
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 	except Exception as e:
-		# Postgres is required; no fallback
+		# Postgres is required; no fallback. Keep bot alive and emit actionable logs.
+		try:
+			print(f"[ERROR] /start failed to access Postgres: {type(e).__name__}: {e}", flush=True)
+		except Exception:
+			pass
 		if update.message is not None:
-			await update.message.reply_text("Database not available. Please contact support.")
-		raise
+			await update.message.reply_text(
+				"Database temporarily unavailable. Please try again in 1–2 minutes."
+			)
+		return
 
 	# Internal audit log (no user-visible output)
 	try:

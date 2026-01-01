@@ -56,6 +56,9 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
+    provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+    if provider == "cryptocompare":
+        return _cryptocompare_top_crypto_pairs(top_n)
     if _BINANCE_DISABLED_REASON is not None:
         # Fallback universe when Binance is blocked.
         return _cryptocompare_top_crypto_pairs(top_n)

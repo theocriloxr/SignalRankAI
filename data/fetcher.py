@@ -83,15 +83,16 @@ def get_crypto_candles(asset, timeframe):
         return []
 
     def _cryptocompare_candles(symbol_rest: str, tf: str) -> list[dict]:
-        # CryptoCompare expects fsym/tsym (base/quote). For USDT quotes, try USDT first.
-        base = symbol_rest
-        quote = "USDT"
+        # CryptoCompare expects fsym/tsym (base/quote). We try multiple quote
+        # currencies because some assets don't have a USDT market.
+        base_raw = symbol_rest
+        preferred_quote = "USDT"
         for q in ("USDT", "USDC", "BUSD", "USD"):
-            if base.endswith(q) and len(base) > len(q):
-                base = base[: -len(q)]
-                quote = q
+            if base_raw.endswith(q) and len(base_raw) > len(q):
+                base_raw = base_raw[: -len(q)]
+                preferred_quote = q
                 break
-        if not base:
+        if not base_raw:
             return []
 
         tf = (tf or "").strip()
@@ -107,46 +108,59 @@ def get_crypto_candles(asset, timeframe):
             aggregate = 1
 
         url_cc = f"https://min-api.cryptocompare.com/data/v2/{endpoint}"
-        params_cc = {
-            "fsym": base,
-            "tsym": quote,
-            "limit": 200,
-            "aggregate": aggregate,
-        }
 
         headers = {}
         api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
         if api_key:
             headers["authorization"] = f"Apikey {api_key}"
 
-        resp = requests.get(url_cc, params=params_cc, headers=headers, timeout=12)
-        payload = resp.json() if resp.ok else {}
-        if not resp.ok:
-            return []
-        if str(payload.get("Response") or "").lower() != "success":
-            return []
+        def _fetch_for_quote(tsym: str) -> list[dict]:
+            params_cc = {
+                "fsym": base_raw,
+                "tsym": tsym,
+                "limit": 200,
+                "aggregate": aggregate,
+            }
 
-        data = (((payload.get("Data") or {}) or {}).get("Data") or [])
-        if not isinstance(data, list) or not data:
-            return []
+            resp = requests.get(url_cc, params=params_cc, headers=headers, timeout=12)
+            payload = resp.json() if resp.ok else {}
+            if not resp.ok:
+                return []
+            if str(payload.get("Response") or "").lower() != "success":
+                return []
 
-        out: list[dict] = []
-        for row in data:
-            try:
-                ts_ms = int(row.get("time")) * 1000
-                out.append(
-                    {
-                        "timestamp": ts_ms,
-                        "open": float(row.get("open")),
-                        "high": float(row.get("high")),
-                        "low": float(row.get("low")),
-                        "close": float(row.get("close")),
-                        "volume": float(row.get("volumefrom") or 0.0),
-                    }
-                )
-            except Exception:
+            data = (((payload.get("Data") or {}) or {}).get("Data") or [])
+            if not isinstance(data, list) or not data:
+                return []
+
+            out: list[dict] = []
+            for row in data:
+                try:
+                    ts_ms = int(row.get("time")) * 1000
+                    out.append(
+                        {
+                            "timestamp": ts_ms,
+                            "open": float(row.get("open")),
+                            "high": float(row.get("high")),
+                            "low": float(row.get("low")),
+                            "close": float(row.get("close")),
+                            "volume": float(row.get("volumefrom") or 0.0),
+                        }
+                    )
+                except Exception:
+                    continue
+            return out
+
+        tried: list[str] = []
+        for tsym in (preferred_quote, "USDT", "USD", "USDC", "BUSD"):
+            tsym = (tsym or "").upper().strip()
+            if not tsym or tsym in tried:
                 continue
-        return out
+            tried.append(tsym)
+            out = _fetch_for_quote(tsym)
+            if out:
+                return out
+        return []
 
     # Allow explicit provider override
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()

@@ -79,6 +79,7 @@ def main_loop(DRY_RUN=False):
         cycle_candidates = 0
         cycle_scored = 0
         cycle_stored = 0
+        cycle_store_failures = 0
         cycle_users = 0
         cycle_dispatched_users = 0
         # Global kill-switch (skip cycle but keep process alive)
@@ -212,8 +213,14 @@ def main_loop(DRY_RUN=False):
                             try:
                                 store_signal_compat(signal)
                                 cycle_stored += 1
-                            except Exception:
-                                pass
+                            except Exception as e:
+								cycle_store_failures += 1
+								# Keep loop alive but emit a single useful hint per cycle.
+								if cycle_store_failures == 1:
+									try:
+										print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
+									except Exception:
+										pass
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
@@ -247,6 +254,7 @@ def main_loop(DRY_RUN=False):
                         "[engine] cycle="
                         f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
                         f"scored>={MIN_SCORE_THRESHOLD}={cycle_scored} stored={cycle_stored} "
+                        f"store_failures={cycle_store_failures} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
                         f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
                         flush=True,
