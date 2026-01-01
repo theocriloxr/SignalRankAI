@@ -3,6 +3,7 @@ import contextlib
 import os
 import signal
 import threading
+from typing import Optional
 
 from db.session import ENGINE, get_session
 from db.repository import expire_subscriptions
@@ -34,10 +35,23 @@ class Worker:
 
     async def run(self) -> None:
         expiry_task = asyncio.create_task(self._expiry_loop())
+        ws_task: Optional[asyncio.Task] = None
+
+        if _env_bool("CRYPTO_WS_ENABLED", False):
+            try:
+                from data.ws_ingest import run_ws_ingestor
+
+                ws_task = asyncio.create_task(run_ws_ingestor(self._stop))
+            except Exception:
+                ws_task = None
         try:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
         finally:
+            if ws_task is not None:
+                ws_task.cancel()
+                with contextlib.suppress(Exception):
+                    await ws_task
             expiry_task.cancel()
             with contextlib.suppress(Exception):
                 await expiry_task

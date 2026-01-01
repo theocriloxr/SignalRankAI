@@ -1,7 +1,8 @@
 import os
 import time
 
-from data.fetcher import fetch_market_data, is_crypto
+from data.fetcher import is_crypto
+from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs
 from engine.regime import detect_market_regime
 from strategies import run_all_strategies
@@ -183,7 +184,13 @@ def main_loop(DRY_RUN=False):
             for asset in assets:
                 try:
                     tfs = crypto_timeframes if is_crypto(asset) else fx_timeframes
-                    market_data = fetch_market_data(asset, tfs)
+                    try:
+                        import asyncio
+
+                        market_data = asyncio.run(fetch_market_data_cached(asset, tfs))
+                    except Exception:
+                        # Best-effort fallback (should be rare; engine runs in a thread in RUN_MODE=all)
+                        market_data = {}
 
                     # Fail-closed: never run strategies on empty/insufficient market data.
                     try:

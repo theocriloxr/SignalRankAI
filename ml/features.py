@@ -11,13 +11,18 @@ def regime_to_int(regime):
     return mapping.get(regime, 0)
 
 def extract_features(signal, market_data):
+    tf = signal.get("timeframe")
+    tf_data = (market_data or {}).get(tf) or {}
+    ind = (tf_data or {}).get("indicators") or {}
+    bb = (ind or {}).get("bollinger") or {}
+
     return {
-        "rsi": signal.get("rsi", market_data.get("rsi", 0)),
-        "atr": signal.get("atr", market_data.get("atr", 0)),
-        "trend_strength": signal.get("trend_strength", market_data.get("trend_strength", 0)),
-        "volatility": signal.get("volatility", market_data.get("volatility", 0)),
-        "rr": signal.get("rr", 0),
-        "timeframe": timeframe_to_int(signal.get("timeframe")),
-        "strategy_id": strategy_to_int(signal.get("strategy", "")),
+        "rsi": float(signal.get("rsi") if signal.get("rsi") is not None else (ind.get("rsi") or 0)),
+        "atr": float(signal.get("atr") if signal.get("atr") is not None else (ind.get("atr") or 0)),
+        "trend_strength": float(signal.get("trend_strength") if signal.get("trend_strength") is not None else (ind.get("adx") or 0)),
+        "volatility": float(signal.get("volatility") if signal.get("volatility") is not None else (bb.get("width") or ind.get("bollinger_width") or 0)),
+        "rr": float(signal.get("rr") if signal.get("rr") is not None else (signal.get("rr_ratio") or 0)),
+        "timeframe": timeframe_to_int(tf),
+        "strategy_id": strategy_to_int(signal.get("strategy") or signal.get("strategy_name") or ""),
         "regime": regime_to_int(signal.get("regime", ""))
     }

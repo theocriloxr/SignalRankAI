@@ -100,6 +100,38 @@ class Signal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class MarketTick(Base):
+    __tablename__ = "market_ticks"
+
+    # One row per symbol; continuously upserted by WS/REST.
+    symbol: Mapped[str] = mapped_column(String(32), primary_key=True)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    event_time_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class MarketCandle(Base):
+    __tablename__ = "market_candles"
+    __table_args__ = (
+        UniqueConstraint("symbol", "timeframe", "open_time_ms", name="uq_market_candles_symbol_tf_open"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    open_time_ms: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    close_time_ms: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+
+    open: Mapped[float] = mapped_column(Float, nullable=False)
+    high: Mapped[float] = mapped_column(Float, nullable=False)
+    low: Mapped[float] = mapped_column(Float, nullable=False)
+    close: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+    is_final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class Outcome(Base):
     __tablename__ = "outcomes"
 
