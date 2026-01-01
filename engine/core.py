@@ -26,6 +26,26 @@ def load_tradable_assets():
         return []
     return [x.strip() for x in raw.split(",") if x.strip()]
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return int(default)
+    raw = raw.strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
 def main_loop(DRY_RUN=False):
     crypto_timeframes = [x.strip() for x in (os.getenv("CRYPTO_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",") if x.strip()]
     # AlphaVantage free tier is rate-limited; default to daily-only for FX.
@@ -55,6 +75,12 @@ def main_loop(DRY_RUN=False):
     regime_strategies = get_regime_strategies() if hasattr(get_regime_strategies, '__call__') else None
 
     while True:
+        cycle_assets = 0
+        cycle_candidates = 0
+        cycle_scored = 0
+        cycle_stored = 0
+        cycle_users = 0
+        cycle_dispatched_users = 0
         # Global kill-switch (skip cycle but keep process alive)
         try:
             if state.get_killswitch_sync().enabled:
@@ -89,6 +115,8 @@ def main_loop(DRY_RUN=False):
             except Exception:
                 pass
 
+            cycle_assets = len(assets)
+
             scored_signals_all = []
 
             for asset in assets:
@@ -121,6 +149,11 @@ def main_loop(DRY_RUN=False):
                         strategy_weights=strategy_weights,
                         regime_strategies=regime_strategies,
                     )
+
+                    try:
+                        cycle_candidates += len(strategy_signals or [])
+                    except Exception:
+                        pass
 
                     # Signal Controller step (deduplication + normalization)
                     from engine.signal_controller import SignalController
@@ -175,7 +208,12 @@ def main_loop(DRY_RUN=False):
                             else:
                                 signal['rr_ratio'] = signal.get('rr_ratio', 0)
                             scored_signals_all.append(signal)
-                            store_signal_compat(signal)
+                            cycle_scored += 1
+                            try:
+                                store_signal_compat(signal)
+                                cycle_stored += 1
+                            except Exception:
+                                pass
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
@@ -187,8 +225,32 @@ def main_loop(DRY_RUN=False):
                     print("[DRY RUN]", sig)
             else:
                 user_ids = get_all_user_ids_compat()
+                try:
+                    cycle_users = len(user_ids or [])
+                except Exception:
+                    cycle_users = 0
                 for user_id in user_ids:
                     dispatch_signals(ranked_signals, user_id=user_id)
+                    cycle_dispatched_users += 1
+
+            # One-line per-cycle health signal for Railway logs.
+            if _env_bool("ENGINE_CYCLE_LOG", True):
+                every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
+                try:
+                    cycle_no = _env_int("_ENGINE_CYCLE_NO", 0) + 1
+                    os.environ["_ENGINE_CYCLE_NO"] = str(cycle_no)
+                except Exception:
+                    cycle_no = 0
+                if cycle_no <= 0 or (cycle_no % every) == 0:
+                    crypto_provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+                    print(
+                        "[engine] cycle="
+                        f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
+                        f"scored>={MIN_SCORE_THRESHOLD}={cycle_scored} stored={cycle_stored} "
+                        f"users={cycle_users} dispatched={cycle_dispatched_users} "
+                        f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
+                        flush=True,
+                    )
         except Exception:
             # Keep process alive; production version should log structured errors.
             pass
