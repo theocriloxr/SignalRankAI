@@ -30,6 +30,14 @@ def main_loop(DRY_RUN=False):
     timeframes = ['5m', '15m', '1h', '4h', '1d']
     cycle_sleep_seconds = int(os.getenv("CYCLE_SLEEP_SECONDS", "60"))
 
+    # Fail fast: if FX pairs are configured, require a real candle provider key.
+    fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
+    if fx_pairs and not (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip():
+        raise RuntimeError(
+            "FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. "
+            "Set ALPHAVANTAGE_API_KEY or clear FX_PAIRS to avoid running on empty FX data."
+        )
+
     # Example: fetch strategy weights and regime_strategies from ML/DB (stubbed here)
     from engine.ml import get_strategy_weights, get_regime_strategies
     strategy_weights = get_strategy_weights() if hasattr(get_strategy_weights, '__call__') else {}
