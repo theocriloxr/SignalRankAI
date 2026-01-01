@@ -2,6 +2,8 @@
 import os
 import logging
 import inspect
+import socket
+from datetime import datetime, timezone
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -11,6 +13,26 @@ from .access import resolve_user_tier
 
 
 _audit_logger = logging.getLogger("audit")
+
+_BOOT_TS = datetime.now(timezone.utc).isoformat()
+
+
+async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if update.message is None:
+		return
+	# Non-sensitive fingerprint to confirm which build is running.
+	mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
+	lines = [
+		"SignalRankAI /version",
+		f"boot_utc: {_BOOT_TS}",
+		f"run_mode: {mode}",
+		f"host: {socket.gethostname()}",
+		f"railway_service: {os.getenv('RAILWAY_SERVICE_NAME')}",
+		f"railway_env: {os.getenv('RAILWAY_ENVIRONMENT')}",
+		f"railway_deployment: {os.getenv('RAILWAY_DEPLOYMENT_ID')}",
+		f"git_sha: {os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
+	]
+	await update.message.reply_text("\n".join(lines))
 
 
 def _effective_tier(user_id: int) -> str:

@@ -24,6 +24,16 @@ def main() -> None:
 
     mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
 
+    print(
+        "[boot] starting | "
+        f"run_mode={mode} "
+        f"railway_service={os.getenv('RAILWAY_SERVICE_NAME')} "
+        f"railway_env={os.getenv('RAILWAY_ENVIRONMENT')} "
+        f"railway_deployment={os.getenv('RAILWAY_DEPLOYMENT_ID')} "
+        f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
+        flush=True,
+    )
+
     # Railway-friendly: auto-run migrations against Postgres (idempotent)
     # and optionally wipe data for a clean "fresh start".
     try:

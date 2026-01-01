@@ -13,8 +13,7 @@ PAYSTACK_WEBHOOK_SECRET = os.getenv('PAYSTACK_WEBHOOK_SECRET')
 PAYSTACK_VERIFY_URL = 'https://api.paystack.co/transaction/verify/'
 PAYSTACK_INIT_URL = 'https://api.paystack.co/transaction/initialize'
 
-# Setup audit logger
-logging.basicConfig(filename='audit.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+_audit_logger = logging.getLogger("audit")
 
 AMOUNTS = {
     # Recommended pricing (Nigeria-optimized)
@@ -51,7 +50,7 @@ def verify_payment(reference, user_id):
             amount = int(data['data']['amount']) // 100  # Paystack returns kobo
             metadata = data['data'].get('metadata', {})
             if not metadata or not isinstance(metadata, dict):
-                logging.warning(f"Payment missing metadata: user {user_id}, amount {amount}")
+                _audit_logger.warning(f"Payment missing metadata: user {user_id}, amount {amount}")
                 return False, "❌ Payment missing required metadata. Please use the official payment link.", None
             # Extra signal purchase
             if metadata.get('duration') == 'EXTRA':
@@ -59,10 +58,10 @@ def verify_payment(reference, user_id):
                 tier = metadata.get('tier', 'PREMIUM')
                 expected_price = 300 * extra_count if tier == 'PREMIUM' else 500 * extra_count
                 if amount != expected_price:
-                    logging.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for extra {tier}")
+                    _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for extra {tier}")
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your extra signal purchase.", None
                 approve_extra_signals(user_id, extra_count)
-                logging.info(f"Extra signals credited: user {user_id}, tier {tier}, count {extra_count}")
+                _audit_logger.info(f"Extra signals credited: user {user_id}, tier {tier}, count {extra_count}")
                 return True, f"✅ Payment verified! {extra_count} extra {tier.title()} signal(s) credited for today.", tier
             # Subscription purchase
             tier = metadata.get('tier')
@@ -74,13 +73,13 @@ def verify_payment(reference, user_id):
                 expected_price = AMOUNTS.get(key)
                 expected_days = DURATIONS.get(key)
                 if amount != expected_price:
-                    logging.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
+                    _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your subscription.", None
                 set_subscription(user_id, key, expected_days, reference)
-                logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
+                _audit_logger.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
                 return True, f"✅ Payment verified! Weekly Plan access granted.", key
             if not tier or (not duration and duration_days is None):
-                logging.warning(f"Subscription payment missing tier/duration: user {user_id}, amount {amount}")
+                _audit_logger.warning(f"Subscription payment missing tier/duration: user {user_id}, amount {amount}")
                 return False, "❌ Payment missing required subscription details. Please use the official payment link.", None
 
             # New path: tier in {premium,vip} with explicit duration_days
@@ -109,14 +108,14 @@ def verify_payment(reference, user_id):
             if tier.upper() == 'VIP' and duration.lower() == 'trial':
                 from db.database import has_ever_had_vip
                 if has_ever_had_vip(user_id):
-                    logging.warning(f"Repeat VIP trial attempt: user {user_id}")
+                    _audit_logger.warning(f"Repeat VIP trial attempt: user {user_id}")
                     return False, "❌ VIP trial is only available once per user. Please choose a regular VIP plan.", None
             # Validate amount for subscription
             key = f"{tier.upper()}_{duration.upper()}"
             expected_price = AMOUNTS.get(key)
             expected_days = DURATIONS.get(key)
             if expected_price is None or expected_days is None or amount != expected_price:
-                logging.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
+                _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
                 return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your subscription.", None
 
             # VIP seat cap (legacy path)

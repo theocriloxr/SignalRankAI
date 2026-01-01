@@ -1,5 +1,6 @@
 import os
 import asyncio
+import socket
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 from datetime import datetime
@@ -11,6 +12,7 @@ from .formatter import format_signal
 from .commands import (
     start_command,
     help_command,
+    version_command,
     about_command,
     faq_command,
     disclaimer_command,
@@ -318,6 +320,15 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from db.pg_compat import get_all_user_ids_compat
 
 def run_bot():
+    print(
+        "[boot] telegram bot starting | "
+        f"host={socket.gethostname()} "
+        f"run_mode={(os.getenv('RUN_MODE') or 'engine').strip().lower()} "
+        f"railway_service={os.getenv('RAILWAY_SERVICE_NAME')} "
+        f"railway_deployment={os.getenv('RAILWAY_DEPLOYMENT_ID')} "
+        f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
+        flush=True,
+    )
     application = Application.builder().token(_require_telegram_token()).build()
 
     async def _post_init(app):
@@ -341,6 +352,7 @@ def run_bot():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("version", version_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("faq", faq_command))
     application.add_handler(CommandHandler("disclaimer", disclaimer_command))
