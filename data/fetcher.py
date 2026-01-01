@@ -1,11 +1,10 @@
 import os
-from .indicators import calculate_indicators
-import pandas as pd
 import time
-import os
+from datetime import datetime
+
+import requests
+
 from .indicators import calculate_indicators
-import pandas as pd
-import time
 
 def fetch_market_data(asset, timeframes):
     data = {}
@@ -32,9 +31,9 @@ def get_candles(asset, timeframe):
         return get_fx_candles(asset, timeframe)
 
 def is_crypto(asset):
-    # Simple check: if asset ends with 'USDT' or 'USD' and is in top crypto list
-    cryptos = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'MATIC', 'DOT', 'LTC', 'TRX', 'AVAX', 'SHIB', 'LINK', 'ATOM', 'XMR', 'ETC', 'FIL', 'APT', 'ARB', 'OP']
-    return any(asset.startswith(c) for c in cryptos)
+    a = (asset or "").upper().strip()
+    # Treat Binance-style symbols as crypto by default (e.g., BTCUSDT, ETHUSDT).
+    return a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC")
 
 def get_crypto_candles(asset, timeframe):
     import ccxt
@@ -57,25 +56,130 @@ def get_crypto_candles(asset, timeframe):
     return []
 
 def get_fx_candles(asset, timeframe):
-    import requests
-    import datetime
-    base, quote = asset[:3], asset[3:]
-    # Map timeframe to period (exchangerate.host supports 1m, 5m, 15m, 30m, 1h, 4h, 1d)
-    tf_map = {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}
-    period = tf_map.get(timeframe, '1h')
-    end = datetime.datetime.utcnow()
-    start = end - datetime.timedelta(days=5)  # last 5 days
-    url = f"https://api.exchangerate.host/timeseries?start_date={start.date()}&end_date={end.date()}&base={base}&symbols={quote}"
-    resp = requests.get(url)
-    data = resp.json()
-    candles = []
-    if 'rates' not in data:
-        # API error or unsupported pair
+    """Fetch FX candles from a real candle provider.
+
+    This intentionally avoids synthetic OHLC generation.
+    Requires ALPHAVANTAGE_API_KEY to be set.
+    """
+    api_key = (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip()
+    if not api_key:
         return []
-    # Simulate OHLCV from daily close (exchangerate.host gives only close, so OHLC=close, V=0)
-    for ts, v in sorted(data['rates'].items()):
-        close = v.get(quote)
-        if close is None:
-            continue
-        candles.append({'timestamp': ts, 'open': close, 'high': close, 'low': close, 'close': close, 'volume': 0})
-    return candles
+
+    pair = (asset or "").upper().strip()
+    if len(pair) < 6:
+        return []
+    from_symbol, to_symbol = pair[:3], pair[3:6]
+
+    tf = (timeframe or "").strip()
+    if tf in {"5m", "15m", "1h"}:
+        interval = {"5m": "5min", "15m": "15min", "1h": "60min"}[tf]
+        url = (
+            "https://www.alphavantage.co/query"
+            f"?function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}"
+            f"&interval={interval}&outputsize=compact&apikey={api_key}"
+        )
+        resp = requests.get(url, timeout=10)
+        payload = resp.json() if resp.ok else {}
+        key = f"Time Series FX ({interval})"
+        series = payload.get(key) or {}
+        candles = []
+        for ts, row in sorted(series.items()):
+            try:
+                candles.append(
+                    {
+                        "timestamp": ts,
+                        "open": float(row["1. open"]),
+                        "high": float(row["2. high"]),
+                        "low": float(row["3. low"]),
+                        "close": float(row["4. close"]),
+                        "volume": 0.0,
+                    }
+                )
+            except Exception:
+                continue
+
+        # For 4h, aggregate from 60min bars.
+        if tf == "1h":
+            return candles
+        return candles
+
+    if tf in {"4h", "1d"}:
+        # Use daily candles for now; 4h requires intraday aggregation.
+        if tf == "4h":
+            # Try to approximate 4h by aggregating 60min bars.
+            url = (
+                "https://www.alphavantage.co/query"
+                f"?function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}"
+                f"&interval=60min&outputsize=compact&apikey={api_key}"
+            )
+            resp = requests.get(url, timeout=10)
+            payload = resp.json() if resp.ok else {}
+            series = payload.get("Time Series FX (60min)") or {}
+            hourly = []
+            for ts, row in sorted(series.items()):
+                try:
+                    hourly.append(
+                        {
+                            "timestamp": ts,
+                            "open": float(row["1. open"]),
+                            "high": float(row["2. high"]),
+                            "low": float(row["3. low"]),
+                            "close": float(row["4. close"]),
+                            "volume": 0.0,
+                        }
+                    )
+                except Exception:
+                    continue
+            if not hourly:
+                return []
+
+            # Group by 4-hour buckets based on timestamp hour.
+            buckets: dict[str, list[dict]] = {}
+            for bar in hourly:
+                try:
+                    dt = datetime.fromisoformat(str(bar["timestamp"]).replace("Z", ""))
+                    bucket_hour = (dt.hour // 4) * 4
+                    bucket_key = dt.replace(minute=0, second=0, microsecond=0, hour=bucket_hour).isoformat()
+                except Exception:
+                    bucket_key = str(bar["timestamp"]).split(":")[0]
+                buckets.setdefault(bucket_key, []).append(bar)
+
+            out = []
+            for k in sorted(buckets.keys()):
+                bars = buckets[k]
+                if not bars:
+                    continue
+                o = bars[0]["open"]
+                c = bars[-1]["close"]
+                h = max(b["high"] for b in bars)
+                l = min(b["low"] for b in bars)
+                out.append({"timestamp": k, "open": o, "high": h, "low": l, "close": c, "volume": 0.0})
+            return out
+
+        # Daily
+        url = (
+            "https://www.alphavantage.co/query"
+            f"?function=FX_DAILY&from_symbol={from_symbol}&to_symbol={to_symbol}"
+            f"&outputsize=compact&apikey={api_key}"
+        )
+        resp = requests.get(url, timeout=10)
+        payload = resp.json() if resp.ok else {}
+        series = payload.get("Time Series FX (Daily)") or {}
+        candles = []
+        for ts, row in sorted(series.items()):
+            try:
+                candles.append(
+                    {
+                        "timestamp": ts,
+                        "open": float(row["1. open"]),
+                        "high": float(row["2. high"]),
+                        "low": float(row["3. low"]),
+                        "close": float(row["4. close"]),
+                        "volume": 0.0,
+                    }
+                )
+            except Exception:
+                continue
+        return candles
+
+    return []

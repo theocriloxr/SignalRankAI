@@ -16,8 +16,15 @@ from core.redis_state import state
 MIN_SCORE_THRESHOLD = 75
 
 def load_tradable_assets():
-    # Example: Replace with real asset loader
-    return ['BTCUSDT', 'ETHUSD', 'EURUSD', 'GBPUSD']
+    """Return configured fallback assets.
+
+    This intentionally avoids hardcoded demo symbols.
+    Use TRADABLE_ASSETS="BTCUSDT,ETHUSDT" (comma-separated) to provide a fallback list.
+    """
+    raw = (os.getenv("TRADABLE_ASSETS") or "").strip()
+    if not raw:
+        return []
+    return [x.strip() for x in raw.split(",") if x.strip()]
 
 def main_loop(DRY_RUN=False):
     timeframes = ['5m', '15m', '1h', '4h', '1d']
@@ -45,6 +52,11 @@ def main_loop(DRY_RUN=False):
 
             if not assets:
                 assets = load_tradable_assets()
+
+            # No assets => do not run on demo/hardcoded data.
+            if not assets:
+                time.sleep(max(5, cycle_sleep_seconds))
+                continue
 
             scored_signals_all = []
 

@@ -1,3 +1,4 @@
+import os
 import ccxt
 import requests
 
@@ -16,10 +17,16 @@ def get_trending_crypto_pairs(top_n=20):
         print(f"[WARN] Could not fetch Binance pairs: {e}")
         return []
 
-# Discover trending FX pairs (placeholder: use your own logic or API)
 def get_trending_fx_pairs():
-    # Example: hardcoded popular pairs
-    return ['EURUSD', 'GBPUSD', 'USDJPY', 'AUDUSD', 'USDCAD', 'USDCHF', 'NZDUSD']
+    """Return configured FX pairs.
+
+    This avoids hardcoded demo pairs. Configure via FX_PAIRS (comma-separated), e.g.
+    FX_PAIRS="EURUSD,GBPUSD,USDJPY".
+    """
+    raw = (os.getenv("FX_PAIRS") or "").strip()
+    if not raw:
+        return []
+    return [x.strip().upper() for x in raw.split(",") if x.strip()]
 
 # Combine all pairs for strategy engine
 def get_all_trending_pairs():

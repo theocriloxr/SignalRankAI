@@ -15,8 +15,13 @@ This matrix maps the functional spec to current code paths and highlights remain
 
 ## Data ingestion
 - Crypto (Binance WS + REST fallback): `data/binance_ws.py`, `data/fetcher.py`
-- FX feed: present as placeholders/integration points (not fully wired end-to-end)
+- FX feed: uses AlphaVantage candles when `ALPHAVANTAGE_API_KEY` is configured (`data/fetcher.py`). If not configured, FX candles are disabled (returns empty) rather than generating synthetic OHLC.
 - Normalization: `data/indicators.py` + engine normalization in `engine/signal_controller.py`
+
+### Real-feed configuration (no demo fallbacks)
+- `TRADABLE_ASSETS` (comma-separated) — used only if pair discovery returns no assets.
+- `FX_PAIRS` (comma-separated) — optional list of FX symbols (e.g., `EURUSD,GBPUSD`). No hardcoded FX pairs.
+- `ALPHAVANTAGE_API_KEY` — required to fetch FX candles.
 
 ## Strategy engine
 - Strategy modules: `strategies/` (trend/momentum/volatility/structure)
