@@ -825,7 +825,7 @@ async def start_command(update, context):
 							is_new_user=bool(is_new),
 						)
 					except Exception:
-					referral_outcome = None
+						referral_outcome = None
 
 				# Audit: always record the start event when Postgres is available
 				try:
