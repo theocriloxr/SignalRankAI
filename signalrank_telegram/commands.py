@@ -126,10 +126,12 @@ def invite_command(update: Update, context: CallbackContext):
 		need = int(progress.get("needed_for_next", 0) or 0)
 		toward = int(progress.get("toward_next", 0) or 0)
 		total = int(progress.get("total", 0) or 0)
-		if need == 0:
-			progress_line = f"\n\nProgress: {toward}/3 (next reward ready after your next invite joins). Total invites: {total}."
+		# If you're exactly on a multiple of 3, you already earned the previous reward;
+		# the next reward needs 3 more invites.
+		if toward == 0:
+			progress_line = f"\n\nProgress: 0/3 (invite 3 more to earn +7 days Premium). Total invites: {total}."
 		else:
-			progress_line = f"\n\nProgress: {toward}/3 (invite {need} more to earn 7 days Premium). Total invites: {total}."
+			progress_line = f"\n\nProgress: {toward}/3 (invite {need} more to earn +7 days Premium). Total invites: {total}."
 
 	if bot_username and code:
 		link = f"https://t.me/{bot_username}?start=ref_{code}"
@@ -440,6 +442,19 @@ def start_command(update, context):
 				referral_outcome = process_referral_start(user_id, code, is_new_user=bool(is_new))
 			except Exception:
 				referral_outcome = None
+
+	# Internal audit log (no user-visible output)
+	try:
+		if referral_outcome:
+			_audit_logger.info(
+				"referral_start status=%s referrer_id=%s referred_id=%s days=%s",
+				referral_outcome.get("status"),
+				referral_outcome.get("referrer_id"),
+				user_id,
+				referral_outcome.get("days_granted"),
+			)
+	except Exception:
+		pass
 
 	msg = (
 		"SignalRankAI provides algorithmic market analysis for educational purposes only. "

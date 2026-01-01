@@ -187,10 +187,12 @@ BYPASS_KEY = os.getenv('BYPASS_KEY')
 OWNER_IDS = [int(x) for x in os.getenv('OWNER_IDS', str(OWNER_TELEGRAM_ID)).split(',')]
 
 
-def record_user_seen(user_id: int) -> None:
+def record_user_seen(user_id: int) -> bool:
     """Persist user_id for basic analytics/ops.
 
     This is intentionally minimal (Telegram ID only; no passwords).
+
+    Returns True if this is the first time we've seen the user.
     """
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
