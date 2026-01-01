@@ -6,11 +6,59 @@ FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apik
 
 _BINANCE_DISABLED_REASON: str | None = None
 
+
+def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
+    """Best-effort fallback crypto universe via CryptoCompare.
+
+    Returns Binance-style symbols like BTCUSDT, ETHUSDT.
+    """
+
+    try:
+        limit = max(1, int(top_n))
+    except Exception:
+        limit = 20
+
+    # CryptoCompare gives us top coins by total volume in a quote currency.
+    # Use USD to maximize availability; we'll still map to *USDT symbols* for our engine.
+    url = "https://min-api.cryptocompare.com/data/top/totalvolfull"
+    params = {"limit": int(limit), "tsym": "USD"}
+
+    headers = {}
+    api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+    if api_key:
+        headers["authorization"] = f"Apikey {api_key}"
+
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=8)
+        payload = resp.json() if resp.ok else {}
+        if not resp.ok:
+            return []
+        if str(payload.get("Response") or "").lower() != "success":
+            return []
+        data = payload.get("Data") or []
+        if not isinstance(data, list):
+            return []
+        out: list[str] = []
+        for row in data:
+            try:
+                coin = (row.get("CoinInfo") or {}).get("Name")
+                coin = str(coin or "").upper().strip()
+                if not coin:
+                    continue
+                # Map to our engine's crypto convention.
+                out.append(f"{coin}USDT")
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     if _BINANCE_DISABLED_REASON is not None:
-        return []
+        # Fallback universe when Binance is blocked.
+        return _cryptocompare_top_crypto_pairs(top_n)
     try:
         resp = requests.get(BINANCE_API, timeout=5)
         data = resp.json()
@@ -26,7 +74,7 @@ def get_trending_crypto_pairs(top_n=20):
             if "restricted location" in msg_s.lower():
                 _BINANCE_DISABLED_REASON = msg_s
                 print(f"[WARN] Binance pairs disabled: {msg_s}")
-                return []
+                return _cryptocompare_top_crypto_pairs(top_n)
             raise RuntimeError(f"Binance API error: code={code} msg={msg}")
         if not isinstance(data, list):
             raise RuntimeError(f"Unexpected Binance API response type: {type(data).__name__}")
@@ -35,7 +83,7 @@ def get_trending_crypto_pairs(top_n=20):
         return [x['symbol'] for x in sorted_pairs[:top_n]]
     except Exception as e:
         print(f"[WARN] Could not fetch Binance pairs: {e}")
-        return []
+        return _cryptocompare_top_crypto_pairs(top_n)
 
 def get_trending_fx_pairs():
     """Return configured FX pairs.
