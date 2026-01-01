@@ -1064,3 +1064,6 @@ Traceback (most recent call last):
     c.execute('SELECT * FROM signals WHERE user_id=?', (user_id,))
     ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 sqlite3.OperationalError: no such column: user_id
+2026-01-01 12:47:25,582 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 12:47:26,445 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 12:47:27,067 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/sendMessage "HTTP/1.1 200 OK"
