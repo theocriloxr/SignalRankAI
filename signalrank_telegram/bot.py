@@ -329,7 +329,30 @@ def run_bot():
         f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
         flush=True,
     )
+
+    # Preflight token + Telegram connectivity before starting long-polling.
+    try:
+        token = _require_telegram_token()
+        print("[boot] telegram bot token_present=yes", flush=True)
+
+        async def _preflight() -> None:
+            me = await Bot(token=token).get_me()
+            print(f"[boot] telegram bot getMe ok: @{me.username} ({me.id})", flush=True)
+
+        asyncio.run(_preflight())
+    except Exception as exc:
+        # Crash loudly: Railway logs should show this and restart.
+        print(f"[boot] telegram bot preflight failed: {exc}", flush=True)
+        raise
+
     application = Application.builder().token(_require_telegram_token()).build()
+
+    async def _on_error(update, context) -> None:
+        err = getattr(context, "error", None)
+        print(f"[bot] error: {err}", flush=True)
+        # Avoid crashing the bot on handler errors; PTB will continue polling.
+
+    application.add_error_handler(_on_error)
 
     async def _post_init(app):
         # BotFather-visible commands must remain concise.
@@ -594,6 +617,7 @@ def run_bot():
     )
     scheduler.start()
 
+    print("[boot] telegram bot polling starting", flush=True)
     application.run_polling()
 
 
