@@ -332,6 +332,15 @@ def run_bot():
         flush=True,
     )
 
+    # Ensure an event loop exists in this (main) thread.
+    # Python 3.12+ no longer creates one implicitly, and PTB's run_polling()
+    # uses asyncio.get_event_loop().
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     # Preflight token + Telegram connectivity before starting long-polling.
     try:
         token = _require_telegram_token()
@@ -341,7 +350,7 @@ def run_bot():
             me = await Bot(token=token).get_me()
             print(f"[boot] telegram bot getMe ok: @{me.username} ({me.id})", flush=True)
 
-        asyncio.run(_preflight())
+        loop.run_until_complete(_preflight())
     except Exception as exc:
         # Crash loudly: Railway logs should show this and restart.
         print(f"[boot] telegram bot preflight failed: {exc}", flush=True)
