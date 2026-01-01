@@ -3232,3 +3232,10 @@ telegram.error.InvalidToken: Unauthorized
 2026-01-01 20:01:47,945 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:11:47 WAT)" executed successfully
 2026-01-01 20:11:47,943 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:21:47 WAT)" (scheduled at 2026-01-01 20:11:47.939550+01:00)
 2026-01-01 20:11:47,946 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:21:47 WAT)" executed successfully
+2026-01-01 20:12:08,026 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:12:08,026 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:12:08,026 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 20:12:08,029 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:12:08,029 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:12:08,032 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:12:08,032 INFO KILL SWITCH DISABLED by 1
