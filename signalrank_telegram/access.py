@@ -1,7 +1,6 @@
 import asyncio
 
 from config import OWNER_IDS
-from db.database import get_subscription
 from core.redis_state import state
 
 try:
@@ -12,6 +11,7 @@ except Exception:  # pragma: no cover
     _PG_ENGINE = None
 
 def resolve_user_tier(user_id):
+    """Postgres-only tier resolution. Returns OWNER/VIP/PREMIUM/FREE."""
     if user_id in OWNER_IDS:
         return "OWNER"
 
@@ -23,20 +23,19 @@ def resolve_user_tier(user_id):
     except Exception:
         pass
 
-    # Prefer Postgres when configured.
+    # Postgres required
+    if _PG_ENGINE is None or _resolve_user_tier_pg is None:
+        raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
+
     try:
-        if _PG_ENGINE is not None and _resolve_user_tier_pg is not None:
-            # PTB sync handlers commonly run in a worker thread; asyncio.run is safe there.
-            try:
-                asyncio.get_running_loop()
-            except RuntimeError:
-                tier = asyncio.run(_resolve_user_tier_pg(int(user_id)))
-                return (tier or "free").strip().upper()
+        # PTB sync handlers commonly run in a worker thread; asyncio.run is safe there.
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            tier = asyncio.run(_resolve_user_tier_pg(int(user_id)))
+            return (tier or "free").strip().upper()
     except Exception:
         pass
 
-    # Legacy SQLite fallback.
-    sub = get_subscription(user_id)
-    if sub is None or sub.get('expired', True):
-        return "FREE"
-    return (sub.get('tier', 'FREE') or 'FREE')
+    # Default to FREE if lookup fails
+    return "FREE"

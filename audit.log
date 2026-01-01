@@ -3239,3 +3239,21 @@ telegram.error.InvalidToken: Unauthorized
 2026-01-01 20:12:08,029 INFO KILL SWITCH DISABLED by 1
 2026-01-01 20:12:08,032 WARNING KILL SWITCH ENABLED by 1: test
 2026-01-01 20:12:08,032 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:21:47,945 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:31:47 WAT)" (scheduled at 2026-01-01 20:21:47.939550+01:00)
+2026-01-01 20:21:47,948 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:31:47 WAT)" executed successfully
+2026-01-01 20:28:28,269 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:28:28,269 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:28:28,269 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 20:28:28,271 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:28:28,271 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:28:28,273 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:28:28,273 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:31:47,943 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:41:47 WAT)" (scheduled at 2026-01-01 20:31:47.939550+01:00)
+2026-01-01 20:31:47,949 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 20:41:47 WAT)" executed successfully
+2026-01-01 20:33:22,949 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:33:22,949 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:33:22,949 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 20:33:22,951 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:33:22,951 INFO KILL SWITCH DISABLED by 1
+2026-01-01 20:33:22,955 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 20:33:22,955 INFO KILL SWITCH DISABLED by 1

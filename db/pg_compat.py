@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from db.session import ENGINE, get_session
 
@@ -22,10 +22,9 @@ def postgres_enabled() -> bool:
 
 
 def get_all_user_ids_compat() -> list[int]:
+    """Postgres-only. Returns all telegram user IDs."""
     if not postgres_enabled():
-        from db.database import get_all_user_ids
-
-        return get_all_user_ids()
+        raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 
     async def _impl() -> list[int]:
         from db.pg_features import list_all_user_telegram_ids
@@ -37,12 +36,10 @@ def get_all_user_ids_compat() -> list[int]:
     return _run(_impl())
 
 
-def store_signal_compat(signal: Dict[str, Any]) -> Optional[str]:
+def store_signal_compat(signal: Dict[str, Any]) -> str:
+    """Postgres-only. Store a signal and return its ID."""
     if not postgres_enabled():
-        from db.database import store_signal
-
-        store_signal(signal)
-        return None
+        raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 
     async def _impl() -> str:
         from db.pg_features import get_or_create_signal

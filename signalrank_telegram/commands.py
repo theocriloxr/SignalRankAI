@@ -149,13 +149,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	except Exception:
 		signals = []
 
-	# SQLite fallback (legacy)
+	# Postgres is required
 	if not signals:
-		try:
-			from db.database import get_unreleased_signals
-			signals = get_unreleased_signals()[:10]
-		except Exception:
-			signals = []
+		signals = []
 
 	if not signals:
 		if update.message is not None:
@@ -466,15 +462,10 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
 				await session.commit()
 		else:
-			raise RuntimeError("no postgres")
+			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 	except Exception:
-		try:
-			from db.database import generate_referral_code, get_referral_progress
-			code = generate_referral_code(user_id)
-			progress = get_referral_progress(user_id)
-		except Exception:
-			code = None
-			progress = None
+		code = None
+		progress = None
 
 	bot_username = None
 	try:
@@ -516,8 +507,20 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if await _public_guard(update):
 		return
-	from db.database import count_active_vip_seats
-	used, remaining, limit = count_active_vip_seats()
+	# VIP seat info from Postgres (best-effort)
+	try:
+		from db.session import ENGINE, get_session
+		from db.repository import count_active_vip_users
+		if ENGINE is not None:
+			async with get_session() as session:
+				used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
+				await session.commit()
+			limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
+			remaining = max(0, limit - used)
+		else:
+			used, remaining, limit = 0, 15, 15
+	except Exception:
+		used, remaining, limit = 0, 15, 15
 	vip_line = f"VIP seats remaining: {remaining}/{limit}"
 	msg = (
 		"💎 SignalRankAI Pricing\n\n"
@@ -581,10 +584,19 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	)
 	# VIP link only if seats available (or user is owner/bypassed/already VIP)
 	try:
-		from db.database import count_active_vip_seats, get_subscription, OWNER_IDS
-		_, remaining, limit = count_active_vip_seats()
-		sub = get_subscription(user_id)
-		already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
+		from db.session import ENGINE, get_session
+		from db.repository import count_active_vip_users, get_active_subscription
+		from config import OWNER_IDS
+		if ENGINE is not None:
+			async with get_session() as session:
+				used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
+				limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
+				remaining = max(0, limit - used)
+				sub = await get_active_subscription(session, telegram_user_id=user_id, tier="vip")
+				already_vip = sub is not None
+				await session.commit()
+		else:
+			remaining, limit, already_vip = 15, 15, False
 		try:
 			bypassed = bool(await state.has_temp_owner(user_id))
 		except Exception:
@@ -610,11 +622,12 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		await update.message.reply_text(msg)
 # --- Extra Signal Purchase Logic ---
 from telegram import Update
-from db.database import get_user_tier
 
 async def buy_extra_signals(update, context):
 	user_id = update.effective_user.id
-	tier = get_user_tier(user_id)
+	# Use Postgres tier resolution
+	from signalrank_telegram.access import resolve_user_tier
+	tier = resolve_user_tier(user_id)
 	if tier != "FREE":
 		await update.message.reply_text(
 			"Extra daily signals are only available for Free users.\n"
@@ -696,8 +709,7 @@ async def recap_command(update, context):
 		pass
 
 	# SQLite fallback
-	from db.database import fetch_user_trades
-	trades = fetch_user_trades(user_id)
+	trades = []  # Postgres-only
 	total_signals = len(trades)
 	if total_signals == 0:
 		await update.message.reply_text(
@@ -845,26 +857,12 @@ async def start_command(update, context):
 
 				await session.commit()
 		else:
-			raise RuntimeError("no postgres")
-	except Exception:
-		# SQLite fallback (legacy)
-		try:
-			from db.database import record_user_seen
-			is_new = record_user_seen(user_id, username=username)
-		except Exception:
-			is_new = False
-
-		# Referral attribution fallback
-		if ref_token:
-			code = ref_token
-			if code.startswith("ref_"):
-				code = code[4:]
-			if code:
-				try:
-					from db.database import process_referral_start
-					referral_outcome = process_referral_start(user_id, code, is_new_user=bool(is_new))
-				except Exception:
-					referral_outcome = None
+			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
+	except Exception as e:
+		# Postgres is required; no fallback
+		if update.message is not None:
+			await update.message.reply_text("Database not available. Please contact support.")
+		raise
 
 	# Internal audit log (no user-visible output)
 	try:
@@ -1034,8 +1032,7 @@ async def performance_command(update, context):
 		pass
 
 	# Fallback: legacy SQLite (best-effort)
-	from db.database import fetch_user_trades
-	trades = fetch_user_trades(user_id)
+	trades = []  # Postgres-only
 	cutoff = datetime.now() - timedelta(days=30)
 	def parse_dt(row):
 		try:
@@ -1097,8 +1094,7 @@ async def stats_command(update, context):
 		pass
 
 	# SQLite fallback
-	from db.database import fetch_user_trades
-	trades = fetch_user_trades(user_id)
+	trades = []  # Postgres-only
 	msg = (
 		"📈 Stats (Premium)\n\n"
 		f"Signals recorded: {len(trades)}\n"
@@ -1148,8 +1144,7 @@ async def history_command(update, context):
 		pass
 
 	# SQLite fallback
-	from db.database import fetch_user_trades
-	trades = fetch_user_trades(user_id)
+	trades = []  # Postgres-only
 	filtered = []
 	for t in trades:
 		try:
@@ -1204,7 +1199,6 @@ async def alerts_command(update, context):
 					return dict(prefs or {})
 		except Exception:
 			pass
-		from db.database import get_alert_prefs
 		return dict(get_alert_prefs(user_id) or {})
 
 	async def _set_prefs(*, tp_sl_enabled=None, quiet_start_hour=None, quiet_end_hour=None) -> dict:
@@ -1224,7 +1218,6 @@ async def alerts_command(update, context):
 					return dict(prefs or {})
 		except Exception:
 			pass
-		from db.database import set_alert_prefs
 		return dict(set_alert_prefs(user_id, tp_sl_enabled=tp_sl_enabled, quiet_start_hour=quiet_start_hour, quiet_end_hour=quiet_end_hour) or {})
 	
 	if not context.args:
@@ -1262,8 +1255,7 @@ async def alerts_command(update, context):
 # -------- VIP commands (hidden from BotFather) --------
 @require_tier("VIP")
 async def elite_command(update, context):
-	from db.database import get_unreleased_signals
-	signals = get_unreleased_signals()[:10]
+	signals = []  # Postgres-only
 	elite = [s for s in signals if float(s.get("score") or 0) >= 85]
 	if not elite:
 		if update.message is not None:

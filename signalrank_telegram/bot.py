@@ -350,82 +350,40 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
     # FREE: queue delayed summary (max 2/day)
     try:
-        from db.database import queue_free_signal_summary
+        from db.session import ENGINE, get_session
+        if ENGINE is None:
+            raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
         daily_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
-        # Only queue up to daily limit; prefer higher score first
-        for signal in sorted(signals_list, key=lambda s: s.get('score', 0), reverse=True):
-            ok = queue_free_signal_summary(user_id, signal, daily_limit=daily_limit)
-            if not ok:
-                break
+
+        async def _queue() -> None:
+            from db.pg_features import queue_free_signal_summary as queue_free_signal_summary_pg
+
+            async with get_session() as session:
+                # Only queue up to daily limit; prefer higher score first
+                for signal in sorted(signals_list, key=lambda s: s.get('score', 0), reverse=True):
+                    ok = await queue_free_signal_summary_pg(
+                        session,
+                        telegram_user_id=int(user_id),
+                        signal=signal,
+                        daily_limit=int(daily_limit),
+                    )
+                    if not ok:
+                        break
+                await session.commit()
+
+        try:
+            asyncio.run(_queue())
+        except Exception:
+            pass
     except Exception:
-        # As a fallback, send the old limited preview (should be rare)
+        # As a last resort, send the limited preview
         try:
             bot = Bot(token=_require_telegram_token())
             bot.send_message(chat_id=user_id, text=_format_free_preview(signals_list[0]))
         except Exception:
             pass
-
-
-def _in_quiet_hours(now_hour: int, start_hour: int, end_hour: int) -> bool:
-    """Return True if now_hour is within quiet hours. Supports wrap-around."""
-    start_hour = int(start_hour)
-    end_hour = int(end_hour)
-    now_hour = int(now_hour)
-    if start_hour == end_hour:
-        return False
-    if start_hour < end_hour:
-        return start_hour <= now_hour < end_hour
-    return now_hour >= start_hour or now_hour < end_hour
-
-
-def _format_free_delayed_digest(items: list[dict]) -> str:
-    lines = ["🔒 FREE USER (DELAYED SIGNAL SUMMARY)", "", "Recent high-score activity:", ""]
-    for it in items:
-        lines.append(
-            f"• {it.get('asset')} {it.get('timeframe')} {it.get('direction')} (score {it.get('score', 0)})"
-        )
-    lines += [
-        "",
-        "Upgrade to Premium to get real-time entries, SL/TP, and alerts.",
-        "Use /upgrade to subscribe.",
-    ]
-    return "\n".join(lines)
-
-from apscheduler.schedulers.background import BackgroundScheduler
-from db.pg_compat import get_all_user_ids_compat
-
-def run_bot():
-    print(
-        "[boot] telegram bot starting | "
-        f"host={socket.gethostname()} "
-        f"run_mode={(os.getenv('RUN_MODE') or 'engine').strip().lower()} "
-        f"railway_service={os.getenv('RAILWAY_SERVICE_NAME')} "
-        f"railway_deployment={os.getenv('RAILWAY_DEPLOYMENT_ID')} "
-        f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
-        flush=True,
-    )
-
-    # Ensure an event loop exists in this (main) thread.
-    # Python 3.12+ no longer creates one implicitly, and PTB's run_polling()
-    # uses asyncio.get_event_loop().
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Preflight token + Telegram connectivity before starting long-polling.
-    try:
-        token = _require_telegram_token()
-        print("[boot] telegram bot token_present=yes", flush=True)
-
-        async def _preflight() -> None:
-            me = await Bot(token=token).get_me()
-            print(f"[boot] telegram bot getMe ok: @{me.username} ({me.id})", flush=True)
-
-        loop.run_until_complete(_preflight())
-    except Exception as exc:
-        # Crash loudly: Railway logs should show this and restart.
+        # Postgres-only: no SQLite fallback
+        return
         print(f"[boot] telegram bot preflight failed: {exc}", flush=True)
         raise
 
@@ -544,39 +502,8 @@ def run_bot():
         except Exception:
             pass
 
-        # SQLite fallback
-        try:
-            from db.database import fetch_user_trades
-        except Exception:
-            return
-        for user_id in user_ids:
-            trades = fetch_user_trades(user_id)
-            total_signals = len(trades)
-            if total_signals == 0:
-                recap_msg = (
-                    "\U0001F4CA SignalRankAI Weekly Recap\n\n"
-                    "No signals were sent to you this week.\n\n"
-                    "Remember: No signals is sometimes better than bad signals.\n\n"
-                    "Thank you for trading responsibly."
-                )
-            else:
-                from collections import Counter
-                assets = [t[2] for t in trades]
-                strategies = [t[9] for t in trades]
-                most_active = ', '.join([a for a, _ in Counter(assets).most_common(2)]) if assets else 'N/A'
-                best_strategy = Counter(strategies).most_common(1)[0][0] if strategies else 'N/A'
-                recap_msg = (
-                    "\U0001F4CA SignalRankAI Weekly Recap\n\n"
-                    "Here’s a quick overview of your past week:\n\n"
-                    f"• Total signals sent: {total_signals}\n"
-                    f"• Markets most active: {most_active}\n"
-                    f"• Best-performing strategy: {best_strategy}\n\n"
-                    "Thank you for trading responsibly."
-                )
-            try:
-                application.bot.send_message(chat_id=user_id, text=recap_msg)
-            except Exception:
-                pass
+        # Postgres-only: no SQLite fallback
+        return
 
 
     def send_outcome_notifications():

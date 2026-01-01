@@ -5,7 +5,6 @@ import os
 import hmac
 import hashlib
 import logging
-from db.database import set_subscription
 
 
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
@@ -36,7 +35,6 @@ DURATIONS = {
 }
 
 def verify_payment(reference, user_id):
-    from db.database import approve_extra_signals
     from core.redis_state import state
     headers = {
         'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
@@ -62,11 +60,6 @@ def verify_payment(reference, user_id):
                     state.add_extra_signals_sync(int(user_id), int(extra_count), ttl_seconds=86400)
                 except Exception:
                     pass
-                # Backward-compatible SQLite log (local dev/legacy paths)
-                try:
-                    approve_extra_signals(user_id, extra_count)
-                except Exception:
-                    pass
                 _audit_logger.info(f"Extra signals credited: user {user_id}, count {extra_count}")
                 return True, f"✅ Payment verified! {extra_count} extra signal(s) credited (24h access).", "EXTRA_SIGNALS"
             # Subscription purchase
@@ -81,41 +74,27 @@ def verify_payment(reference, user_id):
                 if amount != expected_price:
                     _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your subscription.", None
-                set_subscription(user_id, key, expected_days, reference)
-                _audit_logger.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
-                return True, f"✅ Payment verified! Weekly Plan access granted.", key
+                # Manual verify flow is deprecated; webhook persistence is the source of truth.
+                return False, "❌ Manual verification is no longer supported. Please wait for webhook confirmation.", None
             if not tier or (not duration and duration_days is None):
                 _audit_logger.warning(f"Subscription payment missing tier/duration: user {user_id}, amount {amount}")
                 return False, "❌ Payment missing required subscription details. Please use the official payment link.", None
 
             # New path: tier in {premium,vip} with explicit duration_days
             if duration_days is not None and str(tier).strip().lower() in {"premium", "vip"}:
-                from db.database import set_subscription, count_active_vip_seats
                 days = int(duration_days)
                 tnorm = str(tier).strip().upper()
                 if tnorm == "VIP":
-                    used, remaining, limit = count_active_vip_seats()
-                    # Excludes owner/bypassed by definition; allow if the payer is already VIP (renewal).
-                    from db.database import get_subscription
-                    sub = get_subscription(user_id)
-                    already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
-                    if not already_vip and remaining <= 0:
-                        return False, f"❌ VIP is currently full ({limit} seats). Please try again later.", None
+                    pass
                 # Amount check for recommended plans
                 if tnorm == "PREMIUM" and amount not in {4000, 12000, 28000}:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
                 if tnorm == "VIP" and amount != 20000:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
-                key = f"{tnorm}_DAYS_{days}"
-                set_subscription(user_id, key, days, reference)
-                logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {days}")
-                return True, f"✅ Payment verified! {tnorm.title()} access granted.", key
+                return False, "❌ Manual verification is no longer supported. Please wait for webhook confirmation.", None
             # Block repeat first-time VIP trial
             if tier.upper() == 'VIP' and duration.lower() == 'trial':
-                from db.database import has_ever_had_vip
-                if has_ever_had_vip(user_id):
-                    _audit_logger.warning(f"Repeat VIP trial attempt: user {user_id}")
-                    return False, "❌ VIP trial is only available once per user. Please choose a regular VIP plan.", None
+                return False, "❌ VIP trials are not supported via manual verification.", None
             # Validate amount for subscription
             key = f"{tier.upper()}_{duration.upper()}"
             expected_price = AMOUNTS.get(key)
@@ -126,15 +105,8 @@ def verify_payment(reference, user_id):
 
             # VIP seat cap (legacy path)
             if key.startswith("VIP"):
-                from db.database import count_active_vip_seats, get_subscription
-                used, remaining, limit = count_active_vip_seats()
-                sub = get_subscription(user_id)
-                already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
-                if not already_vip and remaining <= 0:
-                    return False, f"❌ VIP is currently full ({limit} seats). Please try again later.", None
-            set_subscription(user_id, key, expected_days, reference)
-            logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
-            return True, f"✅ Payment verified! {tier.title()} {duration.title()} access granted.", key
+                return False, "❌ VIP seat checks require webhook-based activation.", None
+            return False, "❌ Manual verification is no longer supported. Please wait for webhook confirmation.", None
     return False, "❌ Payment not verified. Please try again.", None
 
 def match_amount_to_tier(amount):
