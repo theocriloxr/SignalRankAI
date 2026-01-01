@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -50,10 +51,35 @@ def run_startup_ops(run_mode: str) -> None:
     except Exception:
         return
 
+    # Railway can start the app container before Postgres is reachable.
+    # Retry briefly to avoid crashing due to transient connection errors.
+    try:
+        max_attempts = max(1, int((os.getenv("DB_CONNECT_MAX_ATTEMPTS") or "12").strip()))
+    except Exception:
+        max_attempts = 12
+    try:
+        backoff_seconds = max(0.5, float((os.getenv("DB_CONNECT_BACKOFF_SECONDS") or "2").strip()))
+    except Exception:
+        backoff_seconds = 2.0
+
     conn = None
     have_lock = False
     try:
-        conn = psycopg2.connect(db_url, connect_timeout=5)
+        last_err: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                conn = psycopg2.connect(db_url, connect_timeout=5)
+                last_err = None
+                break
+            except Exception as exc:
+                last_err = exc
+                # Sleep before retrying (except after final attempt)
+                if attempt < max_attempts:
+                    time.sleep(backoff_seconds)
+        if conn is None:
+            # Defer migrations until the next boot if DB is still unreachable.
+            return
+
         conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute("SELECT pg_try_advisory_lock(%s)", (_advisory_lock_id(),))

@@ -25,7 +25,17 @@ def get_trending_fx_pairs():
     """
     raw = (os.getenv("FX_PAIRS") or "").strip()
     if not raw:
-        return []
+        # Sensible defaults: liquid majors (good spreads + coverage).
+        # Users can override via FX_PAIRS.
+        return [
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+            "USDCHF",
+            "AUDUSD",
+            "USDCAD",
+            "NZDUSD",
+        ]
     return [x.strip().upper() for x in raw.split(",") if x.strip()]
 
 # Combine all pairs for strategy engine
