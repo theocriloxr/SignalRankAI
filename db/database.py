@@ -36,6 +36,62 @@ def get_all_user_ids():
         c.execute('SELECT user_id FROM subscriptions')
         rows = c.fetchall()
         return [row[0] for row in rows]
+
+
+def get_vip_seat_limit() -> int:
+    try:
+        return max(1, int(os.getenv("VIP_SEAT_LIMIT", "15")))
+    except Exception:
+        return 15
+
+
+def count_active_vip_seats(limit: int | None = None) -> tuple[int, int, int]:
+    """Return (used, remaining, limit) for VIP seats.
+
+    VIP seats count only active VIP subscribers and excludes:
+    - owners (OWNER_IDS)
+    - bypassed users (bypass_key_used=1)
+
+    Seats naturally free up when `expiry_date` passes.
+    """
+    if limit is None:
+        limit = get_vip_seat_limit()
+
+    now = datetime.now().isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS subscriptions (
+                user_id INTEGER PRIMARY KEY,
+                tier TEXT,
+                start_date TEXT,
+                expiry_date TEXT,
+                payment_ref TEXT,
+                bypass_key_used INTEGER DEFAULT 0
+            )'''
+        )
+
+        owner_ids = tuple(int(x) for x in OWNER_IDS) if OWNER_IDS else tuple()
+        if owner_ids:
+            placeholders = ",".join(["?"] * len(owner_ids))
+            query = (
+                f"SELECT COUNT(*) FROM subscriptions "
+                f"WHERE tier LIKE 'VIP%' "
+                f"AND bypass_key_used=0 "
+                f"AND expiry_date > ? "
+                f"AND user_id NOT IN ({placeholders})"
+            )
+            params = (now, *owner_ids)
+            c.execute(query, params)
+        else:
+            c.execute(
+                "SELECT COUNT(*) FROM subscriptions WHERE tier LIKE 'VIP%' AND bypass_key_used=0 AND expiry_date > ?",
+                (now,),
+            )
+        used = int((c.fetchone() or [0])[0])
+
+    remaining = max(0, int(limit) - used)
+    return used, remaining, int(limit)
 def approve_extra_signals(user_id, count):
     # Admin approves extra signals for a user for today
     with closing(sqlite3.connect(DB_PATH)) as conn:
@@ -129,6 +185,77 @@ DB_PATH = 'signals.db'
 OWNER_TELEGRAM_ID = int(os.getenv('OWNER_TELEGRAM_ID', '123456789'))
 BYPASS_KEY = os.getenv('BYPASS_KEY')
 OWNER_IDS = [int(x) for x in os.getenv('OWNER_IDS', str(OWNER_TELEGRAM_ID)).split(',')]
+
+
+def record_user_seen(user_id: int) -> None:
+    """Persist user_id for basic analytics/ops.
+
+    This is intentionally minimal (Telegram ID only; no passwords).
+    """
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                first_seen TEXT
+            )'''
+        )
+        c.execute(
+            'INSERT OR IGNORE INTO users (user_id, first_seen) VALUES (?, ?)',
+            (int(user_id), datetime.now().isoformat()),
+        )
+        conn.commit()
+
+
+def get_alert_prefs(user_id: int) -> dict:
+    """Return alert preferences for a user.
+
+    Schema: tp_sl_enabled (bool), quiet_start_hour, quiet_end_hour
+    """
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS alert_prefs (
+                user_id INTEGER PRIMARY KEY,
+                tp_sl_enabled INTEGER DEFAULT 1,
+                quiet_start_hour INTEGER,
+                quiet_end_hour INTEGER
+            )'''
+        )
+        c.execute('SELECT tp_sl_enabled, quiet_start_hour, quiet_end_hour FROM alert_prefs WHERE user_id=?', (int(user_id),))
+        row = c.fetchone()
+        if not row:
+            return {"tp_sl_enabled": True, "quiet_start_hour": None, "quiet_end_hour": None}
+        return {
+            "tp_sl_enabled": bool(row[0]),
+            "quiet_start_hour": row[1],
+            "quiet_end_hour": row[2],
+        }
+
+
+def set_alert_prefs(
+    user_id: int,
+    tp_sl_enabled: bool | None = None,
+    quiet_start_hour: int | None = None,
+    quiet_end_hour: int | None = None,
+) -> dict:
+    current = get_alert_prefs(user_id)
+    if tp_sl_enabled is None:
+        tp_sl_enabled = bool(current.get("tp_sl_enabled", True))
+    if quiet_start_hour is None:
+        quiet_start_hour = current.get("quiet_start_hour")
+    if quiet_end_hour is None:
+        quiet_end_hour = current.get("quiet_end_hour")
+
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''REPLACE INTO alert_prefs (user_id, tp_sl_enabled, quiet_start_hour, quiet_end_hour)
+               VALUES (?, ?, ?, ?)''',
+            (int(user_id), int(bool(tp_sl_enabled)), quiet_start_hour, quiet_end_hour),
+        )
+        conn.commit()
+    return get_alert_prefs(user_id)
 
 def init_db():
     with closing(sqlite3.connect(DB_PATH)) as conn:

@@ -1,13 +1,67 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 
 from db.models import Subscription, User
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return default
+
+
+async def get_active_subscription(
+    session: AsyncSession,
+    telegram_user_id: int,
+    tier: str,
+) -> Optional[Subscription]:
+    tier_norm = normalize_tier(tier)
+    now = datetime.now(timezone.utc)
+    res = await session.execute(
+        select(Subscription)
+        .join(User, User.id == Subscription.user_id)
+        .where(
+            User.telegram_user_id == telegram_user_id,
+            Subscription.status == "active",
+            Subscription.tier == tier_norm,
+            Subscription.expires_at.is_not(None),
+            Subscription.expires_at > now,
+        )
+        .order_by(Subscription.expires_at.desc())
+    )
+    return res.scalars().first()
+
+
+async def count_active_vip_users(
+    session: AsyncSession,
+    exclude_telegram_user_ids: set[int],
+) -> int:
+    now = datetime.now(timezone.utc)
+    q = (
+        select(func.count(func.distinct(Subscription.user_id)))
+        .select_from(Subscription)
+        .join(User, User.id == Subscription.user_id)
+        .where(
+            Subscription.status == "active",
+            Subscription.tier == "vip",
+            Subscription.expires_at.is_not(None),
+            Subscription.expires_at > now,
+        )
+    )
+
+    if exclude_telegram_user_ids:
+        q = q.where(User.telegram_user_id.not_in(exclude_telegram_user_ids))
+
+    res = await session.execute(q)
+    return int(res.scalar() or 0)
 
 
 def normalize_tier(tier: str) -> str:
@@ -58,11 +112,24 @@ async def activate_subscription(
     user = await get_or_create_user(session, telegram_user_id)
 
     now = datetime.now(timezone.utc)
-    expires_at = now + timedelta(days=max(int(duration_days), 1))
+    tier_norm = normalize_tier(tier)
+    add_days = max(int(duration_days), 1)
+
+    # Renewal behavior: if user already has an active subscription for the same tier, extend it.
+    existing = await get_active_subscription(session, telegram_user_id=telegram_user_id, tier=tier_norm)
+    if existing is not None and existing.expires_at is not None:
+        existing.expires_at = existing.expires_at + timedelta(days=add_days)
+        existing.meta = {**(existing.meta or {}), **(meta or {})}
+        if paystack_reference and not existing.paystack_reference:
+            existing.paystack_reference = paystack_reference
+        await session.flush()
+        return existing
+
+    expires_at = now + timedelta(days=add_days)
 
     sub = Subscription(
         user_id=user.id,
-        tier=normalize_tier(tier),
+        tier=tier_norm,
         status="active",
         started_at=now,
         expires_at=expires_at,

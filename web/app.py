@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from db.session import ENGINE, get_session
-from db.repository import activate_subscription
+from db.repository import activate_subscription, count_active_vip_users, get_active_subscription
 from core.redis_state import state
 
 
@@ -121,6 +121,23 @@ async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str
 
     telegram_user_id, tier, duration_days, reference, meta = _extract_subscription_fields(event)
     async with get_session() as session:
+        # VIP seats: max N active VIP subscribers (excludes owners + temp owner bypass)
+        tier_norm = str(tier).strip().lower()
+        if tier_norm == "vip":
+            vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
+            exclude_ids = set(getattr(__import__("config"), "OWNER_IDS", set()) or set())
+            try:
+                if await state.has_temp_owner(telegram_user_id):
+                    exclude_ids.add(int(telegram_user_id))
+            except Exception:
+                pass
+
+            active_for_user = await get_active_subscription(session, telegram_user_id=telegram_user_id, tier="vip")
+            if active_for_user is None:
+                used = await count_active_vip_users(session, exclude_telegram_user_ids=exclude_ids)
+                if used >= max(1, vip_limit) and int(telegram_user_id) not in exclude_ids:
+                    return {"persisted": False, "reason": f"vip_full ({vip_limit} seats)"}
+
         sub = await activate_subscription(
             session=session,
             telegram_user_id=telegram_user_id,
@@ -201,6 +218,9 @@ async def paystack_webhook(
         raise HTTPException(status_code=400, detail="Payment not verified")
 
     persisted = await _persist_subscription_if_configured(event)
+    if persisted.get("persisted") is False and str(persisted.get("reason", "")).startswith("vip_full"):
+        raise HTTPException(status_code=409, detail="VIP is currently full. Please try again later.")
+
     return JSONResponse(
         {
             "received": True,

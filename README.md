@@ -73,6 +73,7 @@ If technical issues prevent delivery, subscription time may be extended.
 - **Free**: 1–2 delayed summaries/day, limited outcomes & summaries.
 - **Premium**: ₦5,000/month; ₦12,000/3 months; ₦20,000/6 months.
 - **VIP**: ₦20,000/month (limited seats).
+- VIP seats are capped by `VIP_SEAT_LIMIT` (default 15). Owners and bypassed users do not consume seats.
 - **Owner**: internal only (OWNER_TELEGRAM_ID or `/unlock`).
 
 Use `/pricing` and `/upgrade` in the bot.

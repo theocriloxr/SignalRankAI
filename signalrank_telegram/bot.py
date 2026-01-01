@@ -8,6 +8,7 @@ from signalrank_telegram.access import resolve_user_tier
 from .formatter import format_signal
 from .commands import (
     start_command,
+    help_command,
     about_command,
     faq_command,
     disclaimer_command,
@@ -16,6 +17,15 @@ from .commands import (
     upgrade_command,
     policy_command,
     recap_command,
+    signals_command,
+    invite_command,
+    stats_command,
+    history_command,
+    risk_command,
+    alerts_command,
+    elite_command,
+    early_command,
+    report_command,
     buy_extra_premium,
     buy_extra_vip,
 )
@@ -172,18 +182,17 @@ def run_bot():
     application = Application.builder().token(_require_telegram_token()).build()
 
     async def _post_init(app):
-        # Keep public commands concise; hidden commands are not registered.
+        # BotFather-visible commands must remain concise.
         try:
             await app.bot.set_my_commands(
                 [
                     ("start", "Start"),
-                    ("about", "About"),
-                    ("faq", "FAQ"),
                     ("pricing", "Pricing"),
                     ("upgrade", "Upgrade / subscribe"),
-                    ("policy", "Policy / refunds"),
-                    ("recap", "Weekly recap"),
-                    ("performance", "(Premium) performance"),
+                    ("help", "Commands"),
+                    ("signals", "Latest signals"),
+                    ("performance", "Performance"),
+                    ("invite", "Invite"),
                 ]
             )
         except Exception:
@@ -192,12 +201,27 @@ def run_bot():
     application.post_init = _post_init
 
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("faq", faq_command))
     application.add_handler(CommandHandler("disclaimer", disclaimer_command))
     application.add_handler(CommandHandler("performance", performance_command))
     application.add_handler(CommandHandler("pricing", pricing_command))
     application.add_handler(CommandHandler("upgrade", upgrade_command))
+    application.add_handler(CommandHandler("signals", signals_command))
+    application.add_handler(CommandHandler("invite", invite_command))
+
+    # Premium (not advertised)
+    application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("history", history_command))
+    application.add_handler(CommandHandler("risk", risk_command))
+    application.add_handler(CommandHandler("alerts", alerts_command))
+
+    # VIP (not advertised)
+    application.add_handler(CommandHandler("elite", elite_command))
+    application.add_handler(CommandHandler("early", early_command))
+    application.add_handler(CommandHandler("report", report_command))
+
     application.add_handler(CommandHandler("policy", policy_command))
     application.add_handler(CommandHandler("refunds", policy_command))
     application.add_handler(CommandHandler("recap", recap_command))

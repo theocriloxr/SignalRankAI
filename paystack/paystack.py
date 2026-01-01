@@ -66,6 +66,7 @@ def verify_payment(reference, user_id):
             # Subscription purchase
             tier = metadata.get('tier')
             duration = metadata.get('duration')
+            duration_days = metadata.get('duration_days')
             # Support region-optimized weekly plan
             if tier == 'WEEKLY_PLAN' or (tier and duration and tier.upper() == 'WEEKLY_PLAN'):
                 key = 'WEEKLY_PLAN'
@@ -77,9 +78,32 @@ def verify_payment(reference, user_id):
                 set_subscription(user_id, key, expected_days, reference)
                 logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
                 return True, f"✅ Payment verified! Weekly Plan access granted.", key
-            if not tier or not duration:
+            if not tier or (not duration and duration_days is None):
                 logging.warning(f"Subscription payment missing tier/duration: user {user_id}, amount {amount}")
                 return False, "❌ Payment missing required subscription details. Please use the official payment link.", None
+
+            # New path: tier in {premium,vip} with explicit duration_days
+            if duration_days is not None and str(tier).strip().lower() in {"premium", "vip"}:
+                from db.database import set_subscription, count_active_vip_seats
+                days = int(duration_days)
+                tnorm = str(tier).strip().upper()
+                if tnorm == "VIP":
+                    used, remaining, limit = count_active_vip_seats()
+                    # Excludes owner/bypassed by definition; allow if the payer is already VIP (renewal).
+                    from db.database import get_subscription
+                    sub = get_subscription(user_id)
+                    already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
+                    if not already_vip and remaining <= 0:
+                        return False, f"❌ VIP is currently full ({limit} seats). Please try again later.", None
+                # Amount check for recommended plans
+                if tnorm == "PREMIUM" and amount not in {5000, 12000, 20000}:
+                    return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
+                if tnorm == "VIP" and amount != 20000:
+                    return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
+                key = f"{tnorm}_DAYS_{days}"
+                set_subscription(user_id, key, days, reference)
+                logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {days}")
+                return True, f"✅ Payment verified! {tnorm.title()} access granted.", key
             # Block repeat first-time VIP trial
             if tier.upper() == 'VIP' and duration.lower() == 'trial':
                 from db.database import has_ever_had_vip
@@ -93,6 +117,15 @@ def verify_payment(reference, user_id):
             if expected_price is None or expected_days is None or amount != expected_price:
                 logging.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for {key}")
                 return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your subscription.", None
+
+            # VIP seat cap (legacy path)
+            if key.startswith("VIP"):
+                from db.database import count_active_vip_seats, get_subscription
+                used, remaining, limit = count_active_vip_seats()
+                sub = get_subscription(user_id)
+                already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
+                if not already_vip and remaining <= 0:
+                    return False, f"❌ VIP is currently full ({limit} seats). Please try again later.", None
             set_subscription(user_id, key, expected_days, reference)
             logging.info(f"Subscription activated: user {user_id}, tier {key}, duration {expected_days}")
             return True, f"✅ Payment verified! {tier.title()} {duration.title()} access granted.", key

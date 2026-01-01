@@ -1,5 +1,6 @@
 # /pricing command
 import os
+import logging
 
 from telegram import Update
 from telegram.ext import CallbackContext
@@ -7,7 +8,129 @@ from telegram.ext import CallbackContext
 from core.redis_state import state
 from .access import resolve_user_tier
 
+
+_audit_logger = logging.getLogger("audit")
+
+
+def _effective_tier(user_id: int) -> str:
+	try:
+		t = resolve_user_tier(user_id)
+	except Exception:
+		t = "FREE"
+	try:
+		if state.has_temp_owner_sync(user_id):
+			return "OWNER"
+	except Exception:
+		pass
+	return (t or "FREE").upper()
+
+
+def _public_guard(update: Update) -> bool:
+	"""Return True if request should be blocked (kill-switch/rate-limit)."""
+	if update.effective_user is None or update.message is None:
+		return True
+	user_id = update.effective_user.id
+	# Kill-switch blocks signal-related actions globally
+	try:
+		if state.get_killswitch_sync().enabled:
+			update.message.reply_text("🚨 Signals are temporarily paused.")
+			return True
+	except Exception:
+		pass
+	# Rate limit public commands (30/min)
+	try:
+		if state.rate_limited_sync(user_id, limit=30, window_seconds=60):
+			update.message.reply_text("Rate limit exceeded. Please wait.")
+			return True
+	except Exception:
+		pass
+	return False
+
+
+def help_command(update: Update, context: CallbackContext):
+	if _public_guard(update):
+		return
+	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+
+	public_cmds = ["/start", "/help", "/pricing", "/upgrade", "/signals", "/performance", "/invite"]
+	premium_cmds = ["/stats", "/history", "/risk", "/alerts"]
+	vip_cmds = ["/elite", "/early", "/report"]
+
+	lines = ["📌 Commands available:", "", "🆓 Public:"]
+	lines += [f"• {c}" for c in public_cmds]
+	if tier_rank(tier) >= tier_rank("PREMIUM"):
+		lines += ["", "🟡 Premium:"] + [f"• {c}" for c in premium_cmds]
+	if tier_rank(tier) >= tier_rank("VIP"):
+		lines += ["", "🔴 VIP:"] + [f"• {c}" for c in vip_cmds]
+	lines += ["", "⚠️ Educational only. Not financial advice. Trading involves risk."]
+	update.message.reply_text("\n".join(lines))
+
+
+def signals_command(update: Update, context: CallbackContext):
+	if _public_guard(update):
+		return
+	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+
+	try:
+		from db.database import get_unreleased_signals
+		signals = get_unreleased_signals()
+	except Exception:
+		signals = []
+
+	if not signals:
+		update.message.reply_text("No signals available right now. Check back later.")
+		return
+
+	# Show a small batch
+	signals = signals[:5]
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		lines = ["🆓 Latest signal summary (limited):", ""]
+		for s in signals:
+			lines.append(f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {s.get('score', 0)})")
+		lines += ["", "Upgrade to Premium to see exact Entry/SL/TP in real-time."]
+		update.message.reply_text("\n".join(lines))
+		return
+
+	# Premium/VIP: show full formatted messages
+	from .formatter import format_signal
+	for s in signals:
+		try:
+			update.message.reply_text(format_signal(s))
+		except Exception:
+			continue
+
+
+def invite_command(update: Update, context: CallbackContext):
+	if _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	try:
+		from db.database import generate_referral_code
+		code = generate_referral_code(user_id)
+	except Exception:
+		code = None
+
+	bot_username = os.getenv("BOT_USERNAME")
+	if bot_username and code:
+		link = f"https://t.me/{bot_username}?start=ref_{code}"
+		update.message.reply_text(f"🎁 Invite link:\n{link}\n\nShare this with friends.")
+		return
+
+	if code:
+		update.message.reply_text(f"🎁 Your invite code: {code}\n\nSet BOT_USERNAME to generate a full invite link.")
+	else:
+		update.message.reply_text("Invite system is temporarily unavailable.")
+
 def pricing_command(update: Update, context: CallbackContext):
+	if _public_guard(update):
+		return
+	from db.database import count_active_vip_seats
+	used, remaining, limit = count_active_vip_seats()
+	vip_line = f"VIP seats remaining: {remaining}/{limit}"
 	msg = (
 		"💎 SignalRankAI Pricing\n\n"
 		"🆓 FREE\n"
@@ -27,6 +150,7 @@ def pricing_command(update: Update, context: CallbackContext):
 		"• Access to /performance\n\n"
 		"🔴 VIP / ELITE\n"
 		"₦20,000 / month (limited seats)\n"
+		+ vip_line + "\n"
 		"• Highest confidence signals only (score ≥ 85)\n"
 		"• Reduced frequency (quality > quantity)\n"
 		"• Early alerts + priority notifications\n"
@@ -39,6 +163,8 @@ def pricing_command(update: Update, context: CallbackContext):
 
 
 def upgrade_command(update: Update, context: CallbackContext):
+	if _public_guard(update):
+		return
 	"""Generates Paystack payment links for subscriptions.
 
 	Note: In production, configure Paystack Plans and store plan codes in env.
@@ -63,9 +189,26 @@ def upgrade_command(update: Update, context: CallbackContext):
 	links.append(
 		("Premium (₦20,000 / 180 days)", generate_paystack_link(user_id, 20000, tier="premium", duration_days=180, plan_code=premium_semiannual_code))
 	)
-	links.append(
-		("VIP (₦20,000 / 30 days)", generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code))
-	)
+	# VIP link only if seats available (or user is owner/bypassed/already VIP)
+	try:
+		from db.database import count_active_vip_seats, get_subscription, OWNER_IDS
+		_, remaining, limit = count_active_vip_seats()
+		sub = get_subscription(user_id)
+		already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
+		bypassed = bool(sub and bool(sub.get('bypass_key_used')))
+		is_owner = user_id in OWNER_IDS
+		can_offer_vip = (remaining > 0) or already_vip or bypassed or is_owner
+	except Exception:
+		can_offer_vip = True
+		remaining = None
+		limit = None
+
+	if can_offer_vip:
+		links.append(
+			("VIP (₦20,000 / 30 days)", generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code))
+		)
+	else:
+		links.append(("VIP (SOLD OUT)", "VIP seats are currently full. Check /pricing later."))
 
 	msg = "📌 Choose a plan:\n\n" + "\n".join([f"• {label}: {url}" for (label, url) in links])
 	msg += "\n\nPayments are processed by Paystack. No access to your funds."
@@ -145,17 +288,21 @@ def buy_extra_vip(update, context):
 
 # /policy or /refunds command
 def policy_command(update, context):
-    msg = (
+	if _public_guard(update):
+		return
+	msg = (
 		"📄 Subscription & Refund Policy\n\n"
 		"• Due to the digital and time-sensitive nature of the service, payments are non-refundable.\n"
 		"• If technical issues prevent delivery, subscription time may be extended.\n\n"
 		"Subscriptions activate after successful verification and expire at the end of the purchased period.\n\n"
 		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
-    update.message.reply_text(msg)
+	update.message.reply_text(msg)
 
 # /recap command (weekly recap)
 def recap_command(update, context):
+	if _public_guard(update):
+		return
 	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
 	trades = fetch_user_trades(user_id)
@@ -240,6 +387,13 @@ def require_tier(min_tier):
 
 # /start or welcome message
 def start_command(update, context):
+	if _public_guard(update):
+		return
+	try:
+		from db.database import record_user_seen
+		record_user_seen(update.effective_user.id)
+	except Exception:
+		pass
 	msg = (
 		"SignalRankAI provides algorithmic market analysis for educational purposes only. "
 		"This is not financial advice. Trading involves risk.\n\n"
@@ -289,6 +443,8 @@ def faq_command(update, context):
 
 # /disclaimer message
 def disclaimer_command(update, context):
+	if _public_guard(update):
+		return
 	msg = (
 		"\u26A0\uFE0F Disclaimer\n\n"
 		"SignalRankAI provides trading signals for informational and educational purposes only.\n\n"
@@ -299,12 +455,13 @@ def disclaimer_command(update, context):
 	)
 	update.message.reply_text(msg)
 
-# /performance command for Premium+
-@require_tier("PREMIUM")
 def performance_command(update, context):
+	if _public_guard(update):
+		return
 	from db.database import fetch_user_trades
 	from datetime import datetime, timedelta
 	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
 	trades = fetch_user_trades(user_id)
 	# Filter trades from last 30 days
 	cutoff = datetime.now() - timedelta(days=30)
@@ -318,11 +475,156 @@ def performance_command(update, context):
 	total = len(trades_30d)
 	if total == 0:
 		msg = "No signals in the last 30 days."
-	else:
-		# Win rate: count TP outcomes
-		win_count = sum(1 for t in trades_30d if (len(t) > 15 and t[15] == 'TP'))
-		win_rate = win_count / total if total > 0 else 0
-		rr_ratios = [t[7] for t in trades_30d if t[7] is not None]
-		avg_rr = round(sum(rr_ratios)/len(rr_ratios), 2) if rr_ratios else 'N/A'
-		msg = f"Last 30 days:\n✔ Win rate: {round(win_rate*100,1)}%\n✔ Avg RR: {avg_rr}\n✔ Signals: {total}"
+		update.message.reply_text(msg)
+		return
+
+	# Win rate: best-effort parse (legacy DB may not store outcomes)
+	win_count = sum(1 for t in trades_30d if (len(t) > 15 and t[15] == 'TP'))
+	win_rate = win_count / total if total > 0 else 0
+	rr_ratios = [t[7] for t in trades_30d if t[7] is not None]
+	avg_rr = round(sum(rr_ratios)/len(rr_ratios), 2) if rr_ratios else None
+
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		# Limited snapshot: no raw numbers
+		bucket = "mixed"
+		if win_rate >= 0.6:
+			bucket = "strong"
+		elif win_rate <= 0.4:
+			bucket = "cautious"
+		msg = (
+			"📊 Performance (limited)\n\n"
+			f"Recent snapshot: {bucket}.\n"
+			"Outcome-tracked transparently, no profit promises.\n\n"
+			"Upgrade to Premium for full stats and history."
+		)
+		update.message.reply_text(msg)
+		return
+
+	avg_rr_str = str(avg_rr) if avg_rr is not None else "N/A"
+	msg = f"Last 30 days:\n✔ Win rate: {round(win_rate*100,1)}%\n✔ Avg RR: {avg_rr_str}\n✔ Signals: {total}"
 	update.message.reply_text(msg)
+
+
+# -------- Premium commands --------
+@require_tier("PREMIUM")
+def stats_command(update, context):
+	from db.database import fetch_user_trades
+	user_id = update.effective_user.id
+	trades = fetch_user_trades(user_id)
+	msg = (
+		"📈 Stats (Premium)\n\n"
+		f"Signals recorded: {len(trades)}\n"
+		"Use /history to view recent signals."
+	)
+	update.message.reply_text(msg)
+
+
+@require_tier("PREMIUM")
+def history_command(update, context):
+	from db.database import fetch_user_trades
+	user_id = update.effective_user.id
+	trades = fetch_user_trades(user_id)
+
+	asset = None
+	tf = None
+	if context.args:
+		asset = context.args[0].upper()
+		if len(context.args) > 1:
+			tf = context.args[1]
+
+	filtered = []
+	for t in trades:
+		try:
+			row_asset = str(t[1])
+			row_tf = str(t[2])
+			if asset and row_asset != asset:
+				continue
+			if tf and row_tf != tf:
+				continue
+			filtered.append(t)
+		except Exception:
+			continue
+
+	filtered = filtered[-10:]
+	if not filtered:
+		update.message.reply_text("No history available yet.")
+		return
+
+	lines = ["🧾 History (last 10):", ""]
+	for t in filtered:
+		try:
+			lines.append(f"• {t[1]} {t[2]} {t[3]} entry={t[4]} sl={t[5]} tp={t[6]}")
+		except Exception:
+			continue
+	update.message.reply_text("\n".join(lines))
+
+
+@require_tier("PREMIUM")
+def risk_command(update, context):
+	update.message.reply_text(
+		"🛡️ Risk (recommended)\n\n"
+		"Suggested risk: ~1% per trade.\n"
+		"Keep position sizes consistent and avoid overtrading."
+	)
+
+
+@require_tier("PREMIUM")
+def alerts_command(update, context):
+	from db.database import get_alert_prefs, set_alert_prefs
+	user_id = update.effective_user.id
+	
+	if not context.args:
+		prefs = get_alert_prefs(user_id)
+		qs = prefs.get("quiet_start_hour")
+		qe = prefs.get("quiet_end_hour")
+		quiet = "off" if qs is None or qe is None else f"{qs}:00–{qe}:00"
+		status = "on" if prefs.get("tp_sl_enabled", True) else "off"
+		update.message.reply_text(f"🔔 Alerts\n\nTP/SL alerts: {status}\nQuiet hours: {quiet}\n\nUsage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
+		return
+
+	cmd = str(context.args[0]).lower()
+	if cmd in {"on", "off"}:
+		prefs = set_alert_prefs(user_id, tp_sl_enabled=(cmd == "on"))
+		update.message.reply_text("✅ Updated.")
+		return
+	if cmd == "quiet" and len(context.args) == 3:
+		try:
+			qs = int(context.args[1])
+			qe = int(context.args[2])
+			if not (0 <= qs <= 23 and 0 <= qe <= 23):
+				raise ValueError()
+			set_alert_prefs(user_id, quiet_start_hour=qs, quiet_end_hour=qe)
+			update.message.reply_text("✅ Quiet hours updated.")
+			return
+		except Exception:
+			pass
+	update.message.reply_text("Usage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
+
+
+# -------- VIP commands (hidden from BotFather) --------
+@require_tier("VIP")
+def elite_command(update, context):
+	from db.database import get_unreleased_signals
+	signals = get_unreleased_signals()[:10]
+	elite = [s for s in signals if float(s.get("score") or 0) >= 85]
+	if not elite:
+		update.message.reply_text("No elite signals available right now.")
+		return
+	from .formatter import format_signal
+	for s in elite[:5]:
+		update.message.reply_text(format_signal(s))
+
+
+@require_tier("VIP")
+def early_command(update, context):
+	update.message.reply_text("⚡ Early access is automatic for VIP. You’ll receive signals first when available.")
+
+
+@require_tier("VIP")
+def report_command(update, context):
+	# Structured text report (monthly)
+	update.message.reply_text(
+		"🗓️ VIP Monthly Report\n\n"
+		"Monthly reports are delivered automatically.\n"
+		"This command will show the latest report when available."
+	)
