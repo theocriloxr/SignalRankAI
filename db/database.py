@@ -180,7 +180,18 @@ import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 
-load_dotenv()
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+# Only load local `.env` when explicitly enabled (local dev).
+# Railway should rely on injected environment variables.
+if _env_bool("ALLOW_DOTENV", False):
+    load_dotenv()
 DB_PATH = 'signals.db'
 
 

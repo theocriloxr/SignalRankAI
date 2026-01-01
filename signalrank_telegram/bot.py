@@ -50,23 +50,25 @@ def _require_telegram_token() -> str:
     if token:
         return token
 
-    # Local dev convenience: load from a `.env` file if present.
-    # Railway/production should use real environment variables.
-    env_path = os.path.join(os.getcwd(), '.env')
-    if os.path.exists(env_path):
-        try:
-            with open(env_path, 'r', encoding='utf-8') as f:
-                for raw_line in f:
-                    line = raw_line.strip()
-                    if not line or line.startswith('#') or '=' not in line:
-                        continue
-                    key, value = line.split('=', 1)
-                    key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    if key and key not in os.environ:
-                        os.environ[key] = value
-        except Exception:
-            pass
+    # Local dev convenience: optionally load from a `.env` file.
+    # Railway/production should rely on injected environment variables.
+    allow_dotenv = (os.getenv("ALLOW_DOTENV") or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+    if allow_dotenv:
+        env_path = os.path.join(os.getcwd(), '.env')
+        if os.path.exists(env_path):
+            try:
+                with open(env_path, 'r', encoding='utf-8') as f:
+                    for raw_line in f:
+                        line = raw_line.strip()
+                        if not line or line.startswith('#') or '=' not in line:
+                            continue
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"').strip("'")
+                        if key and key not in os.environ:
+                            os.environ[key] = value
+            except Exception:
+                pass
 
     token = os.getenv('TELEGRAM_TOKEN')
     if token:

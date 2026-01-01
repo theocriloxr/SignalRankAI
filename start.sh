@@ -9,8 +9,9 @@ if [ -f requirements.txt ]; then
 	pip install -r requirements.txt
 fi
 
-# Export environment variables from .env (local dev convenience)
-if [ -f .env ]; then
+# Export environment variables from .env only when explicitly enabled.
+# Railway/production should use injected environment variables.
+if [ "${ALLOW_DOTENV:-false}" = "true" ] && [ -f .env ]; then
 	export $(grep -v '^#' .env | xargs)
 fi
 
