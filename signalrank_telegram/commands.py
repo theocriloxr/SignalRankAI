@@ -842,11 +842,17 @@ def require_tier(min_tier):
 # /start or welcome message
 
 async def start_command(update, context):
-	if await _public_guard(update):
-		return
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
+	# Do not block user registration on kill-switch.
+	# Keep only a light rate limit to prevent abuse.
+	try:
+		if state.rate_limited_sync(int(user_id), limit=10, window_seconds=30):
+			await update.message.reply_text("Rate limit exceeded. Please wait.")
+			return
+	except Exception:
+		pass
 	username = None
 	try:
 		username = update.effective_user.username
