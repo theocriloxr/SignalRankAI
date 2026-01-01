@@ -84,19 +84,6 @@ def _rotate_slice(items: list[str], start: int, size: int) -> list[str]:
     return items[s:] + items[: (e - n)]
 
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return int(default)
-    raw = raw.strip()
-    if not raw:
-        return int(default)
-    try:
-        return int(raw)
-    except Exception:
-        return int(default)
-
-
 async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]]) -> dict[str, dict]:
     """Fetch cached market data for many assets using a bounded concurrency."""
 
@@ -167,6 +154,11 @@ def main_loop(DRY_RUN=False):
         # Global kill-switch (skip cycle but keep process alive)
         try:
             if state.get_killswitch_sync().enabled:
+                if _env_bool("ENGINE_CYCLE_LOG", True):
+                    try:
+                        print(f"[engine] cycle={cycle_no} skipped=killswitch", flush=True)
+                    except Exception:
+                        pass
                 time.sleep(max(5, cycle_sleep_seconds))
                 continue
         except Exception:
@@ -183,6 +175,11 @@ def main_loop(DRY_RUN=False):
 
             # No assets => do not run on demo/hardcoded data.
             if not assets:
+                if _env_bool("ENGINE_CYCLE_LOG", True):
+                    try:
+                        print(f"[engine] cycle={cycle_no} skipped=no_assets", flush=True)
+                    except Exception:
+                        pass
                 time.sleep(max(5, cycle_sleep_seconds))
                 continue
 
@@ -384,6 +381,13 @@ def main_loop(DRY_RUN=False):
                     )
         except Exception:
             # Keep process alive; production version should log structured errors.
-            pass
+            if _env_bool("ENGINE_CYCLE_LOG", True):
+                try:
+                    import traceback
+
+                    print(f"[engine] cycle={cycle_no} error=unhandled_exception", flush=True)
+                    traceback.print_exc()
+                except Exception:
+                    pass
 
         time.sleep(max(5, cycle_sleep_seconds))
