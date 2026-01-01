@@ -140,7 +140,10 @@ def match_amount_to_tier(amount):
 
 # --- Webhook signature verification ---
 def verify_webhook_signature(request_body, signature):
-    computed = hmac.new(PAYSTACK_WEBHOOK_SECRET.encode(), request_body, hashlib.sha512).hexdigest()
+    secret = PAYSTACK_WEBHOOK_SECRET or PAYSTACK_SECRET_KEY
+    if not secret:
+        return False
+    computed = hmac.new(secret.encode(), request_body, hashlib.sha512).hexdigest()
     return hmac.compare_digest(computed, signature)
 
 # --- STUB FOR TELEGRAM BOT ---
