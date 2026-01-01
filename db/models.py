@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -21,7 +21,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    telegram_user_id: Mapped[int] = mapped_column(Integer, unique=True, index=True, nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
@@ -136,7 +136,7 @@ class AdminEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    actor_telegram_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    actor_telegram_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     details: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 

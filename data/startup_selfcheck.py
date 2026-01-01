@@ -174,17 +174,23 @@ def run_startup_data_selfcheck() -> None:
 
     verbose = _env_bool("STARTUP_DATA_CHECK_VERBOSE", False)
 
+    crypto_provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "").strip().lower()
+
     # Binance
-    ok_binance = check_binance()
-    if ok_binance:
+    if crypto_provider == "cryptocompare":
         if verbose:
-            _info("Market data self-check: Binance reachable")
+            _info("Market data self-check: Binance skipped (CRYPTO_DATA_PROVIDER=cryptocompare)")
     else:
-        _warn(
-            "Market data self-check: Binance NOT reachable. "
-            "If you're on Railway and Binance is geo-blocked, signals will be reduced/empty. "
-            "Consider changing region or swapping data provider."
-        )
+        ok_binance = check_binance()
+        if ok_binance:
+            if verbose:
+                _info("Market data self-check: Binance reachable")
+        else:
+            _warn(
+                "Market data self-check: Binance NOT reachable. "
+                "If you're on Railway and Binance is geo-blocked, signals will be reduced/empty. "
+                "Consider changing region or swapping data provider."
+            )
 
     # AlphaVantage (only if FX is configured)
     ok_alpha = check_alphavantage()
