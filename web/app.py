@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -157,12 +158,15 @@ app = FastAPI(title=APP_NAME, version="0.1.0")
 async def metrics_middleware(request: Request, call_next):
     path = request.url.path
     method = request.method
-    timer = request_latency.labels(path=path, method=method, status="unknown").time()
+    started = time.perf_counter()
+    status = "500"
     try:
         response = await call_next(request)
+        status = str(response.status_code)
         return response
     finally:
-        timer.observe_duration()
+        elapsed = max(0.0, time.perf_counter() - started)
+        request_latency.labels(path=path, method=method, status=status).observe(elapsed)
 
 
 @app.get("/health")

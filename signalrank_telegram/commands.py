@@ -1,9 +1,10 @@
 # /pricing command
 import os
 import logging
+import inspect
 
 from telegram import Update
-from telegram.ext import CallbackContext
+from telegram.ext import ContextTypes
 
 from core.redis_state import state
 from .access import resolve_user_tier
@@ -25,7 +26,7 @@ def _effective_tier(user_id: int) -> str:
 	return (t or "FREE").upper()
 
 
-def _public_guard(update: Update) -> bool:
+async def _public_guard(update: Update) -> bool:
 	"""Return True if request should be blocked (kill-switch/rate-limit)."""
 	if update.effective_user is None or update.message is None:
 		return True
@@ -33,22 +34,22 @@ def _public_guard(update: Update) -> bool:
 	# Kill-switch blocks signal-related actions globally
 	try:
 		if state.get_killswitch_sync().enabled:
-			update.message.reply_text("🚨 Signals are temporarily paused.")
+			await update.message.reply_text("🚨 Signals are temporarily paused.")
 			return True
 	except Exception:
 		pass
 	# Rate limit public commands (30/min)
 	try:
 		if state.rate_limited_sync(user_id, limit=30, window_seconds=60):
-			update.message.reply_text("Rate limit exceeded. Please wait.")
+			await update.message.reply_text("Rate limit exceeded. Please wait.")
 			return True
 	except Exception:
 		pass
 	return False
 
 
-def help_command(update: Update, context: CallbackContext):
-	if _public_guard(update):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
 		return
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
@@ -64,11 +65,12 @@ def help_command(update: Update, context: CallbackContext):
 	if tier_rank(tier) >= tier_rank("VIP"):
 		lines += ["", "🔴 VIP:"] + [f"• {c}" for c in vip_cmds]
 	lines += ["", "⚠️ Educational only. Not financial advice. Trading involves risk."]
-	update.message.reply_text("\n".join(lines))
+	if update.message is not None:
+		await update.message.reply_text("\n".join(lines))
 
 
-def signals_command(update: Update, context: CallbackContext):
-	if _public_guard(update):
+async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
 		return
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
@@ -80,7 +82,8 @@ def signals_command(update: Update, context: CallbackContext):
 		signals = []
 
 	if not signals:
-		update.message.reply_text("No signals available right now. Check back later.")
+		if update.message is not None:
+			await update.message.reply_text("No signals available right now. Check back later.")
 		return
 
 	# Show a small batch
@@ -90,20 +93,22 @@ def signals_command(update: Update, context: CallbackContext):
 		for s in signals:
 			lines.append(f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {s.get('score', 0)})")
 		lines += ["", "Upgrade to Premium to see exact Entry/SL/TP in real-time."]
-		update.message.reply_text("\n".join(lines))
+		if update.message is not None:
+			await update.message.reply_text("\n".join(lines))
 		return
 
 	# Premium/VIP: show full formatted messages
 	from .formatter import format_signal
 	for s in signals:
 		try:
-			update.message.reply_text(format_signal(s))
+			if update.message is not None:
+				await update.message.reply_text(format_signal(s))
 		except Exception:
 			continue
 
 
-def invite_command(update: Update, context: CallbackContext):
-	if _public_guard(update):
+async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
@@ -135,7 +140,7 @@ def invite_command(update: Update, context: CallbackContext):
 
 	if bot_username and code:
 		link = f"https://t.me/{bot_username}?start=ref_{code}"
-		update.message.reply_text(
+		await update.message.reply_text(
 			f"🎁 Invite link:\n{link}\n\n"
 			"Reward: invite 3 new users → get +7 days Premium."
 			f"{progress_line}"
@@ -143,17 +148,17 @@ def invite_command(update: Update, context: CallbackContext):
 		return
 
 	if code:
-		update.message.reply_text(
+		await update.message.reply_text(
 			f"🎁 Your invite code: {code}\n\n"
 			"Reward: invite 3 new users → get +7 days Premium.\n"
 			"Set BOT_USERNAME to generate a full invite link."
 			f"{progress_line}"
 		)
 	else:
-		update.message.reply_text("Invite system is temporarily unavailable.")
+		await update.message.reply_text("Invite system is temporarily unavailable.")
 
-def pricing_command(update: Update, context: CallbackContext):
-	if _public_guard(update):
+async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
 		return
 	from db.database import count_active_vip_seats
 	used, remaining, limit = count_active_vip_seats()
@@ -186,11 +191,12 @@ def pricing_command(update: Update, context: CallbackContext):
 		"Use /upgrade to subscribe.\n\n"
 		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 
 
-def upgrade_command(update: Update, context: CallbackContext):
-	if _public_guard(update):
+async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
 		return
 	"""Generates Paystack payment links for subscriptions.
 
@@ -240,22 +246,23 @@ def upgrade_command(update: Update, context: CallbackContext):
 	msg = "📌 Choose a plan:\n\n" + "\n".join([f"• {label}: {url}" for (label, url) in links])
 	msg += "\n\nPayments are processed by Paystack. No access to your funds."
 	msg += "\n⚠️ Educational only. Not financial advice."
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 # --- Extra Signal Purchase Logic ---
 from telegram import Update
 from db.database import get_user_tier
 
-def buy_extra_premium(update, context):
+async def buy_extra_premium(update, context):
 	user_id = update.effective_user.id
 	tier = get_user_tier(user_id)
 	if tier != "FREE":
-		update.message.reply_text(
+		await update.message.reply_text(
 			"Extra Premium signals are only available for Free users.\n"
 			"Upgrade to Premium or VIP for unlimited real-time access."
 		)
 		return
 	if not context.args or len(context.args) != 1:
-		update.message.reply_text(
+		await update.message.reply_text(
 			"Usage: /buy_extra_premium <count>\n"
 			"Example: /buy_extra_premium 2\n\n"
 			"You can buy up to 5 extra signals per day."
@@ -264,32 +271,32 @@ def buy_extra_premium(update, context):
 	try:
 		count = int(context.args[0])
 		if count < 1 or count > 5:
-			update.message.reply_text("Count must be between 1 and 5.")
+			await update.message.reply_text("Count must be between 1 and 5.")
 			return
 	except ValueError:
-		update.message.reply_text("Count must be a number.")
+		await update.message.reply_text("Count must be a number.")
 		return
 	price = 300 * count
 	from paystack.paystack import generate_paystack_link
 	paywall_link = generate_paystack_link(user_id, price, tier="PREMIUM", extra_count=count)
-	update.message.reply_text(
+	await update.message.reply_text(
 		f"To unlock {count} extra Premium signals for today, pay ₦{price}: {paywall_link}\n\n"
 		"After payment, your extra signals will be delivered instantly.\n"
 		"All payments are final and non-refundable.\n\n"
 		"For questions, use /faq or contact support."
 	)
 
-def buy_extra_vip(update, context):
+async def buy_extra_vip(update, context):
 	user_id = update.effective_user.id
 	tier = get_user_tier(user_id)
 	if tier != "FREE":
-		update.message.reply_text(
+		await update.message.reply_text(
 			"Extra VIP signals are only available for Free users.\n"
 			"Upgrade to VIP for unlimited real-time access."
 		)
 		return
 	if not context.args or len(context.args) != 1:
-		update.message.reply_text(
+		await update.message.reply_text(
 			"Usage: /buy_extra_vip <count>\n"
 			"Example: /buy_extra_vip 1\n\n"
 			"You can buy up to 3 extra VIP signals per day."
@@ -298,15 +305,15 @@ def buy_extra_vip(update, context):
 	try:
 		count = int(context.args[0])
 		if count < 1 or count > 3:
-			update.message.reply_text("Count must be between 1 and 3.")
+			await update.message.reply_text("Count must be between 1 and 3.")
 			return
 	except ValueError:
-		update.message.reply_text("Count must be a number.")
+		await update.message.reply_text("Count must be a number.")
 		return
 	price = 500 * count
 	from paystack.paystack import generate_paystack_link
 	paywall_link = generate_paystack_link(user_id, price, tier="VIP", extra_count=count)
-	update.message.reply_text(
+	await update.message.reply_text(
 		f"To unlock {count} extra VIP signals for today, pay ₦{price}: {paywall_link}\n\n"
 		"After payment, your extra signals will be delivered instantly.\n"
 		"All payments are final and non-refundable.\n\n"
@@ -314,8 +321,8 @@ def buy_extra_vip(update, context):
 	)
 
 # /policy or /refunds command
-def policy_command(update, context):
-	if _public_guard(update):
+async def policy_command(update, context):
+	if await _public_guard(update):
 		return
 	msg = (
 		"📄 Subscription & Refund Policy\n\n"
@@ -324,11 +331,11 @@ def policy_command(update, context):
 		"Subscriptions activate after successful verification and expire at the end of the purchased period.\n\n"
 		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
-	update.message.reply_text(msg)
+	await update.message.reply_text(msg)
 
 # /recap command (weekly recap)
-def recap_command(update, context):
-	if _public_guard(update):
+async def recap_command(update, context):
+	if await _public_guard(update):
 		return
 	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
@@ -360,7 +367,7 @@ def recap_command(update, context):
 			"Remember:\nNo signals is sometimes better than bad signals.\n\n"
 			"Thank you for trading responsibly."
 		)
-	update.message.reply_text(recap_msg)
+		await update.message.reply_text(recap_msg)
 
 
 TIER_RANKS = {
@@ -379,7 +386,9 @@ from core.performance import strategy_stats
 
 def require_tier(min_tier):
 	def wrapper(func):
-		def inner(update, context):
+		async def inner(update, context):
+			if update.effective_user is None or update.message is None:
+				return
 			user_id = update.effective_user.id
 			# Global kill-switch
 			try:
@@ -387,7 +396,7 @@ def require_tier(min_tier):
 			except Exception:
 				ks = type("KS", (), {"enabled": False})()
 			if getattr(ks, "enabled", False):
-				update.message.reply_text("🚨 Signals are temporarily paused.")
+				await update.message.reply_text("🚨 Signals are temporarily paused.")
 				return
 
 			# Rate limit (20/min)
@@ -396,7 +405,7 @@ def require_tier(min_tier):
 			except Exception:
 				limited = False
 			if limited:
-				update.message.reply_text("Rate limit exceeded. Please wait.")
+				await update.message.reply_text("Rate limit exceeded. Please wait.")
 				return
 			tier = resolve_user_tier(user_id)
 			try:
@@ -405,16 +414,22 @@ def require_tier(min_tier):
 			except Exception:
 				pass
 			if tier_rank(tier) < tier_rank(min_tier):
-				update.message.reply_text("Upgrade required.")
+				await update.message.reply_text("Upgrade required.")
 				return
-			return func(update, context)
+			result = func(update, context)
+			if inspect.isawaitable(result):
+				return await result
+			return result
 		return inner
 	return wrapper
 
 
 # /start or welcome message
-def start_command(update, context):
-	if _public_guard(update):
+
+async def start_command(update, context):
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
 	username = None
@@ -437,20 +452,12 @@ def start_command(update, context):
 
 	# Best-effort Postgres upsert (when configured)
 	try:
-		import asyncio
 		from db.session import ENGINE, get_session
 		from db.repository import get_or_create_user
-
 		if ENGINE is not None:
-			async def _ensure_user():
-				async with get_session() as session:
-					await get_or_create_user(session, telegram_user_id=user_id, username=username)
-					await session.commit()
-			try:
-				asyncio.run(_ensure_user())
-			except RuntimeError:
-				# If we're already inside an event loop, skip silently.
-				pass
+			async with get_session() as session:
+				await get_or_create_user(session, telegram_user_id=user_id, username=username)
+				await session.commit()
 	except Exception:
 		pass
 
@@ -492,9 +499,9 @@ def start_command(update, context):
 	if referral_outcome and update.message is not None:
 		status = str(referral_outcome.get("status"))
 		if status in {"attributed", "reward_granted"}:
-			update.message.reply_text("✅ Referral applied. Welcome!")
+			await update.message.reply_text("✅ Referral applied. Welcome!")
 		elif status == "invalid_code":
-			update.message.reply_text("⚠️ Referral code not recognized.")
+			await update.message.reply_text("⚠️ Referral code not recognized.")
 		# else: silent for self_referral/already_referred/not_new
 
 	# Notify referrer on reward
@@ -502,17 +509,17 @@ def start_command(update, context):
 		if referral_outcome and str(referral_outcome.get("status")) == "reward_granted":
 			referrer_id = int(referral_outcome.get("referrer_id"))
 			days = int(referral_outcome.get("days_granted"))
-			context.bot.send_message(
+			await context.bot.send_message(
 				chat_id=referrer_id,
 				text=f"🎉 Referral reward unlocked: +{days} days added to your subscription.\n\nUse /signals to get the latest ideas.",
 			)
 	except Exception:
 		pass
 
-	update.message.reply_text(msg)
+	await update.message.reply_text(msg)
 
 # /about message
-def about_command(update, context):
+async def about_command(update, context):
 	msg = (
 		"\U0001F4CA About SignalRankAI\n\n"
 		"SignalRankAI is a rule-based trading signal platform designed to deliver high-quality, risk-aware trade ideas.\n\n"
@@ -525,10 +532,11 @@ def about_command(update, context):
 		"All signals are for educational and informational purposes only.\n\n"
 		"Trade responsibly."
 	)
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 
 # /faq message
-def faq_command(update, context):
+async def faq_command(update, context):
 	msg = (
 		"\u2754 Frequently Asked Questions\n\n"
 		"1) Does SignalRankAI place trades for me?\n"
@@ -546,11 +554,12 @@ def faq_command(update, context):
 		"7) Is this financial advice?\n"
 		"No. Signals are for informational purposes only."
 	)
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 
 # /disclaimer message
-def disclaimer_command(update, context):
-	if _public_guard(update):
+async def disclaimer_command(update, context):
+	if await _public_guard(update):
 		return
 	msg = (
 		"\u26A0\uFE0F Disclaimer\n\n"
@@ -560,10 +569,11 @@ def disclaimer_command(update, context):
 		"Past performance does not guarantee future results.\n\n"
 		"By using SignalRankAI, you acknowledge and accept these risks."
 	)
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 
-def performance_command(update, context):
-	if _public_guard(update):
+async def performance_command(update, context):
+	if await _public_guard(update):
 		return
 	from db.database import fetch_user_trades
 	from datetime import datetime, timedelta
@@ -582,7 +592,8 @@ def performance_command(update, context):
 	total = len(trades_30d)
 	if total == 0:
 		msg = "No signals in the last 30 days."
-		update.message.reply_text(msg)
+		if update.message is not None:
+			await update.message.reply_text(msg)
 		return
 
 	# Win rate: best-effort parse (legacy DB may not store outcomes)
@@ -604,17 +615,19 @@ def performance_command(update, context):
 			"Outcome-tracked transparently, no profit promises.\n\n"
 			"Upgrade to Premium for full stats and history."
 		)
-		update.message.reply_text(msg)
+		if update.message is not None:
+			await update.message.reply_text(msg)
 		return
 
 	avg_rr_str = str(avg_rr) if avg_rr is not None else "N/A"
 	msg = f"Last 30 days:\n✔ Win rate: {round(win_rate*100,1)}%\n✔ Avg RR: {avg_rr_str}\n✔ Signals: {total}"
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 
 
 # -------- Premium commands --------
 @require_tier("PREMIUM")
-def stats_command(update, context):
+async def stats_command(update, context):
 	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
 	trades = fetch_user_trades(user_id)
@@ -623,11 +636,12 @@ def stats_command(update, context):
 		f"Signals recorded: {len(trades)}\n"
 		"Use /history to view recent signals."
 	)
-	update.message.reply_text(msg)
+	if update.message is not None:
+		await update.message.reply_text(msg)
 
 
 @require_tier("PREMIUM")
-def history_command(update, context):
+async def history_command(update, context):
 	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
 	trades = fetch_user_trades(user_id)
@@ -654,7 +668,8 @@ def history_command(update, context):
 
 	filtered = filtered[-10:]
 	if not filtered:
-		update.message.reply_text("No history available yet.")
+		if update.message is not None:
+			await update.message.reply_text("No history available yet.")
 		return
 
 	lines = ["🧾 History (last 10):", ""]
@@ -663,20 +678,23 @@ def history_command(update, context):
 			lines.append(f"• {t[1]} {t[2]} {t[3]} entry={t[4]} sl={t[5]} tp={t[6]}")
 		except Exception:
 			continue
-	update.message.reply_text("\n".join(lines))
+	if update.message is not None:
+		await update.message.reply_text("\n".join(lines))
 
 
 @require_tier("PREMIUM")
-def risk_command(update, context):
-	update.message.reply_text(
+async def risk_command(update, context):
+	if update.message is None:
+		return
+	await update.message.reply_text(
 		"🛡️ Risk (recommended)\n\n"
 		"Suggested risk: ~1% per trade.\n"
 		"Keep position sizes consistent and avoid overtrading."
 	)
 
 
-def alerts_command(update, context):
-	if _public_guard(update):
+async def alerts_command(update, context):
+	if await _public_guard(update):
 		return
 	from db.database import get_alert_prefs, set_alert_prefs
 	user_id = update.effective_user.id
@@ -687,13 +705,15 @@ def alerts_command(update, context):
 		qe = prefs.get("quiet_end_hour")
 		quiet = "off" if qs is None or qe is None else f"{qs}:00–{qe}:00"
 		status = "on" if prefs.get("tp_sl_enabled", True) else "off"
-		update.message.reply_text(f"🔔 Alerts\n\nTP/SL alerts: {status}\nQuiet hours: {quiet}\n\nUsage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
+		if update.message is not None:
+			await update.message.reply_text(f"🔔 Alerts\n\nTP/SL alerts: {status}\nQuiet hours: {quiet}\n\nUsage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
 		return
 
 	cmd = str(context.args[0]).lower()
 	if cmd in {"on", "off"}:
 		prefs = set_alert_prefs(user_id, tp_sl_enabled=(cmd == "on"))
-		update.message.reply_text("✅ Updated.")
+		if update.message is not None:
+			await update.message.reply_text("✅ Updated.")
 		return
 	if cmd == "quiet" and len(context.args) == 3:
 		try:
@@ -702,36 +722,43 @@ def alerts_command(update, context):
 			if not (0 <= qs <= 23 and 0 <= qe <= 23):
 				raise ValueError()
 			set_alert_prefs(user_id, quiet_start_hour=qs, quiet_end_hour=qe)
-			update.message.reply_text("✅ Quiet hours updated.")
+			if update.message is not None:
+				await update.message.reply_text("✅ Quiet hours updated.")
 			return
 		except Exception:
 			pass
-	update.message.reply_text("Usage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
+	if update.message is not None:
+		await update.message.reply_text("Usage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
 
 
 # -------- VIP commands (hidden from BotFather) --------
 @require_tier("VIP")
-def elite_command(update, context):
+async def elite_command(update, context):
 	from db.database import get_unreleased_signals
 	signals = get_unreleased_signals()[:10]
 	elite = [s for s in signals if float(s.get("score") or 0) >= 85]
 	if not elite:
-		update.message.reply_text("No elite signals available right now.")
+		if update.message is not None:
+			await update.message.reply_text("No elite signals available right now.")
 		return
 	from .formatter import format_signal
 	for s in elite[:5]:
-		update.message.reply_text(format_signal(s))
+		if update.message is not None:
+			await update.message.reply_text(format_signal(s))
 
 
 @require_tier("VIP")
-def early_command(update, context):
-	update.message.reply_text("⚡ Early access is automatic for VIP. You’ll receive signals first when available.")
+async def early_command(update, context):
+	if update.message is not None:
+		await update.message.reply_text("⚡ Early access is automatic for VIP. You’ll receive signals first when available.")
 
 
 @require_tier("VIP")
-def report_command(update, context):
+async def report_command(update, context):
 	# Structured text report (monthly)
-	update.message.reply_text(
+	if update.message is None:
+		return
+	await update.message.reply_text(
 		"🗓️ VIP Monthly Report\n\n"
 		"Monthly reports are delivered automatically.\n"
 		"This command will show the latest report when available."
