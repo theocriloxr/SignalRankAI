@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 
 def get_database_url() -> Optional[str]:
@@ -27,7 +28,15 @@ def create_engine() -> Optional[AsyncEngine]:
     url = get_database_url()
     if not url:
         return None
-    return create_async_engine(url, pool_pre_ping=True)
+    # In single-service mode (RUN_MODE=all) we run multiple threads/loops (web, bot,
+    # worker, engine). Sharing a pooled asyncpg connection pool across event loops
+    # can trigger "Future attached to a different loop" errors during connection
+    # cleanup. Using NullPool avoids cross-loop pool reuse.
+    mode = (os.getenv("RUN_MODE") or "").strip().lower()
+    poolclass = NullPool if mode == "all" else None
+    if poolclass is None:
+        return create_async_engine(url, pool_pre_ping=True)
+    return create_async_engine(url, pool_pre_ping=True, poolclass=poolclass)
 
 
 def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

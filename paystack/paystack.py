@@ -17,21 +17,19 @@ _audit_logger = logging.getLogger("audit")
 
 AMOUNTS = {
     # Recommended pricing (Nigeria-optimized)
-    'PREMIUM_MONTHLY': 5000,
-    'PREMIUM_QUARTERLY': 12000,
-    'PREMIUM_SEMIANNUAL': 20000,
+    'PREMIUM_WEEKLY': 4000,
+    'PREMIUM_MONTHLY': 12000,
+    'PREMIUM_QUARTERLY': 28000,
     'VIP_MONTHLY': 20000,
 
     # Legacy/optional weekly pricing (kept for backward compatibility)
-    'PREMIUM_WEEKLY': 3000,
     'VIP_WEEKLY': 8000,
     'WEEKLY_PLAN': WEEKLY_PLAN['price_ngn']
 }
 DURATIONS = {
+    'PREMIUM_WEEKLY': 7,
     'PREMIUM_MONTHLY': 30,
     'PREMIUM_QUARTERLY': 90,
-    'PREMIUM_SEMIANNUAL': 180,
-    'PREMIUM_WEEKLY': 7,
     'VIP_MONTHLY': 30,
     'VIP_WEEKLY': 7,
     'WEEKLY_PLAN': WEEKLY_PLAN['duration_days']
@@ -39,6 +37,7 @@ DURATIONS = {
 
 def verify_payment(reference, user_id):
     from db.database import approve_extra_signals
+    from core.redis_state import state
     headers = {
         'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}',
         'Content-Type': 'application/json',
@@ -55,14 +54,21 @@ def verify_payment(reference, user_id):
             # Extra signal purchase
             if metadata.get('duration') == 'EXTRA':
                 extra_count = int(metadata.get('extra_count', 1))
-                tier = metadata.get('tier', 'PREMIUM')
-                expected_price = 300 * extra_count if tier == 'PREMIUM' else 500 * extra_count
+                expected_price = 300 * extra_count
                 if amount != expected_price:
-                    _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for extra {tier}")
+                    _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for extra_signals")
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your extra signal purchase.", None
-                approve_extra_signals(user_id, extra_count)
-                _audit_logger.info(f"Extra signals credited: user {user_id}, tier {tier}, count {extra_count}")
-                return True, f"✅ Payment verified! {extra_count} extra {tier.title()} signal(s) credited for today.", tier
+                try:
+                    state.add_extra_signals_sync(int(user_id), int(extra_count), ttl_seconds=86400)
+                except Exception:
+                    pass
+                # Backward-compatible SQLite log (local dev/legacy paths)
+                try:
+                    approve_extra_signals(user_id, extra_count)
+                except Exception:
+                    pass
+                _audit_logger.info(f"Extra signals credited: user {user_id}, count {extra_count}")
+                return True, f"✅ Payment verified! {extra_count} extra signal(s) credited (24h access).", "EXTRA_SIGNALS"
             # Subscription purchase
             tier = metadata.get('tier')
             duration = metadata.get('duration')
@@ -96,7 +102,7 @@ def verify_payment(reference, user_id):
                     if not already_vip and remaining <= 0:
                         return False, f"❌ VIP is currently full ({limit} seats). Please try again later.", None
                 # Amount check for recommended plans
-                if tnorm == "PREMIUM" and amount not in {5000, 12000, 20000}:
+                if tnorm == "PREMIUM" and amount not in {4000, 12000, 28000}:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
                 if tnorm == "VIP" and amount != 20000:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None

@@ -73,39 +73,41 @@ async def _public_guard(update: Update) -> bool:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if await _public_guard(update):
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
-
-	public_cmds = [
-		("/start", "Start and register your SIGNALRANKAI account"),
-		("/help", "Show commands by tier"),
-		("/pricing", "View plans and seat limits"),
-		("/upgrade", "Get Paystack checkout links"),
-		("/signals", "Today’s signals sent to you"),
-		("/performance", "Performance summary"),
-		("/invite", "Your referral link"),
-	]
-	premium_cmds = [
-		("/stats", "Signal stats"),
-		("/history", "Your signal history"),
-		("/risk", "Risk guidance for current regime"),
-		("/alerts", "Alert preferences (quiet hours, TP/SL)"),
-	]
-	vip_cmds = [
-		("/elite", "Highest-confidence signals"),
-		("/early", "Early alerts"),
-		("/report", "Monthly report"),
-	]
-
-	lines = ["📌 Commands", "", "🆓 Public:"]
-	lines += [f"• {cmd} — {desc}" for (cmd, desc) in public_cmds]
-	if tier_rank(tier) >= tier_rank("PREMIUM"):
-		lines += ["", "🟡 Premium:"] + [f"• {cmd} — {desc}" for (cmd, desc) in premium_cmds]
-	if tier_rank(tier) >= tier_rank("VIP"):
-		lines += ["", "🔴 VIP:"] + [f"• {cmd} — {desc}" for (cmd, desc) in vip_cmds]
-	lines += ["", "⚠️ Educational only. Not financial advice. Trading involves risk."]
+	msg = (
+		"🤖 SignalRankAI Commands\n\n"
+		"🆓 FREE\n"
+		"/start – Start\n"
+		"/help – This menu\n"
+		"/about – About SignalRankAI\n"
+		"/faq – FAQs\n"
+		"/disclaimer – Risk disclaimer\n"
+		"/pricing – Pricing\n"
+		"/upgrade – Subscribe\n"
+		"/signals – Latest signals (limited for Free)\n"
+		"/invite – Invite friends\n"
+		"/policy – Subscription & refund policy\n"
+		"/refunds – Same as /policy\n"
+		"/recap – Weekly recap\n"
+		"/version – Deployment/version info\n"
+		"/buy_extra_premium – Buy extra daily signals (Free-only, ₦300 each, 24h)\n\n"
+		"🟡 PREMIUM (subscribers)\n"
+		"/performance – Full performance stats\n"
+		"/stats – Stats summary\n"
+		"/history – Recent signal history\n"
+		"/risk – Risk guidance\n"
+		"/alerts – TP/SL + quiet hours\n\n"
+		"🔴 VIP (subscribers)\n"
+		"/elite – VIP feed\n"
+		"/early – Early alerts\n"
+		"/report – Reports\n\n"
+		"📌 Notes\n"
+		"• Signals are deduped per-user; repeats are suppressed.\n"
+		"• Free users get delayed summaries unless extra signals are purchased.\n"
+		"• Use /upgrade to activate Premium/VIP.\n\n"
+		"⚠️ Educational only. Not financial advice. Trading involves risk."
+	)
 	if update.message is not None:
-		await update.message.reply_text("\n".join(lines))
+		await update.message.reply_text(msg)
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -253,10 +255,11 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		"• Outcome notifications (no exact prices)\n"
 		"• Daily performance summary (limited)\n"
 		"• Access to /pricing and /upgrade\n\n"
+		"• Optional: buy extra daily signals (₦300 each, 24h access)\n\n"
 		"🟡 PREMIUM\n"
-		"₦5,000 / month\n"
-		"₦12,000 / 3 months\n"
-		"₦20,000 / 6 months\n"
+		"₦4,000 / week\n"
+		"₦12,000 / month\n"
+		"₦28,000 / 3 months\n"
 		"• Real-time signals (5m → 24h)\n"
 		"• Exact Entry, SL, TP\n"
 		"• Confidence score per trade\n"
@@ -297,13 +300,13 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 	links = []
 	links.append(
-		("Premium (₦5,000 / 30 days)", generate_paystack_link(user_id, 5000, tier="premium", duration_days=30, plan_code=premium_monthly_code))
+		("Premium (₦4,000 / 7 days)", generate_paystack_link(user_id, 4000, tier="premium", duration_days=7, plan_code=os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY")))
 	)
 	links.append(
-		("Premium (₦12,000 / 90 days)", generate_paystack_link(user_id, 12000, tier="premium", duration_days=90, plan_code=premium_quarterly_code))
+		("Premium (₦12,000 / 30 days)", generate_paystack_link(user_id, 12000, tier="premium", duration_days=30, plan_code=premium_monthly_code))
 	)
 	links.append(
-		("Premium (₦20,000 / 180 days)", generate_paystack_link(user_id, 20000, tier="premium", duration_days=180, plan_code=premium_semiannual_code))
+		("Premium (₦28,000 / 90 days)", generate_paystack_link(user_id, 28000, tier="premium", duration_days=90, plan_code=premium_quarterly_code))
 	)
 	# VIP link only if seats available (or user is owner/bypassed/already VIP)
 	try:
@@ -351,7 +354,7 @@ async def buy_extra_premium(update, context):
 		await update.message.reply_text(
 			"Usage: /buy_extra_premium <count>\n"
 			"Example: /buy_extra_premium 2\n\n"
-			"You can buy up to 5 extra signals per day."
+			"₦300 per extra signal. Extra access lasts 24 hours."
 		)
 		return
 	try:
@@ -364,10 +367,10 @@ async def buy_extra_premium(update, context):
 		return
 	price = 300 * count
 	from paystack.paystack import generate_paystack_link
-	paywall_link = generate_paystack_link(user_id, price, tier="PREMIUM", extra_count=count)
+	paywall_link = generate_paystack_link(user_id, price, tier="EXTRA_SIGNALS", extra_count=count)
 	await update.message.reply_text(
-		f"To unlock {count} extra Premium signals for today, pay ₦{price}: {paywall_link}\n\n"
-		"After payment, your extra signals will be delivered instantly.\n"
+		f"To unlock {count} extra signals (VIP-style) for the next 24 hours, pay ₦{price}: {paywall_link}\n\n"
+		"After payment verification, your extra signals will be delivered in real time.\n"
 		"All payments are final and non-refundable.\n\n"
 		"For questions, use /faq or contact support."
 	)
@@ -396,9 +399,9 @@ async def buy_extra_vip(update, context):
 	except ValueError:
 		await update.message.reply_text("Count must be a number.")
 		return
-	price = 500 * count
+	price = 300 * count
 	from paystack.paystack import generate_paystack_link
-	paywall_link = generate_paystack_link(user_id, price, tier="VIP", extra_count=count)
+	paywall_link = generate_paystack_link(user_id, price, tier="EXTRA_SIGNALS", extra_count=count)
 	await update.message.reply_text(
 		f"To unlock {count} extra VIP signals for today, pay ₦{price}: {paywall_link}\n\n"
 		"After payment, your extra signals will be delivered instantly.\n"
@@ -669,7 +672,7 @@ async def disclaimer_command(update, context):
 	if await _public_guard(update):
 		return
 	msg = (
-		"\u26A0\uFE0F Disclaimer\n\n"
+		"⚠️ Disclaimer\n\n"
 		"SignalRankAI provides trading signals for informational and educational purposes only.\n\n"
 		"Nothing provided by this bot constitutes financial advice, investment advice, or a recommendation to buy or sell any asset.\n\n"
 		"Trading involves risk, and you are fully responsible for your trading decisions.\n"
@@ -679,18 +682,80 @@ async def disclaimer_command(update, context):
 	if update.message is not None:
 		await update.message.reply_text(msg)
 
+
 async def performance_command(update, context):
 	if await _public_guard(update):
 		return
-	from db.database import fetch_user_trades
 	from datetime import datetime, timedelta
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
+
+	# Prefer Postgres (deliveries + outcomes)
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import get_user_performance_30d
+
+			async def _fetch() -> dict:
+				async with get_session() as session:
+					data = await get_user_performance_30d(session, int(user_id))
+					await session.commit()
+					return data
+
+			import asyncio
+			try:
+				stats = asyncio.run(_fetch())
+			except Exception:
+				stats = {}
+
+			total = int((stats or {}).get("total") or 0)
+			wins = int((stats or {}).get("wins") or 0)
+			losses = int((stats or {}).get("losses") or 0)
+			win_rate = float((stats or {}).get("win_rate") or 0.0)
+			avg_r = (stats or {}).get("avg_r")
+			net_r = (stats or {}).get("net_r")
+
+			if total <= 0:
+				if update.message is not None:
+					await update.message.reply_text("No signals in the last 30 days.")
+				return
+
+			if tier_rank(tier) < tier_rank("PREMIUM"):
+				bucket = "mixed"
+				if win_rate >= 0.6:
+					bucket = "strong"
+				elif win_rate <= 0.4:
+					bucket = "cautious"
+				msg = (
+					"📊 Performance (limited)\n\n"
+					f"Recent snapshot: {bucket}.\n"
+					"Upgrade to Premium for full stats and history."
+				)
+				if update.message is not None:
+					await update.message.reply_text(msg)
+				return
+
+			avg_r_str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
+			net_r_str = f"{float(net_r):.2f}R" if net_r is not None else "N/A"
+			msg = (
+				"📊 Performance (last 30 days)\n\n"
+				f"Signals delivered: {total}\n"
+				f"Wins: {wins} | Losses: {losses}\n"
+				f"Win rate (tracked outcomes): {round(win_rate*100,1)}%\n"
+				f"Avg R (tracked outcomes): {avg_r_str}\n"
+				f"Net R (tracked outcomes): {net_r_str}"
+			)
+			if update.message is not None:
+				await update.message.reply_text(msg)
+			return
+	except Exception:
+		pass
+
+	# Fallback: legacy SQLite (best-effort)
+	from db.database import fetch_user_trades
 	trades = fetch_user_trades(user_id)
-	# Filter trades from last 30 days
 	cutoff = datetime.now() - timedelta(days=30)
 	def parse_dt(row):
-		# Try to parse timestamp from row, fallback to all if missing
 		try:
 			return datetime.fromisoformat(row[3]) if isinstance(row[3], str) else cutoff
 		except Exception:
@@ -698,19 +763,12 @@ async def performance_command(update, context):
 	trades_30d = [t for t in trades if parse_dt(t) >= cutoff]
 	total = len(trades_30d)
 	if total == 0:
-		msg = "No signals in the last 30 days."
 		if update.message is not None:
-			await update.message.reply_text(msg)
+			await update.message.reply_text("No signals in the last 30 days.")
 		return
-
-	# Win rate: best-effort parse (legacy DB may not store outcomes)
-	win_count = sum(1 for t in trades_30d if (len(t) > 15 and t[15] == 'TP'))
+	win_count = sum(1 for t in trades_30d if (len(t) > 15 and str(t[15]).upper() == 'TP'))
 	win_rate = win_count / total if total > 0 else 0
-	rr_ratios = [t[7] for t in trades_30d if t[7] is not None]
-	avg_rr = round(sum(rr_ratios)/len(rr_ratios), 2) if rr_ratios else None
-
 	if tier_rank(tier) < tier_rank("PREMIUM"):
-		# Limited snapshot: no raw numbers
 		bucket = "mixed"
 		if win_rate >= 0.6:
 			bucket = "strong"
@@ -719,15 +777,12 @@ async def performance_command(update, context):
 		msg = (
 			"📊 Performance (limited)\n\n"
 			f"Recent snapshot: {bucket}.\n"
-			"Outcome-tracked transparently, no profit promises.\n\n"
 			"Upgrade to Premium for full stats and history."
 		)
 		if update.message is not None:
 			await update.message.reply_text(msg)
 		return
-
-	avg_rr_str = str(avg_rr) if avg_rr is not None else "N/A"
-	msg = f"Last 30 days:\n✔ Win rate: {round(win_rate*100,1)}%\n✔ Avg RR: {avg_rr_str}\n✔ Signals: {total}"
+	msg = f"Last 30 days:\n✔ Signals: {total}\n✔ Snapshot win-rate: {round(win_rate*100,1)}%"
 	if update.message is not None:
 		await update.message.reply_text(msg)
 

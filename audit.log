@@ -3184,3 +3184,25 @@ telegram.error.InvalidToken: Unauthorized
 2026-01-01 17:25:26,585 INFO KILL SWITCH DISABLED by 1
 2026-01-01 17:25:26,587 WARNING KILL SWITCH ENABLED by 1: test
 2026-01-01 17:25:26,587 INFO KILL SWITCH DISABLED by 1
+2026-01-01 17:31:41,329 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 17:31:41,329 INFO KILL SWITCH DISABLED by 1
+2026-01-01 17:31:41,329 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 17:31:41,332 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 17:31:41,332 INFO KILL SWITCH DISABLED by 1
+2026-01-01 17:31:41,334 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 17:31:41,335 INFO KILL SWITCH DISABLED by 1
+2026-01-01 17:31:47,957 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 17:41:47 WAT)" (scheduled at 2026-01-01 17:31:47.939550+01:00)
+2026-01-01 17:31:47,961 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 17:41:47 WAT)" executed successfully
+2026-01-01 17:41:47,951 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 17:51:47 WAT)" (scheduled at 2026-01-01 17:41:47.939550+01:00)
+2026-01-01 17:41:47,954 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 17:51:47 WAT)" executed successfully
+2026-01-01 17:51:47,944 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:01:47 WAT)" (scheduled at 2026-01-01 17:51:47.939550+01:00)
+2026-01-01 17:51:47,949 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:01:47 WAT)" executed successfully
+2026-01-01 18:01:47,950 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:11:47 WAT)" (scheduled at 2026-01-01 18:01:47.939550+01:00)
+2026-01-01 18:01:47,952 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:11:47 WAT)" executed successfully
+2026-01-01 18:05:40,729 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 18:05:40,730 INFO KILL SWITCH DISABLED by 1
+2026-01-01 18:05:40,730 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 18:05:40,732 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 18:05:40,732 INFO KILL SWITCH DISABLED by 1
+2026-01-01 18:05:40,735 WARNING KILL SWITCH ENABLED by 1: test
+2026-01-01 18:05:40,735 INFO KILL SWITCH DISABLED by 1

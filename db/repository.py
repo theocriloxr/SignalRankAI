@@ -66,6 +66,8 @@ async def count_active_vip_users(
 
 def normalize_tier(tier: str) -> str:
     t = (tier or "").strip().lower()
+    if t in {"owner"}:
+        return "owner"
     if t in {"vip"}:
         return "vip"
     if t in {"premium", "pro"}:

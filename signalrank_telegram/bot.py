@@ -162,6 +162,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
 
+    # Free users with paid extra-signal quota receive VIP-style real-time delivery
+    extra_left = 0
+    if tier == 'free':
+        try:
+            extra_left = int(state.get_extra_signals_left_sync(int(user_id)) or 0)
+        except Exception:
+            extra_left = 0
+
     # Global kill-switch (do not dispatch/queue)
     try:
         if state.get_killswitch_sync().enabled:
@@ -184,6 +192,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         else:
             # Free: delayed summaries from top approved signals
             signals_list = (vip_list + prem_list)
+
+        # Paid extra signals: VIP-style only, real-time
+        if tier == 'free' and extra_left > 0:
+            signals_list = vip_list
     else:
         signals_list = list(strategy_signals or [])
 
@@ -195,9 +207,15 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         from db.session import ENGINE, get_session
 
         if ENGINE is not None:
-            if tier in ('premium', 'vip', 'owner'):
+            effective_tier = tier
+            if tier == 'free' and extra_left > 0:
+                effective_tier = 'vip'
+
+            if effective_tier in ('premium', 'vip', 'owner'):
                 bot = Bot(token=_require_telegram_token())
-                limit = TIER_LIMITS.get(tier, 0)
+                limit = TIER_LIMITS.get(effective_tier, 0)
+                if tier == 'free' and extra_left > 0:
+                    limit = min(int(limit), int(extra_left))
 
                 async def _reserve() -> list[dict]:
                     from db.pg_features import get_or_create_signal, record_signal_delivery
@@ -210,7 +228,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 session,
                                 telegram_user_id=int(user_id),
                                 signal_id=str(s.signal_id),
-                                tier_at_send=str(tier),
+                                tier_at_send=str(effective_tier),
                             )
                             if not ok:
                                 continue
@@ -237,6 +255,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         bot.send_message(chat_id=user_id, text=format_signal(signal))
+                        if tier == 'free' and extra_left > 0:
+                            try:
+                                state.consume_extra_signals_sync(int(user_id), 1)
+                            except Exception:
+                                pass
                     except Exception:
                         continue
                 return

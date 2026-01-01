@@ -20,6 +20,7 @@ except Exception:  # pragma: no cover
 
 
 _KILL_KEY = "signalrankai:killswitch"
+_EXTRA_SIGNALS_PREFIX = "signalrankai:extra_signals:"
 
 
 @dataclass(frozen=True)
@@ -241,6 +242,170 @@ class RedisState:
         except Exception:
             pass
         return False
+
+    def add_extra_signals_sync(self, telegram_user_id: int, count: int, ttl_seconds: int = 86400) -> int:
+        """Credit extra signals for a free user. Expires after ttl_seconds (default 24h)."""
+        uid = int(telegram_user_id)
+        count = max(0, int(count))
+        if count <= 0:
+            return 0
+        key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"
+        ttl_seconds = max(60, int(ttl_seconds))
+
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                row = self._pg_exec_one(
+                    "SELECT value, expires_at FROM runtime_state WHERE key=%s AND expires_at > NOW()",
+                    (key,),
+                )
+                total = 0
+                used = 0
+                if row and row[0] is not None:
+                    try:
+                        data = row[0]
+                        total = int(data.get("total", 0) or 0)
+                        used = int(data.get("used", 0) or 0)
+                    except Exception:
+                        total = 0
+                        used = 0
+                new_total = total + count
+                new_used = used if (row and row[0] is not None) else 0
+                payload = {"total": int(new_total), "used": int(new_used)}
+                self._pg_exec_one(
+                    "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                    "VALUES (%s, %s::jsonb, NOW() + (%s || ' seconds')::interval, NOW()) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=EXCLUDED.expires_at, updated_at=NOW()",
+                    (key, json.dumps(payload), str(ttl_seconds)),
+                )
+                return int(new_total)
+
+            # local dev memory fallback
+            existing = self._memory.get(key)
+            now = time.time()
+            total = 0
+            used = 0
+            exp = now + ttl_seconds
+            if isinstance(existing, dict) and float(existing.get("exp", 0) or 0) > now:
+                total = int(existing.get("total", 0) or 0)
+                used = int(existing.get("used", 0) or 0)
+                exp = float(existing.get("exp", exp) or exp)
+            total += count
+            self._memory[key] = {"total": int(total), "used": int(used), "exp": float(exp)}
+            return int(total)
+
+        # Redis path
+        try:
+            ttl = r.ttl(key)
+        except Exception:
+            ttl = -1
+        try:
+            raw = r.get(key)
+            data = json.loads(raw) if raw else {}
+        except Exception:
+            data = {}
+        total = int(data.get("total", 0) or 0)
+        used = int(data.get("used", 0) or 0)
+        total += count
+        payload = json.dumps({"total": int(total), "used": int(used)})
+        try:
+            r.set(key, payload, ex=(ttl if isinstance(ttl, int) and ttl > 0 else ttl_seconds))
+        except Exception:
+            pass
+        return int(total)
+
+    def get_extra_signals_left_sync(self, telegram_user_id: int) -> int:
+        uid = int(telegram_user_id)
+        key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                row = self._pg_exec_one(
+                    "SELECT value FROM runtime_state WHERE key=%s AND expires_at > NOW()",
+                    (key,),
+                )
+                if not row or row[0] is None:
+                    return 0
+                try:
+                    data = row[0]
+                    total = int(data.get("total", 0) or 0)
+                    used = int(data.get("used", 0) or 0)
+                    return max(0, total - used)
+                except Exception:
+                    return 0
+
+            existing = self._memory.get(key)
+            now = time.time()
+            if not isinstance(existing, dict) or float(existing.get("exp", 0) or 0) <= now:
+                return 0
+            total = int(existing.get("total", 0) or 0)
+            used = int(existing.get("used", 0) or 0)
+            return max(0, total - used)
+
+        try:
+            raw = r.get(key)
+            data = json.loads(raw) if raw else {}
+            total = int(data.get("total", 0) or 0)
+            used = int(data.get("used", 0) or 0)
+            return max(0, total - used)
+        except Exception:
+            return 0
+
+    def consume_extra_signals_sync(self, telegram_user_id: int, amount: int = 1) -> bool:
+        uid = int(telegram_user_id)
+        amount = max(1, int(amount))
+        key = f"{_EXTRA_SIGNALS_PREFIX}{uid}"
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                row = self._pg_exec_one(
+                    "SELECT value FROM runtime_state WHERE key=%s AND expires_at > NOW()",
+                    (key,),
+                )
+                if not row or row[0] is None:
+                    return False
+                try:
+                    data = row[0]
+                    total = int(data.get("total", 0) or 0)
+                    used = int(data.get("used", 0) or 0)
+                except Exception:
+                    return False
+                if total - used < amount:
+                    return False
+                used += amount
+                payload = {"total": int(total), "used": int(used)}
+                self._pg_exec_one(
+                    "UPDATE runtime_state SET value=%s::jsonb, updated_at=NOW() WHERE key=%s AND expires_at > NOW()",
+                    (json.dumps(payload), key),
+                )
+                return True
+
+            existing = self._memory.get(key)
+            now = time.time()
+            if not isinstance(existing, dict) or float(existing.get("exp", 0) or 0) <= now:
+                return False
+            total = int(existing.get("total", 0) or 0)
+            used = int(existing.get("used", 0) or 0)
+            if total - used < amount:
+                return False
+            existing["used"] = int(used + amount)
+            self._memory[key] = existing
+            return True
+
+        try:
+            ttl = r.ttl(key)
+            raw = r.get(key)
+            data = json.loads(raw) if raw else {}
+            total = int(data.get("total", 0) or 0)
+            used = int(data.get("used", 0) or 0)
+            if total - used < amount:
+                return False
+            used += amount
+            payload = json.dumps({"total": int(total), "used": int(used)})
+            r.set(key, payload, ex=(ttl if isinstance(ttl, int) and ttl > 0 else 3600))
+            return True
+        except Exception:
+            return False
 
     def rate_limited_sync(self, telegram_user_id: int, limit: int, window_seconds: int) -> bool:
         """Simple fixed-window rate limit."""

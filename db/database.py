@@ -94,6 +94,11 @@ def count_active_vip_seats(limit: int | None = None) -> tuple[int, int, int]:
     return used, remaining, int(limit)
 def approve_extra_signals(user_id, count):
     # Admin approves extra signals for a user for today
+    try:
+        from core.redis_state import state
+        state.add_extra_signals_sync(int(user_id), int(count), ttl_seconds=86400)
+    except Exception:
+        pass
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
@@ -103,6 +108,13 @@ def approve_extra_signals(user_id, count):
 
 def get_extra_signals_left(user_id):
     # Returns how many extra signals user has left for today
+    try:
+        from core.redis_state import state
+        left = int(state.get_extra_signals_left_sync(int(user_id)) or 0)
+        if left > 0:
+            return left
+    except Exception:
+        pass
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
@@ -115,6 +127,12 @@ def get_extra_signals_left(user_id):
 
 def increment_extra_signal_count(user_id):
     # Increment used count for extra signals
+    try:
+        from core.redis_state import state
+        state.consume_extra_signals_sync(int(user_id), 1)
+        return
+    except Exception:
+        pass
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
@@ -122,6 +140,11 @@ def increment_extra_signal_count(user_id):
         conn.commit()
 def approve_extra_signals(user_id, count):
     # Admin approves extra signals for a user for today
+    try:
+        from core.redis_state import state
+        state.add_extra_signals_sync(int(user_id), int(count), ttl_seconds=86400)
+    except Exception:
+        pass
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
@@ -131,6 +154,13 @@ def approve_extra_signals(user_id, count):
 
 def get_extra_signals_left(user_id):
     # Returns how many extra signals user has left for today
+    try:
+        from core.redis_state import state
+        left = int(state.get_extra_signals_left_sync(int(user_id)) or 0)
+        if left > 0:
+            return left
+    except Exception:
+        pass
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
@@ -143,6 +173,12 @@ def get_extra_signals_left(user_id):
 
 def increment_extra_signal_count(user_id):
     # Increment used count for extra signals
+    try:
+        from core.redis_state import state
+        state.consume_extra_signals_sync(int(user_id), 1)
+        return
+    except Exception:
+        pass
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')

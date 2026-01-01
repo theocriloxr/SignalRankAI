@@ -17,6 +17,7 @@ from db.models import (
     ReferralReward,
     Signal,
     SignalDelivery,
+    Outcome,
     User,
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
@@ -265,6 +266,19 @@ async def queue_free_signal_summary(
 
     s = await get_or_create_signal(session, signal)
 
+    # Dedupe: do not queue the exact same signal more than once per user/day.
+    res_dupe = await session.execute(
+        select(func.count(FreeSignalQueue.id)).where(
+            FreeSignalQueue.user_id == user.id,
+            FreeSignalQueue.date >= today_start,
+            FreeSignalQueue.date < today_end,
+            FreeSignalQueue.signal_id == s.signal_id,
+            FreeSignalQueue.status.in_("queued", "sent"),
+        )
+    )
+    if int(res_dupe.scalar() or 0) > 0:
+        return True
+
     deliver_after = now + timedelta(minutes=max(0, int(delay_minutes)))
     q = FreeSignalQueue(
         user_id=user.id,
@@ -281,6 +295,69 @@ async def queue_free_signal_summary(
     session.add(q)
     await session.flush()
     return True
+
+
+async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int) -> dict:
+    """Compute simple 30-day performance from deliveries + outcomes.
+
+    Returns:
+      {total, wins, losses, win_rate, avg_r, net_r}
+    """
+
+    now = _utcnow()
+    cutoff = now - timedelta(days=30)
+
+    res = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user = res.scalar_one_or_none()
+    if user is None:
+        return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0.0, "avg_r": None, "net_r": None}
+
+    # Total signals delivered in last 30 days
+    res_total = await session.execute(
+        select(func.count(SignalDelivery.id)).where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.delivered_at >= cutoff,
+        )
+    )
+    total = int(res_total.scalar() or 0)
+    if total <= 0:
+        return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0.0, "avg_r": None, "net_r": None}
+
+    delivered_signal_ids_subq = (
+        select(SignalDelivery.signal_id)
+        .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= cutoff)
+        .distinct()
+        .subquery()
+    )
+
+    # Outcomes are global per signal; we only count outcomes for signals this user received.
+    res_outcomes = await session.execute(
+        select(Outcome.status, func.count(Outcome.id)).where(Outcome.signal_id.in_(select(delivered_signal_ids_subq.c.signal_id))).group_by(Outcome.status)
+    )
+    outcome_counts = {str(status).lower(): int(cnt) for (status, cnt) in (res_outcomes.all() or [])}
+
+    win_statuses = {"tp", "tp1", "tp2", "partial_tp"}
+    loss_statuses = {"sl"}
+    wins = sum(outcome_counts.get(s, 0) for s in win_statuses)
+    losses = sum(outcome_counts.get(s, 0) for s in loss_statuses)
+
+    win_rate = (wins / max(1, wins + losses)) if (wins + losses) > 0 else 0.0
+
+    res_r = await session.execute(
+        select(func.avg(Outcome.r_multiple), func.sum(Outcome.r_multiple)).where(
+            Outcome.signal_id.in_(select(delivered_signal_ids_subq.c.signal_id)),
+            Outcome.r_multiple.is_not(None),
+        )
+    )
+    avg_r, net_r = res_r.first() or (None, None)
+    return {
+        "total": int(total),
+        "wins": int(wins),
+        "losses": int(losses),
+        "win_rate": float(win_rate),
+        "avg_r": float(avg_r) if avg_r is not None else None,
+        "net_r": float(net_r) if net_r is not None else None,
+    }
 
 
 async def get_due_free_signal_summaries(session: AsyncSession) -> dict[int, list[dict]]:

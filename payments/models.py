@@ -12,7 +12,7 @@ class Subscription:
 # --- Region-Optimized Weekly Plan ---
 WEEKLY_PLAN = {
     'name': 'Weekly Plan',
-    'price_ngn': 1500,  # Example: ₦1500 per week
+    'price_ngn': 4000,
     'duration_days': 7,
     'features': [
         'Full access to all signals',
