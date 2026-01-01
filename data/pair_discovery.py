@@ -10,6 +10,15 @@ def get_trending_crypto_pairs(top_n=20):
     try:
         resp = requests.get(BINANCE_API, timeout=5)
         data = resp.json()
+
+        # Binance normally returns a list[dict]. If we get a dict, it's usually an
+        # error payload (e.g. rate limit) or an unexpected response shape.
+        if isinstance(data, dict):
+            code = data.get("code")
+            msg = data.get("msg")
+            raise RuntimeError(f"Binance API error: code={code} msg={msg}")
+        if not isinstance(data, list):
+            raise RuntimeError(f"Unexpected Binance API response type: {type(data).__name__}")
         # Sort by quoteVolume (trending)
         sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
         return [x['symbol'] for x in sorted_pairs[:top_n]]
