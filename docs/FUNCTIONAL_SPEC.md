@@ -15,7 +15,7 @@ This document captures the complete functional specification for SignalRankAI (T
   - `username`
   - `joined_at`
   - `tier = FREE` (default when no active subscription)
-- Persisted to Postgres in production, with SQLite fallback for local mode.
+- Persisted to Postgres (required). No SQLite fallback.
 
 **Why**
 - Enables access control, monetization, analytics, and abuse prevention.

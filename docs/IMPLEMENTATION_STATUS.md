@@ -4,10 +4,9 @@ This matrix maps the functional spec to current code paths and highlights remain
 
 ## Access control
 - User registration (/start)
-  - Implemented (SQLite): `db/database.py::record_user_seen` + `/start` in `signalrank_telegram/commands.py`
-  - Implemented (Postgres best-effort): `/start` upserts `db.models.User` when `DATABASE_URL` is set
+  - Implemented (Postgres): `/start` upserts `db.models.User` when `DATABASE_URL` is set
 - Tier detection
-  - Telegram bot (SQLite): `signalrank_telegram/access.py::resolve_user_tier`
+  - Telegram bot (Postgres): `signalrank_telegram/access.py::resolve_user_tier`
   - Web/API (Postgres): `db/access.py::resolve_user_tier`
 - Owner bypass
   - Owner IDs: env `OWNER_TELEGRAM_ID`/`OWNER_IDS`
@@ -37,7 +36,7 @@ This matrix maps the functional spec to current code paths and highlights remain
 
 ## Dispatch/notifications
 - Tiered dispatch formatting: `signalrank_telegram/formatter.py` + dispatch logic in `signalrank_telegram/bot.py`
-- Alerts prefs storage (SQLite): `db/database.py::{get_alert_prefs,set_alert_prefs}`
+- Alerts prefs storage (Postgres): `db/pg_features.py::{get_alert_prefs,set_alert_prefs}`
 - Rate limiting + kill switch: `core/redis_state.py`
 
 ## Outcomes & trust engine
@@ -50,8 +49,8 @@ This matrix maps the functional spec to current code paths and highlights remain
 ## Monetization/payments
 - Paystack webhook + signature verification: `web/app.py`
 - Postgres subscription activation/renewal: `db/repository.py`
-- VIP seat cap enforced: web + legacy SQLite path
-- Referral system (3 invites → 7 days Premium): implemented in SQLite (`db/database.py`) and `/start` processing.
+- VIP seat cap enforced: Postgres/web path
+- Referral system (3 invites → 7 days Premium): implemented via Postgres user/referral tracking in `/start` processing.
 
 ## Security/reliability
 - Kill switch: Redis-backed flag checked before dispatch

@@ -8,12 +8,12 @@ import engine.ranking as ranking
 import engine.ml as ml
 import engine.core as core
 import engine.consensus as consensus
-import db.database as database
 import paystack.paystack as paystack
 import strategies.volatility as volatility
 import strategies.trend as trend
 import strategies.structure as structure
 import strategies.momentum as momentum
+from db.pg_compat import postgres_enabled, get_all_user_ids_compat
 
 class TestAllFunctions(unittest.TestCase):
     def test_signal_controller_functions(self):
@@ -74,27 +74,14 @@ class TestAllFunctions(unittest.TestCase):
         self.assertIsInstance(consensus.best_signal_in_group([{'foo': 'bar'}]), dict)
 
     def test_database_functions(self):
-        user_id = 123456789
-        database.set_subscription(user_id, 'FREE', 1, payment_ref='TEST')
-        self.assertIn(database.get_user_tier(user_id), ['FREE', 'PREMIUM', 'VIP', 'OWNER'])
-        self.assertIsInstance(database.get_subscription(user_id), dict)
-        self.assertIsInstance(database.has_full_access(user_id), bool)
-        self.assertIsInstance(database.get_extra_signals_left(user_id), int)
-        self.assertIsInstance(database.get_free_signals_sent_today(user_id), int)
-        self.assertIsNone(database.increment_free_signal_count(user_id))
-        self.assertIsNone(database.increment_extra_signal_count(user_id))
-        self.assertIsNone(database.approve_extra_signals(user_id, 1))
-        self.assertIsNone(database.unlock_paid_signal_for_user(user_id, 1))
-        self.assertIsInstance(database.generate_referral_code(user_id), str)
-        code = database.generate_referral_code(user_id)
-        self.assertIsInstance(database.get_referral_by_code(code), (dict, type(None)))
-        self.assertIsNone(database.record_referral_reward(user_id, user_id, 'test', 1))
-        self.assertIsInstance(database.get_referral_rewards(user_id), list)
-        self.assertIsNone(database.downgrade_to_free(user_id))
-        self.assertIsNone(database.auto_expire_subscriptions())
-        # Provide all required keys for store_signal
-        signal = {"asset": "BTC", "timeframe": "1h", "direction": "LONG", "entry": 100, "stop_loss": 90, "take_profit": 110, "score": 80, "strategy_name": "test", "strategy_group": "test", "risk_profile": "test", "watermark": "test", "rr_ratio": 2.0, "strength": 1.0}
-        self.assertIsNone(database.store_signal(signal))
+        # Postgres-only: ensure compat layer fails closed when DATABASE_URL is missing,
+        # and is callable when Postgres is configured.
+        if postgres_enabled():
+            ids = get_all_user_ids_compat()
+            self.assertIsInstance(ids, list)
+        else:
+            with self.assertRaises(Exception):
+                _ = get_all_user_ids_compat()
 
     def test_paystack_functions(self):
         self.assertIsInstance(paystack.match_amount_to_tier(10000), (str, type(None)))

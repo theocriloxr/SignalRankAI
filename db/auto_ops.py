@@ -138,6 +138,7 @@ def _fresh_start_if_needed(conn) -> None:
         tables = [
             "signal_deliveries",
             "free_signal_queue",
+            "bot_events",
             "referral_rewards",
             "referrals",
             "referral_codes",
@@ -146,6 +147,7 @@ def _fresh_start_if_needed(conn) -> None:
             "signals",
             "subscriptions",
             "users",
+            "payment_events",
             "strategy_stats",
             "admin_events",
             "runtime_state",

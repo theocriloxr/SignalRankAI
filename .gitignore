@@ -19,7 +19,6 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
-
 # Logs
 *.log
 

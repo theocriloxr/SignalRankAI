@@ -891,64 +891,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         except Exception:
             pass
 
-        # SQLite fallback
-        try:
-            from db.database import (
-                get_due_free_signal_summaries,
-                mark_free_signal_summaries_sent,
-                expire_old_free_signal_summaries,
-                get_alert_prefs,
-            )
-        except Exception:
-            return
-
-        try:
-            expire_old_free_signal_summaries(max_age_hours=24)
-        except Exception:
-            pass
-
-        try:
-            due = get_due_free_signal_summaries()
-        except Exception:
-            due = {}
-        if not due:
-            return
-
-        now_hour = datetime.now().hour
-        per_user_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
-
-        for user_id, items in due.items():
-            try:
-                prefs = get_alert_prefs(int(user_id))
-            except Exception:
-                prefs = {"tp_sl_enabled": True, "quiet_start_hour": None, "quiet_end_hour": None}
-
-            if not prefs.get("tp_sl_enabled", True):
-                try:
-                    mark_free_signal_summaries_sent([it["id"] for it in items], status='suppressed')
-                except Exception:
-                    pass
-                continue
-
-            qs = prefs.get("quiet_start_hour")
-            qe = prefs.get("quiet_end_hour")
-            if qs is not None and qe is not None:
-                try:
-                    if _in_quiet_hours(now_hour, int(qs), int(qe)):
-                        continue
-                except Exception:
-                    pass
-
-            items = items[:per_user_limit]
-            msg = _format_free_delayed_digest(items)
-            try:
-                application.bot.send_message(chat_id=int(user_id), text=msg)
-                mark_free_signal_summaries_sent([it["id"] for it in items], status='sent')
-            except Exception:
-                try:
-                    mark_free_signal_summaries_sent([it["id"] for it in items], status='failed')
-                except Exception:
-                    pass
+        # Postgres-only: no SQLite fallback
+        return
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
