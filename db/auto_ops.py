@@ -101,7 +101,7 @@ def run_startup_ops(run_mode: str) -> None:
             raise
 
         # 2) Optional one-time wipe to "start fresh"
-        if _env_bool("FRESH_START", False) and run_mode == "web":
+        if _env_bool("FRESH_START", False) and run_mode in {"web", "all"}:
             _fresh_start_if_needed(conn)
 
     finally:

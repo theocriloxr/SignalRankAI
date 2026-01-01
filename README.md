@@ -141,6 +141,8 @@ Each service uses the same start command: `python main.py`.
 - `PAYSTACK_WEBHOOK_SECRET` (or reuse `PAYSTACK_SECRET_KEY`)
 - `OWNER_TELEGRAM_ID` (or `OWNER_IDS` comma-separated)
 - `BYPASS_KEY` (used by `/unlock <key>`)
+- `PUBLIC_BASE_URL` (your Railway web domain; used for Paystack callbacks)
+- `ADMIN_API_TOKEN` (protects `/admin/killswitch` endpoints)
 
 Optional (recommended):
 - `AUTO_MIGRATE=true` (default) runs Alembic upgrades automatically on boot.
@@ -167,6 +169,32 @@ Optional (recommended):
 Notes:
 - `/signals` uses Postgres-backed delivery history (today’s signals sent to you).
 - Signal delivery is deduped per user, and signal generation is deduped for ~24h using a fingerprint.
+
+### Railway (single service)
+
+If you prefer a simpler setup (one container, one deploy), you can run everything under a single Railway service.
+
+**Start command**
+
+- `python main.py`
+
+**Service variables**
+
+- `RUN_MODE=all`
+- `PORT` is provided by Railway (do not hardcode unless required)
+- All variables listed under “Required environment variables” above
+
+**What it runs**
+
+- FastAPI web server (health/metrics + Paystack webhook)
+- Telegram bot polling
+- Engine loop
+- Worker loop
+
+**Tradeoffs**
+
+- Higher CPU/RAM usage than splitting into 4 services (Railway free tier may be tighter).
+- If one component crashes, the whole service restarts.
 
 ## Legal & Transparency
 - No profit guarantees

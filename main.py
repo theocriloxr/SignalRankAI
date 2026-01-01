@@ -1,4 +1,5 @@
 import os
+import threading
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -16,6 +17,7 @@ def main() -> None:
     - `worker`: run async worker loop
     - `bot`: run Telegram polling bot
     - `engine` (default): run synchronous engine loop
+    - `all`: run web + bot + engine + worker in one process (single Railway service)
     """
 
     mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
@@ -25,10 +27,46 @@ def main() -> None:
     try:
         from db.auto_ops import run_startup_ops
 
-        run_startup_ops(mode)
+        # In single-service mode, treat startup ops as "web" so it can run
+        # migrations and (optionally) perform a one-time fresh start.
+        run_startup_ops("web" if mode == "all" else mode)
     except Exception:
         # If startup ops fail, crash loudly so Railway logs show the issue.
         raise
+
+    if mode == "all":
+        dry_run = _env_bool("DRY_RUN", False)
+
+        def _run_web() -> None:
+            import uvicorn
+
+            port = int(os.getenv("PORT", "8000"))
+            uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
+
+        def _run_worker() -> None:
+            from worker.worker import main as worker_main
+
+            worker_main()
+
+        def _run_engine() -> None:
+            from engine.core import main_loop
+
+            main_loop(dry_run)
+
+        # Run web/worker/engine in background threads.
+        # Keep the Telegram bot in the main thread (most predictable).
+        threads = [
+            threading.Thread(target=_run_web, name="web", daemon=True),
+            threading.Thread(target=_run_worker, name="worker", daemon=True),
+            threading.Thread(target=_run_engine, name="engine", daemon=True),
+        ]
+        for t in threads:
+            t.start()
+
+        from signalrank_telegram.bot import run_bot as bot_main
+
+        bot_main()
+        return
 
     if mode == "web":
         import uvicorn

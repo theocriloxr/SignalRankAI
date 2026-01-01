@@ -182,9 +182,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 DB_PATH = 'signals.db'
-OWNER_TELEGRAM_ID = int(os.getenv('OWNER_TELEGRAM_ID', '123456789'))
-BYPASS_KEY = os.getenv('BYPASS_KEY')
-OWNER_IDS = [int(x) for x in os.getenv('OWNER_IDS', str(OWNER_TELEGRAM_ID)).split(',')]
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    raw = raw.strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+OWNER_TELEGRAM_ID = _env_int('OWNER_TELEGRAM_ID', 123456789)
+BYPASS_KEY = (os.getenv('BYPASS_KEY') or '').strip() or None
+
+_owner_ids_raw = (os.getenv('OWNER_IDS') or str(OWNER_TELEGRAM_ID)).strip()
+OWNER_IDS = [int(x) for x in _owner_ids_raw.split(',') if x.strip().isdigit()]
 
 
 def record_user_seen(user_id: int, username: str | None = None) -> bool:
