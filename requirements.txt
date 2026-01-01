@@ -11,7 +11,7 @@ prometheus-client>=0.20
 gunicorn
 python-dotenv
 APScheduler>=3.10
-httpx>=0.24.0,<0.25.0
+httpx>=0.27.0,<0.28.0
 pypaystack2>=2.0.1
 websockets
 SQLAlchemy>=2.0
