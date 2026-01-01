@@ -2415,3 +2415,7 @@ telegram.error.NetworkError: Bad Gateway
 2026-01-01 15:41:05,155 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
 2026-01-01 15:41:15,365 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
 2026-01-01 15:41:25,521 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 15:41:35,752 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 15:41:45,942 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 15:41:47,942 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 15:51:47 WAT)" (scheduled at 2026-01-01 15:41:47.939550+01:00)
+2026-01-01 15:41:47,945 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 15:51:47 WAT)" executed successfully
