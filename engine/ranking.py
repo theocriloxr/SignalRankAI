@@ -1,12 +1,24 @@
+import os
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
 def rank_signals(signals):
     """Accepts a list of signals and returns a dict with keys 'vip', 'premium', 'free'."""
+    vip_threshold = _env_float("VIP_SCORE_THRESHOLD", 85)
+    premium_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
     premium = []
     vip = []
     free = []
     for signal in signals:
-        if signal.get('score', 0) >= 85:
+        if float(signal.get('score', 0) or 0) >= vip_threshold:
             vip.append(signal)
-        elif signal.get('score', 0) >= 75:
+        elif float(signal.get('score', 0) or 0) >= premium_threshold:
             premium.append(signal)
         else:
             free.append(signal)

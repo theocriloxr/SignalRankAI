@@ -13,7 +13,17 @@ from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals
 from core.redis_state import state
 
-MIN_SCORE_THRESHOLD = 75
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
+# Store/dispatch threshold for the main pipeline.
+# Default lowered to 70 so the system produces signals in production; tune via env.
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
 
 def load_tradable_assets():
     """Return configured fallback assets.
@@ -282,7 +292,7 @@ def main_loop(DRY_RUN=False):
                         "[engine] cycle="
                         f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
                             f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
-                        f"scored>={MIN_SCORE_THRESHOLD}={cycle_scored} stored={cycle_stored} "
+                        f"scored>={MIN_SCORE_THRESHOLD:.2f}={cycle_scored} stored={cycle_stored} "
                         f"store_failures={cycle_store_failures} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
                             f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "

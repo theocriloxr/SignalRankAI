@@ -232,15 +232,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if isinstance(strategy_signals, dict):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
-        free_list = list(strategy_signals.get('free', []) or [])
         if tier in ('vip',):
             signals_list = vip_list
         elif tier in ('premium',):
             # Premium sees full signals (premium + vip)
             signals_list = vip_list + prem_list
         elif tier in ('owner',):
-            # Owner sees everything (for monitoring / debugging).
-            signals_list = vip_list + prem_list + free_list
+            # Owner sees all subscriber-grade signals, but formatted as VIP.
+            signals_list = vip_list + prem_list
         else:
             # Free: delayed summaries from top approved signals
             signals_list = (vip_list + prem_list)
@@ -260,12 +259,18 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
         if ENGINE is not None:
             effective_tier = tier
+            display_tier = tier
             if tier == 'free' and extra_left > 0:
                 effective_tier = 'premium'
+                display_tier = 'premium'
+            if tier == 'owner':
+                # Owner receives VIP formatting while keeping owner volume limits.
+                display_tier = 'vip'
+                effective_tier = 'vip'
 
             if effective_tier in ('premium', 'vip', 'owner'):
                 bot = Bot(token=_require_telegram_token())
-                limit = TIER_LIMITS.get(effective_tier, 0)
+                limit = TIER_LIMITS.get(tier, 0)
                 if tier == 'free' and extra_left > 0:
                     limit = min(int(max(1, extra_left)), len(signals_list))
 
@@ -306,7 +311,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 for signal in reserved:
                     try:
-                        bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=effective_tier))
+                        bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
