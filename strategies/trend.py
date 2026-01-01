@@ -15,13 +15,14 @@ class EMATrendStrategy(BaseStrategy):
         candles = market_data['candles']
         if ind['ema_fast'] > ind['ema_slow'] and ind['ema_slow'] > ind['ema_trend']:
             if candles:
+                entry = candles[-1]['close']
+                stop = candles[-1]['low']
+                target = entry + (entry - stop) * 2
                 return {
-                    'symbol': market_data['symbol'],
                     'direction': 'BUY',
-                    'timeframe': market_data['timeframe'],
-                    'entry': candles[-1]['close'],
-                    'stop': candles[-1]['low'],
-                    'targets': None,
+                    'entry': entry,
+                    'stop': stop,
+                    'targets': target,
                     'confidence': 0.9
                 }
         return None
@@ -32,13 +33,14 @@ class SupertrendStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('supertrend_signal') == 'BUY' and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.85
             }
         return None
@@ -49,13 +51,14 @@ class ADXTrendStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('adx', 0) > 25 and ind.get('di_plus', 0) > ind.get('di_minus', 0) and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.8
             }
         return None

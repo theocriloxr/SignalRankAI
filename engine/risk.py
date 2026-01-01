@@ -1,5 +1,11 @@
-def calculate_dynamic_risk(signal, risk):
-    return calculate_position_size(signal, risk)
+def calculate_dynamic_risk(signal, regime=None):
+    """Return a risk profile dict (not position size)."""
+    return {
+        "risk": 1.0,
+        "max_volatility": MAX_VOLATILITY,
+        "max_drawdown": MAX_DRAWDOWN,
+        "regime": regime,
+    }
 
 MAX_VOLATILITY = 0.04
 MAX_DRAWDOWN = 0.20

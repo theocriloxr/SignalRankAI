@@ -13,13 +13,14 @@ class ATRBreakoutStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind['atr'] > 1.5 * ind['bollinger']['width'] and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.8
             }
         return None
@@ -30,13 +31,14 @@ class BBWidthVolatilityStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('bollinger_width', 0) > 0.05 and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.75
             }
         return None
@@ -47,13 +49,14 @@ class KeltnerVolatilityStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('keltner_width', 0) > 0.04 and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.7
             }
         return None

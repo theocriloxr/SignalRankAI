@@ -15,23 +15,25 @@ class RSIMomentumStrategy(BaseStrategy):
         if not candles:
             return None
         if ind['rsi'] < 30:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.7
             }
         if ind['rsi'] > 70:
+            entry = candles[-1]['close']
+            stop = candles[-1]['high']
+            target = entry - (stop - entry) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'SELL',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['high'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.7
             }
         return None
@@ -42,13 +44,14 @@ class MACDMomentumStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('macd_hist', 0) > 0 and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.75
             }
         return None
@@ -58,14 +61,15 @@ class StochRSIMomentumStrategy(BaseStrategy):
     def evaluate(self, market_data):
         ind = market_data['indicators']
         candles = market_data['candles']
-        if ind.get('stochrsi', 0) < 0.2 and candles:
+        if ind.get('stoch_rsi', 0) < 0.2 and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.7
             }
         return None

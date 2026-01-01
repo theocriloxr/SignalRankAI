@@ -16,12 +16,10 @@ class StructureBullStrategy(BaseStrategy):
             price = candles[-1]['close']
             if price > ind['ema_trend']:
                 return {
-                    'symbol': market_data['symbol'],
                     'direction': 'BUY',
-                    'timeframe': market_data['timeframe'],
                     'entry': price,
                     'stop': candles[-1]['low'],
-                    'targets': None,
+                    'targets': price + (price - candles[-1]['low']) * 2,
                     'confidence': 0.6
                 }
         return None
@@ -32,13 +30,14 @@ class SRBreakRetestStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('sr_breakout', False) and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.65
             }
         return None
@@ -49,13 +48,14 @@ class LiquiditySweepStrategy(BaseStrategy):
         ind = market_data['indicators']
         candles = market_data['candles']
         if ind.get('liquidity_sweep', False) and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
             return {
-                'symbol': market_data['symbol'],
                 'direction': 'BUY',
-                'timeframe': market_data['timeframe'],
-                'entry': candles[-1]['close'],
-                'stop': candles[-1]['low'],
-                'targets': None,
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
                 'confidence': 0.6
             }
         return None
