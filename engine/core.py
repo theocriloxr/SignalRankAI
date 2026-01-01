@@ -214,13 +214,13 @@ def main_loop(DRY_RUN=False):
                                 store_signal_compat(signal)
                                 cycle_stored += 1
                             except Exception as e:
-								cycle_store_failures += 1
-								# Keep loop alive but emit a single useful hint per cycle.
-								if cycle_store_failures == 1:
-									try:
-										print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
-									except Exception:
-										pass
+                                cycle_store_failures += 1
+                                # Keep loop alive but emit a single useful hint per cycle.
+                                if cycle_store_failures == 1:
+                                    try:
+                                        print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
+                                    except Exception:
+                                        pass
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
