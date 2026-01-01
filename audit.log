@@ -2013,3 +2013,4 @@ telegram.error.TimedOut: Timed out
 2026-01-01 14:48:18,481 INFO KILL SWITCH DISABLED by 1
 2026-01-01 14:48:18,481 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
 2026-01-01 14:48:18,481 INFO EVENT: test_event | user_id=1 | details={'foo': 'bar'}
+2026-01-01 14:48:25,955 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
