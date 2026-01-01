@@ -187,7 +187,7 @@ BYPASS_KEY = os.getenv('BYPASS_KEY')
 OWNER_IDS = [int(x) for x in os.getenv('OWNER_IDS', str(OWNER_TELEGRAM_ID)).split(',')]
 
 
-def record_user_seen(user_id: int) -> bool:
+def record_user_seen(user_id: int, username: str | None = None) -> bool:
     """Persist user_id for basic analytics/ops.
 
     This is intentionally minimal (Telegram ID only; no passwords).
@@ -199,14 +199,18 @@ def record_user_seen(user_id: int) -> bool:
         c.execute(
             '''CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
+                username TEXT,
                 first_seen TEXT
             )'''
         )
         before = conn.total_changes
         c.execute(
-            'INSERT OR IGNORE INTO users (user_id, first_seen) VALUES (?, ?)',
-            (int(user_id), datetime.now().isoformat()),
+            'INSERT OR IGNORE INTO users (user_id, username, first_seen) VALUES (?, ?, ?)',
+            (int(user_id), (username or None), datetime.now().isoformat()),
         )
+        # If user already existed, best-effort update username (non-breaking).
+        if username:
+            c.execute('UPDATE users SET username=? WHERE user_id=?', (str(username)[:64], int(user_id)))
         conn.commit()
         return (conn.total_changes - before) > 0
 
@@ -288,6 +292,26 @@ def init_db():
             payment_ref TEXT,
             bypass_key_used INTEGER DEFAULT 0
         )''')
+
+        # Delayed free signal delivery queue (auto-push summaries)
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS free_signal_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                asset TEXT,
+                timeframe TEXT,
+                direction TEXT,
+                score INTEGER,
+                queued_at TEXT,
+                deliver_after TEXT,
+                sent_at TEXT,
+                status TEXT DEFAULT 'queued'
+            )'''
+        )
+        c.execute('CREATE INDEX IF NOT EXISTS ix_free_signal_queue_user_date ON free_signal_queue (user_id, date)')
+        c.execute('CREATE INDEX IF NOT EXISTS ix_free_signal_queue_deliver ON free_signal_queue (deliver_after, status)')
+
         # Referral tables
         c.execute('''CREATE TABLE IF NOT EXISTS referral_codes (
             code TEXT PRIMARY KEY,
@@ -309,6 +333,145 @@ def init_db():
             created_at TEXT
         )''')
         conn.commit()
+
+
+def queue_free_signal_summary(
+    user_id: int,
+    signal: dict,
+    delay_minutes: int | None = None,
+    daily_limit: int | None = None,
+) -> bool:
+    """Queue a delayed summary for a FREE user.
+
+    Enforces a per-user daily cap (default 2). Returns True if queued.
+    """
+    if delay_minutes is None:
+        try:
+            delay_minutes = int(os.getenv("FREE_DELAY_MINUTES", "30"))
+        except Exception:
+            delay_minutes = 30
+    if daily_limit is None:
+        try:
+            daily_limit = int(os.getenv("FREE_DAILY_LIMIT", "2"))
+        except Exception:
+            daily_limit = 2
+
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')
+    deliver_after = (now + timedelta(minutes=max(0, int(delay_minutes)))).isoformat()
+
+    asset = str(signal.get('asset') or '')[:32]
+    timeframe = str(signal.get('timeframe') or '')[:8]
+    direction = str(signal.get('direction') or '')[:8]
+    try:
+        score = int(signal.get('score') or 0)
+    except Exception:
+        score = 0
+
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS free_signal_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                asset TEXT,
+                timeframe TEXT,
+                direction TEXT,
+                score INTEGER,
+                queued_at TEXT,
+                deliver_after TEXT,
+                sent_at TEXT,
+                status TEXT DEFAULT 'queued'
+            )'''
+        )
+
+        # Count already queued/sent today (exclude expired)
+        c.execute(
+            "SELECT COUNT(*) FROM free_signal_queue WHERE user_id=? AND date=? AND status IN ('queued','sent')",
+            (int(user_id), today),
+        )
+        already = int((c.fetchone() or (0,))[0] or 0)
+        if already >= int(daily_limit):
+            return False
+
+        c.execute(
+            '''INSERT INTO free_signal_queue (user_id, date, asset, timeframe, direction, score, queued_at, deliver_after, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued')''',
+            (int(user_id), today, asset, timeframe, direction, score, now.isoformat(), deliver_after),
+        )
+        conn.commit()
+        return True
+
+
+def get_due_free_signal_summaries(now_iso: str | None = None) -> dict[int, list[dict]]:
+    """Return due queued free summaries grouped by user_id."""
+    if now_iso is None:
+        now_iso = datetime.now().isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS free_signal_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                date TEXT,
+                asset TEXT,
+                timeframe TEXT,
+                direction TEXT,
+                score INTEGER,
+                queued_at TEXT,
+                deliver_after TEXT,
+                sent_at TEXT,
+                status TEXT DEFAULT 'queued'
+            )'''
+        )
+        c.execute(
+            "SELECT id, user_id, asset, timeframe, direction, score FROM free_signal_queue "
+            "WHERE status='queued' AND deliver_after <= ? ORDER BY user_id, score DESC",
+            (now_iso,),
+        )
+        rows = c.fetchall() or []
+
+    grouped: dict[int, list[dict]] = {}
+    for row in rows:
+        _id, uid, asset, tf, direction, score = row
+        grouped.setdefault(int(uid), []).append(
+            {
+                "id": int(_id),
+                "asset": asset,
+                "timeframe": tf,
+                "direction": direction,
+                "score": int(score or 0),
+            }
+        )
+    return grouped
+
+
+def mark_free_signal_summaries_sent(ids: list[int], status: str = 'sent') -> None:
+    if not ids:
+        return
+    now = datetime.now().isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        placeholders = ",".join(["?"] * len(ids))
+        c.execute(
+            f"UPDATE free_signal_queue SET sent_at=?, status=? WHERE id IN ({placeholders})",
+            (now, status, *[int(x) for x in ids]),
+        )
+        conn.commit()
+
+
+def expire_old_free_signal_summaries(max_age_hours: int = 24) -> int:
+    """Expire queued free summaries older than max_age_hours. Returns count affected."""
+    cutoff = (datetime.now() - timedelta(hours=int(max_age_hours))).isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            "UPDATE free_signal_queue SET status='expired' WHERE status='queued' AND queued_at < ?",
+            (cutoff,),
+        )
+        conn.commit()
+        return int(conn.total_changes or 0)
 import random
 def generate_referral_code(referrer_id):
     code = f"SRK{referrer_id}{random.randint(1000,9999)}"

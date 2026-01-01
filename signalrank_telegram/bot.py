@@ -1,6 +1,7 @@
 import os
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
+from datetime import datetime
 
 from core.performance import performance_tracker
 from db.database import get_all_user_ids
@@ -153,27 +154,93 @@ def _format_free_preview(signal):
     )
 
 def dispatch_signals(strategy_signals, user_id, regime=None):
-    bot = Bot(token=_require_telegram_token())
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
-    limit = TIER_LIMITS.get(tier, 0)
 
-    if not strategy_signals:
+    # Global kill-switch (do not dispatch/queue)
+    try:
+        if state.get_killswitch_sync().enabled:
+            return
+    except Exception:
+        pass
+
+    # Support passing ranked buckets (vip/premium/free)
+    signals_list = []
+    if isinstance(strategy_signals, dict):
+        vip_list = list(strategy_signals.get('vip', []) or [])
+        prem_list = list(strategy_signals.get('premium', []) or [])
+        if tier in ('vip',):
+            signals_list = vip_list
+        elif tier in ('premium',):
+            # Premium sees full signals (premium + vip)
+            signals_list = vip_list + prem_list
+        elif tier in ('owner',):
+            signals_list = vip_list + prem_list
+        else:
+            # Free: delayed summaries from top approved signals
+            signals_list = (vip_list + prem_list)
+    else:
+        signals_list = list(strategy_signals or [])
+
+    if not signals_list:
         return
 
-    sent = 0
-    for signal in strategy_signals:
-        if sent >= limit:
-            break
-        try:
-            if tier in ('premium', 'vip', 'owner'):
+    if tier in ('premium', 'vip', 'owner'):
+        bot = Bot(token=_require_telegram_token())
+        limit = TIER_LIMITS.get(tier, 0)
+        sent = 0
+        for signal in signals_list:
+            if sent >= limit:
+                break
+            try:
                 bot.send_message(chat_id=user_id, text=format_signal(signal))
-            else:
-                bot.send_message(chat_id=user_id, text=_format_free_preview(signal))
-            sent += 1
+                sent += 1
+            except Exception:
+                continue
+        return
+
+    # FREE: queue delayed summary (max 2/day)
+    try:
+        from db.database import queue_free_signal_summary
+        daily_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
+        # Only queue up to daily limit; prefer higher score first
+        for signal in sorted(signals_list, key=lambda s: s.get('score', 0), reverse=True):
+            ok = queue_free_signal_summary(user_id, signal, daily_limit=daily_limit)
+            if not ok:
+                break
+    except Exception:
+        # As a fallback, send the old limited preview (should be rare)
+        try:
+            bot = Bot(token=_require_telegram_token())
+            bot.send_message(chat_id=user_id, text=_format_free_preview(signals_list[0]))
         except Exception:
-            # Don't crash dispatch loop on one bad message
-            continue
+            pass
+
+
+def _in_quiet_hours(now_hour: int, start_hour: int, end_hour: int) -> bool:
+    """Return True if now_hour is within quiet hours. Supports wrap-around."""
+    start_hour = int(start_hour)
+    end_hour = int(end_hour)
+    now_hour = int(now_hour)
+    if start_hour == end_hour:
+        return False
+    if start_hour < end_hour:
+        return start_hour <= now_hour < end_hour
+    return now_hour >= start_hour or now_hour < end_hour
+
+
+def _format_free_delayed_digest(items: list[dict]) -> str:
+    lines = ["🔒 FREE USER (DELAYED SIGNAL SUMMARY)", "", "Recent high-score activity:", ""]
+    for it in items:
+        lines.append(
+            f"• {it.get('asset')} {it.get('timeframe')} {it.get('direction')} (score {it.get('score', 0)})"
+        )
+    lines += [
+        "",
+        "Upgrade to Premium to get real-time entries, SL/TP, and alerts.",
+        "Use /upgrade to subscribe.",
+    ]
+    return "\n".join(lines)
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from db.database import get_all_user_ids
@@ -270,7 +337,79 @@ def run_bot():
                 )
             application.bot.send_message(chat_id=user_id, text=recap_msg)
 
+    def send_free_delayed_summaries():
+        # Respect kill-switch
+        try:
+            if state.get_killswitch_sync().enabled:
+                return
+        except Exception:
+            pass
+
+        try:
+            from db.database import (
+                get_due_free_signal_summaries,
+                mark_free_signal_summaries_sent,
+                expire_old_free_signal_summaries,
+                get_alert_prefs,
+            )
+        except Exception:
+            return
+
+        # Drop very old queued items to avoid backlog spam.
+        try:
+            expire_old_free_signal_summaries(max_age_hours=24)
+        except Exception:
+            pass
+
+        due = {}
+        try:
+            due = get_due_free_signal_summaries()
+        except Exception:
+            due = {}
+
+        if not due:
+            return
+
+        now_hour = datetime.now().hour
+        per_user_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
+
+        for user_id, items in due.items():
+            try:
+                prefs = get_alert_prefs(int(user_id))
+            except Exception:
+                prefs = {"tp_sl_enabled": True, "quiet_start_hour": None, "quiet_end_hour": None}
+
+            if not prefs.get("tp_sl_enabled", True):
+                # Avoid backlog: mark as suppressed
+                try:
+                    mark_free_signal_summaries_sent([it["id"] for it in items], status='suppressed')
+                except Exception:
+                    pass
+                continue
+
+            qs = prefs.get("quiet_start_hour")
+            qe = prefs.get("quiet_end_hour")
+            if qs is not None and qe is not None:
+                try:
+                    if _in_quiet_hours(now_hour, int(qs), int(qe)):
+                        continue
+                except Exception:
+                    pass
+
+            items = items[:per_user_limit]
+            msg = _format_free_delayed_digest(items)
+            try:
+                application.bot.send_message(chat_id=int(user_id), text=msg)
+                mark_free_signal_summaries_sent([it["id"] for it in items], status='sent')
+            except Exception:
+                # If send fails (blocked bot etc.), suppress to avoid retry loops
+                try:
+                    mark_free_signal_summaries_sent([it["id"] for it in items], status='failed')
+                except Exception:
+                    pass
+
     scheduler = BackgroundScheduler()
+    scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(
         send_weekly_recap,
         'cron',

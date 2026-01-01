@@ -120,16 +120,15 @@ def main_loop(DRY_RUN=False):
 
             # Ranking and Dispatch
             ranked_signals = rank_signals(scored_signals_all)
-            all_signals = ranked_signals.get('vip', []) + ranked_signals.get('premium', [])
             if DRY_RUN:
-                for sig in all_signals:
+                for sig in (ranked_signals.get('vip', []) + ranked_signals.get('premium', [])):
                     print("[DRY RUN]", sig)
             else:
                 from db.database import get_all_user_ids
 
                 user_ids = get_all_user_ids()
                 for user_id in user_ids:
-                    dispatch_signals(all_signals, user_id=user_id)
+                    dispatch_signals(ranked_signals, user_id=user_id)
         except Exception:
             # Keep process alive; production version should log structured errors.
             pass

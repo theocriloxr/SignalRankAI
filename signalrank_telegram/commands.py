@@ -417,6 +417,11 @@ def start_command(update, context):
 	if _public_guard(update):
 		return
 	user_id = update.effective_user.id
+	username = None
+	try:
+		username = update.effective_user.username
+	except Exception:
+		username = None
 	ref_token = None
 	try:
 		if getattr(context, "args", None):
@@ -426,9 +431,28 @@ def start_command(update, context):
 
 	try:
 		from db.database import record_user_seen
-		is_new = record_user_seen(user_id)
+		is_new = record_user_seen(user_id, username=username)
 	except Exception:
 		is_new = False
+
+	# Best-effort Postgres upsert (when configured)
+	try:
+		import asyncio
+		from db.session import ENGINE, get_session
+		from db.repository import get_or_create_user
+
+		if ENGINE is not None:
+			async def _ensure_user():
+				async with get_session() as session:
+					await get_or_create_user(session, telegram_user_id=user_id, username=username)
+					await session.commit()
+			try:
+				asyncio.run(_ensure_user())
+			except RuntimeError:
+				# If we're already inside an event loop, skip silently.
+				pass
+	except Exception:
+		pass
 
 	# Referral attribution (only for first-time users)
 	referral_outcome = None
@@ -651,8 +675,9 @@ def risk_command(update, context):
 	)
 
 
-@require_tier("PREMIUM")
 def alerts_command(update, context):
+	if _public_guard(update):
+		return
 	from db.database import get_alert_prefs, set_alert_prefs
 	user_id = update.effective_user.id
 	
