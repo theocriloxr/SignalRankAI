@@ -2,6 +2,9 @@
 from telegram import Update
 from telegram.ext import CallbackContext
 
+from core.redis_state import state
+from .access import resolve_user_tier
+
 def pricing_command(update: Update, context: CallbackContext):
 	msg = (
 			"\U0001F4B3 SignalRankAI Pricing\n\n"
@@ -169,10 +172,29 @@ def require_tier(min_tier):
 	def wrapper(func):
 		def inner(update, context):
 			user_id = update.effective_user.id
-			tier = resolve_user_tier(user_id)
-			if rate_limited(user_id):
+			# Global kill-switch
+			try:
+				ks = state.get_killswitch_sync()
+			except Exception:
+				ks = type("KS", (), {"enabled": False})()
+			if getattr(ks, "enabled", False):
+				update.message.reply_text("🚨 Signals are temporarily paused.")
+				return
+
+			# Rate limit (20/min)
+			try:
+				limited = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
+			except Exception:
+				limited = False
+			if limited:
 				update.message.reply_text("Rate limit exceeded. Please wait.")
 				return
+			tier = resolve_user_tier(user_id)
+			try:
+				if state.has_temp_owner_sync(user_id):
+					tier = "OWNER"
+			except Exception:
+				pass
 			if tier_rank(tier) < tier_rank(min_tier):
 				update.message.reply_text("Upgrade required.")
 				return

@@ -67,5 +67,12 @@ def volatility_strategies(asset, timeframe, market_data):
     for strat in strategies:
         sig = strat.evaluate(market_data)
         if sig:
+            sig['asset'] = asset
+            sig['symbol'] = asset
+            sig['timeframe'] = timeframe
+            sig['strategy_name'] = getattr(strat, 'name', strat.__class__.__name__)
+            sig['strategy_group'] = 'volatility'
+            sig['strength'] = float(sig.get('confidence', 0) or 0)
+            sig['volatility'] = float(market_data.get('indicators', {}).get('bollinger', {}).get('width', 0) or 0)
             signals.append(sig)
     return signals

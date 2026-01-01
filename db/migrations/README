@@ -1,0 +1,5 @@
+Alembic migrations live here.
+
+Run locally:
+- set DATABASE_URL=postgresql+asyncpg://...
+- alembic -c alembic.ini upgrade head

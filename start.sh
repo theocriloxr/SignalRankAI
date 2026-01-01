@@ -4,19 +4,24 @@
 # Activate virtual environment (if any)
 # source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (optional; Railway/Nixpacks usually handles this)
+if [ -f requirements.txt ]; then
+	pip install -r requirements.txt
+fi
 
-# Export environment variables
-export $(grep -v '^#' .env | xargs)
+# Export environment variables from .env (local dev convenience)
+if [ -f .env ]; then
+	export $(grep -v '^#' .env | xargs)
+fi
 
-# Start the bot
-python -m telegram.bot &
+# Default: run a single mode via RUN_MODE (engine/web/worker/bot)
+# Optional: RUN_ALL=true to run web + engine + bot in one container.
 
-# Start the main engine
-python main.py &
-
-# Start Flask API (if needed)
-# python api.py &
-
-wait
+if [ "${RUN_ALL:-false}" = "true" ]; then
+	RUN_MODE=web python main.py &
+	RUN_MODE=engine python main.py &
+	RUN_MODE=bot python main.py &
+	wait
+else
+	python main.py
+fi

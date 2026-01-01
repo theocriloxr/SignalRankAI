@@ -1,0 +1,28 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local env/secrets
+.env
+.env.*
+!.env.example
+
+# Local DB / artifacts
+*.db
+*.sqlite
+*.sqlite3
+
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

@@ -2,6 +2,16 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+"""LEGACY TELEGRAM BOT (kept for backward compatibility).
+
+Primary bot implementation: `signalrank_telegram/`.
+
+This module is intentionally guarded to avoid accidentally running the legacy
+bot in production. To run it directly, set:
+
+    ALLOW_LEGACY_TELEGRAM_BOT=true
+"""
+
 from functools import wraps
 from telegram import Update, Bot
 from telegram.ext import Application, ContextTypes, CallbackContext, CommandHandler
@@ -206,6 +216,13 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"User {user_id} upgraded to {tier} for {days} days.")
 
 if __name__ == "__main__":
+    if os.getenv("ALLOW_LEGACY_TELEGRAM_BOT", "false").strip().lower() not in {"1", "true", "yes", "y", "on"}:
+        raise SystemExit(
+            "Legacy bot entrypoint blocked. "
+            "Use RUN_MODE=bot python main.py (recommended), "
+            "or set ALLOW_LEGACY_TELEGRAM_BOT=true to run telegram/bot.py."
+        )
+
     TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN', 'YOUR_TELEGRAM_BOT_TOKEN')
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 

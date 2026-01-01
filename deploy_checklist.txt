@@ -13,8 +13,14 @@ SignalRankAI Deployment & Automation Checklist
 - Use railway.json for Railway cloud deployment
 
 4. Bot & Engine Startup
-- python -m telegram.bot (Telegram bot)
-- python main.py (Signal engine)
+- Recommended (canonical):
+	- RUN_MODE=bot python main.py (Telegram bot)
+	- RUN_MODE=engine python main.py (Signal engine loop)
+	- RUN_MODE=web python main.py (FastAPI web / health / metrics / webhooks)
+	- RUN_MODE=worker python main.py (subscription expiry + background jobs)
+
+- Legacy (backward compatible, opt-in):
+	- ALLOW_LEGACY_TELEGRAM_BOT=true python -m telegram.bot
 
 5. Payment & Monetization
 - Ensure Paystack webhook is set up and points to your server

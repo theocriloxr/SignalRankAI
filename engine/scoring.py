@@ -2,14 +2,19 @@
 
 def score_signal(signal):
     """Single-arg scorer used internally by the pipeline."""
-    score = 0
-    score += float(signal.get("confidence", 0) or 0) * 2
+    # Target: 0..100 score
+    confidence = float(signal.get("confidence", 0) or 0)
+    confidence = min(max(confidence, 0.0), 1.0)
+
     entry = signal.get("entry")
     stop = signal.get("stop")
     target = signal.get("targets", entry)
     rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
-    score += min(rr, 3)
-    score += (1 - float(signal.get("volatility", 0) or 0)) * 2
+
+    rr_component = rr_score(rr)              # 0..1
+    vol_component = volatility_quality_score(signal)  # 0..1
+
+    score = (confidence * 50.0) + (rr_component * 30.0) + (vol_component * 20.0)
     return round(score, 2)
 
 
