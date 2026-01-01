@@ -13,6 +13,7 @@ from .commands import (
     disclaimer_command,
     performance_command,
     pricing_command,
+    upgrade_command,
     policy_command,
     recap_command,
     buy_extra_premium,
@@ -179,6 +180,7 @@ def run_bot():
                     ("about", "About"),
                     ("faq", "FAQ"),
                     ("pricing", "Pricing"),
+                    ("upgrade", "Upgrade / subscribe"),
                     ("policy", "Policy / refunds"),
                     ("recap", "Weekly recap"),
                     ("performance", "(Premium) performance"),
@@ -195,6 +197,7 @@ def run_bot():
     application.add_handler(CommandHandler("disclaimer", disclaimer_command))
     application.add_handler(CommandHandler("performance", performance_command))
     application.add_handler(CommandHandler("pricing", pricing_command))
+    application.add_handler(CommandHandler("upgrade", upgrade_command))
     application.add_handler(CommandHandler("policy", policy_command))
     application.add_handler(CommandHandler("refunds", policy_command))
     application.add_handler(CommandHandler("recap", recap_command))

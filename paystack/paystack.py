@@ -16,14 +16,21 @@ PAYSTACK_VERIFY_URL = 'https://api.paystack.co/transaction/verify/'
 logging.basicConfig(filename='audit.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
 AMOUNTS = {
-    'PREMIUM_MONTHLY': 10000,
+    # Recommended pricing (Nigeria-optimized)
+    'PREMIUM_MONTHLY': 5000,
+    'PREMIUM_QUARTERLY': 12000,
+    'PREMIUM_SEMIANNUAL': 20000,
+    'VIP_MONTHLY': 20000,
+
+    # Legacy/optional weekly pricing (kept for backward compatibility)
     'PREMIUM_WEEKLY': 3000,
-    'VIP_MONTHLY': 25000,
     'VIP_WEEKLY': 8000,
     'WEEKLY_PLAN': WEEKLY_PLAN['price_ngn']
 }
 DURATIONS = {
     'PREMIUM_MONTHLY': 30,
+    'PREMIUM_QUARTERLY': 90,
+    'PREMIUM_SEMIANNUAL': 180,
     'PREMIUM_WEEKLY': 7,
     'VIP_MONTHLY': 30,
     'VIP_WEEKLY': 7,
@@ -103,21 +110,37 @@ def verify_webhook_signature(request_body, signature):
     return hmac.compare_digest(computed, signature)
 
 # --- STUB FOR TELEGRAM BOT ---
-def generate_paystack_link(user_id, price, tier=None, duration=None, extra_count=None, plan_name=None):
+def generate_paystack_link(
+    user_id,
+    price,
+    tier=None,
+    duration=None,
+    duration_days=None,
+    extra_count=None,
+    plan_name=None,
+    plan_code=None,
+):
     # Compose metadata for Paystack payment
     metadata = {
-        "telegram_id": user_id
+        # Prefer field names used by the FastAPI webhook extractor.
+        "telegram_user_id": user_id
     }
+    if plan_code:
+        metadata["plan_code"] = str(plan_code)
     if plan_name == "Weekly Plan":
         metadata["tier"] = "WEEKLY_PLAN"
         metadata["duration"] = "WEEKLY"
+        metadata["duration_days"] = DURATIONS.get("WEEKLY_PLAN")
     elif extra_count:
         metadata["tier"] = tier or "PREMIUM"
         metadata["duration"] = "EXTRA"
         metadata["extra_count"] = extra_count
-    elif tier and duration:
+    elif tier and (duration or duration_days):
         metadata["tier"] = tier
-        metadata["duration"] = duration
+        if duration:
+            metadata["duration"] = duration
+        if duration_days is not None:
+            metadata["duration_days"] = int(duration_days)
     # In production, use Paystack API to create a payment session with metadata
     # For now, encode metadata in query params for testing
     import urllib.parse

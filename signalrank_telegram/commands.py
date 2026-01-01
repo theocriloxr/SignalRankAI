@@ -1,4 +1,6 @@
 # /pricing command
+import os
+
 from telegram import Update
 from telegram.ext import CallbackContext
 
@@ -7,32 +9,67 @@ from .access import resolve_user_tier
 
 def pricing_command(update: Update, context: CallbackContext):
 	msg = (
-			"\U0001F4B3 SignalRankAI Pricing\n\n"
-        "🆓 Free – ₦0\n"
-        "• Delayed daily summaries (for learning)\n"
-        "• Example signals, not real-time\n\n"
-        "⭐ Premium\n"
-        "₦2,000 / week\n"
-        "₦6,000 / month\n"
-        "• Real-time ranked trade signals\n"
-        "• Clear entries, stops, and targets\n"
-        "• Designed for active traders\n\n"
-        "🚀 VIP\n"
-        "₦5,000 / week\n"
-        "₦18,000 / month\n"
-        "• Early access to all signals\n"
-		"• AI confidence and advanced filtering\n"
-		"• Highest quality, lowest noise\n\n"
-		"━━━━━━━━━━━━━━\n\n"
-		"\U0001F4B8 Need more signals as a Free user?\n"
-		"• Buy extra Premium signal: ₦300 each (/buy_extra_premium <count>)\n"
-		"• Buy extra VIP signal: ₦500 each (/buy_extra_vip <count>)\n\n"
-		"All payments are processed securely with Paystack.\n"
-		"Subscriptions activate automatically after payment verification\n"
-		"and expire at the end of the selected period. No auto-renewal.\n\n"
-		"Use /faq to learn more.\n\n"
-		"Honest, region-optimized pricing for Nigeria/West Africa.\n"
+		"💎 SignalRankAI Pricing\n\n"
+		"🆓 FREE\n"
+		"• 1–2 delayed signal summaries per day\n"
+		"• Outcome notifications (no exact prices)\n"
+		"• Daily performance summary (limited)\n"
+		"• Access to /pricing and /upgrade\n\n"
+		"🟡 PREMIUM\n"
+		"₦5,000 / month\n"
+		"₦12,000 / 3 months\n"
+		"₦20,000 / 6 months\n"
+		"• Real-time signals (5m → 24h)\n"
+		"• Exact Entry, SL, TP\n"
+		"• Confidence score per trade\n"
+		"• TP/SL hit notifications\n"
+		"• Daily & weekly performance stats\n"
+		"• Access to /performance\n\n"
+		"🔴 VIP / ELITE\n"
+		"₦20,000 / month (limited seats)\n"
+		"• Highest confidence signals only (score ≥ 85)\n"
+		"• Reduced frequency (quality > quantity)\n"
+		"• Early alerts + priority notifications\n"
+		"• Monthly performance report\n\n"
+		"📌 No hype. Transparent tracking.\n"
+		"Use /upgrade to subscribe.\n\n"
+		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
+	update.message.reply_text(msg)
+
+
+def upgrade_command(update: Update, context: CallbackContext):
+	"""Generates Paystack payment links for subscriptions.
+
+	Note: In production, configure Paystack Plans and store plan codes in env.
+	This function still works with the current hosted-payment-link stub.
+	"""
+	user_id = update.effective_user.id
+	from paystack.paystack import generate_paystack_link
+	
+	# Plan codes (optional; used later when wiring Paystack plans properly)
+	premium_monthly_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_MONTHLY")
+	premium_quarterly_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_QUARTERLY")
+	premium_semiannual_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_SEMIANNUAL")
+	vip_monthly_code = os.getenv("PAYSTACK_PLAN_CODE_VIP_MONTHLY")
+
+	links = []
+	links.append(
+		("Premium (₦5,000 / 30 days)", generate_paystack_link(user_id, 5000, tier="premium", duration_days=30, plan_code=premium_monthly_code))
+	)
+	links.append(
+		("Premium (₦12,000 / 90 days)", generate_paystack_link(user_id, 12000, tier="premium", duration_days=90, plan_code=premium_quarterly_code))
+	)
+	links.append(
+		("Premium (₦20,000 / 180 days)", generate_paystack_link(user_id, 20000, tier="premium", duration_days=180, plan_code=premium_semiannual_code))
+	)
+	links.append(
+		("VIP (₦20,000 / 30 days)", generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code))
+	)
+
+	msg = "📌 Choose a plan:\n\n" + "\n".join([f"• {label}: {url}" for (label, url) in links])
+	msg += "\n\nPayments are processed by Paystack. No access to your funds."
+	msg += "\n⚠️ Educational only. Not financial advice."
 	update.message.reply_text(msg)
 # --- Extra Signal Purchase Logic ---
 from telegram import Update
@@ -109,13 +146,11 @@ def buy_extra_vip(update, context):
 # /policy or /refunds command
 def policy_command(update, context):
     msg = (
-		"\U0001F4DC Subscription & Refund Policy\n\n"
-		"• All payments to SignalRankAI are final.\n"
-		"• We do not offer refunds under any circumstances.\n"
-		"• Payments sent with incorrect amounts or incorrect details are non-refundable.\n"
-		"• It is the user’s responsibility to confirm payment details before completing a transaction.\n\n"
-		"Subscriptions activate automatically after successful payment verification and expire at the end of the purchased period.\n\n"
-		"By subscribing, you acknowledge and agree to this policy."
+		"📄 Subscription & Refund Policy\n\n"
+		"• Due to the digital and time-sensitive nature of the service, payments are non-refundable.\n"
+		"• If technical issues prevent delivery, subscription time may be extended.\n\n"
+		"Subscriptions activate after successful verification and expire at the end of the purchased period.\n\n"
+		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
     update.message.reply_text(msg)
 
@@ -206,9 +241,12 @@ def require_tier(min_tier):
 # /start or welcome message
 def start_command(update, context):
 	msg = (
-		"SignalRankAI is a trading signal bot that helps you spot high-quality trade opportunities.\n\n"
-		"It analyzes the market using multiple strategies, filters out risky setups, and delivers only the strongest signals — directly on Telegram.\n\n"
-		"No hype. No guarantees. Just structured, risk-aware signals."
+		"SignalRankAI provides algorithmic market analysis for educational purposes only. "
+		"This is not financial advice. Trading involves risk.\n\n"
+		"What you get:\n"
+		"• Risk-managed signals filtered for high-probability setups\n"
+		"• Outcome tracking (no hype, no guarantees)\n\n"
+		"Use /pricing to see plans, or /upgrade to subscribe."
 	)
 	update.message.reply_text(msg)
 

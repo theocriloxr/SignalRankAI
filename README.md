@@ -46,6 +46,46 @@ The older implementation in `telegram/` is kept for backward compatibility, but 
 - Never commit `.env` (repo includes `.gitignore`).
 - Webhook verification uses HMAC SHA-512 via `x-paystack-signature`.
 
+## Disclaimer (mandatory)
+
+SignalRankAI provides algorithmic market analysis for educational purposes only.
+This is not financial advice. Trading involves risk.
+
+## Performance policy
+
+- No profit promises.
+- We use language like: “historically filtered for high-probability setups” and “risk-managed signals”.
+- We avoid: “guaranteed”, “100% win rate”, “daily profits”.
+
+## Refund policy
+
+Due to the digital and time-sensitive nature of the service, payments are non-refundable.
+If technical issues prevent delivery, subscription time may be extended.
+
+## Data & security
+
+- We store Telegram IDs (no passwords).
+- Payments are handled by Paystack.
+- SignalRankAI never has access to your funds.
+
+## Pricing (Nigeria + global)
+
+- **Free**: 1–2 delayed summaries/day, limited outcomes & summaries.
+- **Premium**: ₦5,000/month; ₦12,000/3 months; ₦20,000/6 months.
+- **VIP**: ₦20,000/month (limited seats).
+- **Owner**: internal only (OWNER_TELEGRAM_ID or `/unlock`).
+
+Use `/pricing` and `/upgrade` in the bot.
+
+### Paystack plan codes
+
+Create Paystack plans and store these environment variables:
+
+- `PAYSTACK_PLAN_CODE_PREMIUM_MONTHLY`
+- `PAYSTACK_PLAN_CODE_PREMIUM_QUARTERLY`
+- `PAYSTACK_PLAN_CODE_PREMIUM_SEMIANNUAL`
+- `PAYSTACK_PLAN_CODE_VIP_MONTHLY`
+
 ## Payments (Paystack)
 
 - Configure `PAYSTACK_WEBHOOK_SECRET` and `PAYSTACK_SECRET_KEY`.
