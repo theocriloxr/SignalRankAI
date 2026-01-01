@@ -88,13 +88,16 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     """Fetch cached market data for many assets using a bounded concurrency."""
 
     concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
+    per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", 25.0))
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(asset: str, tfs: list[str]) -> tuple[str, dict]:
         async with sem:
             try:
-                data = await fetch_market_data_cached(asset, tfs)
+                data = await asyncio.wait_for(fetch_market_data_cached(asset, tfs), timeout=max(1.0, per_asset_timeout))
                 return asset, (data or {})
+            except asyncio.TimeoutError:
+                return asset, {}
             except Exception:
                 return asset, {}
 
@@ -106,6 +109,19 @@ def main_loop(DRY_RUN=False):
     crypto_timeframes = [x.strip() for x in (os.getenv("CRYPTO_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",") if x.strip()]
     # AlphaVantage free tier is rate-limited; default to daily-only for FX.
     fx_timeframes = [x.strip() for x in (os.getenv("FX_TIMEFRAMES") or "1d").split(",") if x.strip()]
+
+    if _env_bool("ENGINE_CYCLE_LOG", True):
+        try:
+            print(
+                "[engine] loop_start "
+                f"dry_run={bool(DRY_RUN)} "
+                f"cycle_sleep_seconds={int(os.getenv('CYCLE_SLEEP_SECONDS', '60'))} "
+                f"crypto_timeframes={','.join(crypto_timeframes)} "
+                f"fx_timeframes={','.join(fx_timeframes)}",
+                flush=True,
+            )
+        except Exception:
+            pass
 
     try:
         fx_max_pairs = int((os.getenv("FX_MAX_PAIRS") or "3").strip())
@@ -137,6 +153,14 @@ def main_loop(DRY_RUN=False):
             os.environ["_ENGINE_CYCLE_NO"] = str(cycle_no)
         except Exception:
             cycle_no = 0
+
+        if _env_bool("ENGINE_CYCLE_LOG", True):
+            try:
+                every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
+                if cycle_no <= 0 or (cycle_no % every) == 0:
+                    print(f"[engine] cycle={cycle_no} start", flush=True)
+            except Exception:
+                pass
 
         cycle_assets = 0
         cycle_candidates = 0

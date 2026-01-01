@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Iterable
 
@@ -56,7 +57,14 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     # Backfill missing timeframes via REST fetcher (and indicators calculation).
     missing = [tf for tf in tfs if tf not in out]
     if missing:
-        rest = fetch_market_data_rest(asset, missing)
+        rest_timeout = float(_env_int("MARKET_REST_TIMEOUT_SECONDS", 25))
+        try:
+            rest = await asyncio.wait_for(
+                asyncio.to_thread(fetch_market_data_rest, asset, missing),
+                timeout=max(1.0, rest_timeout),
+            )
+        except asyncio.TimeoutError:
+            rest = {}
         for tf, payload in (rest or {}).items():
             out[tf] = payload
 
