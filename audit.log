@@ -2752,3 +2752,18 @@ telegram.error.NetworkError: Bad Gateway
 2026-01-01 16:30:35,840 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
 2026-01-01 16:30:46,017 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
 2026-01-01 16:30:56,202 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:31:06,418 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:31:16,604 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:31:26,796 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:31:36,961 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:31:47,130 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:31:47,944 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 16:41:47 WAT)" (scheduled at 2026-01-01 16:31:47.939550+01:00)
+2026-01-01 16:31:47,946 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 16:41:47 WAT)" executed successfully
+2026-01-01 16:31:57,321 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:32:09,651 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:32:19,856 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:32:30,032 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:32:40,245 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:32:50,425 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:33:00,650 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
+2026-01-01 16:33:10,852 INFO HTTP Request: POST https://api.telegram.org/bot8063034474:AAFLhCbLJYNHUaSfqJWEgqGxMiSiK_MUqJY/getUpdates "HTTP/1.1 200 OK"
