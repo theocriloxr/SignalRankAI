@@ -70,11 +70,42 @@ def check_binance(timeout_seconds: float = 6.0) -> bool:
                 payload = resp.json()
             except Exception:
                 payload = None
-            _warn(f"Binance unreachable or blocked: HTTP {resp.status_code} | symbol={symbol} | payload={payload}")
+            msg = None
+            try:
+                if isinstance(payload, dict):
+                    msg = str(payload.get("msg") or payload.get("message") or "")
+            except Exception:
+                msg = None
+
+            msg_l = (msg or "").lower()
+            if "restricted location" in msg_l or "not available" in msg_l or "not supported" in msg_l:
+                _warn(
+                    "Binance appears geo-blocked in this environment (restricted location). "
+                    "Action: change Railway region (or network) or switch crypto data provider. "
+                    f"HTTP {resp.status_code} | symbol={symbol} | msg={msg}"
+                )
+            else:
+                _warn(f"Binance unreachable or blocked: HTTP {resp.status_code} | symbol={symbol} | payload={payload}")
             return False
         payload = resp.json()
         if not isinstance(payload, list) or not payload:
-            _warn(f"Binance returned unexpected klines payload for {symbol}: {payload}")
+            # Binance errors can come back as dict payloads.
+            msg = None
+            try:
+                if isinstance(payload, dict):
+                    msg = str(payload.get("msg") or payload.get("message") or "")
+            except Exception:
+                msg = None
+
+            msg_l = (msg or "").lower()
+            if "restricted location" in msg_l or "not available" in msg_l or "not supported" in msg_l:
+                _warn(
+                    "Binance appears geo-blocked in this environment (restricted location). "
+                    "Action: change Railway region (or network) or switch crypto data provider. "
+                    f"symbol={symbol} | msg={msg}"
+                )
+            else:
+                _warn(f"Binance returned unexpected klines payload for {symbol}: {payload}")
             return False
         return True
     except Exception as e:
