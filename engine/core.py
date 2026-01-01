@@ -1,5 +1,6 @@
 import os
 import time
+import asyncio
 
 from data.fetcher import is_crypto
 from data.market_data import fetch_market_data_cached
@@ -81,6 +82,38 @@ def _rotate_slice(items: list[str], start: int, size: int) -> list[str]:
     if e <= n:
         return items[s:e]
     return items[s:] + items[: (e - n)]
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return int(default)
+    raw = raw.strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
+async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]]) -> dict[str, dict]:
+    """Fetch cached market data for many assets using a bounded concurrency."""
+
+    concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _one(asset: str, tfs: list[str]) -> tuple[str, dict]:
+        async with sem:
+            try:
+                data = await fetch_market_data_cached(asset, tfs)
+                return asset, (data or {})
+            except Exception:
+                return asset, {}
+
+    tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
     crypto_timeframes = [x.strip() for x in (os.getenv("CRYPTO_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",") if x.strip()]
@@ -181,16 +214,20 @@ def main_loop(DRY_RUN=False):
 
             scored_signals_all = []
 
+            # Fetch all market data once per cycle (avoids per-asset asyncio.run overhead).
+            asset_to_tfs: dict[str, list[str]] = {}
+            for asset in assets:
+                tfs = crypto_timeframes if is_crypto(asset) else fx_timeframes
+                asset_to_tfs[str(asset)] = list(tfs)
+
+            try:
+                all_market_data = asyncio.run(_fetch_market_data_for_assets(asset_to_tfs))
+            except Exception:
+                all_market_data = {}
+
             for asset in assets:
                 try:
-                    tfs = crypto_timeframes if is_crypto(asset) else fx_timeframes
-                    try:
-                        import asyncio
-
-                        market_data = asyncio.run(fetch_market_data_cached(asset, tfs))
-                    except Exception:
-                        # Best-effort fallback (should be rare; engine runs in a thread in RUN_MODE=all)
-                        market_data = {}
+                    market_data = (all_market_data or {}).get(asset) or {}
 
                     # Fail-closed: never run strategies on empty/insufficient market data.
                     try:
