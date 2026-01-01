@@ -103,9 +103,9 @@ def get_trending_fx_pairs():
 # Combine all pairs for strategy engine
 def get_all_trending_pairs():
     try:
-        top_n = int((os.getenv("CRYPTO_TRENDING_TOP_N") or "10").strip())
+        top_n = int((os.getenv("CRYPTO_TRENDING_TOP_N") or os.getenv("CRYPTO_UNIVERSE_TOP_N") or "30").strip())
     except Exception:
-        top_n = 10
+        top_n = 30
     crypto = get_trending_crypto_pairs(top_n=max(1, top_n))
     fx = get_trending_fx_pairs()
     return crypto + fx

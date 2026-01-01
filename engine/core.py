@@ -56,6 +56,31 @@ def _env_bool(name: str, default: bool = False) -> bool:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
+
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for x in items:
+        xs = str(x or "").strip()
+        if not xs or xs in seen:
+            continue
+        seen.add(xs)
+        out.append(xs)
+    return out
+
+
+def _rotate_slice(items: list[str], start: int, size: int) -> list[str]:
+    if size <= 0:
+        return []
+    if len(items) <= size:
+        return list(items)
+    n = len(items)
+    s = int(start) % n
+    e = s + int(size)
+    if e <= n:
+        return items[s:e]
+    return items[s:] + items[: (e - n)]
+
 def main_loop(DRY_RUN=False):
     crypto_timeframes = [x.strip() for x in (os.getenv("CRYPTO_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",") if x.strip()]
     # AlphaVantage free tier is rate-limited; default to daily-only for FX.
@@ -85,6 +110,13 @@ def main_loop(DRY_RUN=False):
     regime_strategies = get_regime_strategies() if hasattr(get_regime_strategies, '__call__') else None
 
     while True:
+        # Increment cycle counter early so we can use it for pair rotation.
+        try:
+            cycle_no = _env_int("_ENGINE_CYCLE_NO", 0) + 1
+            os.environ["_ENGINE_CYCLE_NO"] = str(cycle_no)
+        except Exception:
+            cycle_no = 0
+
         cycle_assets = 0
         cycle_candidates = 0
         cycle_after_dedupe = 0
@@ -122,12 +154,24 @@ def main_loop(DRY_RUN=False):
 
             # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
             try:
+                assets = _dedupe_preserve_order(list(assets or []))
                 fx_assets = [a for a in assets if not is_crypto(a)]
                 crypto_assets = [a for a in assets if is_crypto(a)]
                 if not fx_enabled:
                     fx_assets = []
                 if fx_assets and fx_max_pairs > 0:
                     fx_assets = fx_assets[: int(fx_max_pairs)]
+
+                # Crypto universe can be large; bound per-cycle work but rotate so we cover all.
+                crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", 20)
+                crypto_pair_rotation = _env_bool("CRYPTO_PAIR_ROTATION", True)
+                if crypto_max_pairs > 0 and len(crypto_assets) > crypto_max_pairs:
+                    if crypto_pair_rotation:
+                        start = (max(0, int(cycle_no)) - 1) * int(crypto_max_pairs)
+                        crypto_assets = _rotate_slice(crypto_assets, start=start, size=int(crypto_max_pairs))
+                    else:
+                        crypto_assets = crypto_assets[: int(crypto_max_pairs)]
+
                 assets = crypto_assets + fx_assets
             except Exception:
                 pass
@@ -281,11 +325,6 @@ def main_loop(DRY_RUN=False):
             # One-line per-cycle health signal for Railway logs.
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
-                try:
-                    cycle_no = _env_int("_ENGINE_CYCLE_NO", 0) + 1
-                    os.environ["_ENGINE_CYCLE_NO"] = str(cycle_no)
-                except Exception:
-                    cycle_no = 0
                 if cycle_no <= 0 or (cycle_no % every) == 0:
                     crypto_provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
                     print(

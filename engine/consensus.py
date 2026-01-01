@@ -32,7 +32,9 @@ def consensus_filter(signals, min_score=None):
         # Default is intentionally permissive so the bot produces signals.
         # Tune in production: e.g. 1.4 (needs ~2 strategies at 0.7 confidence),
         # or 2.1 (needs ~3 strategies at 0.7 confidence).
-        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.7)
+        # Many single-strategy signals in this codebase use ~0.6–0.65 confidence.
+        # Defaulting to 0.6 avoids filtering everything to zero in low-signal environments.
+        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.6)
 
     grouped = {}
     for s in signals:
