@@ -46,6 +46,17 @@ def main() -> None:
         # If startup ops fail, crash loudly so Railway logs show the issue.
         raise
 
+    # Market data connectivity self-check (non-fatal): prints warnings if
+    # Binance/AlphaVantage are unreachable so you can see "can it see charts"
+    # immediately in Railway logs.
+    try:
+        from data.startup_selfcheck import run_startup_data_selfcheck
+
+        run_startup_data_selfcheck()
+    except Exception:
+        # Never block startup due to self-check issues.
+        pass
+
     if mode == "all":
         dry_run = _env_bool("DRY_RUN", False)
 

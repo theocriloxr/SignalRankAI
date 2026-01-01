@@ -38,12 +38,15 @@ def main_loop(DRY_RUN=False):
 
     cycle_sleep_seconds = int(os.getenv("CYCLE_SLEEP_SECONDS", "60"))
 
-    # Fail fast: if FX pairs are configured, require a real candle provider key.
+    # If FX pairs are configured, require a real candle provider key.
+    # Non-fatal: warn and disable FX rather than crashing the whole engine.
     fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
+    fx_enabled = True
     if fx_pairs and not (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip():
-        raise RuntimeError(
-            "FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. "
-            "Set ALPHAVANTAGE_API_KEY or clear FX_PAIRS to avoid running on empty FX data."
+        fx_enabled = False
+        print(
+            "[WARN] FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. Disabling FX candles.",
+            flush=True,
         )
 
     # Example: fetch strategy weights and regime_strategies from ML/DB (stubbed here)
@@ -78,6 +81,8 @@ def main_loop(DRY_RUN=False):
             try:
                 fx_assets = [a for a in assets if not is_crypto(a)]
                 crypto_assets = [a for a in assets if is_crypto(a)]
+                if not fx_enabled:
+                    fx_assets = []
                 if fx_assets and fx_max_pairs > 0:
                     fx_assets = fx_assets[: int(fx_max_pairs)]
                 assets = crypto_assets + fx_assets
