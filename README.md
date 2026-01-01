@@ -145,7 +145,12 @@ Each service uses the same start command: `python main.py`.
 
 - `VIP_SEAT_LIMIT` (default 15)
 - `TRADABLE_ASSETS` (comma-separated fallback list; no demo symbols are hardcoded)
+- `CRYPTO_TRENDING_TOP_N` (default 10; limits Binance auto-discovery)
 - `FX_PAIRS` + `ALPHAVANTAGE_API_KEY` (optional; required only if FX is enabled)
+- **AlphaVantage free-tier safety** (recommended):
+	- `FX_MAX_PAIRS=3`
+	- `FX_TIMEFRAMES=1d`
+	- `ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS=15`
 
 **5) Paystack webhook**
 

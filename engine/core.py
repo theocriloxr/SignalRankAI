@@ -1,7 +1,7 @@
 import os
 import time
 
-from data.fetcher import fetch_market_data
+from data.fetcher import fetch_market_data, is_crypto
 from data.pair_discovery import get_all_trending_pairs
 from engine.regime import detect_market_regime
 from strategies import run_all_strategies
@@ -27,7 +27,15 @@ def load_tradable_assets():
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 def main_loop(DRY_RUN=False):
-    timeframes = ['5m', '15m', '1h', '4h', '1d']
+    crypto_timeframes = [x.strip() for x in (os.getenv("CRYPTO_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",") if x.strip()]
+    # AlphaVantage free tier is rate-limited; default to daily-only for FX.
+    fx_timeframes = [x.strip() for x in (os.getenv("FX_TIMEFRAMES") or "1d").split(",") if x.strip()]
+
+    try:
+        fx_max_pairs = int((os.getenv("FX_MAX_PAIRS") or "3").strip())
+    except Exception:
+        fx_max_pairs = 3
+
     cycle_sleep_seconds = int(os.getenv("CYCLE_SLEEP_SECONDS", "60"))
 
     # Fail fast: if FX pairs are configured, require a real candle provider key.
@@ -66,11 +74,22 @@ def main_loop(DRY_RUN=False):
                 time.sleep(max(5, cycle_sleep_seconds))
                 continue
 
+            # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
+            try:
+                fx_assets = [a for a in assets if not is_crypto(a)]
+                crypto_assets = [a for a in assets if is_crypto(a)]
+                if fx_assets and fx_max_pairs > 0:
+                    fx_assets = fx_assets[: int(fx_max_pairs)]
+                assets = crypto_assets + fx_assets
+            except Exception:
+                pass
+
             scored_signals_all = []
 
             for asset in assets:
                 try:
-                    market_data = fetch_market_data(asset, timeframes)
+                    tfs = crypto_timeframes if is_crypto(asset) else fx_timeframes
+                    market_data = fetch_market_data(asset, tfs)
                     regime = detect_market_regime(market_data)
                     strategy_signals = run_all_strategies(
                         asset,

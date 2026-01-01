@@ -6,6 +6,33 @@ import requests
 
 from .indicators import calculate_indicators
 
+
+_ALPHA_LAST_CALL_TS = 0.0
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
+def _alphavantage_rate_limit() -> None:
+    """Best-effort global rate limit for AlphaVantage.
+
+    Free tier is very limited, so we default to ~4 calls/minute.
+    Override via ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS.
+    """
+    global _ALPHA_LAST_CALL_TS
+    min_seconds = max(0.0, _env_float("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", 15.0))
+    if min_seconds <= 0:
+        return
+    now = time.monotonic()
+    wait = (_ALPHA_LAST_CALL_TS + min_seconds) - now
+    if wait > 0:
+        time.sleep(wait)
+    _ALPHA_LAST_CALL_TS = time.monotonic()
+
 def fetch_market_data(asset, timeframes):
     data = {}
     for tf in timeframes:
@@ -78,8 +105,12 @@ def get_fx_candles(asset, timeframe):
             f"?function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}"
             f"&interval={interval}&outputsize=compact&apikey={api_key}"
         )
+        _alphavantage_rate_limit()
         resp = requests.get(url, timeout=10)
         payload = resp.json() if resp.ok else {}
+        # AlphaVantage sends throttle notices in-body with 200 OK
+        if any(k in payload for k in ("Note", "Information", "Error Message")):
+            return []
         key = f"Time Series FX ({interval})"
         series = payload.get(key) or {}
         candles = []
@@ -112,8 +143,11 @@ def get_fx_candles(asset, timeframe):
                 f"?function=FX_INTRADAY&from_symbol={from_symbol}&to_symbol={to_symbol}"
                 f"&interval=60min&outputsize=compact&apikey={api_key}"
             )
+            _alphavantage_rate_limit()
             resp = requests.get(url, timeout=10)
             payload = resp.json() if resp.ok else {}
+            if any(k in payload for k in ("Note", "Information", "Error Message")):
+                return []
             series = payload.get("Time Series FX (60min)") or {}
             hourly = []
             for ts, row in sorted(series.items()):
@@ -162,8 +196,11 @@ def get_fx_candles(asset, timeframe):
             f"?function=FX_DAILY&from_symbol={from_symbol}&to_symbol={to_symbol}"
             f"&outputsize=compact&apikey={api_key}"
         )
+        _alphavantage_rate_limit()
         resp = requests.get(url, timeout=10)
         payload = resp.json() if resp.ok else {}
+        if any(k in payload for k in ("Note", "Information", "Error Message")):
+            return []
         series = payload.get("Time Series FX (Daily)") or {}
         candles = []
         for ts, row in sorted(series.items()):
