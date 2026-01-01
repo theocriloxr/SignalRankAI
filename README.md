@@ -112,9 +112,49 @@ A production-grade, rule-based trading signal platform enhanced with probabilist
 4. Simulate signals, payments, expiry, and admin actions.
 
 ## Deployment
-- Set all secrets as Railway environment variables.
-- Use PostgreSQL for production DB.
-- Start command: `python main.py`
+
+### Railway (recommended)
+
+Create **one Railway project** and add **4 services** from the same repo (same codebase), each with a different `RUN_MODE`.
+
+**1) Add Postgres**
+
+- Add a Railway Postgres plugin.
+- Copy its `DATABASE_URL` to each service as an environment variable.
+- Run migrations once: `python -m alembic upgrade head` (Railway shell on any service).
+
+**2) Create services**
+
+Each service uses the same start command: `python main.py`.
+
+- **web**: `RUN_MODE=web`
+- **bot**: `RUN_MODE=bot`
+- **engine**: `RUN_MODE=engine`
+- **worker**: `RUN_MODE=worker`
+
+**3) Required environment variables**
+
+- `DATABASE_URL` (Railway Postgres)
+- `TELEGRAM_TOKEN`
+- `PAYSTACK_SECRET_KEY`
+- `PAYSTACK_WEBHOOK_SECRET` (or reuse `PAYSTACK_SECRET_KEY`)
+- `OWNER_TELEGRAM_ID` (or `OWNER_IDS` comma-separated)
+- `BYPASS_KEY` (used by `/unlock <key>`)
+
+**4) Recommended environment variables**
+
+- `VIP_SEAT_LIMIT` (default 15)
+- `TRADABLE_ASSETS` (comma-separated fallback list; no demo symbols are hardcoded)
+- `FX_PAIRS` + `ALPHAVANTAGE_API_KEY` (optional; required only if FX is enabled)
+
+**5) Paystack webhook**
+
+- In Paystack dashboard, set webhook URL to:
+	- `https://<your-railway-web-domain>/webhooks/paystack`
+
+Notes:
+- `/signals` uses Postgres-backed delivery history (today’s signals sent to you).
+- Signal delivery is deduped per user, and signal generation is deduped for ~24h using a fingerprint.
 
 ## Legal & Transparency
 - No profit guarantees

@@ -8,7 +8,7 @@ from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk
 from engine.scoring import calculate_signal_score
-from db.database import store_signal
+from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals
 from core.redis_state import state
@@ -133,7 +133,7 @@ def main_loop(DRY_RUN=False):
                             else:
                                 signal['rr_ratio'] = signal.get('rr_ratio', 0)
                             scored_signals_all.append(signal)
-                            store_signal(signal)
+                            store_signal_compat(signal)
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
@@ -144,9 +144,7 @@ def main_loop(DRY_RUN=False):
                 for sig in (ranked_signals.get('vip', []) + ranked_signals.get('premium', [])):
                     print("[DRY RUN]", sig)
             else:
-                from db.database import get_all_user_ids
-
-                user_ids = get_all_user_ids()
+                user_ids = get_all_user_ids_compat()
                 for user_id in user_ids:
                     dispatch_signals(ranked_signals, user_id=user_id)
         except Exception:

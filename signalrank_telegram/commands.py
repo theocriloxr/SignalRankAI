@@ -54,16 +54,33 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
 
-	public_cmds = ["/start", "/help", "/pricing", "/upgrade", "/signals", "/performance", "/invite"]
-	premium_cmds = ["/stats", "/history", "/risk", "/alerts"]
-	vip_cmds = ["/elite", "/early", "/report"]
+	public_cmds = [
+		("/start", "Start and register your account"),
+		("/help", "Show commands by tier"),
+		("/pricing", "View plans and seat limits"),
+		("/upgrade", "Get Paystack checkout links"),
+		("/signals", "Today’s signals sent to you"),
+		("/performance", "Performance summary"),
+		("/invite", "Your referral link"),
+	]
+	premium_cmds = [
+		("/stats", "Signal stats"),
+		("/history", "Your signal history"),
+		("/risk", "Risk guidance for current regime"),
+		("/alerts", "Alert preferences (quiet hours, TP/SL)"),
+	]
+	vip_cmds = [
+		("/elite", "Highest-confidence signals"),
+		("/early", "Early alerts"),
+		("/report", "Monthly report"),
+	]
 
-	lines = ["📌 Commands available:", "", "🆓 Public:"]
-	lines += [f"• {c}" for c in public_cmds]
+	lines = ["📌 Commands", "", "🆓 Public:"]
+	lines += [f"• {cmd} — {desc}" for (cmd, desc) in public_cmds]
 	if tier_rank(tier) >= tier_rank("PREMIUM"):
-		lines += ["", "🟡 Premium:"] + [f"• {c}" for c in premium_cmds]
+		lines += ["", "🟡 Premium:"] + [f"• {cmd} — {desc}" for (cmd, desc) in premium_cmds]
 	if tier_rank(tier) >= tier_rank("VIP"):
-		lines += ["", "🔴 VIP:"] + [f"• {c}" for c in vip_cmds]
+		lines += ["", "🔴 VIP:"] + [f"• {cmd} — {desc}" for (cmd, desc) in vip_cmds]
 	lines += ["", "⚠️ Educational only. Not financial advice. Trading involves risk."]
 	if update.message is not None:
 		await update.message.reply_text("\n".join(lines))
@@ -75,31 +92,61 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
 
+	signals: list[dict] = []
+	# Prefer Postgres-backed daily history when configured.
 	try:
-		from db.database import get_unreleased_signals
-		signals = get_unreleased_signals()
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import list_signals_sent_today
+			async with get_session() as session:
+				rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+				signals = [
+					{
+						"signal_id": r.signal_id,
+						"asset": r.asset,
+						"timeframe": r.timeframe,
+						"direction": r.direction,
+						"entry": r.entry,
+						"stop_loss": r.stop_loss,
+						"take_profit": r.take_profit,
+						"rr_ratio": r.rr_estimate,
+						"score": r.score,
+						"regime": r.regime,
+						"strength": r.strength,
+						"strategy_name": r.strategy_name,
+						"strategy_group": r.strategy_group,
+					}
+					for r in rows
+				]
 	except Exception:
 		signals = []
 
+	# SQLite fallback (legacy)
+	if not signals:
+		try:
+			from db.database import get_unreleased_signals
+			signals = get_unreleased_signals()[:10]
+		except Exception:
+			signals = []
+
 	if not signals:
 		if update.message is not None:
-			await update.message.reply_text("No signals available right now. Check back later.")
+			await update.message.reply_text("No signals sent to you today yet. Check back later.")
 		return
 
-	# Show a small batch
-	signals = signals[:5]
 	if tier_rank(tier) < tier_rank("PREMIUM"):
-		lines = ["🆓 Latest signal summary (limited):", ""]
-		for s in signals:
-			lines.append(f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {s.get('score', 0)})")
-		lines += ["", "Upgrade to Premium to see exact Entry/SL/TP in real-time."]
+		lines = ["🆓 Today’s signals (summary):", ""]
+		for s in signals[:10]:
+			lines.append(
+				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {int(s.get('score', 0) or 0)})"
+			)
+		lines += ["", "Upgrade to Premium to receive real-time entries, SL/TP, and alerts."]
 		if update.message is not None:
 			await update.message.reply_text("\n".join(lines))
 		return
 
-	# Premium/VIP: show full formatted messages
 	from .formatter import format_signal
-	for s in signals:
+	for s in signals[:10]:
 		try:
 			if update.message is not None:
 				await update.message.reply_text(format_signal(s))
@@ -113,19 +160,33 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
-	try:
-		from db.database import generate_referral_code
-		code = generate_referral_code(user_id)
-	except Exception:
-		code = None
+	code = None
 	progress = None
 	try:
-		from db.database import get_referral_progress
-		progress = get_referral_progress(user_id)
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import get_or_create_referral_code, get_referral_progress
+			async with get_session() as session:
+				code = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
+				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
+				await session.commit()
+		else:
+			raise RuntimeError("no postgres")
 	except Exception:
-		progress = None
+		try:
+			from db.database import generate_referral_code, get_referral_progress
+			code = generate_referral_code(user_id)
+			progress = get_referral_progress(user_id)
+		except Exception:
+			code = None
+			progress = None
 
-	bot_username = os.getenv("BOT_USERNAME")
+	bot_username = None
+	try:
+		me = await context.bot.get_me()
+		bot_username = getattr(me, "username", None)
+	except Exception:
+		bot_username = os.getenv("BOT_USERNAME")
 	progress_line = ""
 	if progress:
 		need = int(progress.get("needed_for_next", 0) or 0)
@@ -151,7 +212,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		await update.message.reply_text(
 			f"🎁 Your invite code: {code}\n\n"
 			"Reward: invite 3 new users → get +7 days Premium.\n"
-			"Set BOT_USERNAME to generate a full invite link."
+			"Invite link is unavailable (bot username not resolved)."
 			f"{progress_line}"
 		)
 	else:
@@ -444,22 +505,28 @@ async def start_command(update, context):
 	except Exception:
 		ref_token = None
 
-	try:
-		from db.database import record_user_seen
-		is_new = record_user_seen(user_id, username=username)
-	except Exception:
-		is_new = False
-
-	# Best-effort Postgres upsert (when configured)
+	is_new = False
+	# Prefer Postgres for "new user" determination when configured.
 	try:
 		from db.session import ENGINE, get_session
+		from db.models import User
+		from sqlalchemy import select
 		from db.repository import get_or_create_user
 		if ENGINE is not None:
 			async with get_session() as session:
+				res = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+				existing = res.scalar_one_or_none()
+				is_new = existing is None
 				await get_or_create_user(session, telegram_user_id=user_id, username=username)
 				await session.commit()
+		else:
+			raise RuntimeError("no postgres")
 	except Exception:
-		pass
+		try:
+			from db.database import record_user_seen
+			is_new = record_user_seen(user_id, username=username)
+		except Exception:
+			is_new = False
 
 	# Referral attribution (only for first-time users)
 	referral_outcome = None
@@ -469,10 +536,25 @@ async def start_command(update, context):
 			code = code[4:]
 		if code:
 			try:
-				from db.database import process_referral_start
-				referral_outcome = process_referral_start(user_id, code, is_new_user=bool(is_new))
+				from db.session import ENGINE, get_session
+				if ENGINE is not None:
+					from db.pg_features import process_referral_start as process_referral_start_pg
+					async with get_session() as session:
+						referral_outcome = await process_referral_start_pg(
+							session,
+							referred_telegram_user_id=int(user_id),
+							referral_code=str(code),
+							is_new_user=bool(is_new),
+						)
+						await session.commit()
+				else:
+					raise RuntimeError("no postgres")
 			except Exception:
-				referral_outcome = None
+				try:
+					from db.database import process_referral_start
+					referral_outcome = process_referral_start(user_id, code, is_new_user=bool(is_new))
+				except Exception:
+					referral_outcome = None
 
 	# Internal audit log (no user-visible output)
 	try:

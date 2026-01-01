@@ -11,6 +11,7 @@ from db.database import set_subscription
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 PAYSTACK_WEBHOOK_SECRET = os.getenv('PAYSTACK_WEBHOOK_SECRET')
 PAYSTACK_VERIFY_URL = 'https://api.paystack.co/transaction/verify/'
+PAYSTACK_INIT_URL = 'https://api.paystack.co/transaction/initialize'
 
 # Setup audit logger
 logging.basicConfig(filename='audit.log', level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
@@ -153,29 +154,70 @@ def generate_paystack_link(
     plan_name=None,
     plan_code=None,
 ):
-    # Compose metadata for Paystack payment
+    """Create a Paystack checkout session and return a short, working URL.
+
+    Uses Paystack Transaction Initialize API and returns `authorization_url`.
+    Metadata fields are aligned with the FastAPI webhook extractor in web/app.py.
+    """
+
+    secret = os.getenv('PAYSTACK_SECRET_KEY')
+    if not secret:
+        # Fail closed: don't emit fake links.
+        return "PAYSTACK_SECRET_KEY is not configured."
+
+    amount_ngn = int(price)
+    amount_kobo = max(100, amount_ngn) * 100
+
     metadata = {
-        # Prefer field names used by the FastAPI webhook extractor.
-        "telegram_user_id": user_id
+        "telegram_user_id": int(user_id),
     }
     if plan_code:
         metadata["plan_code"] = str(plan_code)
+
     if plan_name == "Weekly Plan":
         metadata["tier"] = "WEEKLY_PLAN"
         metadata["duration"] = "WEEKLY"
-        metadata["duration_days"] = DURATIONS.get("WEEKLY_PLAN")
+        metadata["duration_days"] = int(DURATIONS.get("WEEKLY_PLAN") or 7)
     elif extra_count:
-        metadata["tier"] = tier or "PREMIUM"
+        metadata["tier"] = (tier or "PREMIUM")
         metadata["duration"] = "EXTRA"
-        metadata["extra_count"] = extra_count
-    elif tier and (duration or duration_days):
+        metadata["extra_count"] = int(extra_count)
+    elif tier and (duration or duration_days is not None):
         metadata["tier"] = tier
         if duration:
             metadata["duration"] = duration
         if duration_days is not None:
             metadata["duration_days"] = int(duration_days)
-    # In production, use Paystack API to create a payment session with metadata
-    # For now, encode metadata in query params for testing
-    import urllib.parse
-    meta_str = urllib.parse.quote(str(metadata))
-    return f"https://paystack.com/pay/signalrankai?user={user_id}&price={price}&metadata={meta_str}"
+
+    payload = {
+        "email": f"user{int(user_id)}@signalrank.ai",
+        "amount": int(amount_kobo),
+        "metadata": metadata,
+    }
+
+    # Optional: set subscription plan code (Paystack will use it if enabled)
+    if plan_code:
+        payload["plan"] = str(plan_code)
+
+    callback_url = os.getenv("PAYSTACK_CALLBACK_URL") or os.getenv("PUBLIC_BASE_URL")
+    if callback_url:
+        payload["callback_url"] = callback_url
+
+    headers = {
+        'Authorization': f'Bearer {secret}',
+        'Content-Type': 'application/json',
+    }
+
+    try:
+        resp = requests.post(PAYSTACK_INIT_URL, json=payload, headers=headers, timeout=20)
+        data = resp.json() if resp.content else {}
+        if resp.status_code >= 400 or not bool(data.get('status')):
+            logging.warning(f"Paystack init failed: status={resp.status_code} body={data}")
+            return "Paystack checkout init failed. Please try again."
+        auth_url = ((data.get('data') or {}).get('authorization_url') or '').strip()
+        if not auth_url:
+            return "Paystack did not return a checkout URL."
+        return auth_url
+    except Exception as exc:
+        logging.warning(f"Paystack init exception: {exc}")
+        return "Paystack checkout init error. Please try again."

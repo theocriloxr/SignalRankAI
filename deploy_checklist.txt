@@ -19,6 +19,30 @@ SignalRankAI Deployment & Automation Checklist
 	- RUN_MODE=web python main.py (FastAPI web / health / metrics / webhooks)
 	- RUN_MODE=worker python main.py (subscription expiry + background jobs)
 
+4b. Railway (production) recommended layout
+
+- Create 1 Railway project
+- Add Postgres plugin
+- Create 4 Railway services (all from the same repo) with start command: `python main.py`
+	- service: web 	RUN_MODE=web
+	- service: bot 	RUN_MODE=bot
+	- service: engine RUN_MODE=engine
+	- service: worker RUN_MODE=worker
+
+- Configure variables on ALL services:
+	- DATABASE_URL (from Railway Postgres)
+	- TELEGRAM_TOKEN
+	- PAYSTACK_SECRET_KEY
+	- PAYSTACK_WEBHOOK_SECRET (or reuse PAYSTACK_SECRET_KEY)
+	- OWNER_TELEGRAM_ID (or OWNER_IDS)
+	- BYPASS_KEY
+
+- Run migrations once (Railway shell):
+	- python -m alembic upgrade head
+
+- Paystack webhook URL:
+	- https://<your-railway-web-domain>/webhooks/paystack
+
 - Legacy (backward compatible, opt-in):
 	- ALLOW_LEGACY_TELEGRAM_BOT=true python -m telegram.bot
 

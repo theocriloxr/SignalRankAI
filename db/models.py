@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -64,6 +64,9 @@ class Signal(Base):
     strategy_group: Mapped[str] = mapped_column(String(32), nullable=False)
     strength: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
+    # Optional deduplication key for “same signal” within a short window (e.g., 24h).
+    fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
@@ -106,3 +109,75 @@ class AdminEvent(Base):
     actor_telegram_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     details: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class AlertPreference(Base):
+    __tablename__ = "alert_prefs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    tp_sl_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    quiet_start_hour: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    quiet_end_hour: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class ReferralCode(Base):
+    __tablename__ = "referral_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    referrer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class ReferralAttribution(Base):
+    __tablename__ = "referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    referrer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class ReferralReward(Base):
+    __tablename__ = "referral_rewards"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    referrer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    referred_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
+    reward_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    reward_value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class FreeSignalQueue(Base):
+    __tablename__ = "free_signal_queue"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    date: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+
+    signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    queued_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    deliver_after: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="queued")
+
+
+class SignalDelivery(Base):
+    __tablename__ = "signal_deliveries"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_signal_delivery_user_signal"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
+    tier_at_send: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="free")
+    delivered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
