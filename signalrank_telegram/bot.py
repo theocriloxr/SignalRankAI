@@ -384,8 +384,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             pass
         # Postgres-only: no SQLite fallback
         return
-        print(f"[boot] telegram bot preflight failed: {exc}", flush=True)
-        raise
+        
+
+def run_bot() -> None:
+    """Run the Telegram polling bot.
+
+    This must be explicitly invoked (e.g. RUN_MODE=bot or RUN_MODE=all). It must
+    not run on import.
+    """
+
+    from apscheduler.schedulers.background import BackgroundScheduler
 
     application = Application.builder().token(_require_telegram_token()).build()
 
@@ -504,7 +512,6 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
         # Postgres-only: no SQLite fallback
         return
-
 
     def send_outcome_notifications():
         # Best-effort Postgres follow-up messages for TP/SL/invalid outcomes.

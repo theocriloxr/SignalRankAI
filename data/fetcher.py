@@ -8,6 +8,7 @@ from .indicators import calculate_indicators
 
 
 _ALPHA_LAST_CALL_TS = 0.0
+_BINANCE_BLOCKED_REASON: str | None = None
 
 
 def _env_float(name: str, default: float) -> float:
@@ -81,18 +82,126 @@ def get_crypto_candles(asset, timeframe):
     if not sym or len(sym) < 6:
         return []
 
+    def _cryptocompare_candles(symbol_rest: str, tf: str) -> list[dict]:
+        # CryptoCompare expects fsym/tsym (base/quote). For USDT quotes, try USDT first.
+        base = symbol_rest
+        quote = "USDT"
+        for q in ("USDT", "USDC", "BUSD", "USD"):
+            if base.endswith(q) and len(base) > len(q):
+                base = base[: -len(q)]
+                quote = q
+                break
+        if not base:
+            return []
+
+        tf = (tf or "").strip()
+        # Map timeframe to endpoint + aggregate
+        if tf in {"5m", "15m"}:
+            endpoint = "histominute"
+            aggregate = 5 if tf == "5m" else 15
+        elif tf in {"1h", "4h"}:
+            endpoint = "histohour"
+            aggregate = 1 if tf == "1h" else 4
+        else:
+            endpoint = "histoday"
+            aggregate = 1
+
+        url_cc = f"https://min-api.cryptocompare.com/data/v2/{endpoint}"
+        params_cc = {
+            "fsym": base,
+            "tsym": quote,
+            "limit": 200,
+            "aggregate": aggregate,
+        }
+
+        headers = {}
+        api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+        if api_key:
+            headers["authorization"] = f"Apikey {api_key}"
+
+        resp = requests.get(url_cc, params=params_cc, headers=headers, timeout=12)
+        payload = resp.json() if resp.ok else {}
+        if not resp.ok:
+            return []
+        if str(payload.get("Response") or "").lower() != "success":
+            return []
+
+        data = (((payload.get("Data") or {}) or {}).get("Data") or [])
+        if not isinstance(data, list) or not data:
+            return []
+
+        out: list[dict] = []
+        for row in data:
+            try:
+                ts_ms = int(row.get("time")) * 1000
+                out.append(
+                    {
+                        "timestamp": ts_ms,
+                        "open": float(row.get("open")),
+                        "high": float(row.get("high")),
+                        "low": float(row.get("low")),
+                        "close": float(row.get("close")),
+                        "volume": float(row.get("volumefrom") or 0.0),
+                    }
+                )
+            except Exception:
+                continue
+        return out
+
+    # Allow explicit provider override
+    provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+    if provider == "cryptocompare":
+        candles = _cryptocompare_candles(sym, interval)
+        return candles or []
+
+    global _BINANCE_BLOCKED_REASON
+    if _BINANCE_BLOCKED_REASON is not None:
+        candles = _cryptocompare_candles(sym, interval)
+        return candles or []
+
     url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": sym, "interval": interval, "limit": 200}
-    max_retries = 3
+    max_retries = 2
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.get(url, params=params, timeout=10)
+            payload = resp.json() if resp.ok else None
+
             if not resp.ok:
+                msg = None
+                try:
+                    if isinstance(payload, dict):
+                        msg = str(payload.get("msg") or payload.get("message") or "")
+                except Exception:
+                    msg = None
+                msg_l = (msg or "").lower()
+                if resp.status_code in {451, 403} or "restricted location" in msg_l:
+                    _BINANCE_BLOCKED_REASON = msg or f"HTTP {resp.status_code}"
+                    print(
+                        f"[WARN] Binance appears geo-blocked (HTTP {resp.status_code}). Falling back to CryptoCompare for candles.",
+                        flush=True,
+                    )
+                    candles = _cryptocompare_candles(sym, interval)
+                    return candles or []
                 raise RuntimeError(f"Binance klines HTTP {resp.status_code}")
 
-            payload = resp.json()
             if not isinstance(payload, list):
                 # Binance errors come back as dicts
+                msg = None
+                try:
+                    if isinstance(payload, dict):
+                        msg = str(payload.get("msg") or payload.get("message") or "")
+                except Exception:
+                    msg = None
+                msg_l = (msg or "").lower()
+                if "restricted location" in msg_l:
+                    _BINANCE_BLOCKED_REASON = msg
+                    print(
+                        "[WARN] Binance appears geo-blocked (restricted location). Falling back to CryptoCompare for candles.",
+                        flush=True,
+                    )
+                    candles = _cryptocompare_candles(sym, interval)
+                    return candles or []
                 raise RuntimeError(f"Unexpected Binance klines payload: {payload}")
 
             candles = []
@@ -114,8 +223,11 @@ def get_crypto_candles(asset, timeframe):
             return candles
         except Exception as e:
             print(f"[WARN] Binance candle fetch failed for {sym} {interval} (attempt {attempt}/{max_retries}): {e}")
-            time.sleep(2)
-    return []
+            time.sleep(1)
+
+    # Final fallback
+    candles = _cryptocompare_candles(sym, interval)
+    return candles or []
 
 def get_fx_candles(asset, timeframe):
     """Fetch FX candles from a real candle provider.
