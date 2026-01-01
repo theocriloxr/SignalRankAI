@@ -120,7 +120,12 @@ async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str
     if ENGINE is None:
         return {"persisted": False, "reason": "DATABASE_URL not set"}
 
-    telegram_user_id, tier, duration_days, reference, meta = _extract_subscription_fields(event)
+    try:
+        telegram_user_id, tier, duration_days, reference, meta = _extract_subscription_fields(event)
+    except HTTPException as exc:
+        # Not all Paystack webhook events contain our subscription metadata.
+        # If the signature is valid, acknowledge receipt and simply skip persistence.
+        return {"persisted": False, "reason": str(getattr(exc, "detail", "unable_to_persist"))}
     async with get_session() as session:
         # VIP seats: max N active VIP subscribers (excludes owners + temp owner bypass)
         tier_norm = str(tier).strip().lower()

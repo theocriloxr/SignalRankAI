@@ -121,7 +121,8 @@ Create **one Railway project** and add **4 services** from the same repo (same c
 
 - Add a Railway Postgres plugin.
 - Copy its `DATABASE_URL` to each service as an environment variable.
-- Run migrations once: `python -m alembic upgrade head` (Railway shell on any service).
+- Migrations are run automatically on boot when `DATABASE_URL` is set.
+	- You can still run them manually: `python -m alembic upgrade head`
 
 **2) Create services**
 
@@ -140,6 +141,12 @@ Each service uses the same start command: `python main.py`.
 - `PAYSTACK_WEBHOOK_SECRET` (or reuse `PAYSTACK_SECRET_KEY`)
 - `OWNER_TELEGRAM_ID` (or `OWNER_IDS` comma-separated)
 - `BYPASS_KEY` (used by `/unlock <key>`)
+
+Optional (recommended):
+- `AUTO_MIGRATE=true` (default) runs Alembic upgrades automatically on boot.
+- `FRESH_START=true` (dangerous) wipes Postgres data ONCE on the next web boot and starts with an empty database.
+	- This resets bot-side history (users/subscriptions/signals/referrals/deliveries/queues).
+	- It does NOT delete Telegram chat history in users' apps (Telegram does not allow bots to do that).
 
 **4) Recommended environment variables**
 

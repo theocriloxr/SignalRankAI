@@ -13,9 +13,9 @@ except Exception:  # pragma: no cover
     redis = None
 
 try:
-	import psycopg2
+    import psycopg2
 except Exception:  # pragma: no cover
-	psycopg2 = None
+    psycopg2 = None
 
 
 _KILL_KEY = "signalrankai:killswitch"
@@ -42,7 +42,7 @@ class RedisState:
     def __init__(self) -> None:
         self._memory: Dict[str, Any] = {}
         self._redis_sync: Any = None
-		self._pg_dsn: Optional[str] = None
+        self._pg_dsn: Optional[str] = None
 
     def _redis_url(self) -> Optional[str]:
         url = os.getenv("REDIS_URL")
@@ -112,7 +112,7 @@ class RedisState:
                         updated_at = float(data.get("updated_at", 0.0) or 0.0)
                         return KillSwitchState(enabled, reason, updated_at)
                     except Exception:
-                    pass
+                        pass
             raw = self._memory.get(_KILL_KEY)
             if not isinstance(raw, dict):
                 return KillSwitchState(False, "", 0.0)

@@ -20,6 +20,16 @@ def main() -> None:
 
     mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
 
+    # Railway-friendly: auto-run migrations against Postgres (idempotent)
+    # and optionally wipe data for a clean "fresh start".
+    try:
+        from db.auto_ops import run_startup_ops
+
+        run_startup_ops(mode)
+    except Exception:
+        # If startup ops fail, crash loudly so Railway logs show the issue.
+        raise
+
     if mode == "web":
         import uvicorn
 

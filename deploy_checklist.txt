@@ -41,7 +41,14 @@ SignalRankAI Deployment & Automation Checklist
 	- python -m alembic upgrade head
 
 - Paystack webhook URL:
-	- https://<your-railway-web-domain>/webhooks/paystack
+	- https://signalrankai-production.up.railway.app/webhooks/paystack
+
+- Redis is optional. If REDIS_URL is not set, the app uses Postgres-backed runtime state for:
+	- kill-switch
+	- temp owner bypass (/unlock)
+	- rate limiting
+
+- Optional (dangerous): set FRESH_START=true to wipe Postgres data once on next web boot.
 
 - Legacy (backward compatible, opt-in):
 	- ALLOW_LEGACY_TELEGRAM_BOT=true python -m telegram.bot
