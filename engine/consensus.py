@@ -43,7 +43,13 @@ def consensus_filter(signals, min_score=None):
         key = (sym, direction)
         grouped.setdefault(key, 0)
         try:
-            grouped[key] += float(s.get("confidence") or 0.0)
+            conf = s.get("confidence")
+            if conf is None:
+                # Some pipeline stages normalize confidence into 'strength' or use weights.
+                conf = s.get("strength")
+            if conf is None:
+                conf = s.get("weight")
+            grouped[key] += float(conf or 0.0)
         except Exception:
             grouped[key] += 0.0
 

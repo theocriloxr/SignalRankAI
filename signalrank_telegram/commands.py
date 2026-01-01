@@ -1049,9 +1049,8 @@ async def performance_command(update, context):
 					await session.commit()
 					return data
 
-			import asyncio
 			try:
-				stats = asyncio.run(_fetch())
+				stats = await _fetch()
 			except Exception:
 				stats = {}
 
