@@ -200,11 +200,13 @@ def record_user_seen(user_id: int) -> None:
                 first_seen TEXT
             )'''
         )
+        before = conn.total_changes
         c.execute(
             'INSERT OR IGNORE INTO users (user_id, first_seen) VALUES (?, ?)',
             (int(user_id), datetime.now().isoformat()),
         )
         conn.commit()
+        return (conn.total_changes - before) > 0
 
 
 def get_alert_prefs(user_id: int) -> dict:
@@ -290,6 +292,12 @@ def init_db():
             referrer_id INTEGER,
             created_at TEXT
         )''')
+        # Each referred user can be attributed to a single referrer once.
+        c.execute('''CREATE TABLE IF NOT EXISTS referrals (
+            referred_id INTEGER PRIMARY KEY,
+            referrer_id INTEGER,
+            created_at TEXT
+        )''')
         c.execute('''CREATE TABLE IF NOT EXISTS referral_rewards (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             referrer_id INTEGER,
@@ -329,6 +337,168 @@ def get_referral_rewards(referrer_id):
         c = conn.cursor()
         c.execute('SELECT * FROM referral_rewards WHERE referrer_id=?', (referrer_id,))
         return c.fetchall()
+
+
+def record_referral_signup(referrer_id: int, referred_id: int) -> bool:
+    """Record a unique referral attribution.
+
+    Returns True if recorded; False if the referred user was already attributed.
+    """
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS referrals (
+                referred_id INTEGER PRIMARY KEY,
+                referrer_id INTEGER,
+                created_at TEXT
+            )'''
+        )
+        before = conn.total_changes
+        c.execute(
+            'INSERT OR IGNORE INTO referrals (referred_id, referrer_id, created_at) VALUES (?, ?, ?)',
+            (int(referred_id), int(referrer_id), datetime.now().isoformat()),
+        )
+        conn.commit()
+        return (conn.total_changes - before) > 0
+
+
+def count_referrals(referrer_id: int) -> int:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS referrals (
+                referred_id INTEGER PRIMARY KEY,
+                referrer_id INTEGER,
+                created_at TEXT
+            )'''
+        )
+        c.execute('SELECT COUNT(*) FROM referrals WHERE referrer_id=?', (int(referrer_id),))
+        row = c.fetchone() or (0,)
+        return int(row[0] or 0)
+
+
+def get_referral_progress(referrer_id: int) -> dict:
+    total = count_referrals(referrer_id)
+    toward_next = total % 3
+    needed = 3 - toward_next if toward_next else 0
+    return {
+        "total": total,
+        "toward_next": toward_next,
+        "needed_for_next": needed,
+        "reward_days_per_3": 7,
+    }
+
+
+def _sum_reward_days(referrer_id: int) -> int:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        c = conn.cursor()
+        c.execute(
+            '''CREATE TABLE IF NOT EXISTS referral_rewards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                referrer_id INTEGER,
+                referred_id INTEGER,
+                reward_type TEXT,
+                reward_value INTEGER,
+                created_at TEXT
+            )'''
+        )
+        c.execute(
+            "SELECT COALESCE(SUM(reward_value), 0) FROM referral_rewards WHERE referrer_id=? AND reward_type='premium_days'",
+            (int(referrer_id),),
+        )
+        row = c.fetchone() or (0,)
+        return int(row[0] or 0)
+
+
+def process_referral_start(referred_id: int, referral_code: str, is_new_user: bool) -> dict:
+    """Process /start ref_CODE attribution and grant rewards.
+
+    Abuse prevention:
+    - Referred must be a new user (first time /start).
+    - Each referred can be attributed once.
+    - Self-referrals rejected.
+
+    Reward:
+    - Every 3 successful referrals => +7 days to referrer's active tier (VIP stays VIP; otherwise Premium).
+    """
+    result = {
+        "status": "ignored",
+        "referrer_id": None,
+        "referrals_total": 0,
+        "days_granted": 0,
+    }
+
+    try:
+        code_row = get_referral_by_code(referral_code)
+    except Exception:
+        code_row = None
+    if not code_row:
+        result["status"] = "invalid_code"
+        return result
+
+    referrer_id = int(code_row["referrer_id"])
+    result["referrer_id"] = referrer_id
+
+    if int(referred_id) == referrer_id:
+        result["status"] = "self_referral"
+        return result
+
+    # Must be new user on first /start
+    if not bool(is_new_user):
+        result["status"] = "not_new"
+        return result
+
+    # If the referred already has any subscription record, treat as not eligible.
+    try:
+        if get_subscription(int(referred_id)) is not None:
+            result["status"] = "not_new"
+            return result
+    except Exception:
+        pass
+
+    recorded = record_referral_signup(referrer_id, int(referred_id))
+    if not recorded:
+        result["status"] = "already_referred"
+        return result
+
+    # Audit: record the referral event
+    try:
+        record_referral_reward(referrer_id, int(referred_id), "referral_signup", 1)
+    except Exception:
+        pass
+
+    total = count_referrals(referrer_id)
+    result["referrals_total"] = total
+
+    expected_days = (total // 3) * 7
+    already_days = _sum_reward_days(referrer_id)
+    grant_days = max(0, expected_days - already_days)
+
+    if grant_days <= 0:
+        result["status"] = "attributed"
+        return result
+
+    # Extend referrer subscription (stacking)
+    try:
+        current_tier = get_user_tier(referrer_id)
+    except Exception:
+        current_tier = "FREE"
+    tier_to_extend = current_tier if str(current_tier).upper().startswith("VIP") else "PREMIUM"
+    try:
+        set_subscription(referrer_id, tier_to_extend, int(grant_days), payment_ref="REFERRAL", bypass_key_used=False)
+    except Exception:
+        # If extension fails, don't record reward days.
+        result["status"] = "attributed"
+        return result
+
+    try:
+        record_referral_reward(referrer_id, int(referred_id), "premium_days", int(grant_days))
+    except Exception:
+        pass
+
+    result["status"] = "reward_granted"
+    result["days_granted"] = int(grant_days)
+    return result
 def has_full_access(user_id, provided_key=None):
     if user_id in OWNER_IDS:
         return True
@@ -364,8 +534,22 @@ def get_subscription(user_id):
 def set_subscription(user_id, tier, duration_days, payment_ref, bypass_key_used=False):
     now = datetime.now()
     sub = get_subscription(user_id)
-    # If upgrading from Premium to VIP, extend from current expiry if still active
-    if tier.startswith('VIP') and sub and sub.get('tier', '').startswith('PREMIUM') and not sub.get('expired', True):
+    # Stacking renewals: if same tier is active, extend from expiry.
+    # Upgrades: Premium -> VIP extends from Premium expiry.
+    base = str(tier or "").upper()
+    prior = str(sub.get('tier', '')).upper() if sub else ""
+    active = bool(sub and not sub.get('expired', True))
+
+    same_base = False
+    if base.startswith('VIP') and prior.startswith('VIP'):
+        same_base = True
+    if base.startswith('PREMIUM') and prior.startswith('PREMIUM'):
+        same_base = True
+
+    if active and same_base:
+        start = datetime.fromisoformat(sub['expiry_date'])
+        expiry = start + timedelta(days=duration_days)
+    elif base.startswith('VIP') and active and prior.startswith('PREMIUM'):
         start = datetime.fromisoformat(sub['expiry_date'])
         expiry = start + timedelta(days=duration_days)
     else:

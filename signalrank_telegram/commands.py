@@ -113,15 +113,40 @@ def invite_command(update: Update, context: CallbackContext):
 		code = generate_referral_code(user_id)
 	except Exception:
 		code = None
+	progress = None
+	try:
+		from db.database import get_referral_progress
+		progress = get_referral_progress(user_id)
+	except Exception:
+		progress = None
 
 	bot_username = os.getenv("BOT_USERNAME")
+	progress_line = ""
+	if progress:
+		need = int(progress.get("needed_for_next", 0) or 0)
+		toward = int(progress.get("toward_next", 0) or 0)
+		total = int(progress.get("total", 0) or 0)
+		if need == 0:
+			progress_line = f"\n\nProgress: {toward}/3 (next reward ready after your next invite joins). Total invites: {total}."
+		else:
+			progress_line = f"\n\nProgress: {toward}/3 (invite {need} more to earn 7 days Premium). Total invites: {total}."
+
 	if bot_username and code:
 		link = f"https://t.me/{bot_username}?start=ref_{code}"
-		update.message.reply_text(f"🎁 Invite link:\n{link}\n\nShare this with friends.")
+		update.message.reply_text(
+			f"🎁 Invite link:\n{link}\n\n"
+			"Reward: invite 3 new users → get +7 days Premium."
+			f"{progress_line}"
+		)
 		return
 
 	if code:
-		update.message.reply_text(f"🎁 Your invite code: {code}\n\nSet BOT_USERNAME to generate a full invite link.")
+		update.message.reply_text(
+			f"🎁 Your invite code: {code}\n\n"
+			"Reward: invite 3 new users → get +7 days Premium.\n"
+			"Set BOT_USERNAME to generate a full invite link."
+			f"{progress_line}"
+		)
 	else:
 		update.message.reply_text("Invite system is temporarily unavailable.")
 
@@ -389,11 +414,33 @@ def require_tier(min_tier):
 def start_command(update, context):
 	if _public_guard(update):
 		return
+	user_id = update.effective_user.id
+	ref_token = None
+	try:
+		if getattr(context, "args", None):
+			ref_token = str(context.args[0])
+	except Exception:
+		ref_token = None
+
 	try:
 		from db.database import record_user_seen
-		record_user_seen(update.effective_user.id)
+		is_new = record_user_seen(user_id)
 	except Exception:
-		pass
+		is_new = False
+
+	# Referral attribution (only for first-time users)
+	referral_outcome = None
+	if ref_token:
+		code = ref_token
+		if code.startswith("ref_"):
+			code = code[4:]
+		if code:
+			try:
+				from db.database import process_referral_start
+				referral_outcome = process_referral_start(user_id, code, is_new_user=bool(is_new))
+			except Exception:
+				referral_outcome = None
+
 	msg = (
 		"SignalRankAI provides algorithmic market analysis for educational purposes only. "
 		"This is not financial advice. Trading involves risk.\n\n"
@@ -402,6 +449,27 @@ def start_command(update, context):
 		"• Outcome tracking (no hype, no guarantees)\n\n"
 		"Use /pricing to see plans, or /upgrade to subscribe."
 	)
+	# Referral feedback (minimal, non-spammy)
+	if referral_outcome and update.message is not None:
+		status = str(referral_outcome.get("status"))
+		if status in {"attributed", "reward_granted"}:
+			update.message.reply_text("✅ Referral applied. Welcome!")
+		elif status == "invalid_code":
+			update.message.reply_text("⚠️ Referral code not recognized.")
+		# else: silent for self_referral/already_referred/not_new
+
+	# Notify referrer on reward
+	try:
+		if referral_outcome and str(referral_outcome.get("status")) == "reward_granted":
+			referrer_id = int(referral_outcome.get("referrer_id"))
+			days = int(referral_outcome.get("days_granted"))
+			context.bot.send_message(
+				chat_id=referrer_id,
+				text=f"🎉 Referral reward unlocked: +{days} days added to your subscription.\n\nUse /signals to get the latest ideas.",
+			)
+	except Exception:
+		pass
+
 	update.message.reply_text(msg)
 
 # /about message
