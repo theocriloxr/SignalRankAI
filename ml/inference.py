@@ -1,5 +1,9 @@
-import xgboost as xgb
 import os
+
+try:
+    import xgboost as xgb  # type: ignore
+except Exception:  # pragma: no cover
+    xgb = None
 
 MODEL_PATH = os.getenv("ML_MODEL_PATH", "ml/model.json")
 
@@ -15,6 +19,12 @@ class MLFilter:
         # Opt-in ML filtering; default off to avoid blocking signals when a model
         # is missing, mis-specified, or features are not aligned.
         if not _env_bool("ML_ENABLED", False):
+            self.active = False
+            self.model = None
+            return
+
+        # If the dependency isn't installed, fail open (do not block signals).
+        if xgb is None:
             self.active = False
             self.model = None
             return
