@@ -232,13 +232,15 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if isinstance(strategy_signals, dict):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
+        free_list = list(strategy_signals.get('free', []) or [])
         if tier in ('vip',):
             signals_list = vip_list
         elif tier in ('premium',):
             # Premium sees full signals (premium + vip)
             signals_list = vip_list + prem_list
         elif tier in ('owner',):
-            signals_list = vip_list + prem_list
+            # Owner sees everything (for monitoring / debugging).
+            signals_list = vip_list + prem_list + free_list
         else:
             # Free: delayed summaries from top approved signals
             signals_list = (vip_list + prem_list)

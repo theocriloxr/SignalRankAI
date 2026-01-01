@@ -77,9 +77,15 @@ def main_loop(DRY_RUN=False):
     while True:
         cycle_assets = 0
         cycle_candidates = 0
+        cycle_after_dedupe = 0
+        cycle_after_consensus = 0
+        cycle_after_risk = 0
+        cycle_after_ml = 0
         cycle_scored = 0
         cycle_stored = 0
         cycle_store_failures = 0
+        cycle_max_score = None
+        cycle_max_score_asset = None
         cycle_users = 0
         cycle_dispatched_users = 0
         # Global kill-switch (skip cycle but keep process alive)
@@ -161,17 +167,29 @@ def main_loop(DRY_RUN=False):
 
                     controller = SignalController()
                     filtered_signals = controller.deduplicate_signals(strategy_signals)
+                    try:
+                        cycle_after_dedupe += len(filtered_signals or [])
+                    except Exception:
+                        pass
 
                     # Consensus Engine
                     from engine.consensus import consensus_filter
 
                     consensus_signals = consensus_filter(filtered_signals)
+                    try:
+                        cycle_after_consensus += len(consensus_signals or [])
+                    except Exception:
+                        pass
 
                     # Risk Engine
                     from engine.risk import risk_check
 
                     account_state = type('AccountState', (), {'drawdown': 0.0})()  # Replace with real account state
                     risk_signals = [s for s in consensus_signals if risk_check(s, account_state)]
+                    try:
+                        cycle_after_risk += len(risk_signals or [])
+                    except Exception:
+                        pass
 
                     # ML Probability Filter
                     from ml.features import extract_features
@@ -189,6 +207,10 @@ def main_loop(DRY_RUN=False):
                             continue
                         signal["ml_probability"] = probability
                         ml_signals.append(signal)
+                    try:
+                        cycle_after_ml += len(ml_signals or [])
+                    except Exception:
+                        pass
 
                     # Scoring
                     from engine.scoring import score_signal
@@ -196,6 +218,12 @@ def main_loop(DRY_RUN=False):
                     for signal in ml_signals:
                         score = score_signal(signal)
                         signal['score'] = score
+                        try:
+                            if cycle_max_score is None or float(score) > float(cycle_max_score):
+                                cycle_max_score = float(score)
+                                cycle_max_score_asset = str(signal.get('asset') or signal.get('symbol') or '')
+                        except Exception:
+                            pass
                         if score >= MIN_SCORE_THRESHOLD:
                             # Normalize for DB + formatters
                             signal['regime'] = regime
@@ -253,10 +281,12 @@ def main_loop(DRY_RUN=False):
                     print(
                         "[engine] cycle="
                         f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
+                            f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
                         f"scored>={MIN_SCORE_THRESHOLD}={cycle_scored} stored={cycle_stored} "
                         f"store_failures={cycle_store_failures} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
-                        f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
+                            f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "
+                            f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
                         flush=True,
                     )
         except Exception:

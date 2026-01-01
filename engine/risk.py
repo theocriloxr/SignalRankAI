@@ -1,3 +1,13 @@
+import os
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
 def calculate_dynamic_risk(signal, regime=None):
     """Return a risk profile dict (not position size)."""
     return {
@@ -7,8 +17,10 @@ def calculate_dynamic_risk(signal, regime=None):
         "regime": regime,
     }
 
-MAX_VOLATILITY = 0.04
-MAX_DRAWDOWN = 0.20
+# Strategies currently use Bollinger band width (fraction of price) as volatility.
+# A default 0.04 was too strict and effectively blocked most signals.
+MAX_VOLATILITY = _env_float("MAX_SIGNAL_VOLATILITY", 0.20)
+MAX_DRAWDOWN = _env_float("MAX_ACCOUNT_DRAWDOWN", 0.20)
 
 def risk_check(signal, account_state):
     """
