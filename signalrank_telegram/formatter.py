@@ -1,7 +1,51 @@
-def format_signal(signal):
-	tier = 'VIP' if signal.get('score', 0) >= 85 else 'PREMIUM'
-	msg = f"""
-🚀 TRADE ALERT — {tier}
+def _risk_suggestion(score: float | int | None) -> str:
+	try:
+		s = float(score or 0)
+	except Exception:
+		s = 0.0
+	# Very simple mapping; keep conservative.
+	if s >= 92:
+		return "2.0%"
+	if s >= 85:
+		return "1.5%"
+	if s >= 75:
+		return "1.0%"
+	return "0.5%"
+
+
+def format_signal(signal, display_tier: str | None = None, limited: bool = False):
+	"""Format a signal for Telegram.
+
+	- display_tier: force header tier label (vip/premium/free)
+	- limited: Free-tier display (direction-only; no exact levels)
+	"""
+
+	ref = signal.get("signal_id") or signal.get("id")
+	try:
+		ref = str(ref)
+	except Exception:
+		ref = None
+
+	if limited:
+		lines = ["🔒 FREE USER (LIMITED SIGNAL)", ""]
+		if ref:
+			lines.append(f"Reference: {ref}")
+		lines += [
+			f"Asset: {signal.get('asset')}",
+			f"Timeframe: {signal.get('timeframe')}",
+			f"Direction: {signal.get('direction')}",
+			"",
+			"Upgrade to Premium to see exact entry/SL/TP and receive real-time alerts.",
+		]
+		return "\n".join(lines)
+
+	# Full detail
+	if display_tier is None:
+		display_tier = 'vip' if float(signal.get('score', 0) or 0) >= 85 else 'premium'
+	label = str(display_tier).strip().upper()
+
+	msg = f"""\
+🚀 TRADE ALERT — {label}
 
 Asset: {signal.get('asset')}
 Direction: {signal.get('direction')}
@@ -11,11 +55,17 @@ Stop Loss: {signal.get('stop_loss')}
 Take Profit: {signal.get('take_profit')}
 Risk/Reward: {signal.get('rr_ratio')}
 Confidence Score: {signal.get('score')}/100
+Suggested risk: {_risk_suggestion(signal.get('score'))}
 Market Regime: {signal.get('regime', 'N/A')}
 """
-	# Show ML confidence only for VIP/OWNER
-	if tier == 'VIP' and signal.get('ml_probability') is not None:
-		msg += f"\n📊 ML Confidence: {round(signal['ml_probability']*100, 1)}%"
-	# Add short disclaimer
-	msg += "\n\n⚠️ Trade at your own risk. This is not financial advice."
+	if ref:
+		msg = f"Reference: {ref}\n" + msg
+
+	# Show ML confidence only for VIP-ish tiers
+	if label in {'VIP', 'OWNER'} and signal.get('ml_probability') is not None:
+		try:
+			msg += f"\n📊 ML Confidence: {round(float(signal['ml_probability'])*100, 1)}%"
+		except Exception:
+			pass
+	msg += "\n\n⚠️ Educational only. Not financial advice."
 	return msg

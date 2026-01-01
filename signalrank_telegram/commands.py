@@ -18,7 +18,10 @@ _BOOT_TS = datetime.now(timezone.utc).isoformat()
 
 
 async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-	if update.message is None:
+	if update.message is None or update.effective_user is None:
+		return
+	# Owner-only (avoid exposing deployment fingerprints publicly)
+	if _effective_tier(update.effective_user.id) != "OWNER":
 		return
 	# Non-sensitive fingerprint to confirm which build is running.
 	mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
@@ -84,12 +87,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		"/pricing – Pricing\n"
 		"/upgrade – Subscribe\n"
 		"/signals – Latest signals (limited for Free)\n"
+		"/signal – Lookup a signal by reference (/signal <ref> or /signal all)\n"
 		"/invite – Invite friends\n"
 		"/policy – Subscription & refund policy\n"
 		"/refunds – Same as /policy\n"
 		"/recap – Weekly recap\n"
-		"/version – Deployment/version info\n"
-		"/buy_extra_premium – Buy extra daily signals (Free-only, ₦300 each, 24h)\n\n"
+		"/buy_extra_signals – Buy extra daily signals (Free-only, ₦300 each, 24h)\n\n"
 		"🟡 PREMIUM (subscribers)\n"
 		"/performance – Full performance stats\n"
 		"/stats – Stats summary\n"
@@ -161,8 +164,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		lines = ["🆓 Today’s signals (summary):", ""]
 		for s in signals[:10]:
+			ref = s.get("signal_id") or s.get("id")
 			lines.append(
-				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {int(s.get('score', 0) or 0)})"
+				f"• {ref} — {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {int(s.get('score', 0) or 0)})"
 			)
 		lines += ["", "Upgrade to Premium to receive real-time entries, SL/TP, and alerts."]
 		if update.message is not None:
@@ -176,6 +180,72 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				await update.message.reply_text(format_signal(s))
 		except Exception:
 			continue
+
+
+async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+	arg = (context.args[0] if context.args else "").strip() if context.args else ""
+	if not arg:
+		await update.message.reply_text("Usage: /signal <reference> OR /signal all")
+		return
+
+	# Postgres-backed lookup (required for per-user delivery protection)
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is None:
+			raise RuntimeError("Postgres not configured")
+		from db.pg_features import list_signals_sent_today, get_delivered_signal_by_ref
+		from .formatter import format_signal, format_signal_free_limited
+
+		if arg.lower() == "all":
+			async with get_session() as session:
+				rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+				await session.commit()
+			if not rows:
+				await update.message.reply_text("No signals delivered to you today.")
+				return
+			lines = ["📌 Today’s signals:", ""]
+			for s in rows[:20]:
+				ref = str(getattr(s, "signal_id", "") or "")
+				lines.append(f"• {ref} — {s.asset} {s.timeframe} {s.direction}")
+			await update.message.reply_text("\n".join(lines))
+			return
+
+		async with get_session() as session:
+			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
+			await session.commit()
+		if sig is None:
+			await update.message.reply_text("Signal not found (or not delivered to you).")
+			return
+
+		sig_dict = {
+			"signal_id": sig.signal_id,
+			"asset": sig.asset,
+			"timeframe": sig.timeframe,
+			"direction": sig.direction,
+			"entry": sig.entry,
+			"stop_loss": sig.stop_loss,
+			"take_profit": sig.take_profit,
+			"rr_ratio": getattr(sig, "rr_estimate", None),
+			"score": sig.score,
+			"regime": getattr(sig, "regime", None),
+			"strength": getattr(sig, "strength", None),
+			"strategy_name": getattr(sig, "strategy_name", None),
+			"strategy_group": getattr(sig, "strategy_group", None),
+		}
+		if tier_rank(tier) < tier_rank("PREMIUM"):
+			await update.message.reply_text(format_signal_free_limited(sig_dict))
+			return
+		await update.message.reply_text(format_signal(sig_dict))
+		return
+	except Exception:
+		await update.message.reply_text("Signal lookup is temporarily unavailable.")
+		return
 
 
 async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -341,19 +411,19 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 from telegram import Update
 from db.database import get_user_tier
 
-async def buy_extra_premium(update, context):
+async def buy_extra_signals(update, context):
 	user_id = update.effective_user.id
 	tier = get_user_tier(user_id)
 	if tier != "FREE":
 		await update.message.reply_text(
-			"Extra Premium signals are only available for Free users.\n"
-			"Upgrade to Premium or VIP for unlimited real-time access."
+			"Extra daily signals are only available for Free users.\n"
+			"Use /upgrade to subscribe if you want unlimited access."
 		)
 		return
 	if not context.args or len(context.args) != 1:
 		await update.message.reply_text(
-			"Usage: /buy_extra_premium <count>\n"
-			"Example: /buy_extra_premium 2\n\n"
+			"Usage: /buy_extra_signals <count>\n"
+			"Example: /buy_extra_signals 2\n\n"
 			"₦300 per extra signal. Extra access lasts 24 hours."
 		)
 		return
@@ -367,47 +437,16 @@ async def buy_extra_premium(update, context):
 		return
 	price = 300 * count
 	from paystack.paystack import generate_paystack_link
-	paywall_link = generate_paystack_link(user_id, price, tier="EXTRA_SIGNALS", extra_count=count)
+	paywall_link = generate_paystack_link(user_id, price, tier="PREMIUM", extra_count=count)
 	await update.message.reply_text(
-		f"To unlock {count} extra signals (VIP-style) for the next 24 hours, pay ₦{price}: {paywall_link}\n\n"
+		f"To unlock {count} extra signals for the next 24 hours, pay ₦{price}: {paywall_link}\n\n"
 		"After payment verification, your extra signals will be delivered in real time.\n"
 		"All payments are final and non-refundable.\n\n"
 		"For questions, use /faq or contact support."
 	)
 
-async def buy_extra_vip(update, context):
-	user_id = update.effective_user.id
-	tier = get_user_tier(user_id)
-	if tier != "FREE":
-		await update.message.reply_text(
-			"Extra VIP signals are only available for Free users.\n"
-			"Upgrade to VIP for unlimited real-time access."
-		)
-		return
-	if not context.args or len(context.args) != 1:
-		await update.message.reply_text(
-			"Usage: /buy_extra_vip <count>\n"
-			"Example: /buy_extra_vip 1\n\n"
-			"You can buy up to 3 extra VIP signals per day."
-		)
-		return
-	try:
-		count = int(context.args[0])
-		if count < 1 or count > 3:
-			await update.message.reply_text("Count must be between 1 and 3.")
-			return
-	except ValueError:
-		await update.message.reply_text("Count must be a number.")
-		return
-	price = 300 * count
-	from paystack.paystack import generate_paystack_link
-	paywall_link = generate_paystack_link(user_id, price, tier="EXTRA_SIGNALS", extra_count=count)
-	await update.message.reply_text(
-		f"To unlock {count} extra VIP signals for today, pay ₦{price}: {paywall_link}\n\n"
-		"After payment, your extra signals will be delivered instantly.\n"
-		"All payments are final and non-refundable.\n\n"
-		"For questions, use /faq or contact support."
-	)
+# Backward compatible alias
+buy_extra_premium = buy_extra_signals
 
 # /policy or /refunds command
 async def policy_command(update, context):
@@ -426,37 +465,60 @@ async def policy_command(update, context):
 async def recap_command(update, context):
 	if await _public_guard(update):
 		return
-	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
+	# Postgres-first recap (delivery-based)
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import get_weekly_recap_stats
+			async with get_session() as session:
+				stats = await get_weekly_recap_stats(session, int(user_id))
+				await session.commit()
+			total = int((stats or {}).get("total") or 0)
+			if total <= 0:
+				await update.message.reply_text(
+					"\U0001F4CA SignalRankAI Weekly Recap\n\n"
+					"No signals were sent to you this week.\n\n"
+					"Thank you for trading responsibly."
+				)
+				return
+			most_active = ", ".join(list((stats or {}).get("top_assets") or [])[:2]) or "N/A"
+			best_strategy = ", ".join(list((stats or {}).get("top_strategies") or [])[:1]) or "N/A"
+			await update.message.reply_text(
+				"\U0001F4CA SignalRankAI Weekly Recap\n\n"
+				"Here’s a quick overview of your past week:\n\n"
+				f"• Total signals delivered: {total}\n"
+				f"• Markets most active: {most_active}\n"
+				f"• Best-performing strategy: {best_strategy}\n\n"
+				"Thank you for trading responsibly."
+			)
+			return
+	except Exception:
+		pass
+
+	# SQLite fallback
+	from db.database import fetch_user_trades
 	trades = fetch_user_trades(user_id)
 	total_signals = len(trades)
 	if total_signals == 0:
-		recap_msg = (
+		await update.message.reply_text(
 			"\U0001F4CA SignalRankAI Weekly Recap\n\n"
 			"No signals were sent to you this week.\n\n"
-			"Remember: No signals is sometimes better than bad signals.\n\n"
 			"Thank you for trading responsibly."
 		)
-	else:
-		from collections import Counter
-		assets = [t[2] for t in trades]  # asset column
-		strategies = [t[9] for t in trades]  # strategy_name column
-		rr_ratios = [t[7] for t in trades if t[7] is not None]
-		most_active = ', '.join([a for a, _ in Counter(assets).most_common(2)]) if assets else 'N/A'
-		best_strategy = Counter(strategies).most_common(1)[0][0] if strategies else 'N/A'
-		avg_rr = round(sum(rr_ratios)/len(rr_ratios), 2) if rr_ratios else 'N/A'
-		recap_msg = (
-			f"\U0001F4CA SignalRankAI Weekly Recap\n\n"
-			f"Here’s a quick overview of your past week:\n\n"
-			f"• Total signals sent: {total_signals}\n"
-			f"• Markets most active: {most_active}\n"
-			f"• Best-performing strategy: {best_strategy}\n"
-			f"• Average risk/reward: {avg_rr}\n\n"
-			"Market conditions were mixed, so signal frequency was intentionally limited.\n\n"
-			"Remember:\nNo signals is sometimes better than bad signals.\n\n"
-			"Thank you for trading responsibly."
-		)
-		await update.message.reply_text(recap_msg)
+		return
+	from collections import Counter
+	assets = [t[2] for t in trades]  # asset column
+	strategies = [t[9] for t in trades]  # strategy_name column
+	most_active = ', '.join([a for a, _ in Counter(assets).most_common(2)]) if assets else 'N/A'
+	best_strategy = Counter(strategies).most_common(1)[0][0] if strategies else 'N/A'
+	await update.message.reply_text(
+		"\U0001F4CA SignalRankAI Weekly Recap\n\n"
+		"Here’s a quick overview of your past week:\n\n"
+		f"• Total signals sent: {total_signals}\n"
+		f"• Markets most active: {most_active}\n"
+		f"• Best-performing strategy: {best_strategy}"
+	)
 
 
 TIER_RANKS = {
@@ -496,14 +558,12 @@ def require_tier(min_tier):
 			if limited:
 				await update.message.reply_text("Rate limit exceeded. Please wait.")
 				return
-			tier = resolve_user_tier(user_id)
-			try:
-				if state.has_temp_owner_sync(user_id):
-					tier = "OWNER"
-			except Exception:
-				pass
+			tier = _effective_tier(user_id)
 			if tier_rank(tier) < tier_rank(min_tier):
-				await update.message.reply_text("Upgrade required.")
+				await update.message.reply_text(
+					f"🔒 You can’t access this on {str(tier).upper()} tier.\n"
+					"Use /upgrade to subscribe to unlock it."
+				)
 				return
 			result = func(update, context)
 			if inspect.isawaitable(result):
@@ -790,8 +850,32 @@ async def performance_command(update, context):
 # -------- Premium commands --------
 @require_tier("PREMIUM")
 async def stats_command(update, context):
-	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
+	# Postgres-first
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
+			async with get_session() as session:
+				week = await get_weekly_recap_stats(session, int(user_id))
+				today_rows = await list_signals_sent_today(session, int(user_id))
+				await session.commit()
+			total_week = int((week or {}).get("total") or 0)
+			today = len(today_rows or [])
+			msg = (
+				"📈 Stats (Premium)\n\n"
+				f"Signals delivered today: {today}\n"
+				f"Signals delivered (last 7 days): {total_week}\n\n"
+				"Use /history to view recent signals."
+			)
+			if update.message is not None:
+				await update.message.reply_text(msg)
+			return
+	except Exception:
+		pass
+
+	# SQLite fallback
+	from db.database import fetch_user_trades
 	trades = fetch_user_trades(user_id)
 	msg = (
 		"📈 Stats (Premium)\n\n"
@@ -804,17 +888,46 @@ async def stats_command(update, context):
 
 @require_tier("PREMIUM")
 async def history_command(update, context):
-	from db.database import fetch_user_trades
 	user_id = update.effective_user.id
-	trades = fetch_user_trades(user_id)
-
 	asset = None
 	tf = None
 	if context.args:
-		asset = context.args[0].upper()
+		asset = str(context.args[0]).upper()
 		if len(context.args) > 1:
-			tf = context.args[1]
+			tf = str(context.args[1])
 
+	# Postgres-first
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import list_recent_signals_delivered
+			async with get_session() as session:
+				rows = await list_recent_signals_delivered(
+					session,
+					telegram_user_id=int(user_id),
+					limit=10,
+					asset=asset,
+					timeframe=tf,
+				)
+				await session.commit()
+			if not rows:
+				if update.message is not None:
+					await update.message.reply_text("No history available yet.")
+				return
+			lines = ["🧾 History (last 10):", ""]
+			for s in rows:
+				lines.append(
+					f"• {s.asset} {s.timeframe} {s.direction} ref={s.signal_id} entry={s.entry} sl={s.stop_loss} tp={s.take_profit}"
+				)
+			if update.message is not None:
+				await update.message.reply_text("\n".join(lines))
+			return
+	except Exception:
+		pass
+
+	# SQLite fallback
+	from db.database import fetch_user_trades
+	trades = fetch_user_trades(user_id)
 	filtered = []
 	for t in trades:
 		try:
@@ -827,13 +940,11 @@ async def history_command(update, context):
 			filtered.append(t)
 		except Exception:
 			continue
-
 	filtered = filtered[-10:]
 	if not filtered:
 		if update.message is not None:
 			await update.message.reply_text("No history available yet.")
 		return
-
 	lines = ["🧾 History (last 10):", ""]
 	for t in filtered:
 		try:
@@ -858,11 +969,44 @@ async def risk_command(update, context):
 async def alerts_command(update, context):
 	if await _public_guard(update):
 		return
-	from db.database import get_alert_prefs, set_alert_prefs
 	user_id = update.effective_user.id
+
+	async def _get_prefs() -> dict:
+		try:
+			from db.session import ENGINE, get_session
+			if ENGINE is not None:
+				from db.pg_features import get_alert_prefs
+				async with get_session() as session:
+					prefs = await get_alert_prefs(session, int(user_id))
+					await session.commit()
+					return dict(prefs or {})
+		except Exception:
+			pass
+		from db.database import get_alert_prefs
+		return dict(get_alert_prefs(user_id) or {})
+
+	async def _set_prefs(*, tp_sl_enabled=None, quiet_start_hour=None, quiet_end_hour=None) -> dict:
+		try:
+			from db.session import ENGINE, get_session
+			if ENGINE is not None:
+				from db.pg_features import set_alert_prefs
+				async with get_session() as session:
+					prefs = await set_alert_prefs(
+						session,
+						int(user_id),
+						tp_sl_enabled=tp_sl_enabled,
+						quiet_start_hour=quiet_start_hour,
+						quiet_end_hour=quiet_end_hour,
+					)
+					await session.commit()
+					return dict(prefs or {})
+		except Exception:
+			pass
+		from db.database import set_alert_prefs
+		return dict(set_alert_prefs(user_id, tp_sl_enabled=tp_sl_enabled, quiet_start_hour=quiet_start_hour, quiet_end_hour=quiet_end_hour) or {})
 	
 	if not context.args:
-		prefs = get_alert_prefs(user_id)
+		prefs = await _get_prefs()
 		qs = prefs.get("quiet_start_hour")
 		qe = prefs.get("quiet_end_hour")
 		quiet = "off" if qs is None or qe is None else f"{qs}:00–{qe}:00"
@@ -873,7 +1017,7 @@ async def alerts_command(update, context):
 
 	cmd = str(context.args[0]).lower()
 	if cmd in {"on", "off"}:
-		prefs = set_alert_prefs(user_id, tp_sl_enabled=(cmd == "on"))
+		_ = await _set_prefs(tp_sl_enabled=(cmd == "on"))
 		if update.message is not None:
 			await update.message.reply_text("✅ Updated.")
 		return
@@ -883,7 +1027,7 @@ async def alerts_command(update, context):
 			qe = int(context.args[2])
 			if not (0 <= qs <= 23 and 0 <= qe <= 23):
 				raise ValueError()
-			set_alert_prefs(user_id, quiet_start_hour=qs, quiet_end_hour=qe)
+			_ = await _set_prefs(quiet_start_hour=qs, quiet_end_hour=qe)
 			if update.message is not None:
 				await update.message.reply_text("✅ Quiet hours updated.")
 			return

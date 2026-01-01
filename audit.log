@@ -3206,3 +3206,13 @@ telegram.error.InvalidToken: Unauthorized
 2026-01-01 18:05:40,732 INFO KILL SWITCH DISABLED by 1
 2026-01-01 18:05:40,735 WARNING KILL SWITCH ENABLED by 1: test
 2026-01-01 18:05:40,735 INFO KILL SWITCH DISABLED by 1
+2026-01-01 18:11:47,947 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:21:47 WAT)" (scheduled at 2026-01-01 18:11:47.939550+01:00)
+2026-01-01 18:11:47,951 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:21:47 WAT)" executed successfully
+2026-01-01 18:21:47,943 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:31:47 WAT)" (scheduled at 2026-01-01 18:21:47.939550+01:00)
+2026-01-01 18:21:47,947 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:31:47 WAT)" executed successfully
+2026-01-01 18:31:47,942 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:41:47 WAT)" (scheduled at 2026-01-01 18:31:47.939550+01:00)
+2026-01-01 18:31:47,945 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:41:47 WAT)" executed successfully
+2026-01-01 18:41:47,951 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:51:47 WAT)" (scheduled at 2026-01-01 18:41:47.939550+01:00)
+2026-01-01 18:41:47,956 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 18:51:47 WAT)" executed successfully
+2026-01-01 18:51:47,946 INFO Running job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 19:01:47 WAT)" (scheduled at 2026-01-01 18:51:47.939550+01:00)
+2026-01-01 18:51:47,950 INFO Job "run_bot.<locals>.send_free_delayed_summaries (trigger: interval[0:10:00], next run at: 2026-01-01 19:01:47 WAT)" executed successfully

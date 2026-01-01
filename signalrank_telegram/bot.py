@@ -12,7 +12,6 @@ from .formatter import format_signal
 from .commands import (
     start_command,
     help_command,
-    version_command,
     about_command,
     faq_command,
     disclaimer_command,
@@ -22,6 +21,7 @@ from .commands import (
     policy_command,
     recap_command,
     signals_command,
+    signal_command,
     invite_command,
     stats_command,
     history_command,
@@ -30,8 +30,7 @@ from .commands import (
     elite_command,
     early_command,
     report_command,
-    buy_extra_premium,
-    buy_extra_vip,
+    buy_extra_signals,
 )
 
 from core.redis_state import state
@@ -149,6 +148,7 @@ def _format_free_preview(signal):
     # Limited info to drive upgrades (no exact levels)
     return (
         "🔒 FREE USER (LIMITED SIGNAL)\n\n"
+        f"Reference: {signal.get('signal_id') or signal.get('id')}\n"
         f"Asset: {signal.get('asset')}\n"
         f"Timeframe: {signal.get('timeframe')}\n"
         f"Direction: {signal.get('direction')}\n\n"
@@ -193,9 +193,9 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             # Free: delayed summaries from top approved signals
             signals_list = (vip_list + prem_list)
 
-        # Paid extra signals: VIP-style only, real-time
+        # Paid extra signals: Premium-style real-time delivery (vip+premium), capped by purchased count
         if tier == 'free' and extra_left > 0:
-            signals_list = vip_list
+            signals_list = (vip_list + prem_list)
     else:
         signals_list = list(strategy_signals or [])
 
@@ -209,13 +209,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         if ENGINE is not None:
             effective_tier = tier
             if tier == 'free' and extra_left > 0:
-                effective_tier = 'vip'
+                effective_tier = 'premium'
 
             if effective_tier in ('premium', 'vip', 'owner'):
                 bot = Bot(token=_require_telegram_token())
                 limit = TIER_LIMITS.get(effective_tier, 0)
                 if tier == 'free' and extra_left > 0:
-                    limit = min(int(limit), int(extra_left))
+                    limit = min(int(max(1, extra_left)), len(signals_list))
 
                 async def _reserve() -> list[dict]:
                     from db.pg_features import get_or_create_signal, record_signal_delivery
@@ -254,7 +254,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 for signal in reserved:
                     try:
-                        bot.send_message(chat_id=user_id, text=format_signal(signal))
+                        bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=effective_tier))
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
@@ -292,7 +292,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             if sent >= limit:
                 break
             try:
-                bot.send_message(chat_id=user_id, text=format_signal(signal))
+                bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=tier))
                 sent += 1
             except Exception:
                 continue
@@ -398,6 +398,7 @@ def run_bot():
                     ("upgrade", "Upgrade / subscribe"),
                     ("help", "Commands"),
                     ("signals", "Latest signals"),
+                    ("signal", "Signal by reference"),
                     ("performance", "Performance"),
                     ("invite", "Invite"),
                 ]
@@ -409,7 +410,6 @@ def run_bot():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("version", version_command))
     application.add_handler(CommandHandler("about", about_command))
     application.add_handler(CommandHandler("faq", faq_command))
     application.add_handler(CommandHandler("disclaimer", disclaimer_command))
@@ -417,6 +417,7 @@ def run_bot():
     application.add_handler(CommandHandler("pricing", pricing_command))
     application.add_handler(CommandHandler("upgrade", upgrade_command))
     application.add_handler(CommandHandler("signals", signals_command))
+    application.add_handler(CommandHandler("signal", signal_command))
     application.add_handler(CommandHandler("invite", invite_command))
 
     # Premium (not advertised)
@@ -433,8 +434,9 @@ def run_bot():
     application.add_handler(CommandHandler("policy", policy_command))
     application.add_handler(CommandHandler("refunds", policy_command))
     application.add_handler(CommandHandler("recap", recap_command))
-    application.add_handler(CommandHandler("buy_extra_premium", buy_extra_premium))
-    application.add_handler(CommandHandler("buy_extra_vip", buy_extra_vip))
+    application.add_handler(CommandHandler("buy_extra_signals", buy_extra_signals))
+    # Backward compatible alias
+    application.add_handler(CommandHandler("buy_extra_premium", buy_extra_signals))
 
     # Hidden owner-only commands (silent for non-owners)
     application.add_handler(CommandHandler("unlock", unlock))
@@ -443,9 +445,58 @@ def run_bot():
     application.add_handler(CommandHandler("dev_force_signal", dev_force_signal))
     application.add_handler(CommandHandler("dev_invalidate", dev_invalidate))
 
-    from db.database import fetch_user_trades
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
+        # Prefer Postgres-backed recap when configured
+        try:
+            from db.session import ENGINE, get_session
+            if ENGINE is not None:
+                from db.pg_features import get_weekly_recap_stats
+
+                async def _fetch(uid: int) -> dict:
+                    async with get_session() as session:
+                        data = await get_weekly_recap_stats(session, int(uid))
+                        await session.commit()
+                        return data
+
+                for user_id in user_ids:
+                    try:
+                        stats = asyncio.run(_fetch(int(user_id)))
+                    except Exception:
+                        stats = {"total": 0, "top_assets": [], "top_strategies": []}
+                    total = int(stats.get("total") or 0)
+                    if total <= 0:
+                        recap_msg = (
+                            "\U0001F4CA SignalRankAI Weekly Recap\n\n"
+                            "No signals were sent to you this week.\n\n"
+                            "Remember: No signals is sometimes better than bad signals.\n\n"
+                            "Thank you for trading responsibly."
+                        )
+                    else:
+                        most_active = ", ".join(list(stats.get("top_assets") or [])[:2]) or "N/A"
+                        best_strategy = ", ".join(list(stats.get("top_strategies") or [])[:1]) or "N/A"
+                        recap_msg = (
+                            "\U0001F4CA SignalRankAI Weekly Recap\n\n"
+                            "Here’s a quick overview of your past week:\n\n"
+                            f"• Total signals delivered: {total}\n"
+                            f"• Markets most active: {most_active}\n"
+                            f"• Best-performing strategy: {best_strategy}\n\n"
+                            "Market conditions can be mixed, so signal frequency is intentionally limited.\n\n"
+                            "Thank you for trading responsibly."
+                        )
+                    try:
+                        application.bot.send_message(chat_id=user_id, text=recap_msg)
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
+
+        # SQLite fallback
+        try:
+            from db.database import fetch_user_trades
+        except Exception:
+            return
         for user_id in user_ids:
             trades = fetch_user_trades(user_id)
             total_signals = len(trades)
@@ -457,26 +508,306 @@ def run_bot():
                     "Thank you for trading responsibly."
                 )
             else:
-                # Calculate most active markets, best strategy, avg RR
                 from collections import Counter
-                assets = [t[2] for t in trades]  # asset column
-                strategies = [t[9] for t in trades]  # strategy_name column
-                rr_ratios = [t[7] for t in trades if t[7] is not None]
+                assets = [t[2] for t in trades]
+                strategies = [t[9] for t in trades]
                 most_active = ', '.join([a for a, _ in Counter(assets).most_common(2)]) if assets else 'N/A'
                 best_strategy = Counter(strategies).most_common(1)[0][0] if strategies else 'N/A'
-                avg_rr = round(sum(rr_ratios)/len(rr_ratios), 2) if rr_ratios else 'N/A'
                 recap_msg = (
-                    f"\U0001F4CA SignalRankAI Weekly Recap\n\n"
-                    f"Here’s a quick overview of your past week:\n\n"
+                    "\U0001F4CA SignalRankAI Weekly Recap\n\n"
+                    "Here’s a quick overview of your past week:\n\n"
                     f"• Total signals sent: {total_signals}\n"
                     f"• Markets most active: {most_active}\n"
-                    f"• Best-performing strategy: {best_strategy}\n"
-                    f"• Average risk/reward: {avg_rr}\n\n"
-                    "Market conditions were mixed, so signal frequency was intentionally limited.\n\n"
-                    "Remember:\nNo signals is sometimes better than bad signals.\n\n"
+                    f"• Best-performing strategy: {best_strategy}\n\n"
                     "Thank you for trading responsibly."
                 )
-            application.bot.send_message(chat_id=user_id, text=recap_msg)
+            try:
+                application.bot.send_message(chat_id=user_id, text=recap_msg)
+            except Exception:
+                pass
+
+
+    def send_outcome_notifications():
+        # Best-effort Postgres follow-up messages for TP/SL/invalid outcomes.
+        try:
+            from db.session import ENGINE, get_session
+            if ENGINE is None:
+                return
+            from db.pg_features import (
+                list_unnotified_outcomes,
+                list_delivery_recipients_for_signal,
+                mark_outcome_notified,
+                get_alert_prefs,
+            )
+            from datetime import datetime
+
+            async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
+                async with get_session() as session:
+                    rows = await list_unnotified_outcomes(session, limit=50)
+                    out = []
+                    for oc, sig in rows:
+                        recipients = await list_delivery_recipients_for_signal(session, str(sig.signal_id))
+                        enriched: list[tuple[int, str, dict]] = []
+                        for telegram_user_id, tier_at_send in recipients:
+                            try:
+                                prefs = await get_alert_prefs(session, int(telegram_user_id))
+                            except Exception:
+                                prefs = {"tp_sl_enabled": True, "quiet_start_hour": None, "quiet_end_hour": None}
+                            enriched.append((int(telegram_user_id), str(tier_at_send), dict(prefs or {})))
+                        out.append((oc, sig, enriched))
+                    await session.commit()
+                    return out
+
+            try:
+                pending = asyncio.run(_fetch())
+            except Exception:
+                pending = []
+            if not pending:
+                return
+
+            for oc, sig, recipients in pending:
+                status = str(getattr(oc, 'status', '') or '').lower()
+                ref = str(getattr(sig, 'signal_id', '') or '')
+                asset = str(getattr(sig, 'asset', '') or '')
+                timeframe = str(getattr(sig, 'timeframe', '') or '')
+                direction = str(getattr(sig, 'direction', '') or '')
+
+                now_hour = int(datetime.now().hour)
+
+                for telegram_user_id, tier_at_send, prefs in recipients:
+                    try:
+                        if isinstance(prefs, dict) and not prefs.get('tp_sl_enabled', True):
+                            continue
+                        qs = prefs.get('quiet_start_hour')
+                        qe = prefs.get('quiet_end_hour')
+                        if qs is not None and qe is not None:
+                            qs = int(qs)
+                            qe = int(qe)
+                            if qs == qe:
+                                # Quiet all day
+                                continue
+                            if qs < qe:
+                                if qs <= now_hour < qe:
+                                    continue
+                            else:
+                                # Wrap-around (e.g. 22 -> 6)
+                                if now_hour >= qs or now_hour < qe:
+                                    continue
+                    except Exception:
+                        pass
+
+                    # Limited free follow-up
+                    if str(tier_at_send).lower() == 'free':
+                        msg = (
+                            "📣 Signal Update\n\n"
+                            f"Reference: {ref}\n"
+                            f"{asset} {timeframe} {direction}\n\n"
+                            "An outcome was recorded for a recent signal.\n"
+                            "Upgrade to Premium to see full stats and exact levels."
+                        )
+                    else:
+                        label = status.upper() if status else 'UPDATE'
+                        msg = (
+                            f"📣 Outcome Update — {label}\n\n"
+                            f"Reference: {ref}\n"
+                            f"{asset} {timeframe} {direction}\n\n"
+                            "This signal has been marked with an outcome in the tracker."
+                        )
+                    try:
+                        application.bot.send_message(chat_id=int(telegram_user_id), text=msg)
+                    except Exception:
+                        pass
+
+                # Mark notified so we don't repeat.
+                try:
+                    async def _mark(oid: int) -> None:
+                        async with get_session() as session:
+                            await mark_outcome_notified(session, int(oid))
+                            await session.commit()
+
+                    asyncio.run(_mark(int(getattr(oc, 'id'))))
+                except Exception:
+                    pass
+        except Exception:
+            return
+
+
+    def compute_outcomes_best_effort():
+        """Best-effort outcome writer.
+
+        Scans recently delivered signals that have no outcome yet, fetches candles,
+        and records TP/SL if hit. This enables follow-up messages end-to-end.
+        """
+        try:
+            from db.session import ENGINE, get_session
+            if ENGINE is None:
+                return
+            from db.pg_features import list_signals_missing_outcomes, upsert_outcome
+            from datetime import datetime, timezone
+            import json
+            from data.fetcher import get_candles
+
+            async def _fetch_candidates():
+                async with get_session() as session:
+                    sigs = await list_signals_missing_outcomes(session, max_age_days=3, limit=30)
+                    await session.commit()
+                    return sigs
+
+            try:
+                candidates = asyncio.run(_fetch_candidates())
+            except Exception:
+                candidates = []
+            if not candidates:
+                return
+
+            now = datetime.now(timezone.utc)
+
+            def _parse_tp(tp_raw):
+                if tp_raw is None:
+                    return None
+                if isinstance(tp_raw, (int, float)):
+                    return float(tp_raw)
+                s = str(tp_raw).strip()
+                if not s:
+                    return None
+                try:
+                    data = json.loads(s)
+                    if isinstance(data, list) and data:
+                        return float(data[0])
+                    if isinstance(data, (int, float)):
+                        return float(data)
+                except Exception:
+                    pass
+                try:
+                    return float(s)
+                except Exception:
+                    return None
+
+            def _ms(dt):
+                try:
+                    return int(dt.timestamp() * 1000)
+                except Exception:
+                    return 0
+
+            for sig in candidates:
+                try:
+                    asset = str(getattr(sig, "asset", "") or "").upper().strip()
+                    tf = str(getattr(sig, "timeframe", "") or "").lower().strip()
+                    direction = str(getattr(sig, "direction", "") or "").lower().strip()
+                    entry = float(getattr(sig, "entry"))
+                    sl = float(getattr(sig, "stop_loss"))
+                    tp = _parse_tp(getattr(sig, "take_profit", None))
+                    created_at = getattr(sig, "created_at", None)
+                    if not asset or not tf or direction not in {"long", "short"}:
+                        continue
+                    if tp is None or created_at is None:
+                        continue
+
+                    candles = get_candles(asset, tf)
+                    if not candles:
+                        continue
+
+                    created_ms = _ms(created_at)
+                    # Filter candles to those after signal creation when possible.
+                    filtered = []
+                    for c in candles:
+                        try:
+                            ts = c.get("timestamp")
+                            if isinstance(ts, (int, float)):
+                                if int(ts) >= created_ms:
+                                    filtered.append(c)
+                            else:
+                                # FX timestamps are ISO-ish strings; keep best-effort.
+                                filtered.append(c)
+                        except Exception:
+                            continue
+                    if not filtered:
+                        continue
+
+                    status = None
+                    # Walk candles in chronological order and detect first hit.
+                    for c in filtered:
+                        try:
+                            hi = float(c.get("high"))
+                            lo = float(c.get("low"))
+                        except Exception:
+                            continue
+                        if direction == "long":
+                            hit_sl = lo <= sl
+                            hit_tp = hi >= tp
+                        else:
+                            hit_sl = hi >= sl
+                            hit_tp = lo <= tp
+
+                        if hit_sl and hit_tp:
+                            # Ambiguous within-candle; be conservative.
+                            status = "sl"
+                            break
+                        if hit_sl:
+                            status = "sl"
+                            break
+                        if hit_tp:
+                            status = "tp"
+                            break
+
+                    if status is None:
+                        continue
+
+                    # Compute R and % (best-effort)
+                    risk = abs(entry - sl)
+                    reward = abs(tp - entry)
+                    r_mult = None
+                    pct = None
+                    try:
+                        if risk > 0:
+                            if status == "tp":
+                                r_mult = reward / risk
+                            else:
+                                r_mult = -1.0
+                        if status == "tp":
+                            if direction == "long":
+                                pct = ((tp - entry) / entry) * 100.0
+                            else:
+                                pct = ((entry - tp) / entry) * 100.0
+                        else:
+                            if direction == "long":
+                                pct = -((entry - sl) / entry) * 100.0
+                            else:
+                                pct = -((sl - entry) / entry) * 100.0
+                    except Exception:
+                        r_mult = None
+                        pct = None
+
+                    meta = {
+                        "source": "candle_scan",
+                        "evaluated_at": now.isoformat(),
+                        "tp": tp,
+                        "sl": sl,
+                    }
+
+                    async def _write():
+                        async with get_session() as session:
+                            await upsert_outcome(
+                                session,
+                                str(sig.signal_id),
+                                status,
+                                meta=meta,
+                                r_multiple=r_mult,
+                                percent=pct,
+                                opened_at=created_at,
+                                closed_at=now,
+                            )
+                            await session.commit()
+
+                    try:
+                        asyncio.run(_write())
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+
+        except Exception:
+            return
 
     def send_free_delayed_summaries():
         # Respect kill-switch
@@ -642,6 +973,8 @@ def run_bot():
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
+    scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
+    scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)
     scheduler.add_job(
         send_weekly_recap,
         'cron',

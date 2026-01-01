@@ -189,6 +189,226 @@ async def list_signals_sent_today(
     return list(res2.scalars().all())
 
 
+async def list_recent_signals_delivered(
+    session: AsyncSession,
+    telegram_user_id: int,
+    limit: int = 10,
+    asset: str | None = None,
+    timeframe: str | None = None,
+) -> list[Signal]:
+    res = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user = res.scalar_one_or_none()
+    if user is None:
+        return []
+
+    q = (
+        select(Signal)
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(SignalDelivery.user_id == user.id)
+        .order_by(SignalDelivery.delivered_at.desc())
+        .limit(max(1, int(limit)))
+    )
+    if asset:
+        q = q.where(Signal.asset == str(asset).upper().strip())
+    if timeframe:
+        q = q.where(Signal.timeframe == str(timeframe).lower().strip())
+
+    res2 = await session.execute(q)
+    return list(res2.scalars().all())
+
+
+async def get_delivered_signal_by_ref(
+    session: AsyncSession,
+    telegram_user_id: int,
+    ref: str,
+) -> Signal | None:
+    ref = (ref or "").strip()
+    if not ref:
+        return None
+
+    res = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user = res.scalar_one_or_none()
+    if user is None:
+        return None
+
+    q = (
+        select(Signal)
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(SignalDelivery.user_id == user.id)
+    )
+    if len(ref) >= 32:
+        q = q.where(Signal.signal_id == ref)
+    else:
+        q = q.where(Signal.signal_id.like(f"{ref}%"))
+    q = q.order_by(Signal.created_at.desc()).limit(1)
+
+    res2 = await session.execute(q)
+    return res2.scalars().first()
+
+
+async def get_weekly_recap_stats(session: AsyncSession, telegram_user_id: int) -> dict:
+    """Compute a simple last-7-days recap from deliveries."""
+    now = _utcnow()
+    start = now - timedelta(days=7)
+
+    res = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user = res.scalar_one_or_none()
+    if user is None:
+        return {"total": 0, "top_assets": [], "top_strategies": []}
+
+    res_total = await session.execute(
+        select(func.count(SignalDelivery.id)).where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start)
+    )
+    total = int(res_total.scalar() or 0)
+
+    res_assets = await session.execute(
+        select(Signal.asset, func.count(SignalDelivery.id))
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start)
+        .group_by(Signal.asset)
+        .order_by(func.count(SignalDelivery.id).desc())
+        .limit(3)
+    )
+    top_assets = [str(a) for (a, _) in (res_assets.all() or [])]
+
+    res_strats = await session.execute(
+        select(Signal.strategy_name, func.count(SignalDelivery.id))
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start)
+        .group_by(Signal.strategy_name)
+        .order_by(func.count(SignalDelivery.id).desc())
+        .limit(3)
+    )
+    top_strategies = [str(s) for (s, _) in (res_strats.all() or [])]
+
+    return {"total": total, "top_assets": top_assets, "top_strategies": top_strategies}
+
+
+async def upsert_outcome(
+    session: AsyncSession,
+    signal_id: str,
+    status: str,
+    *,
+    meta: dict | None = None,
+    r_multiple: float | None = None,
+    percent: float | None = None,
+    opened_at: datetime | None = None,
+    closed_at: datetime | None = None,
+) -> Outcome:
+    res = await session.execute(select(Outcome).where(Outcome.signal_id == str(signal_id)))
+    oc = res.scalars().first()
+    if oc is None:
+        oc = Outcome(signal_id=str(signal_id), status=str(status).lower()[:16])
+        session.add(oc)
+        await session.flush()
+    oc.status = str(status).lower()[:16]
+    if opened_at is not None and oc.opened_at is None:
+        oc.opened_at = opened_at
+    if closed_at is not None:
+        oc.closed_at = closed_at
+    elif oc.closed_at is None:
+        oc.closed_at = _utcnow()
+    if r_multiple is not None:
+        oc.r_multiple = float(r_multiple)
+    if percent is not None:
+        oc.percent = float(percent)
+    # Best-effort duration
+    try:
+        if oc.opened_at is not None and oc.closed_at is not None:
+            oc.duration_seconds = int((oc.closed_at - oc.opened_at).total_seconds())
+    except Exception:
+        pass
+    if meta:
+        try:
+            merged = dict(oc.meta or {})
+            merged.update(dict(meta))
+            oc.meta = merged
+        except Exception:
+            oc.meta = dict(meta)
+    await session.flush()
+    return oc
+
+
+async def list_signals_missing_outcomes(
+    session: AsyncSession,
+    *,
+    max_age_days: int = 3,
+    limit: int = 50,
+) -> list[Signal]:
+    """Signals that were delivered to at least one user but have no Outcome row yet."""
+    now = _utcnow()
+    start = now - timedelta(days=max(1, int(max_age_days)))
+
+    delivered_ids = (
+        select(SignalDelivery.signal_id)
+        .where(SignalDelivery.delivered_at >= start)
+        .distinct()
+        .subquery()
+    )
+
+    q = (
+        select(Signal)
+        .where(
+            Signal.signal_id.in_(select(delivered_ids.c.signal_id)),
+            Signal.created_at >= start,
+            ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
+        )
+        .order_by(Signal.created_at.asc())
+        .limit(max(1, int(limit)))
+    )
+    res = await session.execute(q)
+    return list(res.scalars().all())
+
+
+async def list_unnotified_outcomes(session: AsyncSession, limit: int = 50) -> list[tuple[Outcome, Signal]]:
+    # Keep query simple; filter meta in Python for robustness.
+    res = await session.execute(
+        select(Outcome, Signal)
+        .join(Signal, Signal.signal_id == Outcome.signal_id)
+        .where(Outcome.closed_at.is_not(None))
+        .order_by(Outcome.closed_at.asc())
+        .limit(max(1, int(limit)))
+    )
+    rows = list(res.all())
+    out: list[tuple[Outcome, Signal]] = []
+    for oc, sig in rows:
+        try:
+            if bool((oc.meta or {}).get("notified")):
+                continue
+        except Exception:
+            pass
+        out.append((oc, sig))
+    return out
+
+
+async def mark_outcome_notified(session: AsyncSession, outcome_id: int) -> None:
+    res = await session.execute(select(Outcome).where(Outcome.id == int(outcome_id)))
+    oc = res.scalars().first()
+    if oc is None:
+        return
+    meta = {}
+    try:
+        meta = dict(oc.meta or {})
+    except Exception:
+        meta = {}
+    meta["notified"] = True
+    meta["notified_at"] = _utcnow().isoformat()
+    oc.meta = meta
+    await session.flush()
+
+
+async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: str) -> list[tuple[int, str]]:
+    """Return list of (telegram_user_id, tier_at_send) for users who received this signal."""
+    res = await session.execute(
+        select(User.telegram_user_id, SignalDelivery.tier_at_send)
+        .select_from(SignalDelivery)
+        .join(User, User.id == SignalDelivery.user_id)
+        .where(SignalDelivery.signal_id == str(signal_id))
+        .order_by(User.telegram_user_id.asc())
+    )
+    return [(int(uid), str(tier)) for (uid, tier) in (res.all() or [])]
+
+
 async def list_all_user_telegram_ids(session: AsyncSession) -> list[int]:
     res = await session.execute(select(User.telegram_user_id).order_by(User.telegram_user_id.asc()))
     return [int(x) for (x,) in (res.all() or [])]
