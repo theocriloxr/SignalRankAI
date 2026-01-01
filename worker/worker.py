@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import os
 import signal
+import threading
 
 from db.session import ENGINE, get_session
 from db.repository import expire_subscriptions
@@ -63,12 +64,16 @@ async def _amain() -> None:
     def _handle_sig(*_: object) -> None:
         worker.request_stop()
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, _handle_sig)
-        except NotImplementedError:
-            # Windows event loop may not support add_signal_handler
-            pass
+    # NOTE: `loop.add_signal_handler` only works in the main thread on Unix.
+    # In RUN_MODE=all we run the worker in a background thread, so skip
+    # installing signal handlers there.
+    if threading.current_thread() is threading.main_thread():
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, _handle_sig)
+            except NotImplementedError:
+                # Windows event loop may not support add_signal_handler
+                pass
 
     await worker.run()
 
