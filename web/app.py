@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import socket
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
@@ -176,7 +177,19 @@ async def metrics_middleware(request: Request, call_next):
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
-    return {"ok": True, "service": APP_NAME}
+    # Include non-sensitive deployment hints to verify which instance is serving traffic.
+    return {
+        "ok": True,
+        "service": APP_NAME,
+        "run_mode": (os.getenv("RUN_MODE") or "").strip().lower() or None,
+        "hostname": socket.gethostname(),
+        "railway": {
+            "service_name": os.getenv("RAILWAY_SERVICE_NAME"),
+            "environment": os.getenv("RAILWAY_ENVIRONMENT_NAME"),
+            "deployment_id": os.getenv("RAILWAY_DEPLOYMENT_ID"),
+            "commit_sha": os.getenv("RAILWAY_GIT_COMMIT_SHA"),
+        },
+    }
 
 
 @app.get("/metrics")
