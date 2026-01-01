@@ -677,11 +677,16 @@ def has_full_access(user_id, provided_key=None):
 def get_user_tier(user_id):
     if user_id in OWNER_IDS:
         return "OWNER"
+    try:
+        from core.redis_state import state as _state
+
+        if _state.has_temp_owner_sync(int(user_id)):
+            return "OWNER"
+    except Exception:
+        pass
     sub = get_subscription(user_id)
     if sub is None or sub.get('expired', True):
         return "FREE"
-    if sub.get('bypass_key_used'):
-        return "OWNER"
     return sub.get('tier', 'FREE')
 
 def get_subscription(user_id):

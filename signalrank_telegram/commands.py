@@ -289,7 +289,10 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		_, remaining, limit = count_active_vip_seats()
 		sub = get_subscription(user_id)
 		already_vip = bool(sub and not sub.get('expired', True) and str(sub.get('tier', '')).upper().startswith('VIP'))
-		bypassed = bool(sub and bool(sub.get('bypass_key_used')))
+		try:
+			bypassed = bool(await state.has_temp_owner(user_id))
+		except Exception:
+			bypassed = False
 		is_owner = user_id in OWNER_IDS
 		can_offer_vip = (remaining > 0) or already_vip or bypassed or is_owner
 	except Exception:

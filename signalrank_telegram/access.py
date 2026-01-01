@@ -2,6 +2,7 @@ import asyncio
 
 from config import OWNER_IDS
 from db.database import get_subscription
+from core.redis_state import state
 
 try:
     from db.access import resolve_user_tier as _resolve_user_tier_pg
@@ -13,6 +14,14 @@ except Exception:  # pragma: no cover
 def resolve_user_tier(user_id):
     if user_id in OWNER_IDS:
         return "OWNER"
+
+    # If a user was granted temporary owner access via /unlock,
+    # treat them as OWNER (this is invalidated automatically when BYPASS_KEY rotates).
+    try:
+        if state.has_temp_owner_sync(int(user_id)):
+            return "OWNER"
+    except Exception:
+        pass
 
     # Prefer Postgres when configured.
     try:
@@ -30,6 +39,4 @@ def resolve_user_tier(user_id):
     sub = get_subscription(user_id)
     if sub is None or sub.get('expired', True):
         return "FREE"
-    if sub.get('bypass_key_used'):
-        return "OWNER"
     return (sub.get('tier', 'FREE') or 'FREE')

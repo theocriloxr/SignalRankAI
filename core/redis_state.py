@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 import json
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -94,6 +95,18 @@ class RedisState:
         self._redis_sync = redis.Redis.from_url(url, decode_responses=True)
         return self._redis_sync
 
+    def _bypass_fingerprint(self) -> Optional[str]:
+        """Fingerprint the active BYPASS_KEY.
+
+        This lets us invalidate previously granted temp-owner access immediately
+        when BYPASS_KEY is rotated, without storing the raw secret.
+        """
+
+        key = (os.getenv("BYPASS_KEY") or "").strip()
+        if not key:
+            return None
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
     # -------- Sync API (Telegram legacy) --------
     def get_killswitch_sync(self) -> KillSwitchState:
         r = self._get_redis_sync()
@@ -154,10 +167,11 @@ class RedisState:
 
     def set_temp_owner_sync(self, telegram_user_id: int, ttl_seconds: int) -> None:
         key = f"signalrankai:owner_bypass:{telegram_user_id}"
+        fp = self._bypass_fingerprint() or ""
         r = self._get_redis_sync()
         if r is None:
             if self._pg_available():
-                data = {"enabled": True}
+                data = {"enabled": True, "bypass_fp": fp}
                 ttl = max(60, int(ttl_seconds))
                 self._pg_exec_one(
                     "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
@@ -166,25 +180,67 @@ class RedisState:
                     (key, json.dumps(data), str(ttl)),
                 )
                 return
-            self._memory[key] = time.time() + int(ttl_seconds)
+            self._memory[key] = {"exp": time.time() + int(ttl_seconds), "bypass_fp": fp}
             return
-        r.set(key, "1", ex=max(60, int(ttl_seconds)))
+        r.set(key, f"1:{fp}", ex=max(60, int(ttl_seconds)))
 
     def has_temp_owner_sync(self, telegram_user_id: int) -> bool:
         key = f"signalrankai:owner_bypass:{telegram_user_id}"
+        expected_fp = self._bypass_fingerprint() or ""
         r = self._get_redis_sync()
         if r is None:
             if self._pg_available():
                 row = self._pg_exec_one(
-                    "SELECT 1 FROM runtime_state WHERE key=%s AND expires_at > NOW()",
+                    "SELECT value FROM runtime_state WHERE key=%s AND expires_at > NOW()",
                     (key,),
                 )
-                return bool(row)
-            exp = self._memory.get(key)
-            if not exp:
+                if not row or row[0] is None:
+                    return False
+                try:
+                    data = row[0]
+                    stored_fp = str(data.get("bypass_fp", "") or "")
+                except Exception:
+                    stored_fp = ""
+                if expected_fp and stored_fp == expected_fp:
+                    return True
+                # Fingerprint mismatch (or missing): revoke old bypass immediately.
+                self._pg_exec_one("DELETE FROM runtime_state WHERE key=%s", (key,))
                 return False
-            return float(exp) > time.time()
-        return r.get(key) == "1"
+
+            raw = self._memory.get(key)
+            if not raw:
+                return False
+            if isinstance(raw, dict):
+                exp = float(raw.get("exp", 0.0) or 0.0)
+                stored_fp = str(raw.get("bypass_fp", "") or "")
+            else:
+                # Legacy in-memory format (timestamp only)
+                exp = float(raw)
+                stored_fp = ""
+            if exp <= time.time():
+                return False
+            return bool(expected_fp) and stored_fp == expected_fp
+
+        val = r.get(key)
+        if not val:
+            return False
+        if ":" not in val:
+            # Legacy format; treat as revoked when we enforce fingerprints.
+            try:
+                r.delete(key)
+            except Exception:
+                pass
+            return False
+        prefix, stored_fp = val.split(":", 1)
+        if prefix != "1":
+            return False
+        if expected_fp and stored_fp == expected_fp:
+            return True
+        try:
+            r.delete(key)
+        except Exception:
+            pass
+        return False
 
     def rate_limited_sync(self, telegram_user_id: int, limit: int, window_seconds: int) -> bool:
         """Simple fixed-window rate limit."""
