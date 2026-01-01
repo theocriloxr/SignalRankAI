@@ -181,3 +181,12 @@ class SignalDelivery(Base):
     signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
     tier_at_send: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="free")
     delivered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class RuntimeState(Base):
+    __tablename__ = "runtime_state"
+
+    key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    value: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
