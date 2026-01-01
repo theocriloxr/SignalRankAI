@@ -47,8 +47,9 @@ class RedisState:
         self._pg_dsn: Optional[str] = None
 
     def _redis_url(self) -> Optional[str]:
-        url = os.getenv("REDIS_URL")
-        return url or None
+        # Redis is intentionally disabled for this project.
+        # Shared runtime state is persisted in Postgres (runtime_state table).
+        return None
 
     def _get_pg_dsn(self) -> Optional[str]:
         if self._pg_dsn is not None:
@@ -87,14 +88,8 @@ class RedisState:
             return None
 
     def _get_redis_sync(self):
-        if self._redis_sync is not None:
-            return self._redis_sync
-        url = self._redis_url()
-        if not url or redis is None:
-            return None
-
-        self._redis_sync = redis.Redis.from_url(url, decode_responses=True)
-        return self._redis_sync
+        # Redis backend disabled: always return None so callers use Postgres or memory.
+        return None
 
     def _bypass_fingerprint(self) -> Optional[str]:
         """Fingerprint the active BYPASS_KEY.
