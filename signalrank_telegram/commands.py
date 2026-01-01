@@ -55,7 +55,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	tier = _effective_tier(user_id)
 
 	public_cmds = [
-		("/start", "Start and register your account"),
+		("/start", "Start and register your SIGNALRANKAI account"),
 		("/help", "Show commands by tier"),
 		("/pricing", "View plans and seat limits"),
 		("/upgrade", "Get Paystack checkout links"),
