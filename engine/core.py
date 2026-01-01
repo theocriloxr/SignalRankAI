@@ -90,6 +90,24 @@ def main_loop(DRY_RUN=False):
                 try:
                     tfs = crypto_timeframes if is_crypto(asset) else fx_timeframes
                     market_data = fetch_market_data(asset, tfs)
+
+                    # Fail-closed: never run strategies on empty/insufficient market data.
+                    try:
+                        min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
+                    except Exception:
+                        min_candles = 50
+                    min_candles = max(1, int(min_candles))
+                    if not market_data:
+                        continue
+                    has_enough = False
+                    for tf_data in (market_data or {}).values():
+                        candles = (tf_data or {}).get("candles") or []
+                        if isinstance(candles, list) and len(candles) >= min_candles:
+                            has_enough = True
+                            break
+                    if not has_enough:
+                        continue
+
                     regime = detect_market_regime(market_data)
                     strategy_signals = run_all_strategies(
                         asset,

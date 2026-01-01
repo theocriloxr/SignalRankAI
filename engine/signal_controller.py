@@ -37,12 +37,19 @@ class SignalController:
         self._cycle_seen: Set[Tuple[str, str, str]] = set()
 
         # Minimal audit logger (kept for existing code/tests)
+        # Default to stdout so Railway captures logs, and avoid writing tracked files.
         import logging
+        import os
 
         self.audit_logger = logging.getLogger("audit")
         self.audit_logger.setLevel(logging.INFO)
+
         if not self.audit_logger.handlers:
-            handler = logging.FileHandler("audit.log")
+            log_path = (os.getenv("AUDIT_LOG_FILE") or "").strip()
+            if log_path:
+                handler: logging.Handler = logging.FileHandler(log_path)
+            else:
+                handler = logging.StreamHandler()
             handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
             self.audit_logger.addHandler(handler)
 

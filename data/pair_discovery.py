@@ -1,5 +1,4 @@
 import os
-import ccxt
 import requests
 
 BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
@@ -41,22 +40,13 @@ def get_trending_crypto_pairs(top_n=20):
 def get_trending_fx_pairs():
     """Return configured FX pairs.
 
-    This avoids hardcoded demo pairs. Configure via FX_PAIRS (comma-separated), e.g.
-    FX_PAIRS="EURUSD,GBPUSD,USDJPY".
+    FX pairs are optional and must be explicitly configured.
+
+    Configure via FX_PAIRS (comma-separated), e.g. FX_PAIRS="EURUSD,GBPUSD,USDJPY".
     """
     raw = (os.getenv("FX_PAIRS") or "").strip()
     if not raw:
-        # Sensible defaults: liquid majors (good spreads + coverage).
-        # Users can override via FX_PAIRS.
-        return [
-            "EURUSD",
-            "GBPUSD",
-            "USDJPY",
-            "USDCHF",
-            "AUDUSD",
-            "USDCAD",
-            "NZDUSD",
-        ]
+        return []
     return [x.strip().upper() for x in raw.split(",") if x.strip()]
 
 # Combine all pairs for strategy engine

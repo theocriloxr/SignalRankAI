@@ -3,7 +3,6 @@ python-telegram-bot>=21.0,<22
 pandas
 numpy
 requests
-ccxt
 alpha_vantage
 fastapi>=0.110
 uvicorn[standard]>=0.24

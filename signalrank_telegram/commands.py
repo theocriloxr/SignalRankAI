@@ -235,15 +235,32 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		# fallback
 		return a.replace("USD", "/USDT")
 
+	def _binance_symbol_rest(asset: str) -> str:
+		a = (asset or "").upper().strip()
+		a = a.replace("/", "").replace("-", "")
+		# Normalize USD suffix to USDT
+		if a.endswith("USD") and not a.endswith("USDT"):
+			a = a[:-3] + "USDT"
+		return a
+
 	def _current_price(asset: str) -> float | None:
 		if not _is_crypto(asset):
 			return None
 		try:
-			import ccxt
-			ex = ccxt.binance({"enableRateLimit": True})
-			ticker = ex.fetch_ticker(_binance_symbol(asset))
-			last = ticker.get("last") or ticker.get("close")
-			return float(last) if last is not None else None
+			import requests
+			sym = _binance_symbol_rest(asset)
+			if not sym:
+				return None
+			resp = requests.get(
+				"https://api.binance.com/api/v3/ticker/price",
+				params={"symbol": sym},
+				timeout=8,
+			)
+			if not resp.ok:
+				return None
+			payload = resp.json() if resp.ok else {}
+			price = payload.get("price")
+			return float(price) if price is not None else None
 		except Exception:
 			return None
 

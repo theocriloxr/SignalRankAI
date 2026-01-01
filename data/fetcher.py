@@ -63,23 +63,58 @@ def is_crypto(asset):
     return a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC")
 
 def get_crypto_candles(asset, timeframe):
-    import ccxt
-    import time
-    exchange = ccxt.binance()
-    symbol = asset.replace('USD', '/USDT') if not asset.endswith('USDT') else asset.replace('USDT', '/USDT')
-    tf_map = {'5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'}
+    """Fetch crypto candles from Binance public REST API.
+
+    This reads *real* chart candles (no demo/synthetic generation) and avoids
+    requiring `ccxt`.
+    """
+
+    tf_map = {"5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
+    interval = tf_map.get((timeframe or "").strip(), "1h")
+
+    sym = (asset or "").upper().strip()
+    # Expect Binance symbols like BTCUSDT; allow BTC/USD style too.
+    sym = sym.replace("/", "").replace("-", "")
+    if sym.endswith("USD") and not sym.endswith("USDT"):
+        sym = sym[:-3] + "USDT"
+
+    if not sym or len(sym) < 6:
+        return []
+
+    url = "https://api.binance.com/api/v3/klines"
+    params = {"symbol": sym, "interval": interval, "limit": 200}
     max_retries = 3
-    for attempt in range(max_retries):
+    for attempt in range(1, max_retries + 1):
         try:
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe=tf_map.get(timeframe, '1h'), limit=100)
+            resp = requests.get(url, params=params, timeout=10)
+            if not resp.ok:
+                raise RuntimeError(f"Binance klines HTTP {resp.status_code}")
+
+            payload = resp.json()
+            if not isinstance(payload, list):
+                # Binance errors come back as dicts
+                raise RuntimeError(f"Unexpected Binance klines payload: {payload}")
+
             candles = []
-            for o in ohlcv:
-                candles.append({'timestamp': o[0], 'open': o[1], 'high': o[2], 'low': o[3], 'close': o[4], 'volume': o[5]})
+            for row in payload:
+                # [ openTime, open, high, low, close, volume, closeTime, ... ]
+                try:
+                    candles.append(
+                        {
+                            "timestamp": int(row[0]),
+                            "open": float(row[1]),
+                            "high": float(row[2]),
+                            "low": float(row[3]),
+                            "close": float(row[4]),
+                            "volume": float(row[5]),
+                        }
+                    )
+                except Exception:
+                    continue
             return candles
         except Exception as e:
-            print(f"Error fetching candles for {symbol} (attempt {attempt+1}/{max_retries}): {e}")
+            print(f"[WARN] Binance candle fetch failed for {sym} {interval} (attempt {attempt}/{max_retries}): {e}")
             time.sleep(2)
-    print(f"Failed to fetch candles for {symbol} after {max_retries} attempts.")
     return []
 
 def get_fx_candles(asset, timeframe):
