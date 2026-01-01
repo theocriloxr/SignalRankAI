@@ -60,3 +60,7 @@ This matrix maps the functional spec to current code paths and highlights remain
 
 ## ML extension
 - Data model supports outcomes + signals; feature snapshot capture is a future enhancement.
+
+## Railway deploy notes
+- `DATABASE_URL` from Railway is auto-normalized for async SQLAlchemy in `db/session.py`.
+- Alembic migrations require a sync Postgres driver; `psycopg2-binary` is included in requirements for this.

@@ -11,6 +11,15 @@ def get_database_url() -> Optional[str]:
     url = os.getenv("DATABASE_URL")
     if not url:
         return None
+    url = url.strip()
+    # Railway commonly provides postgres:// or postgresql:// URLs.
+    # SQLAlchemy async requires the asyncpg dialect.
+    if url.startswith("postgresql+asyncpg://"):
+        return url
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
 
