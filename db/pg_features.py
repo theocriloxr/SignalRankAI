@@ -1143,12 +1143,12 @@ async def get_random_available_signals_for_free_user(
     )
     resolved_signals = set(row[0] for row in res_resolved.all())
     
-    # Get all recent signals
+    # Get all recent signals (not yet archived)
+    # Note: archived filtering will be applied once migration 0009 runs
     res_signals = await session.execute(
         select(Signal)
         .where(
             Signal.created_at >= cutoff,
-            Signal.archived == False,
         )
         .order_by(Signal.created_at.desc())
     )
@@ -1193,11 +1193,11 @@ async def get_highest_scoring_available_signal_for_user(
     resolved_signals = set(row[0] for row in res_resolved.all())
     
     # Get highest scoring recent signal not yet delivered to user and still ongoing
+    # Note: archived filtering will be applied once migration 0009 runs
     res_signal = await session.execute(
         select(Signal)
         .where(
             Signal.created_at >= cutoff,
-            Signal.archived == False,
             Signal.signal_id.notin_(already_received) if already_received else True,
             Signal.signal_id.notin_(resolved_signals) if resolved_signals else True,
         )
