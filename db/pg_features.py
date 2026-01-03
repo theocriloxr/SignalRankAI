@@ -1120,12 +1120,17 @@ async def get_random_available_signals_for_free_user(
     telegram_user_id: int,
     limit: int = 2,
 ) -> list[Signal]:
-    """Get random signals that user hasn't received yet.
+    """Get completely random signals that user hasn't received yet.
+    
+    Bot picks ANY random signals from available pool - no filtering by score,
+    quality, or any other criteria. Truly random selection.
     
     Returns up to 'limit' random signals that:
     - Were created recently (last 24 hours)
     - Haven't been delivered to this user yet
     - Are still ongoing trades (no outcome recorded)
+    
+    Different users will get different random signals from the same pool.
     """
     user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now = _utcnow()
@@ -1160,7 +1165,7 @@ async def get_random_available_signals_for_free_user(
         if s.signal_id not in already_received and s.signal_id not in resolved_signals
     ]
     
-    # Randomly select up to limit
+    # Truly random selection - bot picks any signals it wants
     if len(available) <= limit:
         return available
     
@@ -1285,3 +1290,52 @@ async def queue_random_free_signals_for_all_users(
             await session.flush()
     
     return count
+
+
+async def count_signals_delivered_today(
+    session: AsyncSession,
+    telegram_user_id: int,
+) -> int:
+    """Count how many signals were delivered to a user today."""
+    from db.models import User, SignalDelivery
+    from sqlalchemy import select, func
+    from datetime import datetime, timedelta
+    
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    now = _utcnow()
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    res = await session.execute(
+        select(func.count(SignalDelivery.id)).where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.delivered_at >= start_of_day
+        )
+    )
+    return res.scalar_one() or 0
+
+
+async def get_last_signal_delivery_time(
+    session: AsyncSession,
+    telegram_user_id: int,
+):
+    """
+    Get the timestamp of the last signal delivery for a user today.
+    Returns None if no signals delivered today. Used for random timing of 2nd signal.
+    """
+    from db.models import User, SignalDelivery
+    from sqlalchemy import select, desc
+    
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    now = _utcnow()
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    res = await session.execute(
+        select(SignalDelivery.delivered_at)
+        .where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.delivered_at >= start_of_day
+        )
+        .order_by(desc(SignalDelivery.delivered_at))
+        .limit(1)
+    )
+    return res.scalar_one_or_none()

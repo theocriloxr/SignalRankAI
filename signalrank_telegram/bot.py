@@ -318,7 +318,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
             # VIP: score >= 72 only
-            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 72.0]
+            signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) >= 72.0]
         elif tier in ('premium',):
             # PREMIUM: score < 80 (but >= 55 for dispatch)
             signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) < 80.0]
@@ -490,37 +490,103 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         "extra_signal_failed",
                         f"[bot] extra signal delivery failed: {type(e).__name__}: {e}",
                     )
-                
-                # Also add signals to global pool for other FREE users
-                async def _add_to_pool():
-                    from db.pg_features import queue_signal_to_global_pool
-                    async with get_session() as session:
-                        for signal in signals_list:
-                            await queue_signal_to_global_pool(session, signal)
-                        await session.commit()
-                
-                try:
-                    asyncio.run(_add_to_pool())
-                except Exception:
-                    pass
-                return
 
-            # FREE (no extra): just add signals to global pool
-            async def _add_to_global_pool() -> None:
-                from db.pg_features import queue_signal_to_global_pool
+            # FREE users: send completely random signals immediately (no delay, no scoring)
+            # Bot picks ANY signals at random - different users get different random signals
+            # Bot also decides WHEN to send: 1st signal immediately, 2nd signal at random time later
+            async def _send_random_signals_immediately() -> None:
+                from db.pg_features import get_random_available_signals_for_free_user, record_signal_delivery
+                from db.models import User
+                from sqlalchemy import select
+                import random
+                from datetime import datetime, timedelta
 
+                bot = Bot(token=_require_telegram_token())
+                
                 async with get_session() as session:
-                    for signal in signals_list:
-                        await queue_signal_to_global_pool(session, signal)
+                    # Get user
+                    res_user = await session.execute(
+                        select(User).where(User.telegram_user_id == int(user_id))
+                    )
+                    user = res_user.scalar_one_or_none()
+                    if not user:
+                        return
+                    
+                    # Check how many signals user already received today
+                    from db.pg_features import count_signals_delivered_today, get_last_signal_delivery_time
+                    delivered_today = await count_signals_delivered_today(session, int(user_id))
+                    
+                    # FREE users get 2 signals per day
+                    daily_limit = 2
+                    remaining = max(0, daily_limit - delivered_today)
+                    
+                    if remaining <= 0:
+                        return  # Already hit daily limit
+                    
+                    # If user already got 1 signal today, bot randomly decides if it's time for the 2nd
+                    if delivered_today == 1:
+                        last_delivery = await get_last_signal_delivery_time(session, int(user_id))
+                        if last_delivery:
+                            # Random delay between 2-8 hours for second signal
+                            min_hours = 2
+                            max_hours = 8
+                            random_delay_hours = random.uniform(min_hours, max_hours)
+                            
+                            now = datetime.utcnow()
+                            time_since_last = (now - last_delivery).total_seconds() / 3600  # hours
+                            
+                            # Bot decides: has enough random time passed?
+                            if time_since_last < random_delay_hours:
+                                return  # Not time yet for 2nd signal (bot's choice)
+                    
+                    # Get completely random available signals (bot's choice - no quality filter)
+                    # Different users get different random signals from the same pool
+                    available_signals = await get_random_available_signals_for_free_user(
+                        session, int(user_id), limit=remaining
+                    )
+                    
+                    if not available_signals:
+                        return  # No signals available
+                    
+                    # Send each signal
+                    for sig in available_signals:
+                        # Record delivery
+                        ok = await record_signal_delivery(
+                            session,
+                            telegram_user_id=int(user_id),
+                            signal_id=str(sig.signal_id),
+                            tier_at_send='free',
+                        )
+                        
+                        if ok:
+                            # Build signal dict
+                            sig_dict = {
+                                "signal_id": sig.signal_id,
+                                "asset": sig.asset,
+                                "timeframe": sig.timeframe,
+                                "direction": sig.direction,
+                                "entry": sig.entry,
+                                "stop_loss": sig.stop_loss,
+                                "take_profit": sig.take_profit,
+                                "rr_ratio": sig.rr_estimate,
+                                "score": sig.score,
+                                "regime": getattr(sig, 'regime', 'NEUTRAL'),
+                            }
+                            try:
+                                # Send with FREE tier formatting
+                                _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier='free'))
+                            except Exception:
+                                pass
+                    
                     await session.commit()
 
             try:
-                asyncio.run(_add_to_global_pool())
+                asyncio.run(_send_random_signals_immediately())
                 return
             except Exception as e:
                 _log_once(
-                    "queue_global_pool_failed",
-                    f"[bot] queue to global pool failed: {type(e).__name__}: {e}",
+                    "free_random_send_failed",
+                    f"[bot] free random signal delivery failed: {type(e).__name__}: {e}",
                 )
     except Exception as e:
         _log_once(
