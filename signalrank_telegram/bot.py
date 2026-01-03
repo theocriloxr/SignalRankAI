@@ -330,7 +330,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 display_tier = 'vip'
                 effective_tier = 'admin'
 
-            if effective_tier in ('premium', 'vip', 'owner'):
+            if effective_tier in ('premium', 'vip', 'owner', 'admin'):
                 bot = Bot(token=_require_telegram_token())
                 limit = TIER_LIMITS.get(tier, 0)
                 if tier == 'free' and extra_left > 0:
@@ -627,7 +627,7 @@ def run_bot() -> None:
                             "Thank you for trading responsibly."
                         )
                     try:
-                        application.bot.send_message(chat_id=user_id, text=recap_msg)
+                        _send_message_sync(application.bot, chat_id=int(user_id), text=recap_msg)
                     except Exception:
                         pass
                 return
@@ -724,7 +724,7 @@ def run_bot() -> None:
                             "This signal has been marked with an outcome in the tracker."
                         )
                     try:
-                        application.bot.send_message(chat_id=int(telegram_user_id), text=msg)
+                        _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
                     except Exception:
                         pass
 
@@ -753,7 +753,7 @@ def run_bot() -> None:
             if ENGINE is None:
                 return
             from db.pg_features import list_signals_missing_outcomes, upsert_outcome
-            from datetime import datetime, timezone
+            from datetime import datetime
             import json
             from data.fetcher import get_candles
 
@@ -770,7 +770,7 @@ def run_bot() -> None:
             if not candidates:
                 return
 
-            now = datetime.now(timezone.utc)
+            now = datetime.utcnow()
 
             def _parse_tp(tp_raw):
                 if tp_raw is None:
@@ -985,17 +985,36 @@ def run_bot() -> None:
                         except Exception:
                             pass
 
-                    items = items[:per_user_limit]
-                    msg = _format_free_delayed_digest(items)
-                    status = 'sent'
-                    try:
-                        application.bot.send_message(chat_id=int(uid), text=msg)
-                    except Exception:
-                        status = 'failed'
+                    items_to_send = items[:per_user_limit]
+                    items_to_skip = items[per_user_limit:]
 
-                    actions.append(
-                        (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], status)
-                    )
+                    status = 'sent'
+                    if items_to_send:
+                        msg = _format_free_delayed_digest(items_to_send)
+                        try:
+                            _send_message_sync(application.bot, chat_id=int(uid), text=msg)
+                        except Exception:
+                            status = 'failed'
+
+                        actions.append(
+                            (
+                                int(uid),
+                                [it["id"] for it in items_to_send],
+                                [it["signal_id"] for it in items_to_send],
+                                status,
+                            )
+                        )
+
+                    # Clear out any extra due items so they don't remain queued forever.
+                    if items_to_skip:
+                        actions.append(
+                            (
+                                int(uid),
+                                [it["id"] for it in items_to_skip],
+                                [it["signal_id"] for it in items_to_skip],
+                                'expired',
+                            )
+                        )
 
                 if not actions:
                     return

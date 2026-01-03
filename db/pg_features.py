@@ -208,8 +208,56 @@ async def record_signal_delivery(
 ) -> bool:
     user = await get_or_create_user(session, telegram_user_id=telegram_user_id)
 
-    before = len(session.new)
+    # Dedupe at two levels:
+    # - per-user: don't send the same trade twice to the same user
+    # - per-tier: don't send the same trade twice to a tier cohort
+    # We use Signal.fingerprint so regenerated signal_ids still dedupe.
+    try:
+        dedupe_hours = int((os.getenv("DELIVERY_DEDUPE_HOURS") or "24").strip())
+    except Exception:
+        dedupe_hours = 24
+    dedupe_hours = max(1, int(dedupe_hours))
+    cutoff = _utcnow() - timedelta(hours=int(dedupe_hours))
+
     tier_s = str(tier_at_send or "free").strip().lower()[:16]
+
+    try:
+        res_sig = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
+        sig = res_sig.scalar_one_or_none()
+        fp = getattr(sig, "fingerprint", None) if sig is not None else None
+        if fp:
+            # Per-user dedupe
+            res_u = await session.execute(
+                select(func.count(SignalDelivery.id))
+                .select_from(SignalDelivery)
+                .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                .where(
+                    SignalDelivery.user_id == user.id,
+                    Signal.fingerprint == fp,
+                    SignalDelivery.delivered_at >= cutoff,
+                )
+            )
+            if int(res_u.scalar() or 0) > 0:
+                return False
+
+            # Per-tier dedupe (cohort)
+            res_t = await session.execute(
+                select(func.count(SignalDelivery.id))
+                .select_from(SignalDelivery)
+                .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                .where(
+                    SignalDelivery.tier_at_send == tier_s,
+                    Signal.fingerprint == fp,
+                    SignalDelivery.delivered_at >= cutoff,
+                )
+            )
+            if int(res_t.scalar() or 0) > 0:
+                return False
+    except Exception:
+        # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
+        pass
+
+    before = len(session.new)
     delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s)
     session.add(delivery)
     try:

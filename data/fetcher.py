@@ -11,6 +11,10 @@ _ALPHA_LAST_CALL_TS = 0.0
 _BINANCE_BLOCKED_REASON: str | None = None
 
 
+def is_binance_blocked() -> bool:
+    return _BINANCE_BLOCKED_REASON is not None
+
+
 def _env_float(name: str, default: float) -> float:
     try:
         return float((os.getenv(name) or str(default)).strip())

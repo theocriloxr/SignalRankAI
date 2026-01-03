@@ -2,7 +2,7 @@ import os
 import time
 import asyncio
 
-from data.fetcher import is_crypto
+from data.fetcher import is_crypto, is_binance_blocked
 from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs
 from engine.regime import detect_market_regime
@@ -230,7 +230,15 @@ def main_loop(DRY_RUN=False):
                     fx_assets = fx_assets[: int(fx_max_pairs)]
 
                 # Crypto universe can be large; bound per-cycle work but rotate so we cover all.
-                crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", 20)
+                default_crypto_max = 20
+                try:
+                    # If Binance is blocked and we don't have a CryptoCompare key,
+                    # calling CryptoCompare too aggressively can yield empty candles.
+                    if is_binance_blocked() and not (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip():
+                        default_crypto_max = 8
+                except Exception:
+                    pass
+                crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", int(default_crypto_max))
                 crypto_pair_rotation = _env_bool("CRYPTO_PAIR_ROTATION", True)
                 if crypto_max_pairs > 0 and len(crypto_assets) > crypto_max_pairs:
                     if crypto_pair_rotation:
