@@ -1100,3 +1100,171 @@ async def downgrade_expired_subscriptions(session: AsyncSession) -> int:
         await session.flush()
 
     return count
+
+
+async def queue_signal_to_global_pool(
+    session: AsyncSession,
+    signal: Dict[str, Any],
+) -> bool:
+    """Add signal to global pool for FREE user random distribution.
+    
+    All generated signals are added to a pool, then randomly distributed to FREE users.
+    """
+    s = await get_or_create_signal(session, signal)
+    # Signal is now in the database and available for random selection
+    return True
+
+
+async def get_random_available_signals_for_free_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+    limit: int = 2,
+) -> list[Signal]:
+    """Get random signals that user hasn't received yet.
+    
+    Returns up to 'limit' random signals that:
+    - Were created recently (last 24 hours)
+    - Haven't been delivered to this user yet
+    - Are still valid for trading
+    """
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    now = _utcnow()
+    cutoff = now - timedelta(hours=24)
+    
+    # Get signals this user already received
+    res_delivered = await session.execute(
+        select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
+    )
+    already_received = set(row[0] for row in res_delivered.all())
+    
+    # Get all recent signals
+    res_signals = await session.execute(
+        select(Signal)
+        .where(
+            Signal.created_at >= cutoff,
+            Signal.archived == False,
+        )
+        .order_by(Signal.created_at.desc())
+    )
+    all_recent = list(res_signals.scalars().all())
+    
+    # Filter out already received
+    available = [s for s in all_recent if s.signal_id not in already_received]
+    
+    # Randomly select up to limit
+    if len(available) <= limit:
+        return available
+    
+    return random.sample(available, limit)
+
+
+async def get_highest_scoring_available_signal_for_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+) -> Optional[Signal]:
+    """Get the highest scoring signal user hasn't received yet.
+    
+    Used for extra paid signals - gives user the best available ongoing signal.
+    """
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    now = _utcnow()
+    cutoff = now - timedelta(hours=24)
+    
+    # Get signals this user already received
+    res_delivered = await session.execute(
+        select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
+    )
+    already_received = set(row[0] for row in res_delivered.all())
+    
+    # Get highest scoring recent signal not yet delivered to user
+    res_signal = await session.execute(
+        select(Signal)
+        .where(
+            Signal.created_at >= cutoff,
+            Signal.archived == False,
+            Signal.signal_id.notin_(already_received) if already_received else True,
+        )
+        .order_by(Signal.score.desc())
+        .limit(1)
+    )
+    return res_signal.scalar_one_or_none()
+
+
+async def queue_random_free_signals_for_all_users(
+    session: AsyncSession,
+) -> int:
+    """Queue random signals for all FREE users who haven't reached daily limit.
+    
+    Called periodically to distribute signals to FREE users.
+    Returns count of users who received new signals.
+    """
+    now = _utcnow()
+    daily_limit = 2
+    count = 0
+    
+    # Get all FREE tier users
+    res_users = await session.execute(
+        select(User).where(User.tier == "free")
+    )
+    free_users = list(res_users.scalars().all())
+    
+    for user in free_users:
+        # Check user's daily window
+        try:
+            anchor = user.created_at
+            window_start = now.replace(
+                hour=int(anchor.hour),
+                minute=int(anchor.minute),
+                second=int(anchor.second),
+                microsecond=0,
+            )
+            if window_start > now:
+                window_start = window_start - timedelta(days=1)
+        except Exception:
+            window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        window_end = window_start + timedelta(days=1)
+        
+        # Check how many already queued/sent today
+        res_count = await session.execute(
+            select(func.count(FreeSignalQueue.id)).where(
+                FreeSignalQueue.user_id == user.id,
+                FreeSignalQueue.date >= window_start,
+                FreeSignalQueue.date < window_end,
+                FreeSignalQueue.status.in_(["queued", "sent"]),
+            )
+        )
+        already = int(res_count.scalar() or 0)
+        
+        if already >= daily_limit:
+            continue
+        
+        # Get random signals for this user
+        needed = daily_limit - already
+        random_signals = await get_random_available_signals_for_free_user(
+            session, user.telegram_user_id, limit=needed
+        )
+        
+        # Queue them
+        delay_minutes = _env_int("FREE_DELAY_MINUTES", 30)
+        for sig in random_signals:
+            deliver_after = now + timedelta(minutes=delay_minutes)
+            q = FreeSignalQueue(
+                user_id=user.id,
+                date=window_start,
+                signal_id=sig.signal_id,
+                asset=str(sig.asset),
+                timeframe=str(sig.timeframe),
+                direction=str(sig.direction),
+                score=int(sig.score or 0),
+                queued_at=now,
+                deliver_after=deliver_after,
+                status="queued",
+            )
+            session.add(q)
+            count += 1
+        
+        if random_signals:
+            await session.flush()
+    
+    return count

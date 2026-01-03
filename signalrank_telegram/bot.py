@@ -277,23 +277,21 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     - ADMIN: 9999 signals/day (all signals, real-time, no score filter)
     - VIP: 30 signals/day (score >= 72 only, real-time)
     - PREMIUM: 10 signals/day (score 55-80, real-time)
-    - FREE: 2 signals/day (any signals bot generates, delayed queue, summary format)
+    - FREE: 2 random signals/day (delayed queue, bot picks any from global pool)
+    - EXTRA: 1 signal per purchase (highest scoring available, real-time)
     
-    FREE tier receives ANY 2 signals at any point in time (no score-based selection).
-    The bot decides which signals to send based on generation order.
+    FREE tier: Bot queues ALL generated signals to global pool, then randomly 
+    distributes to FREE users (different users get different signals).
+    
+    EXTRA signals: When FREE users buy extra signals, they get the highest scoring
+    ongoing signal that hasn't been sent to them yet.
     
     Outcomes are sent for ALL signals (crypto and FX) regardless of tier.
-    
-    Quality gates applied before dispatch:
-    - Pass confidence, RR, volatility checks
-    - Score >= MIN_SCORE_THRESHOLD (55)
-    - Pass consensus check (CONSENSUS_MIN_SCORE)
-    - Pass risk validation (RR >= 1.5, vol <= 0.20)
     """
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
 
-    # Free users with paid extra-signal quota receive VIP-style real-time delivery
+    # Free users with paid extra-signal quota receive highest scoring signal
     extra_left = 0
     if tier == 'free':
         try:
@@ -320,16 +318,12 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
             # VIP: score >= 72 only
-            signals_list = [s for s in (vip_list + prem_list) if 55 <= s.get('score', 0) >= 72.0]
+            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 72.0]
         elif tier in ('premium',):
             # PREMIUM: score < 80 (but >= 55 for dispatch)
             signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) < 80.0]
         else:  # FREE
-            # Free: sees ALL signals in summary format (no score filtering)
-            signals_list = (vip_list + prem_list)
-
-        # Paid extra signals: Premium-style real-time delivery (vip+premium), capped by purchased count
-        if tier == 'free' and extra_left > 0:
+            # Free: ALL signals go to global pool (handled separately)
             signals_list = (vip_list + prem_list)
     else:
         signals_list = list(strategy_signals or [])
@@ -444,26 +438,89 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         continue
                 return
 
-            # FREE: queue delayed summaries (max 2/day)
-            async def _queue_free() -> None:
-                from db.pg_features import queue_free_signal_summary
+            # FREE with extra signals: send highest scoring available signal immediately
+            if tier == 'free' and extra_left > 0:
+                bot = Bot(token=_require_telegram_token())
+                
+                async def _get_best_signal():
+                    from db.pg_features import get_highest_scoring_available_signal_for_user, record_signal_delivery
+                    async with get_session() as session:
+                        sent_count = 0
+                        for _ in range(min(extra_left, len(signals_list))):
+                            best_sig = await get_highest_scoring_available_signal_for_user(
+                                session, int(user_id)
+                            )
+                            if not best_sig:
+                                break
+                            
+                            # Record delivery
+                            ok = await record_signal_delivery(
+                                session,
+                                telegram_user_id=int(user_id),
+                                signal_id=str(best_sig.signal_id),
+                                tier_at_send='premium',  # Extra signals get premium formatting
+                            )
+                            if ok:
+                                # Build signal dict for formatting
+                                sig_dict = {
+                                    "signal_id": best_sig.signal_id,
+                                    "asset": best_sig.asset,
+                                    "timeframe": best_sig.timeframe,
+                                    "direction": best_sig.direction,
+                                    "entry": best_sig.entry,
+                                    "stop_loss": best_sig.stop_loss,
+                                    "take_profit": best_sig.take_profit,
+                                    "rr_ratio": best_sig.rr_estimate,
+                                    "score": best_sig.score,
+                                    "regime": getattr(best_sig, 'regime', 'NEUTRAL'),
+                                }
+                                try:
+                                    _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier='premium'))
+                                    sent_count += 1
+                                    state.consume_extra_signals_sync(int(user_id), 1)
+                                except Exception:
+                                    pass
+                        await session.commit()
+                        return sent_count
+                
+                try:
+                    asyncio.run(_get_best_signal())
+                except Exception as e:
+                    _log_once(
+                        "extra_signal_failed",
+                        f"[bot] extra signal delivery failed: {type(e).__name__}: {e}",
+                    )
+                
+                # Also add signals to global pool for other FREE users
+                async def _add_to_pool():
+                    from db.pg_features import queue_signal_to_global_pool
+                    async with get_session() as session:
+                        for signal in signals_list:
+                            await queue_signal_to_global_pool(session, signal)
+                        await session.commit()
+                
+                try:
+                    asyncio.run(_add_to_pool())
+                except Exception:
+                    pass
+                return
 
-                daily_limit = 2
+            # FREE (no extra): just add signals to global pool
+            async def _add_to_global_pool() -> None:
+                from db.pg_features import queue_signal_to_global_pool
+
                 async with get_session() as session:
-                    # Queue any signals the bot generates (no score sorting - bot decides)
                     for signal in signals_list:
-                        ok = await queue_free_signal_summary(session, int(user_id), signal, daily_limit=daily_limit)
-                        if not ok:
-                            break
+                        await queue_signal_to_global_pool(session, signal)
                     await session.commit()
 
             try:
-                asyncio.run(_queue_free())
+                asyncio.run(_add_to_global_pool())
                 return
             except Exception as e:
                 _log_once(
-                    "queue_free_failed",
-                    f"[bot] queue free signal summary failed: {type(e).__name__}: {e}",
+                    "queue_global_pool_failed",
+                    f"[bot] queue to global pool failed: {type(e).__name__}: {e}",
                 )
     except Exception as e:
         _log_once(
@@ -566,6 +623,27 @@ def auto_delete_old_signals_job():
         asyncio.run(_do_delete())
     except Exception as e:
         logger.error(f"❌ Error deleting old signals: {e}")
+
+
+def distribute_random_signals_to_free_users_job():
+    """Periodic job: distribute random signals to FREE users from global pool."""
+    logger.info("🎲 Distributing random signals to FREE users...")
+    try:
+        from db.session import get_session
+        from db.pg_features import queue_random_free_signals_for_all_users
+
+        async def _do_distribute():
+            async with get_session() as session:
+                count = await queue_random_free_signals_for_all_users(session)
+                if count > 0:
+                    logger.info(f"📬 Queued signals for {count} FREE user(s)")
+                    await session.commit()
+                else:
+                    logger.info("✅ All FREE users have reached daily limit or no new signals")
+
+        asyncio.run(_do_distribute())
+    except Exception as e:
+        logger.error(f"❌ Error distributing signals to FREE users: {e}")
 
 
 def run_bot() -> None:
