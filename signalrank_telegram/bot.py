@@ -491,15 +491,27 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         f"[bot] extra signal delivery failed: {type(e).__name__}: {e}",
                     )
 
-            # FREE users: send completely random signals immediately (no delay, no scoring)
+            # FREE users: send completely random signals at random times (bot decides when)
             # Bot picks ANY signals at random - different users get different random signals
-            # Bot also decides WHEN to send: 1st signal immediately, 2nd signal at random time later
+            # Bot also decides WHEN to send: randomly picks times during day to check and send signals
             async def _send_random_signals_immediately() -> None:
-                from db.pg_features import get_random_available_signals_for_free_user, record_signal_delivery
+                from db.pg_features import (
+                    get_random_available_signals_for_free_user, 
+                    record_signal_delivery,
+                    get_user_next_signal_time,
+                    set_user_next_signal_time
+                )
                 from db.models import User
                 from sqlalchemy import select
                 import random
                 from datetime import datetime, timedelta
+                from typing import Awaitable, Callable, cast
+                from sqlalchemy.ext.asyncio import AsyncSession
+
+                SetUserNextSignalTime = Callable[[AsyncSession, int, int, datetime], Awaitable[None]]
+                set_user_next_signal_time_typed: SetUserNextSignalTime = cast(
+                    SetUserNextSignalTime, set_user_next_signal_time
+                )
 
                 bot = Bot(token=_require_telegram_token())
                 
@@ -523,11 +535,45 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     if remaining <= 0:
                         return  # Already hit daily limit
                     
-                    # If user already got 1 signal today, bot randomly decides if it's time for the 2nd
-                    if delivered_today == 1:
-                        last_delivery = await get_last_signal_delivery_time(session, int(user_id))
-                        if last_delivery:
-                            # Random delay between 2-8 hours for second signal
+                    # Bot randomly decides WHEN to check for and send signals
+                    # For 1st signal: bot picks random time during day (0-18 hours from day start)
+                    # For 2nd signal: bot picks random time 2-8 hours after 1st signal
+                    if delivered_today == 0:
+                        # First signal: bot randomly decides what time to send a signal today
+                        next_send_time = await get_user_next_signal_time(session, int(user_id), signal_number=1)
+                        if not next_send_time:
+                            # Bot decides: random time during the day (0-18 hours from start of day)
+                            now = datetime.utcnow()
+                            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                            random_hours = random.uniform(0, 18)
+                            next_send_time = start_of_day + timedelta(hours=random_hours)
+                            await set_user_next_signal_time_typed(
+                                session, int(user_id), signal_number=1, send_time=next_send_time
+                            )
+                        
+                        # Check if it's time to send yet (bot's random choice)
+                        now = datetime.utcnow()
+                        if now < next_send_time:
+                            return  # Not time yet for 1st signal (bot's choice)
+                    
+                    elif delivered_today == 1:
+                        # Second signal: bot decides random time after 1st signal
+                        next_send_time = await get_user_next_signal_time(session, int(user_id), signal_number=2)
+                        if not next_send_time:
+                            last_delivery = await get_last_signal_delivery_time(session, int(user_id))
+                            if last_delivery:
+                                # Random delay between 2-8 hours for second signal
+                                random_delay_hours = random.uniform(2, 8)
+                                next_send_time = last_delivery + timedelta(hours=random_delay_hours)
+                                await set_user_next_signal_time_typed(
+                                    session, int(user_id), signal_number=2, send_time=next_send_time
+                                )
+                        
+                        if next_send_time:
+                            now = datetime.utcnow()
+                            if now < next_send_time:
+                                return  # Not time yet for 2nd signal (bot's choice)
+
                             min_hours = 2
                             max_hours = 8
                             random_delay_hours = random.uniform(min_hours, max_hours)

@@ -1339,3 +1339,38 @@ async def get_last_signal_delivery_time(
         .limit(1)
     )
     return res.scalar_one_or_none()
+
+
+# In-memory cache for user's next signal send times (user_id + signal_number -> datetime)
+# Bot randomly decides WHEN to check for signals, not tied to specific signal creation time
+# Resets daily, so users get new random times each day
+_user_next_signal_times = {}
+
+
+async def get_user_next_signal_time(
+    session: AsyncSession,
+    telegram_user_id: int,
+    signal_number: int,
+):
+    """
+    Get the bot's randomly chosen time to send signal #1 or #2 for a user.
+    Returns None if not set yet. Bot randomly picks times during day to check for signals.
+    Example: Bot decides "I'll send 1st signal at 5:00am" (regardless of when signals were created).
+    """
+    key = f"{telegram_user_id}_signal{signal_number}"
+    return _user_next_signal_times.get(key)
+
+
+async def set_user_next_signal_time(
+    session: AsyncSession,
+    telegram_user_id: int,
+    signal_number: int,
+    send_time,
+):
+    """
+    Set the bot's randomly chosen time to send signal #1 or #2 for a user.
+    Bot randomly picks a time (e.g., 0-18 hours into the day for 1st signal) and stores it.
+    At that time, bot will send whatever signal is available then.
+    """
+    key = f"{telegram_user_id}_signal{signal_number}"
+    _user_next_signal_times[key] = send_time
