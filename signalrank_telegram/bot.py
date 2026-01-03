@@ -53,8 +53,35 @@ TIER_LIMITS = {
 }
 
 
+_LOG_ONCE_KEYS: set[str] = set()
+
+
+def _log_once(key: str, message: str) -> None:
+    if key in _LOG_ONCE_KEYS:
+        return
+    _LOG_ONCE_KEYS.add(key)
+    try:
+        print(message, flush=True)
+    except Exception:
+        pass
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
+        # IMPORTANT: Skip pre-audit for /start.
+        # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
+        # That would make start_command see the user as "not new" and prevent referral attribution.
+        # start_command already handles user creation + start auditing in a single transaction.
+        if str(command_name) == "start":
+            return await handler(update, context)
+
         try:
             from db.session import ENGINE, get_session
             if ENGINE is not None and getattr(update, "effective_user", None) is not None:
@@ -85,10 +112,16 @@ def _audit_handler(command_name: str, handler):
                             meta=meta,
                         )
                         await session.commit()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as e:
+                        _log_once(
+                            "bot_event_audit_failed",
+                            f"[bot] bot_events audit write failed: {type(e).__name__}: {e}",
+                        )
+        except Exception as e:
+            _log_once(
+                "bot_event_audit_outer_failed",
+                f"[bot] bot_events audit init failed: {type(e).__name__}: {e}",
+            )
         return await handler(update, context)
 
     return _inner
@@ -306,8 +339,43 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 try:
                     reserved = asyncio.run(_reserve())
-                except Exception:
+                    reserve_failed = False
+                except Exception as e:
                     reserved = []
+                    reserve_failed = True
+                    _log_once(
+                        "dispatch_reserve_failed",
+                        f"[bot] dispatch reserve failed (falling back to direct send): {type(e).__name__}: {e}",
+                    )
+
+                if _env_bool("BOT_DELIVERY_DEBUG", False):
+                    try:
+                        print(
+                            "[bot] dispatch "
+                            f"user={user_id} tier={tier} effective_tier={effective_tier} "
+                            f"signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}",
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
+
+                if reserve_failed:
+                    # DB dedupe/history failed; still deliver to avoid "silent nothing".
+                    sent = 0
+                    for signal in signals_list:
+                        if sent >= int(limit):
+                            break
+                        try:
+                            bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                            sent += 1
+                            if tier == 'free' and extra_left > 0:
+                                try:
+                                    state.consume_extra_signals_sync(int(user_id), 1)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            continue
+                    return
 
                 for signal in reserved:
                     try:
@@ -336,10 +404,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             try:
                 asyncio.run(_queue_free())
                 return
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                _log_once(
+                    "queue_free_failed",
+                    f"[bot] queue free signal summary failed: {type(e).__name__}: {e}",
+                )
+    except Exception as e:
+        _log_once(
+            "dispatch_pg_path_failed",
+            f"[bot] dispatch postgres path failed: {type(e).__name__}: {e}",
+        )
 
     if tier in ('premium', 'vip', 'owner'):
         bot = Bot(token=_require_telegram_token())
@@ -380,8 +454,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
         try:
             asyncio.run(_queue())
-        except Exception:
-            pass
+        except Exception as e:
+            _log_once(
+                "queue_free_legacy_failed",
+                f"[bot] queue free (legacy path) failed: {type(e).__name__}: {e}",
+            )
     except Exception:
         # As a last resort, send the limited preview
         try:
