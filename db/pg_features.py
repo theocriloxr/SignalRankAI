@@ -884,6 +884,15 @@ async def process_referral_start(
     referral_code: str,
     is_new_user: bool,
 ) -> dict:
+    """
+    Process referral when a new user starts the bot with a referral code.
+    
+    IMPORTANT RULES:
+    1. Referrer ID is extracted from the ReferralCode linked to the referral link
+    2. Referral is ONLY counted if is_new_user=True (first-time start only)
+    3. Reward is distributed to the referrer_id that owns the referral code
+    4. Referred user can only be attributed once (no duplicate credit)
+    """
     result = {
         "status": "ignored",
         "referrer_id": None,
@@ -897,13 +906,15 @@ async def process_referral_start(
         result["status"] = "invalid_code"
         return result
 
+    # STEP 1: Look up referral code to find who created it (the referrer)
     res = await session.execute(select(ReferralCode).where(ReferralCode.code == code))
     rc = res.scalar_one_or_none()
     if rc is None:
         result["status"] = "invalid_code"
         return result
 
-    # Look up referrer telegram id
+    # STEP 2: Get referrer details from ReferralCode.referrer_user_id
+    # This ID is linked to the referral link and is used for reward distribution
     res2 = await session.execute(select(User).where(User.id == rc.referrer_user_id))
     referrer_user = res2.scalar_one_or_none()
     if referrer_user is None:
@@ -917,13 +928,17 @@ async def process_referral_start(
         result["status"] = "self_referral"
         return result
 
+    # STEP 3: CRITICAL CHECK - Only count referral if this is a NEW USER
+    # Existing users using a referral code do NOT trigger referral counting
+    # This ensures each user can only be counted once (at first /start)
     if not bool(is_new_user):
         result["status"] = "not_new"
         return result
 
     referred_user = await get_or_create_user(session, telegram_user_id=int(referred_telegram_user_id))
 
-    # Each referred can only be attributed once.
+    # STEP 4: Check if this referred user was already attributed to someone else
+    # Each user can only be attributed once - no duplicate referral credits
     res3 = await session.execute(
         select(ReferralAttribution).where(ReferralAttribution.referred_user_id == referred_user.id)
     )
@@ -931,10 +946,12 @@ async def process_referral_start(
         result["status"] = "already_referred"
         return result
 
-    # Create referral attribution record
+    # STEP 5: Create referral attribution record
+    # Links referred_user to referrer_user via the ReferralCode's referrer_user_id
+    # This ensures proper reward distribution to the correct referrer
     attribution = ReferralAttribution(
         referred_user_id=referred_user.id,
-        referrer_user_id=rc.referrer_user_id
+        referrer_user_id=rc.referrer_user_id  # Referrer ID from the referral link owner
     )
     session.add(attribution)
     
@@ -948,14 +965,18 @@ async def process_referral_start(
     )
     await session.flush()
 
-    # Increment referrer's referral_count
+    # STEP 6: Increment referrer's referral_count by 1
+    # This tracks progress toward the next reward (3 referrals = 1 reward)
+    # The referrer_user object is fetched from the ReferralCode, ensuring correct attribution
     referrer_user.referral_count = (referrer_user.referral_count or 0) + 1
     await session.flush()
     
     referral_count = referrer_user.referral_count
-    result["referrals_total"] = int(referral_count)
+    result["referrals_total"] = int(referral_count)  # Return updated count to caller
     
-    # Requirement is 3 referrals per reward
+    # STEP 7: Check if referrer has reached reward threshold
+    # Requirement: 3 referrals (counting from 1) = 1 reward cycle
+    # Referrer gets 7 premium days + count resets to 0
     REFERRAL_REQUIREMENT = 3
     has_earned_reward = (referral_count % REFERRAL_REQUIREMENT) == 0
     
