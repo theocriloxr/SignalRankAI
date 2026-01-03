@@ -59,6 +59,17 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _short_err(e: Exception, limit: int = 180) -> str:
+    try:
+        s = f"{type(e).__name__}: {e}"
+    except Exception:
+        s = "Exception"
+    s = (s or "").replace("\n", " ").replace("\r", " ").strip()
+    if len(s) > int(limit):
+        return s[: int(limit) - 3] + "..."
+    return s
+
+
 def _dedupe_preserve_order(items: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -171,6 +182,7 @@ def main_loop(DRY_RUN=False):
         cycle_scored = 0
         cycle_stored = 0
         cycle_store_failures = 0
+        cycle_store_error = None
         cycle_max_score = None
         cycle_max_score_asset = None
         cycle_users = 0
@@ -364,10 +376,20 @@ def main_loop(DRY_RUN=False):
                                 cycle_store_failures += 1
                                 # Keep loop alive but emit a single useful hint per cycle.
                                 if cycle_store_failures == 1:
+                                    cycle_store_error = _short_err(e)
                                     try:
                                         print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
                                     except Exception:
                                         pass
+
+                                    # Optional traceback for faster diagnosis in production logs.
+                                    if _env_bool("STORE_SIGNAL_TRACE", False):
+                                        try:
+                                            import traceback
+
+                                            traceback.print_exc()
+                                        except Exception:
+                                            pass
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
@@ -398,6 +420,7 @@ def main_loop(DRY_RUN=False):
                             f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
                         f"scored>={MIN_SCORE_THRESHOLD:.2f}={cycle_scored} stored={cycle_stored} "
                         f"store_failures={cycle_store_failures} "
+                            f"store_error={cycle_store_error or 'n/a'} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
                             f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "
                             f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
