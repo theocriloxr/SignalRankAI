@@ -1,9 +1,9 @@
 -- Manual Migration SQL for 0010_referral_enhancements
 -- Run this directly in Railway Postgres if you need immediate fix
 
--- Add referral_count column to users table
+-- Add referral_count column to users table (nullable for safety)
 ALTER TABLE users 
-ADD COLUMN referral_count INTEGER NOT NULL DEFAULT 0;
+ADD COLUMN referral_count INTEGER NULL DEFAULT 0;
 
 -- Add referrer_notified_at column to referrals table
 ALTER TABLE referrals 
@@ -19,5 +19,5 @@ FROM information_schema.columns
 WHERE table_name = 'referrals' AND column_name = 'referrer_notified_at';
 
 -- You should see:
--- referral_count | integer | NO
+-- referral_count | integer | YES
 -- referrer_notified_at | timestamp without time zone | YES

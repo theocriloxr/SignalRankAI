@@ -24,7 +24,7 @@ class User(Base):
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     tier: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="free")
-    referral_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # Tracks referrals toward next reward
+    referral_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)  # Tracks referrals toward next reward
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")  # type: ignore[name-defined]

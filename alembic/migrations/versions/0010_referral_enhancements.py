@@ -17,7 +17,8 @@ depends_on = None
 
 def upgrade() -> None:
     # Add referral_count to users (tracks progress toward next reward)
-    op.add_column('users', sa.Column('referral_count', sa.Integer(), nullable=False, server_default='0'))
+    # Nullable to allow gradual rollout
+    op.add_column('users', sa.Column('referral_count', sa.Integer(), nullable=True, server_default='0'))
     
     # Add referrer_notified_at to referrals (tracks when referrer was notified)
     op.add_column('referrals', sa.Column('referrer_notified_at', sa.DateTime(), nullable=True))
