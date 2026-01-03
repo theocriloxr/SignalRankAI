@@ -219,6 +219,20 @@ async def record_signal_delivery(
     dedupe_hours = max(1, int(dedupe_hours))
     cutoff = _utcnow() - timedelta(hours=int(dedupe_hours))
 
+    # Optional deployment reset: ignore any deliveries recorded before this epoch.
+    # Set DELIVERY_DEDUPE_RESET_EPOCH to a Unix timestamp (seconds) to treat all
+    # signals as "new" from that point forward (e.g., on a fresh deployment).
+    dedupe_reset_at = None
+    try:
+        reset_epoch = os.getenv("DELIVERY_DEDUPE_RESET_EPOCH")
+        if reset_epoch:
+            dedupe_reset_at = datetime.utcfromtimestamp(int(str(reset_epoch).strip()))
+    except Exception:
+        dedupe_reset_at = None
+
+    if dedupe_reset_at:
+        cutoff = max(cutoff, dedupe_reset_at)
+
     tier_s = str(tier_at_send or "free").strip().lower()[:16]
 
     try:
