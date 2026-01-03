@@ -46,6 +46,9 @@ from .owner_commands import (
     owner_revenue,
 )
 
+# Module-level logger for scheduled jobs and dispatch traces
+logger = logging.getLogger(__name__)
+
 TIER_LIMITS = {
     'free': 2,
     'premium': 10,
