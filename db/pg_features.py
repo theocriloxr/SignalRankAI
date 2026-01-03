@@ -1125,7 +1125,7 @@ async def get_random_available_signals_for_free_user(
     Returns up to 'limit' random signals that:
     - Were created recently (last 24 hours)
     - Haven't been delivered to this user yet
-    - Are still valid for trading
+    - Are still ongoing trades (no outcome recorded)
     """
     user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now = _utcnow()
@@ -1136,6 +1136,12 @@ async def get_random_available_signals_for_free_user(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
     already_received = set(row[0] for row in res_delivered.all())
+    
+    # Get signals with outcomes (resolved trades)
+    res_resolved = await session.execute(
+        select(Outcome.signal_id).where(Outcome.signal_id.isnot(None))
+    )
+    resolved_signals = set(row[0] for row in res_resolved.all())
     
     # Get all recent signals
     res_signals = await session.execute(
@@ -1148,8 +1154,11 @@ async def get_random_available_signals_for_free_user(
     )
     all_recent = list(res_signals.scalars().all())
     
-    # Filter out already received
-    available = [s for s in all_recent if s.signal_id not in already_received]
+    # Filter out already received and resolved trades
+    available = [
+        s for s in all_recent 
+        if s.signal_id not in already_received and s.signal_id not in resolved_signals
+    ]
     
     # Randomly select up to limit
     if len(available) <= limit:
@@ -1165,6 +1174,7 @@ async def get_highest_scoring_available_signal_for_user(
     """Get the highest scoring signal user hasn't received yet.
     
     Used for extra paid signals - gives user the best available ongoing signal.
+    Only returns signals with no outcome (still active trades).
     """
     user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now = _utcnow()
@@ -1176,13 +1186,20 @@ async def get_highest_scoring_available_signal_for_user(
     )
     already_received = set(row[0] for row in res_delivered.all())
     
-    # Get highest scoring recent signal not yet delivered to user
+    # Get signals with outcomes (resolved trades)
+    res_resolved = await session.execute(
+        select(Outcome.signal_id).where(Outcome.signal_id.isnot(None))
+    )
+    resolved_signals = set(row[0] for row in res_resolved.all())
+    
+    # Get highest scoring recent signal not yet delivered to user and still ongoing
     res_signal = await session.execute(
         select(Signal)
         .where(
             Signal.created_at >= cutoff,
             Signal.archived == False,
             Signal.signal_id.notin_(already_received) if already_received else True,
+            Signal.signal_id.notin_(resolved_signals) if resolved_signals else True,
         )
         .order_by(Signal.score.desc())
         .limit(1)
