@@ -2,7 +2,7 @@ import os
 import time
 import asyncio
 
-from data.fetcher import is_crypto, is_binance_blocked
+from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason
 from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs
 from engine.regime import detect_market_regime
@@ -231,8 +231,25 @@ def main_loop(DRY_RUN=False):
             # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
             try:
                 assets = _dedupe_preserve_order(list(assets or []))
-                fx_assets = [a for a in assets if not is_crypto(a)]
-                crypto_assets = [a for a in assets if is_crypto(a)]
+
+                # Filter out closed markets with per-pair notice.
+                closed_notes = []
+                open_assets = []
+                for a in assets:
+                    reason = market_closed_reason(a)
+                    if reason:
+                        closed_notes.append((a, reason))
+                    else:
+                        open_assets.append(a)
+                if closed_notes and _env_bool("ENGINE_CYCLE_LOG", True):
+                    try:
+                        msg = ", ".join([f"{p}:{r}" for p, r in closed_notes])
+                        print(f"[engine] cycle={cycle_no} market_closed skip={msg}", flush=True)
+                    except Exception:
+                        pass
+
+                fx_assets = [a for a in open_assets if not is_crypto(a)]
+                crypto_assets = [a for a in open_assets if is_crypto(a)]
                 if not fx_enabled:
                     fx_assets = []
 

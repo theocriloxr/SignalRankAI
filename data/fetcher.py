@@ -67,6 +67,32 @@ def is_crypto(asset):
     # Treat Binance-style symbols as crypto by default (e.g., BTCUSDT, ETHUSDT).
     return a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC") or a.endswith("USD")
 
+
+def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
+    """Return a human-readable reason if the asset's market is closed.
+
+    Crypto is treated as 24/7 (always open). FX closes over the weekend.
+    Schedule: open Sunday 22:00 UTC, closed Friday 22:00 UTC through weekend.
+    """
+    if is_crypto(asset):
+        return None
+
+    now = now_utc or datetime.utcnow()
+    wd = now.weekday()  # Monday=0 ... Sunday=6
+    hr = now.hour
+
+    # Friday after 22:00 UTC closed
+    if wd == 4 and hr >= 22:
+        return "FX closed Friday after 22:00 UTC"
+    # Saturday fully closed
+    if wd == 5:
+        return "FX closed Saturday"
+    # Sunday closed until 22:00 UTC
+    if wd == 6 and hr < 22:
+        return "FX closed Sunday until 22:00 UTC"
+
+    return None
+
 def get_crypto_candles(asset, timeframe):
     """Fetch crypto candles from Binance public REST API.
 
