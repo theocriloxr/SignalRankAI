@@ -1220,6 +1220,8 @@ def run_bot() -> None:
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
     scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)
+    # Distribute random signals to FREE users every 15 minutes
+    scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15)
     scheduler.add_job(
         send_weekly_recap,
         'cron',
