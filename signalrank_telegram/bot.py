@@ -417,7 +417,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             async def _queue_free() -> None:
                 from db.pg_features import queue_free_signal_summary
 
-                daily_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
+                daily_limit = 2
                 async with get_session() as session:
                     for signal in sorted(signals_list, key=lambda s: s.get('score', 0), reverse=True):
                         ok = await queue_free_signal_summary(session, int(user_id), signal, daily_limit=daily_limit)
@@ -458,7 +458,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         from db.session import ENGINE, get_session
         if ENGINE is None:
             raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
-        daily_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
+        daily_limit = 2
 
         async def _queue() -> None:
             from db.pg_features import queue_free_signal_summary as queue_free_signal_summary_pg

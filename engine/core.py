@@ -24,8 +24,8 @@ def _env_float(name: str, default: float) -> float:
 
 
 # Store/dispatch threshold for the main pipeline.
-# Default lowered to 50 to allow earlier signal flow while tuning; tune via env.
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 50)
+# Default is 60; tune via env.
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 60)
 
 def load_tradable_assets():
     """Return configured fallback assets.

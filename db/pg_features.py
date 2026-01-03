@@ -534,6 +534,12 @@ async def queue_free_signal_summary(
     if daily_limit is None:
         daily_limit = _env_int("FREE_DAILY_LIMIT", 2)
 
+    # Product rule: Free tier gets at most 2 delayed signals per day.
+    try:
+        daily_limit = min(int(daily_limit), 2)
+    except Exception:
+        daily_limit = 2
+
     now = _utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
