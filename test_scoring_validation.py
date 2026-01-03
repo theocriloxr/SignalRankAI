@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Validate scoring logic improvements for win rate optimization."""
 
+import sys
+import io
+
+# Fix unicode encoding on Windows
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 from engine.scoring import score_signal, rr_score, volatility_quality_score
 
 def test_component_scoring():
@@ -33,9 +40,9 @@ def test_quality_gates():
     print(f"\n❌ Low confidence (0.2): {score} (rejected ✓)")
     
     # Poor RR rejection
-    signal = {'confidence': 0.8, 'entry': 100, 'stop': 95, 'targets': 102, 'volatility': 0.12}
+    signal = {'confidence': 0.8, 'entry': 100, 'stop': 98, 'targets': 100.5, 'volatility': 0.12}
     score = score_signal(signal)
-    print(f"❌ Poor RR (1.0:1): {score} (rejected ✓)")
+    print(f"❌ Poor RR (0.5:1): {score} (rejected ✓)")
     
     # High volatility rejection
     signal = {'confidence': 0.8, 'entry': 100, 'stop': 90, 'targets': 110, 'volatility': 0.22}
@@ -48,22 +55,22 @@ def test_winning_signals():
     print("WINNING SIGNALS (Should score high)")
     print("=" * 60)
     
-    # Good signal
+    # Good signal (2:1 RR)
     print("\n✅ Good signal (conf=0.7, RR=2.0, vol=0.12):")
-    signal = {'confidence': 0.7, 'entry': 100.0, 'stop': 90.0, 'targets': 110.0, 'volatility': 0.12}
+    signal = {'confidence': 0.7, 'entry': 100.0, 'stop': 95.0, 'targets': 110.0, 'volatility': 0.12}
     score = score_signal(signal)
-    print(f"  Base score: {score:.2f}")
-    print(f"  Expected: ~58-60 (above MIN_SCORE_THRESHOLD=65? No - gate needed)")
+    print(f"  Score: {score:.2f}")
+    print(f"  Calc: conf*50=35, rr(2.0)*30≈10, vol*20≈13.3 = ~58 base")
     
-    # Excellent signal
+    # Excellent signal (2.5:1 RR: entry=100, stop=85 (loss=15), target=100+37.5=137.5 (profit=37.5))
     print("\n✅ Excellent signal (conf=0.85, RR=2.5, vol=0.08, regime=0.9):")
-    signal = {'confidence': 0.85, 'entry': 100.0, 'stop': 85.0, 'targets': 112.5, 'volatility': 0.08, 'regime_fit': 0.9}
+    signal = {'confidence': 0.85, 'entry': 100.0, 'stop': 85.0, 'targets': 137.5, 'volatility': 0.08, 'regime_fit': 0.9}
     score = score_signal(signal)
-    print(f"  Base score: {score:.2f}")
+    print(f"  Score: {score:.2f}")
     
-    # Perfect signal
+    # Perfect signal (3:1 RR: entry=100, stop=85 (loss=15), target=100+45=145 (profit=45))
     print("\n✅ Perfect signal (conf=1.0, RR=3.0, vol=0.08, regime=1.0, ML=0.9):")
-    signal = {'confidence': 1.0, 'entry': 100.0, 'stop': 85.0, 'targets': 115.0, 'volatility': 0.08, 'regime_fit': 1.0, 'ml_probability': 0.9}
+    signal = {'confidence': 1.0, 'entry': 100.0, 'stop': 85.0, 'targets': 145.0, 'volatility': 0.08, 'regime_fit': 1.0, 'ml_probability': 0.9}
     score = score_signal(signal)
     print(f"  Score: {score:.2f} (top quality)")
 
@@ -73,7 +80,7 @@ def test_ml_boost():
     print("ML CONFIDENCE BOOST (0.8-1.2x multiplier)")
     print("=" * 60)
     
-    base_signal = {'confidence': 0.8, 'entry': 100.0, 'stop': 90.0, 'targets': 110.0, 'volatility': 0.12}
+    base_signal = {'confidence': 0.8, 'entry': 100.0, 'stop': 95.0, 'targets': 110.0, 'volatility': 0.12}
     
     print("\n📡 Same signal with varying ML confidence:")
     for ml_prob in [0.0, 0.5, 0.75, 1.0]:
@@ -89,7 +96,7 @@ def test_regime_bonus():
     print("REGIME ALIGNMENT BONUS (+10-20% multiplier)")
     print("=" * 60)
     
-    base_signal = {'confidence': 0.8, 'entry': 100.0, 'stop': 90.0, 'targets': 110.0, 'volatility': 0.12}
+    base_signal = {'confidence': 0.8, 'entry': 100.0, 'stop': 95.0, 'targets': 110.0, 'volatility': 0.12}
     
     print("\n📡 Same signal with varying regime fit:")
     for regime in [0.0, 0.5, 0.75, 1.0]:
