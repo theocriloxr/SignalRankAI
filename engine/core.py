@@ -217,6 +217,16 @@ def main_loop(DRY_RUN=False):
 
             if not assets:
                 assets = load_tradable_assets()
+                if _env_bool("ENGINE_CYCLE_LOG", True):
+                    try:
+                        raw_tradable = (os.getenv("TRADABLE_ASSETS") or "").strip()
+                        raw_fx = (os.getenv("FX_PAIRS") or "").strip()
+                        print(
+                            f"[engine] env assets raw tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_sample={raw_tradable[:80]} fx_sample={raw_fx[:80]}",
+                            flush=True,
+                        )
+                    except Exception:
+                        pass
 
             # No assets => do not run on demo/hardcoded data.
             if not assets:
