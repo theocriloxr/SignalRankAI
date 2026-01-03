@@ -115,19 +115,69 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-	"""Show user's UNRESOLVED signals with tier-specific formatting.
+	"""Show user's signals with tier-specific formatting.
 	
-	VIP (score ≥72): Full advice (all fields + risk/entry/exit strategy)
-	PREMIUM (score <80): Limited advice (risk + entry + exit strategy)
-	FREE: Summary only (asset, timeframe, direction, score, status)
+	FREE: Show signals they received (delivered)
+	PREMIUM/VIP: Show unresolved signals (ongoing trades)
 	"""
 	if await _public_guard(update):
 		return
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
 
+	# Owner and admin always get VIP format
+	if tier.lower() in {"owner", "admin"}:
+		tier = "VIP"
+
+	signals_list: list[dict] = []
+	
+	# FREE tier: show delivered signals only
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		try:
+			from db.session import ENGINE, get_session
+			if ENGINE is not None:
+				from db.pg_features import list_signals_sent_today
+				async with get_session() as session:
+					rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+					signals_list = [
+						{
+							"signal_id": r.signal_id,
+							"asset": r.asset,
+							"timeframe": r.timeframe,
+							"direction": r.direction,
+							"entry": r.entry,
+							"stop_loss": r.stop_loss,
+							"take_profit": r.take_profit,
+							"rr_ratio": r.rr_estimate,
+							"score": r.score,
+						}
+						for r in rows
+					]
+		except Exception as e:
+			_audit_logger.error(f"Error fetching delivered signals for {user_id}: {e}")
+			signals_list = []
+		
+		if not signals_list:
+			if update.message is not None:
+				await update.message.reply_text("✅ No signals delivered today.")
+			return
+		
+		lines = ["🆓 Today's Signals", ""]
+		for s in signals_list[:5]:
+			entry = float(s.get('entry') or 0)
+			sig_id = s.get('signal_id', 'N/A')[:8]
+			lines.append(
+				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
+				f"  ID: {sig_id} | Entry: {entry:.4f}\n"
+				f"  Position: /outcome {sig_id}"
+			)
+		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
+		if update.message is not None:
+			await update.message.reply_text("\n".join(lines))
+		return
+	
+	# PREMIUM/VIP: show unresolved signals (ongoing trades)
 	unresolved_signals: list[dict] = []
-	# Fetch unresolved signals only (no outcome yet, not archived)
 	try:
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
@@ -162,26 +212,6 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if not unresolved_signals:
 		if update.message is not None:
 			await update.message.reply_text("✅ No unresolved signals. All trades resolved or archived.")
-		return
-
-	# Owner and admin always get VIP format
-	if tier.lower() in {"owner", "admin"}:
-		tier = "VIP"
-
-	# FREE tier: summary only
-	if tier_rank(tier) < tier_rank("PREMIUM"):
-		lines = ["🆓 Unresolved Signals (Summary)", ""]
-		for s in unresolved_signals[:5]:
-			entry = float(s.get('entry') or 0)
-			sig_id = s.get('signal_id', 'N/A')[:8]  # First 8 chars of ID
-			lines.append(
-				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
-				f"  ID: {sig_id} | Entry: {entry:.4f}\n"
-				f"  Position: /outcome {sig_id}"
-			)
-		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
-		if update.message is not None:
-			await update.message.reply_text("\n".join(lines))
 		return
 
 	# PREMIUM/VIP: detailed formatting per tier
