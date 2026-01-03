@@ -46,12 +46,17 @@ class PerformanceTracker:
         s['total_return'] += ret
         s['returns'].append(ret)
         s['last_update'] = datetime.datetime.utcnow()
-        # Notify all users of trade outcome for trust
-        if user_ids:
+        # Do not broadcast outcomes to users by default. Outcome messages should be
+        # based on actual delivered signals (see send_outcome_notifications).
+        try:
+            enabled = str(os.getenv("OUTCOME_BROADCAST_ENABLED") or "0").strip().lower() in {"1", "true", "yes", "y", "on"}
+        except Exception:
+            enabled = False
+        if enabled and user_ids:
             try:
                 from signalrank_telegram.bot import notify_all_users_trade_outcome
                 notify_all_users_trade_outcome(strategy, result, ret, user_ids)
-            except Exception as e:
+            except Exception:
                 pass
 
     def get_stats(self, strategy=None):

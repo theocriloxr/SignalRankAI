@@ -36,30 +36,60 @@ def consensus_filter(signals, min_score=None):
         # Defaulting to 0.6 avoids filtering everything to zero in low-signal environments.
         min_score = _env_float("CONSENSUS_MIN_SCORE", 0.6)
 
-    grouped = {}
+    try:
+        min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())
+    except Exception:
+        min_groups = 1
+    min_groups = max(1, int(min_groups))
+
+    grouped_score: dict[tuple[str, str, str], float] = {}
+    grouped_groups: dict[tuple[str, str, str], set[str]] = {}
+
     for s in signals:
-        sym = s.get("symbol") or s.get("asset")
-        direction = s.get("direction")
-        key = (sym, direction)
-        grouped.setdefault(key, 0)
+        sym = str(s.get("symbol") or s.get("asset") or "").strip()
+        tf = str(s.get("timeframe") or "").strip().lower()
+        direction = str(s.get("direction") or "").strip().lower()
+        if not sym or not tf or direction not in {"long", "short", "buy", "sell"}:
+            continue
+        if direction == "buy":
+            direction = "long"
+        if direction == "sell":
+            direction = "short"
+        key = (sym, tf, direction)
+        grouped_score.setdefault(key, 0.0)
+        grouped_groups.setdefault(key, set())
         try:
             conf = s.get("confidence")
             if conf is None:
-                # Some pipeline stages normalize confidence into 'strength' or use weights.
                 conf = s.get("strength")
-            if conf is None:
-                conf = s.get("weight")
-            grouped[key] += float(conf or 0.0)
+            w = s.get("weight")
+            if w is None:
+                w = 1.0
+            grouped_score[key] += float(conf or 0.0) * float(w or 1.0)
         except Exception:
-            grouped[key] += 0.0
+            pass
+        try:
+            g = str(s.get("strategy_group") or "").strip().lower()
+            if g:
+                grouped_groups[key].add(g)
+        except Exception:
+            pass
 
-    approved = []
+    approved: list[dict] = []
     for signal in signals:
-        sym = signal.get("symbol") or signal.get("asset")
-        direction = signal.get("direction")
-        key = (sym, direction)
-        if float(grouped.get(key) or 0.0) >= float(min_score):
-            approved.append(signal)
+        sym = str(signal.get("symbol") or signal.get("asset") or "").strip()
+        tf = str(signal.get("timeframe") or "").strip().lower()
+        direction = str(signal.get("direction") or "").strip().lower()
+        if direction == "buy":
+            direction = "long"
+        if direction == "sell":
+            direction = "short"
+        key = (sym, tf, direction)
+        if float(grouped_score.get(key) or 0.0) < float(min_score):
+            continue
+        if len(grouped_groups.get(key) or set()) < int(min_groups):
+            continue
+        approved.append(signal)
     return approved
 
 apply_consensus_filter = consensus_filter

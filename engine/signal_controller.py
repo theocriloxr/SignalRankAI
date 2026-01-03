@@ -80,6 +80,70 @@ class SignalController:
     def deduplicate_signals(self, signals: List[Signal]) -> List[Signal]:
         return self._dedupe([self._normalize_signal(s) for s in signals if s])
 
+    def normalize_signals(self, signals: List[Signal]) -> List[Signal]:
+        """Normalize signals without deduping.
+
+        This keeps all strategy candidates so consensus can aggregate them.
+        """
+        return [self._normalize_signal(s) for s in (signals or []) if s]
+
+    def pick_best_direction_per_pair(self, signals: List[Signal]) -> List[Signal]:
+        """For each (asset,timeframe), pick the direction (long/short) with higher aggregated confidence.
+
+        Returns one representative signal for the winning direction.
+        """
+        grouped: Dict[Tuple[str, str], List[Signal]] = {}
+        for s in (signals or []):
+            asset = str(s.get("asset") or s.get("symbol") or "").upper().strip()
+            tf = str(s.get("timeframe") or "").lower().strip()
+            direction = str(s.get("direction") or "").lower().strip()
+            if not asset or not tf or direction not in {"long", "short"}:
+                continue
+            grouped.setdefault((asset, tf), []).append(s)
+
+        def _conf(sig: Signal) -> float:
+            try:
+                conf = sig.get("confidence")
+                if conf is None:
+                    conf = sig.get("strength")
+                w = sig.get("weight")
+                if w is None:
+                    w = 1.0
+                return float(conf or 0.0) * float(w or 1.0)
+            except Exception:
+                return 0.0
+
+        out: List[Signal] = []
+        for (asset, tf), items in grouped.items():
+            longs = [s for s in items if str(s.get("direction")).lower() == "long"]
+            shorts = [s for s in items if str(s.get("direction")).lower() == "short"]
+
+            long_sum = sum(_conf(s) for s in longs)
+            short_sum = sum(_conf(s) for s in shorts)
+
+            if long_sum == 0 and short_sum == 0:
+                continue
+
+            winning = longs if long_sum >= short_sum else shorts
+            if not winning:
+                continue
+
+            winning_sorted = sorted(winning, key=_conf, reverse=True)
+            best = dict(winning_sorted[0])
+
+            # Add contributor metadata for debugging/analysis
+            try:
+                best["contributors"] = [str(s.get("strategy_name") or s.get("strategy") or "").strip() for s in winning if (s.get("strategy_name") or s.get("strategy"))]
+                best["contributor_groups"] = [str(s.get("strategy_group") or "").strip().lower() for s in winning if s.get("strategy_group")]
+                best["direction_score_long"] = float(long_sum)
+                best["direction_score_short"] = float(short_sum)
+            except Exception:
+                pass
+
+            out.append(best)
+
+        return out
+
     def cap_correlation(self, signals: List[Signal]) -> List[Signal]:
         # Placeholder correlation cap: one per asset (highest score wins)
         best: Dict[str, Signal] = {}

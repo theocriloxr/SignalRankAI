@@ -328,18 +328,20 @@ def main_loop(DRY_RUN=False):
                     from engine.signal_controller import SignalController
 
                     controller = SignalController()
-                    filtered_signals = controller.deduplicate_signals(strategy_signals)
-                    try:
-                        cycle_after_dedupe += len(filtered_signals or [])
-                    except Exception:
-                        pass
+                    normalized_signals = controller.normalize_signals(strategy_signals)
 
-                    # Consensus Engine
+                    # Consensus Engine (aggregates across strategies)
                     from engine.consensus import consensus_filter
+                    consensus_signals = consensus_filter(normalized_signals)
 
-                    consensus_signals = consensus_filter(filtered_signals)
+                    # Per pair/timeframe, pick the stronger direction (buy vs sell)
+                    selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
                     try:
                         cycle_after_consensus += len(consensus_signals or [])
+                    except Exception:
+                        pass
+                    try:
+                        cycle_after_dedupe += len(selected_signals or [])
                     except Exception:
                         pass
 
@@ -347,7 +349,7 @@ def main_loop(DRY_RUN=False):
                     from engine.risk import risk_check
 
                     account_state = type('AccountState', (), {'drawdown': 0.0})()  # Replace with real account state
-                    risk_signals = [s for s in consensus_signals if risk_check(s, account_state)]
+                    risk_signals = [s for s in selected_signals if risk_check(s, account_state)]
                     try:
                         cycle_after_risk += len(risk_signals or [])
                     except Exception:
@@ -359,11 +361,18 @@ def main_loop(DRY_RUN=False):
 
                     ml_filter = MLFilter()
                     ml_signals = []
+                    try:
+                        ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.6").strip())
+                    except Exception:
+                        ml_threshold = 0.6
                     for signal in risk_signals:
-                        features = extract_features(signal, market_data)
-                        try:
-                            approved, probability = ml_filter.ml_filter(features)
-                        except Exception:
+                        if getattr(ml_filter, "active", False):
+                            features = extract_features(signal, market_data)
+                            try:
+                                approved, probability = ml_filter.ml_filter(features, threshold=ml_threshold)
+                            except Exception:
+                                approved, probability = True, None
+                        else:
                             approved, probability = True, None
                         if not approved:
                             continue

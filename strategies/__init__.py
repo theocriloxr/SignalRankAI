@@ -19,25 +19,40 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         return None
 
     htf_bias = get_htf_bias(market_data)
+
+    def _env_bool(name: str, default: bool) -> bool:
+        try:
+            raw = os.getenv(name)
+            if raw is None:
+                return bool(default)
+            return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+        except Exception:
+            return bool(default)
+
+    run_all = _env_bool("RUN_ALL_STRATEGIES", True)
     for timeframe, data in market_data.items():
         # Only allow lower timeframe trades in direction of HTF bias
         if timeframe in ["5m", "15m", "1h"] and htf_bias:
             allowed_direction = htf_bias
         else:
             allowed_direction = None
-        # Determine which groups to run based on regime_strategies (if provided)
-        groups = []
-        if regime_strategies and regime in regime_strategies:
-            groups = regime_strategies[regime]
+        # Determine which groups to run.
+        # Default: run ALL strategy groups, then let consensus + scoring pick the winner.
+        if run_all:
+            groups = ["trend", "momentum", "volatility", "structure"]
         else:
-            if regime == "TRENDING":
-                groups = ["trend", "structure"]
-            elif regime == "RANGING":
-                groups = ["momentum", "structure"]
-            elif regime == "VOLATILE":
-                groups = ["volatility", "structure"]
+            groups = []
+            if regime_strategies and regime in regime_strategies:
+                groups = regime_strategies[regime]
             else:
-                groups = ["structure"]
+                if regime == "TRENDING":
+                    groups = ["trend", "structure"]
+                elif regime == "RANGING":
+                    groups = ["momentum", "structure"]
+                elif regime == "VOLATILE":
+                    groups = ["volatility", "structure"]
+                else:
+                    groups = ["structure"]
         if "trend" in groups:
             for sig in trend_strategies(asset, timeframe, data):
                 if allowed_direction and sig.get('direction') != allowed_direction:
