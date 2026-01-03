@@ -164,6 +164,10 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			await update.message.reply_text("✅ No unresolved signals. All trades resolved or archived.")
 		return
 
+	# Owner and admin always get VIP format
+	if tier.lower() in {"owner", "admin"}:
+		tier = "VIP"
+
 	# FREE tier: summary only
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		lines = ["🆓 Unresolved Signals (Summary)", ""]
@@ -218,36 +222,36 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				entry_advice = f"Sell on rally to {entry:.4f}"
 				exit_advice = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
 			
-			if tier == "VIP":
+			if tier in {"owner", "admin", "vip"}:
 				# Full advice for VIP
 				msg = (
-					f"🟢 **VIP Signal: {s.get('asset')}** ({s.get('timeframe')})\n"
-					f"**ID**: `{sig_id}`\n\n"
-					f"**Setup**: {s.get('direction').upper()} {s.get('strategy_name')}\n"
-					f"**Regime**: {regime} | **Score**: {score:.1f}/100\n\n"
-					f"**Entry**: {entry:.4f}\n"
-					f"**SL**: {stop_loss:.4f}\n"
-					f"**TP**: {take_profit:.4f}\n"
-					f"**R/R**: {rr:.2f}:1\n\n"
-					f"**Confidence**: {confidence*100:.0f}% | **ML**: {ml_prob*100:.0f}%\n\n"
-					f"📌 **Entry Strategy**: {entry_advice}\n"
-					f"📌 **Exit Strategy**: {exit_advice}\n"
-					f"📌 **Risk**: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips\n\n"
-					f"📍 **/outcome {sig_id[:8]}** for current position"
+					f"🟢 VIP Signal: {s.get('asset')} ({s.get('timeframe')})\n"
+					f"ID: `{sig_id}`\n\n"
+					f"Setup: {s.get('direction').upper()} {s.get('strategy_name')}\n"
+					f"Regime: {regime} | **Score**: {score:.1f}/100\n\n"
+					f"Entry: {entry:.4f}\n"
+					f"SL: {stop_loss:.4f}\n"
+					f"TP: {take_profit:.4f}\n"
+					f"R/R: {rr:.2f}:1\n\n"
+					f"Confidence: {confidence*100:.0f}% | ML: {ml_prob*100:.0f}%\n\n"
+					f"📌 Entry Strategy: {entry_advice}\n"
+					f"📌 Exit Strategy: {exit_advice}\n"
+					f"📌 Risk: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips\n\n"
+					f"📍 /outcome {sig_id[:8]} for current position"
 				)
 			else:
 				# Limited advice for PREMIUM
 				msg = (
-					f"**PREMIUM Signal: {s.get('asset')}** ({s.get('timeframe')})\n"
-					f"**ID**: `{sig_id}`\n\n"
-					f"**Setup**: {s.get('direction').upper()}\n"
-					f"**Entry**: {entry:.4f}\n"
-					f"**SL**: {stop_loss:.4f}\n"
-					f"**TP**: {take_profit:.4f}\n"
-					f"**Score**: {score:.1f} | **R/R**: {rr:.2f}:1\n\n"
+					f"PREMIUM Signal: {s.get('asset')} ({s.get('timeframe')})\n"
+					f"ID: `{sig_id}`\n\n"
+					f"Setup: {s.get('direction').upper()}\n"
+					f"Entry: {entry:.4f}\n"
+					f"SL: {stop_loss:.4f}\n"
+					f"TP: {take_profit:.4f}\n"
+					f"Score: {score:.1f} | **R/R**: {rr:.2f}:1\n\n"
 					f"📌 {entry_advice}\n"
 					f"📌 {exit_advice}\n\n"
-					f"📍 **/outcome {sig_id[:8]}** for current position"
+					f"📍 /outcome {sig_id[:8]} for current position"
 				)
 			
 			if update.message is not None:
@@ -553,6 +557,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			user = await get_or_create_user(session, telegram_user_id=int(user_id))
 			user_tier = str(user.tier or "free").strip().lower()
 			
+			# Owner and admin always get VIP format
+			if user_tier in {"owner", "admin"}:
+				user_tier = "vip"
 			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			
 			# If signal not delivered to user, check if it exists at all
