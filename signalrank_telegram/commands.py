@@ -168,10 +168,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		lines = ["🆓 Unresolved Signals (Summary)", ""]
 		for s in unresolved_signals[:5]:
-			score = s.get('score', 0) or 0
+			score = float(s.get('score') or 0)
+			entry = float(s.get('entry') or 0)
 			lines.append(
 				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
-				f"  Entry: {s.get('entry'):.4f} | Score: {score:.1f}"
+				f"  Entry: {entry:.4f} | Score: {score:.1f}"
 			)
 		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
 		if update.message is not None:
@@ -182,19 +183,23 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	from .formatter import format_signal
 	for s in unresolved_signals[:10]:
 		try:
-			score = s.get('score', 0) or 0
-			confidence = s.get('confidence', 0.5) or 0.5
-			rr = s.get('rr_ratio', 1.5) or 1.5
+			# Ensure numeric fields are floats
+			score = float(s.get('score') or 0)
+			confidence = float(s.get('confidence') or 0.5)
+			rr = float(s.get('rr_ratio') or 1.5)
+			entry = float(s.get('entry') or 0)
+			stop_loss = float(s.get('stop_loss') or 0)
+			take_profit = float(s.get('take_profit') or 0)
 			regime = s.get('regime', 'NEUTRAL')
-			ml_prob = s.get('ml_probability', 0.5) or 0.5
+			ml_prob = float(s.get('ml_probability') or 0.5)
 			
 			# Calculate entry/exit advice
 			if s.get('direction', '').upper() == 'LONG':
-				entry_advice = f"Buy on dip to {s.get('entry'):.4f}"
-				exit_advice = f"Take partial profit at {s.get('take_profit'):.4f}, trail SL to {s.get('stop_loss'):.4f}"
+				entry_advice = f"Buy on dip to {entry:.4f}"
+				exit_advice = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
 			else:
-				entry_advice = f"Sell on rally to {s.get('entry'):.4f}"
-				exit_advice = f"Take partial profit at {s.get('take_profit'):.4f}, trail SL to {s.get('stop_loss'):.4f}"
+				entry_advice = f"Sell on rally to {entry:.4f}"
+				exit_advice = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
 			
 			if tier == "VIP":
 				# Full advice for VIP
@@ -202,23 +207,23 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					f"🟢 **VIP Signal: {s.get('asset')}** ({s.get('timeframe')})\n\n"
 					f"**Setup**: {s.get('direction').upper()} {s.get('strategy_name')}\n"
 					f"**Regime**: {regime} | **Score**: {score:.1f}/100\n\n"
-					f"**Entry**: {s.get('entry'):.4f}\n"
-					f"**SL**: {s.get('stop_loss'):.4f}\n"
-					f"**TP**: {s.get('take_profit'):.4f}\n"
+					f"**Entry**: {entry:.4f}\n"
+					f"**SL**: {stop_loss:.4f}\n"
+					f"**TP**: {take_profit:.4f}\n"
 					f"**R/R**: {rr:.2f}:1\n\n"
 					f"**Confidence**: {confidence*100:.0f}% | **ML**: {ml_prob*100:.0f}%\n\n"
 					f"📌 **Entry Strategy**: {entry_advice}\n"
 					f"📌 **Exit Strategy**: {exit_advice}\n"
-					f"📌 **Risk**: {s.get('stop_loss'):.4f} - {s.get('entry'):.4f} = {abs(s.get('entry', 0) - s.get('stop_loss', 0)):.4f} pips"
+					f"📌 **Risk**: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips"
 				)
 			else:
 				# Limited advice for PREMIUM
 				msg = (
 					f"💜 **PREMIUM Signal: {s.get('asset')}** ({s.get('timeframe')})\n\n"
 					f"**Setup**: {s.get('direction').upper()}\n"
-					f"**Entry**: {s.get('entry'):.4f}\n"
-					f"**SL**: {s.get('stop_loss'):.4f}\n"
-					f"**TP**: {s.get('take_profit'):.4f}\n"
+					f"**Entry**: {entry:.4f}\n"
+					f"**SL**: {stop_loss:.4f}\n"
+					f"**TP**: {take_profit:.4f}\n"
 					f"**Score**: {score:.1f} | **R/R**: {rr:.2f}:1\n\n"
 					f"📌 {entry_advice}\n"
 					f"📌 {exit_advice}"
