@@ -1374,3 +1374,49 @@ async def set_user_next_signal_time(
     """
     key = f"{telegram_user_id}_signal{signal_number}"
     _user_next_signal_times[key] = send_time
+
+
+async def get_strategy_performance(session: AsyncSession, strategy_name: str) -> dict:
+    """Get performance metrics for a strategy.
+    
+    Returns: {
+        'win_rate': float (0.0-1.0),
+        'avg_rr': float (average risk/reward ratio),
+        'total_outcomes': int,
+        'wins': int,
+        'losses': int
+    }
+    """
+    try:
+        # Get all outcomes for signals with this strategy
+        stmt = select(Outcome).select_from(Signal).join(
+            Outcome, Outcome.signal_id == Signal.signal_id
+        ).where(Signal.strategy_name == strategy_name)
+        
+        result = await session.execute(stmt)
+        outcomes = result.scalars().all()
+        
+        total = len(outcomes)
+        wins = sum(1 for o in outcomes if str(getattr(o, 'status', '')).lower() == 'tp')
+        losses = total - wins
+        win_rate = (wins / total) if total > 0 else 0.0
+        
+        # Default avg_rr (would need RR calculation from outcomes)
+        avg_rr = 1.8
+        
+        return {
+            'win_rate': win_rate,
+            'avg_rr': avg_rr,
+            'total_outcomes': total,
+            'wins': wins,
+            'losses': losses
+        }
+    except Exception as e:
+        # Fallback if query fails
+        return {
+            'win_rate': 0.0,
+            'avg_rr': 1.8,
+            'total_outcomes': 0,
+            'wins': 0,
+            'losses': 0
+        }

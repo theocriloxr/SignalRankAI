@@ -318,10 +318,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
             # VIP: score >= 72 only
-            signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) >= 72.0]
+            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 60.0]
         elif tier in ('premium',):
             # PREMIUM: score < 80 (but >= 55 for dispatch)
-            signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) < 80.0]
+            signals_list = [s for s in (vip_list + prem_list) if 60.0 <= s.get('score', 0) < 80.0]
         else:  # FREE
             # Free: ALL signals go to global pool (handled separately)
             signals_list = (vip_list + prem_list)

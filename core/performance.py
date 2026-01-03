@@ -3,12 +3,34 @@ def avg_reward_risk(trades):
     return 1.8
 
 def strategy_stats(strategy_name):
-    trades = fetch_trades(strategy_name)
-    total = len(trades)
-    wins = sum(1 for t in trades if t.outcome == "TP")
-    win_rate = wins / total if total > 0 else 0
-    avg_rr = avg_reward_risk(trades)
-    return win_rate, avg_rr
+    """Get strategy performance stats from database.
+    
+    Returns: (win_rate, avg_rr)
+    """
+    try:
+        from db.session import ENGINE
+        from db.repository import get_strategy_performance
+        import asyncio
+        
+        if ENGINE is None:
+            return 0.0, 1.8  # fallback
+        
+        async def _fetch():
+            from db.session import get_session
+            async with get_session() as session:
+                perf = await get_strategy_performance(session, strategy_name)
+                await session.commit()
+                return perf
+        
+        try:
+            perf = asyncio.run(_fetch())
+            win_rate = float(perf.get('win_rate', 0.0)) if perf else 0.0
+            avg_rr = float(perf.get('avg_rr', 1.8)) if perf else 1.8
+            return win_rate, avg_rr
+        except Exception:
+            return 0.0, 1.8
+    except Exception:
+        return 0.0, 1.8
 
 def dynamic_weight(strategy_name):
     win_rate, rr = strategy_stats(strategy_name)
