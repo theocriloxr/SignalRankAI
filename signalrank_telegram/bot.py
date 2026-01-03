@@ -338,17 +338,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         if ENGINE is not None:
             effective_tier = tier
             display_tier = tier
-            if tier == 'free' and extra_left > 0:
+            
+            # OWNER and ADMIN always get VIP format for ALL notifications
+            if tier in ('owner', 'admin'):
+                display_tier = 'vip'
+                effective_tier = 'vip' if tier == 'owner' else 'admin'
+            elif tier == 'free' and extra_left > 0:
                 effective_tier = 'premium'
                 display_tier = 'premium'
-            if tier == 'owner':
-                # Owner receives VIP formatting while keeping owner volume limits.
-                display_tier = 'vip'
-                effective_tier = 'vip'
-            if tier == 'admin':
-                # Admin receives the same set as owner, but store tier distinctly.
-                display_tier = 'vip'
-                effective_tier = 'admin'
 
             if effective_tier in ('premium', 'vip', 'owner', 'admin'):
                 bot = Bot(token=_require_telegram_token())
@@ -475,7 +472,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     "regime": getattr(best_sig, 'regime', 'NEUTRAL'),
                                 }
                                 try:
-                                    _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier='premium'))
+                                    # Determine display tier: VIP for owner/admin, PREMIUM otherwise
+                                    from signalrank_telegram.access import resolve_user_tier
+                                    user_tier = resolve_user_tier(user_id).lower()
+                                    signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'premium'
+                                    _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=signal_display_tier))
                                     sent_count += 1
                                     state.consume_extra_signals_sync(int(user_id), 1)
                                 except Exception:
@@ -619,8 +620,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 "regime": getattr(sig, 'regime', 'NEUTRAL'),
                             }
                             try:
-                                # Send with FREE tier formatting
-                                _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier='free'))
+                                # Determine display tier: VIP for owner/admin, FREE for others
+                                from signalrank_telegram.access import resolve_user_tier
+                                user_tier = resolve_user_tier(user_id).lower()
+                                signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'free'
+                                _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=signal_display_tier))
                             except Exception:
                                 pass
                     
@@ -640,15 +644,17 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             f"[bot] dispatch postgres path failed: {type(e).__name__}: {e}",
         )
 
-    if tier in ('premium', 'vip', 'owner'):
+    if tier in ('premium', 'vip', 'owner', 'admin'):
         bot = Bot(token=_require_telegram_token())
         limit = TIER_LIMITS.get(tier, 0)
         sent = 0
+        # OWNER and ADMIN always get VIP format
+        display_tier = 'vip' if tier in ('owner', 'admin') else tier
         for signal in signals_list:
             if sent >= limit:
                 break
             try:
-                _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=tier))
+                _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
                 sent += 1
             except Exception:
                 continue
@@ -968,8 +974,28 @@ def run_bot() -> None:
                     except Exception:
                         pass
 
-                    # Limited free follow-up
-                    if str(tier_at_send).lower() == 'free':
+                    # Check if user is owner/admin for VIP formatting
+                    from signalrank_telegram.access import resolve_user_tier
+                    user_tier = resolve_user_tier(telegram_user_id).lower()
+                    
+                    # OWNER and ADMIN always get full outcome details (VIP format)
+                    if user_tier in ('owner', 'admin'):
+                        label = status.upper() if status else 'UPDATE'
+                        status_emoji = "✅" if status in ("tp", "tp1", "tp2", "partial_tp") else ("❌" if status == "sl" else "📌")
+                        msg = (
+                            f"📣 Outcome Update — {status_emoji} {label}\n\n"
+                            f"Reference: {ref_short}\n"
+                            f"{asset} {timeframe} {direction}\n"
+                        )
+                        if r_multiple is not None:
+                            try:
+                                r_val = float(r_multiple)
+                                msg += f"R-Multiple: {r_val:.2f}R\n"
+                            except Exception:
+                                pass
+                        msg += "\nThis signal has been marked with an outcome in the tracker."
+                    # Limited free follow-up for actual FREE users only
+                    elif str(tier_at_send).lower() == 'free':
                         msg = (
                             "📣 Signal Update\n\n"
                             f"Reference: {ref_short}\n"
