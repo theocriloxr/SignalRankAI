@@ -65,7 +65,7 @@ def get_candles(asset, timeframe):
 def is_crypto(asset):
     a = (asset or "").upper().strip()
     # Treat Binance-style symbols as crypto by default (e.g., BTCUSDT, ETHUSDT).
-    return a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC")
+    return a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC") or a.endswith("USD")
 
 def get_crypto_candles(asset, timeframe):
     """Fetch crypto candles from Binance public REST API.

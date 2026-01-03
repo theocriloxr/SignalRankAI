@@ -97,7 +97,25 @@ def get_trending_fx_pairs():
     """
     raw = (os.getenv("FX_PAIRS") or "").strip()
     if not raw:
-        return []
+        # If a candle provider key is available, default to a reasonable set of majors.
+        # Opt-out by setting FX_DEFAULT_ENABLED=0.
+        enabled = (os.getenv("FX_DEFAULT_ENABLED") or "1").strip().lower() in {"1", "true", "yes", "y", "on"}
+        if not enabled:
+            return []
+        if not (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip():
+            return []
+        return [
+            "EURUSD",
+            "GBPUSD",
+            "USDJPY",
+            "USDCHF",
+            "AUDUSD",
+            "USDCAD",
+            "NZDUSD",
+            "EURJPY",
+            "GBPJPY",
+            "EURGBP",
+        ]
     return [x.strip().upper() for x in raw.split(",") if x.strip()]
 
 # Combine all pairs for strategy engine

@@ -135,9 +135,9 @@ def main_loop(DRY_RUN=False):
             pass
 
     try:
-        fx_max_pairs = int((os.getenv("FX_MAX_PAIRS") or "3").strip())
+        fx_max_pairs = int((os.getenv("FX_MAX_PAIRS_PER_CYCLE") or os.getenv("FX_MAX_PAIRS") or "6").strip())
     except Exception:
-        fx_max_pairs = 3
+        fx_max_pairs = 6
 
     cycle_sleep_seconds = int(os.getenv("CYCLE_SLEEP_SECONDS", "60"))
 
@@ -145,12 +145,15 @@ def main_loop(DRY_RUN=False):
     # Non-fatal: warn and disable FX rather than crashing the whole engine.
     fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
     fx_enabled = True
-    if fx_pairs and not (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip():
+    if not (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip():
+        # If we don't have a provider key, we can still run crypto-only.
+        # FX pairs (configured or defaulted) will be skipped below.
         fx_enabled = False
-        print(
-            "[WARN] FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. Disabling FX candles.",
-            flush=True,
-        )
+        if fx_pairs:
+            print(
+                "[WARN] FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. Disabling FX candles.",
+                flush=True,
+            )
 
     # Example: fetch strategy weights and regime_strategies from ML/DB (stubbed here)
     from engine.ml import get_strategy_weights, get_regime_strategies
@@ -226,8 +229,15 @@ def main_loop(DRY_RUN=False):
                 crypto_assets = [a for a in assets if is_crypto(a)]
                 if not fx_enabled:
                     fx_assets = []
-                if fx_assets and fx_max_pairs > 0:
-                    fx_assets = fx_assets[: int(fx_max_pairs)]
+
+                # FX universe can be moderate; bound per-cycle calls but rotate to cover all.
+                fx_pair_rotation = _env_bool("FX_PAIR_ROTATION", True)
+                if fx_assets and fx_max_pairs > 0 and len(fx_assets) > int(fx_max_pairs):
+                    if fx_pair_rotation:
+                        start = (max(0, int(cycle_no)) - 1) * int(fx_max_pairs)
+                        fx_assets = _rotate_slice(fx_assets, start=start, size=int(fx_max_pairs))
+                    else:
+                        fx_assets = fx_assets[: int(fx_max_pairs)]
 
                 # Crypto universe can be large; bound per-cycle work but rotate so we cover all.
                 default_crypto_max = 20
