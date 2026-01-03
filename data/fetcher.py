@@ -65,7 +65,19 @@ def get_candles(asset, timeframe):
 def is_crypto(asset):
     a = (asset or "").upper().strip()
     # Treat Binance-style symbols as crypto by default (e.g., BTCUSDT, ETHUSDT).
-    return a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC") or a.endswith("USD")
+    if a.endswith("USDT") or a.endswith("BUSD") or a.endswith("USDC"):
+        return True
+
+    # If it ends with plain USD, distinguish FX majors from crypto tickers.
+    if a.endswith("USD"):
+        base = a[:-3]
+        fx_bases = {"EUR", "GBP", "USD", "JPY", "CHF", "CAD", "AUD", "NZD", "HKD", "SGD", "SEK", "NOK"}
+        if base in fx_bases:
+            return False  # FX pair like EURUSD
+        # If base is longer than 4 chars, treat as crypto (e.g., DOGEUSD)
+        return len(base) > 4
+
+    return False
 
 
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
