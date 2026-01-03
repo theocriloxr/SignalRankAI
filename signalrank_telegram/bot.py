@@ -277,7 +277,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     - ADMIN: 9999 signals/day (all signals, real-time, no score filter)
     - VIP: 30 signals/day (score >= 72 only, real-time)
     - PREMIUM: 10 signals/day (score 55-80, real-time)
-    - FREE: 2 signals/day (any 2 signals, delayed queue, summary format)
+    - FREE: 2 signals/day (any signals bot generates, delayed queue, summary format)
+    
+    FREE tier receives ANY 2 signals at any point in time (no score-based selection).
+    The bot decides which signals to send based on generation order.
     
     Outcomes are sent for ALL signals (crypto and FX) regardless of tier.
     
@@ -317,7 +320,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
             # VIP: score >= 72 only
-            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 72.0]
+            signals_list = [s for s in (vip_list + prem_list) if 55 <= s.get('score', 0) >= 72.0]
         elif tier in ('premium',):
             # PREMIUM: score < 80 (but >= 55 for dispatch)
             signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) < 80.0]
@@ -447,7 +450,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 daily_limit = 2
                 async with get_session() as session:
-                    for signal in sorted(signals_list, key=lambda s: s.get('score', 0), reverse=True):
+                    # Queue any signals the bot generates (no score sorting - bot decides)
+                    for signal in signals_list:
                         ok = await queue_free_signal_summary(session, int(user_id), signal, daily_limit=daily_limit)
                         if not ok:
                             break
@@ -492,8 +496,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             from db.pg_features import queue_free_signal_summary as queue_free_signal_summary_pg
 
             async with get_session() as session:
-                # Only queue up to daily limit; prefer higher score first
-                for signal in sorted(signals_list, key=lambda s: s.get('score', 0), reverse=True):
+                # Queue any signals the bot generates (no score sorting - bot decides)
+                for signal in signals_list:
                     ok = await queue_free_signal_summary_pg(
                         session,
                         telegram_user_id=int(user_id),
