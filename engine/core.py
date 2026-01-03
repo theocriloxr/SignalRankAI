@@ -27,10 +27,11 @@ def _env_float(name: str, default: float) -> float:
 # Higher = fewer signals but higher quality. Lower = more signals but more noise.
 # Default is 55; tune via env. Range: 40-75 recommended.
 # - 40: Very permissive (all passing signals)
+# - 50: Permissive (good volume with some noise)
 # - 55: Balanced (good quality with reasonable volume)
 # - 60: Selective (premium signals only)
 # - 75: Strict (only top tier signals)
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 65)
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 55)
 
 def load_tradable_assets():
     """Return configured fallback assets.

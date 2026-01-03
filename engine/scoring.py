@@ -6,23 +6,23 @@ def score_signal(signal):
     Weights:
     - Confidence (50%): Base strategy agreement/strength (reject <0.3 base)
     - R/R Ratio (30%): Risk/reward quality (favors 2:1+, penalizes <1.5)
-    - Volatility (20%): Lower is better (reject >0.20 volatility)
+    - Volatility (20%): Lower is better (high volatility penalized)
     - Regime Fit (bonus): +10-20% for alignment with market regime
     - ML Probability (boost): 0.8-1.2x multiplier when available
     
     Target Win Rate Optimization:
-    - Enforce strict risk/reward (1.5 minimum, 2.0+ reward)
+    - Enforce good risk/reward (1.5 minimum for edge)
     - Penalize high volatility environments
     - Bonus signals that align with market regime
-    - Reject low-confidence base signals
+    - Reject only extremely low-confidence base signals (<0.2)
     """
     # Target: 0..100 score
     confidence = float(signal.get("confidence", 0) or 0)
     confidence = min(max(confidence, 0.0), 1.0)
     
-    # QUALITY GATE: Reject very low-confidence signals
-    # (Less than 30% base strategy confidence is too risky)
-    if confidence < 0.3:
+    # QUALITY GATE: Reject extremely low-confidence signals
+    # (Less than 20% base strategy confidence is too risky)
+    if confidence < 0.2:
         return 0.0
 
     entry = signal.get("entry")
@@ -33,12 +33,15 @@ def score_signal(signal):
     rr_component = rr_score(rr)              # 0..1
     vol_component = volatility_quality_score(signal)  # 0..1
     
-    # QUALITY GATE: Reject signals with excessive volatility or poor RR
-    if rr < 1.5 or vol_component <= 0.0:
-        return 0.0
-
+    # SOFT GATES: Penalize weak signals, don't hard-reject
+    # Signals with poor RR or high volatility still score, just lower
+    
     # Base score: weighted components
     score = (confidence * 50.0) + (rr_component * 30.0) + (vol_component * 20.0)
+    
+    # Extra penalty for very poor RR (but don't hard-reject)
+    if rr < 1.5:
+        score = score * 0.5  # 50% penalty for RR < 1.5
     
     # REGIME ALIGNMENT BONUS: +10-20% for signals aligned with market regime
     # (Better trades happen when signal aligns with broader trend)
