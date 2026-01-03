@@ -124,7 +124,52 @@ def get_crypto_candles(asset, timeframe):
     if not sym or len(sym) < 6:
         return []
 
-    def _cryptocompare_candles(symbol_rest: str, tf: str) -> list[dict]:
+    def _bybit_candles(symbol: str, tf: str) -> list[dict]:
+        """Fetch candles from Bybit public API (free, often not geo-blocked)."""
+        bybit_tf_map = {
+            "5m": "5",
+            "15m": "15",
+            "1h": "60",
+            "4h": "240",
+            "1d": "1440",
+        }
+        bybit_interval = bybit_tf_map.get((tf or "").strip(), "60")
+        url = "https://api.bybit.com/v5/market/klines"
+        params = {
+            "category": "spot",
+            "symbol": symbol,
+            "interval": bybit_interval,
+            "limit": 200,
+        }
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            payload = resp.json() if resp.ok else {}
+            if not resp.ok or str(payload.get("retCode") or "0") != "0":
+                return []
+            result = payload.get("result") or {}
+            data = result.get("list") or []
+            if not isinstance(data, list) or not data:
+                return []
+            out: list[dict] = []
+            for row in data:
+                try:
+                    # Bybit returns [timestamp_ms, open, high, low, close, volume, ...]
+                    ts_ms = int(row[0]) if row else 0
+                    out.append(
+                        {
+                            "timestamp": ts_ms,
+                            "open": float(row[1]),
+                            "high": float(row[2]),
+                            "low": float(row[3]),
+                            "close": float(row[4]),
+                            "volume": float(row[5]),
+                        }
+                    )
+                except (IndexError, ValueError, TypeError):
+                    continue
+            return out
+        except Exception:
+            return []
         # CryptoCompare expects fsym/tsym (base/quote). We try multiple quote
         # currencies because some assets don't have a USDT market.
         base_raw = symbol_rest
@@ -209,9 +254,16 @@ def get_crypto_candles(asset, timeframe):
     if provider == "cryptocompare":
         candles = _cryptocompare_candles(sym, interval)
         return candles or []
+    if provider == "bybit":
+        candles = _bybit_candles(sym, interval)
+        return candles or []
 
     global _BINANCE_BLOCKED_REASON
     if _BINANCE_BLOCKED_REASON is not None:
+        # Fallback to Bybit first (faster than CryptoCompare for spot)
+        candles = _bybit_candles(sym, interval)
+        if candles:
+            return candles
         candles = _cryptocompare_candles(sym, interval)
         return candles or []
 
