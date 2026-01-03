@@ -1,4 +1,7 @@
 import os
+import json
+import base64
+import tempfile
 from pathlib import Path
 
 try:
@@ -18,6 +21,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
+
 class MLFilter:
     def __init__(self):
         # Opt-in ML filtering; default off to avoid blocking signals when a model
@@ -25,26 +29,78 @@ class MLFilter:
         if not _env_bool("ML_ENABLED", False):
             self.active = False
             self.model = None
+            self.feature_cols = None
             return
 
         # If the dependency isn't installed, fail open (do not block signals).
         if xgb is None:
             self.active = False
             self.model = None
+            self.feature_cols = None
             return
 
-        self.model = xgb.XGBClassifier()
+        self.model = None
+        self.feature_cols = None
         try:
-            self.model.load_model(MODEL_PATH)
-            self.active = True
-        except Exception:
+            with open(MODEL_PATH, 'r') as f:
+                model_data = json.load(f)
+            
+            # Extract metadata and model bytes
+            model_b64 = model_data.get("model_bytes_b64")
+            self.feature_cols = model_data.get("feature_cols", [])
+            
+            if not model_b64:
+                self.active = False
+                return
+            
+            # Decode base64 and load model
+            model_bytes = base64.b64decode(model_b64)
+            
+            # Write to temp file and load
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.bin') as tmp:
+                tmp.write(model_bytes)
+                tmp_path = tmp.name
+            
+            try:
+                booster = xgb.Booster()
+                booster.load_model(tmp_path)
+                self.model = booster
+                self.active = True
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+                
+        except Exception as e:
             self.active = False
+            self.model = None
+            self.feature_cols = None
 
     def ml_filter(self, features, threshold=0.6):
-        if not self.active:
+        """
+        Filter signals through ML model.
+        
+        Args:
+            features: dict of feature_name -> value
+            threshold: confidence threshold (default 0.6)
+        
+        Returns:
+            (approved: bool, probability: float | None)
+        """
+        if not self.active or self.model is None:
             return True, None
+        
         try:
-            prob = self.model.predict_proba([list(features.values())])[0][1]
-            return prob >= threshold, prob
+            # Map input features to model's expected feature order
+            feature_vector = []
+            for col in (self.feature_cols or []):
+                feature_vector.append(float(features.get(col, 0.0)))
+            
+            if not feature_vector:
+                return True, None
+            
+            import numpy as np
+            dmatrix = xgb.DMatrix(np.array([feature_vector]))
+            prob = self.model.predict(dmatrix)[0]
+            approved = prob >= float(threshold)
+            return approved, float(prob)
         except Exception:
             return True, None

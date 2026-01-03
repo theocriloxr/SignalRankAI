@@ -1066,6 +1066,8 @@ async def performance_command(update, context):
 			win_rate = float((stats or {}).get("win_rate") or 0.0)
 			avg_r = (stats or {}).get("avg_r")
 			net_r = (stats or {}).get("net_r")
+			tracked = int((stats or {}).get("tracked_outcomes") or 0)
+			profit_loss = float((stats or {}).get("profit_loss_pct") or 0.0)
 
 			if total <= 0:
 				if update.message is not None:
@@ -1073,14 +1075,10 @@ async def performance_command(update, context):
 				return
 
 			if tier_rank(tier) < tier_rank("PREMIUM"):
-				bucket = "mixed"
-				if win_rate >= 0.6:
-					bucket = "strong"
-				elif win_rate <= 0.4:
-					bucket = "cautious"
+				bucket = "strong" if win_rate >= 0.6 else ("cautious" if win_rate <= 0.4 else "mixed")
 				msg = (
 					"📊 Performance (limited)\n\n"
-					f"Recent snapshot: {bucket}.\n"
+					f"Recent trend: {bucket}.\n"
 					"Upgrade to Premium for full stats and history."
 				)
 				if update.message is not None:
@@ -1089,13 +1087,19 @@ async def performance_command(update, context):
 
 			avg_r_str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
 			net_r_str = f"{float(net_r):.2f}R" if net_r is not None else "N/A"
+			profit_str = f"+{profit_loss:.2f}%" if profit_loss >= 0 else f"{profit_loss:.2f}%"
+			profit_emoji = "✅" if profit_loss >= 0 else "⚠️"
+			
 			msg = (
 				"📊 Performance (last 30 days)\n\n"
 				f"Signals delivered: {total}\n"
+				f"Outcomes tracked: {tracked}/{total}\n"
 				f"Wins: {wins} | Losses: {losses}\n"
-				f"Win rate (tracked outcomes): {round(win_rate*100,1)}%\n"
-				f"Avg R (tracked outcomes): {avg_r_str}\n"
-				f"Net R (tracked outcomes): {net_r_str}"
+				f"Win rate: {round(win_rate*100,1)}%\n"
+				f"Avg R per trade: {avg_r_str}\n"
+				f"Net R (total): {net_r_str}\n"
+				f"{profit_emoji} Est. profit/loss: {profit_str}\n\n"
+				"💡 Based on 1% risk per signal."
 			)
 			if update.message is not None:
 				await update.message.reply_text(msg)

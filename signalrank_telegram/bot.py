@@ -678,6 +678,9 @@ def run_bot() -> None:
             for oc, sig, recipients in pending:
                 status = str(getattr(oc, 'status', '') or '').lower()
                 ref = str(getattr(sig, 'signal_id', '') or '')
+                # Shorten ref to 8 chars for display
+                ref_short = ref[:8] if ref else 'unknown'
+                r_multiple = getattr(oc, 'r_multiple', None)
                 asset = str(getattr(sig, 'asset', '') or '')
                 timeframe = str(getattr(sig, 'timeframe', '') or '')
                 direction = str(getattr(sig, 'direction', '') or '')
@@ -710,19 +713,26 @@ def run_bot() -> None:
                     if str(tier_at_send).lower() == 'free':
                         msg = (
                             "📣 Signal Update\n\n"
-                            f"Reference: {ref}\n"
+                            f"Reference: {ref_short}\n"
                             f"{asset} {timeframe} {direction}\n\n"
                             "An outcome was recorded for a recent signal.\n"
                             "Upgrade to Premium to see full stats and exact levels."
                         )
                     else:
                         label = status.upper() if status else 'UPDATE'
+                        status_emoji = "✅" if status in ("tp", "tp1", "tp2", "partial_tp") else ("❌" if status == "sl" else "📌")
                         msg = (
-                            f"📣 Outcome Update — {label}\n\n"
-                            f"Reference: {ref}\n"
-                            f"{asset} {timeframe} {direction}\n\n"
-                            "This signal has been marked with an outcome in the tracker."
+                            f"📣 Outcome Update — {status_emoji} {label}\n\n"
+                            f"Reference: {ref_short}\n"
+                            f"{asset} {timeframe} {direction}\n"
                         )
+                        if r_multiple is not None:
+                            try:
+                                r_val = float(r_multiple)
+                                msg += f"R-Multiple: {r_val:.2f}R\n"
+                            except Exception:
+                                pass
+                        msg += "\nThis signal has been marked with an outcome in the tracker."
                     try:
                         _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
                     except Exception:
@@ -927,6 +937,8 @@ def run_bot() -> None:
         except Exception:
             pass
 
+        logger.info("🔄 send_free_delayed_summaries job triggered")
+
         # Prefer Postgres-backed delayed queue
         try:
             from db.session import ENGINE, get_session
@@ -938,6 +950,7 @@ def run_bot() -> None:
                     mark_free_signal_summaries_sent as mark_free_signal_summaries_sent_pg,
                     record_signal_delivery,
                 )
+                from datetime import datetime
 
                 async def _fetch_due() -> dict[int, dict]:
                     async with get_session() as session:
@@ -955,10 +968,13 @@ def run_bot() -> None:
 
                 try:
                     due = asyncio.run(_fetch_due())
-                except Exception:
+                    logger.info(f"📬 Free queue check: {len(due)} user(s) with due signals")
+                except Exception as e:
+                    logger.error(f"Error fetching due signals: {e}", exc_info=True)
                     due = {}
 
                 if not due:
+                    logger.info("✅ No free signals due for delivery")
                     return
 
                 now_hour = datetime.now().hour
@@ -970,7 +986,10 @@ def run_bot() -> None:
                     items = list(data.get("items") or [])
                     prefs = dict(data.get("prefs") or {})
 
+                    logger.info(f"📨 User {uid}: {len(items)} queued signal(s)")
+
                     if not prefs.get("tp_sl_enabled", True):
+                        logger.info(f"⏸️ User {uid} has alerts disabled, marking as suppressed")
                         actions.append(
                             (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed')
                         )
@@ -981,6 +1000,7 @@ def run_bot() -> None:
                     if qs is not None and qe is not None:
                         try:
                             if _in_quiet_hours(now_hour, int(qs), int(qe)):
+                                logger.info(f"🔇 User {uid} in quiet hours ({qs}-{qe}), skipping")
                                 continue
                         except Exception:
                             pass
@@ -993,7 +1013,9 @@ def run_bot() -> None:
                         msg = _format_free_delayed_digest(items_to_send)
                         try:
                             _send_message_sync(application.bot, chat_id=int(uid), text=msg)
-                        except Exception:
+                            logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
+                        except Exception as e:
+                            logger.error(f"❌ Failed to send to user {uid}: {e}")
                             status = 'failed'
 
                         actions.append(
@@ -1007,6 +1029,7 @@ def run_bot() -> None:
 
                     # Clear out any extra due items so they don't remain queued forever.
                     if items_to_skip:
+                        logger.info(f"⏱️ User {uid}: {len(items_to_skip)} signal(s) overflow, marking as expired")
                         actions.append(
                             (
                                 int(uid),
@@ -1017,6 +1040,7 @@ def run_bot() -> None:
                         )
 
                 if not actions:
+                    logger.info("✅ No actions to apply")
                     return
 
                 async def _apply_actions() -> None:
@@ -1035,8 +1059,9 @@ def run_bot() -> None:
 
                 try:
                     asyncio.run(_apply_actions())
-                except Exception:
-                    pass
+                    logger.info(f"💾 Applied {len(actions)} queue action(s)")
+                except Exception as e:
+                    logger.error(f"Error applying actions: {e}", exc_info=True)
                 return
         except Exception:
             pass

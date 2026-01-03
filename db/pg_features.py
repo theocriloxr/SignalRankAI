@@ -687,10 +687,10 @@ async def queue_free_signal_summary(
 
 
 async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int) -> dict:
-    """Compute simple 30-day performance from deliveries + outcomes.
+    """Compute 30-day performance from deliveries + outcomes.
 
     Returns:
-      {total, wins, losses, win_rate, avg_r, net_r}
+      {total, wins, losses, win_rate, avg_r, net_r, tracked_outcomes, profit_loss_pct}
     """
 
     now = _utcnow()
@@ -699,7 +699,10 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
     res = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user = res.scalar_one_or_none()
     if user is None:
-        return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0.0, "avg_r": None, "net_r": None}
+        return {
+            "total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+            "avg_r": None, "net_r": None, "tracked_outcomes": 0, "profit_loss_pct": 0.0
+        }
 
     # Total signals delivered in last 30 days
     res_total = await session.execute(
@@ -710,7 +713,10 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
     )
     total = int(res_total.scalar() or 0)
     if total <= 0:
-        return {"total": 0, "wins": 0, "losses": 0, "win_rate": 0.0, "avg_r": None, "net_r": None}
+        return {
+            "total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+            "avg_r": None, "net_r": None, "tracked_outcomes": 0, "profit_loss_pct": 0.0
+        }
 
     delivered_signal_ids_subq = (
         select(SignalDelivery.signal_id)
@@ -729,6 +735,7 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
     loss_statuses = {"sl"}
     wins = sum(outcome_counts.get(s, 0) for s in win_statuses)
     losses = sum(outcome_counts.get(s, 0) for s in loss_statuses)
+    tracked_outcomes = wins + losses
 
     win_rate = (wins / max(1, wins + losses)) if (wins + losses) > 0 else 0.0
 
@@ -739,6 +746,13 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
         )
     )
     avg_r, net_r = res_r.first() or (None, None)
+
+    # Calculate profit/loss percentage: assume equal 1% risk per trade
+    profit_loss_pct = 0.0
+    if net_r is not None and tracked_outcomes > 0:
+        risk_per_trade = 1.0  # 1% risk assumed per signal
+        profit_loss_pct = (float(net_r) / tracked_outcomes) * risk_per_trade
+
     return {
         "total": int(total),
         "wins": int(wins),
@@ -746,6 +760,8 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
         "win_rate": float(win_rate),
         "avg_r": float(avg_r) if avg_r is not None else None,
         "net_r": float(net_r) if net_r is not None else None,
+        "tracked_outcomes": int(tracked_outcomes),
+        "profit_loss_pct": float(profit_loss_pct),
     }
 
 

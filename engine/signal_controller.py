@@ -90,6 +90,8 @@ class SignalController:
     def pick_best_direction_per_pair(self, signals: List[Signal]) -> List[Signal]:
         """For each (asset,timeframe), pick the direction (long/short) with higher aggregated confidence.
 
+        Also considers ML probability scores when available. ML-approved signals get a boost.
+
         Returns one representative signal for the winning direction.
         """
         grouped: Dict[Tuple[str, str], List[Signal]] = {}
@@ -102,6 +104,7 @@ class SignalController:
             grouped.setdefault((asset, tf), []).append(s)
 
         def _conf(sig: Signal) -> float:
+            """Calculate confidence with ML boost."""
             try:
                 conf = sig.get("confidence")
                 if conf is None:
@@ -109,7 +112,22 @@ class SignalController:
                 w = sig.get("weight")
                 if w is None:
                     w = 1.0
-                return float(conf or 0.0) * float(w or 1.0)
+                
+                base_conf = float(conf or 0.0) * float(w or 1.0)
+                
+                # Apply ML probability as a multiplier if available
+                ml_prob = sig.get("ml_probability")
+                if ml_prob is not None:
+                    try:
+                        ml_prob_val = float(ml_prob)
+                        # ML confidence ranges 0-1; scale to multiply base confidence
+                        # E.g., ML of 0.7 boosts by 20%, ML of 0.5 reduces by 20%
+                        ml_factor = 0.5 + ml_prob_val  # Range [0.5, 1.5]
+                        base_conf = base_conf * ml_factor
+                    except Exception:
+                        pass
+                
+                return base_conf
             except Exception:
                 return 0.0
 
@@ -137,6 +155,12 @@ class SignalController:
                 best["contributor_groups"] = [str(s.get("strategy_group") or "").strip().lower() for s in winning if s.get("strategy_group")]
                 best["direction_score_long"] = float(long_sum)
                 best["direction_score_short"] = float(short_sum)
+                # Track ML voting if signals have ML scores
+                if any(s.get("ml_probability") for s in winning):
+                    best["ml_voted"] = True
+                    winning_ml_probs = [s.get("ml_probability") for s in winning if s.get("ml_probability") is not None]
+                    if winning_ml_probs:
+                        best["winning_avg_ml_prob"] = sum(winning_ml_probs) / len(winning_ml_probs)
             except Exception:
                 pass
 
