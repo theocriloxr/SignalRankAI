@@ -170,9 +170,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		for s in unresolved_signals[:5]:
 			score = float(s.get('score') or 0)
 			entry = float(s.get('entry') or 0)
+			sig_id = s.get('signal_id', 'N/A')[:8]  # First 8 chars of ID
 			lines.append(
 				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
-				f"  Entry: {entry:.4f} | Score: {score:.1f}"
+				f"  ID: {sig_id} | Entry: {entry:.4f} | Score: {score:.1f}\n"
+				f"  Position: /outcome {sig_id}"
 			)
 		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
 		if update.message is not None:
@@ -191,7 +193,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			rr = float(s.get('rr_ratio') or 1.5)
 			entry = float(s.get('entry') or 0)
 			stop_loss = float(s.get('stop_loss') or 0)
-			
+			sig_id = s.get('signal_id', 'N/A')
 			# Parse take_profit (JSON array) and get first value
 			tp_raw = s.get('take_profit')
 			try:
@@ -219,7 +221,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			if tier == "VIP":
 				# Full advice for VIP
 				msg = (
-					f"🟢 **VIP Signal: {s.get('asset')}** ({s.get('timeframe')})\n\n"
+					f"🟢 **VIP Signal: {s.get('asset')}** ({s.get('timeframe')})\n"
+					f"**ID**: `{sig_id}`\n\n"
 					f"**Setup**: {s.get('direction').upper()} {s.get('strategy_name')}\n"
 					f"**Regime**: {regime} | **Score**: {score:.1f}/100\n\n"
 					f"**Entry**: {entry:.4f}\n"
@@ -229,19 +232,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					f"**Confidence**: {confidence*100:.0f}% | **ML**: {ml_prob*100:.0f}%\n\n"
 					f"📌 **Entry Strategy**: {entry_advice}\n"
 					f"📌 **Exit Strategy**: {exit_advice}\n"
-					f"📌 **Risk**: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips"
+					f"📌 **Risk**: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips\n\n"
+					f"📍 **/outcome {sig_id[:8]}** for current position"
 				)
 			else:
 				# Limited advice for PREMIUM
 				msg = (
-					f"💜 **PREMIUM Signal: {s.get('asset')}** ({s.get('timeframe')})\n\n"
+					f"**PREMIUM Signal: {s.get('asset')}** ({s.get('timeframe')})\n"
+					f"**ID**: `{sig_id}`\n\n"
 					f"**Setup**: {s.get('direction').upper()}\n"
 					f"**Entry**: {entry:.4f}\n"
 					f"**SL**: {stop_loss:.4f}\n"
 					f"**TP**: {take_profit:.4f}\n"
 					f"**Score**: {score:.1f} | **R/R**: {rr:.2f}:1\n\n"
 					f"📌 {entry_advice}\n"
-					f"📌 {exit_advice}"
+					f"📌 {exit_advice}\n\n"
+					f"📍 **/outcome {sig_id[:8]}** for current position"
 				)
 			
 			if update.message is not None:
