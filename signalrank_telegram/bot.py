@@ -310,18 +310,18 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
         
-        # Tier-based signal selection
+        # Tier-based signal selection with score thresholds
         if tier in ('owner', 'admin'):
             # Owner/Admin see all signals (vip + premium)
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
-            # VIP sees premium and above
-            signals_list = vip_list + prem_list
+            # VIP: score >= 72 only
+            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 72.0]
         elif tier in ('premium',):
-            # Premium sees full signals (premium + vip)
-            signals_list = vip_list + prem_list
+            # PREMIUM: score < 80 (but >= 55 for dispatch)
+            signals_list = [s for s in (vip_list + prem_list) if 55.0 <= s.get('score', 0) < 80.0]
         else:  # FREE
-            # Free: delayed summaries from top approved signals
+            # Free: sees ALL signals in summary format (no score filtering)
             signals_list = (vip_list + prem_list)
 
         # Paid extra signals: Premium-style real-time delivery (vip+premium), capped by purchased count

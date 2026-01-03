@@ -115,20 +115,26 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	"""Show user's UNRESOLVED signals with tier-specific formatting.
+	
+	VIP (score ≥72): Full advice (all fields + risk/entry/exit strategy)
+	PREMIUM (score <80): Limited advice (risk + entry + exit strategy)
+	FREE: Summary only (asset, timeframe, direction, score, status)
+	"""
 	if await _public_guard(update):
 		return
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
 
-	signals: list[dict] = []
-	# Prefer Postgres-backed daily history when configured.
+	unresolved_signals: list[dict] = []
+	# Fetch unresolved signals only (no outcome yet, not archived)
 	try:
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
-			from db.pg_features import list_signals_sent_today
+			from db.pg_features import list_unresolved_signals_for_user
 			async with get_session() as session:
-				rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
-				signals = [
+				rows = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
+				unresolved_signals = [
 					{
 						"signal_id": r.signal_id,
 						"asset": r.asset,
@@ -139,43 +145,89 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 						"take_profit": r.take_profit,
 						"rr_ratio": r.rr_estimate,
 						"score": r.score,
-						"regime": r.regime,
-						"strength": r.strength,
+						"confidence": getattr(r, 'confidence', 0.5),
+						"regime": getattr(r, 'regime', 'NEUTRAL'),
+						"strength": getattr(r, 'strength', 0.5),
+						"ml_probability": getattr(r, 'ml_probability', 0.5),
 						"strategy_name": r.strategy_name,
 						"strategy_group": r.strategy_group,
+						"created_at": r.created_at,
 					}
 					for r in rows
 				]
-	except Exception:
-		signals = []
+	except Exception as e:
+		_audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
+		unresolved_signals = []
 
-	# Postgres is required
-	if not signals:
-		signals = []
-
-	if not signals:
+	if not unresolved_signals:
 		if update.message is not None:
-			await update.message.reply_text("No signals sent to you today yet. Check back later.")
+			await update.message.reply_text("✅ No unresolved signals. All trades resolved or archived.")
 		return
 
+	# FREE tier: summary only
 	if tier_rank(tier) < tier_rank("PREMIUM"):
-		lines = ["🆓 Today’s signals (summary):", ""]
-		for s in signals[:10]:
-			ref = s.get("signal_id") or s.get("id")
+		lines = ["🆓 Unresolved Signals (Summary)", ""]
+		for s in unresolved_signals[:5]:
+			score = s.get('score', 0) or 0
 			lines.append(
-				f"• {ref} — {s.get('asset')} {s.get('timeframe')} {s.get('direction')} (score {int(s.get('score', 0) or 0)})"
+				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
+				f"  Entry: {s.get('entry'):.4f} | Score: {score:.1f}"
 			)
-		lines += ["", "Upgrade to Premium to receive real-time entries, SL/TP, and alerts."]
+		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
 		if update.message is not None:
 			await update.message.reply_text("\n".join(lines))
 		return
 
+	# PREMIUM/VIP: detailed formatting per tier
 	from .formatter import format_signal
-	for s in signals[:10]:
+	for s in unresolved_signals[:10]:
 		try:
+			score = s.get('score', 0) or 0
+			confidence = s.get('confidence', 0.5) or 0.5
+			rr = s.get('rr_ratio', 1.5) or 1.5
+			regime = s.get('regime', 'NEUTRAL')
+			ml_prob = s.get('ml_probability', 0.5) or 0.5
+			
+			# Calculate entry/exit advice
+			if s.get('direction', '').upper() == 'LONG':
+				entry_advice = f"Buy on dip to {s.get('entry'):.4f}"
+				exit_advice = f"Take partial profit at {s.get('take_profit'):.4f}, trail SL to {s.get('stop_loss'):.4f}"
+			else:
+				entry_advice = f"Sell on rally to {s.get('entry'):.4f}"
+				exit_advice = f"Take partial profit at {s.get('take_profit'):.4f}, trail SL to {s.get('stop_loss'):.4f}"
+			
+			if tier == "VIP":
+				# Full advice for VIP
+				msg = (
+					f"🟢 **VIP Signal: {s.get('asset')}** ({s.get('timeframe')})\n\n"
+					f"**Setup**: {s.get('direction').upper()} {s.get('strategy_name')}\n"
+					f"**Regime**: {regime} | **Score**: {score:.1f}/100\n\n"
+					f"**Entry**: {s.get('entry'):.4f}\n"
+					f"**SL**: {s.get('stop_loss'):.4f}\n"
+					f"**TP**: {s.get('take_profit'):.4f}\n"
+					f"**R/R**: {rr:.2f}:1\n\n"
+					f"**Confidence**: {confidence*100:.0f}% | **ML**: {ml_prob*100:.0f}%\n\n"
+					f"📌 **Entry Strategy**: {entry_advice}\n"
+					f"📌 **Exit Strategy**: {exit_advice}\n"
+					f"📌 **Risk**: {s.get('stop_loss'):.4f} - {s.get('entry'):.4f} = {abs(s.get('entry', 0) - s.get('stop_loss', 0)):.4f} pips"
+				)
+			else:
+				# Limited advice for PREMIUM
+				msg = (
+					f"💜 **PREMIUM Signal: {s.get('asset')}** ({s.get('timeframe')})\n\n"
+					f"**Setup**: {s.get('direction').upper()}\n"
+					f"**Entry**: {s.get('entry'):.4f}\n"
+					f"**SL**: {s.get('stop_loss'):.4f}\n"
+					f"**TP**: {s.get('take_profit'):.4f}\n"
+					f"**Score**: {score:.1f} | **R/R**: {rr:.2f}:1\n\n"
+					f"📌 {entry_advice}\n"
+					f"📌 {exit_advice}"
+				)
+			
 			if update.message is not None:
-				await update.message.reply_text(format_signal(s))
-		except Exception:
+				await update.message.reply_text(msg)
+		except Exception as e:
+			_audit_logger.error(f"Error formatting signal for {user_id}: {e}")
 			continue
 
 
