@@ -517,34 +517,92 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		if ENGINE is None:
 			raise RuntimeError("Postgres not configured")
 		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal
+		from db.models import Signal
+		from sqlalchemy import select
+		import json
+		
 		async with get_session() as session:
 			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
-			oc = await get_outcome_for_signal(session, str(sig.signal_id)) if sig is not None else None
+			
+			# If signal not delivered to user, check if it exists at all
+			if sig is None:
+				# Try to find the signal by ref without delivery check
+				ref = (arg or "").strip()
+				query = select(Signal)
+				if len(ref) >= 32:
+					query = query.where(Signal.signal_id == ref)
+				else:
+					query = query.where(Signal.signal_id.like(f"{ref}%"))
+				query = query.order_by(Signal.created_at.desc()).limit(1)
+				
+				res_undelivered = await session.execute(query)
+				undelivered_sig = res_undelivered.scalars().first()
+				
+				if undelivered_sig is not None:
+					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
+					return
+				else:
+					await update.message.reply_text("Signal not found.")
+					return
+			
+			# Signal was delivered to user, now check for outcome
+			oc = await get_outcome_for_signal(session, str(sig.signal_id))
 			await session.commit()
-		if sig is None:
-			await update.message.reply_text("Signal not found (or not delivered to you).")
+		
+		# If outcome exists, show it
+		if oc is not None:
+			status = str(getattr(oc, "status", "") or "").lower()
+			r = getattr(oc, "r_multiple", None)
+			pct = getattr(oc, "percent", None)
+			label = "PROFIT" if status.startswith("tp") else ("LOSS" if status == "sl" else status.upper())
+			lines = [
+				"📣 Outcome",
+				"",
+				f"Reference: {sig.signal_id}",
+				f"{sig.asset} {sig.timeframe} {sig.direction}",
+				f"Result: {label} ({status})",
+			]
+			if r is not None:
+				lines.append(f"R-multiple: {float(r):.2f}R")
+			if pct is not None:
+				lines.append(f"Move: {float(pct):.2f}%")
+			await update.message.reply_text("\n".join(lines))
 			return
-		if oc is None:
-			await update.message.reply_text(
-				"No outcome recorded yet for this signal.\n\n"
-				"Use /signal <ref> to see a live best-effort status."
-			)
-			return
-		status = str(getattr(oc, "status", "") or "").lower()
-		r = getattr(oc, "r_multiple", None)
-		pct = getattr(oc, "percent", None)
-		label = "PROFIT" if status.startswith("tp") else ("LOSS" if status == "sl" else status.upper())
+		
+		# If outcome not yet determined, show current signal details
 		lines = [
-			"📣 Outcome",
+			"🔄 Signal In Progress",
 			"",
 			f"Reference: {sig.signal_id}",
-			f"{sig.asset} {sig.timeframe} {sig.direction}",
-			f"Result: {label} ({status})",
+			f"Asset: {sig.asset}",
+			f"Timeframe: {sig.timeframe}",
+			f"Direction: {sig.direction.upper()}",
+			"",
+			f"Entry: {sig.entry}",
+			f"Stop Loss: {sig.stop_loss}",
 		]
-		if r is not None:
-			lines.append(f"R-multiple: {float(r):.2f}R")
-		if pct is not None:
-			lines.append(f"Move: {float(pct):.2f}%")
+		
+		# Parse take_profit (JSON-encoded list)
+		try:
+			tp_list = json.loads(sig.take_profit) if isinstance(sig.take_profit, str) else sig.take_profit
+			if isinstance(tp_list, list) and len(tp_list) > 0:
+				for i, tp in enumerate(tp_list, 1):
+					lines.append(f"Take Profit {i}: {tp}")
+			else:
+				lines.append(f"Take Profit: {sig.take_profit}")
+		except Exception:
+			lines.append(f"Take Profit: {sig.take_profit}")
+		
+		if sig.rr_estimate is not None:
+			lines.append(f"RR Estimate: {sig.rr_estimate:.2f}")
+		
+		lines.extend([
+			f"Score: {sig.score:.2f}",
+			f"Strategy: {sig.strategy_name}",
+			"",
+			"⏳ Outcome not determined yet."
+		])
+		
 		await update.message.reply_text("\n".join(lines))
 		return
 	except Exception:
