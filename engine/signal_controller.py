@@ -88,20 +88,25 @@ class SignalController:
         return [self._normalize_signal(s) for s in (signals or []) if s]
 
     def pick_best_direction_per_pair(self, signals: List[Signal]) -> List[Signal]:
-        """For each (asset,timeframe), pick the direction (long/short) with higher aggregated confidence.
+        """For each (asset,timeframe,direction), pick the best signal.
+
+        Groups by (asset, timeframe, direction) and returns the highest-confidence
+        signal for each combination. Does NOT pick between long/short - keeps both
+        if both exist for the same pair.
 
         Also considers ML probability scores when available. ML-approved signals get a boost.
 
-        Returns one representative signal for the winning direction.
+        Returns the best signal for each (asset, timeframe, direction) combination.
         """
-        grouped: Dict[Tuple[str, str], List[Signal]] = {}
+        grouped: Dict[Tuple[str, str, str], List[Signal]] = {}
         for s in (signals or []):
             asset = str(s.get("asset") or s.get("symbol") or "").upper().strip()
             tf = str(s.get("timeframe") or "").lower().strip()
             direction = str(s.get("direction") or "").lower().strip()
             if not asset or not tf or direction not in {"long", "short"}:
                 continue
-            grouped.setdefault((asset, tf), []).append(s)
+            key = (asset, tf, direction)
+            grouped.setdefault(key, []).append(s)
 
         def _conf(sig: Signal) -> float:
             """Calculate confidence with ML boost."""
@@ -132,35 +137,25 @@ class SignalController:
                 return 0.0
 
         out: List[Signal] = []
-        for (asset, tf), items in grouped.items():
-            longs = [s for s in items if str(s.get("direction")).lower() == "long"]
-            shorts = [s for s in items if str(s.get("direction")).lower() == "short"]
-
-            long_sum = sum(_conf(s) for s in longs)
-            short_sum = sum(_conf(s) for s in shorts)
-
-            if long_sum == 0 and short_sum == 0:
+        for (asset, tf, direction), items in grouped.items():
+            if not items:
                 continue
-
-            winning = longs if long_sum >= short_sum else shorts
-            if not winning:
-                continue
-
-            winning_sorted = sorted(winning, key=_conf, reverse=True)
-            best = dict(winning_sorted[0])
+            
+            # Sort by confidence and pick the best signal for this (asset, timeframe, direction)
+            sorted_items = sorted(items, key=_conf, reverse=True)
+            best = dict(sorted_items[0])
 
             # Add contributor metadata for debugging/analysis
             try:
-                best["contributors"] = [str(s.get("strategy_name") or s.get("strategy") or "").strip() for s in winning if (s.get("strategy_name") or s.get("strategy"))]
-                best["contributor_groups"] = [str(s.get("strategy_group") or "").strip().lower() for s in winning if s.get("strategy_group")]
-                best["direction_score_long"] = float(long_sum)
-                best["direction_score_short"] = float(short_sum)
+                best["contributors"] = [str(s.get("strategy_name") or s.get("strategy") or "").strip() for s in items if (s.get("strategy_name") or s.get("strategy"))]
+                best["contributor_groups"] = [str(s.get("strategy_group") or "").strip().lower() for s in items if s.get("strategy_group")]
+                best["num_strategies"] = len(items)
                 # Track ML voting if signals have ML scores
-                if any(s.get("ml_probability") for s in winning):
+                if any(s.get("ml_probability") for s in items):
                     best["ml_voted"] = True
-                    winning_ml_probs = [s.get("ml_probability") for s in winning if s.get("ml_probability") is not None]
-                    if winning_ml_probs:
-                        best["winning_avg_ml_prob"] = sum(winning_ml_probs) / len(winning_ml_probs)
+                    ml_probs = [s.get("ml_probability") for s in items if s.get("ml_probability") is not None]
+                    if ml_probs:
+                        best["avg_ml_prob"] = sum(ml_probs) / len(ml_probs)
             except Exception:
                 pass
 

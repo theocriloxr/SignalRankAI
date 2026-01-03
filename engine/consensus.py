@@ -37,8 +37,8 @@ def consensus_filter(signals, min_score=None):
         # - 1.4: Strict (2 strategies @ 0.7+)
         # - 2.0: Very Strict (3 strategies @ 0.67+)
         # 
-        # Default to 0.8 for balanced signal generation with quality control
-        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.8)
+        # Default to 0.6 for more generous signal generation (single strategy @ 0.6+)
+        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.6)
 
     try:
         min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())
