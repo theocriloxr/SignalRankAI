@@ -79,12 +79,30 @@ def regime_fit_score(signal, regime=None):
 
 
 def volatility_quality_score(signal):
+    """Score volatility quality (lower volatility = higher score).
+    
+    Targets:
+    - vol <= 0.10 (10%): score 1.0 (ideal low-volatility environment)
+    - vol = 0.15 (15%): score 0.67 (acceptable)
+    - vol = 0.20 (20%): score 0.33 (high-volatility warning)
+    - vol > 0.20: score 0.0 (reject high volatility)
+    
+    Rationale: High volatility = higher slippage risk + wider stops = poor RR
+    """
     vol = signal.get("volatility", 0.0)
     try:
         vol = float(vol)
     except Exception:
         vol = 0.0
-    return float(1.0 - min(max(vol, 0.0), 1.0))
+    
+    # Quadratic penalty for volatility (more aggressive rejection of high vol)
+    if vol >= 0.20:
+        return 0.0  # Reject high-volatility environments
+    elif vol <= 0.10:
+        return 1.0  # Ideal low-volatility
+    else:
+        # Linear scale from 0.10 to 0.20
+        return float(1.0 - ((vol - 0.10) / 0.10))
 
 
 def historical_winrate_score(signal):
