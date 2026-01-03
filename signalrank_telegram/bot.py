@@ -1102,6 +1102,21 @@ def run_bot() -> None:
         hour=18,
         minute=0
     )
+    # Auto-downgrade expired subscriptions (daily at 00:00 UTC)
+    scheduler.add_job(
+        downgrade_expired_subscriptions_job,
+        'cron',
+        hour=0,
+        minute=0,
+    )
+    # Auto-delete old signals (weekly, Sunday at 01:00 UTC)
+    scheduler.add_job(
+        auto_delete_old_signals_job,
+        'cron',
+        day_of_week='sun',
+        hour=1,
+        minute=0,
+    )
     scheduler.start()
 
     print("[boot] telegram bot polling starting", flush=True)

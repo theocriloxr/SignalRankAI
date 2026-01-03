@@ -6,7 +6,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, func, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
@@ -985,3 +985,118 @@ async def process_referral_start(
     result["status"] = "reward_granted"
     result["days_granted"] = int(grant_days)
     return result
+
+# === NEW: Signal Archiving & Outcome Handling ===
+
+async def archive_signal_after_outcome(session: AsyncSession, signal_id: str) -> None:
+    """Mark signal as archived (soft delete) after outcome is recorded."""
+    res = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
+    sig = res.scalar_one_or_none()
+    if sig is not None:
+        sig.archived = True
+        await session.flush()
+
+
+async def list_unresolved_signals_for_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+) -> list[Signal]:
+    """Return unresolved signals (no outcome yet) delivered to this user, excluding archived."""
+    res = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user = res.scalar_one_or_none()
+    if user is None:
+        return []
+
+    q = (
+        select(Signal)
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(
+            SignalDelivery.user_id == user.id,
+            Signal.archived == False,
+            ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
+        )
+        .order_by(SignalDelivery.delivered_at.desc())
+    )
+    res2 = await session.execute(q)
+    return list(res2.scalars().all())
+
+
+async def delete_old_signals(session: AsyncSession, older_than_days: int = 7) -> int:
+    """Hard delete signals older than N days. Called periodically."""
+    cutoff = _utcnow() - timedelta(days=max(1, int(older_than_days)))
+    res = await session.execute(
+        select(Signal.signal_id).where(Signal.created_at < cutoff)
+    )
+    old_signal_ids = [row[0] for row in res.all()]
+    if not old_signal_ids:
+        return 0
+
+    # Delete dependent records
+    for sig_id in old_signal_ids:
+        await session.execute(select(SignalDelivery).where(SignalDelivery.signal_id == sig_id))
+        await session.execute(select(Outcome).where(Outcome.signal_id == sig_id))
+
+    # Hard delete
+    await session.execute(
+        delete(Signal).where(Signal.signal_id.in_(old_signal_ids))
+    )
+    await session.flush()
+    return len(old_signal_ids)
+
+
+async def extend_subscription_with_bonus(
+    session: AsyncSession,
+    telegram_user_id: int,
+    bonus_days: int,
+) -> Optional[datetime]:
+    """Add bonus_days to user's active subscription expires_at date. Return new expires_at."""
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    
+    # Find active subscription
+    res = await session.execute(
+        select(Subscription)
+        .where(Subscription.user_id == user.id, Subscription.status == "active")
+        .order_by(Subscription.expires_at.desc())
+        .limit(1)
+    )
+    sub = res.scalar_one_or_none()
+    if sub is None:
+        return None
+
+    if sub.expires_at is None:
+        # No expiry = lifetime/free; don't extend
+        return None
+
+    new_expires = sub.expires_at + timedelta(days=int(bonus_days))
+    sub.expires_at = new_expires
+    sub.bonus_days = (int(sub.bonus_days or 0)) + int(bonus_days)
+    await session.flush()
+    return new_expires
+
+
+async def downgrade_expired_subscriptions(session: AsyncSession) -> int:
+    """Check all subscriptions; downgrade expired ones to FREE tier. Return count."""
+    now = _utcnow()
+    res = await session.execute(
+        select(Subscription)
+        .where(
+            Subscription.status == "active",
+            Subscription.expires_at.is_not(None),
+            Subscription.expires_at < now,
+            Subscription.tier != "free",
+        )
+    )
+    expired = list(res.scalars().all())
+    count = 0
+    for sub in expired:
+        sub.status = "expired"
+        sub.tier = "free"
+        
+        # Update user tier to free
+        user = sub.user
+        if user.tier != "free":
+            user.tier = "free"
+            count += 1
+        await session.flush()
+
+    return count

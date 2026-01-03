@@ -38,6 +38,7 @@ class Subscription(Base):
     status: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="active")
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    bonus_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # Referral bonus days to stack
 
     paystack_reference: Mapped[Optional[str]] = mapped_column(String(128), unique=True, nullable=True)
     meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
@@ -97,7 +98,8 @@ class Signal(Base):
 
     # Optional deduplication key for “same signal” within a short window (e.g., 24h).
     fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
-
+    # Soft delete: signal with outcome is excluded from /signals queries but kept for history
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
