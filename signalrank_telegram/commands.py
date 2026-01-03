@@ -172,12 +172,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		lines = ["🆓 Unresolved Signals (Summary)", ""]
 		for s in unresolved_signals[:5]:
-			score = float(s.get('score') or 0)
 			entry = float(s.get('entry') or 0)
 			sig_id = s.get('signal_id', 'N/A')[:8]  # First 8 chars of ID
 			lines.append(
 				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
-				f"  ID: {sig_id} | Entry: {entry:.4f} | Score: {score:.1f}\n"
+				f"  ID: {sig_id} | Entry: {entry:.4f}\n"
 				f"  Position: /outcome {sig_id}"
 			)
 		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
@@ -614,9 +613,13 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		except Exception:
 			vip_cut = 72.0
 		
-		show_levels = user_tier in {"vip", "premium", "owner", "admin"}
-		show_strategy = user_tier in {"vip", "owner", "admin"}
-		show_strength = user_tier in {"vip", "owner", "admin"}
+		# Owner always gets VIP format
+		if user_tier in {"owner", "admin"}:
+			user_tier = "vip"
+		
+		show_levels = user_tier in {"vip", "premium"}
+		show_strategy = user_tier in {"vip"}
+		show_strength = user_tier in {"vip"}
 		
 		lines = ["🔄 Signal In Progress", ""]
 		
@@ -651,9 +654,10 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			if sig.regime:
 				lines.append(f"Regime: {sig.regime}")
 		
-		# Score (all tiers)
-		lines.append("")
-		lines.append(f"Score: {sig.score:.2f}")
+		# Score (premium+ only, not FREE)
+		if show_levels:
+			lines.append("")
+			lines.append(f"Score: {sig.score:.2f}")
 		
 		# RR Estimate (premium+)
 		if show_levels and sig.rr_estimate is not None:

@@ -69,6 +69,7 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	show_ml = label in {'VIP', 'OWNER', 'ADMIN'}
 	show_rr_detail = label in {'VIP', 'OWNER', 'ADMIN'}
 	show_contributors = label in {'VIP', 'OWNER', 'ADMIN'}
+	show_confidence = label in {'PREMIUM', 'VIP', 'OWNER', 'ADMIN'}  # Hide confidence from FREE
 
 	msg = f"""\
 🚀 TRADE ALERT — {label}
@@ -83,8 +84,12 @@ Timeframe: {signal.get('timeframe')}
 Stop Loss: {signal.get('stop_loss')}
 Take Profit: {signal.get('take_profit')}
 """
+	else:
+		# FREE tier: encourage upgrade
+		msg += "\n🔒 Upgrade to PREMIUM to see Entry, Stop Loss, and Take Profit levels.\n"
 	
-	msg += f"""Confidence Score: {signal.get('score')}/100
+	if show_confidence:
+		msg += f"""Confidence Score: {signal.get('score')}/100
 Suggested risk: {_risk_suggestion(signal.get('score'))}
 """
 
