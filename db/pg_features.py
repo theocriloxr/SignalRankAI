@@ -216,8 +216,9 @@ async def record_signal_delivery(
         dedupe_hours = int((os.getenv("DELIVERY_DEDUPE_HOURS") or "24").strip())
     except Exception:
         dedupe_hours = 24
-    dedupe_hours = max(1, int(dedupe_hours))
-    cutoff = _utcnow() - timedelta(hours=int(dedupe_hours))
+    # Allow DELIVERY_DEDUPE_HOURS=0 to completely disable deduping (force resend).
+    dedupe_hours = max(0, int(dedupe_hours))
+    cutoff = _utcnow() - timedelta(hours=int(dedupe_hours)) if dedupe_hours > 0 else None
 
     # Optional deployment reset: ignore any deliveries recorded before this epoch.
     # Set DELIVERY_DEDUPE_RESET_EPOCH to a Unix timestamp (seconds) to treat all
@@ -231,45 +232,46 @@ async def record_signal_delivery(
         dedupe_reset_at = None
 
     if dedupe_reset_at:
-        cutoff = max(cutoff, dedupe_reset_at)
+        cutoff = max(cutoff, dedupe_reset_at) if cutoff else dedupe_reset_at
 
     tier_s = str(tier_at_send or "free").strip().lower()[:16]
 
-    try:
-        res_sig = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
-        sig = res_sig.scalar_one_or_none()
-        fp = getattr(sig, "fingerprint", None) if sig is not None else None
-        if fp:
-            # Per-user dedupe
-            res_u = await session.execute(
-                select(func.count(SignalDelivery.id))
-                .select_from(SignalDelivery)
-                .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
-                .where(
-                    SignalDelivery.user_id == user.id,
-                    Signal.fingerprint == fp,
-                    SignalDelivery.delivered_at >= cutoff,
+    if cutoff is not None:
+        try:
+            res_sig = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
+            sig = res_sig.scalar_one_or_none()
+            fp = getattr(sig, "fingerprint", None) if sig is not None else None
+            if fp:
+                # Per-user dedupe
+                res_u = await session.execute(
+                    select(func.count(SignalDelivery.id))
+                    .select_from(SignalDelivery)
+                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                    .where(
+                        SignalDelivery.user_id == user.id,
+                        Signal.fingerprint == fp,
+                        SignalDelivery.delivered_at >= cutoff,
+                    )
                 )
-            )
-            if int(res_u.scalar() or 0) > 0:
-                return False
+                if int(res_u.scalar() or 0) > 0:
+                    return False
 
-            # Per-tier dedupe (cohort)
-            res_t = await session.execute(
-                select(func.count(SignalDelivery.id))
-                .select_from(SignalDelivery)
-                .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
-                .where(
-                    SignalDelivery.tier_at_send == tier_s,
-                    Signal.fingerprint == fp,
-                    SignalDelivery.delivered_at >= cutoff,
+                # Per-tier dedupe (cohort)
+                res_t = await session.execute(
+                    select(func.count(SignalDelivery.id))
+                    .select_from(SignalDelivery)
+                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                    .where(
+                        SignalDelivery.tier_at_send == tier_s,
+                        Signal.fingerprint == fp,
+                        SignalDelivery.delivered_at >= cutoff,
+                    )
                 )
-            )
-            if int(res_t.scalar() or 0) > 0:
-                return False
-    except Exception:
-        # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
-        pass
+                if int(res_t.scalar() or 0) > 0:
+                    return False
+        except Exception:
+            # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
+            pass
 
     before = len(session.new)
     delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s)
