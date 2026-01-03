@@ -1,6 +1,7 @@
 import os
 import asyncio
 import socket
+import logging
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 from datetime import datetime
@@ -71,6 +72,29 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+async def _send_message_async(bot: Bot, chat_id: int, text: str) -> None:
+    await bot.send_message(chat_id=chat_id, text=text)
+
+
+def _send_message_sync(bot: Bot, chat_id: int, text: str) -> None:
+    """Send a Telegram message from sync code.
+
+    python-telegram-bot v20+ uses async methods. The engine and APScheduler jobs
+    run in sync contexts, so we bridge with asyncio.
+    """
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(_send_message_async(bot, int(chat_id), str(text)))
+        return
+    # If we're already in an event loop, schedule it.
+    try:
+        loop.create_task(_send_message_async(bot, int(chat_id), str(text)))
+    except Exception:
+        pass
 
 
 def _audit_handler(command_name: str, handler):
@@ -366,7 +390,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         if sent >= int(limit):
                             break
                         try:
-                            bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                            _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
                             sent += 1
                             if tier == 'free' and extra_left > 0:
                                 try:
@@ -379,7 +403,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 for signal in reserved:
                     try:
-                        bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                        _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
@@ -423,7 +447,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             if sent >= limit:
                 break
             try:
-                bot.send_message(chat_id=user_id, text=format_signal(signal, display_tier=tier))
+                _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=tier))
                 sent += 1
             except Exception:
                 continue
@@ -463,7 +487,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         # As a last resort, send the limited preview
         try:
             bot = Bot(token=_require_telegram_token())
-            bot.send_message(chat_id=user_id, text=_format_free_preview(signals_list[0]))
+            _send_message_sync(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
         except Exception:
             pass
         # Postgres-only: no SQLite fallback
@@ -478,6 +502,17 @@ def run_bot() -> None:
     """
 
     from apscheduler.schedulers.background import BackgroundScheduler
+
+    # Avoid leaking bot token in logs: httpx logs full request URLs at INFO.
+    # We keep errors, but silence INFO/DEBUG.
+    try:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+    except Exception:
+        pass
+    try:
+        logging.getLogger("telegram").setLevel(logging.WARNING)
+    except Exception:
+        pass
 
     application = Application.builder().token(_require_telegram_token()).build()
 

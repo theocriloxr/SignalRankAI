@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import desc, select
@@ -34,7 +34,7 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
     if ENGINE is None:
         return "free"
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     async with get_session() as session:
         res_user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
         user = res_user.scalar_one_or_none()

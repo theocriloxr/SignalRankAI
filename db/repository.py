@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from sqlalchemy import func, select
@@ -25,7 +25,7 @@ async def get_active_subscription(
     tier: str,
 ) -> Optional[Subscription]:
     tier_norm = normalize_tier(tier)
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     res = await session.execute(
         select(Subscription)
         .join(User, User.id == Subscription.user_id)
@@ -45,7 +45,7 @@ async def count_active_vip_users(
     session: AsyncSession,
     exclude_telegram_user_ids: set[int],
 ) -> int:
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     q = (
         select(func.count(func.distinct(Subscription.user_id)))
         .select_from(Subscription)
@@ -125,7 +125,7 @@ async def activate_subscription(
 
     user = await get_or_create_user(session, telegram_user_id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     tier_norm = normalize_tier(tier)
     add_days = max(int(duration_days), 1)
 
@@ -157,7 +157,7 @@ async def activate_subscription(
 
 async def expire_subscriptions(session: AsyncSession) -> int:
     """Mark active subscriptions as expired if past expiry."""
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     stmt = (
         update(Subscription)
         .where(

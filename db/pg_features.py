@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
 from sqlalchemy import and_, func, select, update
@@ -52,7 +52,10 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    # IMPORTANT: Return a naive UTC datetime.
+    # Our Postgres schema uses TIMESTAMP WITHOUT TIME ZONE, and asyncpg
+    # will raise DataError if we bind timezone-aware datetimes.
+    return datetime.utcnow()
 
 
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
