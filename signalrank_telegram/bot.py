@@ -519,7 +519,49 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             pass
         # Postgres-only: no SQLite fallback
         return
-        
+
+
+def downgrade_expired_subscriptions_job():
+    """Daily job: downgrade expired subscriptions to FREE tier."""
+    logger.info("🔄 Checking for expired subscriptions...")
+    try:
+        from db.session import get_session
+        from db.pg_features import downgrade_expired_subscriptions
+
+        async def _do_downgrade():
+            async with get_session() as session:
+                count = await downgrade_expired_subscriptions(session)
+                if count > 0:
+                    logger.info(f"📉 Downgraded {count} user(s) to FREE tier")
+                    await session.commit()
+                else:
+                    logger.info("✅ No expired subscriptions to downgrade")
+
+        asyncio.run(_do_downgrade())
+    except Exception as e:
+        logger.error(f"❌ Error downgrading subscriptions: {e}")
+
+
+def auto_delete_old_signals_job():
+    """Weekly job: hard delete signals older than 7 days."""
+    logger.info("🗑️ Deleting old signals (>7 days)...")
+    try:
+        from db.session import get_session
+        from db.pg_features import delete_old_signals
+
+        async def _do_delete():
+            async with get_session() as session:
+                count = await delete_old_signals(session, older_than_days=7)
+                if count > 0:
+                    logger.info(f"🗑️ Deleted {count} old signal(s)")
+                    await session.commit()
+                else:
+                    logger.info("✅ No old signals to delete")
+
+        asyncio.run(_do_delete())
+    except Exception as e:
+        logger.error(f"❌ Error deleting old signals: {e}")
+
 
 def run_bot() -> None:
     """Run the Telegram polling bot.
