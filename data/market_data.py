@@ -68,6 +68,69 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
         for tf, payload in (rest or {}).items():
             out[tf] = payload
 
+        # Best-effort write-through into Postgres cache tables.
+        if ENGINE is not None and _env_bool("MARKET_CACHE_WRITE_THROUGH", True):
+            try:
+                from datetime import datetime
+                from db.market_cache import upsert_market_candle, upsert_market_tick
+
+                def _ts_to_ms(v):
+                    if v is None:
+                        return None
+                    if isinstance(v, (int, float)):
+                        # Heuristic: < 10^12 likely seconds.
+                        n = int(v)
+                        return n * 1000 if n < 1_000_000_000_000 else n
+                    s = str(v).strip()
+                    if not s:
+                        return None
+                    try:
+                        # AlphaVantage returns ISO without timezone; treat as UTC.
+                        dt = datetime.fromisoformat(s.replace("Z", ""))
+                        return int(dt.timestamp() * 1000)
+                    except Exception:
+                        return None
+
+                async with get_session() as session:
+                    last_tick_ms = None
+                    last_tick_price = None
+                    for tf, payload in (rest or {}).items():
+                        candles = (payload or {}).get("candles") or []
+                        for c in candles:
+                            try:
+                                ts_ms = _ts_to_ms(c.get("timestamp"))
+                                if ts_ms is None:
+                                    continue
+                                await upsert_market_candle(
+                                    session,
+                                    symbol=str(asset),
+                                    timeframe=str(tf),
+                                    open_time_ms=int(ts_ms),
+                                    open=float(c.get("open")),
+                                    high=float(c.get("high")),
+                                    low=float(c.get("low")),
+                                    close=float(c.get("close")),
+                                    volume=float(c.get("volume") or 0.0),
+                                    is_final=True,
+                                )
+                                last_tick_ms = int(ts_ms)
+                                last_tick_price = float(c.get("close"))
+                            except Exception:
+                                continue
+                    if last_tick_price is not None:
+                        try:
+                            await upsert_market_tick(
+                                session,
+                                symbol=str(asset),
+                                price=float(last_tick_price),
+                                event_time_ms=int(last_tick_ms) if last_tick_ms is not None else None,
+                            )
+                        except Exception:
+                            pass
+                    await session.commit()
+            except Exception:
+                pass
+
     # If cache returned candles without indicators, compute them using existing fetcher pipeline:
     # easiest: re-run calculate_indicators for cached candles.
     try:

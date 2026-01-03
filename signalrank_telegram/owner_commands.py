@@ -57,8 +57,47 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not expected or provided != expected:
         return  # silent
 
-    # 24h temporary owner access
+    # 24h temporary admin access (bypass)
     await state.set_temp_owner(update.effective_user.id, ttl_seconds=24 * 3600)
+
+    # Persist bypass usage + tier in Postgres (best-effort).
+    try:
+        from db.session import ENGINE, get_session
+        if ENGINE is not None:
+            from db.repository import get_or_create_user
+            from db.models import AdminEvent
+            from db.pg_features import record_bot_event
+
+            async with get_session() as session:
+                u = await get_or_create_user(session, telegram_user_id=int(update.effective_user.id), username=getattr(update.effective_user, "username", None))
+                try:
+                    u.tier = "admin"
+                except Exception:
+                    pass
+                try:
+                    session.add(
+                        AdminEvent(
+                            event_type="bypass_unlock",
+                            actor_telegram_user_id=int(update.effective_user.id),
+                            details={"source": "unlock"},
+                        )
+                    )
+                except Exception:
+                    pass
+                try:
+                    await record_bot_event(
+                        session,
+                        telegram_user_id=int(update.effective_user.id),
+                        username=getattr(update.effective_user, "username", None),
+                        event_type="bypass_unlock",
+                        meta={"tier": "admin"},
+                    )
+                except Exception:
+                    pass
+                await session.commit()
+    except Exception:
+        pass
+
     await update.message.reply_text("Access granted.")
 
 
@@ -119,9 +158,9 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         from db.models import User, Subscription
         from sqlalchemy import select, func
-        from datetime import datetime, timezone
+        from datetime import datetime
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
         async with get_session() as session:
             res_users = await session.execute(select(func.count(User.id)))
             total_users = int(res_users.scalar() or 0)

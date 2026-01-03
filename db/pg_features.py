@@ -25,6 +25,31 @@ from db.models import (
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
 
 
+async def ensure_alert_prefs(session: AsyncSession, telegram_user_id: int) -> None:
+    """Ensure a default alert_prefs row exists for the user."""
+    user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+    res = await session.execute(select(AlertPreference).where(AlertPreference.user_id == user.id))
+    pref = res.scalar_one_or_none()
+    if pref is not None:
+        return
+    session.add(AlertPreference(user_id=user.id, tp_sl_enabled=True, updated_at=_utcnow()))
+    await session.flush()
+
+
+async def _touch_strategy_stat(session: AsyncSession, *, strategy_name: str, strategy_group: str) -> None:
+    name = str(strategy_name or "unknown")[:64]
+    group = str(strategy_group or "unknown")[:32]
+    res = await session.execute(
+        select(StrategyStat).where(StrategyStat.strategy_name == name, StrategyStat.strategy_group == group)
+    )
+    row = res.scalar_one_or_none()
+    if row is None:
+        session.add(StrategyStat(strategy_name=name, strategy_group=group, updated_at=_utcnow()))
+    else:
+        row.updated_at = _utcnow()
+    await session.flush()
+
+
 async def record_bot_event(
     session: AsyncSession,
     *,
@@ -166,6 +191,12 @@ async def get_or_create_signal(
     )
     session.add(s)
     await session.flush()
+
+    # Ensure strategy_stats has a row for this strategy.
+    try:
+        await _touch_strategy_stat(session, strategy_name=strategy_name, strategy_group=strategy_group)
+    except Exception:
+        pass
     return s
 
 
@@ -178,7 +209,8 @@ async def record_signal_delivery(
     user = await get_or_create_user(session, telegram_user_id=telegram_user_id)
 
     before = len(session.new)
-    delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=normalize_tier(tier_at_send))
+    tier_s = str(tier_at_send or "free").strip().lower()[:16]
+    delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s)
     session.add(delivery)
     try:
         await session.flush()
@@ -541,17 +573,31 @@ async def queue_free_signal_summary(
         daily_limit = 2
 
     now = _utcnow()
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
-
     user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+
+    # Daily window is anchored to the user's join time (created_at), not midnight.
+    # Example: if user joined at 09:24 UTC, their "day" runs 09:24 → next 09:24.
+    try:
+        anchor = user.created_at
+        window_start = now.replace(
+            hour=int(anchor.hour),
+            minute=int(anchor.minute),
+            second=int(anchor.second),
+            microsecond=0,
+        )
+        if window_start > now:
+            window_start = window_start - timedelta(days=1)
+    except Exception:
+        window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    window_end = window_start + timedelta(days=1)
 
     # Enforce per-day cap (queued + sent)
     res = await session.execute(
         select(func.count(FreeSignalQueue.id)).where(
             FreeSignalQueue.user_id == user.id,
-            FreeSignalQueue.date >= today_start,
-            FreeSignalQueue.date < today_end,
+            FreeSignalQueue.date >= window_start,
+            FreeSignalQueue.date < window_end,
             FreeSignalQueue.status.in_(["queued", "sent"]),
         )
     )
@@ -565,8 +611,8 @@ async def queue_free_signal_summary(
     res_dupe = await session.execute(
         select(func.count(FreeSignalQueue.id)).where(
             FreeSignalQueue.user_id == user.id,
-            FreeSignalQueue.date >= today_start,
-            FreeSignalQueue.date < today_end,
+            FreeSignalQueue.date >= window_start,
+            FreeSignalQueue.date < window_end,
             FreeSignalQueue.signal_id == s.signal_id,
             FreeSignalQueue.status.in_(["queued", "sent"]),
         )
@@ -577,7 +623,7 @@ async def queue_free_signal_summary(
     deliver_after = now + timedelta(minutes=max(0, int(delay_minutes)))
     q = FreeSignalQueue(
         user_id=user.id,
-        date=today_start,
+        date=window_start,
         signal_id=s.signal_id,
         asset=str(s.asset),
         timeframe=str(s.timeframe),

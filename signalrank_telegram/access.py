@@ -16,10 +16,10 @@ def resolve_user_tier(user_id):
         return "OWNER"
 
     # If a user was granted temporary owner access via /unlock,
-    # treat them as OWNER (this is invalidated automatically when BYPASS_KEY rotates).
+    # treat them as ADMIN (this is invalidated automatically when BYPASS_KEY rotates).
     try:
         if state.has_temp_owner_sync(int(user_id)):
-            return "OWNER"
+            return "ADMIN"
     except Exception:
         pass
 

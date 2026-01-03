@@ -50,6 +50,7 @@ TIER_LIMITS = {
     'free': 2,
     'premium': 10,
     'vip': 30,
+    'admin': 9999,
     'owner': 9999,
 }
 
@@ -294,8 +295,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         elif tier in ('premium',):
             # Premium sees full signals (premium + vip)
             signals_list = vip_list + prem_list
-        elif tier in ('owner',):
-            # Owner sees all subscriber-grade signals, but formatted as VIP.
+        elif tier in ('owner', 'admin'):
+            # Owner/Admin see all subscriber-grade signals.
             signals_list = vip_list + prem_list
         else:
             # Free: delayed summaries from top approved signals
@@ -324,6 +325,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 # Owner receives VIP formatting while keeping owner volume limits.
                 display_tier = 'vip'
                 effective_tier = 'vip'
+            if tier == 'admin':
+                # Admin receives the same set as owner, but store tier distinctly.
+                display_tier = 'vip'
+                effective_tier = 'admin'
 
             if effective_tier in ('premium', 'vip', 'owner'):
                 bot = Bot(token=_require_telegram_token())

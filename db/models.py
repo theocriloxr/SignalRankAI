@@ -23,6 +23,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    tier: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")  # type: ignore[name-defined]

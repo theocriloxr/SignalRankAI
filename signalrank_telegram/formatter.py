@@ -26,10 +26,18 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	except Exception:
 		ref = None
 
+	# Short user-facing reference: keep DB IDs intact, display a prefix.
+	ref_short = None
+	try:
+		if ref:
+			ref_short = ref[:8]
+	except Exception:
+		ref_short = None
+
 	if limited:
 		lines = ["🔒 FREE USER (LIMITED SIGNAL)", ""]
-		if ref:
-			lines.append(f"Reference: {ref}")
+		if ref_short:
+			lines.append(f"Reference: {ref_short}")
 		lines += [
 			f"Asset: {signal.get('asset')}",
 			f"Timeframe: {signal.get('timeframe')}",
@@ -41,7 +49,12 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 
 	# Full detail
 	if display_tier is None:
-		display_tier = 'vip' if float(signal.get('score', 0) or 0) >= 85 else 'premium'
+		try:
+			import os
+			vip_cut = float((os.getenv("VIP_SCORE_THRESHOLD") or "72").strip())
+		except Exception:
+			vip_cut = 72.0
+		display_tier = 'vip' if float(signal.get('score', 0) or 0) >= vip_cut else 'premium'
 	label = str(display_tier).strip().upper()
 
 	msg = f"""\
@@ -58,8 +71,21 @@ Confidence Score: {signal.get('score')}/100
 Suggested risk: {_risk_suggestion(signal.get('score'))}
 Market Regime: {signal.get('regime', 'N/A')}
 """
-	if ref:
-		msg = f"Reference: {ref}\n" + msg
+	if ref_short:
+		msg = f"Reference: {ref_short}\n" + msg
+
+	# Extra detail for VIP-ish tiers
+	if label in {'VIP', 'OWNER', 'ADMIN'}:
+		try:
+			strategy = signal.get('strategy_name') or signal.get('strategy')
+			group = signal.get('strategy_group')
+			strength = signal.get('strength')
+			if strategy:
+				msg += f"\nStrategy: {strategy}" + (f" ({group})" if group else "")
+			if strength is not None:
+				msg += f"\nStrength: {strength}"
+		except Exception:
+			pass
 
 	# Show ML confidence only for VIP-ish tiers
 	if label in {'VIP', 'OWNER'} and signal.get('ml_probability') is not None:

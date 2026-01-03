@@ -78,16 +78,22 @@ async def get_or_create_user(
     session: AsyncSession,
     telegram_user_id: int,
     username: Optional[str] = None,
+    tier: Optional[str] = None,
 ) -> User:
     res = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
     user = res.scalar_one_or_none()
     if user is not None:
         if username and user.username != username:
             user.username = username
+        if tier:
+            try:
+                user.tier = str(tier).strip().lower()[:16]
+            except Exception:
+                pass
             await session.flush()
         return user
 
-    user = User(telegram_user_id=telegram_user_id, username=username)
+    user = User(telegram_user_id=telegram_user_id, username=username, tier=(str(tier).strip().lower()[:16] if tier else "free"))
     session.add(user)
     try:
         await session.flush()

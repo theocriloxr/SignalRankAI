@@ -875,11 +875,17 @@ async def start_command(update, context):
 			from sqlalchemy import select
 			from db.repository import get_or_create_user
 			from db.pg_features import record_bot_event
+			from db.pg_features import ensure_alert_prefs
 			async with get_session() as session:
 				res = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 				existing = res.scalar_one_or_none()
 				is_new = existing is None
 				await get_or_create_user(session, telegram_user_id=user_id, username=username)
+				# Ensure alert preferences row exists for all users.
+				try:
+					await ensure_alert_prefs(session, int(user_id))
+				except Exception:
+					pass
 
 				# Referral attribution (only for first-time users)
 				code = None
