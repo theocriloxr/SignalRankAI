@@ -672,6 +672,165 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		if show_strength and sig.strength is not None:
 			lines.append(f"Strength: {sig.strength}")
 		
+		# Current position (live price and advice) - for all tiers
+		lines.append("")
+		lines.append("📍 Current Position")
+		
+		# Get live price and calculate position
+		def _as_float(v):
+			try:
+				return float(v)
+			except Exception:
+				return None
+		
+		def _parse_tp(tp_raw):
+			if tp_raw is None:
+				return None
+			if isinstance(tp_raw, (int, float)):
+				return float(tp_raw)
+			s = str(tp_raw).strip()
+			if not s:
+				return None
+			try:
+				data = json.loads(s)
+				if isinstance(data, list) and data:
+					return float(data[0])
+				if isinstance(data, (int, float)):
+					return float(data)
+			except Exception:
+				pass
+			try:
+				return float(s)
+			except Exception:
+				return None
+		
+		def _is_crypto(symbol: str) -> bool:
+			s = (symbol or "").upper().strip()
+			return s.endswith("USDT") or s.endswith("USDC") or s.endswith("BUSD")
+		
+		def _binance_symbol_rest(asset: str) -> str:
+			a = (asset or "").upper().strip()
+			a = a.replace("/", "").replace("-", "")
+			if a.endswith("USD") and not a.endswith("USDT"):
+				a = a[:-3] + "USDT"
+			return a
+		
+		def _current_price(asset: str) -> float | None:
+			if not _is_crypto(asset):
+				return None
+			try:
+				import requests
+				sym = _binance_symbol_rest(asset)
+				if not sym:
+					return None
+				resp = requests.get(
+					"https://api.binance.com/api/v3/ticker/price",
+					params={"symbol": sym},
+					timeout=8,
+				)
+				if resp.ok:
+					payload = resp.json() if resp.ok else {}
+					price = payload.get("price")
+					return float(price) if price is not None else None
+				
+				# Fallback: CryptoCompare
+				base = sym
+				quote = "USDT"
+				for q in ("USDT", "USDC", "BUSD", "USD"):
+					if base.endswith(q) and len(base) > len(q):
+						base = base[: -len(q)]
+						quote = q
+						break
+				base = (base or "").upper().strip()
+				quote = (quote or "").upper().strip()
+				if not base or not quote:
+					return None
+				
+				headers = {}
+				api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+				if api_key:
+					headers["authorization"] = f"Apikey {api_key}"
+				
+				url = "https://min-api.cryptocompare.com/data/price"
+				params = {"fsym": base, "tsyms": ",".join([quote, "USDT", "USD", "USDC", "BUSD"])}
+				resp2 = requests.get(url, params=params, headers=headers, timeout=10)
+				if not resp2.ok:
+					return None
+				payload2 = resp2.json() if resp2.ok else {}
+				if not isinstance(payload2, dict):
+					return None
+				for q in (quote, "USDT", "USD", "USDC", "BUSD"):
+					try:
+						v = payload2.get(q)
+						if v is None:
+							continue
+						return float(v)
+					except Exception:
+						continue
+				return None
+			except Exception:
+				return None
+		
+		def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
+			"""Return (advice_text, metrics)."""
+			direction = (direction or "").lower().strip()
+			risk = abs(entry - sl)
+			reward = abs(tp - entry)
+			metrics: dict = {"risk": risk, "reward": reward}
+			if risk <= 0 or reward <= 0:
+				return ("Manage risk carefully. Consider waiting for clearer conditions.", metrics)
+			
+			if direction == "long":
+				pl_pct = ((price - entry) / entry) * 100.0
+				progress = (price - entry) / (tp - entry) if (tp - entry) != 0 else 0.0
+				dist_to_sl = (price - sl)
+			else:
+				pl_pct = ((entry - price) / entry) * 100.0
+				progress = (entry - price) / (entry - tp) if (entry - tp) != 0 else 0.0
+				dist_to_sl = (sl - price)
+			
+			metrics.update({"pl_pct": pl_pct, "progress": progress})
+			near_sl = (dist_to_sl / risk) <= 0.2
+			if progress >= 1.0:
+				return ("✅ Target zone reached. Consider taking profit (full or partial) and managing trailing risk.", metrics)
+			if progress >= 0.75:
+				return ("📌 Close to TP. Consider partial take-profit and move SL to breakeven if your plan allows.", metrics)
+			if progress >= 0.30:
+				return ("⏳ In profit but not near TP yet. Consider waiting for full TP, or take partial if volatility is high.", metrics)
+			if near_sl:
+				return ("⚠️ Price is close to SL zone. Consider reducing exposure or exiting early to avoid a full SL hit.", metrics)
+			return ("⏳ Still developing. Consider waiting; avoid moving SL further away.", metrics)
+		
+		# Calculate current position
+		entry = _as_float(sig.entry)
+		sl = _as_float(sig.stop_loss)
+		tp = _parse_tp(sig.take_profit)
+		
+		if entry is not None and sl is not None and tp is not None:
+			price = _current_price(str(sig.asset))
+			if price is not None:
+				advice, metrics = _position_advice(
+					direction=str(sig.direction),
+					entry=float(entry),
+					sl=float(sl),
+					tp=float(tp),
+					price=float(price),
+				)
+				lines.append(f"Current Price: {price:.6g}")
+				try:
+					pl_pct = metrics.get('pl_pct', 0)
+					progress = metrics.get('progress', 0)
+					lines.append(f"P/L: {float(pl_pct):.2f}%")
+					lines.append(f"Progress to TP: {max(0.0, min(1.0, float(progress))) * 100.0:.0f}%")
+				except Exception:
+					pass
+				lines.append("")
+				lines.append(f"💡 {advice}")
+			else:
+				lines.append("Current Price: Unavailable (check later)")
+		else:
+			lines.append("Position data incomplete")
+		
 		# Status message
 		lines.extend(["", "⏳ Outcome not determined yet."])
 		

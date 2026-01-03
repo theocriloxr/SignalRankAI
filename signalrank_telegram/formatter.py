@@ -143,3 +143,37 @@ Suggested risk: {_risk_suggestion(signal.get('score'))}
 
 	msg += "\n\n⚠️ Educational only. Not financial advice."
 	return msg
+
+
+def format_signal_free_limited(signal):
+	"""Format a signal for FREE users with limited information.
+	
+	Shows: Reference, Asset, Timeframe, Direction only.
+	No Entry, SL, TP, or confidence scores.
+	"""
+	ref = signal.get("signal_id") or signal.get("id")
+	try:
+		ref = str(ref)
+	except Exception:
+		ref = None
+
+	ref_short = None
+	try:
+		if ref:
+			ref_short = ref[:8]
+	except Exception:
+		ref_short = None
+
+	lines = ["🔒 FREE USER (LIMITED SIGNAL)", ""]
+	if ref_short:
+		lines.append(f"Reference: {ref_short}")
+	lines += [
+		f"Asset: {signal.get('asset')}",
+		f"Timeframe: {signal.get('timeframe')}",
+		f"Direction: {signal.get('direction', 'N/A').upper()}",
+		"",
+		"🔒 Upgrade to PREMIUM to see Entry, Stop Loss, and Take Profit levels.",
+		"",
+		"⚠️ Educational only. Not financial advice."
+	]
+	return "\n".join(lines)
