@@ -1,11 +1,15 @@
 import os
+from pathlib import Path
 
 try:
     import xgboost as xgb  # type: ignore
 except Exception:  # pragma: no cover
     xgb = None
 
-MODEL_PATH = os.getenv("ML_MODEL_PATH", "ml/model.json")
+# Use absolute path relative to project root so it works both locally and on Railway
+PROJECT_ROOT = Path(__file__).parent.parent
+DEFAULT_MODEL_PATH = str(PROJECT_ROOT / "ml" / "model.json")
+MODEL_PATH = os.getenv("ML_MODEL_PATH", DEFAULT_MODEL_PATH)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:

@@ -17,3 +17,4 @@ SQLAlchemy>=2.0
 asyncpg>=0.29
 psycopg2-binary>=2.9
 alembic>=1.13
+xgboost>=2.0
