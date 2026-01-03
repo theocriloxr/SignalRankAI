@@ -14,10 +14,16 @@ def _risk_suggestion(score: float | int | None) -> str:
 
 
 def format_signal(signal, display_tier: str | None = None, limited: bool = False):
-	"""Format a signal for Telegram.
+	"""Format a signal for Telegram with tier-appropriate detail.
 
 	- display_tier: force header tier label (vip/premium/free)
 	- limited: Free-tier display (direction-only; no exact levels)
+	
+	Tier rules:
+	- FREE: Direction + asset + timeframe only (limited)
+	- PREMIUM: Full signal with SL/TP + confidence + regime
+	- VIP: Everything + strategy + strength + ML confidence + R/R analysis
+	- ADMIN: Same as VIP (sees all details)
 	"""
 
 	ref = signal.get("signal_id") or signal.get("id")
@@ -57,41 +63,78 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 		display_tier = 'vip' if float(signal.get('score', 0) or 0) >= vip_cut else 'premium'
 	label = str(display_tier).strip().upper()
 
+	# Determine what details to show based on tier
+	show_levels = label in {'PREMIUM', 'VIP', 'OWNER', 'ADMIN'}
+	show_strategy = label in {'VIP', 'OWNER', 'ADMIN'}
+	show_ml = label in {'VIP', 'OWNER', 'ADMIN'}
+	show_rr_detail = label in {'VIP', 'OWNER', 'ADMIN'}
+	show_contributors = label in {'VIP', 'OWNER', 'ADMIN'}
+
 	msg = f"""\
 🚀 TRADE ALERT — {label}
 
 Asset: {signal.get('asset')}
-Direction: {signal.get('direction')}
+Direction: {signal.get('direction').upper() if signal.get('direction') else 'N/A'}
 Timeframe: {signal.get('timeframe')}
-Entry: {signal.get('entry')}
+"""
+	
+	if show_levels:
+		msg += f"""Entry: {signal.get('entry')}
 Stop Loss: {signal.get('stop_loss')}
 Take Profit: {signal.get('take_profit')}
-Risk/Reward: {signal.get('rr_ratio')}
-Confidence Score: {signal.get('score')}/100
-Suggested risk: {_risk_suggestion(signal.get('score'))}
-Market Regime: {signal.get('regime', 'N/A')}
 """
+	
+	msg += f"""Confidence Score: {signal.get('score')}/100
+Suggested risk: {_risk_suggestion(signal.get('score'))}
+"""
+
+	if show_levels:
+		msg += f"Market Regime: {signal.get('regime', 'N/A')}\n"
+	
 	if ref_short:
 		msg = f"Reference: {ref_short}\n" + msg
 
-	# Extra detail for VIP-ish tiers
-	if label in {'VIP', 'OWNER', 'ADMIN'}:
+	# Strategy + strength for VIP+
+	if show_strategy:
 		try:
 			strategy = signal.get('strategy_name') or signal.get('strategy')
 			group = signal.get('strategy_group')
 			strength = signal.get('strength')
+			contributors = signal.get('contributors', [])
+			
 			if strategy:
-				msg += f"\nStrategy: {strategy}" + (f" ({group})" if group else "")
+				msg += f"\n📍 Primary Strategy: {strategy}"
+				if group:
+					msg += f" ({group})"
+			
+			if contributors and len(contributors) > 1:
+				msg += f"\n🤝 Contributors: {', '.join(contributors[:3])}"
+			
 			if strength is not None:
-				msg += f"\nStrength: {strength}"
+				msg += f"\n💪 Strength: {strength}"
 		except Exception:
 			pass
 
-	# Show ML confidence only for VIP-ish tiers
-	if label in {'VIP', 'OWNER'} and signal.get('ml_probability') is not None:
+	# ML confidence for VIP+
+	if show_ml and signal.get('ml_probability') is not None:
 		try:
-			msg += f"\n📊 ML Confidence: {round(float(signal['ml_probability'])*100, 1)}%"
+			ml_val = float(signal['ml_probability'])
+			ml_pct = round(ml_val * 100, 1)
+			ml_emoji = "✅" if ml_val >= 0.75 else ("⚠️" if ml_val >= 0.5 else "❌")
+			msg += f"\n{ml_emoji} ML Score: {ml_pct}% approval"
 		except Exception:
 			pass
+
+	# R/R analysis for VIP+
+	if show_rr_detail:
+		try:
+			rr = signal.get('rr_ratio')
+			if rr is not None:
+				rr_val = float(rr)
+				rr_emoji = "🔥" if rr_val >= 2.0 else ("✅" if rr_val >= 1.5 else "⚠️")
+				msg += f"\n{rr_emoji} Risk/Reward: {rr_val:.2f}:1"
+		except Exception:
+			pass
+
 	msg += "\n\n⚠️ Educational only. Not financial advice."
 	return msg

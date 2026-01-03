@@ -29,12 +29,15 @@ def consensus_filter(signals, min_score=None):
         return list(signals)
 
     if min_score is None:
-        # Default is intentionally permissive so the bot produces signals.
-        # Tune in production: e.g. 1.4 (needs ~2 strategies at 0.7 confidence),
-        # or 2.1 (needs ~3 strategies at 0.7 confidence).
-        # Many single-strategy signals in this codebase use ~0.6–0.65 confidence.
-        # Defaulting to 0.6 avoids filtering everything to zero in low-signal environments.
-        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.6)
+        # Consensus threshold: higher values = fewer but higher-quality signals
+        # Recommendations:
+        # - 0.6: Permissive (single strategy @ 0.6+ confidence)
+        # - 1.0: Moderate (single strategy @ 1.0+ or 2 @ 0.5+ confidence)
+        # - 1.4: Selective (2 strategies @ 0.7+)
+        # - 2.0: Strict (3 strategies @ 0.67+)
+        # 
+        # Default to 1.0 for balanced signal generation with quality control
+        min_score = _env_float("CONSENSUS_MIN_SCORE", 1.0)
 
     try:
         min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())
