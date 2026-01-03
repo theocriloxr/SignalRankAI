@@ -245,6 +245,19 @@ def main_loop(DRY_RUN=False):
 
             cycle_assets = len(assets)
 
+            # Optional visibility into what we are actually scanning.
+            if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
+                try:
+                    crypto_n = len([a for a in assets if is_crypto(a)])
+                    fx_n = len([a for a in assets if not is_crypto(a)])
+                    sample = ",".join([str(a) for a in list(assets)[:10]])
+                    print(
+                        f"[engine] cycle={cycle_no} assets_split crypto={crypto_n} fx={fx_n} sample={sample}",
+                        flush=True,
+                    )
+                except Exception:
+                    pass
+
             scored_signals_all = []
 
             # Fetch all market data once per cycle (avoids per-asset asyncio.run overhead).

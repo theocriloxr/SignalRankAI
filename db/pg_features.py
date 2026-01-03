@@ -562,7 +562,7 @@ async def queue_free_signal_summary(
             FreeSignalQueue.date >= today_start,
             FreeSignalQueue.date < today_end,
             FreeSignalQueue.signal_id == s.signal_id,
-            FreeSignalQueue.status.in_("queued", "sent"),
+            FreeSignalQueue.status.in_(["queued", "sent"]),
         )
     )
     if int(res_dupe.scalar() or 0) > 0:
