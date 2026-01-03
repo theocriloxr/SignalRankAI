@@ -33,15 +33,16 @@ class TestSignalController(unittest.TestCase):
 class TestUserTier(unittest.TestCase):
     def test_set_and_get_tier(self):
         # Postgres-only: without DATABASE_URL configured in local tests,
-        # tier resolution should default safely.
+        # tier resolution should default safely to FREE for reliability.
         user_id = 999999
         if postgres_enabled():
             tier = resolve_user_tier(user_id)
             self.assertIn(tier, {"FREE", "PREMIUM", "VIP", "OWNER"})
         else:
-            # When Postgres isn't configured, resolve_user_tier is expected to raise.
-            with self.assertRaises(Exception):
-                _ = resolve_user_tier(user_id)
+            # When Postgres isn't configured, resolve_user_tier gracefully returns "FREE"
+            # This ensures the bot continues to function without database access.
+            tier = resolve_user_tier(user_id)
+            self.assertEqual(tier, "FREE")
 
 if __name__ == "__main__":
     unittest.main()

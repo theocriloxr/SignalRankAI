@@ -11,31 +11,52 @@ except Exception:  # pragma: no cover
     _PG_ENGINE = None
 
 def resolve_user_tier(user_id):
-    """Postgres-only tier resolution. Returns OWNER/VIP/PREMIUM/FREE."""
-    if user_id in OWNER_IDS:
+    """Resolve user tier with priority: OWNER > ADMIN (temp) > DB tier > FREE.
+    
+    Tier Resolution Order:
+    1. Check OWNER_IDS config (highest priority - env variables)
+    2. Check temp ADMIN access via /unlock command
+    3. Query Postgres for user's actual tier
+    4. Default to FREE if all lookups fail
+    
+    IMPORTANT: If user is in OWNER_IDS, they are ALWAYS OWNER,
+    regardless of database tier. This prevents FREE DB tiers from overriding.
+    
+    Returns: OWNER|ADMIN|VIP|PREMIUM|FREE (uppercase)
+    """
+    try:
+        user_id_int = int(user_id)
+    except (ValueError, TypeError):
+        return "FREE"
+    
+    # PRIORITY 1: Check OWNER_IDS (environment variable - highest priority)
+    # This ensures owner is never marked as FREE from database
+    if user_id_int in OWNER_IDS:
         return "OWNER"
 
-    # If a user was granted temporary owner access via /unlock,
-    # treat them as ADMIN (this is invalidated automatically when BYPASS_KEY rotates).
+    # PRIORITY 2: Check temporary ADMIN access via /unlock command
+    # (This is invalidated automatically when BYPASS_KEY rotates)
     try:
-        if state.has_temp_owner_sync(int(user_id)):
+        if state.has_temp_owner_sync(user_id_int):
             return "ADMIN"
     except Exception:
         pass
 
-    # Postgres required
+    # PRIORITY 3: Query Postgres for user's tier (fallback)
     if _PG_ENGINE is None or _resolve_user_tier_pg is None:
-        raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
+        # If Postgres not available, return FREE
+        return "FREE"
 
     try:
         # PTB sync handlers commonly run in a worker thread; asyncio.run is safe there.
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            tier = asyncio.run(_resolve_user_tier_pg(int(user_id)))
-            return (tier or "free").strip().upper()
+            # No running loop - safe to use asyncio.run
+            tier = asyncio.run(_resolve_user_tier_pg(user_id_int))
+            return (tier or "FREE").strip().upper()
     except Exception:
         pass
 
-    # Default to FREE if lookup fails
+    # FALLBACK: Default to FREE if lookup fails
     return "FREE"

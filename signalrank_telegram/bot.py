@@ -267,6 +267,22 @@ def _format_free_preview(signal):
     )
 
 def dispatch_signals(strategy_signals, user_id, regime=None):
+    """Dispatch signals to user based on their tier.
+    
+    Tier-based Limits:
+    - OWNER: 9999 signals/day (all signals, real-time)
+    - ADMIN: 9999 signals/day (all signals, real-time)  
+    - VIP: 30 signals/day (real-time)
+    - PREMIUM: 10 signals/day (real-time)
+    - FREE: 2 signals/day (delayed queue)
+    
+    All signals must:
+    - Pass quality gates (confidence, RR, volatility)
+    - Score >= MIN_SCORE_THRESHOLD (55)
+    - Pass consensus check (CONSENSUS_MIN_SCORE)
+    - Pass risk validation (RR >= 1.5, vol <= 0.20)
+    - Pass ML filter if enabled
+    """
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
 
@@ -290,15 +306,18 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if isinstance(strategy_signals, dict):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
-        if tier in ('vip',):
-            signals_list = vip_list
+        
+        # Tier-based signal selection
+        if tier in ('owner', 'admin'):
+            # Owner/Admin see all signals (vip + premium)
+            signals_list = vip_list + prem_list
+        elif tier in ('vip',):
+            # VIP sees premium and above
+            signals_list = vip_list + prem_list
         elif tier in ('premium',):
             # Premium sees full signals (premium + vip)
             signals_list = vip_list + prem_list
-        elif tier in ('owner', 'admin'):
-            # Owner/Admin see all subscriber-grade signals.
-            signals_list = vip_list + prem_list
-        else:
+        else:  # FREE
             # Free: delayed summaries from top approved signals
             signals_list = (vip_list + prem_list)
 
