@@ -15,6 +15,13 @@ if [ "${ALLOW_DOTENV:-false}" = "true" ] && [ -f .env ]; then
 	export $(grep -v '^#' .env | xargs)
 fi
 
+# Run database migrations BEFORE starting services
+# This ensures schema is up-to-date before any code tries to query it
+if [ -n "${DATABASE_URL}" ]; then
+	echo "[boot] Running database migrations..."
+	python -m alembic upgrade head || echo "[WARN] Migration failed, continuing anyway..."
+fi
+
 # Default: run a single mode via RUN_MODE (engine/web/worker/bot)
 # Optional: RUN_ALL=true to run web + engine + bot in one container.
 
