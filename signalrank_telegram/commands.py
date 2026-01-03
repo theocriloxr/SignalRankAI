@@ -516,12 +516,17 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		from db.session import ENGINE, get_session
 		if ENGINE is None:
 			raise RuntimeError("Postgres not configured")
-		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal
-		from db.models import Signal
+		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal, get_or_create_user
+		from db.models import Signal, User
 		from sqlalchemy import select
 		import json
+		import os
 		
 		async with get_session() as session:
+			# Get user and their tier
+			user = await get_or_create_user(session, telegram_user_id=int(user_id))
+			user_tier = str(user.tier or "free").strip().lower()
+			
 			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			
 			# If signal not delivered to user, check if it exists at all
@@ -559,7 +564,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				"📣 Outcome",
 				"",
 				f"Reference: {sig.signal_id}",
-				f"{sig.asset} {sig.timeframe} {sig.direction}",
+				f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
 				f"Result: {label} ({status})",
 			]
 			if r is not None:
@@ -569,39 +574,69 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			await update.message.reply_text("\n".join(lines))
 			return
 		
-		# If outcome not yet determined, show current signal details
-		lines = [
-			"🔄 Signal In Progress",
-			"",
-			f"Reference: {sig.signal_id}",
+		# If outcome not yet determined, show current signal details based on tier
+		# Determine what to show based on tier
+		try:
+			vip_cut = float((os.getenv("VIP_SCORE_THRESHOLD") or "72").strip())
+		except Exception:
+			vip_cut = 72.0
+		
+		show_levels = user_tier in {"vip", "premium", "owner", "admin"}
+		show_strategy = user_tier in {"vip", "owner", "admin"}
+		show_strength = user_tier in {"vip", "owner", "admin"}
+		
+		lines = ["🔄 Signal In Progress", ""]
+		
+		# Reference
+		lines.append(f"Reference: {sig.signal_id}")
+		
+		# Basic info (all tiers)
+		lines.extend([
 			f"Asset: {sig.asset}",
 			f"Timeframe: {sig.timeframe}",
 			f"Direction: {sig.direction.upper()}",
-			"",
-			f"Entry: {sig.entry}",
-			f"Stop Loss: {sig.stop_loss}",
-		]
+		])
 		
-		# Parse take_profit (JSON-encoded list)
-		try:
-			tp_list = json.loads(sig.take_profit) if isinstance(sig.take_profit, str) else sig.take_profit
-			if isinstance(tp_list, list) and len(tp_list) > 0:
-				for i, tp in enumerate(tp_list, 1):
-					lines.append(f"Take Profit {i}: {tp}")
-			else:
+		# Levels and regime (premium+)
+		if show_levels:
+			lines.extend([
+				f"Entry: {sig.entry}",
+				f"Stop Loss: {sig.stop_loss}",
+			])
+			
+			# Parse take_profit (JSON-encoded list)
+			try:
+				tp_list = json.loads(sig.take_profit) if isinstance(sig.take_profit, str) else sig.take_profit
+				if isinstance(tp_list, list) and len(tp_list) > 0:
+					for i, tp in enumerate(tp_list, 1):
+						lines.append(f"Take Profit {i}: {tp}")
+				else:
+					lines.append(f"Take Profit: {sig.take_profit}")
+			except Exception:
 				lines.append(f"Take Profit: {sig.take_profit}")
-		except Exception:
-			lines.append(f"Take Profit: {sig.take_profit}")
+			
+			if sig.regime:
+				lines.append(f"Regime: {sig.regime}")
 		
-		if sig.rr_estimate is not None:
+		# Score (all tiers)
+		lines.append("")
+		lines.append(f"Score: {sig.score:.2f}")
+		
+		# RR Estimate (premium+)
+		if show_levels and sig.rr_estimate is not None:
 			lines.append(f"RR Estimate: {sig.rr_estimate:.2f}")
 		
-		lines.extend([
-			f"Score: {sig.score:.2f}",
-			f"Strategy: {sig.strategy_name}",
-			"",
-			"⏳ Outcome not determined yet."
-		])
+		# Strategy and strength (VIP+)
+		if show_strategy:
+			lines.append(f"Strategy: {sig.strategy_name}")
+			if sig.strategy_group:
+				lines.append(f"Group: {sig.strategy_group}")
+		
+		if show_strength and sig.strength is not None:
+			lines.append(f"Strength: {sig.strength}")
+		
+		# Status message
+		lines.extend(["", "⏳ Outcome not determined yet."])
 		
 		await update.message.reply_text("\n".join(lines))
 		return
