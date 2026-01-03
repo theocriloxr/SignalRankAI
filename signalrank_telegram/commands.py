@@ -181,6 +181,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 	# PREMIUM/VIP: detailed formatting per tier
 	from .formatter import format_signal
+	import json
+	
 	for s in unresolved_signals[:10]:
 		try:
 			# Ensure numeric fields are floats
@@ -189,7 +191,20 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			rr = float(s.get('rr_ratio') or 1.5)
 			entry = float(s.get('entry') or 0)
 			stop_loss = float(s.get('stop_loss') or 0)
-			take_profit = float(s.get('take_profit') or 0)
+			
+			# Parse take_profit (JSON array) and get first value
+			tp_raw = s.get('take_profit')
+			try:
+				if isinstance(tp_raw, str):
+					tp_list = json.loads(tp_raw)
+					take_profit = float(tp_list[0]) if tp_list else 0.0
+				elif isinstance(tp_raw, list):
+					take_profit = float(tp_raw[0]) if tp_raw else 0.0
+				else:
+					take_profit = float(tp_raw or 0)
+			except Exception:
+				take_profit = 0.0
+			
 			regime = s.get('regime', 'NEUTRAL')
 			ml_prob = float(s.get('ml_probability') or 0.5)
 			
