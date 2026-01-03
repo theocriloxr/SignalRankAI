@@ -997,7 +997,7 @@ async def process_referral_start(
         tier=tier_to_extend,
         duration_days=int(grant_days),
         paystack_reference=reward_ref,
-        meta={"source": "referral", "referred": int(referred_telegram_user_id), "batch": int(total // 3)},
+        meta={"source": "referral", "referred": int(referred_telegram_user_id), "batch": int(batch_number), "grant_days": grant_days},
     )
 
     session.add(
@@ -1008,6 +1008,9 @@ async def process_referral_start(
             reward_value=int(grant_days),
         )
     )
+    
+    # RESET referral_count after reward
+    referrer_user.referral_count = 0
     await session.flush()
 
     result["status"] = "reward_granted"
