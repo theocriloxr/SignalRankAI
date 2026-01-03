@@ -272,19 +272,20 @@ def _format_free_preview(signal):
 def dispatch_signals(strategy_signals, user_id, regime=None):
     """Dispatch signals to user based on their tier.
     
-    Tier-based Limits:
-    - OWNER: 9999 signals/day (all signals, real-time)
-    - ADMIN: 9999 signals/day (all signals, real-time)  
-    - VIP: 30 signals/day (real-time)
-    - PREMIUM: 10 signals/day (real-time)
-    - FREE: 2 signals/day (delayed queue)
+    Tier-based Limits & Score Filtering:
+    - OWNER: 9999 signals/day (all signals, real-time, no score filter)
+    - ADMIN: 9999 signals/day (all signals, real-time, no score filter)
+    - VIP: 30 signals/day (score >= 72 only, real-time)
+    - PREMIUM: 10 signals/day (score 55-80, real-time)
+    - FREE: 2 signals/day (any 2 signals, delayed queue, summary format)
     
-    All signals must:
-    - Pass quality gates (confidence, RR, volatility)
+    Outcomes are sent for ALL signals (crypto and FX) regardless of tier.
+    
+    Quality gates applied before dispatch:
+    - Pass confidence, RR, volatility checks
     - Score >= MIN_SCORE_THRESHOLD (55)
     - Pass consensus check (CONSENSUS_MIN_SCORE)
     - Pass risk validation (RR >= 1.5, vol <= 0.20)
-    - Pass ML filter if enabled
     """
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
