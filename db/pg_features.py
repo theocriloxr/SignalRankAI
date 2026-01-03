@@ -889,6 +889,7 @@ async def process_referral_start(
         "referrer_id": None,
         "referrals_total": 0,
         "days_granted": 0,
+        "referrer_notified": False,
     }
 
     code = (referral_code or "").strip()
@@ -930,9 +931,13 @@ async def process_referral_start(
         result["status"] = "already_referred"
         return result
 
-    session.add(
-        ReferralAttribution(referred_user_id=referred_user.id, referrer_user_id=rc.referrer_user_id)
+    # Create referral attribution record
+    attribution = ReferralAttribution(
+        referred_user_id=referred_user.id,
+        referrer_user_id=rc.referrer_user_id
     )
+    session.add(attribution)
+    
     session.add(
         ReferralReward(
             referrer_user_id=rc.referrer_user_id,
@@ -943,19 +948,42 @@ async def process_referral_start(
     )
     await session.flush()
 
-    total = await _count_referrals(session, referrer_user_id=rc.referrer_user_id)
-    result["referrals_total"] = int(total)
-
-    expected_days = (total // 3) * 7
-    already_days = await _sum_reward_days(session, referrer_user_id=rc.referrer_user_id)
-    grant_days = max(0, int(expected_days) - int(already_days))
-
-    if grant_days <= 0:
+    # Increment referrer's referral_count
+    referrer_user.referral_count = (referrer_user.referral_count or 0) + 1
+    await session.flush()
+    
+    referral_count = referrer_user.referral_count
+    result["referrals_total"] = int(referral_count)
+    
+    # Requirement is 3 referrals per reward
+    REFERRAL_REQUIREMENT = 3
+    has_earned_reward = (referral_count % REFERRAL_REQUIREMENT) == 0
+    
+    # Prepare notification message for referrer
+    msg_for_referrer = None
+    if has_earned_reward:
+        remaining_after_reward = referral_count - REFERRAL_REQUIREMENT
+        msg_for_referrer = (
+            f"🎉 Someone joined with your referral link!\n\n"
+            f"Referral count: {referral_count}\n"
+            f"✅ You've reached {REFERRAL_REQUIREMENT} referrals! You earned 7 premium days.\n\n"
+            f"Progress toward next reward: {remaining_after_reward}/{REFERRAL_REQUIREMENT}"
+        )
+    else:
+        needed = REFERRAL_REQUIREMENT - (referral_count % REFERRAL_REQUIREMENT)
+        msg_for_referrer = (
+            f"👤 Someone joined with your referral link!\n\n"
+            f"Referral count: {referral_count}\n"
+            f"You need {needed} more referrals to earn 7 premium days."
+        )
+    
+    result["referrer_message"] = msg_for_referrer
+    
+    if not has_earned_reward:
         result["status"] = "attributed"
         return result
 
-    # Extend referrer subscription (VIP stays VIP; otherwise Premium)
-    # We avoid relying on SQLite tier logic in production.
+    # REWARD LOGIC: Grant 7 premium days and reset referral_count
     from db.access import resolve_user_tier
 
     current_tier = normalize_tier(await resolve_user_tier(referrer_tid))

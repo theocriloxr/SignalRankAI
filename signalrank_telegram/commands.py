@@ -1338,15 +1338,29 @@ async def start_command(update, context):
 			await update.message.reply_text("⚠️ Referral code not recognized.")
 		# else: silent for self_referral/already_referred/not_new
 
-	# Notify referrer on reward
+	# Notify referrer when someone joins with their link or when reward is unlocked
 	try:
-		if referral_outcome and str(referral_outcome.get("status")) == "reward_granted":
+		if referral_outcome:
 			referrer_id = int(referral_outcome.get("referrer_id"))
-			days = int(referral_outcome.get("days_granted"))
-			await context.bot.send_message(
-				chat_id=referrer_id,
-				text=f"🎉 Referral reward unlocked: +{days} days added to your subscription.\n\nUse /signals to get the latest ideas.",
-			)
+			status = str(referral_outcome.get("status"))
+			
+			if status in {"attributed", "reward_granted"}:
+				# Send referrer message about their referral count
+				referrer_msg = referral_outcome.get("referrer_message")
+				if referrer_msg:
+					await context.bot.send_message(
+						chat_id=referrer_id,
+						text=referrer_msg,
+					)
+			
+			# Additional message for reward_granted
+			if status == "reward_granted":
+				days = int(referral_outcome.get("days_granted"))
+				await context.bot.send_message(
+					chat_id=referrer_id,
+					text=f"🎁 *Bonus Plan Extension*\n\n+{days} premium days have been added to your current plan!\n\nUse /signals to get the latest trading ideas.",
+					parse_mode="Markdown"
+				)
 	except Exception:
 		pass
 
