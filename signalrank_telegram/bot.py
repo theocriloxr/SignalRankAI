@@ -1130,13 +1130,26 @@ def run_bot() -> None:
                         continue
 
                     status = None
-                    # Walk candles in chronological order and detect first hit.
+                    entry_filled = False
+                    entry_filled_at = None
+                    # Walk candles in chronological order and detect first hit after entry is touched.
                     for c in filtered:
                         try:
                             hi = float(c.get("high"))
                             lo = float(c.get("low"))
                         except Exception:
                             continue
+
+                        ts_val = c.get("timestamp")
+
+                        # Require entry fill before considering TP/SL.
+                        if not entry_filled:
+                            if lo <= entry <= hi:
+                                entry_filled = True
+                                entry_filled_at = ts_val
+                            else:
+                                continue
+
                         if direction == "long":
                             hit_sl = lo <= sl
                             hit_tp = hi >= tp
@@ -1190,6 +1203,18 @@ def run_bot() -> None:
                         "sl": sl,
                     }
 
+                    entry_filled_dt = None
+                    try:
+                        if isinstance(entry_filled_at, (int, float)):
+                            entry_filled_dt = datetime.utcfromtimestamp(float(entry_filled_at) / 1000.0)
+                        elif entry_filled_at:
+                            entry_filled_dt = datetime.fromisoformat(str(entry_filled_at).replace("Z", ""))
+                    except Exception:
+                        entry_filled_dt = None
+
+                    if entry_filled_at is not None:
+                        meta["entry_filled_at"] = entry_filled_at
+
                     async def _write():
                         async with get_session() as session:
                             await upsert_outcome(
@@ -1199,7 +1224,7 @@ def run_bot() -> None:
                                 meta=meta,
                                 r_multiple=r_mult,
                                 percent=pct,
-                                opened_at=created_at,
+                                opened_at=entry_filled_dt or created_at,
                                 closed_at=now,
                             )
                             await session.commit()
