@@ -996,8 +996,10 @@ def run_bot() -> None:
                         msg += "\nThis signal has been marked with an outcome in the tracker."
                     # Limited free follow-up for actual FREE users only
                     elif str(tier_at_send).lower() == 'free':
+                        # Show profit/loss indicator
+                        outcome_label = "✅ PROFIT" if status in ("tp", "tp1", "tp2", "partial_tp") else ("❌ LOSS" if status == "sl" else "📌 PENDING")
                         msg = (
-                            "📣 Signal Update\n\n"
+                            f"📣 Signal Update — {outcome_label}\n\n"
                             f"Reference: {ref_short}\n"
                             f"{asset} {timeframe} {direction}\n\n"
                             "An outcome was recorded for a recent signal.\n"
