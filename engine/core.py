@@ -25,13 +25,14 @@ def _env_float(name: str, default: float) -> float:
 
 # Store/dispatch threshold for the main pipeline.
 # Higher = fewer signals but higher quality. Lower = more signals but more noise.
-# Balanced at 55 for good quality with reasonable signal volume
-# Range: 40-75 recommended.
-# - 40: Very permissive (all passing signals, more noise)
-# - 55: Balanced (good quality with reasonable volume) - DEFAULT
-# - 60: Selective (premium signals only)
-# - 70: Strict (only top tier signals)
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 55)
+# Now stricter: 65 for quality-over-quantity (signals with edge + good conditions)
+# Range: 50-75 recommended.
+# - 50: Permissive (all passing signals)
+# - 60: Balanced (reasonable quality)
+# - 65: Quality-focused (only high-confidence+good setups) - DEFAULT
+# - 70: Strict (premium quality only)
+# - 75: Very strict (only top-tier signals)
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 65)
 
 def load_tradable_assets():
     """Return configured fallback assets.

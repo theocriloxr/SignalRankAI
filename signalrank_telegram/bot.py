@@ -925,7 +925,9 @@ def run_bot() -> None:
         return
 
     def send_outcome_notifications():
-        # Best-effort Postgres follow-up messages for TP/SL/invalid outcomes.
+        # Send outcome notifications only once per outcome (notified_at tracks this).
+        # Fetches unnotified outcomes and sends them to all users who received the signal.
+        # Once sent and marked as notified, the outcome will never be resent.
         try:
             from db.session import ENGINE, get_session
             if ENGINE is None:
@@ -1047,7 +1049,8 @@ def run_bot() -> None:
                     except Exception:
                         pass
 
-                # Mark notified so we don't repeat.
+                # Mark as notified so this outcome is never sent again.
+                # Once marked, list_unnotified_outcomes() won't return it.
                 try:
                     async def _mark(oid: int) -> None:
                         async with get_session() as session:

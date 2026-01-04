@@ -20,9 +20,9 @@ def score_signal(signal):
     confidence = float(signal.get("confidence", 0) or 0)
     confidence = min(max(confidence, 0.0), 1.0)
     
-    # QUALITY GATE: Reject extremely low-confidence signals
-    # (Less than 20% base strategy confidence is too risky)
-    if confidence < 0.2:
+    # QUALITY GATE: Reject low-confidence signals
+    # (Less than 35% base strategy confidence is too risky - focus on quality)
+    if confidence < 0.35:
         return 0.0
 
     entry = signal.get("entry")
@@ -39,9 +39,9 @@ def score_signal(signal):
     # Base score: weighted components
     score = (confidence * 50.0) + (rr_component * 30.0) + (vol_component * 20.0)
     
-    # Extra penalty for very poor RR (but don't hard-reject)
+    # Hard rejection for poor R/R (1.5 minimum is table stakes)
     if rr < 1.5:
-        score = score * 0.5  # 50% penalty for RR < 1.5
+        return 0.0  # Hard reject: insufficient margin of safety
     
     # REGIME ALIGNMENT BONUS: +10-20% for signals aligned with market regime
     # (Better trades happen when signal aligns with broader trend)
@@ -123,19 +123,19 @@ def regime_fit_score(signal, regime=None):
 def volatility_quality_score(signal):
     """Score volatility quality (lower volatility = better conditions = higher score).
     
-    Targets:
+    STRICTER for quality focus:
     - vol <= 0.08 (8%): score 1.0 (ideal low-volatility, best execution)
-    - vol = 0.12 (12%): score 0.75 (good, normal conditions)
-    - vol = 0.16 (16%): score 0.50 (acceptable but slippage risk increases)
-    - vol = 0.20 (20%): score 0.0 (reject - too volatile, RR gets squeezed)
-    - vol > 0.20: score 0.0 (reject - prohibitive volatility)
+    - vol = 0.10 (10%): score 0.83 (excellent, low noise)
+    - vol = 0.12 (12%): score 0.67 (good, normal conditions)
+    - vol = 0.15 (15%): score 0.33 (acceptable but risky)
+    - vol >= 0.18 (18%): score 0.0 (reject - too volatile, RR squeezed)
     
     Rationale:
     - Low volatility = tighter stops = better RR achievable
     - High volatility = wider stops forced = poor RR, higher slippage
-    - BB width >20% signals choppy/ranging market (poor edge)
+    - Stricter: reject >18% instead of 20% for quality focus
     
-    Scale: Linear from 0.08→0.20, zero penalty below 0.08, hard reject above 0.20
+    Scale: Linear from 0.08→0.18, zero penalty below 0.08, hard reject above 0.18
     """
     vol = signal.get("volatility", 0.0)
     try:
@@ -146,13 +146,11 @@ def volatility_quality_score(signal):
     # Ideal range: 0.08-0.12 (tight, low-noise environments)
     if vol <= 0.08:
         return 1.0  # Perfect volatility
-    elif vol >= 0.20:
-        return 0.0  # Reject: too volatile, RR gets squeezed by wider stops
+    elif vol >= 0.18:
+        return 0.0  # Hard reject: too volatile for quality trades
     else:
-        # Linear scale: 0.08→0.20 maps to 1.0→0.0
-        # At vol=0.12: (0.20-0.12)/(0.20-0.08) = 0.8/0.12 = 0.667 ✓
-        # At vol=0.16: (0.20-0.16)/(0.20-0.08) = 0.04/0.12 = 0.333 ✓
-        return float((0.20 - vol) / (0.20 - 0.08))
+        # Linear scale: 0.08→0.18 maps to 1.0→0.0
+        return float((0.18 - vol) / (0.18 - 0.08))
 
 
 def historical_winrate_score(signal):

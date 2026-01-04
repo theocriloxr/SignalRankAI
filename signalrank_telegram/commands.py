@@ -622,13 +622,13 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			status = str(getattr(oc, "status", "") or "").lower()
 			r = getattr(oc, "r_multiple", None)
 			pct = getattr(oc, "percent", None)
-			label = "PROFIT" if status.startswith("tp") else ("LOSS" if status == "sl" else status.upper())
-			position_lines.append(f"Outcome: {label} ({status})")
+			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			position_lines.append(f"📊 Outcome: {label} ({status})")
 			if r is not None:
-				position_lines.append(f"R-multiple: {float(r):.2f}R")
+				position_lines.append(f"💰 R-Multiple: {float(r):.2f}R")
 			if pct is not None:
-				position_lines.append(f"Move: {float(pct):.2f}%")
-			advice_line = "This signal has a recorded outcome."
+				position_lines.append(f"📈 Move: {float(pct):.2f}%")
+			advice_line = f"✅ This signal has a completed outcome. Use /outcome {str(arg)[:8]} for full details."
 		else:
 			# Live estimate (crypto only)
 			if entry is not None and sl is not None and tp is not None:
