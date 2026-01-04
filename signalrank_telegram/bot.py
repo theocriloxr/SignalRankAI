@@ -331,6 +331,80 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
+    # Entry validation: check that current price is within entry zone (±1.0%)
+    # Reject stale signals where price has moved away from entry
+    def _is_entry_valid(signal: dict) -> bool:
+        """Check if current price is near the entry level."""
+        try:
+            asset = str(signal.get("asset") or "").upper()
+            entry = float(signal.get("entry") or 0.0)
+            if not asset or entry <= 0:
+                return True  # Can't validate, allow through
+            
+            # Fetch current price
+            try:
+                import requests
+                is_crypto = asset.endswith("USDT") or asset.endswith("USDC")
+                if not is_crypto:
+                    return True  # Skip FX validation for now
+                
+                # Try Binance first, then CryptoCompare fallback
+                sym = asset.replace("USDT", "").replace("USDC", "")
+                try:
+                    resp = requests.get(
+                        f"https://api.binance.com/api/v3/ticker/price",
+                        params={"symbol": asset},
+                        timeout=5,
+                    )
+                    if resp.ok:
+                        price = float(resp.json().get("price", entry))
+                    else:
+                        raise Exception("Binance failed")
+                except Exception:
+                    # Fallback to CryptoCompare
+                    api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+                    headers = {"authorization": f"Apikey {api_key}"} if api_key else {}
+                    resp = requests.get(
+                        "https://min-api.cryptocompare.com/data/price",
+                        params={"fsym": sym, "tsyms": "USDT,USD"},
+                        headers=headers,
+                        timeout=5,
+                    )
+                    if resp.ok:
+                        data = resp.json()
+                        price = float(data.get("USDT") or data.get("USD") or entry)
+                    else:
+                        return True  # Can't validate, allow through
+                
+                # Check if price is within ±1.0% of entry
+                price_distance_pct = abs(price - entry) / entry * 100.0
+                if price_distance_pct > 1.0:
+                    return False  # Entry is stale, reject signal
+                return True
+            except Exception:
+                return True  # On error, allow signal through
+        except Exception:
+            return True
+
+    # Filter out signals with stale entries
+    try:
+        before_filter = len(signals_list)
+        signals_list = [s for s in signals_list if _is_entry_valid(s)]
+        after_filter = len(signals_list)
+        if before_filter > after_filter:
+            _log_once(
+                "entry_validation_filtered",
+                f"[dispatch] Entry validation: rejected {before_filter - after_filter} stale signal(s), kept {after_filter}",
+            )
+    except Exception as e:
+        _log_once(
+            "entry_validation_error",
+            f"[dispatch] Entry validation error: {e}",
+        )
+
+    if not signals_list:
+        return
+
     # If multiple signals share the same asset/direction across different timeframes,
     # keep only the one with the highest score, then highest R/R as tie-breaker.
     try:
@@ -1140,6 +1214,18 @@ def run_bot() -> None:
                         continue
 
                     created_ms = _ms(created_at)
+                    
+                    # Validate entry is still valid (price hasn't moved >1.5% away)
+                    # Use latest candle's close as proxy for current price
+                    try:
+                        latest_price = float(candles[-1].get("close", entry))
+                        price_distance_pct = abs(latest_price - entry) / entry * 100.0
+                        if price_distance_pct > 1.5:
+                            # Entry stale, skip outcome tracking for this signal
+                            continue
+                    except Exception:
+                        pass  # Can't validate, proceed anyway
+                    
                     # Filter candles to those after signal creation when possible.
                     filtered = []
                     for c in candles:
