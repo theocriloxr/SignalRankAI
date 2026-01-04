@@ -300,15 +300,30 @@ def _create_signal(direction: str, asset: str, timeframe: str, confidence: float
         }
         multiplier = tf_multiplier.get(timeframe.lower(), 2.0)
         
+        # Calculate volatility-adjusted R/R
+        # High volatility = higher R/R needed to justify the trade
+        volatility_pct = (atr / entry) * 100 if entry > 0 else 2.0
+        
+        # Adjust R/R based on volatility
+        # Low vol (<1%) = 1.5:1 R/R | Medium vol (1-2%) = 2:1 R/R | High vol (>2%) = 2.5:1 R/R
+        if volatility_pct < 1.0:
+            rr_multiplier = 1.5
+        elif volatility_pct < 2.0:
+            rr_multiplier = 2.0
+        elif volatility_pct < 3.0:
+            rr_multiplier = 2.5
+        else:
+            rr_multiplier = 3.0  # Very high volatility requires higher reward
+        
         # Generate signal
         if direction == 'BUY':
             stop = entry - (atr * multiplier)
-            # Target 2:1 R/R
-            target = entry + (entry - stop) * 2
+            # Target dynamic R/R
+            target = entry + (entry - stop) * rr_multiplier
         else:  # SELL
             stop = entry + (atr * multiplier)
-            # Target 2:1 R/R
-            target = entry - (stop - entry) * 2
+            # Target dynamic R/R
+            target = entry - (stop - entry) * rr_multiplier
         
         # Confidence boosts
         confidence_boost = 1.0
@@ -338,9 +353,9 @@ def _create_signal(direction: str, asset: str, timeframe: str, confidence: float
             'strength': final_confidence,
             'strategy_name': strategy_name,
             'strategy_group': 'tradingview',
-            'volatility': (atr / entry) if entry > 0 else 0.0,
+            'volatility': volatility_pct,
             'source': 'tradingview-ta',
-            'rr_estimate': abs((target - entry) / (entry - stop)) if (entry - stop) != 0 else 2.0,
+            'rr_estimate': rr_multiplier,
         }
     
     except Exception as e:
