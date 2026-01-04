@@ -105,7 +105,9 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     """Fetch cached market data for many assets using a bounded concurrency."""
 
     concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
-    per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", 25.0))
+    # When Binance is blocked we rely on slower fallbacks (Bybit/CryptoCompare), so allow more time.
+    per_asset_timeout_default = 60.0 if is_binance_blocked() else 25.0
+    per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default))
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(asset: str, tfs: list[str]) -> tuple[str, dict]:
@@ -130,7 +132,11 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
-    crypto_timeframes = [x.strip() for x in (os.getenv("CRYPTO_TIMEFRAMES") or "5m,15m,1h,4h,1d").split(",") if x.strip()]
+    # If Binance is blocked and no explicit override is provided, drop the heaviest TF (5m) to speed fallbacks.
+    if os.getenv("CRYPTO_TIMEFRAMES"):
+        crypto_timeframes = [x.strip() for x in os.getenv("CRYPTO_TIMEFRAMES").split(",") if x.strip()]
+    else:
+        crypto_timeframes = [x.strip() for x in ("15m,1h,4h,1d" if is_binance_blocked() else "5m,15m,1h,4h,1d").split(",") if x.strip()]
     # AlphaVantage free tier is rate-limited; default to daily-only for FX.
     fx_timeframes = [x.strip() for x in (os.getenv("FX_TIMEFRAMES") or "1d").split(",") if x.strip()]
 
@@ -287,10 +293,11 @@ def main_loop(DRY_RUN=False):
                 # Crypto universe can be large; bound per-cycle work but rotate so we cover all.
                 default_crypto_max = 20
                 try:
-                    # If Binance is blocked and we don't have a CryptoCompare key,
-                    # calling CryptoCompare too aggressively can yield empty candles.
-                    if is_binance_blocked() and not (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip():
-                        default_crypto_max = 8
+                    if is_binance_blocked():
+                        # When geo-blocked, throttle pair count to reduce cycle time and API strain.
+                        default_crypto_max = 12
+                        if not (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip():
+                            default_crypto_max = 8
                 except Exception:
                     pass
                 crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", int(default_crypto_max))

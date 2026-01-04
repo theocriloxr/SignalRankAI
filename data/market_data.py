@@ -57,7 +57,8 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     # Backfill missing timeframes via REST fetcher (and indicators calculation).
     missing = [tf for tf in tfs if tf not in out]
     if missing:
-        rest_timeout = float(_env_int("MARKET_REST_TIMEOUT_SECONDS", 25))
+        # Fallback providers (CryptoCompare/Bybit) can be slower when Binance is blocked; allow longer by default.
+        rest_timeout = float(_env_int("MARKET_REST_TIMEOUT_SECONDS", 60))
         try:
             rest = await asyncio.wait_for(
                 asyncio.to_thread(fetch_market_data_rest, asset, missing),
