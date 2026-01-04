@@ -1214,6 +1214,16 @@ def run_bot() -> None:
         except Exception:
             return
 
+    def _in_quiet_hours(current_hour, start_hour, end_hour):
+        """Check if current_hour is within quiet hours (respecting wrap-around)."""
+        if start_hour == end_hour:
+            return True  # Quiet all day
+        if start_hour < end_hour:
+            return start_hour <= current_hour < end_hour
+        else:
+            # Wrap-around (e.g., 22 to 6 means quiet 22-23 and 0-5)
+            return current_hour >= start_hour or current_hour < end_hour
+
     def send_free_delayed_summaries():
         # Respect kill-switch
         try:

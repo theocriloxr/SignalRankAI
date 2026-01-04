@@ -131,13 +131,14 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 	signals_list: list[dict] = []
 	
-	# FREE tier: show delivered signals only
+	# FREE tier: show delivered signals only - SHOW ALL SIGNALS SENT TODAY (NO LIMIT)
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		try:
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
 				async with get_session() as session:
+					# Fetch ALL signals delivered to user today (no limit)
 					rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 					signals_list = [
 						{
@@ -162,16 +163,19 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				await update.message.reply_text("✅ No signals delivered today.")
 			return
 		
-		lines = ["🆓 Today's Signals", ""]
-		for s in signals_list[:5]:
+		# Show ALL signals for free users (removed the [:5] limit)
+		total_signals = len(signals_list)
+		lines = [f"🆓 Today's Signals ({total_signals} total)", ""]
+		for i, s in enumerate(signals_list, 1):
 			entry = float(s.get('entry') or 0)
-			sig_id = s.get('signal_id', 'N/A')[:8]
+			sig_id = s.get('signal_id', 'N/A')
+			sig_id_short = sig_id[:8]
 			lines.append(
-				f"• {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
-				f"  ID: {sig_id} | Entry: {entry:.4f}\n"
-				f"  Position: /outcome {sig_id}"
+				f"{i}. {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
+				f"   Reference: `{sig_id_short}...` | Entry: {entry:.4f}\n"
+				f"   /outcome {sig_id_short}"
 			)
-		lines += ["", "👆 Upgrade to PREMIUM for full signal details."]
+		lines += ["", "💡 Use /outcome <reference> to check if you hit TP/SL", "👆 Upgrade to PREMIUM for full signal details."]
 		if update.message is not None:
 			await update.message.reply_text("\n".join(lines))
 		return
@@ -214,11 +218,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			await update.message.reply_text("✅ No unresolved signals. All trades resolved or archived.")
 		return
 
-	# PREMIUM/VIP: detailed formatting per tier
+	# PREMIUM/VIP: detailed formatting per tier - SHOW ALL UNRESOLVED SIGNALS (NO LIMIT)
 	from .formatter import format_signal
 	import json
 	
-	for s in unresolved_signals[:10]:
+	total_active = len(unresolved_signals)
+	if update.message is not None and total_active > 0:
+		await update.message.reply_text(f"📊 Your Active Signals ({total_active} unresolved):\n\n")
+	
+	for idx, s in enumerate(unresolved_signals, 1):
 		try:
 			# Ensure numeric fields are floats
 			score = float(s.get('score') or 0)
