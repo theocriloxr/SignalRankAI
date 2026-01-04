@@ -331,6 +331,28 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
+    # If multiple signals share the same asset/direction across different timeframes,
+    # keep only the one with the highest score, then highest R/R as tie-breaker.
+    try:
+        best_by_key: dict[tuple[str, str], dict] = {}
+        for sig in signals_list:
+            asset = str(sig.get("asset") or sig.get("symbol") or "").upper()
+            direction = str(sig.get("direction") or "").lower()
+            key = (asset, direction)
+            score = float(sig.get("score") or 0.0)
+            rr = float(sig.get("rr_ratio") or sig.get("rr_estimate") or 0.0)
+            cur = best_by_key.get(key)
+            if cur is None:
+                best_by_key[key] = sig
+                continue
+            cur_score = float(cur.get("score") or 0.0)
+            cur_rr = float(cur.get("rr_ratio") or cur.get("rr_estimate") or 0.0)
+            if (score > cur_score) or (score == cur_score and rr > cur_rr):
+                best_by_key[key] = sig
+        signals_list = list(best_by_key.values())
+    except Exception:
+        pass
+
     # Postgres-backed delivery dedup + history (preferred)
     try:
         from db.session import ENGINE, get_session
