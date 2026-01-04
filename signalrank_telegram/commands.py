@@ -610,19 +610,40 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			"strength": getattr(sig, "strength", None),
 			"strategy_name": getattr(sig, "strategy_name", None),
 			"strategy_group": getattr(sig, "strategy_group", None),
+			"ml_probability": getattr(sig, "ml_probability", None),
 		}
-		# Enrich with outcome/live position (best-effort)
+		# Enrich with entry_status and current price
 		entry = _as_float(sig_dict.get("entry"))
-		sl = _as_float(sig_dict.get("stop_loss"))
-		tp = _parse_tp(sig_dict.get("take_profit"))
+		asset = str(sig_dict.get("asset") or "").upper()
 		price = None
-		advice_line = None
-		position_lines: list[str] = []
+		entry_status = "UNKNOWN"
+		
+		if entry is not None and _is_crypto(asset):
+			price = _current_price(asset)
+			if price is not None and entry > 0:
+				distance_pct = abs(price - entry) / entry * 100.0
+				if distance_pct <= 5.0:
+					entry_status = "AT_ENTRY"
+				elif price < entry:
+					entry_status = "PENDING_ENTRY"
+				else:
+					entry_status = "PENDING_ENTRY"
+				sig_dict["entry_status"] = entry_status
+				sig_dict["current_price"] = price
+				sig_dict["distance_pct"] = distance_pct
 		if oc is not None:
 			status = str(getattr(oc, "status", "") or "").lower()
 			r = getattr(oc, "r_multiple", None)
 			pct = getattr(oc, "percent", None)
 			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			
+			# Show entry status with outcome
+			entry_status = sig_dict.get("entry_status", "UNKNOWN")
+			if entry_status == "AT_ENTRY":
+				position_lines.append(f"✅ Entry Status: At entry zone")
+			elif entry_status == "PENDING_ENTRY":
+				position_lines.append(f"⏳ Entry Status: Was pending when signal sent")
+			
 			position_lines.append(f"📊 Outcome: {label} ({status})")
 			if r is not None:
 				position_lines.append(f"💰 R-Multiple: {float(r):.2f}R")
@@ -630,6 +651,20 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				position_lines.append(f"📈 Move: {float(pct):.2f}%")
 			advice_line = f"✅ This signal has a completed outcome. Use /outcome {str(arg)[:8]} for full details."
 		else:
+			# Show entry status for live signals
+			entry_status = sig_dict.get("entry_status", "UNKNOWN")
+			current_price = sig_dict.get("current_price")
+			distance_pct = sig_dict.get("distance_pct")
+			
+			if current_price is not None and distance_pct is not None:
+				if entry_status == "AT_ENTRY":
+					position_lines.append(f"✅ Entry Status: At entry zone ({distance_pct:+.2f}%)")
+				elif entry_status == "PENDING_ENTRY":
+					position_lines.append(f"⏳ Entry Status: Awaiting entry ({distance_pct:+.2f}%)")
+				else:
+					position_lines.append(f"❓ Entry Status: Unknown")
+				position_lines.append(f"Current price: {current_price:.6g}")
+			
 			# Live estimate (crypto only)
 			if entry is not None and sl is not None and tp is not None:
 				price = _current_price(str(sig_dict.get("asset") or ""))
@@ -641,7 +676,6 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 						tp=float(tp),
 						price=float(price),
 					)
-					position_lines.append(f"Current price: {price:.6g}")
 					try:
 						position_lines.append(f"P/L (est.): {float(metrics.get('pl_pct')):.2f}%")
 					except Exception:
@@ -737,18 +771,27 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			status = str(getattr(oc, "status", "") or "").lower()
 			r = getattr(oc, "r_multiple", None)
 			pct = getattr(oc, "percent", None)
-			label = "PROFIT" if status.startswith("tp") else ("LOSS" if status == "sl" else status.upper())
+			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
 			lines = [
 				"📣 Outcome",
 				"",
-				f"Reference: {sig.signal_id}",
+				f"Reference: {sig.signal_id[:8]}",
 				f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
+				f"Entry: {sig.entry}",
 				f"Result: {label} ({status})",
 			]
+			
+			# Show entry status at time of signal
+			ml_prob = getattr(sig, "ml_probability", None)
+			if ml_prob is not None:
+				ml_pct = round(float(ml_prob) * 100, 1)
+				lines.append(f"ML Score: {ml_pct}%")
+			
 			if r is not None:
 				lines.append(f"R-multiple: {float(r):.2f}R")
 			if pct is not None:
 				lines.append(f"Move: {float(pct):.2f}%")
+			
 			await update.message.reply_text("\n".join(lines))
 			return
 		
@@ -804,6 +847,13 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		if show_levels:
 			lines.append("")
 			lines.append(f"Score: {sig.score:.2f}")
+			
+			# ML Score
+			ml_prob = getattr(sig, "ml_probability", None)
+			if ml_prob is not None:
+				ml_pct = round(float(ml_prob) * 100, 1)
+				ml_emoji = "✅" if float(ml_prob) >= 0.75 else ("⚠️" if float(ml_prob) >= 0.5 else "❌")
+				lines.append(f"{ml_emoji} ML Score: {ml_pct}%")
 		
 		# RR Estimate (premium+)
 		if show_levels and sig.rr_estimate is not None:

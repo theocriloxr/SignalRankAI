@@ -331,22 +331,25 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
-    # Entry validation: check that current price is within entry zone (±1.0%)
-    # Reject stale signals where price has moved away from entry
-    def _is_entry_valid(signal: dict) -> bool:
-        """Check if current price is near the entry level."""
+    # Entry validation: check that current price is within entry zone (±5%)
+    # Add entry_status flag to track if entry has been hit or is pending
+    def _check_entry_status(signal: dict) -> tuple[bool, str]:
+        """
+        Check if entry is valid and return (allow: bool, status: str).
+        Status can be: "PENDING_ENTRY" (price >5% away), "AT_ENTRY" (price ±5%), "ENTRY_MISSED" (>5% away, hard reject)
+        """
         try:
             asset = str(signal.get("asset") or "").upper()
             entry = float(signal.get("entry") or 0.0)
             if not asset or entry <= 0:
-                return True  # Can't validate, allow through
+                return True, "UNKNOWN"  # Can't validate, allow through
             
             # Fetch current price
             try:
                 import requests
                 is_crypto = asset.endswith("USDT") or asset.endswith("USDC")
                 if not is_crypto:
-                    return True  # Skip FX validation for now
+                    return True, "UNKNOWN"  # Skip FX validation for now
                 
                 # Try Binance first, then CryptoCompare fallback
                 sym = asset.replace("USDT", "").replace("USDC", "")
@@ -374,32 +377,36 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         data = resp.json()
                         price = float(data.get("USDT") or data.get("USD") or entry)
                     else:
-                        return True  # Can't validate, allow through
+                        return True, "UNKNOWN"  # Can't validate, allow through
                 
-                # Check if price is within ±1.0% of entry
+                # Check if price is within ±5% of entry
                 price_distance_pct = abs(price - entry) / entry * 100.0
-                if price_distance_pct > 1.0:
-                    return False  # Entry is stale, reject signal
-                return True
+                
+                # Determine entry status
+                if price_distance_pct <= 5.0:
+                    # Price is at entry (within tolerance)
+                    return True, "AT_ENTRY"
+                elif price < entry:
+                    # Price is below entry (pending long entry)
+                    return True, "PENDING_ENTRY"
+                else:
+                    # Price is above entry (potential miss)
+                    return True, "PENDING_ENTRY"
             except Exception:
-                return True  # On error, allow signal through
+                return True, "UNKNOWN"  # On error, allow signal through
         except Exception:
-            return True
+            return True, "UNKNOWN"
 
-    # Filter out signals with stale entries
+    # Add entry_status flag to all signals
     try:
-        before_filter = len(signals_list)
-        signals_list = [s for s in signals_list if _is_entry_valid(s)]
-        after_filter = len(signals_list)
-        if before_filter > after_filter:
-            _log_once(
-                "entry_validation_filtered",
-                f"[dispatch] Entry validation: rejected {before_filter - after_filter} stale signal(s), kept {after_filter}",
-            )
+        for signal in signals_list:
+            allow, status = _check_entry_status(signal)
+            signal["entry_status"] = status
+            signal["current_price_pct"] = None  # Will be populated on display
     except Exception as e:
         _log_once(
-            "entry_validation_error",
-            f"[dispatch] Entry validation error: {e}",
+            "entry_status_error",
+            f"[dispatch] Entry status error: {e}",
         )
 
     if not signals_list:

@@ -88,6 +88,19 @@ Take Profit: {signal.get('take_profit')}
 		# FREE tier: encourage upgrade
 		msg += "\n🔒 Upgrade to PREMIUM to see Entry, Stop Loss, and Take Profit levels.\n"
 	
+	# Entry status flag
+	entry_status = signal.get('entry_status', 'UNKNOWN')
+	if entry_status == 'AT_ENTRY':
+		status_emoji = "✅"
+		status_text = "Entry zone reached"
+	elif entry_status == 'PENDING_ENTRY':
+		status_emoji = "⏳"
+		status_text = "Awaiting entry"
+	else:
+		status_emoji = "❓"
+		status_text = "Status unknown"
+	msg += f"{status_emoji} Status: {status_text}\n"
+	
 	if show_confidence:
 		msg += f"""Confidence Score: {signal.get('score')}/100
 Suggested risk: {_risk_suggestion(signal.get('score'))}
