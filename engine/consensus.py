@@ -32,14 +32,14 @@ def consensus_filter(signals, min_score=None):
         # Consensus threshold: higher values = fewer but higher-quality signals
         # Recommendations:
         # - 0.6: Permissive (single strategy @ 0.6+ confidence) - TOO MANY FALSE SIGNALS
+        # - 0.7: Balanced (single strong or 2 medium signals) - NEW DEFAULT
         # - 0.8: Moderate (single strategy @ 0.8+ or 2 @ 0.4+ confidence)
         # - 1.0: Selective (2 strategies @ 0.5+) - GOOD BASELINE
         # - 1.4: Strict (2 strategies @ 0.7+) - RECOMMENDED FOR CONSISTENCY
         # - 2.0: Very Strict (3 strategies @ 0.67+) - ONLY BEST TRADES
         #
-        # NEW DEFAULT: 0.85 for better quality with reasonable signal volume
-        # Achievable by: 2 strategies @ 0.425+ OR 1 @ 85%+ confidence
-        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.85)
+        # NEW DEFAULT: 0.70 to increase volume while keeping quality guardrails.
+        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.70)
 
     try:
         min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())

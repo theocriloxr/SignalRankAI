@@ -3,6 +3,7 @@ import os
 import logging
 import inspect
 import socket
+import random
 from datetime import datetime, timezone
 
 from telegram import Update
@@ -131,7 +132,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 	signals_list: list[dict] = []
 	
-	# FREE tier: show delivered signals only - SHOW ALL SIGNALS SENT TODAY (NO LIMIT)
+	# FREE tier: show delivered signals only - now sample 2 random signals with score >= 55
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		try:
 			from db.session import ENGINE, get_session
@@ -162,16 +163,36 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			if update.message is not None:
 				await update.message.reply_text("✅ No signals delivered today.")
 			return
-		
-		# Show ALL signals for free users (removed the [:5] limit)
-		total_signals = len(signals_list)
-		lines = [f"🆓 Today's Signals ({total_signals} total)", ""]
-		for i, s in enumerate(signals_list, 1):
+
+		# Filter by score >= 55 and sample any 2 at random
+		eligible = []
+		for s in signals_list:
+			try:
+				score_val = float(s.get('score') or 0)
+			except Exception:
+				score_val = 0.0
+			if score_val >= 55.0:
+				eligible.append(s)
+
+		if not eligible:
+			if update.message is not None:
+				await update.message.reply_text("⚠️ No signals above 55 score today. Upgrade for full access or check back later.")
+			return
+
+		picked = eligible if len(eligible) <= 2 else random.sample(eligible, 2)
+		total_signals = len(eligible)
+		lines = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals} with score ≥ 55)", ""]
+		for i, s in enumerate(picked, 1):
 			entry = float(s.get('entry') or 0)
 			sig_id = s.get('signal_id', 'N/A')
 			sig_id_short = sig_id[:8]
+			score_val = 0.0
+			try:
+				score_val = float(s.get('score') or 0)
+			except Exception:
+				score_val = 0.0
 			lines.append(
-				f"{i}. {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
+				f"{i}. {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()} (Score: {score_val:.1f})\n"
 				f"   Reference: `{sig_id_short}...` | Entry: {entry:.4f}\n"
 				f"   /outcome {sig_id_short}"
 			)
@@ -213,20 +234,40 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		_audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
 		unresolved_signals = []
 
-	if not unresolved_signals:
+	# Tier-based filtering
+	tier_norm = str(tier or "").strip().lower()
+	is_vip = tier_norm in {"vip", "owner", "admin"}
+	filtered_signals = []
+	for s in unresolved_signals:
+		try:
+			score_val = float(s.get('score') or 0)
+		except Exception:
+			score_val = 0.0
+		if is_vip:
+			filtered_signals.append(s)
+		else:
+			if 55.0 <= score_val <= 75.0:
+				filtered_signals.append(s)
+
+	if not filtered_signals:
 		if update.message is not None:
-			await update.message.reply_text("✅ No unresolved signals. All trades resolved or archived.")
+			await update.message.reply_text(
+				"✅ No unresolved signals in your range. Premium shows score 55–75. VIP/Owner/Admin shows all signals."
+			)
 		return
 
-	# PREMIUM/VIP: detailed formatting per tier - SHOW ALL UNRESOLVED SIGNALS (NO LIMIT)
+	# PREMIUM/VIP: detailed formatting per tier with new ranges
 	from .formatter import format_signal
 	import json
 	
-	total_active = len(unresolved_signals)
+	total_active = len(filtered_signals)
 	if update.message is not None and total_active > 0:
-		await update.message.reply_text(f"📊 Your Active Signals ({total_active} unresolved):\n\n")
+		if is_vip:
+			await update.message.reply_text(f"📊 Your Active Signals ({total_active} unresolved, all shown):\n\n")
+		else:
+			await update.message.reply_text(f"📊 Your Active Signals ({total_active} between 55–75 score):\n\n")
 	
-	for idx, s in enumerate(unresolved_signals, 1):
+	for idx, s in enumerate(filtered_signals, 1):
 		try:
 			# Ensure numeric fields are floats
 			score = float(s.get('score') or 0)
@@ -250,6 +291,25 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			
 			regime = s.get('regime', 'NEUTRAL')
 			ml_prob = float(s.get('ml_probability') or 0.5)
+
+			merits = []
+			demerits = []
+			if confidence >= 0.7:
+				merits.append("Strong confidence")
+			elif confidence < 0.55:
+				demerits.append("Low confidence")
+			if rr >= 2.0:
+				merits.append("Excellent R/R (≥2.0)")
+			elif rr < 1.5:
+				demerits.append("Weak R/R (<1.5)")
+			if ml_prob >= 0.65:
+				merits.append("ML model agrees")
+			elif ml_prob < 0.4:
+				demerits.append("ML model cautious")
+			if regime and str(regime).upper() != "NEUTRAL":
+				merits.append(f"Regime: {regime}")
+			merits_text = ", ".join(merits) if merits else "Balanced setup"
+			demerits_text = ", ".join(demerits) if demerits else "No major drawbacks"
 			
 			# Calculate entry/exit advice
 			if s.get('direction', '').upper() == 'LONG':
@@ -259,7 +319,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				entry_advice = f"Sell on rally to {entry:.4f}"
 				exit_advice = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
 			
-			if tier in {"owner", "admin", "vip"}:
+			if is_vip:
 				# Full advice for VIP
 				msg = (
 					f"🟢 VIP Signal: {s.get('asset')} ({s.get('timeframe')})\n"
@@ -271,6 +331,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					f"TP: {take_profit:.4f}\n"
 					f"R/R: {rr:.2f}:1\n\n"
 					f"Confidence: {confidence*100:.0f}% | ML: {ml_prob*100:.0f}%\n\n"
+					f"✅ Merits: {merits_text}\n"
+					f"⚠️ Demerits: {demerits_text}\n\n"
 					f"📌 Entry Strategy: {entry_advice}\n"
 					f"📌 Exit Strategy: {exit_advice}\n"
 					f"📌 Risk: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips\n\n"
