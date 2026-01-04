@@ -1233,6 +1233,12 @@ def run_bot() -> None:
                         asyncio.run(_write())
                     except Exception:
                         pass
+
+                    # Fire outcome notifications immediately instead of waiting for the scheduler loop.
+                    try:
+                        send_outcome_notifications()
+                    except Exception:
+                        pass
                 except Exception:
                     continue
 
