@@ -244,8 +244,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		except Exception:
 			score_val = 0.0
 		if is_vip:
-			filtered_signals.append(s)
+			# VIP/Owner/Admin: show all signals with score >= 55
+			if score_val >= 55.0:
+				filtered_signals.append(s)
 		else:
+			# Premium: show signals in 55–75 band
 			if 55.0 <= score_val <= 75.0:
 				filtered_signals.append(s)
 
@@ -263,7 +266,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	total_active = len(filtered_signals)
 	if update.message is not None and total_active > 0:
 		if is_vip:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} unresolved, all shown):\n\n")
+			await update.message.reply_text(f"📊 Your Active Signals ({total_active} with score ≥ 55):\n\n")
 		else:
 			await update.message.reply_text(f"📊 Your Active Signals ({total_active} between 55–75 score):\n\n")
 	
