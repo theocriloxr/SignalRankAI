@@ -1523,8 +1523,42 @@ async def performance_command(update, context):
 			profit_loss = float((stats or {}).get("profit_loss_pct") or 0.0)
 
 			if total <= 0:
-				if update.message is not None:
-					await update.message.reply_text("No signals in the last 30 days.")
+				# Fallback diagnostic: if deliveries exist but outcomes are missing, show a hint instead of empty state.
+				deliveries_30d = 0
+				try:
+					from sqlalchemy import select, func
+					from db.models import SignalDelivery, User
+					cutoff = datetime.utcnow() - timedelta(days=30)
+					async def _count_deliveries() -> int:
+						async with get_session() as session:
+							res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+							u = res_u.scalar_one_or_none()
+							if u is None:
+								await session.commit()
+								return 0
+							res_d = await session.execute(
+								select(func.count(SignalDelivery.id)).where(
+									SignalDelivery.user_id == u.id,
+									SignalDelivery.delivered_at >= cutoff,
+								)
+							)
+							await session.commit()
+							return int(res_d.scalar() or 0)
+					deliveries_30d = await _count_deliveries()
+				except Exception:
+					deliveries_30d = 0
+
+				if deliveries_30d > 0:
+					msg = (
+						"📊 Performance (pending outcomes)\n\n"
+						f"Signals delivered (30d): {deliveries_30d}\n"
+						"Outcomes not yet tracked for these signals. They will appear once TP/SL is marked."
+					)
+					if update.message is not None:
+						await update.message.reply_text(msg)
+				else:
+					if update.message is not None:
+						await update.message.reply_text("No signals in the last 30 days.")
 				return
 
 			if tier_rank(tier) < tier_rank("PREMIUM"):
