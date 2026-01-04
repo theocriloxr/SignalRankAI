@@ -248,6 +248,54 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				filtered_signals.append(s)
 
 	if not filtered_signals:
+		# Fallback: show any signals delivered today (even if already resolved/archived)
+		delivered_today: list[dict] = []
+		try:
+			from db.session import ENGINE, get_session
+			if ENGINE is not None:
+				from db.pg_features import list_signals_sent_today
+				async with get_session() as session:
+					rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+					delivered_today = [
+						{
+							"signal_id": r.signal_id,
+							"asset": r.asset,
+							"timeframe": r.timeframe,
+							"direction": r.direction,
+							"entry": r.entry,
+							"stop_loss": r.stop_loss,
+							"take_profit": r.take_profit,
+							"rr_ratio": r.rr_estimate,
+							"score": r.score,
+						}
+						for r in rows
+					]
+		except Exception:
+			delivered_today = []
+
+		if delivered_today:
+			lines = ["📬 Delivered today (latest signals):", ""]
+			for i, s in enumerate(delivered_today[:10], 1):
+				ref = str(s.get("signal_id") or "N/A")
+				ref_short = ref[:8]
+				try:
+					score_val = float(s.get("score") or 0)
+				except Exception:
+					score_val = 0.0
+				entry_val = 0.0
+				try:
+					entry_val = float(s.get("entry") or 0)
+				except Exception:
+					entry_val = 0.0
+				lines.append(
+					f"{i}. {s.get('asset')} {s.get('timeframe')} {str(s.get('direction') or '').upper()} | Score {score_val:.2f}\n"
+					f"   Ref: {ref_short} | Entry: {entry_val:.4f}"
+				)
+			lines += ["", "Use /outcome <ref> to check if you hit TP/SL."]
+			if update.message is not None:
+				await update.message.reply_text("\n".join(lines))
+			return
+
 		if update.message is not None:
 			await update.message.reply_text(
 				"✅ No unresolved signals in your range. Premium shows score 55–75. VIP/Owner/Admin shows all signals."
