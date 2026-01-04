@@ -176,11 +176,15 @@ def save_model(model, feature_cols):
     """Save model to JSON."""
     model_path = Path(__file__).parent / "model.json"
     
-    # Convert to JSON-serializable format
+    # Save model as ubj (XGBoost binary JSON) - avoids format warnings
+    import base64
+    booster = model.get_booster()
+    model_bytes = booster.save_raw('ubj')  # Binary format, no warnings
+    
     model_dict = {
         "type": "xgboost",
         "feature_cols": feature_cols,
-        "model_json": model.get_booster().save_raw('json').decode('utf-8'),
+        "model_bytes_b64": base64.b64encode(model_bytes).decode('utf-8'),
         "trained_at": datetime.utcnow().isoformat(),
     }
 

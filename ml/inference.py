@@ -53,21 +53,12 @@ class MLFilter:
                 self.active = False
                 return
             
-            # Decode base64 and load model
+            # Decode base64 and load model directly from bytes (ubj format)
             model_bytes = base64.b64decode(model_b64)
-            
-            # Write to temp file and load
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.bin') as tmp:
-                tmp.write(model_bytes)
-                tmp_path = tmp.name
-            
-            try:
-                booster = xgb.Booster()
-                booster.load_model(tmp_path)
-                self.model = booster
-                self.active = True
-            finally:
-                Path(tmp_path).unlink(missing_ok=True)
+            booster = xgb.Booster()
+            booster.load_model(bytearray(model_bytes))  # Load directly from memory
+            self.model = booster
+            self.active = True
                 
         except Exception as e:
             self.active = False
