@@ -16,9 +16,12 @@ Features:
 
 import os
 import logging
+import time
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+_RATE_LIMIT = "__TV_RATE_LIMIT__"
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -35,6 +38,14 @@ def _env_float(name: str, default: float) -> float:
         return float((os.getenv(name) or str(default)).strip())
     except Exception:
         return float(default)
+
+
+def _env_int(name: str, default: int) -> int:
+    """Parse environment variable as int."""
+    try:
+        return int((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return int(default)
 
 
 def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
@@ -97,6 +108,9 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
             interval=tv_tf,
         )
 
+        max_rl_retries = max(1, _env_int("TRADINGVIEW_RATE_LIMIT_RETRIES", 2))
+        rl_delay = _env_float("TRADINGVIEW_RATE_LIMIT_DELAY", 3.0)
+
         def _try_analysis(h):
             try:
                 return h.get_analysis()
@@ -104,9 +118,26 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
                 err_msg = str(exc).lower()
                 if "exchange or symbol not found" in err_msg:
                     return None
+                if "status code: 429" in err_msg or "http status code: 429" in err_msg:
+                    return _RATE_LIMIT
                 raise
 
-        analysis = _try_analysis(handler)
+        def _run_with_rate_limit(h, label: str):
+            for attempt in range(1, max_rl_retries + 1):
+                result = _try_analysis(h)
+                if result != _RATE_LIMIT:
+                    return result
+                if attempt < max_rl_retries:
+                    logger.warning(
+                        f"[tradingview] rate_limited symbol={label} attempt={attempt}/{max_rl_retries} sleep={rl_delay}s"
+                    )
+                    time.sleep(rl_delay)
+            logger.error(
+                f"[tradingview] rate_limit_exhausted symbol={label} retries={max_rl_retries}"
+            )
+            return _RATE_LIMIT
+
+        analysis = _run_with_rate_limit(handler, symbol)
         # Fallback: some TradingView listings require base-only symbol (rare). Try that once.
         if analysis is None and asset_upper.endswith("USDT"):
             base_only = asset_upper[:-4]
@@ -118,16 +149,15 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
                     exchange=exchange,
                     interval=tv_tf,
                 )
-                analysis = _try_analysis(handler2)
+                analysis = _run_with_rate_limit(handler2, base_only)
             except Exception:
                 analysis = None
 
+        if analysis == _RATE_LIMIT:
+            return signals
+
         if analysis is None:
             logger.warning(f"[tradingview] skip symbol_not_found asset={asset_upper} exchange={exchange} tf={timeframe}")
-            return signals
-        
-        if analysis is None:
-            logger.warning(f"[tradingview] No analysis for {symbol} {timeframe}")
             return signals
         
         # Extract recommendation
