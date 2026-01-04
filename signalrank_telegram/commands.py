@@ -164,14 +164,14 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				await update.message.reply_text("✅ No signals delivered today.")
 			return
 
-		# Filter by score >= 55 and sample any 2 at random
+		# Filter by score in 45–75 and sample any 2 at random
 		eligible = []
 		for s in signals_list:
 			try:
 				score_val = float(s.get('score') or 0)
 			except Exception:
 				score_val = 0.0
-			if score_val >= 55.0:
+			if 45.0 <= score_val <= 75.0:
 				eligible.append(s)
 
 		if not eligible:
@@ -181,22 +181,17 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 		picked = eligible if len(eligible) <= 2 else random.sample(eligible, 2)
 		total_signals = len(eligible)
-		lines = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals} with score ≥ 55)", ""]
+		lines = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals})", ""]
 		for i, s in enumerate(picked, 1):
 			entry = float(s.get('entry') or 0)
 			sig_id = s.get('signal_id', 'N/A')
 			sig_id_short = sig_id[:8]
-			score_val = 0.0
-			try:
-				score_val = float(s.get('score') or 0)
-			except Exception:
-				score_val = 0.0
 			lines.append(
-				f"{i}. {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()} (Score: {score_val:.1f})\n"
+				f"{i}. {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
 				f"   Reference: `{sig_id_short}...` | Entry: {entry:.4f}\n"
 				f"   /outcome {sig_id_short}"
 			)
-		lines += ["", "💡 Use /outcome <reference> to check if you hit TP/SL", "👆 Upgrade to PREMIUM for full signal details."]
+		lines += ["", "💡 Use /outcome <reference> to check if you hit TP/SL", "👆 Upgrade to PREMIUM for more signals and details."]
 		if update.message is not None:
 			await update.message.reply_text("\n".join(lines))
 		return
