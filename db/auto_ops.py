@@ -103,6 +103,23 @@ def run_startup_ops(run_mode: str) -> None:
         # 2) Optional one-time wipe to "start fresh"
         if _env_bool("FRESH_START", False) and run_mode in {"web", "all"}:
             _fresh_start_if_needed(conn)
+        
+        # 3) Ensure ml_probability column exists (post-migration fix for 0011)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='signals' AND column_name='ml_probability'
+                    )
+                """)
+                if not cur.fetchone()[0]:
+                    # Column doesn't exist, add it
+                    cur.execute("ALTER TABLE signals ADD COLUMN ml_probability FLOAT")
+                    conn.commit()
+        except Exception as e:
+            # Column may already exist or table may not exist yet; not critical
+            pass
 
     finally:
         if conn is not None:

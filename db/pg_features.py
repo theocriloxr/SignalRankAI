@@ -178,23 +178,43 @@ async def get_or_create_signal(
         await session.flush()
         return existing
 
-    s = Signal(
-        asset=asset,
-        timeframe=timeframe,
-        direction=direction,
-        entry=entry,
-        stop_loss=stop_loss,
-        take_profit=tp_str,
-        rr_estimate=rr_estimate,
-        score=score,
-        regime=str(regime)[:32] if regime is not None else None,
-        ml_probability=ml_probability,
-        strategy_name=strategy_name,
-        strategy_group=strategy_group,
-        strength=strength,
-        fingerprint=fingerprint,
-        created_at=now,
-    )
+    # Create Signal - try with ml_probability, fallback if column missing (migration pending)
+    try:
+        s = Signal(
+            asset=asset,
+            timeframe=timeframe,
+            direction=direction,
+            entry=entry,
+            stop_loss=stop_loss,
+            take_profit=tp_str,
+            rr_estimate=rr_estimate,
+            score=score,
+            regime=str(regime)[:32] if regime is not None else None,
+            ml_probability=ml_probability,
+            strategy_name=strategy_name,
+            strategy_group=strategy_group,
+            strength=strength,
+            fingerprint=fingerprint,
+            created_at=now,
+        )
+    except Exception:
+        # Fallback if ml_probability column doesn't exist yet
+        s = Signal(
+            asset=asset,
+            timeframe=timeframe,
+            direction=direction,
+            entry=entry,
+            stop_loss=stop_loss,
+            take_profit=tp_str,
+            rr_estimate=rr_estimate,
+            score=score,
+            regime=str(regime)[:32] if regime is not None else None,
+            strategy_name=strategy_name,
+            strategy_group=strategy_group,
+            strength=strength,
+            fingerprint=fingerprint,
+            created_at=now,
+        )
     session.add(s)
     await session.flush()
 
