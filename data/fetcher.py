@@ -184,9 +184,13 @@ def get_crypto_candles(asset, timeframe):
             return out
         except Exception:
             return []
-        # CryptoCompare expects fsym/tsym (base/quote). We try multiple quote
-        # currencies because some assets don't have a USDT market.
-        base_raw = symbol_rest
+
+    def _cryptocompare_candles(symbol_rest: str, tf: str) -> list[dict]:
+        """Fetch candles from CryptoCompare public API (requires free key for higher limits)."""
+        base_raw = (symbol_rest or "").upper().strip()
+        if not base_raw:
+            return []
+
         preferred_quote = "USDT"
         for q in ("USDT", "USDC", "BUSD", "USD"):
             if base_raw.endswith(q) and len(base_raw) > len(q):
@@ -260,6 +264,7 @@ def get_crypto_candles(asset, timeframe):
             tried.append(tsym)
             out = _fetch_for_quote(tsym)
             if out:
+                logger.info(f"[data] crypto_fallback=cryptocompare symbol={base_raw}{tsym} tf={tf} candles={len(out)}")
                 return out
         return []
 
