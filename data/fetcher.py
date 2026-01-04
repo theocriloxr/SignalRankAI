@@ -263,14 +263,18 @@ def get_crypto_candles(asset, timeframe):
                 return out
         return []
 
-    # Allow explicit provider override
+    # Allow explicit provider override (but still fall back if empty)
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
     if provider == "cryptocompare":
         candles = _cryptocompare_candles(sym, interval)
-        return candles or []
-    if provider == "bybit":
+        if candles:
+            return candles
+        # fall through to bybit/binance fallback
+    elif provider == "bybit":
         candles = _bybit_candles(sym, interval)
-        return candles or []
+        if candles:
+            return candles
+        # fall through to binance/cryptocompare
 
     global _BINANCE_BLOCKED_REASON
     if _BINANCE_BLOCKED_REASON is not None:
@@ -352,7 +356,9 @@ def get_crypto_candles(asset, timeframe):
     candles = _cryptocompare_candles(sym, interval)
     if candles:
         logger.info(f"[data] crypto_fallback=cryptocompare symbol={sym} tf={interval} candles={len(candles)}")
-    return candles or []
+        return candles
+    logger.warning(f"[data] crypto_fetched=none symbol={sym} tf={interval} after_all_sources")
+    return []
 
 def get_fx_candles(asset, timeframe):
     """Fetch FX candles from a real candle provider.
