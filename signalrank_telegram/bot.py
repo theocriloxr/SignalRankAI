@@ -1395,6 +1395,33 @@ def run_bot() -> None:
         # Postgres-only: no SQLite fallback
         return
 
+    def auto_retrain_ml_model_job():
+        """Automatically retrain ML model when enough outcome data exists."""
+        try:
+            if state.get_killswitch_sync().enabled:
+                return
+        except Exception:
+            pass
+
+        logger.info("🤖 ML auto-retrain job triggered")
+
+        try:
+            from ml.train_model import main as train_main
+
+            async def _retrain():
+                try:
+                    success = await train_main()
+                    if success:
+                        logger.info("✅ ML model retrained successfully")
+                    else:
+                        logger.warning("⚠️ ML retrain skipped (insufficient data)")
+                except Exception as e:
+                    logger.error(f"❌ ML retrain failed: {e}", exc_info=True)
+
+            asyncio.run(_retrain())
+        except Exception as e:
+            logger.error(f"Error in ML retrain job: {e}", exc_info=True)
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
@@ -1421,6 +1448,14 @@ def run_bot() -> None:
         'cron',
         day_of_week='sun',
         hour=1,
+        minute=0,
+    )
+    # Auto-retrain ML model (weekly, Sunday at 02:00 UTC)
+    scheduler.add_job(
+        auto_retrain_ml_model_job,
+        'cron',
+        day_of_week='sun',
+        hour=2,
         minute=0,
     )
     scheduler.start()
