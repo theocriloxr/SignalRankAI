@@ -92,6 +92,7 @@ class Signal(Base):
     rr_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     score: Mapped[float] = mapped_column(Float, index=True, nullable=False)
     regime: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    ml_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     strategy_name: Mapped[str] = mapped_column(String(64), nullable=False)
     strategy_group: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -143,6 +143,11 @@ async def get_or_create_signal(
     score = float(signal.get("score") or 0)
     regime = signal.get("regime")
     strength = float(signal.get("strength") or 0)
+    ml_probability = signal.get("ml_probability")
+    try:
+        ml_probability = float(ml_probability) if ml_probability is not None else None
+    except Exception:
+        ml_probability = None
     strategy_name = str(signal.get("strategy_name") or signal.get("strategy") or "unknown")[:64]
     strategy_group = str(signal.get("strategy_group") or "unknown")[:32]
 
@@ -183,6 +188,7 @@ async def get_or_create_signal(
         rr_estimate=rr_estimate,
         score=score,
         regime=str(regime)[:32] if regime is not None else None,
+        ml_probability=ml_probability,
         strategy_name=strategy_name,
         strategy_group=strategy_group,
         strength=strength,
