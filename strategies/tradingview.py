@@ -74,27 +74,57 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
             return signals
         
         # Determine exchange (crypto or forex)
-        # USDT/BNB = crypto (Binance), USD/JPY = forex (FX_IDC)
-        if asset.endswith('USDT') or asset.endswith('BNB') or asset.endswith('BUSD'):
+        # Crypto: keep full symbol (BTCUSDT) on BINANCE screener
+        asset_upper = (asset or "").upper().strip()
+        if asset_upper.endswith(('USDT', 'BUSD', 'USDC', 'BTC', 'ETH')):
             exchange = 'BINANCE'
-            symbol = asset.replace('USDT', '').upper()  # BTCUSDT -> BTC
-        elif any(c.isalpha() for c in asset) and len(asset) <= 6:
+            symbol = asset_upper  # TradingView expects full pair, e.g., BTCUSDT
+        elif len(asset_upper) == 6 and asset_upper.isalpha():
             # Forex pair (e.g., EURUSD, GBPUSD)
             exchange = 'FX_IDC'
-            symbol = asset.upper()
+            symbol = asset_upper
         else:
             logger.warning(f"[tradingview] Unknown asset type: {asset}")
             return signals
         
-        # Fetch analysis
+        # Fetch analysis with graceful fallback for unsupported symbols
+        screener = 'forex' if exchange == 'FX_IDC' else 'crypto'
+        logger.info(f"[tradingview] source=tradingview asset={asset_upper} symbol={symbol} exchange={exchange} screener={screener} tf={timeframe}")
         handler = TA_Handler(
             symbol=symbol,
-            screener='forex' if exchange == 'FX_IDC' else 'crypto',
+            screener=screener,
             exchange=exchange,
             interval=tv_tf,
         )
-        
-        analysis = handler.get_analysis()
+
+        def _try_analysis(h):
+            try:
+                return h.get_analysis()
+            except Exception as exc:
+                err_msg = str(exc).lower()
+                if "exchange or symbol not found" in err_msg:
+                    return None
+                raise
+
+        analysis = _try_analysis(handler)
+        # Fallback: some TradingView listings require base-only symbol (rare). Try that once.
+        if analysis is None and asset_upper.endswith("USDT"):
+            base_only = asset_upper[:-4]
+            logger.warning(f"[tradingview] retry_base_only asset={asset_upper} base={base_only} exchange={exchange} tf={timeframe}")
+            try:
+                handler2 = TA_Handler(
+                    symbol=base_only,
+                    screener=screener,
+                    exchange=exchange,
+                    interval=tv_tf,
+                )
+                analysis = _try_analysis(handler2)
+            except Exception:
+                analysis = None
+
+        if analysis is None:
+            logger.warning(f"[tradingview] skip symbol_not_found asset={asset_upper} exchange={exchange} tf={timeframe}")
+            return signals
         
         if analysis is None:
             logger.warning(f"[tradingview] No analysis for {symbol} {timeframe}")

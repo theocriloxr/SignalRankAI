@@ -1,10 +1,13 @@
 import os
 import time
+import logging
 from datetime import datetime
 
 import requests
 
 from .indicators import calculate_indicators
+
+logger = logging.getLogger(__name__)
 
 
 _ALPHA_LAST_CALL_TS = 0.0
@@ -58,9 +61,19 @@ def fetch_market_data(asset, timeframes):
 
 def get_candles(asset, timeframe):
     if is_crypto(asset):
-        return get_crypto_candles(asset, timeframe)
+        candles = get_crypto_candles(asset, timeframe)
+        if candles:
+            logger.info(f"[data] crypto_fetched=binance/bybit/cc symbol={asset} tf={timeframe} candles={len(candles)}")
+        else:
+            logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe}")
+        return candles
     else:
-        return get_fx_candles(asset, timeframe)
+        candles = get_fx_candles(asset, timeframe)
+        if candles:
+            logger.info(f"[data] fx_fetched=alphavantage symbol={asset} tf={timeframe} candles={len(candles)}")
+        else:
+            logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe}")
+        return candles
 
 def is_crypto(asset):
     a = (asset or "").upper().strip()
@@ -167,6 +180,7 @@ def get_crypto_candles(asset, timeframe):
                     )
                 except (IndexError, ValueError, TypeError):
                     continue
+            logger.info(f"[data] crypto_fallback=bybit symbol={symbol} tf={tf} candles={len(out)}")
             return out
         except Exception:
             return []
@@ -328,6 +342,7 @@ def get_crypto_candles(asset, timeframe):
                     )
                 except Exception:
                     continue
+            logger.info(f"[data] crypto_primary=binance symbol={sym} tf={interval} candles={len(candles)}")
             return candles
         except Exception as e:
             print(f"[WARN] Binance candle fetch failed for {sym} {interval} (attempt {attempt}/{max_retries}): {e}")
@@ -335,6 +350,8 @@ def get_crypto_candles(asset, timeframe):
 
     # Final fallback
     candles = _cryptocompare_candles(sym, interval)
+    if candles:
+        logger.info(f"[data] crypto_fallback=cryptocompare symbol={sym} tf={interval} candles={len(candles)}")
     return candles or []
 
 def get_fx_candles(asset, timeframe):
@@ -385,6 +402,7 @@ def get_fx_candles(asset, timeframe):
                 continue
 
         # For 4h, aggregate from 60min bars.
+        logger.info(f"[data] fx_primary=alphavantage symbol={pair} tf={tf} candles={len(candles)}")
         if tf == "1h":
             return candles
         return candles
@@ -443,6 +461,7 @@ def get_fx_candles(asset, timeframe):
                 h = max(b["high"] for b in bars)
                 l = min(b["low"] for b in bars)
                 out.append({"timestamp": k, "open": o, "high": h, "low": l, "close": c, "volume": 0.0})
+            logger.info(f"[data] fx_primary=alphavantage_agg60 symbol={pair} tf={tf} candles={len(out)}")
             return out
 
         # Daily
@@ -472,6 +491,7 @@ def get_fx_candles(asset, timeframe):
                 )
             except Exception:
                 continue
+        logger.info(f"[data] fx_primary=alphavantage_daily symbol={pair} tf={tf} candles={len(candles)}")
         return candles
 
     return []
@@ -523,21 +543,14 @@ def get_tradingview_candles(asset: str, timeframe: str) -> list[dict]:
             return candles
         
         # Determine exchange and symbol format
-        # Crypto: BINANCE for BTCUSDT/ETHUSDT
+        # Crypto: BINANCE for BTCUSDT/ETHUSDT (keep full pair)
         # Forex: FX_IDC for EURUSD/GBPUSD
         asset_upper = asset.upper().strip()
-        
-        if asset_upper.endswith('USDT') or asset_upper.endswith('BUSD') or asset_upper.endswith('USDC'):
-            # Crypto pair - format for Binance
-            exchange = 'BINANCE'
-            # Remove quote currency to get symbol (BTCUSDT -> BTCUSDT)
-            symbol = asset_upper
-        elif is_crypto(asset):
-            # Other crypto formats
+
+        if asset_upper.endswith(('USDT', 'BUSD', 'USDC', 'BTC', 'ETH')) or is_crypto(asset):
             exchange = 'BINANCE'
             symbol = asset_upper
         else:
-            # Forex pair (e.g., EURUSD)
             exchange = 'FX_IDC'
             symbol = asset_upper
         
@@ -551,7 +564,7 @@ def get_tradingview_candles(asset: str, timeframe: str) -> list[dict]:
             )
             
             analysis = handler.get_analysis()
-            
+			
             if analysis is None:
                 return candles
             
@@ -574,7 +587,7 @@ def get_tradingview_candles(asset: str, timeframe: str) -> list[dict]:
                 'tradingview_verified': True,
                 'indicators_count': len([k for k in indicators.keys() if k != 'summary']),
             }
-            
+            logger.info(f"[data] tradingview_candles source=tradingview asset={asset_upper} tf={timeframe} verified=True")
             return [candle_meta]
         
         except Exception as e:
