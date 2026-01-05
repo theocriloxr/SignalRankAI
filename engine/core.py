@@ -27,6 +27,10 @@ from engine.signal_context import SignalContext, SignalCooldownManager, OneBiasP
 from engine.advanced_filters import SmartFilterSuite
 from engine.tier_notifications import TierNotificationManager
 
+# NEW: Near-zero loss trading system
+from engine.ultra_quality_filter import ultra_quality
+from engine.advanced_exit_manager import advanced_exit
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,15 +42,16 @@ def _env_float(name: str, default: float) -> float:
 
 
 # Store/dispatch threshold for the main pipeline.
-# Higher = fewer signals but higher quality. Lower = more signals but more noise.
-# Now stricter: 65 for quality-over-quantity (signals with edge + good conditions)
-# Range: 50-75 recommended.
+# Ultra-strict: 85 minimum = near-zero loss trading
+# Only signals with confluence >= 80%, R:R >= 2.5, trending regime
 # - 50: Permissive (all passing signals)
 # - 60: Balanced (reasonable quality)
 # - 65: Quality-focused (only high-confidence+good setups)
 # - 70: Strict (premium quality only)
-# - 75: Very strict (only top-tier signals) - NEW DEFAULT FOR WIN RATE RECOVERY
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 75)
+# - 75: Very strict (only top-tier signals)
+# - 85: ULTRA (near-zero loss) <- NEW DEFAULT
+# - 90: Elite (only perfect setups)
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 85)
 
 def load_tradable_assets():
     """Return configured fallback assets.
@@ -627,6 +632,21 @@ def main_loop(DRY_RUN=False):
                             score = score_signal(signal)
                             signal['score'] = score
                             
+                            # ========================================
+                            # NEW: ULTRA-QUALITY FILTER (Near-Zero Loss)
+                            # ========================================
+                            # Apply ultra-strict validation to prevent losses
+                            should_trade, rejection, quality_score = ultra_quality.apply_ultra_filter(signal)
+                            
+                            if not should_trade:
+                                # Signal rejected by ultra-quality filter
+                                if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                    print(f"[engine] ultra-filter rejected: {symbol} {timeframe} - {rejection}", flush=True)
+                                continue
+                            
+                            if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                print(f"[engine] ultra-filter approved: {symbol} {timeframe} score={quality_score:.1f}", flush=True)
+                            
                         except Exception:
                             # Isolated failure - continue with next signal
                             continue
@@ -664,20 +684,77 @@ def main_loop(DRY_RUN=False):
                             
                             # Calculate position sizing SUGGESTION
                             try:
-                                risk_pct = 5.0  # 5% risk per trade
-                                risk_amount = account_equity * (risk_pct / 100)
+                                # Use ultra-quality position sizing (Kelly criterion)
                                 entry_price = signal.get('entry', 0)
                                 sl_price = signal.get('stop_loss', 0)
                                 
                                 if entry_price > 0 and sl_price > 0:
-                                    price_diff = abs(entry_price - sl_price)
-                                    if price_diff > 0:
-                                        position_size = risk_amount / price_diff
-                                        signal['position_size'] = position_size
-                                        signal['suggested_risk_amount'] = risk_amount
-                                        signal['risk_pct'] = risk_pct
+                                    position_size, sizing_detail = ultra_quality.calculate_dynamic_position_size(
+                                        account_equity=account_equity,
+                                        entry_price=entry_price,
+                                        stop_loss=sl_price,
+                                        current_win_rate=None
+                                    )
+                                    signal['position_size'] = position_size
+                                    signal['position_sizing_method'] = 'Kelly Criterion (25%)'
+                                    signal['sizing_detail'] = sizing_detail
                             except Exception:
                                 pass
+                            
+                            # ========================================
+                            # NEW: CALCULATE SMART EXITS (Near-Zero Loss)
+                            # ========================================
+                            try:
+                                entry = signal.get('entry', 0)
+                                atr_value = signal.get('atr', 0)
+                                direction = signal.get('direction', 'long')
+                                current_price = signal.get('close_price', entry)
+                                
+                                # Get market structure support/resistance
+                                recent_candles = market_data.get(timeframe, {}).get('candles', [])
+                                recent_lows = [c['low'] for c in recent_candles[-50:]] if recent_candles else []
+                                recent_highs = [c['high'] for c in recent_candles[-50:]] if recent_candles else []
+                                support = min(recent_lows) if recent_lows else entry
+                                resistance = max(recent_highs) if recent_highs else entry
+                                
+                                # Calculate smart stops
+                                smart_stops = advanced_exit.calculate_smart_stops(
+                                    entry_price=entry,
+                                    atr=atr_value,
+                                    direction=direction,
+                                    current_price=current_price,
+                                    recent_low=support,
+                                    recent_high=resistance,
+                                    support=support,
+                                    resistance=resistance
+                                )
+                                
+                                signal['stops'] = smart_stops
+                                signal['tp_levels'] = [smart_stops['tp1'], smart_stops['tp2'], smart_stops['tp3']]
+                                signal['stop_loss'] = smart_stops['stop_loss']
+                                signal['take_profit'] = smart_stops['tp3']  # Default to TP3
+                                
+                                # Calculate partial exits
+                                position_size = signal.get('position_size', 1.0)
+                                partial_exits = advanced_exit.calculate_partial_exit_targets(
+                                    position_size=position_size,
+                                    entry_price=entry,
+                                    tp_levels=[smart_stops['tp1'], smart_stops['tp2'], smart_stops['tp3']]
+                                )
+                                signal['partial_exits'] = partial_exits
+                                
+                                if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                    exit_summary = advanced_exit.get_exit_plan_summary(
+                                        entry=entry,
+                                        stops=smart_stops,
+                                        position_size=position_size,
+                                        account_equity=account_equity
+                                    )
+                                    print(f"[engine] exit plan: {symbol} {timeframe} {exit_summary}", flush=True)
+                                    
+                            except Exception as e:
+                                if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                    print(f"[engine] exit plan error: {symbol} - {e}", flush=True)
                             
                             scored_signals_all.append(signal)
                             cycle_scored += 1
