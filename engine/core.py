@@ -21,6 +21,12 @@ from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals
 from core.redis_state import state
 
+# NEW: Signal-only bot features
+from engine.mtf_analysis import MultiTimeframeAnalyzer
+from engine.signal_context import SignalContext, SignalCooldownManager, OneBiasPerTimeframe
+from engine.advanced_filters import SmartFilterSuite
+from engine.tier_notifications import TierNotificationManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -145,12 +151,12 @@ def main_loop(DRY_RUN=False):
     # INITIALIZE ALL TRADING SYSTEM COMPONENTS
     # ============================================
     
-    # Risk management
+    # Risk management (for SUGGESTIONS, not execution)
     account_equity = 10000.0  # Default, should come from broker API
     risk_manager = RiskManager(account_equity)
     correlation_manager = CorrelationManager()
     
-    # Exit management
+    # Exit management (for TRACKING outcomes, not execution)
     exit_manager = ExitManager()
     partial_exit_tracker = PartialExitTracker()
     
@@ -159,13 +165,34 @@ def main_loop(DRY_RUN=False):
     regime_filter = MarketRegimeFilter()
     slippage_control = SlippageControl()
     
-    # Analytics
+    # Analytics (for performance tracking)
     backtest_engine = BacktestEngine()
     optimization_engine = OptimizationEngine()
     
-    # Position tracking
+    # Position tracking (monitor signal outcomes)
     open_positions = []
     last_trade_times = {}
+    
+    # ============================================
+    # NEW: SIGNAL-ONLY BOT FEATURES
+    # ============================================
+    
+    # Multi-timeframe analysis
+    mtf_analyzer = MultiTimeframeAnalyzer()
+    
+    # Signal context management
+    signal_context = SignalContext()
+    cooldown_manager = SignalCooldownManager()
+    bias_manager = OneBiasPerTimeframe()
+    
+    # Advanced filters
+    advanced_filters = SmartFilterSuite()
+    
+    # Tier-based notifications
+    tier_notifier = TierNotificationManager()
+    
+    # NO TRADE alert tracking
+    last_no_trade_alert = None
     
     # If Binance is blocked and no explicit override is provided, drop the heaviest TF (5m) to speed fallbacks.
     if os.getenv("CRYPTO_TIMEFRAMES"):
@@ -493,14 +520,124 @@ def main_loop(DRY_RUN=False):
                     from engine.scoring import score_signal
 
                     for signal in ml_signals:
-                        score = score_signal(signal)
-                        signal['score'] = score
+                        try:
+                            # ========================================
+                            # NEW: SIGNAL-ONLY BOT VALIDATION
+                            # ========================================
+                            
+                            symbol = signal.get('asset') or signal.get('symbol', '')
+                            timeframe = signal.get('timeframe', '1h')
+                            direction = signal.get('direction', 'long')
+                            
+                            # 1. Check candle close confirmation
+                            if not signal_context.wait_for_candle_close(
+                                market_data.get(timeframe, {}).get('candles', []),
+                                timeframe
+                            ):
+                                continue  # Skip mid-candle signals
+                            
+                            # 2. Check cooldown (prevent spam)
+                            can_send, reason = cooldown_manager.can_send_signal(symbol, timeframe)
+                            if not can_send:
+                                continue
+                            
+                            # 3. Get HTF bias (multi-timeframe analysis)
+                            htf_bias = mtf_analyzer.get_htf_bias(symbol, timeframe, market_data)
+                            
+                            # 4. Validate against HTF trend
+                            is_valid_htf, htf_reason = mtf_analyzer.validate_against_htf(direction, htf_bias)
+                            if not is_valid_htf:
+                                continue  # Reject signals against HTF trend
+                            
+                            # 5. Check one-bias-per-timeframe rule
+                            can_add_bias, bias_reason = bias_manager.can_add_signal(symbol, timeframe, direction)
+                            if not can_add_bias:
+                                continue  # Only one direction per TF
+                            
+                            # 6. Get MTF confluence score
+                            mtf_confluence = mtf_analyzer.get_mtf_confluence(symbol, market_data, timeframe, direction)
+                            
+                            # 7. Detect trading session
+                            session = signal_context.detect_trading_session()
+                            
+                            # 8. Calculate entry zone (range, not single price)
+                            atr = signal.get('atr', 0)
+                            if not atr:
+                                # Calculate ATR if not present
+                                try:
+                                    candles = market_data.get(timeframe, {}).get('candles', [])
+                                    if len(candles) >= 14:
+                                        highs = [c['high'] for c in candles[-14:]]
+                                        lows = [c['low'] for c in candles[-14:]]
+                                        closes = [c['close'] for c in candles[-14:]]
+                                        tr_values = []
+                                        for i in range(1, len(candles[-14:])):
+                                            tr = max(
+                                                highs[i] - lows[i],
+                                                abs(highs[i] - closes[i-1]),
+                                                abs(lows[i] - closes[i-1])
+                                            )
+                                            tr_values.append(tr)
+                                        atr = sum(tr_values) / len(tr_values) if tr_values else 0
+                                except Exception:
+                                    atr = 0
+                            
+                            entry_price = signal.get('entry', signal.get('entry_price', 0))
+                            entry_zone = signal_context.calculate_entry_zone(entry_price, atr, direction)
+                            
+                            # 9. Run advanced filters
+                            market_filter_data = {
+                                'price': entry_price,
+                                'ema_20': signal.get('ema_20', 0),
+                                'ema_50': signal.get('ema_50', 0),
+                                'atr': atr,
+                                'candles': market_data.get(timeframe, {}).get('candles', []),
+                                'adx': signal.get('adx', 30),
+                                'atr_pct': (atr / entry_price * 100) if entry_price > 0 else 0
+                            }
+                            
+                            passed_filters, rejections = advanced_filters.run_all_filters(
+                                signal,
+                                market_filter_data,
+                                session
+                            )
+                            
+                            if not passed_filters:
+                                # Signal rejected by advanced filters
+                                if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                    print(f"[engine] signal rejected: {symbol} {timeframe} - {rejections}", flush=True)
+                                continue
+                            
+                            # 10. Calculate signal expiration
+                            expires_at = signal_context.calculate_signal_expiration(timeframe)
+                            
+                            # 11. Calculate invalidation price (kill zone)
+                            sl_price = signal.get('stop_loss', signal.get('stop', 0))
+                            if direction == 'long':
+                                # Invalidate if price closes below SL - 0.5*ATR
+                                invalid_price = sl_price - (0.5 * atr) if sl_price > 0 else None
+                            else:
+                                # Invalidate if price closes above SL + 0.5*ATR
+                                invalid_price = sl_price + (0.5 * atr) if sl_price > 0 else None
+                            
+                            # ========================================
+                            # EXISTING SCORING
+                            # ========================================
+                            
+                            score = score_signal(signal)
+                            signal['score'] = score
+                            
+                        except Exception:
+                            # Isolated failure - continue with next signal
+                            continue
+                        
                         try:
                             if cycle_max_score is None or float(score) > float(cycle_max_score):
                                 cycle_max_score = float(score)
                                 cycle_max_score_asset = str(signal.get('asset') or signal.get('symbol') or '')
                         except Exception:
                             pass
+                        
                         if score >= MIN_SCORE_THRESHOLD:
                             # Normalize for DB + formatters
                             signal['regime'] = regime
@@ -513,8 +650,42 @@ def main_loop(DRY_RUN=False):
                                 signal['rr_ratio'] = abs(tp - entry) / abs(entry - sl)
                             else:
                                 signal['rr_ratio'] = signal.get('rr_ratio', 0)
+                            
+                            # ========================================
+                            # NEW: ADD SIGNAL CONTEXT TO SIGNAL
+                            # ========================================
+                            signal['entry_zone'] = entry_zone
+                            signal['htf_bias'] = htf_bias
+                            signal['htf_bias_at_creation'] = htf_bias.get('bias')  # For invalidation check
+                            signal['mtf_confluence'] = mtf_confluence
+                            signal['session'] = session
+                            signal['expires_at'] = expires_at
+                            signal['invalid_if_price'] = invalid_price
+                            
+                            # Calculate position sizing SUGGESTION
+                            try:
+                                risk_pct = 5.0  # 5% risk per trade
+                                risk_amount = account_equity * (risk_pct / 100)
+                                entry_price = signal.get('entry', 0)
+                                sl_price = signal.get('stop_loss', 0)
+                                
+                                if entry_price > 0 and sl_price > 0:
+                                    price_diff = abs(entry_price - sl_price)
+                                    if price_diff > 0:
+                                        position_size = risk_amount / price_diff
+                                        signal['position_size'] = position_size
+                                        signal['suggested_risk_amount'] = risk_amount
+                                        signal['risk_pct'] = risk_pct
+                            except Exception:
+                                pass
+                            
                             scored_signals_all.append(signal)
                             cycle_scored += 1
+                            
+                            # Record signal for cooldown/bias tracking
+                            cooldown_manager.record_signal(symbol, timeframe)
+                            bias_manager.set_bias(symbol, timeframe, direction)
+                            
                             try:
                                 store_signal_compat(signal)
                                 cycle_stored += 1
