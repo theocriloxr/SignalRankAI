@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 _ALPHA_LAST_CALL_TS = 0.0
+_ALPHA_COOLDOWN_UNTIL = 0.0
 _BINANCE_BLOCKED_REASON: str | None = None
 
 
@@ -32,7 +33,7 @@ def _alphavantage_rate_limit() -> None:
     Override via ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS.
     """
     global _ALPHA_LAST_CALL_TS
-    min_seconds = max(0.0, _env_float("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", 15.0))
+    min_seconds = max(0.0, _env_float("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", 20.0))
     if min_seconds <= 0:
         return
     now = time.monotonic()
@@ -371,6 +372,11 @@ def get_fx_candles(asset, timeframe):
     This intentionally avoids synthetic OHLC generation.
     Requires ALPHAVANTAGE_API_KEY to be set.
     """
+    global _ALPHA_COOLDOWN_UNTIL
+    now = time.monotonic()
+    if now < _ALPHA_COOLDOWN_UNTIL:
+        return []
+
     api_key = (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip()
     if not api_key:
         return []
@@ -399,7 +405,8 @@ def get_fx_candles(asset, timeframe):
         # AlphaVantage sends throttle notices in-body with 200 OK
         if any(k in payload for k in ("Note", "Information", "Error Message")):
             msg = payload.get("Note") or payload.get("Information") or payload.get("Error Message", "unknown")
-            logger.warning(f"[data] fx_alphavantage_limit symbol={pair} tf={tf} msg={msg[:100]}")
+            logger.warning(f"[data] fx_alphavantage_limit symbol={pair} tf={tf} msg={msg[:120]}")
+            _ALPHA_COOLDOWN_UNTIL = time.monotonic() + max(20.0, _env_float("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", 20.0))
             return []
         key = f"Time Series FX ({interval})"
         series = payload.get(key) or {}
@@ -441,6 +448,9 @@ def get_fx_candles(asset, timeframe):
             resp = requests.get(url, timeout=10)
             payload = resp.json() if resp.ok else {}
             if any(k in payload for k in ("Note", "Information", "Error Message")):
+                msg = payload.get("Note") or payload.get("Information") or payload.get("Error Message", "unknown")
+                logger.warning(f"[data] fx_alphavantage_limit symbol={pair} tf={tf} msg={msg[:120]}")
+                _ALPHA_COOLDOWN_UNTIL = time.monotonic() + max(20.0, _env_float("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", 20.0))
                 return []
             series = payload.get("Time Series FX (60min)") or {}
             hourly = []
@@ -495,6 +505,9 @@ def get_fx_candles(asset, timeframe):
         resp = requests.get(url, timeout=10)
         payload = resp.json() if resp.ok else {}
         if any(k in payload for k in ("Note", "Information", "Error Message")):
+            msg = payload.get("Note") or payload.get("Information") or payload.get("Error Message", "unknown")
+            logger.warning(f"[data] fx_alphavantage_limit symbol={pair} tf={tf} msg={msg[:120]}")
+            _ALPHA_COOLDOWN_UNTIL = time.monotonic() + max(20.0, _env_float("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", 20.0))
             return []
         series = payload.get("Time Series FX (Daily)") or {}
         candles = []
