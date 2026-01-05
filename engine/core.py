@@ -165,7 +165,8 @@ def main_loop(DRY_RUN=False):
     # Non-fatal: warn and disable FX rather than crashing the whole engine.
     fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
     fx_enabled = True
-    if not (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip():
+    alphavantage_key = (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip()
+    if not alphavantage_key:
         # If we don't have a provider key, we can still run crypto-only.
         # FX pairs (configured or defaulted) will be skipped below.
         fx_enabled = False
@@ -174,6 +175,16 @@ def main_loop(DRY_RUN=False):
                 "[WARN] FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. Disabling FX candles.",
                 flush=True,
             )
+        else:
+            print(
+                "[INFO] FX trading disabled: no ALPHAVANTAGE_API_KEY configured.",
+                flush=True,
+            )
+    else:
+        print(
+            f"[INFO] FX trading enabled: AlphaVantage key configured ({alphavantage_key[:4]}...)",
+            flush=True,
+        )
 
     # Example: fetch strategy weights and regime_strategies from ML/DB (stubbed here)
     from engine.ml import get_strategy_weights, get_regime_strategies
