@@ -190,7 +190,7 @@ class Trade(Base):
     max_risk_pct: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)  # Max % of account
     atr: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    trade_metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
