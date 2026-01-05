@@ -246,6 +246,13 @@ def main_loop(DRY_RUN=False):
                 assets = tradable  # Env-configured universe takes priority
             else:
                 assets = discovered  # Fallback to discovery
+            
+            # Add FX pairs to the asset list if configured and enabled
+            if fx_enabled and fx_pairs:
+                fx_list = [x.strip() for x in fx_pairs.split(",") if x.strip()]
+                assets = list(assets) + fx_list
+                if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
+                    print(f"[engine] Added {len(fx_list)} FX pair(s) to asset list", flush=True)
 
             if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
                 try:
