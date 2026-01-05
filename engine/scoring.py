@@ -1,4 +1,15 @@
-
+def _direction_sign(direction_val) -> float:
+    """Normalize direction to numeric sign (+1 long, -1 short, 0 neutral)."""
+    try:
+        if isinstance(direction_val, str):
+            d = direction_val.strip().lower()
+            if d in {"long", "buy", "+", "bull"}:
+                return 1.0
+            if d in {"short", "sell", "-", "bear"}:
+                return -1.0
+        return float(direction_val)
+    except Exception:
+        return 0.0
 
 
 def score_signal(signal):
@@ -27,7 +38,7 @@ def score_signal(signal):
         return 0.0
 
     entry = signal.get("entry")
-    stop = signal.get("stop")
+    stop = signal.get("stop") or signal.get("stop_loss")
     target = signal.get("targets", entry)
     rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
 
@@ -94,8 +105,8 @@ def calculate_confluence(signal: dict) -> float:
     # 1. Trend alignment
     trend_ema = signal.get("trend_ema", 0)
     trend_sma = signal.get("trend_sma", 0)
-    direction = signal.get("direction", 0)
-    
+    direction = _direction_sign(signal.get("direction", 0))
+
     if (direction > 0 and trend_ema > 0 and trend_sma > 0) or \
        (direction < 0 and trend_ema < 0 and trend_sma < 0):
         confirmations += 1
@@ -103,7 +114,7 @@ def calculate_confluence(signal: dict) -> float:
     # 2. Momentum confirmation
     rsi = signal.get("rsi", 50)
     macd_trend = signal.get("macd_trend", 0)
-    
+
     if direction > 0:
         # For longs: RSI > 50 (upward momentum) and MACD positive
         if rsi > 50 and macd_trend > 0:
