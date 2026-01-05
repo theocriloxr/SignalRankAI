@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 _RATE_LIMIT = "__TV_RATE_LIMIT__"
+_LAST_REQUEST_TS: float = 0.0
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -38,6 +39,17 @@ def _env_float(name: str, default: float) -> float:
         return float((os.getenv(name) or str(default)).strip())
     except Exception:
         return float(default)
+
+
+def _respect_global_cooldown():
+    """Enforce a global spacing between TradingView requests to avoid 429s."""
+    global _LAST_REQUEST_TS
+    min_gap = _env_float("TRADINGVIEW_GLOBAL_MIN_SECONDS", 15.0)
+    now = time.monotonic()
+    wait = min_gap - (now - _LAST_REQUEST_TS)
+    if wait > 0:
+        time.sleep(wait)
+    _LAST_REQUEST_TS = time.monotonic()
 
 
 def _env_int(name: str, default: int) -> int:
@@ -108,7 +120,7 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
             interval=tv_tf,
         )
 
-        max_rl_retries = max(1, _env_int("TRADINGVIEW_RATE_LIMIT_RETRIES", 2))
+        max_rl_retries = max(1, _env_int("TRADINGVIEW_RATE_LIMIT_RETRIES", 1))
         rl_delay = _env_float("TRADINGVIEW_RATE_LIMIT_DELAY", 3.0)
 
         def _try_analysis(h):
@@ -124,6 +136,7 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
 
         def _run_with_rate_limit(h, label: str):
             for attempt in range(1, max_rl_retries + 1):
+                _respect_global_cooldown()
                 result = _try_analysis(h)
                 if result != _RATE_LIMIT:
                     return result
