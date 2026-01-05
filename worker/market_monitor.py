@@ -164,10 +164,13 @@ class MarketMonitor:
     async def broadcast_to_active_users(self, message: str):
         """Broadcast NO TRADE alert to all active users."""
         try:
-            from db.pg_compat import get_all_user_ids_compat
+            from db.pg_features import list_all_user_telegram_ids
+            from db.session import get_session
             from telegram import Bot
             
-            user_ids = get_all_user_ids_compat()
+            # Get user IDs asynchronously (we're already in an async context)
+            async with get_session() as session:
+                user_ids = await list_all_user_telegram_ids(session)
             
             if not user_ids:
                 return
