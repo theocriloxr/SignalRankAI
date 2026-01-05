@@ -389,13 +389,23 @@ def get_fx_candles(asset, timeframe):
             f"&interval={interval}&outputsize=compact&apikey={api_key}"
         )
         _alphavantage_rate_limit()
-        resp = requests.get(url, timeout=10)
-        payload = resp.json() if resp.ok else {}
+        try:
+            resp = requests.get(url, timeout=10)
+            payload = resp.json() if resp.ok else {}
+        except Exception as e:
+            logger.error(f"[data] fx_fetch_error symbol={pair} tf={tf} error={e}")
+            return []
+        
         # AlphaVantage sends throttle notices in-body with 200 OK
         if any(k in payload for k in ("Note", "Information", "Error Message")):
+            msg = payload.get("Note") or payload.get("Information") or payload.get("Error Message", "unknown")
+            logger.warning(f"[data] fx_alphavantage_limit symbol={pair} tf={tf} msg={msg[:100]}")
             return []
         key = f"Time Series FX ({interval})"
         series = payload.get(key) or {}
+        if not series:
+            logger.warning(f"[data] fx_no_data symbol={pair} tf={tf} keys={list(payload.keys())[:3]}")
+            return []
         candles = []
         for ts, row in sorted(series.items()):
             try:
