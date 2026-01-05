@@ -18,6 +18,11 @@ def calculate_indicators(candles):
     indicators['sma_50'] = df['close'].rolling(window=50).mean().iloc[-1]
     indicators['sma_200'] = df['close'].rolling(window=200).mean().iloc[-1]
     
+    # Strategy-expected EMAs (for compatibility with trend strategies)
+    indicators['ema_fast'] = df['close'].ewm(span=12, adjust=False).mean().iloc[-1]
+    indicators['ema_slow'] = df['close'].ewm(span=26, adjust=False).mean().iloc[-1]
+    indicators['ema_trend'] = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+    
     # Trend Direction
     indicators['trend_ema'] = determine_trend_ema(df['close'].iloc[-50:].values)
     indicators['trend_sma'] = determine_trend_sma(df['close'].iloc[-50:].values)
@@ -39,8 +44,26 @@ def calculate_indicators(candles):
     bb = BOLLINGER_BANDS(df['close'])
     indicators['bollinger'] = bb
     
-    indicators['adx'] = ADX(df, 14)
+    # ADX with directional indicators
+    adx_val, di_plus, di_minus = ADX_with_DI(df, 14)
+    indicators['adx'] = adx_val
+    indicators['di_plus'] = di_plus
+    indicators['di_minus'] = di_minus
     indicators['adx_trend'] = get_adx_trend(df, 14)
+    
+    # Supertrend signal (simplified - using ATR-based trend detection)
+    try:
+        atr = indicators['atr']
+        close = df['close'].iloc[-1]
+        prev_close = df['close'].iloc[-2] if len(df) > 1 else close
+        hl2 = (df['high'].iloc[-1] + df['low'].iloc[-1]) / 2
+        supertrend_level = hl2 - (2.0 * atr)  # Buy level
+        if close > supertrend_level and prev_close <= (df['high'].iloc[-2] + df['low'].iloc[-2])/2 - (2.0 * atr):
+            indicators['supertrend_signal'] = 'BUY'
+        else:
+            indicators['supertrend_signal'] = None
+    except Exception:
+        indicators['supertrend_signal'] = None
     
     # Volume Indicators
     indicators['volume'] = df['volume'].iloc[-1]
@@ -139,6 +162,32 @@ def ADX(df, period):
     dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
     adx = dx.rolling(window=period).mean()
     return adx.iloc[-1] if not adx.isna().all() else 20
+
+def ADX_with_DI(df, period):
+    """Calculate ADX with DI+ and DI- values"""
+    high = df['high']
+    low = df['low']
+    close = df['close']
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm > 0] = 0
+    tr = pd.concat([
+        high - low,
+        (high - close.shift(1)).abs(),
+        (low - close.shift(1)).abs()
+    ], axis=1).max(axis=1)
+    atr = tr.rolling(window=period).mean()
+    plus_di = 100 * (plus_dm.rolling(window=period).sum() / atr)
+    minus_di = 100 * (abs(minus_dm).rolling(window=period).sum() / atr)
+    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    adx = dx.rolling(window=period).mean()
+    
+    adx_val = adx.iloc[-1] if not adx.isna().all() else 20
+    plus_di_val = plus_di.iloc[-1] if not plus_di.isna().all() else 0
+    minus_di_val = minus_di.iloc[-1] if not minus_di.isna().all() else 0
+    
+    return adx_val, plus_di_val, minus_di_val
 
 
 # ==================== NEW INDICATORS ====================
