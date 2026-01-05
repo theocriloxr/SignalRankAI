@@ -70,16 +70,12 @@ class AdvancedExitManager:
             # SL below recent low (market structure)
             sl_by_structure = recent_low - (0.5 * atr)
             sl_by_atr = entry_price - (2 * atr)
-            stop_loss = max(sl_by_structure, sl_by_atr)  # Tightest
+            stop_loss = max(sl_by_structure, sl_by_atr)  # Tightest (least loss)
             
-            # Multiple TPs for scaling out
+            # Multiple TPs for scaling out (based on ATR, NOT resistance)
             tp1 = entry_price + (2 * atr)
             tp2 = entry_price + (3 * atr)
             tp3 = entry_price + (5 * atr)
-            
-            # Resistance override: don't TP above resistance if too close
-            if resistance and tp3 > resistance * 0.95:
-                tp3 = resistance * 0.99
             
         else:  # Short
             sl_by_structure = recent_high + (0.5 * atr)
@@ -89,9 +85,6 @@ class AdvancedExitManager:
             tp1 = entry_price - (2 * atr)
             tp2 = entry_price - (3 * atr)
             tp3 = entry_price - (5 * atr)
-            
-            if support and tp3 < support * 1.05:
-                tp3 = support * 1.01
         
         # Calculate R:R ratios
         risk = abs(entry_price - stop_loss)

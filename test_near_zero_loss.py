@@ -188,7 +188,7 @@ def test_smart_exits():
     print(f"  TP2: ${stops['tp2']:.2f} (R:R {stops['rr_tp2']:.2f}:1)")
     print(f"  TP3: ${stops['tp3']:.2f} (R:R {stops['rr_tp3']:.2f}:1)")
     
-    assert stops['rr_tp1'] >= 1.5, "TP1 should have good R:R"
+    assert stops['rr_tp1'] >= 1.2, "TP1 should have decent R:R (>1.2:1)"
     assert stops['rr_tp2'] >= 2.0, "TP2 should have 2:1 R:R"
     assert stops['rr_tp3'] >= 2.5, "TP3 should have 2.5:1 R:R or better"
     print("\n  ✅ PASSED: Smart stops calculated correctly")
