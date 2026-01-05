@@ -147,43 +147,46 @@ class UltraQualityFilter:
         total_checks = 6
         
         # 1. Trend alignment
-        trend_ema = signal.get("trend_ema", 0)
-        trend_sma = signal.get("trend_sma", 0)
-        direction = signal.get("direction", 0)
+        trend_ema = float(signal.get("trend_ema", 0) or 0)
+        trend_sma = float(signal.get("trend_sma", 0) or 0)
+        direction = signal.get("direction", "long")
         
-        if (direction > 0 and trend_ema > 0 and trend_sma > 0) or \
-           (direction < 0 and trend_ema < 0 and trend_sma < 0):
-            confirmations += 1
+        if direction == "long":
+            if trend_ema > 0 and trend_sma > 0:
+                confirmations += 1
+        elif direction == "short":
+            if trend_ema < 0 and trend_sma < 0:
+                confirmations += 1
         
         # 2. Momentum confirmation
-        rsi = signal.get("rsi", 50)
-        macd_trend = signal.get("macd_trend", 0)
+        rsi = float(signal.get("rsi", 50) or 50)
+        macd_trend = float(signal.get("macd_trend", 0) or 0)
         
-        if direction > 0:
+        if direction == "long":
             if rsi > 55 and macd_trend > 0:  # Stricter RSI threshold
                 confirmations += 1
-        elif direction < 0:
+        elif direction == "short":
             if rsi < 45 and macd_trend < 0:
                 confirmations += 1
         
         # 3. Volume confirmation
-        volume_ratio = signal.get("volume_ratio", 1.0)
+        volume_ratio = float(signal.get("volume_ratio", 1.0) or 1.0)
         if volume_ratio > self.min_volume_ratio:
             confirmations += 1
         
         # 4. Support/Resistance respect
-        nearest_support = signal.get("nearest_support", 0)
-        nearest_resistance = signal.get("nearest_resistance", 0)
-        current_price = signal.get("close_price", 0)
+        nearest_support = float(signal.get("nearest_support", 0) or 0)
+        nearest_resistance = float(signal.get("nearest_resistance", 0) or 0)
+        current_price = float(signal.get("close_price", 0) or 0)
         
-        if direction > 0 and current_price > nearest_support:
+        if direction == "long" and current_price > nearest_support:
             confirmations += 1
-        elif direction < 0 and current_price < nearest_resistance:
+        elif direction == "short" and current_price < nearest_resistance:
             confirmations += 1
         
         # 5. Market regime alignment
         regime = signal.get("regime", "unknown")
-        adx_trend = signal.get("adx_trend", 0)
+        adx_trend = float(signal.get("adx_trend", 0) or 0)
         
         if regime == "trending" and adx_trend >= self.min_adx:
             confirmations += 1
