@@ -331,12 +331,12 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
-    # Entry validation: check that current price is within entry zone (±5%)
+    # Entry validation: check that current price is within entry zone (±3%)
     # Add entry_status flag to track if entry has been hit or is pending
     def _check_entry_status(signal: dict) -> tuple[bool, str]:
         """
         Check if entry is valid and return (allow: bool, status: str).
-        Status can be: "PENDING_ENTRY" (price >5% away), "AT_ENTRY" (price ±5%), "ENTRY_MISSED" (>5% away, hard reject)
+        Status can be: "PENDING_ENTRY" (price >3% away), "AT_ENTRY" (price ±3%), "ENTRY_MISSED" (>3% away, hard reject)
         """
         try:
             asset = str(signal.get("asset") or "").upper()
@@ -379,11 +379,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     else:
                         return True, "UNKNOWN"  # Can't validate, allow through
                 
-                # Check if price is within ±5% of entry
+                # Check if price is within ±3% of entry
                 price_distance_pct = abs(price - entry) / entry * 100.0
                 
                 # Determine entry status
-                if price_distance_pct <= 5.0:
+                if price_distance_pct <= 3.0:
                     # Price is at entry (within tolerance)
                     return True, "AT_ENTRY"
                 elif price < entry:

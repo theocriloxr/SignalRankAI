@@ -30,9 +30,9 @@ def _env_float(name: str, default: float) -> float:
 # - 50: Permissive (all passing signals)
 # - 60: Balanced (reasonable quality)
 # - 65: Quality-focused (only high-confidence+good setups)
-# - 70: Strict (premium quality only) - NEW DEFAULT
-# - 75: Very strict (only top-tier signals)
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+# - 70: Strict (premium quality only)
+# - 75: Very strict (only top-tier signals) - NEW DEFAULT FOR WIN RATE RECOVERY
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 75)
 
 def load_tradable_assets():
     """Return configured fallback assets.
@@ -415,9 +415,10 @@ def main_loop(DRY_RUN=False):
                     ml_filter = MLFilter()
                     ml_signals = []
                     try:
-                        ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.6").strip())
+                        # Raised to 0.65 for win rate recovery (was 0.6)
+                        ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.65").strip())
                     except Exception:
-                        ml_threshold = 0.6
+                        ml_threshold = 0.65
                     for signal in risk_signals:
                         if getattr(ml_filter, "active", False):
                             features = extract_features(signal, market_data)

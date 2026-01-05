@@ -20,9 +20,9 @@ def score_signal(signal):
     confidence = float(signal.get("confidence", 0) or 0)
     confidence = min(max(confidence, 0.0), 1.0)
     
-    # QUALITY GATE: Reject low-confidence signals
-    # (Less than 40% base strategy confidence is too risky - focus on quality)
-    if confidence < 0.40:
+    # ULTRA-STRICT QUALITY GATE: Only trade-worthy setups
+    # (Less than 50% base strategy confidence = no edge)
+    if confidence < 0.50:
         return 0.0
 
     entry = signal.get("entry")
@@ -39,9 +39,9 @@ def score_signal(signal):
     # Base score: weighted components
     score = (confidence * 50.0) + (rr_component * 30.0) + (vol_component * 20.0)
     
-    # Hard rejection for poor R/R (1.8 minimum is table stakes for quality focus)
-    if rr < 1.8:
-        return 0.0  # Hard reject: insufficient margin of safety
+    # Hard rejection for poor R/R (2.0:1 minimum is table stakes)
+    if rr < 2.0:
+        return 0.0  # Hard reject: need 2:1 minimum for edge
     
     # REGIME ALIGNMENT BONUS: +10-20% for signals aligned with market regime
     # (Better trades happen when signal aligns with broader trend)
@@ -88,28 +88,26 @@ def strategy_agreement_score(signal):
 def rr_score(rr):
     """Score risk/reward ratio. Higher RR is better (optimal: 2.5:1 to 3:1).
     
-    STRICTER for quality focus:
-    - <1.8:1 = 0.0 (reject - insufficient margin of safety)
-    - 1.8:1 = 0.50 (minimum acceptable, very tight)
-    - 2.5:1 = 0.88 (good - well-rewarded trades)
-    - 3.5:1 = 1.00 (excellent - ideal high-probability setup)
-    - >3.5:1 = 1.0 (capped - diminishing returns beyond 3.5:1)
+    ULTRA-STRICT for win rate recovery:
+    - <2.0:1 = 0.0 (reject - need minimum 2:1 edge)
+    - 2.0:1 = 0.50 (minimum acceptable)
+    - 2.5:1 = 0.75 (good quality setup)
+    - 3.0:1 = 1.00 (excellent - ideal setup)
+    - >3.0:1 = 1.0 (capped)
     
-    Rationale: Better RR = better odds of profitability
-    Tighter minimum (1.8 vs 1.5) ensures stronger edge before entry
+    Rationale: 16% win rate requires MASSIVE R/R advantage to be profitable
     """
     try:
         rr = float(rr)
     except Exception:
         rr = 0.0
     
-    # Hard floor: reject RR < 1.8 (stricter for quality)
-    if rr < 1.8:
+    # Hard floor: reject RR < 2.0 (need 2:1 minimum)
+    if rr < 2.0:
         return 0.0
     
-    # Scale: 1.8 is 50%, 3.5 is 100%, interpolate linearly
-    # Formula: (rr - 1.8) / 1.7 with cap at 1.0
-    return float(min(max((rr - 1.8) / 1.7, 0.0), 1.0))
+    # Scale: 2.0 is 50%, 3.0 is 100%
+    return float(min(max((rr - 2.0) / 1.0, 0.0), 1.0))
 
 
 def htf_alignment_score(signal):
@@ -123,18 +121,13 @@ def regime_fit_score(signal, regime=None):
 def volatility_quality_score(signal):
     """Score volatility quality (lower volatility = better conditions = higher score).
     
-    VERY STRICT for quality focus:
-    - vol <= 0.08 (8%): score 1.0 (ideal low-volatility, best execution)
-    - vol = 0.10 (10%): score 0.67 (good, but not great)
-    - vol = 0.12 (12%): score 0.33 (marginal, high slippage risk)
-    - vol >= 0.15 (15%): score 0.0 (reject - too volatile for reliable entry/exit)
+    ULTRA-STRICT for win rate recovery:
+    - vol <= 0.08 (8%): score 1.0 (ideal low-volatility)
+    - vol = 0.10 (10%): score 0.50 (marginal)
+    - vol >= 0.12 (12%): score 0.0 (reject - too volatile for reliable execution)
     
-    Rationale:
-    - Low volatility = tighter stops = better RR achievable
-    - High volatility = wider stops forced = poor RR, higher slippage
-    - STRICTER: reject >15% instead of 18% for quality focus
-    
-    Scale: Linear from 0.08→0.15, zero penalty below 0.08, hard reject above 0.15
+    Rationale: High volatility = poor fills, slippage, stop hunting
+    With 16% win rate, we need PERFECT conditions to turn it around
     """
     vol = signal.get("volatility", 0.0)
     try:
@@ -142,14 +135,13 @@ def volatility_quality_score(signal):
     except Exception:
         vol = 0.0
     
-    # Ideal range: 0.08-0.12 (tight, low-noise environments)
     if vol <= 0.08:
-        return 1.0  # Perfect volatility
-    elif vol >= 0.15:
-        return 0.0  # Hard reject: too volatile for quality trades (STRICTER)
+        return 1.0  # Perfect
+    elif vol >= 0.12:
+        return 0.0  # Hard reject: too volatile
     else:
-        # Linear scale: 0.08→0.15 maps to 1.0→0.0
-        return float((0.15 - vol) / (0.15 - 0.08))
+        # Linear scale: 0.08→0.12 maps to 1.0→0.0
+        return float((0.12 - vol) / (0.12 - 0.08))
 
 
 def historical_winrate_score(signal):
