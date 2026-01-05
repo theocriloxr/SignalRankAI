@@ -1,19 +1,27 @@
 import os
 import time
 import asyncio
+import logging
 
 from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason
 from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs
+from data.indicators import calculate_indicators
 from engine.regime import detect_market_regime
+from engine.risk_manager import RiskManager, CorrelationManager
+from engine.exit_manager import ExitManager, PartialExitTracker
+from engine.filters import SignalFilter, MarketRegimeFilter, SlippageControl
+from engine.backtest import BacktestEngine, OptimizationEngine
 from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk
-from engine.scoring import calculate_signal_score
+from engine.scoring import calculate_signal_score, calculate_confluence
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals
 from core.redis_state import state
+
+logger = logging.getLogger(__name__)
 
 
 def _env_float(name: str, default: float) -> float:
@@ -133,6 +141,32 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
+    # ============================================
+    # INITIALIZE ALL TRADING SYSTEM COMPONENTS
+    # ============================================
+    
+    # Risk management
+    account_equity = 10000.0  # Default, should come from broker API
+    risk_manager = RiskManager(account_equity)
+    correlation_manager = CorrelationManager()
+    
+    # Exit management
+    exit_manager = ExitManager()
+    partial_exit_tracker = PartialExitTracker()
+    
+    # Smart filters
+    signal_filter = SignalFilter()
+    regime_filter = MarketRegimeFilter()
+    slippage_control = SlippageControl()
+    
+    # Analytics
+    backtest_engine = BacktestEngine()
+    optimization_engine = OptimizationEngine()
+    
+    # Position tracking
+    open_positions = []
+    last_trade_times = {}
+    
     # If Binance is blocked and no explicit override is provided, drop the heaviest TF (5m) to speed fallbacks.
     if os.getenv("CRYPTO_TIMEFRAMES"):
         crypto_timeframes = [x.strip() for x in os.getenv("CRYPTO_TIMEFRAMES").split(",") if x.strip()]

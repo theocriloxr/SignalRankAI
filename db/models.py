@@ -153,6 +153,48 @@ class Outcome(Base):
     meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
+class Trade(Base):
+    """Track open and closed trades for position management."""
+    __tablename__ = "trades"
+
+    trade_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    signal_id: Mapped[Optional[str]] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=True)
+    
+    symbol: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)  # long/short
+    
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_time: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    
+    position_size: Mapped[float] = mapped_column(Float, nullable=False)
+    
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded list
+    
+    status: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="open")  # open/closed/cancelled
+    
+    exit_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    exit_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    exit_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # tp/sl/invalidation/timeout
+    
+    pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    max_drawdown: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    max_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    # Partial exits
+    partial_exits: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    
+    # Risk management
+    max_risk_pct: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)  # Max % of account
+    atr: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class StrategyStat(Base):
     __tablename__ = "strategy_stats"
 
