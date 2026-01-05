@@ -526,6 +526,26 @@ def main_loop(DRY_RUN=False):
 
                     for signal in ml_signals:
                         try:
+                            # ----------------------------------------
+                            # Enrich signal with indicator context so scoring/confluence works
+                            # ----------------------------------------
+                            tf_data = (market_data.get(signal.get('timeframe', '')) or {})
+                            ind = tf_data.get('indicators', {}) if isinstance(tf_data, dict) else {}
+                            try:
+                                candles = tf_data.get('candles', []) if isinstance(tf_data, dict) else []
+                                last_close = candles[-1]['close'] if candles else None
+                            except Exception:
+                                last_close = None
+
+                            signal.setdefault('trend_ema', ind.get('trend_ema', ind.get('ema_trend', 0)))
+                            signal.setdefault('trend_sma', ind.get('trend_sma', 0))
+                            signal.setdefault('rsi', ind.get('rsi', 50))
+                            signal.setdefault('macd_trend', ind.get('macd_trend', 0))
+                            signal.setdefault('volume_ratio', ind.get('volume_ratio', 1.0))
+                            signal.setdefault('nearest_support', ind.get('nearest_support', 0))
+                            signal.setdefault('nearest_resistance', ind.get('nearest_resistance', 0))
+                            signal.setdefault('close_price', ind.get('close_price', last_close or 0))
+
                             # ========================================
                             # NEW: SIGNAL-ONLY BOT VALIDATION
                             # ========================================
