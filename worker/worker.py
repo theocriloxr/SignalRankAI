@@ -35,7 +35,17 @@ class Worker:
 
     async def run(self) -> None:
         expiry_task = asyncio.create_task(self._expiry_loop())
+        market_monitor_task: Optional[asyncio.Task] = None
         ws_task: Optional[asyncio.Task] = None
+
+        # Start market monitor for NO TRADE alerts
+        if _env_bool("MARKET_MONITOR_ENABLED", True):
+            try:
+                from worker.market_monitor import start_market_monitor
+                market_monitor_task = asyncio.create_task(start_market_monitor())
+            except Exception as e:
+                print(f"[worker] Failed to start market monitor: {e}", flush=True)
+                market_monitor_task = None
 
         if _env_bool("CRYPTO_WS_ENABLED", False):
             try:
@@ -48,6 +58,10 @@ class Worker:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
         finally:
+            if market_monitor_task is not None:
+                market_monitor_task.cancel()
+                with contextlib.suppress(Exception):
+                    await market_monitor_task
             if ws_task is not None:
                 ws_task.cancel()
                 with contextlib.suppress(Exception):

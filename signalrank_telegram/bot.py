@@ -46,6 +46,12 @@ from .owner_commands import (
     owner_revenue,
 )
 
+# Import tier-based notification manager
+from engine.tier_notifications import TierNotificationManager
+
+# Initialize tier notification manager
+_tier_notifier = TierNotificationManager()
+
 # Module-level logger for scheduled jobs and dispatch traces
 logger = logging.getLogger(__name__)
 
@@ -188,48 +194,134 @@ def _require_telegram_token() -> str:
         "Set it in your shell (PowerShell: $env:TELEGRAM_TOKEN='...') or as a Railway Variable."
     )
 
-# Outcome tracking notifications
+# Outcome tracking notifications with tier-based formatting
 def notify_trade_outcome(user_id, strategy, result, ret):
     bot = Bot(token=_require_telegram_token())
     # result: 'tp', 'partial_tp', 'sl', 'invalid', 'summary', 'free_limited'
-    # signal dict should include asset, timeframe, direction, entry, exit, stop, tp1, duration, confidence, etc.
-    def fmt(val, d=2):
-        return f"{val:.{d}f}" if isinstance(val, float) else str(val)
-    if result == 'tp':
-        msg = (
-            "✅ TAKE PROFIT HIT — FULL CLOSE\n"
-            f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
-            f"\nEntry: {fmt(strategy.get('entry'))}\nExit: {fmt(strategy.get('exit'))}\n"
-            f"\nResult: {fmt(strategy.get('r_multiple'))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\nConfidence Score: {fmt(strategy.get('confidence',0))}%\n"
-            "\nWell-managed trade ✔️"
-        )
-    elif result == 'partial_tp':
-        msg = (
-            "🟢 PARTIAL TAKE PROFIT (TP1)\n"
-            f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
-            f"\nEntry: {fmt(strategy.get('entry'))}\nTP1: {fmt(strategy.get('tp1'))}\n"
-            f"\nPartial Result: {fmt(strategy.get('r_multiple',0))}R\nRemaining Position: Active"
-        )
-    elif result == 'sl':
-        msg = (
-            "❌ STOP LOSS HIT\n"
-            f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
-            f"\nEntry: {fmt(strategy.get('entry'))}\nStop Loss: {fmt(strategy.get('stop'))}\n"
-            f"\nResult: {fmt(strategy.get('r_multiple',-1))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\n"
-            "\nRisk was predefined and controlled."
-        )
-    elif result == 'invalid':
-        msg = (
-            "⚠️ SIGNAL INVALIDATED (ADMIN / MARKET EVENT)\n"
-            f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\n"
-            f"\nReason: {strategy.get('reason','Unknown')}\nStatus: Closed at market\n\nResult: Flat (0R)"
-        )
-    elif result == 'free_limited':
-        msg = (
-            "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n📊 SIGNAL UPDATE\n\nA recent trade reached its target.\n\nUpgrade to Premium to see:\n• Exact entries & exits\n• Full performance stats\n• Real-time alerts"
-        )
+    
+    # Get user tier for appropriate formatting
+    tier_raw = resolve_user_tier(user_id)
+    tier = (tier_raw or 'FREE').strip().lower()
+    
+    # Map tier for notifications
+    if tier in ('owner', 'admin'):
+        user_tier = 'vip'
+    elif tier == 'vip':
+        user_tier = 'vip'
+    elif tier == 'premium':
+        user_tier = 'premium'
     else:
-        msg = "[Outcome] Trade update."
+        user_tier = 'free'
+    
+    # Use tier-based notifier for formatted messages
+    try:
+        if result == 'tp':
+            # Calculate profit percentage
+            entry = float(strategy.get('entry', 0))
+            exit_price = float(strategy.get('exit', 0))
+            direction = str(strategy.get('direction', '')).lower()
+            
+            if entry > 0 and exit_price > 0:
+                if direction == 'long':
+                    profit_pct = ((exit_price - entry) / entry) * 100
+                else:
+                    profit_pct = ((entry - exit_price) / entry) * 100
+            else:
+                profit_pct = float(strategy.get('percent', 0))
+            
+            # Determine which TP level (assume TP3 for full exit)
+            tp_level = 3
+            msg = _tier_notifier.format_tp_hit_notification(strategy, user_tier, tp_level, profit_pct)
+            
+        elif result == 'partial_tp':
+            entry = float(strategy.get('entry', 0))
+            tp1_price = float(strategy.get('tp1', 0))
+            direction = str(strategy.get('direction', '')).lower()
+            
+            if entry > 0 and tp1_price > 0:
+                if direction == 'long':
+                    profit_pct = ((tp1_price - entry) / entry) * 100
+                else:
+                    profit_pct = ((entry - tp1_price) / entry) * 100
+            else:
+                profit_pct = float(strategy.get('r_multiple', 0)) * 100
+            
+            msg = _tier_notifier.format_tp_hit_notification(strategy, user_tier, 1, profit_pct)
+            
+        elif result == 'sl':
+            loss_pct = float(strategy.get('percent', 0))
+            if loss_pct > 0:
+                loss_pct = -loss_pct  # Make it negative
+            msg = _tier_notifier.format_sl_hit_notification(strategy, user_tier, loss_pct)
+            
+        elif result == 'invalid':
+            # Signal invalidated
+            msg = _tier_notifier.format_signal_update(
+                strategy,
+                user_tier,
+                'invalidated',
+                {'reason': strategy.get('reason', 'Market conditions changed')}
+            )
+            
+        elif result == 'free_limited':
+            # Free tier gets basic notification
+            if user_tier == 'free':
+                msg = (
+                    "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n"
+                    "📊 SIGNAL UPDATE\n\n"
+                    "A recent trade reached its target.\n\n"
+                    "Upgrade to Premium to see:\n"
+                    "• Exact entries & exits\n"
+                    "• Full performance stats\n"
+                    "• Real-time alerts"
+                )
+            else:
+                # Shouldn't happen, but fallback
+                msg = "📊 Trade update."
+        else:
+            msg = "[Outcome] Trade update."
+            
+    except Exception as e:
+        # Fallback to old format on error
+        def fmt(val, d=2):
+            return f"{val:.{d}f}" if isinstance(val, float) else str(val)
+        
+        if result == 'tp':
+            msg = (
+                "✅ TAKE PROFIT HIT — FULL CLOSE\n"
+                f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
+                f"\nEntry: {fmt(strategy.get('entry'))}\nExit: {fmt(strategy.get('exit'))}\n"
+                f"\nResult: {fmt(strategy.get('r_multiple'))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\nConfidence Score: {fmt(strategy.get('confidence',0))}%\n"
+                "\nWell-managed trade ✔️"
+            )
+        elif result == 'partial_tp':
+            msg = (
+                "🟢 PARTIAL TAKE PROFIT (TP1)\n"
+                f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
+                f"\nEntry: {fmt(strategy.get('entry'))}\nTP1: {fmt(strategy.get('tp1'))}\n"
+                f"\nPartial Result: {fmt(strategy.get('r_multiple',0))}R\nRemaining Position: Active"
+            )
+        elif result == 'sl':
+            msg = (
+                "❌ STOP LOSS HIT\n"
+                f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
+                f"\nEntry: {fmt(strategy.get('entry'))}\nStop Loss: {fmt(strategy.get('stop'))}\n"
+                f"\nResult: {fmt(strategy.get('r_multiple',-1))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\n"
+                "\nRisk was predefined and controlled."
+            )
+        elif result == 'invalid':
+            msg = (
+                "⚠️ SIGNAL INVALIDATED (ADMIN / MARKET EVENT)\n"
+                f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\n"
+                f"\nReason: {strategy.get('reason','Unknown')}\nStatus: Closed at market\n\nResult: Flat (0R)"
+            )
+        elif result == 'free_limited':
+            msg = (
+                "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n📊 SIGNAL UPDATE\n\nA recent trade reached its target.\n\nUpgrade to Premium to see:\n• Exact entries & exits\n• Full performance stats\n• Real-time alerts"
+            )
+        else:
+            msg = "[Outcome] Trade update."
+    
     bot.send_message(chat_id=user_id, text=msg)
 
 def notify_all_users_trade_outcome(strategy, result, ret, user_ids=None):

@@ -1,3 +1,9 @@
+from engine.tier_notifications import TierNotificationManager
+from datetime import datetime
+
+# Initialize tier notification manager
+_tier_notifier = TierNotificationManager()
+
 def _risk_suggestion(score: float | int | None) -> str:
 	try:
 		s = float(score or 0)
@@ -21,10 +27,38 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	
 	Tier rules:
 	- FREE: Direction + asset + timeframe only (limited)
-	- PREMIUM: Full signal with SL/TP + confidence + regime
-	- VIP: Everything + strategy + strength + ML confidence + R/R analysis
+	- PREMIUM: Full signal with SL/TP + confidence + regime + NEW FEATURES
+	- VIP: Everything + strategy + strength + ML confidence + R/R analysis + NEW FEATURES
 	- ADMIN: Same as VIP (sees all details)
 	"""
+	
+	# Use new tier-based notification system for premium/vip
+	if display_tier and display_tier.lower() in ('premium', 'vip', 'admin', 'owner'):
+		# Map tier
+		user_tier = display_tier.lower()
+		if user_tier in ('owner', 'admin'):
+			user_tier = 'vip'  # Admin/Owner get VIP formatting
+		
+		# Extract new features from signal
+		entry_zone = signal.get('entry_zone', {})
+		htf_bias = signal.get('htf_bias', {})
+		mtf_confluence = signal.get('mtf_confluence', {})
+		session = signal.get('session', 'UNKNOWN')
+		
+		# If new features present, use new formatter
+		if entry_zone or htf_bias:
+			try:
+				return _tier_notifier.format_new_signal(
+					signal=signal,
+					user_tier=user_tier,
+					entry_zone=entry_zone,
+					htf_bias=htf_bias,
+					mtf_confluence=mtf_confluence,
+					session=session
+				)
+			except Exception as e:
+				# Fallback to old formatter on error
+				pass
 
 	# Always use signal_id from database (the actual tracking ID)
 	ref = signal.get("signal_id")
