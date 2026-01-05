@@ -150,13 +150,11 @@ class MarketMonitor:
                 # Format alert
                 msg = self.tier_notifier.format_no_trade_alert(reasons, session)
                 
-                # Broadcast to all active users
-                await self.broadcast_to_active_users(msg)
+                # Log to console/logs only (do NOT broadcast to users)
+                logger.info(f"[MarketMonitor] NO TRADE: {reasons} | Session: {session}")
                 
                 # Update last alert time
                 self.last_no_trade_alert = datetime.utcnow()
-                
-                logger.info(f"[MarketMonitor] NO TRADE alert sent: {reasons}")
         
         except Exception as e:
             logger.error(f"[MarketMonitor] Error in check_and_alert: {e}")
