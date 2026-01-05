@@ -26,19 +26,18 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	- ADMIN: Same as VIP (sees all details)
 	"""
 
-	ref = signal.get("signal_id") or signal.get("id")
-	try:
-		ref = str(ref)
-	except Exception:
+	# Always use signal_id from database (the actual tracking ID)
+	ref = signal.get("signal_id")
+	if not ref:
 		ref = None
-
-	# Short user-facing reference: keep DB IDs intact, display a prefix.
+	
+	# Short user-facing reference: first 8 chars of signal_id
 	ref_short = None
-	try:
-		if ref:
-			ref_short = ref[:8]
-	except Exception:
-		ref_short = None
+	if ref:
+		try:
+			ref_short = str(ref)[:8]
+		except Exception:
+			ref_short = None
 
 	if limited:
 		lines = ["🔒 FREE USER (LIMITED SIGNAL)", ""]
@@ -110,7 +109,7 @@ Suggested risk: {_risk_suggestion(signal.get('score'))}
 		msg += f"Market Regime: {signal.get('regime', 'N/A')}\n"
 	
 	if ref_short:
-		msg = f"Reference: {ref_short}\n" + msg
+		msg = f"📋 Ref: {ref_short} (use /outcome {ref_short})\n" + msg
 
 	# Strategy + strength for VIP+
 	if show_strategy:

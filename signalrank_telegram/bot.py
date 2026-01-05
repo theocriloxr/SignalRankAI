@@ -472,7 +472,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                             if not ok:
                                 continue
                             payload = dict(signal)
-                            payload.setdefault("signal_id", str(s.signal_id))
+                            # CRITICAL: Set signal_id from database (used for /outcome tracking)
+                            payload["signal_id"] = str(s.signal_id)
                             payload.setdefault("asset", s.asset)
                             payload.setdefault("timeframe", s.timeframe)
                             payload.setdefault("direction", s.direction)
