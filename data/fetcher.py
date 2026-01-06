@@ -77,8 +77,8 @@ def get_candles(asset, timeframe):
     Unified candle fetcher with multi-provider fallback.
     
     Provider Priority:
-    - Crypto: Binance → Bybit → CryptoCompare → Yahoo → Polygon → Twelve Data
-    - FX: OANDA → AlphaVantage → Yahoo → Polygon → Twelve Data
+    - Crypto: Binance → Bybit → **CryptoCompare** (works in Nigeria when Binance blocked)
+    - FX: AlphaVantage → Yahoo → Polygon → Twelve Data (OANDA disabled for Nigeria)
     - Stocks: Yahoo → Polygon → Twelve Data
     """
     asset_type = get_asset_type(asset)
@@ -417,23 +417,25 @@ def get_crypto_candles(asset, timeframe):
 
     # Allow explicit provider override (but still fall back if empty)
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+    
+    # Nigeria fix: Binance blocked, prioritize CryptoCompare
     if provider == "cryptocompare":
         candles = _cryptocompare_candles(sym, interval)
         if candles:
             return candles
-        # fall through to bybit/binance fallback
     elif provider == "bybit":
         candles = _bybit_candles(sym, interval)
         if candles:
             return candles
-        # fall through to binance/cryptocompare
 
     global _BINANCE_BLOCKED_REASON
     if _BINANCE_BLOCKED_REASON is not None:
-        # Fallback to Bybit first (faster than CryptoCompare for spot)
+        # Binance blocked: Try Bybit first, then CryptoCompare (NOT Yahoo/Twelve Data - they don't understand BTCUSDT format)
+        logger.info(f"[data] binance_blocked={_BINANCE_BLOCKED_REASON} trying bybit/cryptocompare for {sym}")
         candles = _bybit_candles(sym, interval)
         if candles:
             return candles
+        # Try CryptoCompare as fallback (it understands Binance notation)
         candles = _cryptocompare_candles(sym, interval)
         return candles or []
 
