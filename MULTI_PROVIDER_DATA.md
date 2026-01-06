@@ -29,14 +29,8 @@ Your SignalRankAI bot now supports **5 data providers** with automatic fallbacks
 ### 4. **OANDA** (Bank-Grade FX)
 - **Coverage**: FX only
 - **Quality**: Bank-grade
-- **Free Tier**: Demo account unlimited
-- **Setup**: 
-  ```
-  OANDA_API_KEY=your_key
-  OANDA_ACCOUNT_ID=your_demo_account
-  OANDA_PRACTICE=true
-  ```
-- **Status**: ✅ Integrated
+- **Setup**: Not available in Nigeria ⚠️
+- **Status**: ❌ Disabled (geographic restrictions)
 
 ### 5. **Existing Providers**
 - **Binance/Bybit**: Crypto (already working)
@@ -58,11 +52,10 @@ Your SignalRankAI bot now supports **5 data providers** with automatic fallbacks
 
 ### FX Priority Order
 ```
-1. OANDA (bank-grade, free demo)
-2. AlphaVantage (legacy)
-3. Yahoo Finance (free, no key needed)
-4. Polygon.io (if API key set)
-5. Twelve Data (if API key set)
+1. AlphaVantage (free, no restrictions)
+2. Yahoo Finance (free, no key needed)
+3. Polygon.io (if API key set)
+4. Twelve Data (if API key set)
 ```
 
 ### Stocks Priority Order
@@ -105,15 +98,12 @@ TELEGRAM_TOKEN=your_bot_token
 ### Optional Data Provider Keys
 ```bash
 # Polygon.io (recommended for stocks + crypto + FX)
-POLYGON_API_KEY=your_polygon_key
+
 
 # Twelve Data (generous free tier)
-TWELVEDATA_API_KEY=your_twelvedata_key
 
-# OANDA (best for FX)
-OANDA_API_KEY=your_oanda_key
-OANDA_ACCOUNT_ID=your_demo_account_id
-OANDA_PRACTICE=true
+
+# OANDA - DISABLED (NOT AVAILABLE IN NIGERIA)
 
 # Legacy (keep for fallback)
 ALPHAVANTAGE_API_KEY=your_alpha_key
@@ -177,12 +167,10 @@ New packages added:
 **Recommended Setup (Free):**
 ```bash
 # Stocks: Yahoo (already included, no key needed)
-# FX: OANDA demo (free, unlimited)
+# FX: AlphaVantage (free, works in Nigeria)
 # Crypto: Keep Binance/Bybit (already working)
 
-OANDA_API_KEY=get_from_oanda_demo_account
-OANDA_ACCOUNT_ID=your_demo_id
-OANDA_PRACTICE=true
+ALPHAVANTAGE_API_KEY=get_free_from_alphavantage.co
 ```
 
 ### 3. Enable Stock Trading
