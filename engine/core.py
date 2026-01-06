@@ -548,9 +548,15 @@ def main_loop(DRY_RUN=False):
                             signal.setdefault('rsi', ind.get('rsi', 50))
                             signal.setdefault('macd_trend', ind.get('macd_trend', 0))
                             signal.setdefault('volume_ratio', ind.get('volume_ratio', 1.0))
+                            signal.setdefault('adx_trend', ind.get('adx', ind.get('adx_trend', 30)))
                             signal.setdefault('nearest_support', ind.get('nearest_support', 0))
                             signal.setdefault('nearest_resistance', ind.get('nearest_resistance', 0))
                             signal.setdefault('close_price', ind.get('close_price', last_close or 0))
+                            
+                            # Calculate volatility (ATR as % of price)
+                            atr_val = ind.get('atr', signal.get('atr', 0))
+                            close_val = last_close or signal.get('entry', 0)
+                            signal.setdefault('volatility', (atr_val / close_val) if close_val > 0 else 0)
 
                             # ========================================
                             # NEW: SIGNAL-ONLY BOT VALIDATION
@@ -577,6 +583,7 @@ def main_loop(DRY_RUN=False):
                             
                             # 4. Validate against HTF trend
                             is_valid_htf, htf_reason = mtf_analyzer.validate_against_htf(direction, htf_bias)
+                            signal['htf_bias_aligned'] = is_valid_htf
                             if not is_valid_htf:
                                 continue  # Reject signals against HTF trend
                             
@@ -621,6 +628,8 @@ def main_loop(DRY_RUN=False):
                             # ========================================
                             score = score_signal(signal)
                             signal['score'] = score
+                            # Ultra-filter expects confidence (0.0-1.0); derive from score
+                            signal.setdefault('confidence', min(1.0, score / 100.0))
 
                             try:
                                 if cycle_max_score is None or float(score) > float(cycle_max_score):

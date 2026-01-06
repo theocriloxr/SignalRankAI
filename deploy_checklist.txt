@@ -45,16 +45,7 @@ SignalRankAI Deployment & Automation Checklist
 	- ML_TRAIN_ENABLED=true (worker only; optional, defaults true)
 	- ML_TRAIN_INTERVAL_SECONDS=86400 (worker only; optional)
 	- AUTO_MIGRATE=true (default); DB_CONNECT_MAX_ATTEMPTS / DB_CONNECT_BACKOFF_SECONDS for cold starts
-
-- Run migrations once (Railway shell):
-	- python -m alembic upgrade head
-
-- Paystack webhook URL:
-	- https://signalrankai-production.up.railway.app/webhooks/paystack
-
-- Redis is optional. If REDIS_URL is not set, the app uses Postgres-backed runtime state for:
-	- kill-switch
-	- temp owner bypass (/unlock)
+    - ULTRA_QUALITY_ENABLED=false (disable ultra-strict filter that requires many fields; enable only after enriching signals)
 	- rate limiting
 
 - Optional (dangerous): set FRESH_START=true to wipe Postgres data once on next web boot.
