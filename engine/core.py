@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import logging
+from collections import Counter
 
 from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason
 from data.market_data import fetch_market_data_cached
@@ -291,6 +292,7 @@ def main_loop(DRY_RUN=False):
         cycle_max_score_asset = None
         cycle_users = 0
         cycle_dispatched_users = 0
+        cycle_filter_rejection_counts: Counter[str] = Counter()
         # Global kill-switch (skip cycle but keep process alive)
         try:
             if state.get_killswitch_sync().enabled:
@@ -633,6 +635,9 @@ def main_loop(DRY_RUN=False):
                             
                             if not passed_filters:
                                 cycle_rejected_filters += 1
+                                for reason in rejections:
+                                    if reason:
+                                        cycle_filter_rejection_counts[reason] += 1
                                 # Signal rejected by advanced filters
                                 if _env_bool("ENGINE_SIGNAL_DEBUG", False):
                                     print(f"[engine] signal rejected: {symbol} {timeframe} - {rejections}", flush=True)
@@ -853,6 +858,10 @@ def main_loop(DRY_RUN=False):
                 every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
                 if cycle_no <= 0 or (cycle_no % every) == 0:
                     crypto_provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+                    filter_top = ""
+                    if cycle_filter_rejection_counts:
+                        top3 = cycle_filter_rejection_counts.most_common(3)
+                        filter_top = ";".join([f"{r}:{c}" for r, c in top3])
                     print(
                         "[engine] cycle="
                         f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
@@ -864,6 +873,7 @@ def main_loop(DRY_RUN=False):
                             f"store_error={cycle_store_error or 'n/a'} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
                             f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "
+                            f"filter_top={filter_top or 'n/a'} "
                             f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
                         flush=True,
                     )
