@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections import Counter
 
-from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason
+from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock
 from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs
 from data.indicators import calculate_indicators
@@ -208,6 +208,8 @@ def main_loop(DRY_RUN=False):
         crypto_timeframes = [x.strip() for x in ("15m,1h,4h,1d" if is_binance_blocked() else "5m,15m,1h,4h,1d").split(",") if x.strip()]
     # AlphaVantage free tier is rate-limited; default to daily-only for FX.
     fx_timeframes = [x.strip() for x in (os.getenv("FX_TIMEFRAMES") or "1d").split(",") if x.strip()]
+    # Stocks: use mid/HTFs by default; override via STOCK_TIMEFRAMES
+    stock_timeframes = [x.strip() for x in (os.getenv("STOCK_TIMEFRAMES") or "15m,1h,4h,1d").split(",") if x.strip()]
 
     if _env_bool("ENGINE_CYCLE_LOG", True):
         try:
@@ -216,7 +218,8 @@ def main_loop(DRY_RUN=False):
                 f"dry_run={bool(DRY_RUN)} "
                 f"cycle_sleep_seconds={int(os.getenv('CYCLE_SLEEP_SECONDS', '60'))} "
                 f"crypto_timeframes={','.join(crypto_timeframes)} "
-                f"fx_timeframes={','.join(fx_timeframes)}",
+                f"fx_timeframes={','.join(fx_timeframes)} "
+                f"stock_timeframes={','.join(stock_timeframes)}",
                 flush=True,
             )
         except Exception:
@@ -233,6 +236,8 @@ def main_loop(DRY_RUN=False):
     # Non-fatal: warn and disable FX rather than crashing the whole engine.
     fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
     fx_enabled = True
+    # Explicit stocks toggle; default enabled
+    stocks_enabled = (os.getenv("STOCK_TRADING_ENABLED") or "true").strip().lower() in {"1","true","yes","y","on"}
     alphavantage_key = (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip()
     if not alphavantage_key:
         # If we don't have a provider key, we can still run crypto-only.
@@ -367,10 +372,13 @@ def main_loop(DRY_RUN=False):
                     except Exception:
                         pass
 
-                fx_assets = [a for a in open_assets if not is_crypto(a)]
                 crypto_assets = [a for a in open_assets if is_crypto(a)]
+                fx_assets = [a for a in open_assets if is_fx(a)]
+                stock_assets = [a for a in open_assets if is_stock(a)]
                 if not fx_enabled:
                     fx_assets = []
+                if not stocks_enabled:
+                    stock_assets = []
 
                 # FX universe can be moderate; bound per-cycle calls but rotate to cover all.
                 fx_pair_rotation = _env_bool("FX_PAIR_ROTATION", True)
@@ -400,7 +408,20 @@ def main_loop(DRY_RUN=False):
                     else:
                         crypto_assets = crypto_assets[: int(crypto_max_pairs)]
 
-                assets = crypto_assets + fx_assets
+                # Bound stock universe per cycle to keep runtime predictable
+                try:
+                    stock_max_pairs = _env_int("STOCK_MAX_PAIRS_PER_CYCLE", 20)
+                except Exception:
+                    stock_max_pairs = 20
+                stock_pair_rotation = _env_bool("STOCK_PAIR_ROTATION", True)
+                if stock_assets and stock_max_pairs > 0 and len(stock_assets) > stock_max_pairs:
+                    if stock_pair_rotation:
+                        start = (max(0, int(cycle_no)) - 1) * int(stock_max_pairs)
+                        stock_assets = _rotate_slice(stock_assets, start=start, size=int(stock_max_pairs))
+                    else:
+                        stock_assets = stock_assets[: int(stock_max_pairs)]
+
+                assets = crypto_assets + fx_assets + stock_assets
             except Exception:
                 pass
 
@@ -410,10 +431,11 @@ def main_loop(DRY_RUN=False):
             if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
                 try:
                     crypto_n = len([a for a in assets if is_crypto(a)])
-                    fx_n = len([a for a in assets if not is_crypto(a)])
+                    fx_n = len([a for a in assets if is_fx(a)])
+                    stock_n = len([a for a in assets if is_stock(a)])
                     sample = ",".join([str(a) for a in list(assets)[:10]])
                     print(
-                        f"[engine] cycle={cycle_no} assets_split crypto={crypto_n} fx={fx_n} sample={sample}",
+                        f"[engine] cycle={cycle_no} assets_split crypto={crypto_n} fx={fx_n} stocks={stock_n} sample={sample}",
                         flush=True,
                     )
                 except Exception:
@@ -424,7 +446,12 @@ def main_loop(DRY_RUN=False):
             # Fetch all market data once per cycle (avoids per-asset asyncio.run overhead).
             asset_to_tfs: dict[str, list[str]] = {}
             for asset in assets:
-                tfs = crypto_timeframes if is_crypto(asset) else fx_timeframes
+                if is_crypto(asset):
+                    tfs = crypto_timeframes
+                elif is_fx(asset):
+                    tfs = fx_timeframes
+                else:
+                    tfs = stock_timeframes
                 asset_to_tfs[str(asset)] = list(tfs)
 
             try:
@@ -938,7 +965,7 @@ def main_loop(DRY_RUN=False):
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
                             f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "
                             f"filter_top={filter_top or 'n/a'} "
-                            f"crypto_provider={crypto_provider} fx_enabled={fx_enabled}",
+                            f"crypto_provider={crypto_provider} fx_enabled={fx_enabled} stocks_enabled={stocks_enabled}",
                         flush=True,
                     )
         except Exception:
