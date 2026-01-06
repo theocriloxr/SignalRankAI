@@ -129,11 +129,11 @@ class ChopFilter:
         if adx < 20:
             reasons.append(f"Weak trend (ADX {adx:.0f})")
         
-        # Check ATR
-        if atr_pct < 3.0:
+        # Check ATR (relax for crypto/FX which are naturally lower volatility)
+        if atr_pct < 1.0:
             reasons.append(f"Low volatility (ATR {atr_pct:.1f}%)")
         
-        # Check price range
+        # Check price range (allow tighter ranges for crypto/FX)
         if len(candles) >= lookback:
             recent = candles[-lookback:]
             highs = [c['high'] for c in recent]
@@ -143,10 +143,11 @@ class ChopFilter:
             range_low = min(lows)
             range_pct = ((range_high - range_low) / range_low) * 100
             
-            if range_pct < 5.0:
+            if range_pct < 2.0:
                 reasons.append(f"Tight range ({range_pct:.1f}%)")
         
-        if len(reasons) >= 2:
+        # Only reject if multiple strong reasons; single chop indicator is not enough
+        if len(reasons) >= 3:
             return True, " | ".join(reasons)
         
         return False, ""

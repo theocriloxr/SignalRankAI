@@ -43,10 +43,11 @@ class UltraQualityFilter:
     
     def __init__(self):
         # Ultra-strict thresholds
-        self.min_score = _env_float("ULTRA_MIN_SCORE", 85.0)
-        self.min_confluence = _env_float("ULTRA_MIN_CONFLUENCE", 80.0)
-        self.min_rr_ratio = _env_float("ULTRA_MIN_RR_RATIO", 2.5)
-        self.min_adx = _env_float("ULTRA_MIN_ADX", 25.0)
+        # Match pipeline threshold (55-70 range) rather than hardcoding 85
+        self.min_score = _env_float("ULTRA_MIN_SCORE", 55.0)
+        self.min_confluence = _env_float("ULTRA_MIN_CONFLUENCE", 70.0)
+        self.min_rr_ratio = _env_float("ULTRA_MIN_RR_RATIO", 2.0)
+        self.min_adx = _env_float("ULTRA_MIN_ADX", 20.0)
         self.min_volume_ratio = _env_float("ULTRA_MIN_VOLUME_RATIO", 1.5)
         self.min_confidence = _env_float("ULTRA_MIN_CONFIDENCE", 0.70)
         self.max_volatility = _env_float("ULTRA_MAX_VOLATILITY", 0.15)  # 15% max
