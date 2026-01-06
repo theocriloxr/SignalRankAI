@@ -25,6 +25,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(val):
+    """Coerce numbers that may be stored as strings or single-item lists."""
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, (list, tuple)):
+        return _safe_float(val[0]) if val else 0.0
+    try:
+        s = str(val).strip()
+        if not s:
+            return 0.0
+        return float(s)
+    except Exception:
+        try:
+            import json
+
+            parsed = json.loads(str(val))
+            if isinstance(parsed, (list, tuple)):
+                return _safe_float(parsed[0]) if parsed else 0.0
+            if isinstance(parsed, (int, float)):
+                return float(parsed)
+        except Exception:
+            pass
+    return 0.0
+
+
 async def load_training_data():
     """Load signals + outcomes from Postgres."""
     try:
@@ -63,15 +90,15 @@ async def load_training_data():
                 'asset': sig.asset,
                 'timeframe': sig.timeframe,
                 'direction': sig.direction,
-                'score': float(sig.score or 0),
-                'entry': float(sig.entry or 0),
-                'stop_loss': float(sig.stop_loss or 0),
-                'take_profit': float(sig.take_profit or 0),
-                'rr_ratio': float(sig.rr_estimate or 0),
+                'score': _safe_float(getattr(sig, 'score', 0)),
+                'entry': _safe_float(getattr(sig, 'entry', 0)),
+                'stop_loss': _safe_float(getattr(sig, 'stop_loss', 0)),
+                'take_profit': _safe_float(getattr(sig, 'take_profit', 0)),
+                'rr_ratio': _safe_float(getattr(sig, 'rr_estimate', 0)),
                 'strategy_name': sig.strategy_name or 'unknown',
                 'regime': sig.regime or 'unknown',
-                'strength': sig.strength or 0,
-                'ml_probability': float(getattr(sig, 'ml_probability', None) or 0),
+                'strength': _safe_float(getattr(sig, 'strength', 0)),
+                'ml_probability': _safe_float(getattr(sig, 'ml_probability', 0)),
                 'target': target,
             }
             data.append(row)
