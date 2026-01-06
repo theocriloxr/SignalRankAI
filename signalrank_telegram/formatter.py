@@ -1,8 +1,47 @@
 from engine.tier_notifications import TierNotificationManager
 from datetime import datetime
+import os
 
 # Initialize tier notification manager
 _tier_notifier = TierNotificationManager()
+
+# Tier constants
+TIER_FREE = "free"
+TIER_PREMIUM = "premium"
+TIER_VIP = "vip"
+TIER_ADMIN = "admin"
+TIER_OWNER = "owner"
+
+def _get_user_tier(user_tier: str | None) -> str:
+	"""Normalize and return user tier."""
+	if not user_tier:
+		return TIER_FREE
+	tier = str(user_tier).lower().strip()
+	if tier in {TIER_ADMIN, TIER_OWNER}:
+		return TIER_VIP  # Admin/Owner see VIP content + everything
+	if tier == TIER_VIP:
+		return TIER_VIP
+	if tier == TIER_PREMIUM:
+		return TIER_PREMIUM
+	return TIER_FREE
+
+def _should_send_signal_for_tier(user_tier: str, score: float) -> bool:
+	"""Check if signal should be sent to this tier based on quality."""
+	tier = _get_user_tier(user_tier)
+	
+	# FREE: only 80%+ quality signals
+	if tier == TIER_FREE:
+		return score >= 80.0
+	
+	# PREMIUM: 65%+ signals (high & medium confidence)
+	if tier == TIER_PREMIUM:
+		return score >= 65.0
+	
+	# VIP/ADMIN/OWNER: all signals, but filtered quality-first
+	if tier == TIER_VIP:
+		return score >= 55.0  # Accept lower scores, but will show differently
+	
+	return True
 
 def _risk_suggestion(score: float | int | None) -> str:
 	try:
@@ -104,219 +143,309 @@ def _star_rating(confluence_count: int | None, score: float | int | None) -> str
 	
 	return "⭐" * total_stars
 
-def format_signal(signal, display_tier: str | None = None, limited: bool = False):
-	"""Format a signal for Telegram with tier-appropriate detail.
+# ============================================================
+# TIER-SPECIFIC FORMATTERS
+# ============================================================
 
-	- display_tier: force header tier label (vip/premium/free)
-	- limited: Free-tier display (direction-only; no exact levels)
+def format_signal_free(signal) -> str:
+	"""Format signal for FREE tier: PROOF only, no explanations.
 	
-	Tier rules:
-	- FREE: Direction + asset + timeframe only (limited)
-	- PREMIUM: Full signal with SL/TP + confidence + regime + NEW FEATURES
-	- VIP: Everything + strategy + strength + ML confidence + R/R analysis + NEW FEATURES
-	- ADMIN: Same as VIP (sees all details)
+	Attributes:
+	- 1-3 signals/day (score 80%+)
+	- Single TP only
+	- Basic SL
+	- No explanations, no updates, optional delay
+	- Purpose: Attract users, build trust, showcase accuracy
 	"""
+	ref = signal.get("signal_id") or signal.get("id")
+	ref_short = str(ref)[:8] if ref else "N/A"
 	
-	# Use new tier-based notification system for premium/vip
-	if display_tier and display_tier.lower() in ('premium', 'vip', 'admin', 'owner'):
-		# Map tier
-		user_tier = display_tier.lower()
-		if user_tier in ('owner', 'admin'):
-			user_tier = 'vip'  # Admin/Owner get VIP formatting
-		
-		# Extract new features from signal
-		entry_zone = signal.get('entry_zone', {})
-		htf_bias = signal.get('htf_bias', {})
-		mtf_confluence = signal.get('mtf_confluence', {})
-		session = signal.get('session', 'UNKNOWN')
-		
-		# If new features present, use new formatter
-		if entry_zone or htf_bias:
-			try:
-				return _tier_notifier.format_new_signal(
-					signal=signal,
-					user_tier=user_tier,
-					entry_zone=entry_zone,
-					htf_bias=htf_bias,
-					mtf_confluence=mtf_confluence,
-					session=session
-				)
-			except Exception as e:
-				# Fallback to old formatter on error
-				pass
-
-	# Always use signal_id from database (the actual tracking ID)
-	ref = signal.get("signal_id")
-	if not ref:
-		ref = None
-	
-	# Short user-facing reference: first 8 chars of signal_id
-	ref_short = None
-	if ref:
-		try:
-			ref_short = str(ref)[:8]
-		except Exception:
-			ref_short = None
-
-	if limited:
-		lines = ["🔒 FREE USER (LIMITED SIGNAL)", ""]
-		if ref_short:
-			lines.append(f"Reference: {ref_short}")
-		lines += [
-			f"Asset: {signal.get('asset')}",
-			f"Timeframe: {signal.get('timeframe')}",
-			f"Direction: {signal.get('direction')}",
-			"",
-			"Upgrade to Premium to see exact entry/SL/TP and receive real-time alerts.",
-		]
-		return "\n".join(lines)
-
-	# Full detail
-	if display_tier is None:
-		try:
-			import os
-			vip_cut = float((os.getenv("VIP_SCORE_THRESHOLD") or "72").strip())
-		except Exception:
-			vip_cut = 72.0
-		display_tier = 'vip' if float(signal.get('score', 0) or 0) >= vip_cut else 'premium'
-	label = str(display_tier).strip().upper()
-
-	# Determine what details to show based on tier
-	show_levels = label in {'PREMIUM', 'VIP', 'OWNER', 'ADMIN'}
-	show_strategy = label in {'VIP', 'OWNER', 'ADMIN'}
-	show_ml = label in {'VIP', 'OWNER', 'ADMIN'}
-	show_rr_detail = label in {'VIP', 'OWNER', 'ADMIN'}
-	show_contributors = label in {'VIP', 'OWNER', 'ADMIN'}
-	show_confidence = label in {'PREMIUM', 'VIP', 'OWNER', 'ADMIN'}  # Hide confidence from FREE
-
-	# Generate star rating for display
-	star_rating = _star_rating(signal.get('confluence_count'), signal.get('score'))
-
 	msg = f"""\
-🚀 TRADE ALERT — {label} {star_rating}
+🚀 BUY SIGNAL
 
 Asset: {signal.get('asset')}
-Direction: {signal.get('direction').upper() if signal.get('direction') else 'N/A'}
+Timeframe: {signal.get('timeframe')}
+
+Entry: {signal.get('entry')}
+Stop Loss: {signal.get('stop_loss')}
+Take Profit: {signal.get('take_profit')}
+
+⚠️ Risk max 1–2%
+
+📋 Ref: {ref_short} (use /outcome {ref_short})
+"""
+	return msg
+
+def format_signal_premium(signal) -> str:
+	"""Format signal for PREMIUM tier: Core revenue tier.
+	
+	Attributes:
+	- 5-10 signals/day (score 65%+)
+	- 2-3 TP levels
+	- Confidence rating (%)
+	- Signal validity window
+	- Basic update alerts (TP / SL)
+	- Session tag
+	- Purpose: Core revenue, active traders, better clarity & control
+	"""
+	ref = signal.get("signal_id") or signal.get("id")
+	ref_short = str(ref)[:8] if ref else "N/A"
+	
+	tp_levels = signal.get('tp_levels', [])
+	score = signal.get('score', 0)
+	session = signal.get('session', '')
+	expires_at = signal.get('expires_at')
+	
+	msg = f"""\
+🚀 BUY SIGNAL
+
+Asset: {signal.get('asset')}
 Timeframe: {signal.get('timeframe')}
 """
-	if show_levels:
-		msg += f"""Entry: {signal.get('entry')}
+	
+	if session:
+		msg += f"Session: {session}\n"
+	
+	msg += f"""
+Entry: {signal.get('entry')}
 Stop Loss: {signal.get('stop_loss')}
 """
-		# Display multiple TP levels with exit percentages
-		tp_levels = signal.get('tp_levels', [])
-		if tp_levels and len(tp_levels) >= 3:
-			# Standard 3-level exits: 33% each
-			msg += f"""Take Profit 1: {tp_levels[0]} (33% exit)
-Take Profit 2: {tp_levels[1]} (33% exit)
-Take Profit 3: {tp_levels[2]} (34% exit)
-"""
-		elif tp_levels:
-			# Fallback for fewer TP levels
-			exit_pct = 100 // len(tp_levels)
-			for i, tp in enumerate(tp_levels, 1):
-				pct = exit_pct if i < len(tp_levels) else (100 - exit_pct * (len(tp_levels) - 1))
-				msg += f"Take Profit {i}: {tp} ({pct}% exit)\n"
-		else:
-			# No TP levels, show single TP
-			msg += f"Take Profit: {signal.get('take_profit')}\n"
+	
+	# Multiple TP levels (2-3)
+	if tp_levels:
+		for i, tp in enumerate(tp_levels[:3], 1):
+			msg += f"TP{i}: {tp}\n"
 	else:
-		# FREE tier: encourage upgrade
-		msg += "\n🔒 Upgrade to PREMIUM to see Entry, Stop Loss, and Take Profit levels.\n"
+		msg += f"TP: {signal.get('take_profit')}\n"
 	
-	# Entry status flag
-	entry_status = signal.get('entry_status', 'UNKNOWN')
-	if entry_status == 'AT_ENTRY':
-		status_emoji = "✅"
-		status_text = "Entry zone reached"
-	elif entry_status == 'PENDING_ENTRY':
-		status_emoji = "⏳"
-		status_text = "Awaiting entry"
-	else:
-		status_emoji = "❓"
-		status_text = "Status unknown"
-	msg += f"{status_emoji} Status: {status_text}\n"
-	
-	if show_confidence:
-		confidence_tag = _confidence_tag(signal.get('score'))
-		confluence_display = _confluence_display(signal.get('confluence_count'), signal.get('confluence_total'))
-		msg += f"""Confidence: {confidence_tag}
-Score: {signal.get('score')}/100
-Confluence: {confluence_display}
-Suggested risk: {_risk_suggestion(signal.get('score'))}
+	msg += f"""
+🔥 Confidence: {int(score)}%
 """
-
-	if show_levels:
-		msg += f"Market Regime: {signal.get('regime', 'N/A')}\n"
-		session = signal.get('session')
-		if session:
-			msg += f"📍 Session: {session}\n"
 	
-	if ref_short:
-		msg = f"📋 Ref: {ref_short} (use /outcome {ref_short})\n" + msg
-
-	# Strategy + strength for VIP+
-	if show_strategy:
+	# Validity window
+	if expires_at:
 		try:
-			strategy = signal.get('strategy_name') or signal.get('strategy')
-			group = signal.get('strategy_group')
-			strength = signal.get('strength')
-			contributors = signal.get('contributors', [])
-			
-			if strategy:
-				msg += f"\n📍 Primary Strategy: {strategy}"
-				if group:
-					msg += f" ({group})"
-			
-			if contributors and len(contributors) > 1:
-				msg += f"\n🤝 Contributors: {', '.join(contributors[:3])}"
-			
-			if strength is not None:
-				msg += f"\n💪 Strength: {strength}"
-		except Exception:
-			pass
-
-	# ML confidence for VIP+
-	if show_ml and signal.get('ml_probability') is not None:
-		try:
-			ml_val = float(signal['ml_probability'])
-			ml_pct = round(ml_val * 100, 1)
-			ml_emoji = "✅" if ml_val >= 0.75 else ("⚠️" if ml_val >= 0.5 else "❌")
-			msg += f"\n{ml_emoji} ML Score: {ml_pct}% approval"
-		except Exception:
-			pass
-
-	# R/R analysis for VIP+
-	if show_rr_detail:
-		try:
-			rr = signal.get('rr_ratio')
-			if rr is not None:
-				rr_val = float(rr)
-				rr_emoji = "🔥" if rr_val >= 2.0 else ("✅" if rr_val >= 1.5 else "⚠️")
-				msg += f"\n{rr_emoji} Risk/Reward: {rr_val:.2f}:1"
-		except Exception:
-			pass
-
-	# Expiration time for PREMIUM+
-	if show_levels:
-		try:
-			expires_at = signal.get('expires_at')
-			if expires_at:
-				exp_str = _format_expiration(expires_at)
-				msg += f"\n⏰ Valid: {exp_str}"
+			exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+			now = datetime.utcnow().replace(tzinfo=exp_dt.tzinfo) if exp_dt.tzinfo else datetime.utcnow()
+			diff = (exp_dt - now).total_seconds()
+			candles = max(1, int(diff / 900))  # Assume 15min candles
+			msg += f"⏳ Validity: Next {candles} candles\n"
 		except Exception:
 			pass
 	
-	# Risk guidance for PREMIUM+
-	if show_levels:
-		try:
-			guidance = _risk_guidance(label, signal.get('score'))
-			msg += f"\n{guidance}"
-		except Exception:
-			pass
+	msg += f"""
+⚠️ Risk max 1–2%
 
-	msg += "\n\n⚠️ Educational only. Not financial advice."
+📋 Ref: {ref_short} (use /outcome {ref_short})
+"""
 	return msg
+
+def format_signal_vip(signal) -> str:
+	"""Format signal for VIP tier: Maximum edge & transparency.
+	
+	Attributes:
+	- Fewer but highest-quality signals (score-filtered)
+	- 3+ TP levels
+	- Full confidence score (0-100)
+	- Confluence breakdown
+	- Market regime info
+	- Invalidation levels
+	- Full update alerts
+	- NO-TRADE alerts
+	- Weekly performance summary
+	- Priority delivery
+	- Purpose: High-value users, institutional-style
+	"""
+	ref = signal.get("signal_id") or signal.get("id")
+	ref_short = str(ref)[:8] if ref else "N/A"
+	
+	tp_levels = signal.get('tp_levels', [])
+	score = signal.get('score', 0)
+	session = signal.get('session', '')
+	regime = signal.get('regime', '')
+	confluence_count = signal.get('confluence_count', 0)
+	confluence_total = signal.get('confluence_total', 5)
+	rr_ratio = signal.get('rr_ratio', 0)
+	strategy = signal.get('strategy_name') or signal.get('strategy')
+	
+	msg = f"""\
+🚀 BUY SIGNAL — VIP
+
+Asset: {signal.get('asset')}
+Timeframe: {signal.get('timeframe')}
+"""
+	
+	if session:
+		msg += f"Session: {session}\n"
+	if regime:
+		msg += f"Market Regime: {regime}\n"
+	
+	msg += f"""
+Entry Zone: {signal.get('entry')}
+Stop Loss: {signal.get('stop_loss')}
+
+"""
+	
+	# All 3 TP levels for VIP
+	if tp_levels and len(tp_levels) >= 3:
+		msg += f"TP1: {tp_levels[0]}\n"
+		msg += f"TP2: {tp_levels[1]}\n"
+		msg += f"TP3: {tp_levels[2]}\n"
+	else:
+		msg += f"TP: {signal.get('take_profit')}\n"
+	
+	# Full score breakdown
+	msg += f"""
+📊 Confluence Score: {int(score)} / 100
+🔥 Confidence: {'VERY HIGH' if score >= 80 else ('HIGH' if score >= 65 else 'MEDIUM')}
+"""
+	
+	# HTF Bias
+	htf_bias = signal.get('htf_bias', {})
+	if isinstance(htf_bias, dict):
+		bias_str = htf_bias.get('bias', 'NEUTRAL')
+		msg += f"📈 HTF Bias: {bias_str}\n"
+	
+	# Risk-Reward ratio
+	if rr_ratio and rr_ratio > 0:
+		msg += f"📊 Risk–Reward: 1 : {rr_ratio:.1f}\n"
+	
+	# Invalidation levels
+	invalid_price = signal.get('invalid_if_price')
+	if invalid_price:
+		msg += f"""
+❌ Invalidation:
+• Close below {invalid_price}
+"""
+	
+	# Trading logic / reasoning
+	if signal.get('technical_reason'):
+		msg += f"""
+🧠 Trade Logic:
+• {signal.get('technical_reason')}
+"""
+	
+	msg += f"""
+📌 Signal ID: {ref_short}
+📈 Strategy: {strategy or 'Multi-Strategy'}
+
+📋 (use /outcome {ref_short} WIN/LOSS/CANCEL to track result)
+"""
+	return msg
+
+def format_signal_admin(signal) -> str:
+	"""Format signal for ADMIN/OWNER: Everything.
+	
+	Same as VIP but with additional internal information.
+	"""
+	vip_msg = format_signal_vip(signal)
+	
+	# Add admin-specific info
+	admin_info = f"""
+
+═══ ADMIN INFO ═══
+Score: {signal.get('score')}/100
+ML Prob: {signal.get('ml_probability', 'N/A')}
+Confluence: {signal.get('confluence_count', 0)}/{signal.get('confluence_total', 5)}
+Contributors: {', '.join(signal.get('contributors', [])[:3])}
+Created: {signal.get('created_at', 'N/A')}
+"""
+	return vip_msg + admin_info
+
+def format_signal_update_tp_hit(signal, tp_number: int) -> str:
+	"""Format TP HIT update alert."""
+	asset = signal.get('asset', 'UNKNOWN')
+	ref = signal.get('signal_id', 'N/A')
+	ref_short = str(ref)[:8]
+	
+	msg = f"""\
+📢 UPDATE — {asset}
+
+✅ TP{tp_number} HIT
+🔒 Consider moving SL to breakeven
+"""
+	return msg
+
+def format_signal_no_trade_alert() -> str:
+	"""Format NO-TRADE alert for VIP."""
+	msg = """\
+⛔ NO TRADE ZONE — VIP
+
+Market Conditions:
+• Low volume
+• Choppy structure
+• Poor risk-to-reward
+
+📉 Capital preservation mode active
+"""
+	return msg
+
+def format_performance_summary_vip(stats: dict) -> str:
+	"""Format weekly performance summary for VIP."""
+	msg = f"""\
+📊 WEEKLY PERFORMANCE — VIP
+
+Signals Delivered: {stats.get('total_signals', 0)}
+Winning Trades: {stats.get('wins', 0)} ({stats.get('win_rate', 0):.1f}%)
+Avg R/Reward: {stats.get('avg_rr', 0):.2f}:1
+Best Asset: {stats.get('best_asset', 'N/A')}
+Best Timeframe: {stats.get('best_tf', 'N/A')}
+
+Capital Gained: {stats.get('profit_pct', 0):.2f}%
+"""
+	return msg
+
+def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None):
+	"""Format a signal for Telegram with tier-appropriate detail.
+
+	Routes to tier-specific formatters following the GOLDEN RULE:
+	- FREE: PROOF only (1-3 signals/day, score 80%+)
+	- PREMIUM: MORE OPPORTUNITY (5-10 signals/day, score 65%+)
+	- VIP: LESS NOISE BUT BETTER QUALITY (score-filtered)
+	- ADMIN/OWNER: Everything VIP gets + admin info
+	
+	Args:
+		signal: Signal dict with all fields
+		display_tier: Display tier to show in header (for compatibility)
+		limited: If True, use limited FREE format
+		user_tier: Actual user tier to determine what to send
+	
+	Returns:
+		Formatted signal string for Telegram
+	"""
+	
+	# Determine actual tier to show to user
+	if not user_tier:
+		user_tier = display_tier
+	
+	tier = _get_user_tier(user_tier)
+	score = float(signal.get('score', 0) or 0)
+	
+	# Check if signal should be sent to this tier (quality gate)
+	if not _should_send_signal_for_tier(tier, score):
+		return None  # Signal filtered out for this tier
+	
+	# Route to tier-specific formatter
+	if tier == TIER_FREE:
+		return format_signal_free(signal)
+	elif tier == TIER_PREMIUM:
+		return format_signal_premium(signal)
+	elif tier == TIER_VIP:
+		return format_signal_vip(signal)
+	elif tier in {TIER_ADMIN, TIER_OWNER}:
+		return format_signal_admin(signal)
+	
+	# Fallback to PREMIUM format
+	return format_signal_premium(signal)
+
+def format_signal_legacy(signal, display_tier: str | None = None, limited: bool = False):
+	"""DEPRECATED: Legacy format_signal function. Use new tier-based formatters instead.
+	
+	This function is kept for backwards compatibility only.
+	New code should use format_signal() with user_tier parameter.
+	"""
+	# Redirect to new format_signal
+	return format_signal(signal, display_tier=display_tier, limited=limited, user_tier=display_tier)
 
 
 def format_signal_free_limited(signal):
