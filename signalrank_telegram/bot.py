@@ -56,7 +56,7 @@ _tier_notifier = TierNotificationManager()
 logger = logging.getLogger(__name__)
 
 TIER_LIMITS = {
-    'free': 2,
+    'free': 3,
     'premium': 10,
     'vip': 30,
     'admin': 9999,
@@ -726,7 +726,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     delivered_today = await count_signals_delivered_today(session, int(user_id))
                     
                     # FREE users get 2 signals per day
-                    daily_limit = 2
+                    daily_limit = 3
                     remaining = max(0, daily_limit - delivered_today)
                     
                     if remaining <= 0:
@@ -856,12 +856,12 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 continue
         return
 
-    # FREE: queue delayed summary (max 2/day)
+    # FREE: queue delayed summary (max 3/day)
     try:
         from db.session import ENGINE, get_session
         if ENGINE is None:
             raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
-        daily_limit = 2
+        daily_limit = 3
 
         async def _queue() -> None:
             from db.pg_features import queue_free_signal_summary as queue_free_signal_summary_pg
@@ -1517,7 +1517,7 @@ def run_bot() -> None:
                     return
 
                 now_hour = datetime.now().hour
-                per_user_limit = int(os.getenv('FREE_DAILY_LIMIT', '2'))
+                per_user_limit = int(os.getenv('FREE_DAILY_LIMIT', '3'))
 
                 actions: list[tuple[int, list[int], list[str], str]] = []
 
