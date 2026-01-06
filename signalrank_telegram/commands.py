@@ -107,10 +107,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		"/report – Detailed performance reports\n\n"
 		"📌 Notes\n"
 		"• Signals are real-time from live market data\n"
-		"• Corrected signals are automatically resent\n"
+		"• Supports crypto, FX, and stocks (auto)\n"
+		"• Signal corrections: automatic validation + manual fixes\n"
 		"• No duplicate signals per user\n"
 		"• Free users get 3 signals/day (delayed summaries)\n"
-		"• Current prices fetched live for /outcome\n\n"
+		"• Current prices fetched live for /signal and /outcome\n\n"
 		"⚠️ Educational only. Not financial advice. Trading involves risk."
 	)
 	if update.message is not None:
@@ -473,26 +474,24 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		return a
 
 	def _current_price(asset: str) -> float | None:
-		"""Fetch current price from live market data. Works for crypto and stocks."""
+		"""Fetch current price from live market data. Supports crypto, FX, and stocks."""
 		try:
-			from data.fetcher import get_candles
+			from data.fetcher import get_candles, get_asset_type
 			
-			# Determine asset type
-			is_crypto = _is_crypto(asset)
-			asset_type = "crypto" if is_crypto else "stock"
+			asset_type = get_asset_type(asset)
+			if asset_type not in {"crypto", "fx", "stock"}:
+				asset_type = "crypto"
 			
-			# Fetch 1 candle (1m timeframe for freshest data)
-			candles = get_candles(
-				asset=asset,
-				timeframe="1m",
-				limit=1,
-				asset_type=asset_type
-			)
+			# Try short timeframes first; fall back if unavailable
+			candles = []
+			for tf in ("1m", "5m", "15m"):
+				candles = get_candles(asset, tf)
+				if candles:
+					break
 			
-			if not candles or len(candles) == 0:
+			if not candles:
 				return None
 			
-			# Return close price of latest candle
 			latest = candles[-1]
 			close_price = latest.get("close")
 			
@@ -887,26 +886,23 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			return a
 		
 		def _current_price(asset: str) -> float | None:
-			"""Fetch current price from live market data. Works for crypto and stocks."""
+			"""Fetch current price from live market data. Supports crypto, FX, and stocks."""
 			try:
-				from data.fetcher import get_candles
+				from data.fetcher import get_candles, get_asset_type
 				
-				# Determine asset type
-				is_crypto = _is_crypto(asset)
-				asset_type = "crypto" if is_crypto else "stock"
-				
-				# Fetch 1 candle (1m timeframe for freshest data)
-				candles = get_candles(
-					asset=asset,
-					timeframe="1m",
-					limit=1,
-					asset_type=asset_type
-				)
-				
-				if not candles or len(candles) == 0:
+				asset_type = get_asset_type(asset)
+				if asset_type not in {"crypto", "fx", "stock"}:
+					asset_type = "crypto"
+			
+				candles = []
+				for tf in ("1m", "5m", "15m"):
+					candles = get_candles(asset, tf)
+					if candles:
+						break
+			
+				if not candles:
 					return None
 				
-				# Return close price of latest candle
 				latest = candles[-1]
 				close_price = latest.get("close")
 				
