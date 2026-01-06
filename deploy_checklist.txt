@@ -19,11 +19,19 @@ SignalRankAI Deployment & Automation Checklist
 	- RUN_MODE=web python main.py (FastAPI web / health / metrics / webhooks)
 	- RUN_MODE=worker python main.py (subscription expiry + background jobs)
 
-4b. Railway (production) recommended layout
+4b. Railway (production) layout options
 
 - Create 1 Railway project
 - Add Postgres plugin
-- Create 4 Railway services (all from the same repo) with start command: `python main.py`
+
+- Option A: Single service (all-in-one)
+	- Create one service named e.g. "all" or set RUN_MODE=all
+	- Start command: `python main.py`
+	- Runs web + bot + engine + worker in one container via threads
+	- Keep in mind memory/CPU; async DB pool uses NullPool in RUN_MODE=all to avoid cross-loop issues
+
+- Option B: Four services (separated)
+	- Create 4 services (same repo) with start command: `python main.py`
 	- Name services so RUN_MODE is auto-detected: "web", "bot" (or "telegram"), "engine", "worker"
 	- RUN_MODE is still honored if set manually; auto-detect just makes Railway zero-config per service
 
