@@ -86,8 +86,14 @@ class OverextendedFilter:
         
         Overextended = price > 3*ATR away from EMA50
         """
+        # If we don't have reliable values, don't block the signal here.
+        if ema_50 <= 0 or atr <= 0 or current_price <= 0:
+            return False, ""
+
         distance = abs(current_price - ema_50)
-        threshold = 3 * atr
+        # Require both an ATR-based and a small percent-based buffer to avoid false positives
+        # when ATR is tiny (common on FX) or EMA is missing.
+        threshold = max(3 * atr, 0.02 * ema_50)
         
         if distance > threshold:
             distance_pct = (distance / current_price) * 100

@@ -615,6 +615,19 @@ def main_loop(DRY_RUN=False):
                             
                             entry_price = signal.get('entry', signal.get('entry_price', 0))
                             entry_zone = signal_context.calculate_entry_zone(entry_price, atr, direction)
+
+                            # ========================================
+                            # EXISTING SCORING (compute before filters for observability)
+                            # ========================================
+                            score = score_signal(signal)
+                            signal['score'] = score
+
+                            try:
+                                if cycle_max_score is None or float(score) > float(cycle_max_score):
+                                    cycle_max_score = float(score)
+                                    cycle_max_score_asset = str(signal.get('asset') or signal.get('symbol') or '')
+                            except Exception:
+                                pass
                             
                             # 9. Run advanced filters
                             market_filter_data = {
@@ -654,13 +667,6 @@ def main_loop(DRY_RUN=False):
                             else:
                                 # Invalidate if price closes above SL + 0.5*ATR
                                 invalid_price = sl_price + (0.5 * atr) if sl_price > 0 else None
-                            
-                            # ========================================
-                            # EXISTING SCORING
-                            # ========================================
-                            
-                            score = score_signal(signal)
-                            signal['score'] = score
                             
                             # ========================================
                             # NEW: ULTRA-QUALITY FILTER (Near-Zero Loss)
