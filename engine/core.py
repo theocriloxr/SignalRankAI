@@ -708,11 +708,37 @@ def main_loop(DRY_RUN=False):
                         if score >= MIN_SCORE_THRESHOLD:
                             # Normalize for DB + formatters
                             signal['regime'] = regime
-                            signal['stop_loss'] = signal.get('stop_loss', signal.get('stop'))
-                            signal['take_profit'] = signal.get('take_profit', signal.get('targets'))
+                            
+                            # Ensure stop_loss and take_profit are populated
+                            # Fallback: Use ATR-based stops if missing
                             entry = signal.get('entry')
-                            sl = signal.get('stop_loss')
-                            tp = signal.get('take_profit')
+                            sl = signal.get('stop_loss', signal.get('stop'))
+                            tp = signal.get('take_profit', signal.get('targets'))
+                            
+                            # If stops are missing/invalid, calculate from ATR
+                            if not sl or sl == entry:
+                                atr_value = signal.get('atr', 0)
+                                if atr_value > 0 and entry > 0:
+                                    direction = signal.get('direction', 'long').lower()
+                                    if direction == 'long':
+                                        sl = entry - (2 * atr_value)  # 2x ATR below
+                                    else:
+                                        sl = entry + (2 * atr_value)  # 2x ATR above
+                            
+                            if not tp or tp == entry:
+                                atr_value = signal.get('atr', 0)
+                                if atr_value > 0 and entry > 0 and sl and sl != entry:
+                                    direction = signal.get('direction', 'long').lower()
+                                    rr = 2.0  # Target 2:1 R/R
+                                    if direction == 'long':
+                                        tp = entry + (abs(entry - sl) * rr)
+                                    else:
+                                        tp = entry - (abs(entry - sl) * rr)
+                            
+                            signal['stop_loss'] = sl
+                            signal['take_profit'] = tp
+                            
+                            # Recalculate R:R with actual values
                             if entry is not None and sl is not None and tp is not None and abs(entry - sl) > 0:
                                 signal['rr_ratio'] = abs(tp - entry) / abs(entry - sl)
                             else:
