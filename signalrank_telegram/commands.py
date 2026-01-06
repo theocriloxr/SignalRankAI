@@ -1596,20 +1596,6 @@ async def performance_command(update, context):
 
 	# Prefer Postgres (deliveries + outcomes)
 	try:
-		import asyncio
-		# Check if event loop is running/available
-		try:
-			loop = asyncio.get_running_loop()
-			if loop.is_closed():
-				raise RuntimeError("Event loop is closed")
-		except RuntimeError as loop_err:
-			if "no running event loop" in str(loop_err).lower() or "closed" in str(loop_err).lower():
-				_audit_logger.warning(f"/performance skipped for user={user_id}: {loop_err}")
-				if update.message is not None:
-					await update.message.reply_text("Performance is temporarily unavailable. Please try again shortly.")
-				return
-			raise
-		
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_user_performance_30d
