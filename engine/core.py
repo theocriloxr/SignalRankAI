@@ -49,9 +49,10 @@ def _env_float(name: str, default: float) -> float:
 # - 65: Quality-focused (only high-confidence+good setups)
 # - 70: Strict (premium quality only)
 # - 75: Very strict (only top-tier signals)
-# - 85: ULTRA (near-zero loss) <- NEW DEFAULT
+# - 85: ULTRA (near-zero loss)
 # - 90: Elite (only perfect setups)
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 85)
+# Default to 70 so we actually emit high-quality signals under tight liquidity/coverage.
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
 
 def load_tradable_assets():
     """Return configured fallback assets.
