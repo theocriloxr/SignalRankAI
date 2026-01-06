@@ -44,7 +44,7 @@ class UltraQualityFilter:
     def __init__(self):
         # Ultra-strict thresholds
         # Match pipeline threshold (55-70 range) rather than hardcoding 85
-        self.min_score = _env_float("ULTRA_MIN_SCORE", 55.0)
+        self.min_score = _env_float("ULTRA_MIN_SCORE", 65.0)
         self.min_confluence = _env_float("ULTRA_MIN_CONFLUENCE", 70.0)
         self.min_rr_ratio = _env_float("ULTRA_MIN_RR_RATIO", 2.0)
         self.min_adx = _env_float("ULTRA_MIN_ADX", 20.0)
@@ -64,74 +64,101 @@ class UltraQualityFilter:
     def apply_ultra_filter(self, signal: Dict) -> Tuple[bool, str, float]:
         """
         Apply ultra-strict filters to signal.
+        Requires 8 out of 11 checks to pass.
         
         Returns: (should_trade, rejection_reason, final_score)
         """
-        reasons = []
+        score = signal.get("score", 0)
+        passed_checks = 0
+        failed_checks = []
         
         # 1. Score check
-        score = signal.get("score", 0)
-        if score < self.min_score:
-            reasons.append(f"Score {score:.1f} < {self.min_score}")
+        if score >= self.min_score:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Score {score:.1f} < {self.min_score}")
         
         # 2. Confluence check (5+ of 6 confirmations)
         confluence = self._calculate_strict_confluence(signal)
-        if confluence < self.min_confluence:
-            reasons.append(f"Confluence {confluence:.0f}% < {self.min_confluence}%")
+        if confluence >= self.min_confluence:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Confluence {confluence:.0f}% < {self.min_confluence}%")
         
         # 3. Confidence check
         confidence = signal.get("confidence", 0)
-        if confidence < self.min_confidence:
-            reasons.append(f"Confidence {confidence:.2f} < {self.min_confidence}")
+        if confidence >= self.min_confidence:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Confidence {confidence:.2f} < {self.min_confidence}")
         
         # 4. R:R ratio check
         entry = signal.get("entry")
         stop = signal.get("stop")
         target = signal.get("targets", entry)
         rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
-        if rr < self.min_rr_ratio:
-            reasons.append(f"R:R {rr:.2f} < {self.min_rr_ratio}")
+        if rr >= self.min_rr_ratio:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"R:R {rr:.2f} < {self.min_rr_ratio}")
         
         # 5. Regime check (must be trending)
         regime = signal.get("regime", "unknown")
         adx = signal.get("adx_trend", 0)
-        if regime != "trending" or adx < self.min_adx:
-            reasons.append(f"Regime not trending (ADX {adx:.1f} < {self.min_adx})")
+        if regime == "trending" and adx >= self.min_adx:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Regime not trending (ADX {adx:.1f} < {self.min_adx})")
         
         # 6. Volume check
         volume_ratio = signal.get("volume_ratio", 0)
-        if volume_ratio < self.min_volume_ratio:
-            reasons.append(f"Volume {volume_ratio:.1f}x < {self.min_volume_ratio}x avg")
+        if volume_ratio >= self.min_volume_ratio:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Volume {volume_ratio:.1f}x < {self.min_volume_ratio}x avg")
         
         # 7. Volatility check
         volatility = signal.get("volatility", 0)
-        if volatility > self.max_volatility:
-            reasons.append(f"Volatility {volatility:.2%} > {self.max_volatility:.2%}")
+        if volatility <= self.max_volatility:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Volatility {volatility:.2%} > {self.max_volatility:.2%}")
         
         # 8. Session check (high conviction only)
         session = signal.get("session", "unknown")
-        if session not in self.high_conviction_sessions:
-            reasons.append(f"Session {session} not in high-conviction list")
+        if session in self.high_conviction_sessions:
+            passed_checks += 1
+        else:
+            failed_checks.append(f"Session {session} not in high-conviction list")
         
         # 9. Entry zone natural entry check
         entry_natural = self._check_entry_zone_natural(signal)
-        if not entry_natural:
-            reasons.append("Price not in natural entry zone")
+        if entry_natural:
+            passed_checks += 1
+        else:
+            failed_checks.append("Price not in natural entry zone")
         
         # 10. Overextended check
-        if self._is_overextended(signal):
-            reasons.append("Price overextended from MA")
+        if not self._is_overextended(signal):
+            passed_checks += 1
+        else:
+            failed_checks.append("Price overextended from MA")
         
         # 11. HTF bias alignment
         htf_bias_aligned = signal.get("htf_bias_aligned", False)
-        if not htf_bias_aligned:
-            reasons.append("HTF bias not aligned with entry direction")
+        if htf_bias_aligned:
+            passed_checks += 1
+        else:
+            failed_checks.append("HTF bias not aligned with entry direction")
         
-        if reasons:
-            rejection_reason = " | ".join(reasons[:3])  # Top 3 reasons
-            return False, rejection_reason, score
-        
-        return True, "APPROVED - Ultra quality setup", score
+        # Require 8 out of 11 checks to pass
+        min_passed = 8
+        if passed_checks >= min_passed:
+            reason = f"APPROVED - {passed_checks}/11 checks passed"
+            return True, reason, score
+        else:
+            rejection_reason = " | ".join(failed_checks[:3])  # Top 3 failures
+            return False, f"{passed_checks}/11 passed - {rejection_reason}", score
     
     def _calculate_strict_confluence(self, signal: Dict) -> float:
         """
