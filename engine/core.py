@@ -284,6 +284,7 @@ def main_loop(DRY_RUN=False):
         cycle_stored = 0
         cycle_rejected_filters = 0
         cycle_rejected_ultra = 0
+        cycle_score_errors = 0
         cycle_store_failures = 0
         cycle_store_error = None
         cycle_max_score = None
@@ -672,7 +673,13 @@ def main_loop(DRY_RUN=False):
                             if _env_bool("ENGINE_SIGNAL_DEBUG", False):
                                 print(f"[engine] ultra-filter approved: {symbol} {timeframe} score={quality_score:.1f}", flush=True)
                             
-                        except Exception:
+                        except Exception as e:
+                            cycle_score_errors += 1
+                            if cycle_score_errors <= 3:
+                                try:
+                                    print(f"[engine] score_error asset={symbol} tf={timeframe} err={_short_err(e)}", flush=True)
+                                except Exception:
+                                    pass
                             # Isolated failure - continue with next signal
                             continue
                         
@@ -852,6 +859,7 @@ def main_loop(DRY_RUN=False):
                             f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
                         f"scored>={MIN_SCORE_THRESHOLD:.2f}={cycle_scored} stored={cycle_stored} "
                         f"rejected_filters={cycle_rejected_filters} rejected_ultra={cycle_rejected_ultra} "
+                        f"score_errors={cycle_score_errors} "
                         f"store_failures={cycle_store_failures} "
                             f"store_error={cycle_store_error or 'n/a'} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "
