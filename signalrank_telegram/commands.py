@@ -80,35 +80,37 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	msg = (
 		"🤖 SignalRankAI Commands\n\n"
 		"🆓 FREE\n"
-		"/start – Start\n"
+		"/start – Start the bot\n"
 		"/help – This menu\n"
 		"/about – About SignalRankAI\n"
-		"/faq – FAQs\n"
+		"/faq – Frequently asked questions\n"
 		"/disclaimer – Risk disclaimer\n"
-		"/pricing – Pricing\n"
-		"/upgrade – Subscribe\n"
+		"/pricing – View pricing plans\n"
+		"/upgrade – Subscribe to Premium/VIP\n"
 		"/signals – Latest signals (limited for Free)\n"
-		"/signal – Lookup a signal by reference (/signal <ref> or /signal all)\n"
-		"/outcome – Check outcome by reference (/outcome <ref>)\n"
-		"/invite – Invite friends\n"
+		"/signal <ref> – Lookup a signal by reference\n"
+		"/outcome <ref> – Check outcome by reference\n"
+		"/invite – Invite friends and earn rewards\n"
 		"/policy – Subscription & refund policy\n"
 		"/refunds – Same as /policy\n"
-		"/recap – Weekly recap\n"
-		"/buy_extra_signals – Buy extra daily signals (Free-only, ₦300 each, 24h)\n\n"
+		"/recap – Weekly performance recap\n"
+		"/buy_extra_signals – Buy extra daily signals (₦300/signal, 24h)\n\n"
 		"🟡 PREMIUM (subscribers)\n"
-		"/performance – Full performance stats\n"
-		"/stats – Stats summary\n"
+		"/performance – Full performance stats (30 days)\n"
+		"/stats – Quick stats summary\n"
 		"/history – Recent signal history\n"
-		"/risk – Risk guidance\n"
-		"/alerts – TP/SL + quiet hours\n\n"
+		"/risk – Risk management guidance\n"
+		"/alerts – TP/SL alerts + quiet hours settings\n\n"
 		"🔴 VIP (subscribers)\n"
-		"/elite – VIP feed\n"
-		"/early – Early alerts\n"
-		"/report – Reports\n\n"
+		"/elite – VIP-only high-conviction signals\n"
+		"/early – Early access alerts\n"
+		"/report – Detailed performance reports\n\n"
 		"📌 Notes\n"
-		"• Signals are deduped per-user; repeats are suppressed.\n"
-		"• Free users get delayed summaries unless extra signals are purchased.\n"
-		"• Use /upgrade to activate Premium/VIP.\n\n"
+		"• Signals are real-time from live market data\n"
+		"• Corrected signals are automatically resent\n"
+		"• No duplicate signals per user\n"
+		"• Free users get 3 signals/day (delayed summaries)\n"
+		"• Current prices fetched live for /outcome\n\n"
 		"⚠️ Educational only. Not financial advice. Trading involves risk."
 	)
 	if update.message is not None:
@@ -471,62 +473,35 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		return a
 
 	def _current_price(asset: str) -> float | None:
-		if not _is_crypto(asset):
-			return None
+		"""Fetch current price from live market data. Works for crypto and stocks."""
 		try:
-			import requests
-			# First try Binance (fast, direct) then fall back to CryptoCompare when
-			# Binance is geo-blocked (HTTP 451) or otherwise unreachable.
-			sym = _binance_symbol_rest(asset)
-			if not sym:
-				return None
-			resp = requests.get(
-				"https://api.binance.com/api/v3/ticker/price",
-				params={"symbol": sym},
-				timeout=8,
+			from data.fetcher import get_candles
+			
+			# Determine asset type
+			is_crypto = _is_crypto(asset)
+			asset_type = "crypto" if is_crypto else "stock"
+			
+			# Fetch 1 candle (1m timeframe for freshest data)
+			candles = get_candles(
+				asset=asset,
+				timeframe="1m",
+				limit=1,
+				asset_type=asset_type
 			)
-			if resp.ok:
-				payload = resp.json() if resp.ok else {}
-				price = payload.get("price")
-				return float(price) if price is not None else None
-
-			# Fallback: CryptoCompare simple price endpoint.
-			base = sym
-			quote = "USDT"
-			for q in ("USDT", "USDC", "BUSD", "USD"):
-				if base.endswith(q) and len(base) > len(q):
-					base = base[: -len(q)]
-					quote = q
-					break
-			base = (base or "").upper().strip()
-			quote = (quote or "").upper().strip()
-			if not base or not quote:
+			
+			if not candles or len(candles) == 0:
 				return None
-
-			headers = {}
-			api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
-			if api_key:
-				headers["authorization"] = f"Apikey {api_key}"
-
-			url = "https://min-api.cryptocompare.com/data/price"
-			# Ask for a few quotes; use the first available.
-			params = {"fsym": base, "tsyms": ",".join([quote, "USDT", "USD", "USDC", "BUSD"])}
-			resp2 = requests.get(url, params=params, headers=headers, timeout=10)
-			if not resp2.ok:
-				return None
-			payload2 = resp2.json() if resp2.ok else {}
-			if not isinstance(payload2, dict):
-				return None
-			for q in (quote, "USDT", "USD", "USDC", "BUSD"):
-				try:
-					v = payload2.get(q)
-					if v is None:
-						continue
-					return float(v)
-				except Exception:
-					continue
+			
+			# Return close price of latest candle
+			latest = candles[-1]
+			close_price = latest.get("close")
+			
+			if close_price is not None:
+				return float(close_price)
+			
 			return None
-		except Exception:
+		except Exception as e:
+			logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
 			return None
 
 	def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
@@ -912,59 +887,35 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			return a
 		
 		def _current_price(asset: str) -> float | None:
-			if not _is_crypto(asset):
-				return None
+			"""Fetch current price from live market data. Works for crypto and stocks."""
 			try:
-				import requests
-				sym = _binance_symbol_rest(asset)
-				if not sym:
-					return None
-				resp = requests.get(
-					"https://api.binance.com/api/v3/ticker/price",
-					params={"symbol": sym},
-					timeout=8,
+				from data.fetcher import get_candles
+				
+				# Determine asset type
+				is_crypto = _is_crypto(asset)
+				asset_type = "crypto" if is_crypto else "stock"
+				
+				# Fetch 1 candle (1m timeframe for freshest data)
+				candles = get_candles(
+					asset=asset,
+					timeframe="1m",
+					limit=1,
+					asset_type=asset_type
 				)
-				if resp.ok:
-					payload = resp.json() if resp.ok else {}
-					price = payload.get("price")
-					return float(price) if price is not None else None
 				
-				# Fallback: CryptoCompare
-				base = sym
-				quote = "USDT"
-				for q in ("USDT", "USDC", "BUSD", "USD"):
-					if base.endswith(q) and len(base) > len(q):
-						base = base[: -len(q)]
-						quote = q
-						break
-				base = (base or "").upper().strip()
-				quote = (quote or "").upper().strip()
-				if not base or not quote:
+				if not candles or len(candles) == 0:
 					return None
 				
-				headers = {}
-				api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
-				if api_key:
-					headers["authorization"] = f"Apikey {api_key}"
+				# Return close price of latest candle
+				latest = candles[-1]
+				close_price = latest.get("close")
 				
-				url = "https://min-api.cryptocompare.com/data/price"
-				params = {"fsym": base, "tsyms": ",".join([quote, "USDT", "USD", "USDC", "BUSD"])}
-				resp2 = requests.get(url, params=params, headers=headers, timeout=10)
-				if not resp2.ok:
-					return None
-				payload2 = resp2.json() if resp2.ok else {}
-				if not isinstance(payload2, dict):
-					return None
-				for q in (quote, "USDT", "USD", "USDC", "BUSD"):
-					try:
-						v = payload2.get(q)
-						if v is None:
-							continue
-						return float(v)
-					except Exception:
-						continue
+				if close_price is not None:
+					return float(close_price)
+				
 				return None
-			except Exception:
+			except Exception as e:
+				logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
 				return None
 		
 		def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:

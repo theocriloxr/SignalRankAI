@@ -849,6 +849,21 @@ def main_loop(DRY_RUN=False):
                             cooldown_manager.record_signal(symbol, timeframe)
                             bias_manager.set_bias(symbol, timeframe, direction)
                             
+                            # VALIDATE SIGNAL BEFORE STORING
+                            try:
+                                from engine.signal_validator import validate_signal
+                                is_valid, error_desc = validate_signal(signal)
+                                
+                                if not is_valid:
+                                    logger.warning(f"Signal validation failed for {symbol}: {error_desc}")
+                                    if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                        print(f"[VALIDATION FAILED] {symbol} {timeframe}: {error_desc}", flush=True)
+                                    # Skip storing invalid signal
+                                    continue
+                            except Exception as e:
+                                logger.error(f"Signal validation error: {e}")
+                                # If validation fails, continue storing (backward compatibility)
+                            
                             try:
                                 store_signal_compat(signal)
                                 cycle_stored += 1

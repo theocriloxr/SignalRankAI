@@ -293,6 +293,25 @@ class SignalDelivery(Base):
     delivered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class SignalCorrection(Base):
+    """Track signal corrections sent to users when original signal had errors."""
+    __tablename__ = "signal_corrections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    original_signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
+    corrected_signal_id: Mapped[Optional[str]] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=True)
+    
+    error_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)  # invalid_entry/data_error/calc_error/etc
+    error_description: Mapped[str] = mapped_column(Text, nullable=False)
+    
+    # Track if users were notified
+    users_notified: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    correction_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
 class RuntimeState(Base):
     __tablename__ = "runtime_state"
 

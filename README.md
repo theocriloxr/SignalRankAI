@@ -99,11 +99,36 @@ This repo is being upgraded from a SQLite + polling prototype into a production 
 A production-grade, rule-based trading signal platform enhanced with probabilistic ML filtering for quality control.
 
 ## Key Features
-- Deterministic, explainable signal pipeline
-- ML probability filter (never generates signals)
-- Tiered access and secure payments
-- Owner/admin controls and kill-switch
-- Railway-ready, scalable, and testable
+
+### Signal Generation & Quality
+- ✅ **Real-time live market data** from Yahoo Finance (crypto + stocks)
+- ✅ **Signal validation system** - Automatic rejection of invalid signals
+- ✅ **Signal corrections** - Users notified when signals have errors
+- ✅ **Deduplication** - No repeated signals to the same user
+- ✅ **ML scoring** - XGBoost probability filter (0.79 AUC)
+- ✅ **Multi-strategy consensus** - Momentum, Trend, Structure, Volatility
+- ✅ **Advanced filters** - Regime detection, liquidity checks, correlation limits
+
+### Market Coverage
+- ✅ **Crypto trading** - BTCUSDT, ETHUSDT, SOLUSDT, etc. (Yahoo Finance)
+- ✅ **Stock trading** - AAPL, MSFT, TSLA, etc. (enable with `STOCK_TRADING_ENABLED=true`)
+- ✅ **FX trading** - EUR/USD, GBP/USD, etc. (AlphaVantage, optional)
+- ✅ **Nigeria-optimized** - Works around Binance geo-blocking
+
+### User Experience
+- ✅ **Current prices** - Live price display in `/signal` and `/outcome`
+- ✅ **Outcome tracking** - Automated TP/SL tracking with R-multiple
+- ✅ **Performance stats** - 30-day win rate, avg R, total signals
+- ✅ **Referral rewards** - Invite friends, earn bonus days
+- ✅ **Extra signals** - Buy additional daily signals (₦300/signal, 24h)
+
+### Technical Excellence
+- ✅ **Deterministic pipeline** - Rule-based, explainable signals
+- ✅ **Owner controls** - Kill switch, manual corrections, revenue tracking
+- ✅ **Tiered access** - FREE (delayed), PREMIUM (instant), VIP (ultra-quality)
+- ✅ **Railway-ready** - Single-service deployment with `RUN_MODE=all`
+- ✅ **Auto-migrations** - Alembic database migrations on boot
+- ✅ **Secure payments** - Paystack integration with webhook verification
 
 ## Local Testing
 1. Copy `.env.example` to `.env` and fill in your values.

@@ -282,3 +282,110 @@ async def owner_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("\n".join(lines))
     except Exception:
         await update.message.reply_text("Unable to load revenue stats right now.")
+
+
+async def correct_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Owner command to mark a signal as incorrect and notify all recipients.
+    
+    Usage: /correct_signal <signal_ref> <error_description>
+    Example: /correct_signal abc123 Invalid entry level due to data error
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    
+    if not await _is_strict_owner(update.effective_user.id):
+        return
+    
+    if not context.args or len(context.args) < 2:
+        await update.message.reply_text(
+            "Usage: /correct_signal <signal_ref> <error_description>\n"
+            "Example: /correct_signal abc123 Invalid entry level"
+        )
+        return
+    
+    signal_ref = context.args[0].strip()
+    error_description = " ".join(context.args[1:]).strip()
+    
+    if not signal_ref or not error_description:
+        await update.message.reply_text("❌ Both signal reference and error description are required.")
+        return
+    
+    try:
+        from db.session import ENGINE, get_session
+        if ENGINE is None:
+            await update.message.reply_text("Postgres not configured.")
+            return
+        
+        from db.models import Signal, SignalDelivery
+        from sqlalchemy import select
+        from engine.signal_validator import create_signal_correction, notify_signal_correction
+        
+        async with get_session() as session:
+            # Find the signal
+            query = select(Signal)
+            if len(signal_ref) >= 32:
+                query = query.where(Signal.signal_id == signal_ref)
+            else:
+                query = query.where(Signal.signal_id.like(f"{signal_ref}%"))
+            
+            query = query.order_by(Signal.created_at.desc()).limit(1)
+            result = await session.execute(query)
+            signal = result.scalar_one_or_none()
+            
+            if signal is None:
+                await update.message.reply_text(f"❌ Signal not found: {signal_ref}")
+                return
+            
+            # Count deliveries
+            delivery_query = select(SignalDelivery).where(
+                SignalDelivery.signal_id == signal.signal_id
+            )
+            delivery_result = await session.execute(delivery_query)
+            deliveries = delivery_result.scalars().all()
+            delivery_count = len(deliveries)
+            
+            if delivery_count == 0:
+                await update.message.reply_text(
+                    f"⚠️ Signal {signal.signal_id[:8]} was never delivered to any users.\n"
+                    f"No corrections needed."
+                )
+                return
+            
+            # Create correction record
+            await create_signal_correction(
+                session=session,
+                original_signal_id=signal.signal_id,
+                error_type="manual_correction",
+                error_description=error_description,
+                corrected_signal_id=None  # Manual correction, no replacement signal
+            )
+            
+            await session.commit()
+        
+        # Notify users
+        await update.message.reply_text(
+            f"⏳ Notifying {delivery_count} users about signal correction..."
+        )
+        
+        from signalrank_telegram.bot import application
+        bot = application.bot
+        
+        notified_count = await notify_signal_correction(
+            bot=bot,
+            original_signal_id=signal.signal_id,
+            error_description=error_description,
+            corrected_signal_id=None
+        )
+        
+        await update.message.reply_text(
+            f"✅ Signal correction complete:\n"
+            f"• Signal: {signal.signal_id[:8]}\n"
+            f"• Error: {error_description}\n"
+            f"• Users notified: {notified_count}/{delivery_count}"
+        )
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        await update.message.reply_text(f"❌ Error correcting signal: {e}")
