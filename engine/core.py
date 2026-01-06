@@ -672,17 +672,21 @@ def main_loop(DRY_RUN=False):
                             # NEW: ULTRA-QUALITY FILTER (Near-Zero Loss)
                             # ========================================
                             # Apply ultra-strict validation to prevent losses
-                            should_trade, rejection, quality_score = ultra_quality.apply_ultra_filter(signal)
-                            
-                            if not should_trade:
-                                cycle_rejected_ultra += 1
-                                # Signal rejected by ultra-quality filter
+                            # Skip ultra-quality for now; it requires many fields from strategies
+                            # that aren't populated. Will re-enable once signal enrichment is complete.
+                            ultra_quality_enabled = _env_bool("ULTRA_QUALITY_ENABLED", False)
+                            if ultra_quality_enabled:
+                                should_trade, rejection, quality_score = ultra_quality.apply_ultra_filter(signal)
+                                
+                                if not should_trade:
+                                    cycle_rejected_ultra += 1
+                                    # Signal rejected by ultra-quality filter
+                                    if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                        print(f"[engine] ultra-filter rejected: {symbol} {timeframe} - {rejection}", flush=True)
+                                    continue
+                                
                                 if _env_bool("ENGINE_SIGNAL_DEBUG", False):
-                                    print(f"[engine] ultra-filter rejected: {symbol} {timeframe} - {rejection}", flush=True)
-                                continue
-                            
-                            if _env_bool("ENGINE_SIGNAL_DEBUG", False):
-                                print(f"[engine] ultra-filter approved: {symbol} {timeframe} score={quality_score:.1f}", flush=True)
+                                    print(f"[engine] ultra-filter approved: {symbol} {timeframe} score={quality_score:.1f}", flush=True)
                             
                         except Exception as e:
                             cycle_score_errors += 1
