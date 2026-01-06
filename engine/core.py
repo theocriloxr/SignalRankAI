@@ -804,8 +804,12 @@ def main_loop(DRY_RUN=False):
                                 
                                 signal['stops'] = smart_stops
                                 signal['tp_levels'] = [smart_stops['tp1'], smart_stops['tp2'], smart_stops['tp3']]
-                                signal['stop_loss'] = smart_stops['stop_loss']
-                                signal['take_profit'] = smart_stops['tp3']  # Default to TP3
+                                
+                                # Only update SL/TP if the smart stops are valid (different from entry)
+                                if smart_stops.get('stop_loss') and smart_stops['stop_loss'] != entry:
+                                    signal['stop_loss'] = smart_stops['stop_loss']
+                                if smart_stops.get('tp3') and smart_stops['tp3'] != entry:
+                                    signal['take_profit'] = smart_stops['tp3']  # Default to TP3
                                 
                                 # Calculate partial exits
                                 position_size = signal.get('position_size', 1.0)
