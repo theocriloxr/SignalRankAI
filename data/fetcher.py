@@ -105,14 +105,16 @@ def get_candles(asset, timeframe):
 
 
 def _fetch_crypto_multi_provider(asset, timeframe):
-    """Try multiple crypto providers in order."""
-    from .providers import fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles
+    """Try multiple crypto providers in order.
     
+    NOTE: For Nigeria (Binance blocked):
+    - Binance/Bybit → CryptoCompare ONLY
+    - Yahoo/Polygon/Twelve Data removed (they don't understand BTCUSDT format)
+    """
     providers = [
         ("binance/bybit", lambda: get_crypto_candles(asset, timeframe)),
-        ("yahoo", lambda: fetch_yahoo_candles(asset, timeframe)),
-        ("polygon", lambda: fetch_polygon_candles(asset, timeframe, "crypto")),
-        ("twelvedata", lambda: fetch_twelvedata_candles(asset, timeframe, "crypto")),
+        # CryptoCompare is called internally by get_crypto_candles when Binance is blocked
+        # No need to list other providers - they fail for crypto symbols
     ]
     
     for provider_name, fetch_func in providers:
@@ -363,6 +365,9 @@ def get_crypto_candles(asset, timeframe):
 
         headers = {}
         api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+        if not api_key:
+            logger.warning(f"[data] cryptocompare_no_api_key symbol={sym} tf={tf}")
+            return []
         if api_key:
             headers["authorization"] = f"Apikey {api_key}"
 
@@ -374,15 +379,23 @@ def get_crypto_candles(asset, timeframe):
                 "aggregate": aggregate,
             }
 
-            resp = requests.get(url_cc, params=params_cc, headers=headers, timeout=12)
+            try:
+                resp = requests.get(url_cc, params=params_cc, headers=headers, timeout=12)
+            except Exception as e:
+                logger.warning(f"[data] cryptocompare_request_failed symbol={base_raw} tsym={tsym} error={e}")
+                return []
+            
             payload = resp.json() if resp.ok else {}
             if not resp.ok:
+                logger.warning(f"[data] cryptocompare_http_error symbol={base_raw} tsym={tsym} status={resp.status_code}")
                 return []
             if str(payload.get("Response") or "").lower() != "success":
+                logger.warning(f"[data] cryptocompare_api_error symbol={base_raw} tsym={tsym} response={payload.get('Response')}")
                 return []
 
             data = (((payload.get("Data") or {}) or {}).get("Data") or [])
             if not isinstance(data, list) or not data:
+                logger.warning(f"[data] cryptocompare_no_data symbol={base_raw} tsym={tsym}")
                 return []
 
             out: list[dict] = []
