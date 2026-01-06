@@ -824,6 +824,19 @@ def main_loop(DRY_RUN=False):
                     dispatch_signals(ranked_signals, user_id=user_id)
                     cycle_dispatched_users += 1
 
+            # Explicit per-cycle max score logging for easier troubleshooting.
+            if _env_bool("ENGINE_CYCLE_LOG", True):
+                if cycle_max_score is not None:
+                    print(
+                        f"[engine] cycle={cycle_no} max_score={cycle_max_score:.2f} max_asset={cycle_max_score_asset or 'n/a'} threshold={MIN_SCORE_THRESHOLD}",
+                        flush=True,
+                    )
+                else:
+                    print(
+                        f"[engine] cycle={cycle_no} max_score=n/a threshold={MIN_SCORE_THRESHOLD}",
+                        flush=True,
+                    )
+
             # One-line per-cycle health signal for Railway logs.
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
