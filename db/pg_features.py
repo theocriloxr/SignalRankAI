@@ -300,7 +300,7 @@ async def record_signal_delivery(
             pass
 
     before = len(session.new)
-    delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s)
+    delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s, delivered_at=_utcnow())
     session.add(delivery)
     try:
         await session.flush()
