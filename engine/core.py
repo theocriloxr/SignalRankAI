@@ -282,6 +282,8 @@ def main_loop(DRY_RUN=False):
         cycle_after_ml = 0
         cycle_scored = 0
         cycle_stored = 0
+        cycle_rejected_filters = 0
+        cycle_rejected_ultra = 0
         cycle_store_failures = 0
         cycle_store_error = None
         cycle_max_score = None
@@ -629,6 +631,7 @@ def main_loop(DRY_RUN=False):
                             )
                             
                             if not passed_filters:
+                                cycle_rejected_filters += 1
                                 # Signal rejected by advanced filters
                                 if _env_bool("ENGINE_SIGNAL_DEBUG", False):
                                     print(f"[engine] signal rejected: {symbol} {timeframe} - {rejections}", flush=True)
@@ -660,6 +663,7 @@ def main_loop(DRY_RUN=False):
                             should_trade, rejection, quality_score = ultra_quality.apply_ultra_filter(signal)
                             
                             if not should_trade:
+                                cycle_rejected_ultra += 1
                                 # Signal rejected by ultra-quality filter
                                 if _env_bool("ENGINE_SIGNAL_DEBUG", False):
                                     print(f"[engine] ultra-filter rejected: {symbol} {timeframe} - {rejection}", flush=True)
@@ -847,6 +851,7 @@ def main_loop(DRY_RUN=False):
                         f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
                             f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
                         f"scored>={MIN_SCORE_THRESHOLD:.2f}={cycle_scored} stored={cycle_stored} "
+                        f"rejected_filters={cycle_rejected_filters} rejected_ultra={cycle_rejected_ultra} "
                         f"store_failures={cycle_store_failures} "
                             f"store_error={cycle_store_error or 'n/a'} "
                         f"users={cycle_users} dispatched={cycle_dispatched_users} "

@@ -1608,8 +1608,9 @@ async def performance_command(update, context):
 
 			try:
 				stats = await _fetch()
-			except Exception:
+			except Exception as e:
 				stats = {}
+				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 
 			total = int((stats or {}).get("total") or 0)
 			wins = int((stats or {}).get("wins") or 0)
@@ -1689,8 +1690,11 @@ async def performance_command(update, context):
 			if update.message is not None:
 				await update.message.reply_text(msg)
 			return
-	except Exception:
-		pass
+	except Exception as e:
+		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
+		if update.message is not None:
+			await update.message.reply_text("Performance is temporarily unavailable. Please try again shortly.")
+		return
 
 	# Fallback: legacy SQLite (best-effort)
 	trades = []  # Postgres-only
