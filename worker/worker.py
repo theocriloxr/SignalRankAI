@@ -35,6 +35,7 @@ class Worker:
 
     async def run(self) -> None:
         expiry_task = asyncio.create_task(self._expiry_loop())
+        ml_task: Optional[asyncio.Task] = None
         market_monitor_task: Optional[asyncio.Task] = None
         ws_task: Optional[asyncio.Task] = None
 
@@ -54,6 +55,14 @@ class Worker:
                 ws_task = asyncio.create_task(run_ws_ingestor(self._stop))
             except Exception:
                 ws_task = None
+
+        # ML daily retrain loop (optional)
+        if _env_bool("ML_TRAIN_ENABLED", True):
+            try:
+                ml_task = asyncio.create_task(self._ml_train_loop())
+            except Exception as e:
+                print(f"[worker] Failed to start ML train loop: {e}", flush=True)
+                ml_task = None
         try:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
@@ -66,6 +75,10 @@ class Worker:
                 ws_task.cancel()
                 with contextlib.suppress(Exception):
                     await ws_task
+            if ml_task is not None:
+                ml_task.cancel()
+                with contextlib.suppress(Exception):
+                    await ml_task
             expiry_task.cancel()
             with contextlib.suppress(Exception):
                 await expiry_task
@@ -82,6 +95,33 @@ class Worker:
                 # Keep worker alive; production version should log structured errors.
                 pass
             await asyncio.sleep(3600)
+
+    async def _ml_train_loop(self) -> None:
+        """Periodically retrain the ML model from Postgres outcomes."""
+        # Import inside to avoid startup failures if deps missing in minimal envs
+        try:
+            from ml import train_model as ml_train
+        except Exception as exc:  # pragma: no cover
+            print(f"[worker] ML train loop disabled (import failed): {exc}", flush=True)
+            return
+
+        interval = max(3600, int(os.getenv("ML_TRAIN_INTERVAL_SECONDS", "86400") or "86400"))
+
+        while not self._stop.is_set():
+            try:
+                ok = await ml_train.main()
+                if ok:
+                    print("[worker] ML model retrained successfully", flush=True)
+                else:
+                    print("[worker] ML model retrain skipped/failed (insufficient data)", flush=True)
+            except Exception as exc:  # pragma: no cover
+                print(f"[worker] ML train loop error: {exc}", flush=True)
+
+            # Sleep until next window or until stop requested
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
 
 
 async def _amain() -> None:
