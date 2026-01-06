@@ -6,7 +6,7 @@ from collections import Counter
 
 from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock
 from data.market_data import fetch_market_data_cached
-from data.pair_discovery import get_all_trending_pairs
+from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers
 from data.indicators import calculate_indicators
 from engine.regime import detect_market_regime
 from engine.risk_manager import RiskManager, CorrelationManager
@@ -330,6 +330,28 @@ def main_loop(DRY_RUN=False):
                 assets = list(assets) + fx_list
                 if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
                     print(f"[engine] Added {len(fx_list)} FX pair(s) to asset list", flush=True)
+
+            # If TRADABLE_ASSETS is set, supplement with stock tickers when enabled
+            # This ensures stocks are not omitted when a custom universe is provided.
+            if stocks_enabled:
+                try:
+                    # Prefer manual configuration via STOCK_TICKERS, else discover trending
+                    manual = (os.getenv("STOCK_TICKERS") or "").strip()
+                    if manual:
+                        stock_list = [x.strip().upper() for x in manual.split(",") if x.strip()]
+                    else:
+                        # Use the same env-driven limit as discovery
+                        try:
+                            stock_top_n = int((os.getenv("STOCK_TRENDING_TOP_N") or "20").strip())
+                        except Exception:
+                            stock_top_n = 20
+                        stock_list = get_trending_stock_tickers(stock_top_n)
+                    if stock_list:
+                        assets = list(assets) + list(stock_list)
+                        if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
+                            print(f"[engine] Added {len(stock_list)} stock ticker(s) to asset list", flush=True)
+                except Exception:
+                    pass
 
             if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
                 try:

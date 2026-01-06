@@ -256,8 +256,10 @@ def get_asset_type(asset):
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     """Return a human-readable reason if the asset's market is closed.
 
-    Crypto is treated as 24/7 (always open). FX closes over the weekend.
-    Schedule: open Sunday 22:00 UTC, closed Friday 22:00 UTC through weekend.
+    - Crypto: 24/7, always open
+    - FX: Closed over weekend; open Sunday 22:00 UTC → Friday 22:00 UTC
+    - Stocks: Default to US market hours (NYSE/NASDAQ): Mon–Fri 13:30–20:00 UTC
+      Note: This is a simplified schedule (no holidays). Override via env if needed.
     """
     if is_crypto(asset):
         return None
@@ -265,17 +267,45 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     now = now_utc or datetime.utcnow()
     wd = now.weekday()  # Monday=0 ... Sunday=6
     hr = now.hour
+    minute = now.minute
 
-    # Friday after 22:00 UTC closed
-    if wd == 4 and hr >= 22:
-        return "FX closed Friday after 22:00 UTC"
-    # Saturday fully closed
-    if wd == 5:
-        return "FX closed Saturday"
-    # Sunday closed until 22:00 UTC
-    if wd == 6 and hr < 22:
-        return "FX closed Sunday until 22:00 UTC"
+    # FX schedule
+    if is_fx(asset):
+        # Friday after 22:00 UTC closed
+        if wd == 4 and hr >= 22:
+            return "FX closed Friday after 22:00 UTC"
+        # Saturday fully closed
+        if wd == 5:
+            return "FX closed Saturday"
+        # Sunday closed until 22:00 UTC
+        if wd == 6 and hr < 22:
+            return "FX closed Sunday until 22:00 UTC"
+        return None
 
+    # Stocks schedule (US default). Allow overrides via env:
+    # STOCK_OPEN_UTC=13:30, STOCK_CLOSE_UTC=20:00 (HH:MM)
+    if is_stock(asset):
+        try:
+            open_str = (os.getenv("STOCK_OPEN_UTC") or "13:30").strip()
+            close_str = (os.getenv("STOCK_CLOSE_UTC") or "20:00").strip()
+            oh, om = [int(x) for x in open_str.split(":")]
+            ch, cm = [int(x) for x in close_str.split(":")]
+        except Exception:
+            oh, om = 13, 30
+            ch, cm = 20, 0
+
+        # Weekend closed
+        if wd in (5, 6):
+            return "Stocks closed (weekend)"
+
+        # Weekday hours check
+        after_open = (hr > oh) or (hr == oh and minute >= om)
+        before_close = (hr < ch) or (hr == ch and minute <= cm)
+        if after_open and before_close:
+            return None
+        return "Stocks closed (outside US market hours)"
+
+    # Default: unknown type treated as open
     return None
 
 def get_crypto_candles(asset, timeframe):
