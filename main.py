@@ -11,6 +11,33 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _infer_run_mode() -> str:
+    """Derive a sensible default RUN_MODE from Railway service naming.
+
+    If RUN_MODE is explicitly set, it wins. Otherwise we look at
+    RAILWAY_SERVICE_NAME/RAILWAY_SERVICE and pick a mode so you can deploy
+    four Railway services without manual env tweaks.
+    """
+
+    explicit = os.getenv("RUN_MODE")
+    if explicit:
+        return explicit.strip().lower()
+
+    service = (os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("RAILWAY_SERVICE") or "").lower()
+    for needle, mode in (
+        ("web", "web"),
+        ("bot", "bot"),
+        ("telegram", "bot"),
+        ("worker", "worker"),
+        ("engine", "engine"),
+        ("core", "engine"),
+    ):
+        if needle in service:
+            return mode
+
+    return "engine"
+
+
 def main() -> None:
     """Unified entrypoint.
 
@@ -22,7 +49,7 @@ def main() -> None:
     - `all`: run web + bot + engine + worker in one process (single Railway service)
     """
 
-    mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
+    mode = _infer_run_mode()
 
     print(
         "[boot] starting | "

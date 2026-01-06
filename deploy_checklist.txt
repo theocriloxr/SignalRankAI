@@ -24,10 +24,8 @@ SignalRankAI Deployment & Automation Checklist
 - Create 1 Railway project
 - Add Postgres plugin
 - Create 4 Railway services (all from the same repo) with start command: `python main.py`
-	- service: web 	RUN_MODE=web
-	- service: bot 	RUN_MODE=bot
-	- service: engine RUN_MODE=engine
-	- service: worker RUN_MODE=worker
+	- Name services so RUN_MODE is auto-detected: "web", "bot" (or "telegram"), "engine", "worker"
+	- RUN_MODE is still honored if set manually; auto-detect just makes Railway zero-config per service
 
 - Configure variables on ALL services:
 	- DATABASE_URL (from Railway Postgres)
@@ -36,6 +34,9 @@ SignalRankAI Deployment & Automation Checklist
 	- PAYSTACK_WEBHOOK_SECRET (or reuse PAYSTACK_SECRET_KEY)
 	- OWNER_TELEGRAM_ID (or OWNER_IDS)
 	- BYPASS_KEY
+	- ML_TRAIN_ENABLED=true (worker only; optional, defaults true)
+	- ML_TRAIN_INTERVAL_SECONDS=86400 (worker only; optional)
+	- AUTO_MIGRATE=true (default); DB_CONNECT_MAX_ATTEMPTS / DB_CONNECT_BACKOFF_SECONDS for cold starts
 
 - Run migrations once (Railway shell):
 	- python -m alembic upgrade head
