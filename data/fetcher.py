@@ -43,14 +43,26 @@ def _alphavantage_rate_limit() -> None:
     _ALPHA_LAST_CALL_TS = time.monotonic()
 
 def fetch_market_data(asset, timeframes):
+    """Fetch live market data with validation."""
     data = {}
     for tf in timeframes:
         try:
             candles = get_candles(asset, tf)
-            # Validate candles: must be non-empty and have 'close' key in first row
-            if not candles or 'close' not in candles[0]:
+            # Validate candles: must be non-empty and have required fields
+            if not candles or not isinstance(candles, list) or len(candles) < 20:
                 continue
+            
+            # Verify candle structure
+            first = candles[0]
+            required_keys = {'close', 'high', 'low', 'open', 'timestamp'}
+            if not all(k in first for k in required_keys):
+                continue
+            
+            # Calculate indicators from real candle data
             indicators = calculate_indicators(candles)
+            if not indicators:
+                continue  # Indicator calculation failed
+            
             data[tf] = {
                 'candles': candles,
                 'indicators': indicators

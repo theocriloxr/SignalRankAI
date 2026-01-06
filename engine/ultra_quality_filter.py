@@ -249,6 +249,13 @@ class UltraQualityFilter:
         atr = signal.get("atr", 0)
         
         if not current_price or not ema_50 or not atr:
+            return False  # Can't determine, assume not overextended
+        
+        # Overextended if price is > 3*ATR away from EMA50
+        distance = abs(current_price - ema_50)
+        return distance > (3 * atr)
+        
+        if not current_price or not ema_50 or not atr:
             return False
         
         distance = abs(current_price - ema_50)

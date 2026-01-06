@@ -1,4 +1,24 @@
 def momentum_strategies(asset, timeframe, market_data):
+    # Validate real-time data integrity
+    if not market_data or 'candles' not in market_data or 'indicators' not in market_data:
+        return []
+    
+    candles = market_data.get('candles', [])
+    if not candles or len(candles) < 20:
+        return []  # Insufficient data for reliable signals
+    
+    # Verify data is recent (not stale) - last candle should be within reasonable time
+    try:
+        from datetime import datetime, timedelta
+        last_ts = candles[-1].get('timestamp', 0)
+        if last_ts > 0:
+            last_time = datetime.fromtimestamp(last_ts / 1000)
+            # Data older than 24 hours = stale
+            if datetime.utcnow() - last_time > timedelta(hours=24):
+                return []  # Stale data, skip signal
+    except Exception:
+        pass  # If timestamp check fails, proceed anyway but log it
+    
     strat = MomentumStrategy()
     signal = strat.evaluate(market_data)
     return [signal] if signal else []
