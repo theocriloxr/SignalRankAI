@@ -584,7 +584,7 @@ def main_loop(DRY_RUN=False):
                                 continue  # Only one direction per TF
                             
                             # 6. Get MTF confluence score
-                            mtf_confluence = mtf_analyzer.get_mtf_confluence(symbol, market_data, timeframe, direction)
+                            mtf_confluence = mtf_analyzer.get_mtf_confluence(symbol, market_data, direction)
                             
                             # 7. Detect trading session
                             session = signal_context.detect_trading_session()
