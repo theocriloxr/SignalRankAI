@@ -25,6 +25,7 @@ def _infer_run_mode() -> str:
 
     service = (os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("RAILWAY_SERVICE") or "").lower()
     for needle, mode in (
+        ("all", "all"),
         ("web", "web"),
         ("bot", "bot"),
         ("telegram", "bot"),
