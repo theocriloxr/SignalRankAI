@@ -126,7 +126,93 @@ def get_all_trending_pairs():
         top_n = 30
     crypto = get_trending_crypto_pairs(top_n=max(1, top_n))
     fx = get_trending_fx_pairs()
-    return crypto + fx
+    stocks = get_trending_stock_tickers(top_n=max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20"))))
+    return crypto + fx + stocks
+
+
+def get_trending_stock_tickers(top_n=20):
+    """
+    Return popular stock tickers.
+    
+    Sources (in order of preference):
+    1. Manual configuration via STOCK_TICKERS env var
+    2. S&P 500 most liquid stocks (hardcoded list)
+    3. Polygon.io trending stocks API (if API key available)
+    """
+    # 1. Manual configuration
+    manual = (os.getenv("STOCK_TICKERS") or "").strip()
+    if manual:
+        tickers = [t.strip().upper() for t in manual.split(",") if t.strip()]
+        return tickers[:top_n]
+    
+    # 2. Hardcoded S&P 500 most liquid stocks
+    sp500_liquid = [
+        # Mega caps (FAANG+)
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA",
+        # Tech
+        "AMD", "INTC", "NFLX", "ADBE", "CRM", "ORCL", "CSCO",
+        # Finance
+        "JPM", "BAC", "WFC", "GS", "MS", "C", "V", "MA",
+        # Healthcare
+        "JNJ", "UNH", "PFE", "ABBV", "TMO", "MRK", "ABT",
+        # Consumer
+        "WMT", "HD", "DIS", "NKE", "MCD", "SBUX", "KO", "PEP",
+        # Industrial
+        "BA", "CAT", "GE", "MMM", "HON",
+        # Energy
+        "XOM", "CVX", "COP", "SLB",
+        # Communication
+        "T", "VZ", "CMCSA",
+    ]
+    
+    # 3. Polygon.io trending (if API key available)
+    polygon_key = os.getenv("POLYGON_API_KEY", "").strip()
+    if polygon_key:
+        try:
+            # Polygon snapshot endpoint for top gainers/losers/actives
+            url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
+            params = {"apiKey": polygon_key}
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.ok:
+                data = resp.json()
+                tickers_data = data.get("tickers", [])
+                if tickers_data:
+                    # Sort by volume
+                    sorted_tickers = sorted(
+                        tickers_data,
+                        key=lambda x: x.get("day", {}).get("v", 0),
+                        reverse=True
+                    )
+                    polygon_tickers = [t["ticker"] for t in sorted_tickers[:top_n * 2]]
+                    # Merge with hardcoded list
+                    combined = []
+                    for ticker in polygon_tickers + sp500_liquid:
+                        if ticker not in combined:
+                            combined.append(ticker)
+                    return combined[:top_n]
+        except Exception as e:
+            print(f"[WARN] Polygon stocks fetch failed: {e}")
+    
+    # Fallback to hardcoded list
+    return sp500_liquid[:top_n]
+
+
+def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
+    """
+    Get all tradable assets (crypto + FX + stocks).
+    
+    Returns:
+        dict with keys: crypto, fx, stocks
+    """
+    crypto = get_trending_crypto_pairs(crypto_limit)
+    fx = get_trending_fx_pairs()
+    stocks = get_trending_stock_tickers(stock_limit)
+    
+    return {
+        "crypto": crypto,
+        "fx": fx,
+        "stocks": stocks,
+    }
 
 # Example usage:
 # pairs = get_all_trending_pairs()

@@ -73,20 +73,122 @@ def fetch_market_data(asset, timeframes):
     return data
 
 def get_candles(asset, timeframe):
-    if is_crypto(asset):
-        candles = get_crypto_candles(asset, timeframe)
-        if candles:
-            logger.info(f"[data] crypto_fetched=binance/bybit/cc symbol={asset} tf={timeframe} candles={len(candles)}")
+    """
+    Unified candle fetcher with multi-provider fallback.
+    
+    Provider Priority:
+    - Crypto: Binance → Bybit → CryptoCompare → Yahoo → Polygon → Twelve Data
+    - FX: OANDA → AlphaVantage → Yahoo → Polygon → Twelve Data
+    - Stocks: Yahoo → Polygon → Twelve Data
+    """
+    asset_type = get_asset_type(asset)
+    
+    # Enable multi-provider via env var
+    use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+    
+    if not use_multi_provider:
+        # Legacy single-provider mode
+        if asset_type == "crypto":
+            return get_crypto_candles(asset, timeframe)
+        elif asset_type == "fx":
+            return get_fx_candles(asset, timeframe)
         else:
-            logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe}")
-        return candles
-    else:
-        candles = get_fx_candles(asset, timeframe)
-        if candles:
-            logger.info(f"[data] fx_fetched=alphavantage symbol={asset} tf={timeframe} candles={len(candles)}")
-        else:
-            logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe}")
-        return candles
+            return get_stock_candles(asset, timeframe)
+    
+    # Multi-provider mode with fallbacks
+    if asset_type == "crypto":
+        return _fetch_crypto_multi_provider(asset, timeframe)
+    elif asset_type == "fx":
+        return _fetch_fx_multi_provider(asset, timeframe)
+    else:  # stock
+        return _fetch_stock_multi_provider(asset, timeframe)
+
+
+def _fetch_crypto_multi_provider(asset, timeframe):
+    """Try multiple crypto providers in order."""
+    from .providers import fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles
+    
+    providers = [
+        ("binance/bybit", lambda: get_crypto_candles(asset, timeframe)),
+        ("yahoo", lambda: fetch_yahoo_candles(asset, timeframe)),
+        ("polygon", lambda: fetch_polygon_candles(asset, timeframe, "crypto")),
+        ("twelvedata", lambda: fetch_twelvedata_candles(asset, timeframe, "crypto")),
+    ]
+    
+    for provider_name, fetch_func in providers:
+        try:
+            candles = fetch_func()
+            if candles and len(candles) >= 20:
+                logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                return candles
+        except Exception as e:
+            logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
+            continue
+    
+    logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    return []
+
+
+def _fetch_fx_multi_provider(asset, timeframe):
+    """Try multiple FX providers in order."""
+    from .providers import fetch_oanda_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles
+    
+    # Convert to formats needed by different providers
+    oanda_format = asset.replace("/", "_").replace("-", "_").upper()
+    yahoo_format = asset.replace("_", "").replace("-", "")
+    if "/" not in yahoo_format and len(yahoo_format) == 6:
+        yahoo_format = f"{yahoo_format[:3]}{yahoo_format[3:]}=X"  # Yahoo FX format: EURUSD=X
+    
+    providers = [
+        ("oanda", lambda: fetch_oanda_candles(oanda_format, timeframe)),
+        ("alphavantage", lambda: get_fx_candles(asset, timeframe)),
+        ("yahoo", lambda: fetch_yahoo_candles(yahoo_format, timeframe)),
+        ("polygon", lambda: fetch_polygon_candles(asset, timeframe, "forex")),
+        ("twelvedata", lambda: fetch_twelvedata_candles(asset, timeframe, "forex")),
+    ]
+    
+    for provider_name, fetch_func in providers:
+        try:
+            candles = fetch_func()
+            if candles and len(candles) >= 20:
+                logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                return candles
+        except Exception as e:
+            logger.warning(f"[data] fx_provider={provider_name} symbol={asset} failed: {e}")
+            continue
+    
+    logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    return []
+
+
+def _fetch_stock_multi_provider(asset, timeframe):
+    """Try multiple stock providers in order."""
+    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles
+    
+    providers = [
+        ("yahoo", lambda: fetch_yahoo_candles(asset, timeframe)),
+        ("polygon", lambda: fetch_polygon_candles(asset, timeframe, "stocks")),
+        ("twelvedata", lambda: fetch_twelvedata_candles(asset, timeframe, "stocks")),
+    ]
+    
+    for provider_name, fetch_func in providers:
+        try:
+            candles = fetch_func()
+            if candles and len(candles) >= 20:
+                logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                return candles
+        except Exception as e:
+            logger.warning(f"[data] stock_provider={provider_name} symbol={asset} failed: {e}")
+            continue
+    
+    logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    return []
+
+
+def get_stock_candles(asset, timeframe):
+    """Legacy single-provider stock fetcher - uses Yahoo as default."""
+    from .providers import fetch_yahoo_candles
+    return fetch_yahoo_candles(asset, timeframe)
 
 def is_crypto(asset):
     a = (asset or "").upper().strip()
@@ -104,6 +206,38 @@ def is_crypto(asset):
         return len(base) > 4
 
     return False
+
+
+def is_fx(asset):
+    """Check if asset is a forex pair."""
+    a = (asset or "").upper().strip()
+    
+    # FX pairs are typically 6-7 characters: EURUSD, EUR/USD, EUR_USD
+    clean = a.replace("/", "").replace("_", "").replace("-", "")
+    
+    if len(clean) == 6:
+        base = clean[:3]
+        quote = clean[3:]
+        fx_currencies = {"EUR", "GBP", "USD", "JPY", "CHF", "CAD", "AUD", "NZD", "HKD", "SGD", "SEK", "NOK", "DKK", "PLN", "TRY", "MXN", "ZAR"}
+        return base in fx_currencies and quote in fx_currencies
+    
+    return False
+
+
+def is_stock(asset):
+    """Check if asset is a stock ticker."""
+    # If not crypto and not FX, assume stock
+    return not is_crypto(asset) and not is_fx(asset)
+
+
+def get_asset_type(asset):
+    """Determine asset type: 'crypto', 'fx', or 'stock'."""
+    if is_crypto(asset):
+        return "crypto"
+    elif is_fx(asset):
+        return "fx"
+    else:
+        return "stock"
 
 
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:

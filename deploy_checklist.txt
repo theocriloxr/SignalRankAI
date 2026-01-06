@@ -46,6 +46,29 @@ SignalRankAI Deployment & Automation Checklist
 	- ML_TRAIN_INTERVAL_SECONDS=86400 (worker only; optional)
 	- AUTO_MIGRATE=true (default); DB_CONNECT_MAX_ATTEMPTS / DB_CONNECT_BACKOFF_SECONDS for cold starts
     - ULTRA_QUALITY_ENABLED=false (disable ultra-strict filter that requires many fields; enable only after enriching signals)
+
+- Data Source Configuration (Multi-Provider Support):
+
+	Crypto Data Providers (priority order):
+		- CRYPTO_DATA_PROVIDER=binance (default; options: binance, bybit, cryptocompare)
+		- CRYPTOCOMPARE_API_KEY (optional; free tier available)
+    
+	FX Data Providers (priority order):
+		- OANDA_API_KEY (free demo account; bank-grade data)
+		- OANDA_ACCOUNT_ID (for OANDA)
+		- OANDA_PRACTICE=true (default; use practice/demo account)
+		- ALPHAVANTAGE_API_KEY (legacy; limited free tier)
+    
+	Stock Data Providers:
+		- No API key needed for Yahoo Finance (default free provider)
+		- POLYGON_API_KEY (optional; premium multi-asset data)
+		- TWELVEDATA_API_KEY (optional; generous free tier)
+    
+	Universal Settings:
+		- USE_MULTI_PROVIDER_DATA=true (default; enable fallback to multiple providers)
+		- STOCK_TRADING_ENABLED=true (enable stock signals)
+		- STOCK_TICKERS="AAPL,MSFT,GOOGL,AMZN" (manual stock list; optional)
+		- STOCK_TRENDING_TOP_N=20 (auto-discover top stocks; default 20)
 	- rate limiting
 
 - Optional (dangerous): set FRESH_START=true to wipe Postgres data once on next web boot.
