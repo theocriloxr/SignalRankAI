@@ -108,13 +108,24 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     """Try multiple crypto providers in order.
     
     NOTE: For Nigeria (Binance blocked):
-    - Binance/Bybit → CryptoCompare ONLY
-    - Yahoo/Polygon/Twelve Data removed (they don't understand BTCUSDT format)
+    - Binance/Bybit → Yahoo Finance (free, works worldwide) → CryptoCompare
+    - Yahoo requires symbol conversion: BTCUSDT → BTC-USD
     """
+    from .providers import fetch_yahoo_candles
+    
+    # Convert BTCUSDT → BTC-USD for Yahoo Finance
+    yahoo_symbol = asset.upper()
+    if yahoo_symbol.endswith("USDT"):
+        base = yahoo_symbol[:-4]  # Remove USDT
+        yahoo_symbol = f"{base}-USD"
+    elif yahoo_symbol.endswith("USD") and not yahoo_symbol.endswith("-USD"):
+        base = yahoo_symbol[:-3]  # Remove USD
+        yahoo_symbol = f"{base}-USD"
+    
     providers = [
         ("binance/bybit", lambda: get_crypto_candles(asset, timeframe)),
+        ("yahoo", lambda: fetch_yahoo_candles(yahoo_symbol, timeframe)),
         # CryptoCompare is called internally by get_crypto_candles when Binance is blocked
-        # No need to list other providers - they fail for crypto symbols
     ]
     
     for provider_name, fetch_func in providers:
