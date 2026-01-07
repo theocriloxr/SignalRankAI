@@ -505,26 +505,24 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
-    # Deduplicate: If multiple signals for same asset/direction across different timeframes,
-    # keep only the one with highest score. Use R/R as tie-breaker if scores are equal.
+    # Deduplicate: If multiple signals for same asset (any direction, any timeframe),
+    # keep only the ONE with highest score. Use R/R as tie-breaker if scores are equal.
     try:
         original_count = len(signals_list)
-        best_by_key: dict[tuple[str, str], dict] = {}
+        best_by_asset: dict[str, dict] = {}
         
         for sig in signals_list:
             asset = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
-            direction = str(sig.get("direction") or "").lower().strip()
             
-            if not asset or not direction:
+            if not asset:
                 continue  # Skip invalid signals
             
-            key = (asset, direction)
             score = float(sig.get("score") or 0.0)
             rr = float(sig.get("rr_ratio") or sig.get("rr_estimate") or 0.0)
             
-            cur = best_by_key.get(key)
+            cur = best_by_asset.get(asset)
             if cur is None:
-                best_by_key[key] = sig
+                best_by_asset[asset] = sig
                 continue
             
             cur_score = float(cur.get("score") or 0.0)
@@ -532,14 +530,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             
             # Replace if better score, or same score but better R/R
             if (score > cur_score) or (score == cur_score and rr > cur_rr):
-                best_by_key[key] = sig
+                best_by_asset[asset] = sig
         
-        signals_list = list(best_by_key.values())
+        signals_list = list(best_by_asset.values())
         
         if len(signals_list) < original_count:
             _log_once(
                 "asset_dedup",
-                f"[dispatch] Deduplicated {original_count} signals → {len(signals_list)} (removed {original_count - len(signals_list)} duplicate assets)",
+                f"[dispatch] Deduplicated {original_count} signals → {len(signals_list)} (kept best per asset)",
             )
     except Exception as e:
         _log_once(
