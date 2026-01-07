@@ -1077,13 +1077,10 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if await _public_guard(update):
 		return
-	"""Generates Paystack payment links for subscriptions.
-
-	Note: In production, configure Paystack Plans and store plan codes in env.
-	This function still works with the current hosted-payment-link stub.
-	"""
+	"""Generates Paystack payment links for subscriptions with tier confirmation."""
 	user_id = update.effective_user.id
 	from paystack.paystack import generate_paystack_link
+	from signalrank_telegram.payment_handler import format_tier_upgrade_confirmation
 	
 	# Plan codes (optional; used later when wiring Paystack plans properly)
 	premium_monthly_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_MONTHLY")
@@ -1092,15 +1089,24 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	vip_monthly_code = os.getenv("PAYSTACK_PLAN_CODE_VIP_MONTHLY")
 
 	links = []
-	links.append(
-		("Premium (₦4,000 / 7 days)", generate_paystack_link(user_id, 4000, tier="premium", duration_days=7, plan_code=os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY")))
-	)
-	links.append(
-		("Premium (₦12,000 / 30 days)", generate_paystack_link(user_id, 12000, tier="premium", duration_days=30, plan_code=premium_monthly_code))
-	)
-	links.append(
-		("Premium (₦28,000 / 90 days)", generate_paystack_link(user_id, 28000, tier="premium", duration_days=90, plan_code=premium_quarterly_code))
-	)
+	
+	# PREMIUM options
+	premium_plans = [
+		("Premium (₦4,000 / 7 days)", 4000, 7, os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY")),
+		("Premium (₦12,000 / 30 days)", 12000, 30, premium_monthly_code),
+		("Premium (₦28,000 / 90 days)", 28000, 90, premium_quarterly_code),
+	]
+	
+	premium_formatted = await format_tier_upgrade_confirmation("PREMIUM", 4000, 7, user_id)
+	premium_msg = premium_formatted + "\n\n📌 PREMIUM Plans:\n"
+	
+	for label, amount, days, plan_code in premium_plans:
+		link = generate_paystack_link(user_id, amount, tier="premium", duration_days=days, plan_code=plan_code)
+		premium_msg += f"• {label}: {link}\n"
+	
+	if update.message is not None:
+		await update.message.reply_text(premium_msg)
+	
 	# VIP link only if seats available (or user is owner/bypassed/already VIP)
 	try:
 		from db.session import ENGINE, get_session
@@ -1128,17 +1134,24 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		limit = None
 
 	if can_offer_vip:
-		links.append(
-			("VIP (₦20,000 / 30 days)", generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code))
-		)
+		vip_formatted = await format_tier_upgrade_confirmation("VIP", 20000, 30, user_id)
+		vip_msg = vip_formatted + "\n\n"
+		
+		vip_link = generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code)
+		vip_msg += f"🔗 {vip_link}\n"
+		
+		if remaining is not None:
+			vip_msg += f"\n⚠️ {remaining}/{limit} VIP seats remaining"
+		
+		if update.message is not None:
+			await update.message.reply_text(vip_msg)
 	else:
-		links.append(("VIP (SOLD OUT)", "VIP seats are currently full. Check /pricing later."))
-
-	msg = "📌 Choose a plan:\n\n" + "\n".join([f"• {label}: {url}" for (label, url) in links])
-	msg += "\n\nPayments are processed by Paystack. No access to your funds."
-	msg += "\n⚠️ Educational only. Not financial advice."
-	if update.message is not None:
-		await update.message.reply_text(msg)
+		if update.message is not None:
+			await update.message.reply_text(
+				"🏆 VIP TIER (SOLD OUT)\n\n"
+				"VIP seats are currently full.\n"
+				"Check /pricing later or upgrade to Premium to get started!"
+			)
 # --- Extra Signal Purchase Logic ---
 from telegram import Update
 
