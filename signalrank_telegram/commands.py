@@ -1543,16 +1543,12 @@ async def performance_command(update, context):
 		if ENGINE is not None:
 			from db.pg_features import get_user_performance_30d
 
-			async def _fetch() -> dict:
-				async with get_session() as session:
-					data = await get_user_performance_30d(session, int(user_id))
-					await session.commit()
-					return data
-
+			# Fetch performance stats
+			stats = {}
 			try:
-				stats = await _fetch()
+				async with get_session() as session:
+					stats = await get_user_performance_30d(session, int(user_id))
 			except Exception as e:
-				stats = {}
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 
 			total = int((stats or {}).get("total") or 0)
@@ -1565,29 +1561,28 @@ async def performance_command(update, context):
 			profit_loss = float((stats or {}).get("profit_loss_pct") or 0.0)
 
 			if total <= 0:
-				# Fallback diagnostic: if deliveries exist but outcomes are missing, show a hint instead of empty state.
+				# Fallback diagnostic: if deliveries exist but outcomes are missing, show a hint
 				deliveries_30d = 0
 				try:
 					from sqlalchemy import select, func
 					from db.models import SignalDelivery, User
 					cutoff = datetime.utcnow() - timedelta(days=30)
-					async def _count_deliveries() -> int:
-						async with get_session() as session:
-							res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
-							u = res_u.scalar_one_or_none()
-							if u is None:
-								await session.commit()
-								return 0
+					
+					async with get_session() as session:
+						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+						u = res_u.scalar_one_or_none()
+						if u is None:
+							deliveries_30d = 0
+						else:
 							res_d = await session.execute(
 								select(func.count(SignalDelivery.id)).where(
 									SignalDelivery.user_id == u.id,
 									SignalDelivery.delivered_at >= cutoff,
 								)
 							)
-							await session.commit()
-							return int(res_d.scalar() or 0)
-					deliveries_30d = await _count_deliveries()
-				except Exception:
+							deliveries_30d = int(res_d.scalar() or 0)
+				except Exception as e:
+					_audit_logger.error(f"/performance delivery count failed for user={user_id}: {e}")
 					deliveries_30d = 0
 
 				if deliveries_30d > 0:
@@ -1596,11 +1591,11 @@ async def performance_command(update, context):
 						f"Signals delivered (30d): {deliveries_30d}\n"
 						"Outcomes not yet tracked for these signals. They will appear once TP/SL is marked."
 					)
-					if update.message is not None:
-						await update.message.reply_text(msg)
 				else:
-					if update.message is not None:
-						await update.message.reply_text("No signals in the last 30 days.")
+					msg = "No signals in the last 30 days."
+				
+				if update.message is not None:
+					await update.message.reply_text(msg)
 				return
 
 			if tier_rank(tier) < tier_rank("PREMIUM"):
@@ -1638,16 +1633,6 @@ async def performance_command(update, context):
 		if update.message is not None:
 			await update.message.reply_text("Performance is temporarily unavailable. Please try again shortly.")
 		return
-
-	# Fallback: legacy SQLite (best-effort)
-	trades = []  # Postgres-only
-	cutoff = datetime.now() - timedelta(days=30)
-	def parse_dt(row):
-		try:
-			return datetime.fromisoformat(row[3]) if isinstance(row[3], str) else cutoff
-		except Exception:
-			return cutoff
-	trades_30d = [t for t in trades if parse_dt(t) >= cutoff]
 	total = len(trades_30d)
 	if total == 0:
 		if update.message is not None:
