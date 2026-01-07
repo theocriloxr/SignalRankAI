@@ -1259,9 +1259,6 @@ def run_bot() -> None:
                             "An outcome was recorded for a recent signal.\n"
                             "Upgrade to Premium to see full stats and entry/exit levels."
                         )
-                        elif status == "tp2":
-                            msg += "\n💡 Partial TP2 hit - Lock profits, trail remaining\n"
-                        
                         msg += "\nThis signal has been marked with an outcome in the tracker."
                     try:
                         _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
