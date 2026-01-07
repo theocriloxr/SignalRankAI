@@ -652,7 +652,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				base += "\n\n🧠 Suggestion\n" + str(advice_line)
 		await update.message.reply_text(base)
 		return
-	except Exception:
+	except Exception as e:
+		import logging
+		logging.getLogger(__name__).error(f"signal_command failed: {e}", exc_info=True)
 		await update.message.reply_text("Signal lookup is temporarily unavailable.")
 		return
 
@@ -959,7 +961,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		
 		await update.message.reply_text("\n".join(lines))
 		return
-	except Exception:
+	except Exception as e:
+		import logging
+		logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
 		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
 		return
 
