@@ -655,7 +655,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 tier_at_send='premium',  # Extra signals get premium formatting
                             )
                             if ok:
-                                # Build signal dict for formatting
+                                # Build signal dict for formatting with all VIP fields
+                                import json
+                                tp_parsed = best_sig.take_profit
+                                try:
+                                    # Parse JSON-encoded TP list
+                                    if isinstance(best_sig.take_profit, str):
+                                        tp_parsed = json.loads(best_sig.take_profit)
+                                except Exception:
+                                    pass
+                                
                                 sig_dict = {
                                     "signal_id": best_sig.signal_id,
                                     "asset": best_sig.asset,
@@ -663,10 +672,19 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     "direction": best_sig.direction,
                                     "entry": best_sig.entry,
                                     "stop_loss": best_sig.stop_loss,
-                                    "take_profit": best_sig.take_profit,
+                                    "take_profit": tp_parsed,
                                     "rr_ratio": best_sig.rr_estimate,
                                     "score": best_sig.score,
                                     "regime": getattr(best_sig, 'regime', 'NEUTRAL'),
+                                    # VIP-specific fields
+                                    "session": getattr(best_sig, 'session', ''),
+                                    "market_regime": getattr(best_sig, 'regime', ''),
+                                    "confluence": getattr(best_sig, 'confluence', None),
+                                    "htf_bias": getattr(best_sig, 'htf_bias', None),
+                                    "risk_reward": best_sig.rr_estimate,
+                                    "invalidation": getattr(best_sig, 'invalidation', None),
+                                    "trade_logic": getattr(best_sig, 'trade_logic', None),
+                                    "strategy": best_sig.strategy_name,
                                 }
                                 try:
                                     # Determine display tier: VIP for owner/admin, PREMIUM otherwise
@@ -803,7 +821,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         )
                         
                         if ok:
-                            # Build signal dict
+                            # Build signal dict with all VIP fields
+                            import json
+                            tp_parsed = sig.take_profit
+                            try:
+                                # Parse JSON-encoded TP list
+                                if isinstance(sig.take_profit, str):
+                                    tp_parsed = json.loads(sig.take_profit)
+                            except Exception:
+                                pass
+                            
                             sig_dict = {
                                 "signal_id": sig.signal_id,
                                 "asset": sig.asset,
@@ -811,10 +838,19 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 "direction": sig.direction,
                                 "entry": sig.entry,
                                 "stop_loss": sig.stop_loss,
-                                "take_profit": sig.take_profit,
+                                "take_profit": tp_parsed,
                                 "rr_ratio": sig.rr_estimate,
                                 "score": sig.score,
                                 "regime": getattr(sig, 'regime', 'NEUTRAL'),
+                                # VIP-specific fields
+                                "session": getattr(sig, 'session', ''),
+                                "market_regime": getattr(sig, 'regime', ''),
+                                "confluence": getattr(sig, 'confluence', None),
+                                "htf_bias": getattr(sig, 'htf_bias', None),
+                                "risk_reward": sig.rr_estimate,
+                                "invalidation": getattr(sig, 'invalidation', None),
+                                "trade_logic": getattr(sig, 'trade_logic', None),
+                                "strategy": sig.strategy_name,
                             }
                             try:
                                 # Determine display tier: VIP for owner/admin, FREE for others

@@ -66,25 +66,29 @@ class AdvancedExitManager:
         
         For Short: Opposite
         """
+        # Ensure ATR is not zero or too small (use 0.5% of entry as minimum)
+        min_atr = entry_price * 0.005  # 0.5% minimum
+        effective_atr = max(atr, min_atr)
+        
         if direction == "long":
             # SL below recent low (market structure)
-            sl_by_structure = recent_low - (0.5 * atr)
-            sl_by_atr = entry_price - (2 * atr)
+            sl_by_structure = recent_low - (0.5 * effective_atr)
+            sl_by_atr = entry_price - (2 * effective_atr)
             stop_loss = max(sl_by_structure, sl_by_atr)  # Tightest (least loss)
             
             # Multiple TPs for scaling out (based on ATR, NOT resistance)
-            tp1 = entry_price + (2 * atr)
-            tp2 = entry_price + (3 * atr)
-            tp3 = entry_price + (5 * atr)
+            tp1 = entry_price + (2 * effective_atr)
+            tp2 = entry_price + (3 * effective_atr)
+            tp3 = entry_price + (5 * effective_atr)
             
         else:  # Short
-            sl_by_structure = recent_high + (0.5 * atr)
-            sl_by_atr = entry_price + (2 * atr)
+            sl_by_structure = recent_high + (0.5 * effective_atr)
+            sl_by_atr = entry_price + (2 * effective_atr)
             stop_loss = min(sl_by_structure, sl_by_atr)
             
-            tp1 = entry_price - (2 * atr)
-            tp2 = entry_price - (3 * atr)
-            tp3 = entry_price - (5 * atr)
+            tp1 = entry_price - (2 * effective_atr)
+            tp2 = entry_price - (3 * effective_atr)
+            tp3 = entry_price - (5 * effective_atr)
         
         # Calculate R:R ratios
         risk = abs(entry_price - stop_loss)
