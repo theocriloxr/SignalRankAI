@@ -407,14 +407,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         
         # Tier-based signal selection with score thresholds
         if tier in ('owner', 'admin'):
-            # Owner/Admin see all signals (vip + premium)
+            # Owner/Admin see ALL signals without filtering (vip + premium)
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
-            # VIP: score >= 72 only
-            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 60.0]
+            # VIP: score >= 55 (quality-first but broader than premium)
+            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
         elif tier in ('premium',):
-            # PREMIUM: score < 80 (but >= 55 for dispatch)
-            signals_list = [s for s in (vip_list + prem_list) if 60.0 <= s.get('score', 0) < 80.0]
+            # PREMIUM: score >= 55 for dispatch (mid-tier quality)
+            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
         else:  # FREE
             # Free: ALL signals go to global pool (handled separately)
             signals_list = (vip_list + prem_list)
@@ -538,7 +538,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             # OWNER and ADMIN always get VIP format for ALL notifications
             if tier in ('owner', 'admin'):
                 display_tier = 'vip'
-                effective_tier = 'vip' if tier == 'owner' else 'admin'
+                effective_tier = tier  # Keep actual tier for delivery tracking
             elif tier == 'free' and extra_left > 0:
                 effective_tier = 'premium'
                 display_tier = 'premium'
@@ -1178,26 +1178,61 @@ def run_bot() -> None:
                     from signalrank_telegram.access import resolve_user_tier
                     user_tier = resolve_user_tier(telegram_user_id).lower()
                     
+                    # Parse which TP was hit (TP1, TP2, TP3, or full TP)
+                    tp_level = ""
+                    if status in ("tp1", "partial_tp"):
+                        tp_level = "TP1"
+                    elif status == "tp2":
+                        tp_level = "TP2"
+                    elif status == "tp3":
+                        tp_level = "TP3"
+                    elif status == "tp":
+                        tp_level = "FULL TP"
+                    
                     # OWNER and ADMIN always get full outcome details (VIP format)
-                    if user_tier in ('owner', 'admin'):
-                        label = status.upper() if status else 'UPDATE'
-                        status_emoji = "✅" if status in ("tp", "tp1", "tp2", "partial_tp") else ("❌" if status == "sl" else "📌")
+                    if user_tier in ('owner', 'admin', 'vip'):
+                        if status in ("tp", "tp1", "tp2", "tp3", "partial_tp"):
+                            label = tp_level if tp_level else "TP HIT"
+                            status_emoji = "✅"
+                        elif status == "sl":
+                            label = "STOP LOSS"
+                            status_emoji = "❌"
+                        else:
+                            label = status.upper() if status else 'UPDATE'
+                            status_emoji = "📌"
+                        
                         msg = (
                             f"📣 Outcome Update — {status_emoji} {label}\n\n"
                             f"Reference: {ref_short}\n"
-                            f"{asset} {timeframe} {direction}\n"
+                            f"{asset} {timeframe} {direction.upper()}\n"
                         )
                         if r_multiple is not None:
                             try:
                                 r_val = float(r_multiple)
-                                msg += f"R-Multiple: {r_val:.2f}R\n"
+                                profit_emoji = "🟢" if r_val > 0 else "🔴"
+                                msg += f"{profit_emoji} R-Multiple: {r_val:.2f}R\n"
+                                # Add % gain estimate (assuming 1% risk per trade)
+                                pct_gain = r_val * 1.0  # If risking 1% per trade
+                                msg += f"💰 Approx Gain: {pct_gain:+.2f}% (at 1% risk)\n"
                             except Exception:
                                 pass
+                        
+                        # Show partial TP guidance for VIP/admin/owner
+                        if status in ("tp1", "partial_tp"):
+                            msg += "\n💡 Partial TP1 hit - Consider:\n"
+                            msg += "  • Move SL to breakeven\n"
+                            msg += "  • Trail remaining position\n"
+                            msg += "  • Target TP2 for more gains\n"
+                        elif status == "tp2":
+                            msg += "\n💡 Partial TP2 hit - Consider:\n"
+                            msg += "  • Lock in more profits\n"
+                            msg += "  • Trail aggressively to TP3\n"
+                        
                         msg += "\nThis signal has been marked with an outcome in the tracker."
                     # Limited free follow-up for actual FREE users only
                     elif str(tier_at_send).lower() == 'free':
                         # Show profit/loss indicator
-                        outcome_label = "✅ PROFIT" if status in ("tp", "tp1", "tp2", "partial_tp") else ("❌ LOSS" if status == "sl" else "📌 PENDING")
+                        outcome_label = "✅ PROFIT" if status in ("tp", "tp1", "tp2", "tp3", "partial_tp") else ("❌ LOSS" if status == "sl" else "📌 PENDING")
                         msg = (
                             f"📣 Signal Update — {outcome_label}\n\n"
                             f"Reference: {ref_short}\n"
@@ -1205,20 +1240,47 @@ def run_bot() -> None:
                             "An outcome was recorded for a recent signal.\n"
                             "Upgrade to Premium to see full stats and exact levels."
                         )
-                    else:
-                        label = status.upper() if status else 'UPDATE'
-                        status_emoji = "✅" if status in ("tp", "tp1", "tp2", "partial_tp") else ("❌" if status == "sl" else "📌")
+                    else:  # PREMIUM tier
+                        # Parse which TP was hit
+                        tp_level = ""
+                        if status in ("tp1", "partial_tp"):
+                            tp_level = "TP1"
+                        elif status == "tp2":
+                            tp_level = "TP2"
+                        elif status == "tp3":
+                            tp_level = "TP3"
+                        elif status == "tp":
+                            tp_level = "FULL TP"
+                        
+                        if status in ("tp", "tp1", "tp2", "tp3", "partial_tp"):
+                            label = tp_level if tp_level else "TP HIT"
+                            status_emoji = "✅"
+                        elif status == "sl":
+                            label = "STOP LOSS"
+                            status_emoji = "❌"
+                        else:
+                            label = status.upper() if status else 'UPDATE'
+                            status_emoji = "📌"
+                        
                         msg = (
                             f"📣 Outcome Update — {status_emoji} {label}\n\n"
                             f"Reference: {ref_short}\n"
-                            f"{asset} {timeframe} {direction}\n"
+                            f"{asset} {timeframe} {direction.upper()}\n"
                         )
                         if r_multiple is not None:
                             try:
                                 r_val = float(r_multiple)
-                                msg += f"R-Multiple: {r_val:.2f}R\n"
+                                profit_emoji = "🟢" if r_val > 0 else "🔴"
+                                msg += f"{profit_emoji} R-Multiple: {r_val:.2f}R\n"
                             except Exception:
                                 pass
+                        
+                        # Show partial TP guidance for premium
+                        if status in ("tp1", "partial_tp"):
+                            msg += "\n💡 Partial TP1 hit - Move SL to breakeven\n"
+                        elif status == "tp2":
+                            msg += "\n💡 Partial TP2 hit - Lock profits, trail remaining\n"
+                        
                         msg += "\nThis signal has been marked with an outcome in the tracker."
                     try:
                         _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)

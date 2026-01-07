@@ -77,45 +77,18 @@ async def _public_guard(update: Update) -> bool:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if await _public_guard(update):
 		return
-	msg = (
-		"🤖 SignalRankAI Commands\n\n"
-		"🆓 FREE\n"
-		"/start – Start the bot\n"
-		"/help – This menu\n"
-		"/about – About SignalRankAI\n"
-		"/faq – Frequently asked questions\n"
-		"/disclaimer – Risk disclaimer\n"
-		"/pricing – View pricing plans\n"
-		"/upgrade – Subscribe to Premium/VIP\n"
-		"/signals – Latest signals (limited for Free)\n"
-		"/signal <ref> – Lookup a signal by reference\n"
-		"/outcome <ref> – Check outcome by reference\n"
-		"/invite – Invite friends and earn rewards\n"
-		"/policy – Subscription & refund policy\n"
-		"/refunds – Same as /policy\n"
-		"/recap – Weekly performance recap\n"
-		"/buy_extra_signals – Buy extra daily signals (₦300/signal, 24h)\n\n"
-		"🟡 PREMIUM (subscribers)\n"
-		"/performance – Full performance stats (30 days)\n"
-		"/stats – Quick stats summary\n"
-		"/history – Recent signal history\n"
-		"/risk – Risk management guidance\n"
-		"/alerts – TP/SL alerts + quiet hours settings\n\n"
-		"🔴 VIP (subscribers)\n"
-		"/elite – VIP-only high-conviction signals\n"
-		"/early – Early access alerts\n"
-		"/report – Detailed performance reports\n\n"
-		"📌 Notes\n"
-		"• Signals are real-time from live market data\n"
-		"• Supports crypto, FX, and stocks (auto)\n"
-		"• Signal corrections: automatic validation + manual fixes\n"
-		"• No duplicate signals per user\n"
-		"• Free users get 3 signals/day (delayed summaries)\n"
-		"• Current prices fetched live for /signal and /outcome\n\n"
-		"⚠️ Educational only. Not financial advice. Trading involves risk."
-	)
-	if update.message is not None:
-		await update.message.reply_text(msg)
+	if update.effective_user is None or update.message is None:
+		return
+	
+	# Get user's current tier (live check - handles demotion)
+	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+	
+	# Import tier-based help builder
+	from .command_access import get_help_message
+	
+	msg = get_help_message(tier)
+	await update.message.reply_text(msg)
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1307,13 +1280,15 @@ def require_tier(min_tier):
 				limited = False
 			if limited:
 				await update.message.reply_text("Rate limit exceeded. Please wait.")
-				return
 			tier = _effective_tier(user_id)
 			if tier_rank(tier) < tier_rank(min_tier):
-				await update.message.reply_text(
-					f"🔒 You can’t access this on {str(tier).upper()} tier.\n"
-					"Use /upgrade to subscribe to unlock it."
-				)
+				try:
+					from .command_access import check_command_access
+					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
+					_, reason = check_command_access(cmd_name, tier)
+				except Exception:
+					reason = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+				await update.message.reply_text(reason)
 				return
 			result = func(update, context)
 			if inspect.isawaitable(result):
@@ -1534,6 +1509,7 @@ async def disclaimer_command(update, context):
 		await update.message.reply_text(msg)
 
 
+@require_tier("PREMIUM")
 async def performance_command(update, context):
 	if await _public_guard(update):
 		return
@@ -1795,6 +1771,7 @@ async def risk_command(update, context):
 	)
 
 
+@require_tier("PREMIUM")
 async def alerts_command(update, context):
 	if await _public_guard(update):
 		return
