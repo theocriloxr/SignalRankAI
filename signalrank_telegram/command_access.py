@@ -22,6 +22,7 @@ COMMAND_TIERS = {
     "refunds": "FREE",
     "recap": "FREE",
     "buy_extra_signals": "FREE",
+    "unlock": "FREE",  # Needed for admins to regain access via bypass key
     
     # PREMIUM COMMANDS
     "performance": "PREMIUM",
@@ -36,7 +37,6 @@ COMMAND_TIERS = {
     "report": "VIP",
     
     # OWNER/ADMIN COMMANDS (for internal use)
-    "unlock": "OWNER",
     "dev_pause": "OWNER",
     "dev_resume": "OWNER",
     "dev_force_signal": "OWNER",
