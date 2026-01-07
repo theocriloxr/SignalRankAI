@@ -1407,7 +1407,20 @@ def run_bot() -> None:
 
                     candles = get_candles(asset, tf)
                     if not candles:
-                        continue
+                        # Fallback: try alternate granularities to improve availability
+                        # Prefer higher resolution first for better entry/TP/SL detection
+                        tf_order = ["1m", "5m", "15m", "1h", "4h", "1d"]
+                        alt_tfs = [t for t in tf_order if t != tf]
+                        for alt in alt_tfs:
+                            try:
+                                candles = get_candles(asset, alt)
+                                if candles:
+                                    break
+                            except Exception:
+                                candles = []
+                                continue
+                        if not candles:
+                            continue
 
                     created_ms = _ms(created_at)
                     
