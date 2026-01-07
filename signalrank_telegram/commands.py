@@ -463,6 +463,58 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					break
 			
 			if not candles:
+				# Last-resort fallbacks per asset type
+				# 1) Crypto: Try Bybit spot tickers, then Yahoo last close
+				try:
+					atype = asset_type
+					if atype == "crypto":
+						# Bybit spot ticker
+						import requests
+						sym = (asset or "").upper().replace("/", "").replace("-", "")
+						if sym.endswith("USD") and not sym.endswith("USDT"):
+							sym = sym[:-3] + "USDT"
+						url = "https://api.bybit.com/v5/market/tickers"
+						params = {"category": "spot", "symbol": sym}
+						try:
+							resp = requests.get(url, params=params, timeout=8)
+							data = resp.json() if resp.ok else {}
+							result = (data.get("result") or {}).get("list") or []
+							if isinstance(result, list) and result:
+								last_price = result[0].get("lastPrice")
+								if last_price is not None:
+									return float(last_price)
+						except Exception:
+							pass
+
+						# Yahoo Finance quick last close
+						try:
+							import yfinance as yf
+							ysym = (asset or "").upper()
+							if ysym.endswith("USDT"):
+								base = ysym[:-4]
+								ysym = f"{base}-USD"
+							tkr = yf.Ticker(ysym)
+							h = tkr.history(period="1d", interval="1m")
+							if not h.empty:
+								return float(h["Close"].iloc[-1])
+						except Exception:
+							pass
+
+					# 2) FX/Stocks: Yahoo last close best-effort
+					if atype in {"fx", "stock"}:
+						try:
+							import yfinance as yf
+							ysym = (asset or "").upper().replace("_", "").replace("-", "")
+							if atype == "fx" and "/" not in ysym and len(ysym) == 6:
+								ysym = f"{ysym[:3]}{ysym[3:]}=X"
+							tkr = yf.Ticker(ysym)
+							h = tkr.history(period="1d", interval="1m")
+							if not h.empty:
+								return float(h["Close"].iloc[-1])
+						except Exception:
+							pass
+				except Exception:
+					pass
 				return None
 			
 			latest = candles[-1]
