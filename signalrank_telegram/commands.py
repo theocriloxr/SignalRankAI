@@ -947,8 +947,15 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		else:
 			lines.append("Position data incomplete")
 		
-		# Status message
-		lines.extend(["", "⏳ Outcome not determined yet."])
+		# Status message - check if price shows TP was hit
+		try:
+			if 'metrics' in locals() and metrics.get('progress', 0) >= 1.0:
+				# TP clearly hit based on current price, but outcome record not in DB yet
+				lines.extend(["", "✅ Target zone reached (outcome being recorded)."])
+			else:
+				lines.extend(["", "⏳ Outcome not determined yet."])
+		except Exception:
+			lines.extend(["", "⏳ Outcome not determined yet."])
 		
 		await update.message.reply_text("\n".join(lines))
 		return

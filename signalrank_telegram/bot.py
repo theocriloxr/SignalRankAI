@@ -1379,16 +1379,9 @@ def run_bot() -> None:
 
                     created_ms = _ms(created_at)
                     
-                    # Validate entry is still valid (price hasn't moved >1.5% away)
-                    # Use latest candle's close as proxy for current price
-                    try:
-                        latest_price = float(candles[-1].get("close", entry))
-                        price_distance_pct = abs(latest_price - entry) / entry * 100.0
-                        if price_distance_pct > 1.5:
-                            # Entry stale, skip outcome tracking for this signal
-                            continue
-                    except Exception:
-                        pass  # Can't validate, proceed anyway
+                    # Note: Don't skip based on entry distance from current price.
+                    # If TP/SL was hit, price will be far from entry - that's expected.
+                    # The entry fill detection below will determine if entry was actually touched.
                     
                     # Filter candles to those after signal creation when possible.
                     filtered = []
@@ -1421,7 +1414,15 @@ def run_bot() -> None:
 
                         # Require entry fill before considering TP/SL.
                         if not entry_filled:
+                            # Entry is filled if price trades through entry level OR
+                            # if price has already reached TP/SL (gap up/down case)
                             if lo <= entry <= hi:
+                                # Normal case: price traded through entry
+                                entry_filled = True
+                                entry_filled_at = ts_val
+                            elif (direction == "long" and hi >= tp) or (direction == "short" and lo <= tp):
+                                # Gap case: price gapped past TP without hitting entry
+                                # Mark entry as filled since trade was profitable
                                 entry_filled = True
                                 entry_filled_at = ts_val
                             else:
