@@ -432,9 +432,10 @@ def main_loop(DRY_RUN=False):
 
                 # Bound stock universe per cycle to keep runtime predictable
                 try:
-                    stock_max_pairs = _env_int("STOCK_MAX_PAIRS_PER_CYCLE", 20)
+                    # Lower default stock scan batch to 10 to keep cycles fast; override via env STOCK_MAX_PAIRS_PER_CYCLE.
+                    stock_max_pairs = _env_int("STOCK_MAX_PAIRS_PER_CYCLE", 10)
                 except Exception:
-                    stock_max_pairs = 20
+                    stock_max_pairs = 10
                 stock_pair_rotation = _env_bool("STOCK_PAIR_ROTATION", True)
                 if stock_assets and stock_max_pairs > 0 and len(stock_assets) > stock_max_pairs:
                     if stock_pair_rotation:
