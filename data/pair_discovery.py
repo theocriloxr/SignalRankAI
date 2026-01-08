@@ -7,6 +7,28 @@ FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apik
 _BINANCE_DISABLED_REASON: str | None = None
 
 
+# Default crypto symbols to pause until reliable intraday providers are configured.
+_DEFAULT_CRYPTO_BLACKLIST = {
+    "APTUSDT",
+    "UNIUSDT",
+}
+
+
+def _load_crypto_blacklist() -> set[str]:
+    raw = (os.getenv("CRYPTO_BLACKLIST") or "").strip()
+    extra = {x.strip().upper() for x in raw.split(",") if x.strip()}
+    return _DEFAULT_CRYPTO_BLACKLIST | extra
+
+
+_CRYPTO_BLACKLIST = _load_crypto_blacklist()
+
+
+def _filter_blacklisted(pairs: list[str]) -> list[str]:
+    if not pairs:
+        return []
+    return [p for p in pairs if p.upper() not in _CRYPTO_BLACKLIST]
+
+
 def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
     """Best-effort fallback crypto universe via CryptoCompare.
 
@@ -49,7 +71,7 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
                 out.append(f"{coin}USDT")
             except Exception:
                 continue
-        return out
+        return _filter_blacklisted(out)
     except Exception:
         return []
 
@@ -58,10 +80,10 @@ def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
     if provider == "cryptocompare":
-        return _cryptocompare_top_crypto_pairs(top_n)
+        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
     if _BINANCE_DISABLED_REASON is not None:
         # Fallback universe when Binance is blocked.
-        return _cryptocompare_top_crypto_pairs(top_n)
+        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
     try:
         resp = requests.get(BINANCE_API, timeout=5)
         data = resp.json()
@@ -83,10 +105,10 @@ def get_trending_crypto_pairs(top_n=20):
             raise RuntimeError(f"Unexpected Binance API response type: {type(data).__name__}")
         # Sort by quoteVolume (trending)
         sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
-        return [x['symbol'] for x in sorted_pairs[:top_n]]
+        return _filter_blacklisted([x['symbol'] for x in sorted_pairs[:top_n]])
     except Exception as e:
         print(f"[WARN] Could not fetch Binance pairs: {e}")
-        return _cryptocompare_top_crypto_pairs(top_n)
+        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
 
 def get_trending_fx_pairs():
     """Return configured FX pairs.
