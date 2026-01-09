@@ -1252,51 +1252,50 @@ def run_bot() -> None:
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
         # Prefer Postgres-backed recap when configured
-        scheduler.add_job(send_weekly_recap,
-        # Resend unsent signals to eligible users if outcome not reached
-        scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=5)
-            from db.session import ENGINE, get_session
-            if ENGINE is not None:
-                from db.pg_features import get_weekly_recap_stats
+        from db.session import ENGINE, get_session
+        if ENGINE is not None:
+            from db.pg_features import get_weekly_recap_stats
 
-                async def _fetch(uid: int) -> dict:
-                    async with get_session() as session:
-                        data = await get_weekly_recap_stats(session, int(uid))
-                        await session.commit()
-                        return data
+            async def _fetch(uid: int) -> dict:
+                async with get_session() as session:
+                    data = await get_weekly_recap_stats(session, int(uid))
+                    await session.commit()
+                    return data
 
-                for user_id in user_ids:
-                    try:
-                        stats = asyncio.run(_fetch(int(user_id)))
-                    except Exception:
-                        stats = {"total": 0, "top_assets": [], "top_strategies": []}
-                    total = int(stats.get("total") or 0)
-                    if total <= 0:
-                        recap_msg = (
-                            "\U0001F4CA SignalRankAI Weekly Recap\n\n"
-                            "No signals were sent to you this week.\n\n"
-                            "Remember: No signals is sometimes better than bad signals.\n\n"
-                            "Thank you for trading responsibly."
-                        )
-                    else:
-                        most_active = ", ".join(list(stats.get("top_assets") or [])[:2]) or "N/A"
-                        best_strategy = ", ".join(list(stats.get("top_strategies") or [])[:1]) or "N/A"
-                        recap_msg = (
-                            "\U0001F4CA SignalRankAI Weekly Recap\n\n"
-                            "Here’s a quick overview of your past week:\n\n"
-                            f"• Total signals delivered: {total}\n"
-                            f"• Markets most active: {most_active}\n"
-                            f"• Best-performing strategy: {best_strategy}\n\n"
-                            "Market conditions can be mixed, so signal frequency is intentionally limited.\n\n"
-                            "Thank you for trading responsibly."
-                        )
-                    try:
-                        _send_message_sync(application.bot, chat_id=int(user_id), text=recap_msg)
-                    except Exception:
-                        pass
-                return
-        except Exception:
-            pass
+            for user_id in user_ids:
+                try:
+                    stats = asyncio.run(_fetch(int(user_id)))
+                except Exception:
+                    stats = {"total": 0, "top_assets": [], "top_strategies": []}
+                total = int(stats.get("total") or 0)
+                if total <= 0:
+                    recap_msg = (
+                        "\U0001F4CA SignalRankAI Weekly Recap\n\n"
+                        "No signals were sent to you this week.\n\n"
+                        "Remember: No signals is sometimes better than bad signals.\n\n"
+                        "Thank you for trading responsibly."
+                    )
+                else:
+                    most_active = ", ".join(list(stats.get("top_assets") or [])[:2]) or "N/A"
+                    best_strategy = ", ".join(list(stats.get("top_strategies") or [])[:1]) or "N/A"
+                    recap_msg = (
+                        "\U0001F4CA SignalRankAI Weekly Recap\n\n"
+                        "Here’s a quick overview of your past week:\n\n"
+                        f"• Total signals delivered: {total}\n"
+                        f"• Markets most active: {most_active}\n"
+                        f"• Best-performing strategy: {best_strategy}\n\n"
+                        "Market conditions can be mixed, so signal frequency is intentionally limited.\n\n"
+                        "Thank you for trading responsibly."
+                    )
+                try:
+                    _send_message_sync(application.bot, chat_id=int(user_id), text=recap_msg)
+                except Exception:
+                    pass
+            return
+
+    # Schedule jobs
+    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='mon', hour=8, minute=0)
+    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=5)
 
         # Postgres-only: no SQLite fallback
         return
