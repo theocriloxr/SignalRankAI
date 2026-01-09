@@ -78,7 +78,6 @@ from .commands import (
     elite_command,
     early_command,
     report_command,
-    buy_extra_signals,
     feedback_command,
     notify_command,
     selfcheck_command,
