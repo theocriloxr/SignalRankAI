@@ -24,25 +24,37 @@ _EXTRA_SIGNALS_PREFIX = "signalrankai:extra_signals:"
 _DELIVERED_SIGNAL_PREFIX = "signalrankai:delivered_signal:"
 
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
-    """Mark that a signal was delivered to a user."""
-    import redis
-    r = redis.Redis()
-    key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
-    r.sadd(key, signal_id)
+    """Mark that a signal was delivered to a user. No-op if Redis unavailable."""
+    try:
+        import redis
+        r = redis.Redis()
+        key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
+        r.sadd(key, signal_id)
+    except Exception:
+        # Redis not available (dev/railway), skip
+        pass
 
 def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
-    """Check if a signal was delivered to a user."""
-    import redis
-    r = redis.Redis()
-    key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
-    return r.sismember(key, signal_id)
+    """Check if a signal was delivered to a user. Returns False if Redis unavailable."""
+    try:
+        import redis
+        r = redis.Redis()
+        key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
+        return r.sismember(key, signal_id)
+    except Exception:
+        # Redis not available (dev/railway), always return False (so signal will be sent)
+        return False
 
 def get_delivered_signals_sync(user_id: int) -> set:
-    """Get all signal_ids delivered to a user."""
-    import redis
-    r = redis.Redis()
-    key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
-    return set(r.smembers(key))
+    """Get all signal_ids delivered to a user. Returns empty set if Redis unavailable."""
+    try:
+        import redis
+        r = redis.Redis()
+        key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
+        return set(r.smembers(key))
+    except Exception:
+        # Redis not available (dev/railway), return empty set
+        return set()
 
 
 @dataclass(frozen=True)
