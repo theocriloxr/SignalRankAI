@@ -1,6 +1,22 @@
 
 import threading
 import time
+
+def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
+    """
+    Get all tradable assets (crypto + FX + stocks).
+    Returns:
+        dict with keys: crypto, fx, stocks
+    """
+    crypto = get_trending_crypto_pairs(crypto_limit)
+    fx = get_trending_fx_pairs()
+    stocks = get_trending_stock_tickers(stock_limit)
+    return {
+        "crypto": crypto,
+        "fx": fx,
+        "stocks": stocks,
+    }
+
 # Global cache for auto-refreshed asset universe
 _ASSET_UNIVERSE_CACHE = None
 _ASSET_UNIVERSE_LAST_REFRESH = 0
