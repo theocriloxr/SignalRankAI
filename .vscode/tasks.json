@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run resend_unsent_signals_job",
+			"type": "shell",
+			"command": "python -c \"from signalrank_telegram.bot import resend_unsent_signals_job; resend_unsent_signals_job()\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Run resend_unsent_signals_job (Python script)",
+			"type": "shell",
+			"command": "python -m signalrank_telegram.bot",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
