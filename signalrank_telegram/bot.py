@@ -86,7 +86,7 @@ def _audit_handler(command_name: str, handler):
         return await handler(update, context)
     return _inner
 
-application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).httpx_client(httpx_client).build()
+application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command
