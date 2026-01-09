@@ -1181,7 +1181,7 @@ def run_bot() -> None:
     except Exception:
         pass
 
-    application = Application.builder().token(_require_telegram_token()).httpx_client(httpx_client).build()
+    application = Application.builder().token(_require_telegram_token()).build()
 
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
