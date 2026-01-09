@@ -127,15 +127,15 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     """Fetch cached market data for many assets using a bounded concurrency."""
 
     concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
-    # When Binance is blocked we rely on slower fallbacks (Bybit/CryptoCompare), so allow more time.
-    per_asset_timeout_default = 60.0 if is_binance_blocked() else 25.0
+    # When Binance is blocked we rely on slower fallbacks (Bybit/CryptoCompare), so allow much more time.
+    per_asset_timeout_default = 120.0 if is_binance_blocked() else 45.0
     per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default))
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(asset: str, tfs: list[str]) -> tuple[str, dict]:
         async with sem:
             try:
-                data = await asyncio.wait_for(fetch_market_data_cached(asset, tfs), timeout=max(1.0, per_asset_timeout))
+                data = await asyncio.wait_for(fetch_market_data_cached(asset, tfs), timeout=max(5.0, per_asset_timeout))
                 if not data or not any(data.values()):
                     if _env_bool("ENGINE_ASSET_DEBUG", False):
                         print(f"[engine] candle_fetch asset={asset} status=empty", flush=True)
