@@ -1,3 +1,5 @@
+from telegram.ext import Application, CommandHandler
+application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command

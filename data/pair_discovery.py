@@ -1,7 +1,6 @@
 
 import threading
 import time
-from data.pair_discovery import get_all_tradable_assets
 # Global cache for auto-refreshed asset universe
 _ASSET_UNIVERSE_CACHE = None
 _ASSET_UNIVERSE_LAST_REFRESH = 0
