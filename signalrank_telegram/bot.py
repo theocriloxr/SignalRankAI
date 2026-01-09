@@ -1,5 +1,7 @@
+
 import os
 from telegram.ext import Application, CommandHandler
+from signalrank_telegram.httpx_config import httpx_client
 
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
@@ -25,7 +27,7 @@ def _audit_handler(command_name: str, handler):
         return await handler(update, context)
     return _inner
 
-application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
+application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).httpx_client(httpx_client).build()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command
@@ -1116,7 +1118,7 @@ def run_bot() -> None:
     except Exception:
         pass
 
-    application = Application.builder().token(_require_telegram_token()).build()
+    application = Application.builder().token(_require_telegram_token()).httpx_client(httpx_client).build()
 
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
