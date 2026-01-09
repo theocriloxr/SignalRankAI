@@ -5,7 +5,7 @@ def resend_unsent_signals_job():
         from db.pg_features import list_active_signals, get_signal_outcome_status
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         from db.pg_compat import get_all_user_ids_compat
-        from core.redis_state import was_signal_delivered_sync, mark_signal_delivered_sync
+        from core.redis_state import was_signal_delivered_sync
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
         bot = Bot(token=_require_telegram_token())
@@ -21,40 +21,89 @@ def resend_unsent_signals_job():
             signals = asyncio.run(_fetch_signals())
         except Exception:
             signals = []
-        for sig in signals:
+        import concurrent.futures
+        import threading
+        from db.session import get_session
+        from db.pg_features import record_signal_delivery
+        loop = None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        def deliver_signal_to_user(sig, user_id):
             signal_id = str(getattr(sig, 'signal_id', '') or '')
             if not signal_id:
-                continue
+                logger.info(f"[resend] Skipping empty signal_id for user {user_id}")
+                return
             # Check if outcome already reached
             try:
                 outcome_status = get_signal_outcome_status(signal_id)
                 if outcome_status and outcome_status.get('reached'):
-                    continue  # Already hit TP/SL
-            except Exception:
-                pass
-            for user_id in user_ids:
-                try:
-                    # 1. Check if this user already received this signal
-                    already_delivered = was_signal_delivered_sync(user_id, signal_id)
-                    if already_delivered:
-                        # Already delivered to this user, skip
-                        continue
-                    # 2. Check if this user is eligible for this signal (tier, score, daily limits)
-                    user_tier = resolve_user_tier(user_id).lower()
-                    score = float(getattr(sig, 'score', 0) or 0)
-                    eligible = delivery_mgr.should_send_signal(user_tier, score, user_id=user_id)
-                    if not eligible:
-                        # Not eligible for this signal (tier/score/limit), skip
-                        continue
-                    # 3. Deliver the signal to this user
-                    sig_dict = sig.__dict__ if hasattr(sig, '__dict__') else dict(sig)
-                    display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
-                    _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=display_tier))
-                    mark_signal_delivered_sync(user_id, signal_id)
-                except Exception as e:
-                    # Optionally log the error for debugging
-                    # print(f"[resend] Failed for user {user_id}, signal {signal_id}: {e}")
+                    logger.info(f"[resend] Signal {signal_id} already reached outcome, skipping user {user_id}")
+                    return  # Already hit TP/SL
+            except Exception as e:
+                logger.warning(f"[resend] Outcome check failed for signal {signal_id}: {e}")
+            # 1. Check if this user already received this signal (legacy Redis, for fast skip)
+            already_delivered = was_signal_delivered_sync(user_id, signal_id)
+            if already_delivered:
+                logger.info(f"[resend] Signal {signal_id} already delivered to user {user_id} (Redis/memory), skipping.")
+                return
+            # 2. Check if this user is eligible for this signal (tier, score, daily limits)
+            user_tier = resolve_user_tier(user_id).lower()
+            score = float(getattr(sig, 'score', 0) or 0)
+            eligible = delivery_mgr.should_send_signal(user_tier, score, user_id=user_id)
+            if not eligible:
+                logger.info(f"[resend] User {user_id} not eligible for signal {signal_id} (tier/score/limit), skipping.")
+                return
+            # 3. Deliver the signal to this user
+            sig_dict = sig.__dict__ if hasattr(sig, '__dict__') else dict(sig)
+            display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
+            try:
+                _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=display_tier))
+                logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
+            except Exception as e:
+                logger.error(f"[resend] Failed to deliver signal {signal_id} to user {user_id}: {e}")
+                return
+            # 4. Record delivery in DB (persistent)
+            try:
+                # Use a new event loop for DB call if not in async context
+                def db_record():
+                    import asyncio
+                    async def do_record():
+                        async with get_session() as session:
+                            try:
+                                ok = await record_signal_delivery(
+                                    session,
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(signal_id),
+                                    tier_at_send=str(user_tier),
+                                )
+                                await session.commit()
+                                if ok:
+                                    logger.info(f"[resend] DB tracked delivery: signal {signal_id} to user {user_id} (tier={user_tier})")
+                                else:
+                                    logger.info(f"[resend] DB deduped: signal {signal_id} to user {user_id} (tier={user_tier})")
+                            except Exception as e:
+                                await session.rollback()
+                                logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {e}")
+                    asyncio.run(do_record())
+                if loop is None:
+                    db_record()
+                else:
+                    # If already in event loop, schedule as thread
+                    threading.Thread(target=db_record).start()
+            except Exception as e:
+                logger.error(f"[resend] Exception in DB delivery tracking for signal {signal_id} to user {user_id}: {e}")
+        # Use ThreadPoolExecutor for parallel delivery
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = []
+            for sig in signals:
+                signal_id = str(getattr(sig, 'signal_id', '') or '')
+                if not signal_id:
                     continue
+                for user_id in user_ids:
+                    futures.append(executor.submit(deliver_signal_to_user, sig, user_id))
+            concurrent.futures.wait(futures)
     except Exception:
         pass
 
