@@ -1,3 +1,4 @@
+import os
 from telegram.ext import Application, CommandHandler
 application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
 from .commands import reports_command
