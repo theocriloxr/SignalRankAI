@@ -1346,9 +1346,11 @@ def run_bot() -> None:
                     pass
             return
 
-    # Schedule jobs
+    # Initialize and schedule jobs
+    scheduler = BackgroundScheduler()
     scheduler.add_job(send_weekly_recap, 'cron', day_of_week='mon', hour=8, minute=0)
     scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=5)
+    scheduler.start()
 
 
     def send_outcome_notifications():
