@@ -241,10 +241,40 @@ def get_help_message(tier: str) -> str:
     lines = [title, ""]
     for cmd, desc in commands:
         lines.append(f"/{cmd} – {desc}")
-    
+
+    # --- Advanced Features Section ---
+    lines.extend([
+        "",
+        "*Advanced Features & Usage*",
+        "",
+        "• /dashboard – Open your analytics dashboard (Premium/VIP/Admin)",
+        "• /apikey – Get your API key for programmatic access",
+        "• /filter – Set custom signal filters (min_score, rr, regime)",
+        "• /reports – Opt-in/out of daily/weekly performance reports",
+        "• /notify – Customize which assets, timeframes, or strategies you receive",
+        "• /language – Change your notification language",
+        "• /referral_leaderboard – See top referrers",
+        "• /referral_rewards – View your referral rewards",
+        "• /feedback – Rate a signal or report an issue (Premium/VIP)",
+        "",
+        "*How to use advanced features:*",
+        "- /apikey regenerate – Reset your API key",
+        "- /filter min_score 60 – Set minimum score",
+        "- /filter rr 2.0 – Set minimum risk/reward",
+        "- /filter regime TRENDING – Set regime filter",
+        "- /reports on|off – Subscribe/unsubscribe to scheduled reports",
+        "- /notify assets BTCUSDT,ETHUSDT – Set asset notifications",
+        "- /notify timeframes 1h,4h – Set timeframes",
+        "- /notify strategies momentum,trend – Set strategies",
+        "- /notify clear – Reset notification preferences",
+        "- /language en|es|fr – Set your language",
+        "- /feedback <signal_ref> <rating|issue> [comment] – Submit feedback",
+        "",
+    ])
+
     if footer:
         lines.extend(["", footer])
-    
+
     # Add disclaimers
     lines.extend([
         "",
@@ -257,7 +287,7 @@ def get_help_message(tier: str) -> str:
         "",
         "⚠️ Educational only. Not financial advice. Trading involves risk.",
     ])
-    
+
     return "\n".join(lines)
 
 
