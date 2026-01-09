@@ -411,6 +411,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     
     Outcomes are sent for ALL signals (crypto and FX) regardless of tier.
     """
+
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
 
@@ -434,22 +435,45 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if isinstance(strategy_signals, dict):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
-        
         # Tier-based signal selection with score thresholds
         if tier in ('owner', 'admin'):
-            # Owner/Admin see ALL signals without filtering (vip + premium)
             signals_list = vip_list + prem_list
         elif tier in ('vip',):
-            # VIP: score >= 55 (quality-first but broader than premium)
             signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
         elif tier in ('premium',):
-            # PREMIUM: score >= 55 for dispatch (mid-tier quality)
             signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
         else:  # FREE
-            # Free: ALL signals go to global pool (handled separately)
             signals_list = (vip_list + prem_list)
     else:
         signals_list = list(strategy_signals or [])
+
+    # --- USER PREFERENCES FILTERING ---
+    try:
+        from .user_prefs import user_prefs_store
+        prefs = user_prefs_store.get_prefs(user_id)
+        assets = set([a.upper() for a in prefs.get('assets', set())]) if prefs.get('assets') else None
+        timeframes = set([tf.lower() for tf in prefs.get('timeframes', set())]) if prefs.get('timeframes') else None
+        strategies = set([s.lower() for s in prefs.get('strategies', set())]) if prefs.get('strategies') else None
+        if assets or timeframes or strategies:
+            filtered = []
+            for sig in signals_list:
+                asset_ok = True
+                tf_ok = True
+                strat_ok = True
+                if assets:
+                    asset = str(sig.get('asset') or sig.get('symbol') or '').upper()
+                    asset_ok = asset in assets
+                if timeframes:
+                    tf = str(sig.get('timeframe') or '').lower()
+                    tf_ok = tf in timeframes
+                if strategies:
+                    strat = str(sig.get('strategy_name') or sig.get('strategy') or '').lower()
+                    strat_ok = strat in strategies
+                if asset_ok and tf_ok and strat_ok:
+                    filtered.append(sig)
+            signals_list = filtered
+    except Exception as e:
+        _log_once('user_prefs_filter_error', f'[dispatch] User prefs filter error: {e}')
 
     if not signals_list:
         return
