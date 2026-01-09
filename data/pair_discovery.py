@@ -23,7 +23,8 @@ _CRYPTO_BLACKLIST = _load_crypto_blacklist()
 def _filter_blacklisted(pairs: list[str]) -> list[str]:
     if not pairs:
         return []
-    return [p for p in pairs if p.upper() not in _CRYPTO_BLACKLIST]
+    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT", "MATICUSDT"}
+    return [p for p in pairs if p.upper() not in _CRYPTO_BLACKLIST and p.upper() not in EXCLUDE_ALWAYS]
 
 
 def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
@@ -76,7 +77,7 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
-    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
+    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT", "MATICUSDT"}
     def exclude_pairs(pairs):
         return [p for p in pairs if p.upper() not in EXCLUDE_ALWAYS]
     if provider == "cryptocompare":
