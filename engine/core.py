@@ -525,30 +525,54 @@ def main_loop(DRY_RUN=False):
                 all_market_data = {}
 
             new_degraded_assets = set()
+
             for asset in assets:
                 try:
                     market_data = (all_market_data or {}).get(asset) or {}
 
-                    # Fail-closed: never run strategies on empty/insufficient market data.
+                    # Always ensure freshest candle data before running strategies
                     try:
                         min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
                     except Exception:
                         min_candles = 50
                     min_candles = max(1, int(min_candles))
+                    needs_refresh = False
                     if not market_data:
-                        # Mark asset as degraded for next cycle
-                        new_degraded_assets.add(asset)
-                        continue
-                    has_enough = False
-                    for tf_data in (market_data or {}).values():
-                        candles = (tf_data or {}).get("candles") or []
-                        if isinstance(candles, list) and len(candles) >= min_candles:
-                            has_enough = True
-                            break
-                    if not has_enough:
-                        # Mark asset as degraded for next cycle
-                        new_degraded_assets.add(asset)
-                        continue
+                        needs_refresh = True
+                    else:
+                        for tf, tf_data in (market_data or {}).items():
+                            candles = (tf_data or {}).get("candles") or []
+                            # If candles are missing or stale (last close > 2x timeframe ago), refresh
+                            if not isinstance(candles, list) or len(candles) < min_candles:
+                                needs_refresh = True
+                                break
+                            # Check staleness: last candle close time
+                            last_candle = candles[-1] if candles else None
+                            if last_candle and 'close_time' in last_candle:
+                                import time
+                                now = int(time.time())
+                                close_time = int(last_candle['close_time'])
+                                # Assume timeframe in seconds (e.g., 900 for 15m)
+                                tf_sec = 60
+                                if 'm' in tf:
+                                    tf_sec = int(tf.replace('m','')) * 60
+                                elif 'h' in tf:
+                                    tf_sec = int(tf.replace('h','')) * 3600
+                                elif 'd' in tf:
+                                    tf_sec = int(tf.replace('d','')) * 86400
+                                if now - close_time > 2 * tf_sec:
+                                    needs_refresh = True
+                                    break
+                    if needs_refresh:
+                        # Re-fetch market data for this asset
+                        try:
+                            market_data = asyncio.run(fetch_market_data_cached(asset, list((asset_to_tfs_degraded.get(asset) or []))))
+                            if not market_data or not any((tf_data or {}).get('candles') for tf_data in market_data.values()):
+                                new_degraded_assets.add(asset)
+                                continue
+                        except Exception:
+                            new_degraded_assets.add(asset)
+                            continue
 
                     regime = detect_market_regime(market_data)
                     strategy_signals = run_all_strategies(
@@ -817,30 +841,47 @@ def main_loop(DRY_RUN=False):
                             
                             # Ensure stop_loss and take_profit are populated
                             # Fallback: Use ATR-based stops if missing
+
                             entry = signal.get('entry')
                             sl = signal.get('stop_loss', signal.get('stop'))
                             tp = signal.get('take_profit', signal.get('targets'))
-                            
+
+                            # Infer direction if missing or invalid
+                            direction = (signal.get('direction') or '').lower().strip()
+                            try:
+                                entry_f = float(entry) if entry is not None else None
+                                # Handle TP as list or float
+                                if isinstance(tp, (list, tuple)) and tp:
+                                    tp_f = float(tp[0])
+                                else:
+                                    tp_f = float(tp) if tp is not None else None
+                                if direction not in {'long', 'short'} and entry_f is not None and tp_f is not None:
+                                    if tp_f < entry_f:
+                                        direction = 'short'
+                                    elif tp_f > entry_f:
+                                        direction = 'long'
+                                    signal['direction'] = direction
+                            except Exception:
+                                pass
+
                             # If stops are missing/invalid, calculate from ATR
                             if not sl or sl == entry:
                                 atr_value = signal.get('atr', 0)
-                                if atr_value > 0 and entry > 0:
-                                    direction = signal.get('direction', 'long').lower()
+                                if atr_value > 0 and entry is not None and float(entry) > 0:
                                     if direction == 'long':
-                                        sl = entry - (2 * atr_value)  # 2x ATR below
+                                        sl = float(entry) - (2 * atr_value)  # 2x ATR below
                                     else:
-                                        sl = entry + (2 * atr_value)  # 2x ATR above
-                            
+                                        sl = float(entry) + (2 * atr_value)  # 2x ATR above
+
                             if not tp or tp == entry:
                                 atr_value = signal.get('atr', 0)
-                                if atr_value > 0 and entry > 0 and sl and sl != entry:
-                                    direction = signal.get('direction', 'long').lower()
+                                if atr_value > 0 and entry is not None and float(entry) > 0 and sl and sl != entry:
                                     rr = 2.0  # Target 2:1 R/R
                                     if direction == 'long':
-                                        tp = entry + (abs(entry - sl) * rr)
+                                        tp = float(entry) + (abs(float(entry) - float(sl)) * rr)
                                     else:
-                                        tp = entry - (abs(entry - sl) * rr)
-                            
+                                        tp = float(entry) - (abs(float(entry) - float(sl)) * rr)
+
                             signal['stop_loss'] = sl
                             signal['take_profit'] = tp
                             

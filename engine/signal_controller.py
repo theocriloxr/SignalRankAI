@@ -299,10 +299,28 @@ class SignalController:
             out["strength"] = float(out.get("confidence", 0) or 0)
 
         direction = (out.get("direction") or "").lower().strip()
+        entry = out.get("entry")
+        tp = out.get("take_profit")
+        # Infer direction if missing or invalid
         if direction in {"buy", "long"}:
             out["direction"] = "long"
         elif direction in {"sell", "short"}:
             out["direction"] = "short"
+        else:
+            try:
+                entry_f = float(entry) if entry is not None else None
+                # Handle TP as list or float
+                if isinstance(tp, (list, tuple)) and tp:
+                    tp_f = float(tp[0])
+                else:
+                    tp_f = float(tp) if tp is not None else None
+                if entry_f is not None and tp_f is not None:
+                    if tp_f < entry_f:
+                        out["direction"] = "short"
+                    elif tp_f > entry_f:
+                        out["direction"] = "long"
+            except Exception:
+                pass
 
         # Compute rr_ratio if possible
         if "rr_ratio" not in out:

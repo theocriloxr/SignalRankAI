@@ -1,3 +1,56 @@
+def resend_unsent_signals_job():
+    """Scheduled job: resend unsent signals to eligible users if outcome not reached, respecting tier logic."""
+    try:
+        from db.session import ENGINE, get_session
+        from db.pg_features import list_active_signals, get_signal_outcome_status
+        from signalrank_telegram.tier_delivery import TierDeliveryManager
+        from db.pg_compat import get_all_user_ids_compat
+        from core.redis_state import was_signal_delivered_sync, mark_signal_delivered_sync
+        from signalrank_telegram.access import resolve_user_tier
+        from .formatter import format_signal
+        bot = Bot(token=_require_telegram_token())
+        delivery_mgr = TierDeliveryManager()
+        user_ids = get_all_user_ids_compat()
+        import asyncio
+        async def _fetch_signals():
+            async with get_session() as session:
+                sigs = await list_active_signals(session, max_age_days=3, limit=100)
+                await session.commit()
+                return sigs
+        try:
+            signals = asyncio.run(_fetch_signals())
+        except Exception:
+            signals = []
+        for sig in signals:
+            signal_id = str(getattr(sig, 'signal_id', '') or '')
+            if not signal_id:
+                continue
+            # Check if outcome already reached
+            try:
+                outcome_status = get_signal_outcome_status(signal_id)
+                if outcome_status and outcome_status.get('reached'):
+                    continue  # Already hit TP/SL
+            except Exception:
+                pass
+            # For each user, check if should have received and if not, send
+            for user_id in user_ids:
+                try:
+                    if was_signal_delivered_sync(user_id, signal_id):
+                        continue
+                    user_tier = resolve_user_tier(user_id).lower()
+                    # Use delivery manager to check eligibility
+                    score = float(getattr(sig, 'score', 0) or 0)
+                    if not delivery_mgr.should_send_signal(user_tier, score, user_id=user_id):
+                        continue
+                    # Build signal dict for formatting
+                    sig_dict = sig.__dict__ if hasattr(sig, '__dict__') else dict(sig)
+                    display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
+                    _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=display_tier))
+                    mark_signal_delivered_sync(user_id, signal_id)
+                except Exception:
+                    continue
+    except Exception:
+        pass
 
 import os
 from telegram.ext import Application, CommandHandler
@@ -94,7 +147,7 @@ application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", 
 application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
 application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
 
-from core.redis_state import state
+from core.redis_state import state, mark_signal_delivered_sync
 from .owner_commands import (
     unlock,
     dev_pause,
@@ -959,6 +1012,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 user_tier = resolve_user_tier(user_id).lower()
                                 signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'free'
                                 _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=signal_display_tier))
+                                # Mark as delivered in Redis
+                                try:
+                                    mark_signal_delivered_sync(user_id, str(sig_dict.get('signal_id')))
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                     
@@ -989,6 +1047,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 break
             try:
                 _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                # Mark as delivered in Redis
+                try:
+                    mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))
+                except Exception:
+                    pass
                 sent += 1
             except Exception:
                 continue
@@ -1189,7 +1252,9 @@ def run_bot() -> None:
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
         # Prefer Postgres-backed recap when configured
-        try:
+        scheduler.add_job(send_weekly_recap,
+        # Resend unsent signals to eligible users if outcome not reached
+        scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=5)
             from db.session import ENGINE, get_session
             if ENGINE is not None:
                 from db.pg_features import get_weekly_recap_stats
