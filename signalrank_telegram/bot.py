@@ -514,7 +514,6 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     # Global kill-switch (do not dispatch/queue)
     try:
         if state.get_killswitch_sync().enabled:
-            return
     except Exception:
         pass
 
