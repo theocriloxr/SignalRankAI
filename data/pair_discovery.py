@@ -2,6 +2,19 @@
 import threading
 import time
 
+
+def get_trending_crypto_pairs(top_n=20):
+    # ...existing code...
+    pass
+
+def get_trending_fx_pairs():
+    # ...existing code...
+    pass
+
+def get_trending_stock_tickers(top_n=20):
+    # ...existing code...
+    pass
+
 def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     """
     Get all tradable assets (crypto + FX + stocks).
