@@ -1094,8 +1094,6 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             _send_message_sync(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
         except Exception:
             pass
-        # Postgres-only: no SQLite fallback
-        return
 
 
 def downgrade_expired_subscriptions_job():
