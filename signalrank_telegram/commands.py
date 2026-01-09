@@ -1,3 +1,115 @@
+# --------- REFERRAL LEADERBOARD & REWARDS ---------
+from db.session import get_session, ENGINE
+from db.pg_features import get_or_create_user
+from db.models import ReferralReward, ReferralAttribution, User
+import asyncio
+
+async def referral_leaderboard_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	if ENGINE is None:
+		await update.message.reply_text("Database unavailable.")
+		return
+	async with get_session() as session:
+		# Top referrers by count
+		res = await session.execute(
+			"""
+			SELECT referrer_user_id, COUNT(*) as cnt
+			FROM referrals
+			GROUP BY referrer_user_id
+			ORDER BY cnt DESC
+			LIMIT 10
+			"""
+		)
+		rows = res.fetchall()
+		if not rows:
+			await update.message.reply_text("No referral data yet.")
+			return
+		# Get usernames if possible
+		ids = [r[0] for r in rows]
+		users = {}
+		if ids:
+			res2 = await session.execute(
+				"SELECT id, username FROM users WHERE id = ANY(:ids)", {"ids": ids}
+			)
+			users = {r[0]: r[1] for r in res2.fetchall()}
+		msg = "🏆 Referral Leaderboard:\n"
+		for i, (uid, cnt) in enumerate(rows, 1):
+			uname = users.get(uid) or f"User {uid}"
+			msg += f"{i}. {uname}: {cnt} referrals\n"
+		await update.message.reply_text(msg)
+
+async def referral_rewards_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	if ENGINE is None:
+		await update.message.reply_text("Database unavailable.")
+		return
+	async with get_session() as session:
+		user = await get_or_create_user(session, telegram_user_id=int(user_id))
+		res = await session.execute(
+			"SELECT reward_type, COUNT(*) as cnt, SUM(reward_value) as total FROM referral_rewards WHERE referrer_user_id = :uid GROUP BY reward_type",
+			{"uid": user.id}
+		)
+		rows = res.fetchall()
+		if not rows:
+			await update.message.reply_text("No rewards earned yet. Refer friends to earn rewards!")
+			return
+		msg = "🎁 Your Referral Rewards:\n"
+		for rtype, cnt, total in rows:
+			msg += f"{rtype}: {cnt} times, total value: {total}\n"
+		await update.message.reply_text(msg)
+from engine.signal_analytics import signal_analytics
+# --------- ADMIN ANALYTICS COMMANDS ---------
+from config import OWNER_IDS
+def _is_admin(user_id):
+	return int(user_id) in OWNER_IDS
+
+async def admin_top_assets_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	if not _is_admin(user_id):
+		await update.message.reply_text("Admin only.")
+		return
+	stats = signal_analytics.get_stats()
+	delivery = stats.get('delivery_stats', {})
+	asset_counts = {}
+	for k, v in delivery.items():
+		if k.startswith('delivered_'):
+			asset = k[len('delivered_'):]
+			asset_counts[asset] = asset_counts.get(asset, 0) + v
+	top = sorted(asset_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+	msg = "\n".join([f"{a}: {c}" for a, c in top]) or "No data."
+	await update.message.reply_text(f"Top Assets (delivered):\n{msg}")
+
+async def admin_top_strategies_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	if not _is_admin(user_id):
+		await update.message.reply_text("Admin only.")
+		return
+	# Placeholder: If strategies are tracked, add here. For now, show fill_rates as proxy.
+	stats = signal_analytics.get_stats()
+	fill_rates = stats.get('fill_rates', {})
+	top = sorted(fill_rates.items(), key=lambda x: x[1], reverse=True)[:10]
+	msg = "\n".join([f"{a}: {c:.2f}" for a, c in top]) or "No data."
+	await update.message.reply_text(f"Top Strategies (by fill rate):\n{msg}")
+
+async def admin_user_engagement_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	if not _is_admin(user_id):
+		await update.message.reply_text("Admin only.")
+		return
+	stats = signal_analytics.get_stats()
+	engagement = stats.get('user_engagement', {})
+	top = sorted(engagement.items(), key=lambda x: x[1], reverse=True)[:10]
+	msg = "\n".join([f"{u}: {c}" for u, c in top]) or "No data."
+	await update.message.reply_text(f"Top Users (engagement):\n{msg}")
 # --------- ADMIN /SELFHECK COMMAND ---------
 @require_tier("ADMIN")
 async def selfcheck_command(update, context):
@@ -90,15 +202,19 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		await update.message.reply_text(f"✅ Strategies updated: {', '.join(values)}")
 	else:
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
-from .feedback import feedback_store
 # --------- FEEDBACK COMMAND ---------
+from .feedback import feedback_store
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-	"""Allow users to rate a signal or report an issue. Usage: /feedback <signal_ref> <rating|issue> [comment]"""
+	"""Allow non-free users to rate a signal or report an issue. Usage: /feedback <signal_ref> <rating|issue> [comment]"""
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+	if tier.strip().upper() == "FREE":
+		await update.message.reply_text("Feedback is only available for Premium and VIP users. Upgrade to unlock this feature.")
+		return
 	args = context.args or []
 	if len(args) < 2:
 		await update.message.reply_text("Usage: /feedback <signal_ref> <rating|issue> [comment]")
@@ -134,6 +250,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	# Optionally flush feedback every 10 submissions
 	if len(feedback_store.get_feedback(signal_id)) % 10 == 0:
 		feedback_store.flush()
+
 # /pricing command
 import os
 import logging
@@ -215,16 +332,36 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	
-	# Get user's current tier (live check - handles demotion)
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
-	
-	# Import tier-based help builder
 	from .command_access import get_help_message
-	
 	msg = get_help_message(tier)
-	await update.message.reply_text(msg)
+	# Add dashboard link for eligible users
+	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
+		dashboard_url = f"https://yourdomain.com/userdash/login?uid={user_id}"
+		msg += f"\n\n🌐 [Open your dashboard]({dashboard_url})"
+	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="Markdown")
+
+# --------- MYID COMMAND ---------
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+	msg = f"Your Telegram user ID: `{user_id}`\nYour current tier: *{tier}*"
+	await update.message.reply_text(msg, parse_mode="Markdown")
+
+# --------- DASHBOARD COMMAND ---------
+async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	tier = _effective_tier(user_id)
+	if tier.strip().upper() not in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
+		await update.message.reply_text("The dashboard is only available for Premium, VIP, and above.")
+		return
+	dashboard_url = f"https://yourdomain.com/userdash/login?uid={user_id}"
+	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="Markdown")
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

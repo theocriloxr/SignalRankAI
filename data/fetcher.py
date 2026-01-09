@@ -1,10 +1,15 @@
 import threading
 import time
+
 # Provider health state (in-memory, per process)
 _PROVIDER_HEALTH = {}
 _PROVIDER_HEALTH_LOCK = threading.Lock()
 _PROVIDER_FAIL_WINDOW = 600  # seconds to deprioritize after repeated failures
 _PROVIDER_FAIL_THRESHOLD = 3
+
+# Outage tracking for automated alerts
+_PROVIDER_OUTAGE_ALERTED = {}
+_PROVIDER_OUTAGE_MINUTES = 10  # Alert if down for more than X minutes
 
 def mark_provider_result(provider_name, ok):
     now = time.time()
@@ -13,6 +18,8 @@ def mark_provider_result(provider_name, ok):
         if ok:
             entry["last_success"] = now
             entry["failures"] = []
+            # Reset outage alert state
+            _PROVIDER_OUTAGE_ALERTED[provider_name] = False
         else:
             entry["failures"].append(now)
             # Keep only recent failures
@@ -29,6 +36,21 @@ def provider_is_healthy(provider_name):
             if now - entry["failures"][-1] < _PROVIDER_FAIL_WINDOW and (now - entry["last_success"] > _PROVIDER_FAIL_WINDOW):
                 return False
         return True
+
+
+# Return list of (provider_name, minutes_down) for providers down > threshold
+def get_unhealthy_providers(min_minutes=None):
+    now = time.time()
+    min_minutes = min_minutes or _PROVIDER_OUTAGE_MINUTES
+    unhealthy = []
+    with _PROVIDER_HEALTH_LOCK:
+        for name, entry in _PROVIDER_HEALTH.items():
+            if len(entry["failures"]) >= _PROVIDER_FAIL_THRESHOLD:
+                last_success = entry["last_success"]
+                down_for = (now - last_success) / 60.0
+                if down_for >= min_minutes:
+                    unhealthy.append((name, down_for))
+    return unhealthy
 import random
 def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60, jitter=0.2):
     """Retry a fetch function with exponential backoff and jitter."""

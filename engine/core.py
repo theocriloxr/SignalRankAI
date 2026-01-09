@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import logging
+import threading
 from engine.signal_analytics import signal_analytics
 from collections import Counter
 
@@ -23,6 +24,11 @@ from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals
 from core.redis_state import state
 
+# For outage alerting
+from data.fetcher import get_unhealthy_providers
+from signalrank_telegram.bot import _send_message_sync
+from config import OWNER_IDS
+
 # NEW: Signal-only bot features
 from engine.mtf_analysis import MultiTimeframeAnalyzer
 from engine.signal_context import SignalContext, SignalCooldownManager, OneBiasPerTimeframe
@@ -34,6 +40,24 @@ from engine.ultra_quality_filter import ultra_quality
 from engine.advanced_exit_manager import advanced_exit
 
 logger = logging.getLogger(__name__)
+
+# Background outage alert job
+def start_outage_alert_job():
+    def _job():
+        while True:
+            try:
+                unhealthy = get_unhealthy_providers()
+                if unhealthy:
+                    for name, mins in unhealthy:
+                        msg = f"🚨 Provider outage: {name} has been down for {mins:.1f} minutes."
+                        for admin_id in OWNER_IDS:
+                            _send_message_sync(None, admin_id, msg)
+                time.sleep(120)  # Check every 2 minutes
+            except Exception as e:
+                print(f"[outage_alert] Error: {e}", flush=True)
+                time.sleep(120)
+    t = threading.Thread(target=_job, daemon=True)
+    t.start()
 
 
 def _env_float(name: str, default: float) -> float:
@@ -155,6 +179,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
+    # Start outage alert job (only once per process)
+    start_outage_alert_job()
     # Track assets that failed to fetch data in the last cycle for graceful degradation
     degraded_assets = set()
     # ============================================

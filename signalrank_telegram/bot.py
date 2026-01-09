@@ -1,3 +1,12 @@
+from .commands import referral_leaderboard_command, referral_rewards_command
+# Register referral leaderboard and rewards commands
+application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
+application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
+from .commands import admin_top_assets_command, admin_top_strategies_command, admin_user_engagement_command
+# Register admin analytics commands
+application.add_handler(CommandHandler("admin_top_assets", _audit_handler("admin_top_assets", admin_top_assets_command)))
+application.add_handler(CommandHandler("admin_top_strategies", _audit_handler("admin_top_strategies", admin_top_strategies_command)))
+application.add_handler(CommandHandler("admin_user_engagement", _audit_handler("admin_user_engagement", admin_user_engagement_command)))
 import os
 import asyncio
 import socket
@@ -10,6 +19,7 @@ from core.performance import performance_tracker
 from db.pg_compat import get_all_user_ids_compat
 from signalrank_telegram.access import resolve_user_tier
 from .formatter import format_signal
+
 from .commands import (
     start_command,
     help_command,
@@ -36,10 +46,16 @@ from .commands import (
     feedback_command,
     notify_command,
     selfcheck_command,
-            application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
-        application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
-    application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
+    myid_command,
+    dashboard_command,
 )
+
+# Register new commands
+application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
+application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
+application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
+application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
+application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
 
 from core.redis_state import state
 from .owner_commands import (
