@@ -318,6 +318,8 @@ async def selfcheck_command(update, context):
 		pass
 	await update.message.reply_text("\n".join(lines))
 from .user_prefs import user_prefs_store
+from telegram import Update
+from telegram.ext import ContextTypes
 # --------- NOTIFICATION CUSTOMIZATION COMMAND ---------
 async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	"""Let users customize which assets, timeframes, or strategies they want to receive signals for.
