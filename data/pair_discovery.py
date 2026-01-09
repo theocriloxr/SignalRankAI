@@ -76,11 +76,14 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
+    def exclude_pairs(pairs):
+        return [p for p in pairs if p.upper() not in EXCLUDE_ALWAYS]
     if provider == "cryptocompare":
-        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
+        return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
     if _BINANCE_DISABLED_REASON is not None:
         # Fallback universe when Binance is blocked.
-        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
+        return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
     try:
         resp = requests.get(BINANCE_API, timeout=5)
         data = resp.json()
