@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Your Dashboard - SignalRankAI</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f7f7f7; }
+        .container { max-width: 800px; margin: 40px auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
+        h2 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background: #f0f0f0; }
+        .tier { font-weight: bold; color: #0077cc; }
+        .logout { float: right; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/logout" class="logout">Logout</a>
+        <h2>Your Signal Dashboard</h2>
+        <div>Tier: <span class="tier">{{ tier }}</span></div>
+        {% if signals and signals|length > 0 %}
+        <table>
+            <tr>
+                <th>Signal ID</th>
+                <th>Asset</th>
+                <th>Timeframe</th>
+                <th>Direction</th>
+                <th>Entry</th>
+                <th>Stop Loss</th>
+                <th>Take Profit</th>
+                <th>Score</th>
+            </tr>
+            {% for s in signals %}
+            <tr>
+                <td>{{ s.signal_id }}</td>
+                <td>{{ s.asset }}</td>
+                <td>{{ s.timeframe }}</td>
+                <td>{{ s.direction }}</td>
+                <td>{{ s.entry }}</td>
+                <td>{{ s.stop_loss }}</td>
+                <td>{{ s.take_profit }}</td>
+                <td>{{ s.score }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% else %}
+        <p>No signals delivered to you today.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

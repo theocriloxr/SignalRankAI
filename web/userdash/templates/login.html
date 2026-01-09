@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login - SignalRankAI User Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f7f7f7; }
+        .container { max-width: 400px; margin: 80px auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
+        h2 { text-align: center; }
+        .error { color: red; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Login to Your Dashboard</h2>
+        {% if error %}<div class="error">{{ error }}</div>{% endif %}
+        <form method="post">
+            <label for="user_id">Telegram User ID:</label><br>
+            <input type="text" id="user_id" name="user_id" required><br><br>
+            <button type="submit">Login</button>
+        </form>
+        <p style="font-size:0.9em;color:#888;">(Ask the bot for your user ID with <b>/myid</b> if unsure.)</p>
+    </div>
+</body>
+</html>
