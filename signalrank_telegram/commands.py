@@ -1,3 +1,43 @@
+def require_tier(min_tier):
+	def wrapper(func):
+		async def inner(update, context):
+			if update.effective_user is None or update.message is None:
+				return
+			user_id = update.effective_user.id
+			# Global kill-switch
+			try:
+				ks = state.get_killswitch_sync()
+			except Exception:
+				ks = type("KS", (), {"enabled": False})()
+			if getattr(ks, "enabled", False):
+				await update.message.reply_text("🚨 Signals are temporarily paused.")
+				return
+
+			# Rate limit (20/min)
+			try:
+				limited = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
+			except Exception:
+				limited = False
+			if limited:
+				await update.message.reply_text("Rate limit exceeded. Please wait.")
+				return
+			tier = _effective_tier(user_id)
+			if tier_rank(tier) < tier_rank(min_tier):
+				try:
+					from .command_access import check_command_access
+					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
+					_, reason = check_command_access(cmd_name, tier)
+				except Exception:
+					reason = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+				await update.message.reply_text(reason)
+				return
+			result = func(update, context)
+			if inspect.isawaitable(result):
+				return await result
+			return result
+		return inner
+	return wrapper
+
 # --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
 async def reports_command(update, context):
 	if update.effective_user is None or update.message is None:
@@ -233,46 +273,6 @@ async def admin_user_engagement_command(update, context):
 	msg = "\n".join([f"{u}: {c}" for u, c in top]) or "No data."
 	await update.message.reply_text(f"Top Users (engagement):\n{msg}")
 # --------- ADMIN /SELFHECK COMMAND ---------
-@require_tier("ADMIN")
-async def selfcheck_command(update, context):
-	"""Admin/Owner: Show quick health summary of the system."""
-	import platform, psutil, shutil
-	import datetime
-	import os
-	from db.session import ENGINE
-	lines = ["🩺 System Self-Check"]
-	lines.append(f"Time: {datetime.datetime.utcnow().isoformat()} UTC")
-	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
-	lines.append(f"Python: {platform.python_version()}")
-	lines.append(f"RAM: {psutil.virtual_memory().percent}% used")
-	lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
-	# DB status
-	try:
-		if ENGINE is not None:
-			lines.append("DB: ✅ Connected")
-		else:
-			lines.append("DB: ❌ Not connected")
-	except Exception:
-		lines.append("DB: ❓ Unknown")
-	# ML drift
-	try:
-		import json
-		from pathlib import Path
-		drift_path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
-		if drift_path.exists():
-			with open(drift_path, "r") as f:
-				drift = json.load(f)
-			acc = drift.get("accuracy")
-			auc = drift.get("auc")
-			lines.append(f"ML: acc={acc:.3f} auc={auc:.3f}")
-		else:
-			lines.append("ML: No drift data")
-	except Exception:
-		lines.append("ML: Drift check error")
-	# Uptime
-	try:
-		import time
-		uptime = time.time() - psutil.boot_time()
 		lines.append(f"Uptime: {uptime/3600:.1f}h")
 	except Exception:
 		pass
