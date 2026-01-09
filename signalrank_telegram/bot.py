@@ -1,5 +1,30 @@
 import os
 from telegram.ext import Application, CommandHandler
+
+def _audit_handler(command_name: str, handler):
+    async def _inner(update, context):
+        # IMPORTANT: Skip pre-audit for /start.
+        # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
+        # That would make start_command see the user as "not new" and prevent referral attribution.
+        # start_command already handles user creation + start auditing in a single transaction.
+        if str(command_name) == "start":
+            return await handler(update, context)
+
+        try:
+            from db.session import ENGINE, get_session
+            if ENGINE is not None and getattr(update, "effective_user", None) is not None:
+                user_id = int(update.effective_user.id)
+                username = None
+                try:
+                    username = update.effective_user.username
+                except Exception:
+                    pass
+                # ...existing code for auditing...
+        except Exception:
+            pass
+        return await handler(update, context)
+    return _inner
+
 application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
