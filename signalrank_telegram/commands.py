@@ -1,3 +1,125 @@
+# --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
+async def reports_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if not args:
+		prefs = user_prefs_store.get_prefs(user_id)
+		val = prefs.get("reports_optin", False)
+		msg = "You are currently " + ("subscribed to" if val else "not receiving") + " daily/weekly reports.\nUse /reports on or /reports off."
+		await update.message.reply_text(msg)
+		return
+	opt = args[0].lower()
+	if opt in {"on", "yes", "true"}:
+		user_prefs_store.set_prefs(user_id, reports_optin=True)
+		await update.message.reply_text("You will now receive daily/weekly performance summaries.")
+	elif opt in {"off", "no", "false"}:
+		user_prefs_store.set_prefs(user_id, reports_optin=False)
+		await update.message.reply_text("You will no longer receive scheduled reports.")
+	else:
+		await update.message.reply_text("Usage: /reports on|off")
+# --------- CUSTOM SIGNAL FILTERS COMMAND ---------
+async def filter_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if not args:
+		prefs = user_prefs_store.get_prefs(user_id)
+		filters = prefs.get("filters", {})
+		if not filters:
+			await update.message.reply_text("No custom filters set. Use /filter min_score 60 or /filter rr 2.0 or /filter regime TRENDING.")
+		else:
+			lines = ["Your custom filters:"]
+			for k, v in filters.items():
+				lines.append(f"{k}: {v}")
+			await update.message.reply_text("\n".join(lines))
+		return
+	key = args[0].lower()
+	if key not in {"min_score", "rr", "regime"}:
+		await update.message.reply_text("Supported filters: min_score, rr, regime. Example: /filter min_score 60")
+		return
+	value = args[1] if len(args) > 1 else None
+	if not value:
+		await update.message.reply_text("Usage: /filter <min_score|rr|regime> <value>")
+		return
+	filters = user_prefs_store.get_prefs(user_id).get("filters", {})
+	filters[key] = value
+	user_prefs_store.set_prefs(user_id, filters=filters)
+	await update.message.reply_text(f"Filter set: {key} = {value}")
+# --------- API KEY COMMAND ---------
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
+try:
+	from web.api import generate_api_key, set_user_api_key, get_user_api_key
+except Exception:
+	generate_api_key = lambda: "demo-key"
+	set_user_api_key = lambda user_id, key: None
+	get_user_api_key = lambda user_id: None
+
+async def apikey_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if args and args[0].lower() == "regenerate":
+		key = generate_api_key()
+		set_user_api_key(user_id, key)
+		await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
+		return
+	key = get_user_api_key(user_id)
+	if not key:
+		key = generate_api_key()
+		set_user_api_key(user_id, key)
+	await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to reset.")
+# Basic translation dictionary
+TRANSLATIONS = {
+	"en": {
+		"help_title": "SignalRankAI Help",
+		"dashboard": "Open your dashboard",
+	},
+	"es": {
+		"help_title": "Ayuda de SignalRankAI",
+		"dashboard": "Abrir tu panel",
+	},
+	"fr": {
+		"help_title": "Aide SignalRankAI",
+		"dashboard": "Ouvrir votre tableau de bord",
+	},
+}
+
+def _t(user_id, key):
+	lang = _get_user_language(user_id)
+	return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+from .user_prefs import user_prefs_store
+# --------- LANGUAGE SELECTION COMMAND ---------
+LANGUAGES = {
+	"en": "English",
+	"es": "Español",
+	"fr": "Français",
+}
+
+def _get_user_language(user_id):
+	return user_prefs_store.get_prefs(user_id).get("language", "en")
+
+async def language_command(update, context):
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if not args:
+		current = _get_user_language(user_id)
+		msg = "🌐 Select your language:\n" + "\n".join([f"/language {k} - {v}" for k, v in LANGUAGES.items()])
+		msg += f"\n\nCurrent: {LANGUAGES.get(current, 'English')}"
+		await update.message.reply_text(msg)
+		return
+	lang = args[0].lower()
+	if lang not in LANGUAGES:
+		await update.message.reply_text("Unsupported language. Available: " + ", ".join(LANGUAGES.keys()))
+		return
+	user_prefs_store.set_prefs(user_id, language=lang)
+	await update.message.reply_text(f"Language set to {LANGUAGES[lang]}.")
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
 from db.session import get_session, ENGINE
 from db.pg_features import get_or_create_user
@@ -327,6 +449,7 @@ async def _public_guard(update: Update) -> bool:
 	return False
 
 
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if await _public_guard(update):
 		return
@@ -335,11 +458,12 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	user_id = update.effective_user.id
 	tier = _effective_tier(user_id)
 	from .command_access import get_help_message
-	msg = get_help_message(tier)
+	lang = _get_user_language(user_id)
+	msg = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
 	# Add dashboard link for eligible users
 	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		dashboard_url = f"https://yourdomain.com/userdash/login?uid={user_id}"
-		msg += f"\n\n🌐 [Open your dashboard]({dashboard_url})"
+		msg += f"\n\n🌐 [{_t(user_id, 'dashboard')}]({dashboard_url})"
 	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="Markdown")
 
 # --------- MYID COMMAND ---------

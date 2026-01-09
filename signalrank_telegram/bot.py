@@ -1,3 +1,11 @@
+from .commands import reports_command
+application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
+from .commands import filter_command
+application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
+from .commands import apikey_command
+application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
+from .commands import language_command
+application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
 from .commands import referral_leaderboard_command, referral_rewards_command
 # Register referral leaderboard and rewards commands
 application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
