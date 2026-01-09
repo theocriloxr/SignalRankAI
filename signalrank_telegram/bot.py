@@ -32,22 +32,28 @@ def resend_unsent_signals_job():
                     continue  # Already hit TP/SL
             except Exception:
                 pass
-            # For each user, check if should have received and if not, send
             for user_id in user_ids:
                 try:
-                    if was_signal_delivered_sync(user_id, signal_id):
+                    # 1. Check if this user already received this signal
+                    already_delivered = was_signal_delivered_sync(user_id, signal_id)
+                    if already_delivered:
+                        # Already delivered to this user, skip
                         continue
+                    # 2. Check if this user is eligible for this signal (tier, score, daily limits)
                     user_tier = resolve_user_tier(user_id).lower()
-                    # Use delivery manager to check eligibility
                     score = float(getattr(sig, 'score', 0) or 0)
-                    if not delivery_mgr.should_send_signal(user_tier, score, user_id=user_id):
+                    eligible = delivery_mgr.should_send_signal(user_tier, score, user_id=user_id)
+                    if not eligible:
+                        # Not eligible for this signal (tier/score/limit), skip
                         continue
-                    # Build signal dict for formatting
+                    # 3. Deliver the signal to this user
                     sig_dict = sig.__dict__ if hasattr(sig, '__dict__') else dict(sig)
                     display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
                     _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=display_tier))
                     mark_signal_delivered_sync(user_id, signal_id)
-                except Exception:
+                except Exception as e:
+                    # Optionally log the error for debugging
+                    # print(f"[resend] Failed for user {user_id}, signal {signal_id}: {e}")
                     continue
     except Exception:
         pass
