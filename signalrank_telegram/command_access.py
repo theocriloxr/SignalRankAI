@@ -237,13 +237,20 @@ def get_help_message(tier: str) -> str:
     commands = help_data.get("commands", [])
     footer = help_data.get("footer", "")
     
+    def escape_md(text):
+        # Telegram Markdown V2 escaping
+        chars = r'_[]()~`>#+-=|{}.!'
+        for c in chars:
+            text = text.replace(c, f'\\{c}')
+        return text
+
     # Build message
-    lines = [title, ""]
+    lines = [escape_md(title), ""]
     for cmd, desc in commands:
-        lines.append(f"/{cmd} – {desc}")
+        lines.append(f"/{escape_md(cmd)} – {escape_md(desc)}")
 
     # --- Advanced Features Section ---
-    lines.extend([
+    adv_features = [
         "",
         "*Advanced Features & Usage*",
         "",
@@ -270,13 +277,14 @@ def get_help_message(tier: str) -> str:
         "- /language en|es|fr – Set your language",
         "- /feedback <signal_ref> <rating|issue> [comment] – Submit feedback",
         "",
-    ])
+    ]
+    lines.extend([escape_md(line) if line else "" for line in adv_features])
 
     if footer:
-        lines.extend(["", footer])
+        lines.extend(["", escape_md(footer)])
 
     # Add disclaimers
-    lines.extend([
+    disclaimers = [
         "",
         "📌 Notes",
         "• Signals are real-time from live market data",
@@ -286,7 +294,8 @@ def get_help_message(tier: str) -> str:
         "• Tier features reflect your current subscription",
         "",
         "⚠️ Educational only. Not financial advice. Trading involves risk.",
-    ])
+    ]
+    lines.extend([escape_md(line) if line else "" for line in disclaimers])
 
     return "\n".join(lines)
 

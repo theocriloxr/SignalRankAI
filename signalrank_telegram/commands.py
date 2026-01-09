@@ -505,8 +505,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	# Add dashboard link for eligible users
 	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		dashboard_url = f"https://yourdomain.com/userdash/login?uid={user_id}"
-		msg += f"\n\n🌐 [{_t(user_id, 'dashboard')}]({dashboard_url})"
-	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="Markdown")
+		# Escape brackets and parentheses in dashboard link for Markdown V2
+		safe_dashboard_url = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
+		safe_dashboard_text = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
+		msg += f"\n\n🌐 [{safe_dashboard_text}]({safe_dashboard_url})"
+	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="MarkdownV2")
 
 # --------- MYID COMMAND ---------
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
