@@ -2,6 +2,7 @@ import os
 import time
 import asyncio
 import logging
+from engine.signal_analytics import signal_analytics
 from collections import Counter
 
 from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock
@@ -154,6 +155,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
+    # Track assets that failed to fetch data in the last cycle for graceful degradation
+    degraded_assets = set()
     # ============================================
     # INITIALIZE ALL TRADING SYSTEM COMPONENTS
     # ============================================
@@ -477,11 +480,22 @@ def main_loop(DRY_RUN=False):
                     tfs = stock_timeframes
                 asset_to_tfs[str(asset)] = list(tfs)
 
+
+            # Graceful degradation: reduce batch size and skip some timeframes for problematic assets
+            asset_to_tfs_degraded = {}
+            for asset, tfs in asset_to_tfs.items():
+                if asset in degraded_assets:
+                    # Only scan 1 timeframe for degraded assets (lowest timeframe)
+                    asset_to_tfs_degraded[asset] = [tfs[0]] if tfs else []
+                else:
+                    asset_to_tfs_degraded[asset] = tfs
+
             try:
-                all_market_data = asyncio.run(_fetch_market_data_for_assets(asset_to_tfs))
+                all_market_data = asyncio.run(_fetch_market_data_for_assets(asset_to_tfs_degraded))
             except Exception:
                 all_market_data = {}
 
+            new_degraded_assets = set()
             for asset in assets:
                 try:
                     market_data = (all_market_data or {}).get(asset) or {}
@@ -493,6 +507,8 @@ def main_loop(DRY_RUN=False):
                         min_candles = 50
                     min_candles = max(1, int(min_candles))
                     if not market_data:
+                        # Mark asset as degraded for next cycle
+                        new_degraded_assets.add(asset)
                         continue
                     has_enough = False
                     for tf_data in (market_data or {}).values():
@@ -501,6 +517,8 @@ def main_loop(DRY_RUN=False):
                             has_enough = True
                             break
                     if not has_enough:
+                        # Mark asset as degraded for next cycle
+                        new_degraded_assets.add(asset)
                         continue
 
                     regime = detect_market_regime(market_data)
@@ -939,7 +957,12 @@ def main_loop(DRY_RUN=False):
                     # Isolate per-asset failures so the loop stays alive.
                     continue
 
+            # Update degraded_assets for next cycle
+            degraded_assets = new_degraded_assets
+
             # Ranking and Dispatch
+
+            # --- Signal Quality Analytics: Track delivery stats ---
             ranked_signals = rank_signals(scored_signals_all)
             if DRY_RUN:
                 for sig in (ranked_signals.get('vip', []) + ranked_signals.get('premium', [])):
@@ -951,8 +974,19 @@ def main_loop(DRY_RUN=False):
                 except Exception:
                     cycle_users = 0
                 for user_id in user_ids:
-                    dispatch_signals(ranked_signals, user_id=user_id)
+                    # Log user engagement
+                    signal_analytics.log_user_engagement(user_id)
+                    dispatched = dispatch_signals(ranked_signals, user_id=user_id)
+                    # Log delivery stats for each signal dispatched
+                    if isinstance(dispatched, list):
+                        for sig in dispatched:
+                            symbol = sig.get('symbol') or sig.get('asset')
+                            signal_analytics.log_delivery(symbol, delivered=True)
                     cycle_dispatched_users += 1
+
+            # Optionally flush analytics every N cycles or on interval
+            if cycle_no % 10 == 0:
+                signal_analytics.flush()
 
             # Explicit per-cycle max score logging for easier troubleshooting.
             if _env_bool("ENGINE_CYCLE_LOG", True):

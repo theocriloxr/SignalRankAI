@@ -1,3 +1,139 @@
+# --------- ADMIN /SELFHECK COMMAND ---------
+@require_tier("ADMIN")
+async def selfcheck_command(update, context):
+	"""Admin/Owner: Show quick health summary of the system."""
+	import platform, psutil, shutil
+	import datetime
+	import os
+	from db.session import ENGINE
+	lines = ["🩺 System Self-Check"]
+	lines.append(f"Time: {datetime.datetime.utcnow().isoformat()} UTC")
+	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
+	lines.append(f"Python: {platform.python_version()}")
+	lines.append(f"RAM: {psutil.virtual_memory().percent}% used")
+	lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
+	# DB status
+	try:
+		if ENGINE is not None:
+			lines.append("DB: ✅ Connected")
+		else:
+			lines.append("DB: ❌ Not connected")
+	except Exception:
+		lines.append("DB: ❓ Unknown")
+	# ML drift
+	try:
+		import json
+		from pathlib import Path
+		drift_path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
+		if drift_path.exists():
+			with open(drift_path, "r") as f:
+				drift = json.load(f)
+			acc = drift.get("accuracy")
+			auc = drift.get("auc")
+			lines.append(f"ML: acc={acc:.3f} auc={auc:.3f}")
+		else:
+			lines.append("ML: No drift data")
+	except Exception:
+		lines.append("ML: Drift check error")
+	# Uptime
+	try:
+		import time
+		uptime = time.time() - psutil.boot_time()
+		lines.append(f"Uptime: {uptime/3600:.1f}h")
+	except Exception:
+		pass
+	await update.message.reply_text("\n".join(lines))
+from .user_prefs import user_prefs_store
+# --------- NOTIFICATION CUSTOMIZATION COMMAND ---------
+async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	"""Let users customize which assets, timeframes, or strategies they want to receive signals for.
+	Usage:
+	  /notify assets BTCUSDT,ETHUSDT
+	  /notify timeframes 1h,4h
+	  /notify strategies momentum,trend
+	  /notify clear
+	  /notify (shows current prefs)
+	"""
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if not args:
+		prefs = user_prefs_store.get_prefs(user_id)
+		if not prefs:
+			await update.message.reply_text("No custom notification preferences set. You will receive all signals allowed by your tier.")
+		else:
+			lines = ["Your notification preferences:"]
+			for k, v in prefs.items():
+				lines.append(f"{k}: {', '.join(sorted(v))}")
+			await update.message.reply_text("\n".join(lines))
+		return
+	cmd = args[0].lower()
+	if cmd == "clear":
+		user_prefs_store.clear_prefs(user_id)
+		await update.message.reply_text("✅ Notification preferences cleared. You will receive all signals allowed by your tier.")
+		return
+	if len(args) < 2:
+		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
+		return
+	values = [x.strip().upper() for x in " ".join(args[1:]).split(",") if x.strip()]
+	if cmd == "assets":
+		user_prefs_store.set_prefs(user_id, assets=values)
+		await update.message.reply_text(f"✅ Assets updated: {', '.join(values)}")
+	elif cmd == "timeframes":
+		user_prefs_store.set_prefs(user_id, timeframes=values)
+		await update.message.reply_text(f"✅ Timeframes updated: {', '.join(values)}")
+	elif cmd == "strategies":
+		user_prefs_store.set_prefs(user_id, strategies=values)
+		await update.message.reply_text(f"✅ Strategies updated: {', '.join(values)}")
+	else:
+		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
+from .feedback import feedback_store
+# --------- FEEDBACK COMMAND ---------
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+	"""Allow users to rate a signal or report an issue. Usage: /feedback <signal_ref> <rating|issue> [comment]"""
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if len(args) < 2:
+		await update.message.reply_text("Usage: /feedback <signal_ref> <rating|issue> [comment]")
+		return
+	signal_ref = str(args[0]).strip()
+	rating_or_issue = str(args[1]).strip().lower()
+	comment = " ".join(args[2:]).strip() if len(args) > 2 else None
+
+	# Accept rating as 1-5 or issue as text
+	rating = None
+	issue = None
+	if rating_or_issue.isdigit() and 1 <= int(rating_or_issue) <= 5:
+		rating = int(rating_or_issue)
+	else:
+		issue = rating_or_issue
+
+	# Optionally: resolve signal_id from short ref (first 8 chars)
+	signal_id = None
+	try:
+		from db.session import ENGINE, get_session
+		if ENGINE is not None:
+			from db.pg_features import get_signal_id_by_short_ref
+			async with get_session() as session:
+				signal_id = await get_signal_id_by_short_ref(session, signal_ref)
+	except Exception:
+		pass
+	if not signal_id:
+		signal_id = signal_ref  # fallback: use as-is
+
+	feedback_store.add_feedback(user_id, signal_id, rating=rating, issue=issue, comment=comment)
+	await update.message.reply_text("✅ Feedback received. Thank you!")
+
+	# Optionally flush feedback every 10 submissions
+	if len(feedback_store.get_feedback(signal_id)) % 10 == 0:
+		feedback_store.flush()
 # /pricing command
 import os
 import logging

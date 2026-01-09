@@ -1,3 +1,34 @@
+import threading
+import time
+# Global cache for auto-refreshed asset universe
+_ASSET_UNIVERSE_CACHE = None
+_ASSET_UNIVERSE_LAST_REFRESH = 0
+_ASSET_UNIVERSE_REFRESH_INTERVAL = 3600  # seconds (1 hour)
+_ASSET_UNIVERSE_LOCK = threading.Lock()
+
+def _refresh_asset_universe():
+    global _ASSET_UNIVERSE_CACHE, _ASSET_UNIVERSE_LAST_REFRESH
+    with _ASSET_UNIVERSE_LOCK:
+        _ASSET_UNIVERSE_CACHE = get_all_tradable_assets()
+        _ASSET_UNIVERSE_LAST_REFRESH = time.time()
+
+def get_latest_asset_universe(force_refresh=False):
+    now = time.time()
+    if force_refresh or _ASSET_UNIVERSE_CACHE is None or (now - _ASSET_UNIVERSE_LAST_REFRESH > _ASSET_UNIVERSE_REFRESH_INTERVAL):
+        _refresh_asset_universe()
+    return _ASSET_UNIVERSE_CACHE
+
+def _asset_universe_auto_refresh_thread():
+    while True:
+        try:
+            _refresh_asset_universe()
+        except Exception as e:
+            print(f"[pair_discovery] Asset universe auto-refresh failed: {e}")
+        time.sleep(_ASSET_UNIVERSE_REFRESH_INTERVAL)
+
+# Start auto-refresh thread at import time
+_t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
+_t.start()
 import os
 import requests
 

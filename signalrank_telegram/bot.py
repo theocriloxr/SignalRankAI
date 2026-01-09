@@ -33,6 +33,12 @@ from .commands import (
     early_command,
     report_command,
     buy_extra_signals,
+    feedback_command,
+    notify_command,
+    selfcheck_command,
+            application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
+        application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
+    application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
 )
 
 from core.redis_state import state

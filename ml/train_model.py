@@ -159,7 +159,7 @@ def engineer_features(df):
 
 
 def train_model(X_train, y_train, feature_cols):
-    """Train XGBoost classifier."""
+    """Train XGBoost classifier and check for drift."""
     logger.info("Training XGBoost model...")
 
     # Split data
@@ -191,6 +191,37 @@ def train_model(X_train, y_train, feature_cols):
     logger.info(f"Test AUC: {auc:.4f}")
     logger.info(f"Confusion Matrix:\n{confusion_matrix(y_te, y_pred)}")
     logger.info(f"Classification Report:\n{classification_report(y_te, y_pred)}")
+
+    # Drift detection: compare with last run (if available)
+    drift_path = Path(__file__).parent / "ml_drift.json"
+    drift = {}
+    try:
+        if drift_path.exists():
+            with open(drift_path, "r") as f:
+                drift = json.load(f)
+        prev_acc = float(drift.get("accuracy", 0))
+        prev_auc = float(drift.get("auc", 0))
+        acc_drop = prev_acc - acc
+        auc_drop = prev_auc - auc
+        if acc_drop > 0.05 or auc_drop > 0.05:
+            logger.warning(f"[ML DRIFT] Accuracy or AUC dropped significantly! Δacc={acc_drop:.3f}, Δauc={auc_drop:.3f}")
+            print(f"[ML DRIFT] Accuracy or AUC dropped! Δacc={acc_drop:.3f}, Δauc={auc_drop:.3f}", flush=True)
+        # Feature distribution drift (simple mean diff)
+        prev_means = drift.get("feature_means", {})
+        means = dict(X_train.mean())
+        drifted = []
+        for k, v in means.items():
+            prev = float(prev_means.get(k, v))
+            if abs(v - prev) > 0.1 * (abs(prev) + 1e-6):
+                drifted.append(k)
+        if drifted:
+            logger.warning(f"[ML DRIFT] Feature(s) drifted: {drifted}")
+            print(f"[ML DRIFT] Feature(s) drifted: {drifted}", flush=True)
+        drift = {"accuracy": acc, "auc": auc, "feature_means": means}
+        with open(drift_path, "w") as f:
+            json.dump(drift, f, indent=2)
+    except Exception as e:
+        logger.warning(f"[ML DRIFT] Drift check failed: {e}")
 
     # Feature importance
     importance = dict(zip(feature_cols, model.feature_importances_))

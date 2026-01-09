@@ -1,3 +1,48 @@
+import threading
+import time
+# Provider health state (in-memory, per process)
+_PROVIDER_HEALTH = {}
+_PROVIDER_HEALTH_LOCK = threading.Lock()
+_PROVIDER_FAIL_WINDOW = 600  # seconds to deprioritize after repeated failures
+_PROVIDER_FAIL_THRESHOLD = 3
+
+def mark_provider_result(provider_name, ok):
+    now = time.time()
+    with _PROVIDER_HEALTH_LOCK:
+        entry = _PROVIDER_HEALTH.setdefault(provider_name, {"failures": [], "last_success": 0})
+        if ok:
+            entry["last_success"] = now
+            entry["failures"] = []
+        else:
+            entry["failures"].append(now)
+            # Keep only recent failures
+            entry["failures"] = [t for t in entry["failures"] if now - t < _PROVIDER_FAIL_WINDOW]
+
+def provider_is_healthy(provider_name):
+    now = time.time()
+    with _PROVIDER_HEALTH_LOCK:
+        entry = _PROVIDER_HEALTH.get(provider_name)
+        if not entry:
+            return True
+        if len(entry["failures"]) >= _PROVIDER_FAIL_THRESHOLD:
+            # If last failure was recent and no recent success, mark unhealthy
+            if now - entry["failures"][-1] < _PROVIDER_FAIL_WINDOW and (now - entry["last_success"] > _PROVIDER_FAIL_WINDOW):
+                return False
+        return True
+import random
+def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60, jitter=0.2):
+    """Retry a fetch function with exponential backoff and jitter."""
+    for attempt in range(max_retries):
+        timeout = min(base_timeout * (2 ** attempt), max_timeout)
+        # Add jitter
+        timeout = timeout * (1 + random.uniform(-jitter, jitter))
+        try:
+            return fetch_func(timeout=timeout)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(timeout)
+    return None
 import os
 import time
 import logging
@@ -123,21 +168,25 @@ def _fetch_crypto_multi_provider(asset, timeframe):
         yahoo_symbol = f"{base}-USD"
     
     providers = [
-        ("binance/bybit", lambda: get_crypto_candles(asset, timeframe)),
-        ("yahoo", lambda: fetch_yahoo_candles(yahoo_symbol, timeframe)),
+        ("binance/bybit", lambda timeout=10: get_crypto_candles(asset, timeframe)),
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
         # CryptoCompare is called internally by get_crypto_candles when Binance is blocked
     ]
-    
-    for provider_name, fetch_func in providers:
+    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
+    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
-            candles = fetch_func()
+            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             if candles and len(candles) >= 20:
+                mark_provider_result(provider_name, True)
                 logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
+            else:
+                mark_provider_result(provider_name, False)
         except Exception as e:
+            mark_provider_result(provider_name, False)
             logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
             continue
-    
     logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
@@ -153,23 +202,27 @@ def _fetch_fx_multi_provider(asset, timeframe):
         yahoo_format = f"{yahoo_format[:3]}{yahoo_format[3:]}=X"  # Yahoo FX format: EURUSD=X
     
     providers = [
-        ("oanda", lambda: fetch_oanda_candles(oanda_format, timeframe)),
-        ("alphavantage", lambda: get_fx_candles(asset, timeframe)),
-        ("yahoo", lambda: fetch_yahoo_candles(yahoo_format, timeframe)),
-        ("polygon", lambda: fetch_polygon_candles(asset, timeframe, "forex")),
-        ("twelvedata", lambda: fetch_twelvedata_candles(asset, timeframe, "forex")),
+        ("oanda", lambda timeout=10: fetch_oanda_candles(oanda_format, timeframe)),
+        ("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)),
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_format, timeframe)),
+        ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
+        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "forex")),
     ]
-    
-    for provider_name, fetch_func in providers:
+    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
+    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
-            candles = fetch_func()
+            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             if candles and len(candles) >= 20:
+                mark_provider_result(provider_name, True)
                 logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
+            else:
+                mark_provider_result(provider_name, False)
         except Exception as e:
+            mark_provider_result(provider_name, False)
             logger.warning(f"[data] fx_provider={provider_name} symbol={asset} failed: {e}")
             continue
-    
     logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
@@ -179,21 +232,25 @@ def _fetch_stock_multi_provider(asset, timeframe):
     from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles
     
     providers = [
-        ("yahoo", lambda: fetch_yahoo_candles(asset, timeframe)),
-        ("polygon", lambda: fetch_polygon_candles(asset, timeframe, "stocks")),
-        ("twelvedata", lambda: fetch_twelvedata_candles(asset, timeframe, "stocks")),
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(asset, timeframe)),
+        ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "stocks")),
+        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "stocks")),
     ]
-    
-    for provider_name, fetch_func in providers:
+    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
+    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
-            candles = fetch_func()
+            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             if candles and len(candles) >= 20:
+                mark_provider_result(provider_name, True)
                 logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
+            else:
+                mark_provider_result(provider_name, False)
         except Exception as e:
+            mark_provider_result(provider_name, False)
             logger.warning(f"[data] stock_provider={provider_name} symbol={asset} failed: {e}")
             continue
-    
     logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
