@@ -273,6 +273,46 @@ async def admin_user_engagement_command(update, context):
 	msg = "\n".join([f"{u}: {c}" for u, c in top]) or "No data."
 	await update.message.reply_text(f"Top Users (engagement):\n{msg}")
 # --------- ADMIN /SELFHECK COMMAND ---------
+@require_tier("ADMIN")
+async def selfcheck_command(update, context):
+	"""Admin/Owner: Show quick health summary of the system."""
+	import platform, psutil, shutil
+	import datetime
+	import os
+	from db.session import ENGINE
+	lines = ["🩺 System Self-Check"]
+	lines.append(f"Time: {datetime.datetime.utcnow().isoformat()} UTC")
+	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
+	lines.append(f"Python: {platform.python_version()}")
+	lines.append(f"RAM: {psutil.virtual_memory().percent}% used")
+	lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
+	# DB status
+	try:
+		if ENGINE is not None:
+			lines.append("DB: ✅ Connected")
+		else:
+			lines.append("DB: ❌ Not connected")
+	except Exception:
+		lines.append("DB: ❓ Unknown")
+	# ML drift
+	try:
+		import json
+		from pathlib import Path
+		drift_path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
+		if drift_path.exists():
+			with open(drift_path, "r") as f:
+				drift = json.load(f)
+			acc = drift.get("accuracy")
+			auc = drift.get("auc")
+			lines.append(f"ML: acc={acc:.3f} auc={auc:.3f}")
+		else:
+			lines.append("ML: No drift data")
+	except Exception:
+		lines.append("ML: Drift check error")
+	# Uptime
+	try:
+		import time
+		uptime = time.time() - psutil.boot_time()
 		lines.append(f"Uptime: {uptime/3600:.1f}h")
 	except Exception:
 		pass
