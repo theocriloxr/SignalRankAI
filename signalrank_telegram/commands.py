@@ -48,7 +48,7 @@ async def filter_command(update, context):
 	filters[key] = value
 	user_prefs_store.set_prefs(user_id, filters=filters)
 	await update.message.reply_text(f"Filter set: {key} = {value}")
-# --------- API KEY COMMAND ---------
+import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
 try:
