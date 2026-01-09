@@ -43,15 +43,18 @@ logger = logging.getLogger(__name__)
 
 # Background outage alert job
 def start_outage_alert_job():
+    from telegram import Bot
     def _job():
+        bot_token = os.getenv('TELEGRAM_TOKEN')
+        bot = Bot(token=bot_token) if bot_token else None
         while True:
             try:
                 unhealthy = get_unhealthy_providers()
-                if unhealthy:
+                if unhealthy and bot is not None:
                     for name, mins in unhealthy:
                         msg = f"🚨 Provider outage: {name} has been down for {mins:.1f} minutes."
                         for admin_id in OWNER_IDS:
-                            _send_message_sync(None, admin_id, msg)
+                            _send_message_sync(bot, admin_id, msg)
                 time.sleep(120)  # Check every 2 minutes
             except Exception as e:
                 print(f"[outage_alert] Error: {e}", flush=True)

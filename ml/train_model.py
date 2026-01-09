@@ -208,7 +208,7 @@ def train_model(X_train, y_train, feature_cols):
             print(f"[ML DRIFT] Accuracy or AUC dropped! Δacc={acc_drop:.3f}, Δauc={auc_drop:.3f}", flush=True)
         # Feature distribution drift (simple mean diff)
         prev_means = drift.get("feature_means", {})
-        means = dict(X_train.mean())
+        means = {k: float(v) for k, v in X_train.mean().items()}
         drifted = []
         for k, v in means.items():
             prev = float(prev_means.get(k, v))
@@ -217,7 +217,7 @@ def train_model(X_train, y_train, feature_cols):
         if drifted:
             logger.warning(f"[ML DRIFT] Feature(s) drifted: {drifted}")
             print(f"[ML DRIFT] Feature(s) drifted: {drifted}", flush=True)
-        drift = {"accuracy": acc, "auc": auc, "feature_means": means}
+        drift = {"accuracy": float(acc), "auc": float(auc), "feature_means": means}
         with open(drift_path, "w") as f:
             json.dump(drift, f, indent=2)
     except Exception as e:
