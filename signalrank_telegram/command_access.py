@@ -74,7 +74,7 @@ COMMAND_HELP = {
             ("invite", "Get your referral link (earn rewards)"),
             ("policy", "Subscription & refund policy"),
             ("recap", "Weekly performance recap"),
-            ("buy_extra_signals", "Buy 1-5 extra daily signals (₦300 each)"),
+            # ("buy_extra_signals", "Buy 1-5 extra daily signals (₦300 each)"),
         ],
         "footer": (
             "📌 Free Features:\n"
@@ -106,7 +106,7 @@ COMMAND_HELP = {
             ("history", "Recent signal history"),
             ("risk", "Risk management guidance"),
             ("alerts", "TP/SL alerts + quiet hours settings"),
-            ("buy_extra_signals", "Buy extra daily signals (if available)"),
+            # ("buy_extra_signals", "Buy extra daily signals (if available)"),
         ],
         "footer": (
             "🟡 Premium Features:\n"

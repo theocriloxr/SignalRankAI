@@ -1608,41 +1608,6 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Extra Signal Purchase Logic ---
 from telegram import Update
 
-async def buy_extra_signals(update, context):
-	user_id = update.effective_user.id
-	# Use Postgres tier resolution
-	from signalrank_telegram.access import resolve_user_tier
-	tier = resolve_user_tier(user_id)
-	if tier != "FREE":
-		await update.message.reply_text(
-			"Extra daily signals are only available for Free users.\n"
-			"Use /upgrade to subscribe if you want unlimited access."
-		)
-		return
-	if not context.args or len(context.args) != 1:
-		await update.message.reply_text(
-			"Usage: /buy_extra_signals <count>\n"
-			"Example: /buy_extra_signals 2\n\n"
-			"₦300 per extra signal. Extra access lasts 24 hours."
-		)
-		return
-	try:
-		count = int(context.args[0])
-		if count < 1 or count > 5:
-			await update.message.reply_text("Count must be between 1 and 5.")
-			return
-	except ValueError:
-		await update.message.reply_text("Count must be a number.")
-		return
-	price = 300 * count
-	from paystack.paystack import generate_paystack_link
-	paywall_link = generate_paystack_link(user_id, price, tier="PREMIUM", extra_count=count)
-	await update.message.reply_text(
-		f"To unlock {count} extra signals for the next 24 hours, pay ₦{price}: {paywall_link}\n\n"
-		"After payment verification, your extra signals will be delivered in real time.\n"
-		"All payments are final and non-refundable.\n\n"
-		"For questions, use /faq or contact support."
-	)
 
 
 # /policy or /refunds command

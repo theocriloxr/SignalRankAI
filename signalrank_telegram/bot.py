@@ -1121,7 +1121,6 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("policy", _audit_handler("policy", policy_command)))
     application.add_handler(CommandHandler("refunds", _audit_handler("refunds", policy_command)))
     application.add_handler(CommandHandler("recap", _audit_handler("recap", recap_command)))
-    application.add_handler(CommandHandler("buy_extra_signals", _audit_handler("buy_extra_signals", buy_extra_signals)))
     # Backward compatible alias
 
     # Hidden owner-only commands (silent for non-owners)
