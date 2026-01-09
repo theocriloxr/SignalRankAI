@@ -8,10 +8,7 @@ _BINANCE_DISABLED_REASON: str | None = None
 
 
 # Default crypto symbols to pause until reliable intraday providers are configured.
-_DEFAULT_CRYPTO_BLACKLIST = {
-    "APTUSDT",
-    "UNIUSDT",
-}
+_DEFAULT_CRYPTO_BLACKLIST = set()
 
 
 def _load_crypto_blacklist() -> set[str]:
