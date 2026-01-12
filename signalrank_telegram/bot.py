@@ -710,45 +710,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
-    # Deduplicate: If multiple signals for same asset (any direction, any timeframe),
-    # keep only the ONE with highest score. Use R/R as tie-breaker if scores are equal.
+    # DEBUG: Removing deduplication - send all signals to all users
     try:
-        original_count = len(signals_list)
-        best_by_asset: dict[str, dict] = {}
-        
+        print(f"[DEBUG][dispatch] User {user_id} tier={tier} signals_list={len(signals_list)}", flush=True)
         for sig in signals_list:
-            asset = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
-            
-            if not asset:
-                continue  # Skip invalid signals
-            
-            score = float(sig.get("score") or 0.0)
-            rr = float(sig.get("rr_ratio") or sig.get("rr_estimate") or 0.0)
-            
-            cur = best_by_asset.get(asset)
-            if cur is None:
-                best_by_asset[asset] = sig
-                continue
-            
-            cur_score = float(cur.get("score") or 0.0)
-            cur_rr = float(cur.get("rr_ratio") or cur.get("rr_estimate") or 0.0)
-            
-            # Replace if better score, or same score but better R/R
-            if (score > cur_score) or (score == cur_score and rr > cur_rr):
-                best_by_asset[asset] = sig
-        
-        signals_list = list(best_by_asset.values())
-        
-        if len(signals_list) < original_count:
-            _log_once(
-                "asset_dedup",
-                f"[dispatch] Deduplicated {original_count} signals → {len(signals_list)} (kept best per asset)",
-            )
+            print(f"[DEBUG][dispatch] Preparing to send signal: {sig.get('asset')} {sig.get('timeframe')} score={sig.get('score')} id={sig.get('signal_id', 'n/a')}", flush=True)
     except Exception as e:
-        _log_once(
-            "asset_dedup_error",
-            f"[dispatch] Asset deduplication failed: {e}",
-        )
+        print(f"[DEBUG][dispatch] Error in debug logging: {e}", flush=True)
 
     # Postgres-backed delivery dedup + history (preferred)
     try:
@@ -766,6 +734,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 effective_tier = 'premium'
                 display_tier = 'premium'
 
+
             if effective_tier in ('premium', 'vip', 'owner', 'admin'):
                 bot = Bot(token=_require_telegram_token())
                 limit = TIER_LIMITS.get(tier, 0)
@@ -779,16 +748,15 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     async with get_session() as session:
                         for signal in signals_list[: max(0, int(limit))]:
                             s = await get_or_create_signal(session, signal)
+                            print(f"[DEBUG][db] Attempting to record delivery: user={user_id} signal_id={s.signal_id} tier={effective_tier}", flush=True)
                             ok = await record_signal_delivery(
                                 session,
                                 telegram_user_id=int(user_id),
                                 signal_id=str(s.signal_id),
                                 tier_at_send=str(effective_tier),
                             )
-                            if not ok:
-                                continue
+                            print(f"[DEBUG][db] record_signal_delivery result: {ok}", flush=True)
                             payload = dict(signal)
-                            # CRITICAL: Set signal_id from database (used for /outcome tracking)
                             payload["signal_id"] = str(s.signal_id)
                             payload.setdefault("asset", s.asset)
                             payload.setdefault("timeframe", s.timeframe)
@@ -809,29 +777,17 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 except Exception as e:
                     reserved = []
                     reserve_failed = True
-                    _log_once(
-                        "dispatch_reserve_failed",
-                        f"[bot] dispatch reserve failed (falling back to direct send): {type(e).__name__}: {e}",
-                    )
+                    print(f"[DEBUG][db] dispatch reserve failed (falling back to direct send): {type(e).__name__}: {e}", flush=True)
 
-                if _env_bool("BOT_DELIVERY_DEBUG", False):
-                    try:
-                        print(
-                            "[bot] dispatch "
-                            f"user={user_id} tier={tier} effective_tier={effective_tier} "
-                            f"signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}",
-                            flush=True,
-                        )
-                    except Exception:
-                        pass
+                print(f"[DEBUG][dispatch] user={user_id} tier={tier} effective_tier={effective_tier} signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}", flush=True)
 
                 if reserve_failed:
-                    # DB dedupe/history failed; still deliver to avoid "silent nothing".
                     sent = 0
                     for signal in signals_list:
                         if sent >= int(limit):
                             break
                         try:
+                            print(f"[DEBUG][dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
                             _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
                             sent += 1
                             if tier == 'free' and extra_left > 0:
@@ -839,19 +795,22 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     state.consume_extra_signals_sync(int(user_id), 1)
                                 except Exception:
                                     pass
-                        except Exception:
+                        except Exception as e:
+                            print(f"[DEBUG][dispatch] Exception in fallback send: {e}", flush=True)
                             continue
                     return
 
                 for signal in reserved:
                     try:
+                        print(f"[DEBUG][dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
                         _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
                             except Exception:
                                 pass
-                    except Exception:
+                    except Exception as e:
+                        print(f"[DEBUG][dispatch] Exception in reserved send: {e}", flush=True)
                         continue
                 return
 
