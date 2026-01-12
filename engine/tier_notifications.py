@@ -175,45 +175,57 @@ class TierNotificationManager:
         signal: Dict,
         user_tier: str,
         tp_level: int,
-        current_profit_pct: float
+        current_profit_pct: float,
+        current_market_price: float = None
     ) -> str:
         """
-        Format TP hit notification.
-        
-        Premium: Detailed advice on partial exits
-        Free: Basic notification
+        Enhanced TP hit notification: includes full signal data, which TP was hit, current market price, and partial profit advice.
         """
-        is_premium = user_tier in ['premium', 'vip']
-        
+        is_premium = user_tier in ['premium', 'vip', 'admin', 'owner']
         symbol = signal.get('symbol')
-        
+        direction = signal.get('direction', '').upper()
+        entry = signal.get('entry')
+        stop = signal.get('stop') or signal.get('stop_loss') or signal.get('sl')
+        tps = signal.get('targets') or signal.get('tp_levels') or []
+        if isinstance(tps, (float, int)):
+            tps = [tps]
+        timeframe = signal.get('timeframe', '')
+        msg = f"🎯 TP{tp_level} HIT: {symbol} ({timeframe})\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        msg += f"Direction: {direction}\nEntry: {entry}\nStop Loss: {stop}\n"
+        if tps:
+            for i, tp in enumerate(tps, 1):
+                if isinstance(tp, dict):
+                    price = tp.get('price', tp.get('tp', ''))
+                else:
+                    price = tp
+                msg += f"TP{i}: {price}\n"
+        msg += f"\nTP HIT: TP{tp_level}\n"
+        if current_market_price is not None:
+            msg += f"Current Market Price: {current_market_price}\n"
+        msg += f"Profit: +{current_profit_pct:.2f}%\n"
+        # Partial profit advice
         if is_premium:
-            msg = f"🎯 TP{tp_level} HIT: {symbol}\n"
-            msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            msg += f"Exit 33% position at current price\n"
-            msg += f"Profit: +{current_profit_pct:.2f}%\n\n"
-            
-            # Advice
+            percent = 33 if tp_level == 1 else 50 if tp_level == 2 else 100
+            msg += f"\n💡 Suggestion: Take {percent}% partial profit at TP{tp_level}."
             if tp_level == 1:
-                msg += "💡 Suggestion: Move SL to break-even\n"
+                msg += " Move SL to break-even."
             elif tp_level == 2:
-                msg += "💡 Suggestion: Tighten SL to TP1 level\n"
-            
-            # Remaining TPs
-            remaining_tps = []
-            for i, tp in enumerate(signal.get('tp_levels', []), 1):
-                if i > tp_level:
-                    remaining_tps.append(f"TP{i} ${tp['price']:,.2f}")
-            
-            if remaining_tps:
-                msg += f"📊 Remaining TPs: {' | '.join(remaining_tps)}\n"
-            
-            msg += f"\n📋 Ref: {signal.get('id', 'N/A')[:8]}"
-        
+                msg += " Tighten SL to TP1 level."
+            elif tp_level == 3:
+                msg += " Consider closing the rest of your position."
         else:
-            # Free tier - basic notification
-            msg = f"✅ TP{tp_level} HIT: {symbol} (+{current_profit_pct:.2f}%)"
-        
+            msg += "\nUpgrade to Premium for detailed advice."
+        # Remaining TPs
+        if tps and tp_level < len(tps):
+            remaining_tps = []
+            for i, tp in enumerate(tps, 1):
+                if i > tp_level:
+                    price = tp.get('price', tp.get('tp', '')) if isinstance(tp, dict) else tp
+                    remaining_tps.append(f"TP{i} {price}")
+            if remaining_tps:
+                msg += f"\n📊 Remaining TPs: {' | '.join(remaining_tps)}"
+        msg += f"\n\n📋 Ref: {signal.get('id', 'N/A')[:8]}"
         return msg
     
     def format_sl_hit_notification(

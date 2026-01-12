@@ -40,6 +40,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             return bool(default)
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
+    from .stock import stock_strategies
     for timeframe, data in market_data.items():
         # Only allow lower timeframe trades in direction of HTF bias
         if timeframe in ["5m", "15m", "1h"] and htf_bias:
@@ -65,6 +66,13 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     groups = ["structure", "tradingview"]
         if "trend" in groups:
             for sig in trend_strategies(asset, timeframe, data):
+                if allowed_direction and sig.get('direction') != allowed_direction:
+                    continue
+                if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
+                    sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
+                    signals.append(sig)
+        if "stock" in groups:
+            for sig in stock_strategies(asset, timeframe, data):
                 if allowed_direction and sig.get('direction') != allowed_direction:
                     continue
                 if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:

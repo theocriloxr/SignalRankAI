@@ -1038,7 +1038,24 @@ def main_loop(DRY_RUN=False):
                 for sig in (ranked_signals.get('vip', []) + ranked_signals.get('premium', [])):
                     print("[DRY RUN]", sig)
             else:
-                user_ids = get_all_user_ids_compat()
+                user_ids = []
+                try:
+                    user_ids = list(get_all_user_ids_compat() or [])
+                except Exception:
+                    user_ids = []
+
+                # Ensure OWNER_IDS are included so owners always receive signals
+                try:
+                    for _oid in (OWNER_IDS or set()):
+                        try:
+                            oid = int(_oid)
+                            if oid not in user_ids:
+                                user_ids.append(oid)
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
                 try:
                     cycle_users = len(user_ids or [])
                 except Exception:

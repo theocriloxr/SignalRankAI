@@ -95,7 +95,9 @@ def resend_unsent_signals_job():
             except Exception as e:
                 logger.error(f"[resend] Exception in DB delivery tracking for signal {signal_id} to user {user_id}: {e}")
         # Use ThreadPoolExecutor for parallel delivery
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        # Increase pool size to handle more concurrent deliveries
+        max_workers = int(os.getenv("TELEGRAM_POOL_SIZE", "24"))  # Default to 24, configurable
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for sig in signals:
                 signal_id = str(getattr(sig, 'signal_id', '') or '')
@@ -135,7 +137,11 @@ def _audit_handler(command_name: str, handler):
         return await handler(update, context)
     return _inner
 
-application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
+from telegram.ext import Defaults
+# Increase Telegram bot request timeout for connection pool exhaustion
+TELEGRAM_REQUEST_TIMEOUT = int(os.getenv("TELEGRAM_REQUEST_TIMEOUT", "30"))  # seconds, configurable
+defaults = Defaults(request_timeout=TELEGRAM_REQUEST_TIMEOUT)
+application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).defaults(defaults).build()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command
@@ -1349,7 +1355,7 @@ def run_bot() -> None:
     # Initialize and schedule jobs
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_weekly_recap, 'cron', day_of_week='mon', hour=8, minute=0)
-    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=5)
+    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1)
     scheduler.start()
 
 
@@ -1431,7 +1437,7 @@ def run_bot() -> None:
                     from signalrank_telegram.access import resolve_user_tier
                     user_tier = resolve_user_tier(telegram_user_id).lower()
                     
-                    # Parse which TP was hit (TP1, TP2, TP3, or full TP)
+                    # Parse which TP was hit (TP1, TP2, TP3)
                     tp_level_num = 0
                     if status in ("tp1", "partial_tp"):
                         tp_level_num = 1
@@ -1439,80 +1445,61 @@ def run_bot() -> None:
                         tp_level_num = 2
                     elif status == "tp3":
                         tp_level_num = 3
-                    
-                    # Use tier-specific formatters for TP updates
-                    if user_tier in ('owner', 'admin', 'vip'):
-                        # VIP gets detailed TP update
-                        if tp_level_num > 0:
-                            from signalrank_telegram.tier_signal_formatter import format_vip_tp_update
-                            msg = format_vip_tp_update(
-                                tp_level=tp_level_num,
-                                asset=asset,
-                                direction=direction,
-                                entry=None,  # Would need to fetch from signal
-                                tp_price=None,
-                                remaining_tps=None
-                            )
-                        else:
-                            # SL or other outcome
-                            if status == "sl":
-                                msg = (
-                                    f"📣 Outcome Update — ❌ STOP LOSS\n\n"
-                                    f"Reference: {ref_short}\n"
-                                    f"{asset} {timeframe} {direction.upper()}\n"
-                                )
-                            else:
-                                msg = (
-                                    f"📣 Outcome Update — 📌 {status.upper()}\n\n"
-                                    f"Reference: {ref_short}\n"
-                                    f"{asset} {timeframe} {direction.upper()}\n"
-                                )
-                        
-                        if r_multiple is not None:
-                            try:
-                                r_val = float(r_multiple)
-                                profit_emoji = "🟢" if r_val > 0 else "🔴"
-                                msg += f"\n{profit_emoji} R-Multiple: {r_val:.2f}R\n"
-                            except Exception:
-                                pass
-                        
-                        msg += "\nThis signal has been marked with an outcome in the tracker."
-                    
-                    elif str(user_tier).lower() == 'premium':
-                        # PREMIUM gets concise TP update
-                        if tp_level_num > 0:
-                            from signalrank_telegram.tier_signal_formatter import format_premium_tp_update
-                            msg = format_premium_tp_update(
-                                tp_level=tp_level_num,
-                                asset=asset
-                            )
-                        else:
-                            if status == "sl":
-                                msg = (
-                                    f"📣 Outcome Update — ❌ STOP LOSS\n\n"
-                                    f"{asset} {timeframe}\n"
-                                    "SL was hit on this signal."
-                                )
-                            else:
-                                msg = (
-                                    f"📣 Outcome Update\n\n"
-                                    f"{asset} {timeframe}\n"
-                                    f"Status: {status.upper()}"
-                                )
-                        
-                        msg += "\n\nUse /outcome <ref> to see full details."
-                    
-                    elif str(tier_at_send).lower() == 'free':
-                        # FREE gets minimal update
-                        outcome_label = "✅ PROFIT" if status in ("tp", "tp1", "tp2", "tp3", "partial_tp") else ("❌ LOSS" if status == "sl" else "📌 UPDATE")
-                        msg = (
-                            f"📣 Signal Update — {outcome_label}\n\n"
-                            f"Reference: {ref_short}\n"
-                            f"{asset} {timeframe}\n\n"
-                            "An outcome was recorded for a recent signal.\n"
-                            "Upgrade to Premium to see full stats and entry/exit levels."
-                        )
-                        msg += "\nThis signal has been marked with an outcome in the tracker."
+
+                    # Fetch the delivered signal for this user and signal_id
+                    delivered_signal = None
+                    try:
+                        from db.session import get_session
+                        from db.pg_features import get_delivered_signal_by_ref
+                        async def _fetch_delivered():
+                            async with get_session() as session:
+                                return await get_delivered_signal_by_ref(session, int(telegram_user_id), str(ref))
+                        delivered_signal = asyncio.run(_fetch_delivered())
+                    except Exception:
+                        delivered_signal = None
+
+                    signal_data = delivered_signal.__dict__ if delivered_signal else sig.__dict__
+
+                    # Outcome notification logic by tier
+                    notify = False
+                    msg = None
+                    # Try to get current market price for the asset
+                    current_market_price = None
+                    try:
+                        from data.market_data import fetch_market_data_cached
+                        mkt = fetch_market_data_cached(asset, timeframe)
+                        if mkt and 'candles' in mkt and mkt['candles']:
+                            current_market_price = mkt['candles'][-1].get('close')
+                    except Exception:
+                        pass
+
+                    if user_tier in ("owner", "admin", "vip"):
+                        if tp_level_num in (1, 2, 3):
+                            notify = True
+                            msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
+                        elif status == "sl":
+                            notify = True
+                            msg = _tier_notifier.format_sl_hit_notification(signal_data, user_tier, float(getattr(oc, "percent", 0) or 0))
+                    elif user_tier == "premium":
+                        if tp_level_num in (1, 2):
+                            notify = True
+                            msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
+                        elif status == "sl":
+                            notify = True
+                            msg = _tier_notifier.format_sl_hit_notification(signal_data, user_tier, float(getattr(oc, "percent", 0) or 0))
+                    elif str(tier_at_send).lower() == "free":
+                        if tp_level_num > 0 or status == "tp":
+                            notify = True
+                            msg = _tier_notifier.format_tp_hit_notification(signal_data, "free", tp_level_num or 1, float(getattr(oc, "percent", 0) or 0), current_market_price)
+                        elif status == "sl":
+                            notify = True
+                            msg = _tier_notifier.format_sl_hit_notification(signal_data, "free", float(getattr(oc, "percent", 0) or 0))
+
+                    if notify and msg:
+                        try:
+                            _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
+                        except Exception:
+                            pass
                     try:
                         _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
                     except Exception:

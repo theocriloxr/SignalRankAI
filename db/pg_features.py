@@ -266,34 +266,24 @@ async def record_signal_delivery(
         try:
             res_sig = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig = res_sig.scalar_one_or_none()
-            fp = getattr(sig, "fingerprint", None) if sig is not None else None
-            if fp:
-                # Per-user dedupe
+            if sig:
+                # Only dedupe if all key fields match for this user
                 res_u = await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                     .where(
                         SignalDelivery.user_id == user.id,
-                        Signal.fingerprint == fp,
+                        Signal.asset == sig.asset,
+                        Signal.entry == sig.entry,
+                        Signal.stop_loss == sig.stop_loss,
+                        Signal.take_profit == sig.take_profit,
+                        Signal.timeframe == sig.timeframe,
+                        Signal.direction == sig.direction,
                         SignalDelivery.delivered_at >= cutoff,
                     )
                 )
                 if int(res_u.scalar() or 0) > 0:
-                    return False
-
-                # Per-tier dedupe (cohort)
-                res_t = await session.execute(
-                    select(func.count(SignalDelivery.id))
-                    .select_from(SignalDelivery)
-                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
-                    .where(
-                        SignalDelivery.tier_at_send == tier_s,
-                        Signal.fingerprint == fp,
-                        SignalDelivery.delivered_at >= cutoff,
-                    )
-                )
-                if int(res_t.scalar() or 0) > 0:
                     return False
         except Exception:
             # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
