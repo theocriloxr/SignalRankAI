@@ -397,77 +397,106 @@ def notify_trade_outcome(user_id, strategy, result, ret):
     
     # Use tier-based notifier for formatted messages
     try:
-        if result == 'tp':
-            # Calculate profit percentage
-            entry = float(strategy.get('entry', 0))
-            exit_price = float(strategy.get('exit', 0))
-            direction = str(strategy.get('direction', '')).lower()
-            
-            if entry > 0 and exit_price > 0:
+        # Multi-TP/Partial Exit Support
+        tp_levels = strategy.get('tp_levels') or strategy.get('take_profit') or []
+        if isinstance(tp_levels, str):
+            import ast
+            try:
+                tp_levels = ast.literal_eval(tp_levels)
+            except Exception:
+                tp_levels = []
+        if isinstance(tp_levels, (float, int)):
+            tp_levels = [tp_levels]
+
+        entry = float(strategy.get('entry', 0))
+        direction = str(strategy.get('direction', '')).lower()
+        # For each TP, check if it was hit and not yet notified
+        trade_id = strategy.get('trade_id')
+        notified_tps = set()
+        # Load notified TPs from DB if possible (pseudo-code, adapt as needed)
+        # notified_tps = get_notified_tps_for_trade(trade_id, user_id)
+        # For now, assume in-memory or meta field
+        notified_tps = set(strategy.get('notified_tps', []))
+
+        # Determine which TP(s) to notify
+        tp_hit = strategy.get('tp_hit')  # e.g., [1,2] if TP1 and TP2 hit
+        if tp_hit is None:
+            # Fallback: if result == 'tp', treat as full TP3; if 'partial_tp', as TP1
+            if result == 'tp':
+                tp_hit = [3]
+            elif result == 'partial_tp':
+                tp_hit = [1]
+            else:
+                tp_hit = []
+        if isinstance(tp_hit, int):
+            tp_hit = [tp_hit]
+
+        for tp_level in tp_hit:
+            if tp_level in notified_tps:
+                continue  # Already notified
+            # Calculate profit percentage for this TP
+            tp_price = None
+            if tp_levels and len(tp_levels) >= tp_level:
+                tp_price = float(tp_levels[tp_level-1])
+            else:
+                tp_price = float(strategy.get(f'tp{tp_level}', 0))
+            if entry > 0 and tp_price > 0:
                 if direction == 'long':
-                    profit_pct = ((exit_price - entry) / entry) * 100
+                    profit_pct = ((tp_price - entry) / entry) * 100
                 else:
-                    profit_pct = ((entry - exit_price) / entry) * 100
+                    profit_pct = ((entry - tp_price) / entry) * 100
             else:
                 profit_pct = float(strategy.get('percent', 0))
-            
-            # Determine which TP level (assume TP3 for full exit)
-            tp_level = 3
             msg = _tier_notifier.format_tp_hit_notification(strategy, user_tier, tp_level, profit_pct)
-            
-        elif result == 'partial_tp':
-            entry = float(strategy.get('entry', 0))
-            tp1_price = float(strategy.get('tp1', 0))
-            direction = str(strategy.get('direction', '')).lower()
-            
-            if entry > 0 and tp1_price > 0:
-                if direction == 'long':
-                    profit_pct = ((tp1_price - entry) / entry) * 100
-                else:
-                    profit_pct = ((entry - tp1_price) / entry) * 100
-            else:
-                profit_pct = float(strategy.get('r_multiple', 0)) * 100
-            
-            msg = _tier_notifier.format_tp_hit_notification(strategy, user_tier, 1, profit_pct)
-            
-        elif result == 'sl':
+            # Send notification
+            bot.send_message(chat_id=user_id, text=msg)
+            # Mark as notified (update DB or in-memory as needed)
+            notified_tps.add(tp_level)
+            # Optionally update Trade.partial_exits in DB here
+
+        # SL notification
+        if result == 'sl':
             loss_pct = float(strategy.get('percent', 0))
             if loss_pct > 0:
                 loss_pct = -loss_pct  # Make it negative
             msg = _tier_notifier.format_sl_hit_notification(strategy, user_tier, loss_pct)
-            
-        elif result == 'invalid':
-            # Signal invalidated
+            bot.send_message(chat_id=user_id, text=msg)
+
+        # Invalidation notification
+        if result == 'invalid':
             msg = _tier_notifier.format_signal_update(
                 strategy,
                 user_tier,
                 'invalidated',
                 {'reason': strategy.get('reason', 'Market conditions changed')}
             )
-            
+            bot.send_message(chat_id=user_id, text=msg)
+
+        # Free limited notification
+        if result == 'free_limited' and user_tier == 'free':
+            msg = (
+                "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n"
+                "📊 SIGNAL UPDATE\n\n"
+                "A recent trade reached its target.\n\n"
+                "Upgrade to Premium to see:\n"
+                "• Exact entries & exits\n"
+                "• Full performance stats\n"
+                "• Real-time alerts"
+            )
+            bot.send_message(chat_id=user_id, text=msg)
         elif result == 'free_limited':
-            # Free tier gets basic notification
-            if user_tier == 'free':
-                msg = (
-                    "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n"
-                    "📊 SIGNAL UPDATE\n\n"
-                    "A recent trade reached its target.\n\n"
-                    "Upgrade to Premium to see:\n"
-                    "• Exact entries & exits\n"
-                    "• Full performance stats\n"
-                    "• Real-time alerts"
-                )
-            else:
-                # Shouldn't happen, but fallback
-                msg = "📊 Trade update."
-        else:
+            msg = "📊 Trade update."
+            bot.send_message(chat_id=user_id, text=msg)
+
+        if not tp_hit and result not in ('sl', 'invalid', 'free_limited'):
+            # Fallback generic notification
             msg = "[Outcome] Trade update."
-            
+            bot.send_message(chat_id=user_id, text=msg)
+
     except Exception as e:
         # Fallback to old format on error
         def fmt(val, d=2):
             return f"{val:.{d}f}" if isinstance(val, float) else str(val)
-        
         if result == 'tp':
             msg = (
                 "✅ TAKE PROFIT HIT — FULL CLOSE\n"
@@ -476,6 +505,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                 f"\nResult: {fmt(strategy.get('r_multiple'))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\nConfidence Score: {fmt(strategy.get('confidence',0))}%\n"
                 "\nWell-managed trade ✔️"
             )
+            bot.send_message(chat_id=user_id, text=msg)
         elif result == 'partial_tp':
             msg = (
                 "🟢 PARTIAL TAKE PROFIT (TP1)\n"
@@ -1607,10 +1637,13 @@ def run_bot() -> None:
                     except Exception:
                         prev_status = None
 
+
                     status = None
                     entry_filled = False
                     entry_filled_at = None
                     tp_hits = 0
+                    missed = False
+                    invalidated = False
                     for c in filtered:
                         try:
                             hi = float(c.get("high"))
@@ -1618,15 +1651,20 @@ def run_bot() -> None:
                         except Exception:
                             continue
                         ts_val = c.get("timestamp")
+                        # Entry must be filled before tracking SL/TP
                         if not entry_filled:
+                            # If SL is hit before entry, mark as invalidated
+                            if (direction == "long" and lo <= sl) or (direction == "short" and hi >= sl):
+                                invalidated = True
+                                break
+                            # If price never touches entry, keep waiting
                             if lo <= entry <= hi:
                                 entry_filled = True
                                 entry_filled_at = ts_val
-                            elif (direction == "long" and hi >= tp) or (direction == "short" and lo <= tp):
-                                entry_filled = True
-                                entry_filled_at = ts_val
-                            else:
-                                continue
+                                # Notify entry filled
+                                print(f"[DEBUG][outcome] Entry filled for {sig.signal_id} at {entry_filled_at}", flush=True)
+                            continue
+                        # After entry is filled, track SL/TP
                         if direction == "long":
                             hit_sl = lo <= sl
                             hit_tp = hi >= tp
@@ -1642,11 +1680,20 @@ def run_bot() -> None:
                         if hit_tp:
                             tp_hits += 1
                             status = f"tp{tp_hits}" if tp_hits <= 3 else "tp"
-                            # Only allow up to TP3, then treat as final
                             if tp_hits >= 3:
                                 break
 
-                    if status is None:
+                    # If entry never filled and candles are exhausted, mark as missed
+                    if not entry_filled and not invalidated:
+                        missed = True
+
+                    if invalidated:
+                        status = "invalidated"
+                        print(f"[DEBUG][outcome] Signal {sig.signal_id} invalidated: SL hit before entry", flush=True)
+                    elif missed:
+                        status = "missed"
+                        print(f"[DEBUG][outcome] Signal {sig.signal_id} missed: entry never touched", flush=True)
+                    elif status is None:
                         continue
 
                     # Only progress outcome status, never duplicate or regress

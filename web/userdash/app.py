@@ -48,7 +48,15 @@ def dashboard():
             signals = asyncio.run(fetch())
     except Exception:
         signals = []
-    return render_template("dashboard.html", signals=signals, tier=tier)
+    # Determine feature access by tier
+    tier_norm = str(tier).strip().lower()
+    show_advanced = tier_norm in ("premium", "vip", "admin", "owner")
+    return render_template(
+        "dashboard.html",
+        signals=signals,
+        tier=tier,
+        show_advanced=show_advanced
+    )
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

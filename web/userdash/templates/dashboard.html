@@ -30,6 +30,11 @@
                 <th>Stop Loss</th>
                 <th>Take Profit</th>
                 <th>Score</th>
+                {% if show_advanced %}
+                <th>Partial Exits</th>
+                <th>Outcome</th>
+                <th>Performance</th>
+                {% endif %}
             </tr>
             {% for s in signals %}
             <tr>
@@ -41,6 +46,11 @@
                 <td>{{ s.stop_loss }}</td>
                 <td>{{ s.take_profit }}</td>
                 <td>{{ s.score }}</td>
+                {% if show_advanced %}
+                <td>{{ s.partial_exits if s.partial_exits else '-' }}</td>
+                <td>{{ s.outcome.status if s.outcome else '-' }}</td>
+                <td>{{ s.performance if s.performance else '-' }}</td>
+                {% endif %}
             </tr>
             {% endfor %}
         </table>
