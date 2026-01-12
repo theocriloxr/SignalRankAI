@@ -139,9 +139,17 @@ def _audit_handler(command_name: str, handler):
 
 from telegram.ext import Defaults
 # Increase Telegram bot request timeout for connection pool exhaustion
-TELEGRAM_REQUEST_TIMEOUT = int(os.getenv("TELEGRAM_REQUEST_TIMEOUT", "30"))  # seconds, configurable
-defaults = Defaults(request_timeout=TELEGRAM_REQUEST_TIMEOUT)
-application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).defaults(defaults).build()
+TELEGRAM_POOL_TIMEOUT = int(os.getenv("TELEGRAM_POOL_TIMEOUT", "30"))  # seconds, configurable
+TELEGRAM_CONNECT_TIMEOUT = int(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "30"))  # seconds, configurable
+TELEGRAM_READ_TIMEOUT = int(os.getenv("TELEGRAM_READ_TIMEOUT", "30"))  # seconds, configurable
+TELEGRAM_WRITE_TIMEOUT = int(os.getenv("TELEGRAM_WRITE_TIMEOUT", "30"))  # seconds, configurable
+application = Application.builder()
+application = application.token(os.getenv('TELEGRAM_TOKEN'))
+application = application.pool_timeout(TELEGRAM_POOL_TIMEOUT)
+application = application.connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
+application = application.read_timeout(TELEGRAM_READ_TIMEOUT)
+application = application.write_timeout(TELEGRAM_WRITE_TIMEOUT)
+application = application.build()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command
