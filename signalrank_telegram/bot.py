@@ -1544,6 +1544,7 @@ def run_bot() -> None:
                 except Exception:
                     return 0
 
+
             for sig in candidates:
                 try:
                     asset = str(getattr(sig, "asset", "") or "").upper().strip()
@@ -1558,10 +1559,10 @@ def run_bot() -> None:
                     if tp is None or created_at is None:
                         continue
 
+                    print(f"[DEBUG][outcome] Evaluating signal {sig.signal_id} {asset} {tf} {direction}", flush=True)
+
                     candles = get_candles(asset, tf)
                     if not candles:
-                        # Fallback: try alternate granularities to improve availability
-                        # Prefer higher resolution first for better entry/TP/SL detection
                         tf_order = ["1m", "5m", "15m", "1h", "4h", "1d"]
                         alt_tfs = [t for t in tf_order if t != tf]
                         for alt in alt_tfs:
@@ -1573,15 +1574,10 @@ def run_bot() -> None:
                                 candles = []
                                 continue
                         if not candles:
+                            print(f"[DEBUG][outcome] No candles found for {asset} {tf}", flush=True)
                             continue
 
                     created_ms = _ms(created_at)
-                    
-                    # Note: Don't skip based on entry distance from current price.
-                    # If TP/SL was hit, price will be far from entry - that's expected.
-                    # The entry fill detection below will determine if entry was actually touched.
-                    
-                    # Filter candles to those after signal creation when possible.
                     filtered = []
                     for c in candles:
                         try:
@@ -1590,75 +1586,92 @@ def run_bot() -> None:
                                 if int(ts) >= created_ms:
                                     filtered.append(c)
                             else:
-                                # FX timestamps are ISO-ish strings; keep best-effort.
                                 filtered.append(c)
                         except Exception:
                             continue
                     if not filtered:
+                        print(f"[DEBUG][outcome] No filtered candles for {asset} {tf}", flush=True)
                         continue
+
+                    # Only progress outcome status (TP1->TP2->TP3->SL), never backwards or duplicate
+                    from db.session import get_session
+                    from db.pg_features import get_outcome_for_signal
+                    prev_status = None
+                    try:
+                        async def _get_prev():
+                            async with get_session() as session:
+                                return await get_outcome_for_signal(session, str(sig.signal_id))
+                        prev = asyncio.run(_get_prev())
+                        if prev:
+                            prev_status = str(getattr(prev, 'status', '') or '').lower()
+                    except Exception:
+                        prev_status = None
 
                     status = None
                     entry_filled = False
                     entry_filled_at = None
-                    # Walk candles in chronological order and detect first hit after entry is touched.
+                    tp_hits = 0
                     for c in filtered:
                         try:
                             hi = float(c.get("high"))
                             lo = float(c.get("low"))
                         except Exception:
                             continue
-
                         ts_val = c.get("timestamp")
-
-                        # Require entry fill before considering TP/SL.
                         if not entry_filled:
-                            # Entry is filled if price trades through entry level OR
-                            # if price has already reached TP/SL (gap up/down case)
                             if lo <= entry <= hi:
-                                # Normal case: price traded through entry
                                 entry_filled = True
                                 entry_filled_at = ts_val
                             elif (direction == "long" and hi >= tp) or (direction == "short" and lo <= tp):
-                                # Gap case: price gapped past TP without hitting entry
-                                # Mark entry as filled since trade was profitable
                                 entry_filled = True
                                 entry_filled_at = ts_val
                             else:
                                 continue
-
                         if direction == "long":
                             hit_sl = lo <= sl
                             hit_tp = hi >= tp
                         else:
                             hit_sl = hi >= sl
                             hit_tp = lo <= tp
-
                         if hit_sl and hit_tp:
-                            # Ambiguous within-candle; be conservative.
                             status = "sl"
                             break
                         if hit_sl:
                             status = "sl"
                             break
                         if hit_tp:
-                            status = "tp"
-                            break
+                            tp_hits += 1
+                            status = f"tp{tp_hits}" if tp_hits <= 3 else "tp"
+                            # Only allow up to TP3, then treat as final
+                            if tp_hits >= 3:
+                                break
 
                     if status is None:
                         continue
 
-                    # Compute R and % (best-effort)
+                    # Only progress outcome status, never duplicate or regress
+                    status_order = ["tp1", "tp2", "tp3", "tp", "sl"]
+                    if prev_status:
+                        try:
+                            prev_idx = status_order.index(prev_status) if prev_status in status_order else -1
+                            curr_idx = status_order.index(status) if status in status_order else -1
+                            if curr_idx <= prev_idx:
+                                print(f"[DEBUG][outcome] Skipping duplicate/regressive outcome for {sig.signal_id}: {status} (prev: {prev_status})", flush=True)
+                                continue
+                        except Exception:
+                            pass
+
                     risk = abs(entry - sl)
                     reward = abs(tp - entry)
                     r_mult = None
                     pct = None
                     try:
                         if risk > 0:
-                            if status == "tp":
+                            if status.startswith("tp"):
                                 r_mult = reward / risk
                             else:
                                 r_mult = -1.0
-                        if status == "tp":
+                        if status.startswith("tp"):
                             if direction == "long":
                                 pct = ((tp - entry) / entry) * 100.0
                             else:
@@ -1678,7 +1691,6 @@ def run_bot() -> None:
                         "tp": tp,
                         "sl": sl,
                     }
-
                     entry_filled_dt = None
                     try:
                         if isinstance(entry_filled_at, (int, float)):
@@ -1687,10 +1699,10 @@ def run_bot() -> None:
                             entry_filled_dt = datetime.fromisoformat(str(entry_filled_at).replace("Z", ""))
                     except Exception:
                         entry_filled_dt = None
-
                     if entry_filled_at is not None:
                         meta["entry_filled_at"] = entry_filled_at
 
+                    print(f"[DEBUG][outcome] Writing outcome for {sig.signal_id}: {status}", flush=True)
                     async def _write():
                         async with get_session() as session:
                             await upsert_outcome(
@@ -1704,18 +1716,19 @@ def run_bot() -> None:
                                 closed_at=now,
                             )
                             await session.commit()
-
                     try:
                         asyncio.run(_write())
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"[DEBUG][outcome] Exception writing outcome: {e}", flush=True)
 
-                    # Fire outcome notifications immediately instead of waiting for the scheduler loop.
+                    # Fire outcome notifications immediately
                     try:
+                        print(f"[DEBUG][outcome] Sending outcome notifications for {sig.signal_id}", flush=True)
                         send_outcome_notifications()
-                    except Exception:
-                        pass
-                except Exception:
+                    except Exception as e:
+                        print(f"[DEBUG][outcome] Exception sending notifications: {e}", flush=True)
+                except Exception as e:
+                    print(f"[DEBUG][outcome] Exception in outcome computation: {e}", flush=True)
                     continue
 
         except Exception:
