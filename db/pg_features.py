@@ -164,8 +164,23 @@ async def get_or_create_signal(
         }
     )
 
+
+    # Strict deduplication: match by fingerprint AND all key fields (asset, timeframe, direction, entry, stop_loss, take_profit, strategy_group, strategy_name)
     res = await session.execute(
-        select(Signal).where(and_(Signal.fingerprint == fingerprint, Signal.created_at >= cutoff))
+        select(Signal).where(
+            and_(
+                Signal.fingerprint == fingerprint,
+                Signal.asset == asset,
+                Signal.timeframe == timeframe,
+                Signal.direction == direction,
+                Signal.entry == entry,
+                Signal.stop_loss == stop_loss,
+                Signal.take_profit == tp_str,
+                Signal.strategy_group == strategy_group,
+                Signal.strategy_name == strategy_name,
+                Signal.created_at >= cutoff
+            )
+        )
     )
     existing = res.scalars().first()
     if existing is not None:
@@ -176,7 +191,20 @@ async def get_or_create_signal(
         except Exception:
             pass
         await session.flush()
+        # Debug log for dedup hit
+        try:
+            import logging
+            logging.getLogger(__name__).info(f"[dedup] Existing signal found: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
+        except Exception:
+            pass
         return existing
+
+    # Debug log for new signal creation
+    try:
+        import logging
+        logging.getLogger(__name__).info(f"[dedup] Creating new signal: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
+    except Exception:
+        pass
 
     # Create Signal - try with ml_probability, fallback if column missing (migration pending)
     try:
@@ -262,12 +290,13 @@ async def record_signal_delivery(
 
     tier_s = str(tier_at_send or "free").strip().lower()[:16]
 
+
     if cutoff is not None:
         try:
             res_sig = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig = res_sig.scalar_one_or_none()
             if sig:
-                # Only dedupe if all key fields match for this user
+                # Strict deduplication: match by user, asset, entry, stop_loss, take_profit, timeframe, direction, strategy_group, strategy_name
                 res_u = await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
@@ -280,20 +309,35 @@ async def record_signal_delivery(
                         Signal.take_profit == sig.take_profit,
                         Signal.timeframe == sig.timeframe,
                         Signal.direction == sig.direction,
+                        Signal.strategy_group == sig.strategy_group,
+                        Signal.strategy_name == sig.strategy_name,
                         SignalDelivery.delivered_at >= cutoff,
                     )
                 )
                 if int(res_u.scalar() or 0) > 0:
+                    # Debug log for dedup hit
+                    try:
+                        import logging
+                        logging.getLogger(__name__).info(f"[dedup] Existing delivery found: user={user.id} asset={sig.asset} tf={sig.timeframe} dir={sig.direction} entry={sig.entry} sl={sig.stop_loss} tp={sig.take_profit} strat={sig.strategy_group}/{sig.strategy_name}")
+                    except Exception:
+                        pass
                     return False
         except Exception:
             # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
             pass
+
 
     before = len(session.new)
     delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s, delivered_at=_utcnow())
     session.add(delivery)
     try:
         await session.flush()
+        # Debug log for new delivery creation
+        try:
+            import logging
+            logging.getLogger(__name__).info(f"[dedup] Creating new delivery: user={user.id} signal_id={signal_id} tier={tier_s}")
+        except Exception:
+            pass
         return True
     except Exception:
         # Unique constraint hit or other issue: treat as already delivered
