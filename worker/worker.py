@@ -1,3 +1,13 @@
+
+#
+# SignalRankAI Async Worker Entrypoint
+#
+# This module manages all background processing: market data polling, strategy execution,
+# ML retraining, and outcome tracking. All features are controlled by config toggles.
+# Each background task is launched as an async coroutine and is gracefully cancelled on shutdown.
+#
+# Example config toggles: config.MARKET_MONITOR_ENABLED, config.CRYPTO_WS_ENABLED, config.ML_TRAIN_ENABLED
+#
 import asyncio
 import contextlib
 from config import config

@@ -95,8 +95,9 @@ def resend_unsent_signals_job():
             except Exception as e:
                 logger.error(f"[resend] Exception in DB delivery tracking for signal {signal_id} to user {user_id}: {e}")
         # Use ThreadPoolExecutor for parallel delivery
-        # Increase pool size to handle more concurrent deliveries
-        max_workers = int(getattr(config, "TELEGRAM_POOL_SIZE", 24))  # Default to 24, configurable
+        # Pool size is configurable via config.TELEGRAM_POOL_SIZE (default: 24).
+        # This allows scaling delivery throughput based on deployment environment.
+        max_workers = int(getattr(config, "TELEGRAM_POOL_SIZE", 24))
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for sig in signals:
