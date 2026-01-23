@@ -4,7 +4,7 @@ import hashlib
 import os
 import random
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Tuple, 
+from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,7 @@ from db.models import (
     SignalDelivery,
     Outcome,
     User,
+    StrategyStat,  # <-- Added import for StrategyStat
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
 
@@ -77,10 +78,10 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _utcnow() -> datetime:
-    # IMPORTANT: Return a naive UTC datetime.
-    # Our Postgres schema uses TIMESTAMP WITHOUT TIME ZONE, and asyncpg
-    # will raise DataError if we bind timezone-aware datetimes.
-    return datetime.utcnow()
+    # IMPORTANT: Return a timezone-aware UTC datetime.
+    # Our Postgres schema uses TIMESTAMP WITHOUT TIME ZONE, but using timezone-aware objects is recommended.
+    from datetime import timezone
+    return datetime.now(timezone.utc)
 
 
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
