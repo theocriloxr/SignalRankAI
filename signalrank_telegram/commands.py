@@ -1230,6 +1230,18 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	# Simplified, robust implementation to avoid indentation/syntax errors
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+
+	user_id: int = update.effective_user.id
+	arg: str = (context.args[0] if context.args else "").strip()
+	if not arg:
+		await update.message.reply_text("Usage: /outcome <reference>")
+		return
+
 	try:
 		from db.session import ENGINE, get_session
 		if ENGINE is None:
@@ -1241,30 +1253,23 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		import os
 
 		async with get_session() as session:
-			session: AsyncSession
-			# Get user and their tier
+			# Ensure user exists
 			user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
-			user_tier: str = str(user.tier or "free").strip().lower()
 
-			# Owner and admin always get VIP format
-			if user_tier in {"owner", "admin"}:
-				user_tier = "vip"
+			# Look up delivered signal for this user
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 
-			# If signal not delivered to user, check if it exists at all
 			if sig is None:
-				# Try to find the signal by ref without delivery check
-				ref: str = (arg or "").strip()
-				query: Select[Tuple[Signal]] = select(Signal)
+				# Try to find the signal globally by reference
+				ref = arg
+				query = select(Signal)
 				if len(ref) >= 32:
-					query: Select[Tuple[Signal]] = query.where(Signal.signal_id == ref)
+					query = query.where(Signal.signal_id == ref)
 				else:
-					query: Select[Tuple[Signal]] = query.where(Signal.signal_id.like(f"{ref}%"))
-				query: Select[Tuple[Signal]] = query.order_by(Signal.created_at.desc()).limit(1)
-
-				res_undelivered: Result[Tuple[Signal]] = await session.execute(query)
-				undelivered_sig: Signal | None = res_undelivered.scalars().first()
-
+					query = query.where(Signal.signal_id.like(f"{ref}%"))
+				query = query.order_by(Signal.created_at.desc()).limit(1)
+				res = await session.execute(query)
+				undelivered_sig: Signal | None = res.scalars().first()
 				if undelivered_sig is not None:
 					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
 					return
@@ -1272,57 +1277,79 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					await update.message.reply_text("Signal not found.")
 					return
 
-			# Signal was delivered to user, now check for outcome
+			# Check outcome
 			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
-			await session.commit()
 
-			# If outcome exists, show it
-			if oc is not None:
-				status: str = str(getattr(oc, "status", "") or "").lower()
-				r: os.Any | None = getattr(oc, "r_multiple", None)
-				pct: os.Any | None = getattr(oc, "percent", None)
-				label: str = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
-				lines: list[str] = [
-					"📣 Outcome",
-					"",
-					f"Reference: {sig.signal_id[:8]}",
-					f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
-					f"Entry: {sig.entry}",
-					f"Result: {label} ({status})",
-				]
-
-				# Show entry status at time of signal
-				ml_prob: os.Any | None = getattr(sig, "ml_probability", None)
-				if ml_prob is not None:
-					ml_pct: float = round(float(ml_prob) * 100, 1)
+		# Format and reply outside session where possible
+		if oc is not None:
+			status = str(getattr(oc, "status", "") or "").lower()
+			r = getattr(oc, "r_multiple", None)
+			pct = getattr(oc, "percent", None)
+			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			lines = [
+				"📣 Outcome",
+				"",
+				f"Reference: {sig.signal_id[:8]}",
+				f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
+				f"Entry: {sig.entry}",
+				f"Result: {label} ({status})",
+			]
+			ml_prob = getattr(sig, "ml_probability", None)
+			if ml_prob is not None:
+				try:
+					ml_pct = round(float(ml_prob) * 100, 1)
 					lines.append(f"ML Score: {ml_pct}%")
-
-				if r is not None:
+				except Exception:
+					pass
+			if r is not None:
+				try:
 					lines.append(f"R-multiple: {float(r):.2f}R")
-				if pct is not None:
+				except Exception:
+					pass
+			if pct is not None:
+				try:
 					lines.append(f"Move: {float(pct):.2f}%")
+				except Exception:
+					pass
 
-				await update.message.reply_text("\n".join(lines))
-				return
+			await update.message.reply_text("\n".join(lines))
+			return
 
-			# If outcome not yet determined, show current signal details based on tier
-			# Determine what to show based on tier
-			try:
-				vip_cut = float(getattr(config, "VIP_SCORE_THRESHOLD", 72))
-			except Exception:
-				vip_cut = 72.0
+		# No outcome yet — show basic in-progress details
+		lines = ["🔄 Signal In Progress", "", f"Reference: {sig.signal_id}"]
+		lines.extend([
+			f"Asset: {sig.asset}",
+			f"Timeframe: {sig.timeframe}",
+			f"Direction: {sig.direction.upper()}",
+		])
+		if getattr(sig, "entry", None) is not None:
+			lines.append(f"Entry: {sig.entry}")
+		if getattr(sig, "stop_loss", None) is not None:
+			lines.append(f"Stop Loss: {sig.stop_loss}")
+		try:
+			tp_raw = getattr(sig, "take_profit", None)
+			if isinstance(tp_raw, str):
+				try:
+					tp_data = json.loads(tp_raw)
+					if isinstance(tp_data, list) and tp_data:
+						for i, tp in enumerate(tp_data, 1):
+							lines.append(f"Take Profit {i}: {tp}")
+					else:
+						lines.append(f"Take Profit: {tp_raw}")
+				except Exception:
+					lines.append(f"Take Profit: {tp_raw}")
+			elif tp_raw is not None:
+				lines.append(f"Take Profit: {tp_raw}")
+		except Exception:
+			pass
 
-			# Owner always gets VIP format
-			if user_tier in {"owner", "admin"}:
-				user_tier = "vip"
-
-			show_levels: bool = user_tier in {"vip", "premium"}
-			show_strategy: bool = user_tier in {"vip"}
-			# ...existing code...
+		await update.message.reply_text("\n".join(lines))
+		return
 	except Exception as e:
 		import logging
-		logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
+		logging.getLogger(__name__).exception("outcome_command failed")
 		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
+		return
 		# If outcome not yet determined, show current signal details based on tier
 		# Determine what to show based on tier
 	try:
@@ -1526,28 +1553,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				lines.append(f"💡 {advice}")
 			else:
 				lines.append("Current Price: Unavailable (check later)")
-	else:
-			lines.append("Position data incomplete")
-		
-		# Status message - check if price shows TP was hit
-	try:
-			if 'metrics' in locals() and metrics.get('progress', 0) >= 1.0:
-				# TP clearly hit based on current price, but outcome record not in DB yet
-				lines.extend(["", "✅ Target zone reached (outcome being recorded)."])
-			else:
-				lines.extend(["", "⏳ Outcome not determined yet."])
-	except Exception:
-			lines.extend(["", "⏳ Outcome not determined yet."])
-		
-	await update.message.reply_text("\n".join(lines))
-	return
-except Exception as e:
-import logging
-logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
-await update.message.reply_text("Outcome lookup is temporarily unavailable.")
-	return
-
-
+        
 async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
