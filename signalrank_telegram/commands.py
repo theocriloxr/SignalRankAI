@@ -243,14 +243,15 @@ async def referral_leaderboard_command(update, context) -> None:
 		return
 	async with get_session() as session:
 		# Top referrers by count
+		from sqlalchemy import text
 		res = await session.execute(
-			"""
+			text("""
 			SELECT referrer_user_id, COUNT(*) as cnt
 			FROM referrals
 			GROUP BY referrer_user_id
 			ORDER BY cnt DESC
 			LIMIT 10
-			"""
+			""")
 		)
 		rows = res.fetchall()
 		if not rows:
@@ -260,11 +261,12 @@ async def referral_leaderboard_command(update, context) -> None:
 		ids = [r[0] for r in rows]
 		users = {}
 		if ids:
+			from sqlalchemy import text
 			res2 = await session.execute(
-				"SELECT id, username FROM users WHERE id = ANY(:ids)", {"ids": ids}
+				text("SELECT id, username FROM users WHERE id = ANY(:ids)"), {"ids": ids}
 			)
 			users = {r[0]: r[1] for r in res2.fetchall()}
-		msg = "🏆 Referral Leaderboard:\n"
+		msg = "🏆 Referral Leaderboard:\n\n"
 		for i, (uid, cnt) in enumerate(rows, 1):
 			uname = users.get(uid) or f"User {uid}"
 			msg += f"{i}. {uname}: {cnt} referrals\n"
@@ -279,8 +281,9 @@ async def referral_rewards_command(update, context) -> None:
 		return
 	async with get_session() as session:
 		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
+		from sqlalchemy import text
 		res = await session.execute(
-			"SELECT reward_type, COUNT(*) as cnt, SUM(reward_value) as total FROM referral_rewards WHERE referrer_user_id = :uid GROUP BY reward_type",
+			text("SELECT reward_type, COUNT(*) as cnt, SUM(reward_value) as total FROM referral_rewards WHERE referrer_user_id = :uid GROUP BY reward_type"),
 			{"uid": user.id}
 		)
 		rows = res.fetchall()
@@ -334,8 +337,8 @@ async def admin_user_engagement_command(update, context) -> None:
 		return
 	user_id = update.effective_user.id
 	if not _is_admin(user_id):
-		await update.message.reply_text("Admin only.")
-		return
+			await update.message.reply_text("Admin only.")
+			return
 	stats = signal_analytics.get_stats()
 	engagement = stats.get('user_engagement', {})
 	top = sorted(engagement.items(), key=lambda x: x[1], reverse=True)[:10]
@@ -688,7 +691,6 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			if update.message is not None:
 				await update.message.reply_text("⚠️ No signals above 55 score today. Upgrade for full access or check back later.")
 			return
-
 		picked = eligible if len(eligible) <= 2 else random.sample(eligible, 2)
 		total_signals: int = len(eligible)
 		lines: list[str] = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals})", ""]
@@ -733,7 +735,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						"strategy_group": r.strategy_group,
 						"created_at": r.created_at,
 					}
-					for r: Signal in rows
+					for r in rows
 				]
 	except Exception as e:
 		_audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
@@ -764,7 +766,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
-				async with get_session() as session: AsyncSession:
+				async with get_session() as session:
+					# type: AsyncSession
 					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 					delivered_today = [
 						{
@@ -778,7 +781,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 							"rr_ratio": r.rr_estimate,
 							"score": r.score,
 						}
-						for r: Signal in rows
+						for r in rows
 					]
 		except Exception:
 			delivered_today = []
@@ -911,7 +914,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			
 			if update.message is not None:
 				await update.message.reply_text(msg)
-		except Exception as e: Exception:
+		except Exception as e:
 			_audit_logger.error(f"Error formatting signal for {user_id}: {e}")
 			continue
 
@@ -991,8 +994,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			
 			# Try short timeframes first; fall back if unavailable
 			candles = []
-			for tf: str in ("1m", "5m", "15m"):
-				candles = get_candles(asset, tf)
+			for tf in ("1m", "5m", "15m"):
+				candles: list[dict] = get_candles(asset, tf)
 				if candles:
 					break
 			
@@ -1058,7 +1061,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				return float(close_price)
 			
 			return None
-		except Exception as e: Exception:
+		except Exception as e:
 			logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
 			return None
 
@@ -1102,20 +1105,20 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		from .formatter import format_signal, format_signal_free_limited
 
 		if arg.lower() == "all":
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 				await session.commit()
 			if not rows:
 				await update.message.reply_text("No signals delivered to you today.")
 				return
 			lines: list[str] = ["📌 Today’s signals:", ""]
-			for s: Signal in rows[:20]:
+			for s in rows[:20]:
 				ref = str(getattr(s, "signal_id", "") or "")
 				lines.append(f"• {ref} — {s.asset} {s.timeframe} {s.direction}")
 			await update.message.reply_text("\n".join(lines))
 			return
 
-		async with get_session() as session: AsyncSession:
+		async with get_session() as session:
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			oc = None
 			if sig is not None:
@@ -1238,7 +1241,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				base += "\n\n🧠 Suggestion\n" + str(advice_line)
 		await update.message.reply_text(base)
 		return
-	except Exception as e: Exception:
+	except Exception as e:
 		import logging
 		logging.getLogger(__name__).error(f"signal_command failed: {e}", exc_info=True)
 		await update.message.reply_text("Signal lookup is temporarily unavailable.")
@@ -1270,12 +1273,12 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			# Get user and their tier
 			user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 			user_tier: str = str(user.tier or "free").strip().lower()
-			
+		
 			# Owner and admin always get VIP format
 			if user_tier in {"owner", "admin"}:
 				user_tier = "vip"
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
-			
+		
 			# If signal not delivered to user, check if it exists at all
 			if sig is None:
 				# Try to find the signal by ref without delivery check
@@ -1286,17 +1289,17 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				else:
 					query: Select[Tuple[Signal]] = query.where(Signal.signal_id.like(f"{ref}%"))
 				query: Select[Tuple[Signal]] = query.order_by(Signal.created_at.desc()).limit(1)
-				
+			
 				res_undelivered: Result[Tuple[Signal]] = await session.execute(query)
 				undelivered_sig: Signal | None = res_undelivered.scalars().first()
-				
+			
 				if undelivered_sig is not None:
 					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
 					return
 				else:
 					await update.message.reply_text("Signal not found.")
 					return
-			
+		
 			# Signal was delivered to user, now check for outcome
 			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
 			await session.commit()
