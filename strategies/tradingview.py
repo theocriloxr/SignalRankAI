@@ -115,19 +115,21 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
         logger.info(f"[tradingview] source=tradingview asset={asset_upper} symbol={symbol} exchange={exchange} screener={screener} tf={timeframe}")
         handler = TA_Handler(
             symbol=symbol,
-            def _respect_global_cooldown():
-                """Enforce a global spacing between TradingView requests to avoid 429s."""
-                global _LAST_REQUEST_TS
-                min_gap = _env_float("TRADINGVIEW_GLOBAL_MIN_SECONDS", 15.0)
-                now = time.monotonic()
-                wait = min_gap - (now - _LAST_REQUEST_TS)
-                if wait > 0:
-                    time.sleep(wait)
-                _LAST_REQUEST_TS = time.monotonic()
-            for attempt in range(1, max_rl_retries + 1):
-                _respect_global_cooldown()
-                result = _try_analysis(h)
-                if result != _RATE_LIMIT:
+            # ...existing TA_Handler arguments...
+        )
+        def _respect_global_cooldown():
+            """Enforce a global spacing between TradingView requests to avoid 429s."""
+            global _LAST_REQUEST_TS
+            min_gap = _env_float("TRADINGVIEW_GLOBAL_MIN_SECONDS", 15.0)
+            now = time.monotonic()
+            wait = min_gap - (now - _LAST_REQUEST_TS)
+            if wait > 0:
+                time.sleep(wait)
+            _LAST_REQUEST_TS = time.monotonic()
+        for attempt in range(1, max_rl_retries + 1):
+            _respect_global_cooldown()
+            result = _try_analysis(h)
+            if result != _RATE_LIMIT:
                     return result
                 if attempt < max_rl_retries:
                     logger.warning(

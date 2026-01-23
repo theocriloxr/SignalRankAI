@@ -369,7 +369,7 @@ async def selfcheck_command(update, context) -> None:
 		from pathlib import Path
 		drift_path: Path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
 		if drift_path.exists():
-			with open(drift_path, "r") as f: os.TextIOWrapper[_WrappedBuffer]:
+			with open(drift_path, "r") as f:
 				drift = json.load(f)
 			acc = drift.get("accuracy")
 			auc = drift.get("auc")
