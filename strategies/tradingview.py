@@ -115,7 +115,12 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
         logger.info(f"[tradingview] source=tradingview asset={asset_upper} symbol={symbol} exchange={exchange} screener={screener} tf={timeframe}")
         handler = TA_Handler(
             symbol=symbol,
-            # ...existing TA_Handler arguments...
+            screener=screener,
+            exchange=exchange,
+            interval=timeframe,
+        )
+        # ...existing TA_Handler arguments...
+        )
         )
         def _respect_global_cooldown():
             """Enforce a global spacing between TradingView requests to avoid 429s."""

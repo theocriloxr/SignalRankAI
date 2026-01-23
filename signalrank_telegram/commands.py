@@ -363,6 +363,29 @@ async def selfcheck_command(update, context) -> None:
 			lines.append("DB: ❌ Not connected")
 	except Exception:
 		lines.append("DB: ❓ Unknown")
+		# ML drift
+		try:
+			import json
+			from pathlib import Path
+			drift_path: Path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
+			if drift_path.exists():
+				with open(drift_path, "r") as f:
+					drift = json.load(f)
+				acc = drift.get("accuracy")
+				auc = drift.get("auc")
+				lines.append(f"ML: acc={acc:.3f} auc={auc:.3f}")
+			else:
+				lines.append("ML: No drift data")
+		except Exception:
+			lines.append("ML: Drift check error")
+		# Uptime
+		try:
+			import time
+			uptime: float = time.time() - psutil.boot_time()
+			lines.append(f"Uptime: {uptime/3600:.1f}h")
+		except Exception:
+			pass
+		await update.message.reply_text("\n".join(lines))
 	# ML drift
 	try:
 		import json
