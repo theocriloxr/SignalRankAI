@@ -26,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 def _env_float(name: str, default: float) -> float:
 
+    raw = os.getenv(name)
+    if raw is None:
+        return float(default)
+    try:
+        return float(str(raw).strip())
+    except Exception:
+        return float(default)
+
 
 class UltraQualityFilter:
     """Filters signals to only highest quality setups."""
@@ -239,17 +247,8 @@ class UltraQualityFilter:
         
         if not current_price or not ema_50 or not atr:
             return False  # Can't determine, assume not overextended
-        
-        # Overextended if price is > 3*ATR away from EMA50
         distance = abs(current_price - ema_50)
-        return distance > (3 * atr)
-        
-        if not current_price or not ema_50 or not atr:
-            return False
-        
-        distance = abs(current_price - ema_50)
-        
-        # Overextended if > 2.5*ATR away
+        # Consider overextended if distance exceeds 2.5 * ATR (conservative)
         return distance > (2.5 * atr)
     
     def calculate_dynamic_position_size(
@@ -289,9 +288,10 @@ class UltraQualityFilter:
         position_size = risk_amount / risk_distance
         
         # Apply Kelly Criterion adjustment
+        kelly_pct = 0.0
         if current_win_rate > 0.5:
             kelly_pct = ((current_win_rate * 2.5) - (1 - current_win_rate)) / 2.5  # Assuming 2.5:1 R:R
-            kelly_pct = max(0, kelly_pct)  # Can't be negative
+            kelly_pct = max(0.0, kelly_pct)  # Can't be negative
             position_size *= (self.kelly_fraction * kelly_pct)
         else:
             # Negative Kelly: reduce size further
