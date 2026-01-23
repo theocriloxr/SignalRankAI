@@ -1371,11 +1371,8 @@ def run_bot() -> None:
                     pass
             return
 
-    # Initialize and schedule jobs
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='mon', hour=8, minute=0)
-    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1)
-    scheduler.start()
+    # Jobs will be initialized later in the run sequence once all helpers are defined.
+    # (We avoid starting a scheduler here to prevent duplicate job registration.)
 
 
     def send_outcome_notifications():
