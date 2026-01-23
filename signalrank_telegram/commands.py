@@ -625,7 +625,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
-				async with get_session() as session: AsyncSession:
+				async with get_session() as session:
 					# Fetch ALL signals delivered to user today (no limit)
 					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 					signals_list = [

@@ -126,6 +126,7 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
             if wait > 0:
                 time.sleep(wait)
             _LAST_REQUEST_TS = time.monotonic()
+
         for attempt in range(1, max_rl_retries + 1):
             _respect_global_cooldown()
             result = _try_analysis(h)
