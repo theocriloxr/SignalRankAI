@@ -27,10 +27,10 @@ class Config:
 		self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 		self.OWNER_TELEGRAM_ID = self._env_int("TELEGRAM_OWNER_ID", 0)
 		self.OWNER_TELEGRAM_IDS = self._env_int_set("OWNER_TELEGRAM_IDS")
-		self.OWNER_IDS = set()
+		self.owner_ids: set[int] = set()
 		if self.OWNER_TELEGRAM_ID:
-			self.OWNER_IDS.add(self.OWNER_TELEGRAM_ID)
-		self.OWNER_IDS |= self.OWNER_TELEGRAM_IDS
+			self.owner_ids.add(self.OWNER_TELEGRAM_ID)
+		self.owner_ids |= self.OWNER_TELEGRAM_IDS
 
 		# Payments and API keys
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
@@ -104,3 +104,13 @@ class Config:
 
 # Global config instance
 config = Config()
+# Backwards-compatible top-level exports for modules that import names directly from `config`
+from typing import Set
+
+
+OWNER_IDS: Set[int] = config.owner_ids
+OWNER_TELEGRAM_ID = config.OWNER_TELEGRAM_ID
+OWNER_TELEGRAM_IDS = config.OWNER_TELEGRAM_IDS
+TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
+DATABASE_URL = config.DATABASE_URL
+REDIS_URL = config.REDIS_URL
