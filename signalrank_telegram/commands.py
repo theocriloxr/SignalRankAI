@@ -277,7 +277,7 @@ async def referral_rewards_command(update, context) -> None:
 	if ENGINE is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session() as session: AsyncSession:
+	async with get_session() as session:
 		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 		res = await session.execute(
 			"SELECT reward_type, COUNT(*) as cnt, SUM(reward_value) as total FROM referral_rewards WHERE referrer_user_id = :uid GROUP BY reward_type",
