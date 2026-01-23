@@ -88,25 +88,6 @@ async def filter_command(update, context) -> None:
 	filters[key] = value
 	user_prefs_store.set_prefs(user_id, filters=filters)
 	await update.message.reply_text(f"Filter set: {key} = {value}")
-import os
-from pathlib import Path
-import sys
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from requests import Response
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
@@ -1268,17 +1249,18 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from sqlalchemy import select
 		import json
 		import os
-		
-		async with get_session() as session: AsyncSession:
+
+		async with get_session() as session:
+			session: AsyncSession
 			# Get user and their tier
 			user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 			user_tier: str = str(user.tier or "free").strip().lower()
-		
+
 			# Owner and admin always get VIP format
 			if user_tier in {"owner", "admin"}:
 				user_tier = "vip"
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
-		
+
 			# If signal not delivered to user, check if it exists at all
 			if sig is None:
 				# Try to find the signal by ref without delivery check
@@ -1289,10 +1271,10 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				else:
 					query: Select[Tuple[Signal]] = query.where(Signal.signal_id.like(f"{ref}%"))
 				query: Select[Tuple[Signal]] = query.order_by(Signal.created_at.desc()).limit(1)
-			
+
 				res_undelivered: Result[Tuple[Signal]] = await session.execute(query)
 				undelivered_sig: Signal | None = res_undelivered.scalars().first()
-			
+
 				if undelivered_sig is not None:
 					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
 					return
@@ -1301,11 +1283,11 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					return
 		
 			# Signal was delivered to user, now check for outcome
-			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
-			await session.commit()
+	oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
+	await session.commit()
 		
 		# If outcome exists, show it
-		if oc is not None:
+	if oc is not None:
 			status: str = str(getattr(oc, "status", "") or "").lower()
 			r: os.Any | None = getattr(oc, "r_multiple", None)
 			pct: os.Any | None = getattr(oc, "percent", None)
@@ -1335,33 +1317,33 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		
 		# If outcome not yet determined, show current signal details based on tier
 		# Determine what to show based on tier
-		try:
+	try:
 			vip_cut = float(getattr(config, "VIP_SCORE_THRESHOLD", 72))
-		except Exception:
+	except Exception:
 			vip_cut = 72.0
 		
 		# Owner always gets VIP format
-		if user_tier in {"owner", "admin"}:
+	if user_tier in {"owner", "admin"}:
 			user_tier = "vip"
 		
-		show_levels: bool = user_tier in {"vip", "premium"}
-		show_strategy: bool = user_tier in {"vip"}
-		show_strength: bool = user_tier in {"vip"}
+	show_levels: bool = user_tier in {"vip", "premium"}
+	show_strategy: bool = user_tier in {"vip"}
+	show_strength: bool = user_tier in {"vip"}
 		
-		lines: list[str] = ["🔄 Signal In Progress", ""]
+	lines: list[str] = ["🔄 Signal In Progress", ""]
 		
 		# Reference
-		lines.append(f"Reference: {sig.signal_id}")
+	lines.append(f"Reference: {sig.signal_id}")
 		
 		# Basic info (all tiers)
-		lines.extend([
+	lines.extend([
 			f"Asset: {sig.asset}",
 			f"Timeframe: {sig.timeframe}",
 			f"Direction: {sig.direction.upper()}",
 		])
 		
 		# Levels and regime (premium+)
-		if show_levels:
+	if show_levels:
 			lines.extend([
 				f"Entry: {sig.entry}",
 				f"Stop Loss: {sig.stop_loss}",
@@ -1382,7 +1364,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				lines.append(f"Regime: {sig.regime}")
 		
 		# Score (premium+ only, not FREE)
-		if show_levels:
+	if show_levels:
 			lines.append("")
 			lines.append(f"Score: {sig.score:.2f}")
 			
@@ -1394,30 +1376,30 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				lines.append(f"{ml_emoji} ML Score: {ml_pct}%")
 		
 		# RR Estimate (premium+)
-		if show_levels and sig.rr_estimate is not None:
+	if show_levels and sig.rr_estimate is not None:
 			lines.append(f"RR Estimate: {sig.rr_estimate:.2f}")
 		
 		# Strategy and strength (VIP+)
-		if show_strategy:
+	if show_strategy:
 			lines.append(f"Strategy: {sig.strategy_name}")
 			if sig.strategy_group:
 				lines.append(f"Group: {sig.strategy_group}")
 		
-		if show_strength and sig.strength is not None:
+	if show_strength and sig.strength is not None:
 			lines.append(f"Strength: {sig.strength}")
 		
 		# Current position (live price and advice) - for all tiers
-		lines.append("")
-		lines.append("📍 Current Position")
+	lines.append("")
+	lines.append("📍 Current Position")
 		
 		# Get live price and calculate position
-		def _as_float(v) -> float | None:
+	def _as_float(v) -> float | None:
 			try:
 				return float(v)
 			except Exception:
 				return None
 		
-		def _parse_tp(tp_raw) -> None | float:
+	def _parse_tp(tp_raw) -> None | float:
 			if tp_raw is None:
 				return None
 			if isinstance(tp_raw, (int, float)):
@@ -1438,18 +1420,18 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			except Exception:
 				return None
 		
-		def _is_crypto(symbol: str) -> bool:
+	def _is_crypto(symbol: str) -> bool:
 			s: str = (symbol or "").upper().strip()
 			return s.endswith("USDT") or s.endswith("USDC") or s.endswith("BUSD")
 		
-		def _binance_symbol_rest(asset: str) -> str:
+	def _binance_symbol_rest(asset: str) -> str:
 			a: str = (asset or "").upper().strip()
 			a: str = a.replace("/", "").replace("-", "")
 			if a.endswith("USD") and not a.endswith("USDT"):
 				a: str = a[:-3] + "USDT"
 			return a
 		
-		def _current_price(asset: str) -> float | None:
+	def _current_price(asset: str) -> float | None:
 			"""Fetch current price from live market data. Supports crypto, FX, and stocks."""
 			try:
 				from data.fetcher import get_candles, get_asset_type
@@ -1459,7 +1441,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					asset_type = "crypto"
 			
 				candles = []
-				for tf: str in ("1m", "5m", "15m"):
+				for tf in ("1m", "5m", "15m"):
 					candles = get_candles(asset, tf)
 					if candles:
 						break
@@ -1475,10 +1457,11 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				
 				return None
 			except Exception as e: Exception:
-				logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
-				return None
+			logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
+			return None
 		
-		def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
+		
+	def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
 			"""Return (advice_text, metrics)."""
 			direction = (direction or "").lower().strip()
 			risk: float = abs(entry - sl)
@@ -1509,11 +1492,11 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			return ("⏳ Still developing. Consider waiting; avoid moving SL further away.", metrics)
 		
 		# Calculate current position
-		entry: float | None = _as_float(sig.entry)
-		sl: float | None = _as_float(sig.stop_loss)
-		tp: None | float = _parse_tp(sig.take_profit)
+	entry: float | None = _as_float(sig.entry)
+	sl: float | None = _as_float(sig.stop_loss)
+	tp: None | float = _parse_tp(sig.take_profit)
 		
-		if entry is not None and sl is not None and tp is not None:
+	if entry is not None and sl is not None and tp is not None:
 			price: float | None = _current_price(str(sig.asset))
 			if price is not None:
 				advice, metrics = _position_advice(
@@ -1535,26 +1518,26 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				lines.append(f"💡 {advice}")
 			else:
 				lines.append("Current Price: Unavailable (check later)")
-		else:
+	else:
 			lines.append("Position data incomplete")
 		
 		# Status message - check if price shows TP was hit
-		try:
+	try:
 			if 'metrics' in locals() and metrics.get('progress', 0) >= 1.0:
 				# TP clearly hit based on current price, but outcome record not in DB yet
 				lines.extend(["", "✅ Target zone reached (outcome being recorded)."])
 			else:
 				lines.extend(["", "⏳ Outcome not determined yet."])
-		except Exception:
+	except Exception:
 			lines.extend(["", "⏳ Outcome not determined yet."])
 		
-		await update.message.reply_text("\n".join(lines))
-		return
-	except Exception as e: Exception:
-		import logging
-		logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
-		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
-		return
+	await update.message.reply_text("\n".join(lines))
+	return
+except Exception as e: Exception:
+import logging
+logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
+await update.message.reply_text("Outcome lookup is temporarily unavailable.")
+	return
 
 
 async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1773,7 +1756,7 @@ async def recap_command(update, context):
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_weekly_recap_stats
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				stats = await get_weekly_recap_stats(session, int(user_id))
 				await session.commit()
 			total = int((stats or {}).get("total") or 0)
@@ -2105,8 +2088,8 @@ async def performance_command(update, context):
 			stats = {}
 			try:
 				async with get_session() as session: AsyncSession:
-					stats = await get_user_performance_30d(session, int(user_id))
-			except Exception as e: Exception:
+				stats = await get_user_performance_30d(session, int(user_id))
+			except Exception as e:
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 
 			total = int((stats or {}).get("total") or 0)
@@ -2126,7 +2109,7 @@ async def performance_command(update, context):
 					from db.models import SignalDelivery, User
 					cutoff: datetime = datetime.utcnow() - timedelta(days=30)
 					
-					async with get_session() as session: AsyncSession:
+					async with get_session() as session:
 						res_u: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 						u: User | None = res_u.scalar_one_or_none()
 						if u is None:
