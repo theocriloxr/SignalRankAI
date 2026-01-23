@@ -22,6 +22,7 @@ from db.models import (
     Outcome,
     User,
     StrategyStat,  # <-- Added import for StrategyStat
+    Subscription,  # <-- Added import for Subscription
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
 
@@ -640,7 +641,7 @@ async def record_payment_event(
     return pe
 
 
-async def get_alert_prefs(session: AsyncSession, telegram_user_id: int) -> dict:
+async def get_alert_prefs(session: AsyncSession, telegram_user_id: int) -> dict[str, object]:
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     res: Result[Tuple[AlertPreference]] = await session.execute(select(AlertPreference).where(AlertPreference.user_id == user.id))
     pref: AlertPreference | None = res.scalar_one_or_none()
@@ -763,7 +764,7 @@ async def queue_free_signal_summary(
     return True
 
 
-async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int) -> dict:
+async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int) -> dict[str, object]:
     """Compute 30-day performance from deliveries + outcomes.
 
     Returns:
@@ -916,7 +917,7 @@ async def _count_referrals(session: AsyncSession, referrer_user_id: int) -> int:
     return int(res.scalar() or 0)
 
 
-async def get_referral_progress(session: AsyncSession, referrer_telegram_user_id: int) -> dict:
+async def get_referral_progress(session: AsyncSession, referrer_telegram_user_id: int) -> dict[str, int]:
     referrer: User = await get_or_create_user(session, telegram_user_id=int(referrer_telegram_user_id))
     total: int = await _count_referrals(session, referrer_user_id=referrer.id)
     toward_next: int = total % 3
@@ -1274,7 +1275,7 @@ async def get_random_available_signals_for_free_user(
     
     # Filter out already received and resolved trades
     available: list[Signal] = [
-        s for s: Signal in all_recent 
+        s for s in all_recent
         if s.signal_id not in already_received and s.signal_id not in resolved_signals
     ]
     
@@ -1510,7 +1511,7 @@ async def get_strategy_performance(session: AsyncSession, strategy_name: str) ->
         outcomes: os.Sequence[Outcome] = result.scalars().all()
         
         total: int = len(outcomes)
-        wins: int = sum(1 for o: Outcome in outcomes if str(getattr(o, 'status', '')).lower() == 'tp')
+        wins: int = sum(1 for o in outcomes if str(getattr(o, 'status', '')).lower() == 'tp')
         losses: int = total - wins
         win_rate: float = (wins / total) if total > 0 else 0.0
         
@@ -1524,7 +1525,7 @@ async def get_strategy_performance(session: AsyncSession, strategy_name: str) ->
             'wins': wins,
             'losses': losses
         }
-    except Exception as e: Exception:
+    except Exception:
         # Fallback if query fails
         return {
             'win_rate': 0.0,
