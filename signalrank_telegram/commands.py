@@ -241,7 +241,7 @@ async def referral_leaderboard_command(update, context) -> None:
 	if ENGINE is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session() as session: AsyncSession:
+	async with get_session() as session:
 		# Top referrers by count
 		res = await session.execute(
 			"""

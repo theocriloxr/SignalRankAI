@@ -388,7 +388,8 @@ def main_loop(DRY_RUN=False):
                     except Exception:
                         pass
                 time.sleep(max(5, cycle_sleep_seconds))
-                continue
+                # Instead of 'continue', use 'return' to exit the function if not in a loop
+                return
 
             # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
             try:
