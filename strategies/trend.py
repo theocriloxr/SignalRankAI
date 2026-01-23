@@ -23,7 +23,8 @@ class EMATrendStrategy(BaseStrategy):
                     'entry': entry,
                     'stop': stop,
                     'targets': target,
-                    'confidence': 0.9
+                    'confidence': 0.9,
+                    'reasoning': f"EMA fast > EMA slow > EMA trend. Uptrend confirmed for BUY."
                 }
         return None
 
@@ -41,7 +42,8 @@ class SupertrendStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.85
+                'confidence': 0.85,
+                'reasoning': "Supertrend indicator signals BUY."
             }
         return None
 
@@ -59,7 +61,8 @@ class ADXTrendStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.8
+                'confidence': 0.8,
+                'reasoning': f"ADX {ind.get('adx', 0):.1f} strong, DI+ > DI-. Trend BUY."
             }
         return None
 

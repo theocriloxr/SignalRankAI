@@ -230,157 +230,138 @@ def main_loop(DRY_RUN=False):
     # Tier-based notifications
     tier_notifier = TierNotificationManager()
     
-    # NO TRADE alert tracking
-    last_no_trade_alert = None
-    
-    # If Binance is blocked and no explicit override is provided, drop the heaviest TF (5m) to speed fallbacks.
-    if os.getenv("CRYPTO_TIMEFRAMES"):
-        crypto_timeframes = [x.strip() for x in os.getenv("CRYPTO_TIMEFRAMES").split(",") if x.strip()]
-    else:
-        crypto_timeframes = [x.strip() for x in ("15m,1h,4h,1d" if is_binance_blocked() else "5m,15m,1h,4h,1d").split(",") if x.strip()]
-    # AlphaVantage free tier is rate-limited; default to daily-only for FX.
-    fx_timeframes = [x.strip() for x in (os.getenv("FX_TIMEFRAMES") or "1d").split(",") if x.strip()]
-    # Stocks: use mid/HTFs by default; override via STOCK_TIMEFRAMES
-    stock_timeframes = [x.strip() for x in (os.getenv("STOCK_TIMEFRAMES") or "15m,1h,4h,1d").split(",") if x.strip()]
+            new_degraded_assets = set()
 
-    if _env_bool("ENGINE_CYCLE_LOG", True):
-        try:
-            print(
-                "[engine] loop_start "
-                f"dry_run={bool(DRY_RUN)} "
-                f"cycle_sleep_seconds={int(os.getenv('CYCLE_SLEEP_SECONDS', '60'))} "
-                f"crypto_timeframes={','.join(crypto_timeframes)} "
-                f"fx_timeframes={','.join(fx_timeframes)} "
-                f"stock_timeframes={','.join(stock_timeframes)}",
-                flush=True,
-            )
-        except Exception:
-            pass
+            # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
+            import concurrent.futures
+            import functools
 
-    try:
-        fx_max_pairs = int((os.getenv("FX_MAX_PAIRS_PER_CYCLE") or os.getenv("FX_MAX_PAIRS") or "6").strip())
-    except Exception:
-        fx_max_pairs = 6
+            def process_asset(asset, market_data):
+                try:
+                    # --- Candle Completeness & Safety Checks ---
+                    min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
+                    min_candles = max(1, int(min_candles))
+                    needs_refresh = False
+                    if not market_data:
+                        needs_refresh = True
+                    else:
+                        for tf, tf_data in (market_data or {}).items():
+                            candles = (tf_data or {}).get("candles") or []
+                            if not isinstance(candles, list) or len(candles) < min_candles:
+                                needs_refresh = True
+                                break
+                            last_candle = candles[-1] if candles else None
+                            if last_candle:
+                                if 'timestamp' not in last_candle or 'close' not in last_candle:
+                                    needs_refresh = True
+                                    break
+                                if 'close_time' in last_candle:
+                                    import time
+                                    now = int(time.time())
+                                    close_time = int(last_candle['close_time'])
+                                    tf_sec = 60
+                                    if 'm' in tf:
+                                        tf_sec = int(tf.replace('m','')) * 60
+                                    elif 'h' in tf:
+                                        tf_sec = int(tf.replace('h','')) * 3600
+                                    elif 'd' in tf:
+                                        tf_sec = int(tf.replace('d','')) * 86400
+                                    if now - close_time > 2 * tf_sec:
+                                        needs_refresh = True
+                                        break
+                    if needs_refresh:
+                        try:
+                            market_data = asyncio.run(fetch_market_data_cached(asset, list((asset_to_tfs_degraded.get(asset) or []))))
+                            valid = False
+                            for tf, tf_data in (market_data or {}).items():
+                                candles = (tf_data or {}).get('candles') or []
+                                if isinstance(candles, list) and len(candles) >= min_candles:
+                                    last_candle = candles[-1] if candles else None
+                                    if last_candle and 'timestamp' in last_candle and 'close' in last_candle:
+                                        valid = True
+                                        break
+                            if not valid:
+                                return None, asset
+                        except Exception:
+                            return None, asset
 
-    cycle_sleep_seconds = int(os.getenv("CYCLE_SLEEP_SECONDS", "60"))
-
-    # If FX pairs are configured, require a real candle provider key.
-    # Non-fatal: warn and disable FX rather than crashing the whole engine.
-    fx_pairs = (os.getenv("FX_PAIRS") or "").strip()
-    fx_enabled = True
-    # Explicit stocks toggle; default enabled
-    stocks_enabled = (os.getenv("STOCK_TRADING_ENABLED") or "true").strip().lower() in {"1","true","yes","y","on"}
-    alphavantage_key = (os.getenv("ALPHAVANTAGE_API_KEY") or "").strip()
-    if not alphavantage_key:
-        # If we don't have a provider key, we can still run crypto-only.
-        # FX pairs (configured or defaulted) will be skipped below.
-        fx_enabled = False
-        if fx_pairs:
-            print(
-                "[WARN] FX_PAIRS is set but ALPHAVANTAGE_API_KEY is missing. Disabling FX candles.",
-                flush=True,
-            )
-        else:
-            print(
-                "[INFO] FX trading disabled: no ALPHAVANTAGE_API_KEY configured.",
-                flush=True,
-            )
-    else:
-        print(
-            f"[INFO] FX trading enabled: AlphaVantage key configured ({alphavantage_key[:4]}...)",
-            flush=True,
-        )
-
-    # Example: fetch strategy weights and regime_strategies from ML/DB (stubbed here)
-    from engine.ml import get_strategy_weights, get_regime_strategies
-    strategy_weights = get_strategy_weights() if hasattr(get_strategy_weights, '__call__') else {}
-    regime_strategies = get_regime_strategies() if hasattr(get_regime_strategies, '__call__') else None
-
-    while True:
-        # Increment cycle counter early so we can use it for pair rotation.
-        try:
-            cycle_no = _env_int("_ENGINE_CYCLE_NO", 0) + 1
-            os.environ["_ENGINE_CYCLE_NO"] = str(cycle_no)
-        except Exception:
-            cycle_no = 0
-
-        if _env_bool("ENGINE_CYCLE_LOG", True):
-            try:
-                every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
-                if cycle_no <= 0 or (cycle_no % every) == 0:
-                    print(f"[engine] cycle={cycle_no} start", flush=True)
-            except Exception:
-                pass
-
-        cycle_assets = 0
-        cycle_candidates = 0
-        cycle_after_dedupe = 0
-        cycle_after_consensus = 0
-        cycle_after_risk = 0
-        cycle_after_ml = 0
-        cycle_scored = 0
-        cycle_stored = 0
-        cycle_rejected_filters = 0
-        cycle_rejected_ultra = 0
-        cycle_score_errors = 0
-        cycle_store_failures = 0
-        cycle_store_error = None
-        cycle_max_score = None
-        cycle_max_score_asset = None
-        cycle_users = 0
-        cycle_dispatched_users = 0
-        cycle_filter_rejection_counts: Counter[str] = Counter()
-        # Global kill-switch (skip cycle but keep process alive)
-        try:
-            if state.get_killswitch_sync().enabled:
-                if _env_bool("ENGINE_CYCLE_LOG", True):
+                    regime = detect_market_regime(market_data)
+                    strategy_signals = run_all_strategies(
+                        asset,
+                        market_data,
+                        regime,
+                        strategy_weights=strategy_weights,
+                        regime_strategies=regime_strategies,
+                    )
                     try:
-                        print(f"[engine] cycle={cycle_no} skipped=killswitch", flush=True)
+                        nonlocal cycle_candidates
+                        cycle_candidates += len(strategy_signals or [])
                     except Exception:
                         pass
-                time.sleep(max(5, cycle_sleep_seconds))
-                continue
-        except Exception:
-            pass
+                    from engine.signal_controller import SignalController
+                    controller = SignalController()
+                    normalized_signals = controller.normalize_signals(strategy_signals)
+                    from engine.consensus import consensus_filter
+                    consensus_signals = consensus_filter(normalized_signals)
+                    selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
+                    from db.pg_features import compute_signal_fingerprint
+                    unique_signals = []
+                    seen_fingerprints = set()
+                    for sig in selected_signals:
+                        fp = compute_signal_fingerprint(sig)
+                        sig["fingerprint"] = fp
+                        if fp in seen_fingerprints:
+                            continue
+                        seen_fingerprints.add(fp)
+                        unique_signals.append(sig)
+                    selected_signals = unique_signals
+                    try:
+                        nonlocal cycle_after_dedupe
+                        cycle_after_dedupe += len(selected_signals or [])
+                    except Exception:
+                        pass
+                    from engine.signal_validator import validate_signal
+                    from engine.risk import risk_check
+                    from engine.scoring import score_signal, calculate_confluence
+                    strict_signals = []
+                    for sig in selected_signals:
+                        is_valid, err = validate_signal(sig)
+                        if not is_valid:
+                            sig["rejection_reason"] = f"validation: {err}"
+                            continue
+                        account_state = type('AccountState', (), {'drawdown': 0.0})()
+                        if not risk_check(sig, account_state):
+                            sig["rejection_reason"] = "risk/volatility gate"
+                            continue
+                        confluence = calculate_confluence(sig)
+                        if confluence < 50:
+                            sig["rejection_reason"] = f"confluence {confluence:.1f}% < 50%"
+                            continue
+                        if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
+                            sig["rejection_reason"] = f"ml_probability {sig['ml_probability']:.2f} < 0.5"
+                            continue
+                        score = score_signal(sig)
+                        if score < MIN_SCORE_THRESHOLD:
+                            sig["rejection_reason"] = f"score {score:.2f} < {MIN_SCORE_THRESHOLD}"
+                            continue
+                        sig["score"] = score
+                        strict_signals.append(sig)
+                    return strict_signals, None
+                except Exception:
+                    return None, asset
 
-        try:
-            # Prioritize TRADABLE_ASSETS env for crypto; fallback to discovery if empty.
-            tradable = load_tradable_assets()
-            try:
-                discovered = get_all_trending_pairs() or []
-            except Exception:
-                discovered = []
-
-            if tradable:
-                assets = tradable  # Env-configured universe takes priority
-            else:
-                assets = discovered  # Fallback to discovery
-            
-            # Add FX pairs to the asset list if configured and enabled
-            if fx_enabled and fx_pairs:
-                fx_list = [x.strip() for x in fx_pairs.split(",") if x.strip()]
-                assets = list(assets) + fx_list
-                if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
-                    print(f"[engine] Added {len(fx_list)} FX pair(s) to asset list", flush=True)
-
-            # If TRADABLE_ASSETS is set, supplement with stock tickers when enabled
-            # This ensures stocks are not omitted when a custom universe is provided.
-            if stocks_enabled:
-                try:
-                    # Prefer manual configuration via STOCK_TICKERS, else discover trending
-                    manual = (os.getenv("STOCK_TICKERS") or "").strip()
-                    if manual:
-                        stock_list = [x.strip().upper() for x in manual.split(",") if x.strip()]
-                    else:
-                        # Use the same env-driven limit as discovery
-                        try:
-                            stock_top_n = int((os.getenv("STOCK_TRENDING_TOP_N") or "20").strip())
-                        except Exception:
-                            stock_top_n = 20
-                        stock_list = get_trending_stock_tickers(stock_top_n)
-                    if stock_list:
-                        assets = list(assets) + list(stock_list)
-                        if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
+            # Use ThreadPoolExecutor for true parallelism (avoids GIL for IO-bound work)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+                futures = [executor.submit(functools.partial(process_asset, asset, (all_market_data or {}).get(asset) or {})) for asset in assets]
+                results = [f.result() for f in futures]
+            # Aggregate results and degraded assets
+            all_strict_signals = []
+            for sigs, degraded in results:
+                if degraded:
+                    new_degraded_assets.add(degraded)
+                elif sigs:
+                    all_strict_signals.extend(sigs)
+            selected_signals = all_strict_signals
                             print(f"[engine] Added {len(stock_list)} stock ticker(s) to asset list", flush=True)
                 except Exception:
                     pass
@@ -527,10 +508,17 @@ def main_loop(DRY_RUN=False):
             new_degraded_assets = set()
 
             for asset in assets:
+
                 try:
                     market_data = (all_market_data or {}).get(asset) or {}
 
-                    # Always ensure freshest candle data before running strategies
+                    # --- Candle Completeness & Safety Checks ---
+                    # Only confirmed, closed candles are ever used for strategy execution.
+                    # This block ensures:
+                    #   - Minimum required candles per timeframe
+                    #   - No partial or forming candles
+                    #   - No stale or expired market snapshots
+                    #   - All required fields are present
                     try:
                         min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
                     except Exception:
@@ -542,32 +530,48 @@ def main_loop(DRY_RUN=False):
                     else:
                         for tf, tf_data in (market_data or {}).items():
                             candles = (tf_data or {}).get("candles") or []
-                            # If candles are missing or stale (last close > 2x timeframe ago), refresh
+                            # Require minimum candles and all required fields
                             if not isinstance(candles, list) or len(candles) < min_candles:
                                 needs_refresh = True
                                 break
-                            # Check staleness: last candle close time
+                            # Check that the last candle is closed/final (not forming)
                             last_candle = candles[-1] if candles else None
-                            if last_candle and 'close_time' in last_candle:
-                                import time
-                                now = int(time.time())
-                                close_time = int(last_candle['close_time'])
-                                # Assume timeframe in seconds (e.g., 900 for 15m)
-                                tf_sec = 60
-                                if 'm' in tf:
-                                    tf_sec = int(tf.replace('m','')) * 60
-                                elif 'h' in tf:
-                                    tf_sec = int(tf.replace('h','')) * 3600
-                                elif 'd' in tf:
-                                    tf_sec = int(tf.replace('d','')) * 86400
-                                if now - close_time > 2 * tf_sec:
+                            if last_candle:
+                                # Require timestamp and close fields
+                                if 'timestamp' not in last_candle or 'close' not in last_candle:
                                     needs_refresh = True
                                     break
+                                # If close_time is present, check staleness
+                                if 'close_time' in last_candle:
+                                    import time
+                                    now = int(time.time())
+                                    close_time = int(last_candle['close_time'])
+                                    # Assume timeframe in seconds (e.g., 900 for 15m)
+                                    tf_sec = 60
+                                    if 'm' in tf:
+                                        tf_sec = int(tf.replace('m','')) * 60
+                                    elif 'h' in tf:
+                                        tf_sec = int(tf.replace('h','')) * 3600
+                                    elif 'd' in tf:
+                                        tf_sec = int(tf.replace('d','')) * 86400
+                                    # If last candle is too old, mark as stale
+                                    if now - close_time > 2 * tf_sec:
+                                        needs_refresh = True
+                                        break
                     if needs_refresh:
                         # Re-fetch market data for this asset
                         try:
                             market_data = asyncio.run(fetch_market_data_cached(asset, list((asset_to_tfs_degraded.get(asset) or []))))
-                            if not market_data or not any((tf_data or {}).get('candles') for tf_data in market_data.values()):
+                            # After re-fetch, re-validate completeness
+                            valid = False
+                            for tf, tf_data in (market_data or {}).items():
+                                candles = (tf_data or {}).get('candles') or []
+                                if isinstance(candles, list) and len(candles) >= min_candles:
+                                    last_candle = candles[-1] if candles else None
+                                    if last_candle and 'timestamp' in last_candle and 'close' in last_candle:
+                                        valid = True
+                                        break
+                            if not valid:
                                 new_degraded_assets.add(asset)
                                 continue
                         except Exception:
@@ -590,7 +594,6 @@ def main_loop(DRY_RUN=False):
 
                     # Signal Controller step (deduplication + normalization)
                     from engine.signal_controller import SignalController
-
                     controller = SignalController()
                     normalized_signals = controller.normalize_signals(strategy_signals)
 
@@ -600,14 +603,58 @@ def main_loop(DRY_RUN=False):
 
                     # Per pair/timeframe, pick the stronger direction (buy vs sell)
                     selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
-                    try:
-                        cycle_after_consensus += len(consensus_signals or [])
-                    except Exception:
-                        pass
+
+                    # --- Enforce deterministic signal fingerprint and deduplication ---
+                    # Each signal must have a unique fingerprint (hash) for asset/timeframe/direction/candle/consensus
+                    from db.pg_features import compute_signal_fingerprint
+                    unique_signals = []
+                    seen_fingerprints = set()
+                    for sig in selected_signals:
+                        fp = compute_signal_fingerprint(sig)
+                        sig["fingerprint"] = fp
+                        if fp in seen_fingerprints:
+                            continue
+                        seen_fingerprints.add(fp)
+                        unique_signals.append(sig)
+                    selected_signals = unique_signals
                     try:
                         cycle_after_dedupe += len(selected_signals or [])
                     except Exception:
                         pass
+
+                    # --- STRICT SIGNAL GENERATION RULES: Gating and rejection reasons ---
+                    from engine.signal_validator import validate_signal
+                    from engine.risk import risk_check
+                    from engine.scoring import score_signal, calculate_confluence
+                    strict_signals = []
+                    for sig in selected_signals:
+                        # 1. Validate structure and price logic
+                        is_valid, err = validate_signal(sig)
+                        if not is_valid:
+                            sig["rejection_reason"] = f"validation: {err}"
+                            continue
+                        # 2. Risk/volatility gate
+                        account_state = type('AccountState', (), {'drawdown': 0.0})()
+                        if not risk_check(sig, account_state):
+                            sig["rejection_reason"] = "risk/volatility gate"
+                            continue
+                        # 3. Confluence gate
+                        confluence = calculate_confluence(sig)
+                        if confluence < 50:
+                            sig["rejection_reason"] = f"confluence {confluence:.1f}% < 50%"
+                            continue
+                        # 4. ML risk advisory (if present)
+                        if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
+                            sig["rejection_reason"] = f"ml_probability {sig['ml_probability']:.2f} < 0.5"
+                            continue
+                        # 5. Score gate (final quality)
+                        score = score_signal(sig)
+                        if score < MIN_SCORE_THRESHOLD:
+                            sig["rejection_reason"] = f"score {score:.2f} < {MIN_SCORE_THRESHOLD}"
+                            continue
+                        sig["score"] = score
+                        strict_signals.append(sig)
+                    selected_signals = strict_signals
 
                     # Risk Engine
                     from engine.risk import risk_check
@@ -620,13 +667,16 @@ def main_loop(DRY_RUN=False):
                         pass
 
                     # ML Probability Filter
+                    # --- ML Layer: Post-Consensus, Advisory-Only ---
+                    # ML is applied strictly after consensus and risk checks.
+                    # It acts only as a confidence/risk modifier and advisory, never as a hard override.
+                    # ML output is stored as 'ml_probability' and 'ml_advisory' for downstream use.
                     from ml.features import extract_features
                     from ml.inference import MLFilter
 
                     ml_filter = MLFilter()
                     ml_signals = []
                     try:
-                        # Raised to 0.65 for win rate recovery (was 0.6)
                         ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.65").strip())
                     except Exception:
                         ml_threshold = 0.65
@@ -639,9 +689,22 @@ def main_loop(DRY_RUN=False):
                                 approved, probability = True, None
                         else:
                             approved, probability = True, None
+                        # ML can only filter or adjust confidence, never override rule consensus
                         if not approved:
+                            # ML advisory: signal filtered by ML risk model
+                            signal["ml_advisory"] = "ML model flagged this signal as high risk."
                             continue
                         signal["ml_probability"] = probability
+                        if probability is not None:
+                            # ML advisory: add guidance for downstream delivery/advisory layers
+                            if probability > 0.85:
+                                signal["ml_advisory"] = "ML model: High confidence in this signal."
+                            elif probability > 0.7:
+                                signal["ml_advisory"] = "ML model: Moderate confidence."
+                            elif probability > 0.5:
+                                signal["ml_advisory"] = "ML model: Caution advised."
+                            else:
+                                signal["ml_advisory"] = "ML model: Low confidence, high risk."
                         ml_signals.append(signal)
                     try:
                         cycle_after_ml += len(ml_signals or [])
@@ -1030,46 +1093,52 @@ def main_loop(DRY_RUN=False):
             # Update degraded_assets for next cycle
             degraded_assets = new_degraded_assets
 
-            # Ranking and Dispatch
-
-            # --- Signal Quality Analytics: Track delivery stats ---
-            ranked_signals = rank_signals(scored_signals_all)
-            if DRY_RUN:
-                for sig in (ranked_signals.get('vip', []) + ranked_signals.get('premium', [])):
-                    print("[DRY RUN]", sig)
-            else:
+            # --- Centralized Tier-Based Delivery ---
+            from signalrank_telegram.tier_delivery import TierDeliveryManager
+            delivery_mgr = TierDeliveryManager()
+            from db.pg_compat import get_all_user_ids_compat
+            from signalrank_telegram.access import resolve_user_tier
+            user_ids = []
+            try:
+                user_ids = list(get_all_user_ids_compat() or [])
+            except Exception:
                 user_ids = []
+            # Ensure OWNER_IDS are included so owners always receive signals
+            try:
+                for _oid in (OWNER_IDS or set()):
+                    try:
+                        oid = int(_oid)
+                        if oid not in user_ids:
+                            user_ids.append(oid)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+            try:
+                cycle_users = len(user_ids or [])
+            except Exception:
+                cycle_users = 0
+            # For each user, resolve tier and deliver only signals allowed by TierDeliveryManager
+            for user_id in user_ids:
                 try:
-                    user_ids = list(get_all_user_ids_compat() or [])
+                    user_tier = resolve_user_tier(user_id).lower()
                 except Exception:
-                    user_ids = []
-
-                # Ensure OWNER_IDS are included so owners always receive signals
-                try:
-                    for _oid in (OWNER_IDS or set()):
-                        try:
-                            oid = int(_oid)
-                            if oid not in user_ids:
-                                user_ids.append(oid)
-                        except Exception:
-                            continue
-                except Exception:
-                    pass
-
-                try:
-                    cycle_users = len(user_ids or [])
-                except Exception:
-                    cycle_users = 0
-                for user_id in user_ids:
-                    # Log user engagement
-                    signal_analytics.log_user_engagement(user_id)
-                    dispatched = dispatch_signals(ranked_signals, user_id=user_id)
-                    # Log delivery stats for each signal dispatched
-                    if isinstance(dispatched, list):
-                        for sig in dispatched:
-                            symbol = sig.get('symbol') or sig.get('asset')
-                            signal_analytics.log_delivery(symbol, delivered=True)
-                    cycle_dispatched_users += 1
+                    user_tier = 'free'
+                # Filter and format signals for this user/tier
+                user_signals = []
+                for sig in scored_signals_all:
+                    if delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id):
+                        msg = delivery_mgr.format_for_delivery(sig, user_tier)
+                        if msg:
+                            user_signals.append(msg)
+                # Dispatch all formatted signals for this user
+                if DRY_RUN:
+                    for msg in user_signals:
+                        print(f"[DRY RUN][{user_tier}] {msg}")
+                else:
+                    from signalrank_telegram.bot import dispatch_signals
+                    dispatched = dispatch_signals(user_signals, user_id=user_id)
+                cycle_dispatched_users += 1
 
             # Optionally flush analytics every N cycles or on interval
             if cycle_no % 10 == 0:

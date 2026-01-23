@@ -6,29 +6,29 @@ def require_tier(min_tier):
 			user_id = update.effective_user.id
 			# Global kill-switch
 			try:
-				ks = state.get_killswitch_sync()
+				ks: KillSwitchState = state.get_killswitch_sync()
 			except Exception:
-				ks = type("KS", (), {"enabled": False})()
+				ks: KS = type("KS", (), {"enabled": False})()
 			if getattr(ks, "enabled", False):
 				await update.message.reply_text("🚨 Signals are temporarily paused.")
 				return
 
 			# Rate limit (20/min)
 			try:
-				limited = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
+				limited: bool = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
 			except Exception:
 				limited = False
 			if limited:
 				await update.message.reply_text("Rate limit exceeded. Please wait.")
 				return
-			tier = _effective_tier(user_id)
+			tier: str = _effective_tier(user_id)
 			if tier_rank(tier) < tier_rank(min_tier):
 				try:
 					from .command_access import check_command_access
 					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
 					_, reason = check_command_access(cmd_name, tier)
 				except Exception:
-					reason = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
 				await update.message.reply_text(reason)
 				return
 			result = func(update, context)
@@ -39,7 +39,7 @@ def require_tier(min_tier):
 	return wrapper
 
 # --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
-async def reports_command(update, context):
+async def reports_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
@@ -47,7 +47,7 @@ async def reports_command(update, context):
 	if not args:
 		prefs = user_prefs_store.get_prefs(user_id)
 		val = prefs.get("reports_optin", False)
-		msg = "You are currently " + ("subscribed to" if val else "not receiving") + " daily/weekly reports.\nUse /reports on or /reports off."
+		msg: str = "You are currently " + ("subscribed to" if val else "not receiving") + " daily/weekly reports.\nUse /reports on or /reports off."
 		await update.message.reply_text(msg)
 		return
 	opt = args[0].lower()
@@ -60,7 +60,7 @@ async def reports_command(update, context):
 	else:
 		await update.message.reply_text("Usage: /reports on|off")
 # --------- CUSTOM SIGNAL FILTERS COMMAND ---------
-async def filter_command(update, context):
+async def filter_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
@@ -71,7 +71,7 @@ async def filter_command(update, context):
 		if not filters:
 			await update.message.reply_text("No custom filters set. Use /filter min_score 60 or /filter rr 2.0 or /filter regime TRENDING.")
 		else:
-			lines = ["Your custom filters:"]
+			lines: list[str] = ["Your custom filters:"]
 			for k, v in filters.items():
 				lines.append(f"{k}: {v}")
 			await update.message.reply_text("\n".join(lines))
@@ -89,32 +89,101 @@ async def filter_command(update, context):
 	user_prefs_store.set_prefs(user_id, filters=filters)
 	await update.message.reply_text(f"Filter set: {key} = {value}")
 import os
+from pathlib import Path
 import sys
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from requests import Response
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+from typing import Tuple
+
+from sqlalchemy import Select
+from typing import Tuple
+
+from sqlalchemy import Select
+from typing import Tuple
+
+from sqlalchemy import Select
+from typing import Tuple
+
+from sqlalchemy import Select
+from typing import Tuple
+
+from sqlalchemy import Result
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from telegram._user import User
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+from typing import Tuple
+
+from sqlalchemy import Result
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+from typing import Tuple
+
+from sqlalchemy import Result
+from typing import Tuple
+
+from sqlalchemy import Result
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
+
+from sqlalchemy.ext.asyncio.session import AsyncSession
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
 try:
 	from web.api import generate_api_key, set_user_api_key, get_user_api_key
 except Exception:
-	generate_api_key = lambda: "demo-key"
+	generate_api_key: Callable[[], Literal['demo-key']] = lambda: "demo-key"
 	set_user_api_key = lambda user_id, key: None
 	get_user_api_key = lambda user_id: None
 
-async def apikey_command(update, context):
+async def apikey_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
 	args = context.args or []
 	if args and args[0].lower() == "regenerate":
-		key = generate_api_key()
+		key: str = generate_api_key()
 		set_user_api_key(user_id, key)
 		await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
 		return
 	key = get_user_api_key(user_id)
 	if not key:
-		key = generate_api_key()
+		key: str = generate_api_key()
 		set_user_api_key(user_id, key)
 	await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to reset.")
 # Basic translation dictionary
-TRANSLATIONS = {
+TRANSLATIONS: dict[str, dict[str, str]] = {
 	"en": {
 		"help_title": "SignalRankAI Help",
 		"dashboard": "Open your dashboard",
@@ -129,12 +198,12 @@ TRANSLATIONS = {
 	},
 }
 
-def _t(user_id, key):
+def _t(user_id, key) -> str | None:
 	lang = _get_user_language(user_id)
 	return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
 from .user_prefs import user_prefs_store
 # --------- LANGUAGE SELECTION COMMAND ---------
-LANGUAGES = {
+LANGUAGES: dict[str, str] = {
 	"en": "English",
 	"es": "Español",
 	"fr": "Français",
@@ -143,14 +212,14 @@ LANGUAGES = {
 def _get_user_language(user_id):
 	return user_prefs_store.get_prefs(user_id).get("language", "en")
 
-async def language_command(update, context):
+async def language_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
 	args = context.args or []
 	if not args:
 		current = _get_user_language(user_id)
-		msg = "🌐 Select your language:\n" + "\n".join([f"/language {k} - {v}" for k, v in LANGUAGES.items()])
+		msg: str = "🌐 Select your language:\n" + "\n".join([f"/language {k} - {v}" for k, v in LANGUAGES.items()])
 		msg += f"\n\nCurrent: {LANGUAGES.get(current, 'English')}"
 		await update.message.reply_text(msg)
 		return
@@ -163,16 +232,16 @@ async def language_command(update, context):
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
 from db.session import get_session, ENGINE
 from db.pg_features import get_or_create_user
-from db.models import ReferralReward, ReferralAttribution, User
+from db.models import Outcome, Outcome, ReferralReward, ReferralAttribution, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Subscription, Signal, Signal, Signal, User
 import asyncio
 
-async def referral_leaderboard_command(update, context):
+async def referral_leaderboard_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	if ENGINE is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session() as session:
+	async with get_session() as session: AsyncSession:
 		# Top referrers by count
 		res = await session.execute(
 			"""
@@ -201,15 +270,15 @@ async def referral_leaderboard_command(update, context):
 			msg += f"{i}. {uname}: {cnt} referrals\n"
 		await update.message.reply_text(msg)
 
-async def referral_rewards_command(update, context):
+async def referral_rewards_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
 	if ENGINE is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session() as session:
-		user = await get_or_create_user(session, telegram_user_id=int(user_id))
+	async with get_session() as session: AsyncSession:
+		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 		res = await session.execute(
 			"SELECT reward_type, COUNT(*) as cnt, SUM(reward_value) as total FROM referral_rewards WHERE referrer_user_id = :uid GROUP BY reward_type",
 			{"uid": user.id}
@@ -225,10 +294,10 @@ async def referral_rewards_command(update, context):
 from engine.signal_analytics import signal_analytics
 # --------- ADMIN ANALYTICS COMMANDS ---------
 from config import OWNER_IDS
-def _is_admin(user_id):
+def _is_admin(user_id) -> bool:
 	return int(user_id) in OWNER_IDS
 
-async def admin_top_assets_command(update, context):
+async def admin_top_assets_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
@@ -243,10 +312,10 @@ async def admin_top_assets_command(update, context):
 			asset = k[len('delivered_'):]
 			asset_counts[asset] = asset_counts.get(asset, 0) + v
 	top = sorted(asset_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-	msg = "\n".join([f"{a}: {c}" for a, c in top]) or "No data."
+	msg: str = "\n".join([f"{a}: {c}" for a, c in top]) or "No data."
 	await update.message.reply_text(f"Top Assets (delivered):\n{msg}")
 
-async def admin_top_strategies_command(update, context):
+async def admin_top_strategies_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
@@ -257,10 +326,10 @@ async def admin_top_strategies_command(update, context):
 	stats = signal_analytics.get_stats()
 	fill_rates = stats.get('fill_rates', {})
 	top = sorted(fill_rates.items(), key=lambda x: x[1], reverse=True)[:10]
-	msg = "\n".join([f"{a}: {c:.2f}" for a, c in top]) or "No data."
+	msg: str = "\n".join([f"{a}: {c:.2f}" for a, c in top]) or "No data."
 	await update.message.reply_text(f"Top Strategies (by fill rate):\n{msg}")
 
-async def admin_user_engagement_command(update, context):
+async def admin_user_engagement_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
@@ -270,17 +339,17 @@ async def admin_user_engagement_command(update, context):
 	stats = signal_analytics.get_stats()
 	engagement = stats.get('user_engagement', {})
 	top = sorted(engagement.items(), key=lambda x: x[1], reverse=True)[:10]
-	msg = "\n".join([f"{u}: {c}" for u, c in top]) or "No data."
+	msg: str = "\n".join([f"{u}: {c}" for u, c in top]) or "No data."
 	await update.message.reply_text(f"Top Users (engagement):\n{msg}")
 # --------- ADMIN /SELFHECK COMMAND ---------
 @require_tier("ADMIN")
-async def selfcheck_command(update, context):
+async def selfcheck_command(update, context) -> None:
 	"""Admin/Owner: Show quick health summary of the system."""
 	import platform, psutil, shutil
 	import datetime
 	import os
 	from db.session import ENGINE
-	lines = ["🩺 System Self-Check"]
+	lines: list[str] = ["🩺 System Self-Check"]
 	lines.append(f"Time: {datetime.datetime.utcnow().isoformat()} UTC")
 	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
 	lines.append(f"Python: {platform.python_version()}")
@@ -298,9 +367,9 @@ async def selfcheck_command(update, context):
 	try:
 		import json
 		from pathlib import Path
-		drift_path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
+		drift_path: Path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
 		if drift_path.exists():
-			with open(drift_path, "r") as f:
+			with open(drift_path, "r") as f: os.TextIOWrapper[_WrappedBuffer]:
 				drift = json.load(f)
 			acc = drift.get("accuracy")
 			auc = drift.get("auc")
@@ -312,7 +381,7 @@ async def selfcheck_command(update, context):
 	# Uptime
 	try:
 		import time
-		uptime = time.time() - psutil.boot_time()
+		uptime: float = time.time() - psutil.boot_time()
 		lines.append(f"Uptime: {uptime/3600:.1f}h")
 	except Exception:
 		pass
@@ -321,7 +390,7 @@ from .user_prefs import user_prefs_store
 from telegram import Update
 from telegram.ext import ContextTypes
 # --------- NOTIFICATION CUSTOMIZATION COMMAND ---------
-async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Let users customize which assets, timeframes, or strategies they want to receive signals for.
 	Usage:
 	  /notify assets BTCUSDT,ETHUSDT
@@ -334,19 +403,19 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	args = context.args or []
+	user_id: int = update.effective_user.id
+	args: list[str] = context.args or []
 	if not args:
 		prefs = user_prefs_store.get_prefs(user_id)
 		if not prefs:
 			await update.message.reply_text("No custom notification preferences set. You will receive all signals allowed by your tier.")
 		else:
-			lines = ["Your notification preferences:"]
+			lines: list[str] = ["Your notification preferences:"]
 			for k, v in prefs.items():
 				lines.append(f"{k}: {', '.join(sorted(v))}")
 			await update.message.reply_text("\n".join(lines))
 		return
-	cmd = args[0].lower()
+	cmd: str = args[0].lower()
 	if cmd == "clear":
 		user_prefs_store.clear_prefs(user_id)
 		await update.message.reply_text("✅ Notification preferences cleared. You will receive all signals allowed by your tier.")
@@ -354,7 +423,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if len(args) < 2:
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
 		return
-	values = [x.strip().upper() for x in " ".join(args[1:]).split(",") if x.strip()]
+	values: list[str] = [x.strip().upper() for x: str in " ".join(args[1:]).split(",") if x.strip()]
 	if cmd == "assets":
 		user_prefs_store.set_prefs(user_id, assets=values)
 		await update.message.reply_text(f"✅ Assets updated: {', '.join(values)}")
@@ -368,24 +437,24 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
 # --------- FEEDBACK COMMAND ---------
 from .feedback import feedback_store
-async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Allow non-free users to rate a signal or report an issue. Usage: /feedback <signal_ref> <rating|issue> [comment]"""
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
 	if tier.strip().upper() == "FREE":
 		await update.message.reply_text("Feedback is only available for Premium and VIP users. Upgrade to unlock this feature.")
 		return
-	args = context.args or []
+	args: list[str] = context.args or []
 	if len(args) < 2:
 		await update.message.reply_text("Usage: /feedback <signal_ref> <rating|issue> [comment]")
 		return
-	signal_ref = str(args[0]).strip()
-	rating_or_issue = str(args[1]).strip().lower()
-	comment = " ".join(args[2:]).strip() if len(args) > 2 else None
+	signal_ref: str = str(args[0]).strip()
+	rating_or_issue: str = str(args[1]).strip().lower()
+	comment: str | None = " ".join(args[2:]).strip() if len(args) > 2 else None
 
 	# Accept rating as 1-5 or issue as text
 	rating = None
@@ -393,7 +462,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	if rating_or_issue.isdigit() and 1 <= int(rating_or_issue) <= 5:
 		rating = int(rating_or_issue)
 	else:
-		issue = rating_or_issue
+		issue: str = rating_or_issue
 
 	# Optionally: resolve signal_id from short ref (first 8 chars)
 	signal_id = None
@@ -401,12 +470,12 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_signal_id_by_short_ref
-			async with get_session() as session:
+			async with get_session() as session: AsyncSession:
 				signal_id = await get_signal_id_by_short_ref(session, signal_ref)
 	except Exception:
 		pass
 	if not signal_id:
-		signal_id = signal_ref  # fallback: use as-is
+		signal_id: str = signal_ref  # fallback: use as-is
 
 	feedback_store.add_feedback(user_id, signal_id, rating=rating, issue=issue, comment=comment)
 	await update.message.reply_text("✅ Feedback received. Thank you!")
@@ -426,24 +495,24 @@ from datetime import datetime, timezone
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.redis_state import state
+from core.redis_state import KillSwitchState, KillSwitchState, state
 from .access import resolve_user_tier
 
 
-_audit_logger = logging.getLogger("audit")
+_audit_logger: logging.Logger = logging.getLogger("audit")
 
-_BOOT_TS = datetime.now(timezone.utc).isoformat()
+_BOOT_TS: str = datetime.now(timezone.utc).isoformat()
 
 
-async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.message is None or update.effective_user is None:
 		return
 	# Owner-only (avoid exposing deployment fingerprints publicly)
 	if _effective_tier(update.effective_user.id) != "OWNER":
 		return
 	# Non-sensitive fingerprint to confirm which build is running.
-	mode = (os.getenv("RUN_MODE") or "engine").strip().lower()
-	lines = [
+	mode: str = (os.getenv("RUN_MODE") or "engine").strip().lower()
+	lines: list[str] = [
 		"SignalRankAI /version",
 		f"boot_utc: {_BOOT_TS}",
 		f"run_mode: {mode}",
@@ -458,7 +527,7 @@ async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def _effective_tier(user_id: int) -> str:
 	try:
-		t = resolve_user_tier(user_id)
+		t: str = resolve_user_tier(user_id)
 	except Exception:
 		t = "FREE"
 	try:
@@ -473,7 +542,7 @@ async def _public_guard(update: Update) -> bool:
 	"""Return True if request should be blocked (kill-switch/rate-limit)."""
 	if update.effective_user is None or update.message is None:
 		return True
-	user_id = update.effective_user.id
+	user_id: int = update.effective_user.id
 	# Kill-switch blocks signal-related actions globally
 	try:
 		if state.get_killswitch_sync().enabled:
@@ -492,48 +561,48 @@ async def _public_guard(update: Update) -> bool:
 
 
 
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
 	from .command_access import get_help_message
 	lang = _get_user_language(user_id)
-	msg = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
+	msg: str = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
 	# Add dashboard link for eligible users
 	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
-		dashboard_url = f"https://yourdomain.com/userdash/login?uid={user_id}"
+		dashboard_url: str = f"https://yourdomain.com/userdash/login?uid={user_id}"
 		# Escape brackets and parentheses in dashboard link for Markdown V2
-		safe_dashboard_url = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
-		safe_dashboard_text = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
+		safe_dashboard_url: str = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
+		safe_dashboard_text: str = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
 		msg += f"\n\n🌐 [{safe_dashboard_text}]({safe_dashboard_url})"
 	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="MarkdownV2")
 
 # --------- MYID COMMAND ---------
-async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
-	msg = f"Your Telegram user ID: `{user_id}`\nYour current tier: *{tier}*"
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+	msg: str = f"Your Telegram user ID: `{user_id}`\nYour current tier: *{tier}*"
 	await update.message.reply_text(msg, parse_mode="Markdown")
 
 # --------- DASHBOARD COMMAND ---------
-async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
 	if tier.strip().upper() not in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		await update.message.reply_text("The dashboard is only available for Premium, VIP, and above.")
 		return
-	dashboard_url = f"https://yourdomain.com/userdash/login?uid={user_id}"
+	dashboard_url: str = f"https://yourdomain.com/userdash/login?uid={user_id}"
 	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="Markdown")
 
 
-async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Show user's signals with tier-specific formatting.
 	
 	FREE: Show signals they received (delivered)
@@ -541,8 +610,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	"""
 	if await _public_guard(update):
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
 
 	# Owner and admin always get VIP format
 	if tier.lower() in {"owner", "admin"}:
@@ -556,9 +625,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
-				async with get_session() as session:
+				async with get_session() as session: AsyncSession:
 					# Fetch ALL signals delivered to user today (no limit)
-					rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 					signals_list = [
 						{
 							"signal_id": r.signal_id,
@@ -571,9 +640,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 							"rr_ratio": r.rr_estimate,
 							"score": r.score,
 						}
-						for r in rows
+						for r: Signal in rows
 					]
-		except Exception as e:
+		except Exception as e: Exception:
 			_audit_logger.error(f"Error fetching delivered signals for {user_id}: {e}")
 			signals_list = []
 		
@@ -598,8 +667,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			return
 
 		picked = eligible if len(eligible) <= 2 else random.sample(eligible, 2)
-		total_signals = len(eligible)
-		lines = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals})", ""]
+		total_signals: int = len(eligible)
+		lines: list[str] = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals})", ""]
 		for i, s in enumerate(picked, 1):
 			entry = float(s.get('entry') or 0)
 			sig_id = s.get('signal_id', 'N/A')
@@ -620,8 +689,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import list_unresolved_signals_for_user
-			async with get_session() as session:
-				rows = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
+			async with get_session() as session: AsyncSession:
+				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
 				unresolved_signals = [
 					{
 						"signal_id": r.signal_id,
@@ -641,15 +710,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 						"strategy_group": r.strategy_group,
 						"created_at": r.created_at,
 					}
-					for r in rows
+					for r: Signal in rows
 				]
-	except Exception as e:
+	except Exception as e: Exception:
 		_audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
 		unresolved_signals = []
 
 	# Tier-based filtering
-	tier_norm = str(tier or "").strip().lower()
-	is_vip = tier_norm in {"vip", "owner", "admin"}
+	tier_norm: str = str(tier or "").strip().lower()
+	is_vip: bool = tier_norm in {"vip", "owner", "admin"}
 	filtered_signals = []
 	for s in unresolved_signals:
 		try:
@@ -672,8 +741,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
-				async with get_session() as session:
-					rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+				async with get_session() as session: AsyncSession:
+					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 					delivered_today = [
 						{
 							"signal_id": r.signal_id,
@@ -686,16 +755,16 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 							"rr_ratio": r.rr_estimate,
 							"score": r.score,
 						}
-						for r in rows
+						for r: Signal in rows
 					]
 		except Exception:
 			delivered_today = []
 
 		if delivered_today:
-			lines = ["📬 Delivered today (latest signals):", ""]
+			lines: list[str] = ["📬 Delivered today (latest signals):", ""]
 			for i, s in enumerate(delivered_today[:10], 1):
 				ref = str(s.get("signal_id") or "N/A")
-				ref_short = ref[:8]
+				ref_short: str = ref[:8]
 				try:
 					score_val = float(s.get("score") or 0)
 				except Exception:
@@ -724,7 +793,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	from .formatter import format_signal
 	import json
 	
-	total_active = len(filtered_signals)
+	total_active: int = len(filtered_signals)
 	if update.message is not None and total_active > 0:
 		if is_vip:
 			await update.message.reply_text(f"📊 Your Active Signals ({total_active} with score ≥ 55):\n\n")
@@ -745,9 +814,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			try:
 				if isinstance(tp_raw, str):
 					tp_list = json.loads(tp_raw)
-					take_profit = float(tp_list[0]) if tp_list else 0.0
+					take_profit: float = float(tp_list[0]) if tp_list else 0.0
 				elif isinstance(tp_raw, list):
-					take_profit = float(tp_raw[0]) if tp_raw else 0.0
+					take_profit: float = float(tp_raw[0]) if tp_raw else 0.0
 				else:
 					take_profit = float(tp_raw or 0)
 			except Exception:
@@ -772,20 +841,20 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				demerits.append("ML model cautious")
 			if regime and str(regime).upper() != "NEUTRAL":
 				merits.append(f"Regime: {regime}")
-			merits_text = ", ".join(merits) if merits else "Balanced setup"
-			demerits_text = ", ".join(demerits) if demerits else "No major drawbacks"
+			merits_text: str = ", ".join(merits) if merits else "Balanced setup"
+			demerits_text: str = ", ".join(demerits) if demerits else "No major drawbacks"
 			
 			# Calculate entry/exit advice
 			if s.get('direction', '').upper() == 'LONG':
-				entry_advice = f"Buy on dip to {entry:.4f}"
-				exit_advice = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
+				entry_advice: str = f"Buy on dip to {entry:.4f}"
+				exit_advice: str = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
 			else:
-				entry_advice = f"Sell on rally to {entry:.4f}"
-				exit_advice = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
+				entry_advice: str = f"Sell on rally to {entry:.4f}"
+				exit_advice: str = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
 			
 			if is_vip:
 				# Full advice for VIP
-				msg = (
+				msg: str = (
 					f"🟢 VIP Signal: {s.get('asset')} ({s.get('timeframe')})\n"
 					f"ID: `{sig_id}`\n\n"
 					f"Setup: {s.get('direction').upper()} {s.get('strategy_name')}\n"
@@ -804,7 +873,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				)
 			else:
 				# Limited advice for PREMIUM
-				msg = (
+				msg: str = (
 					f"PREMIUM Signal: {s.get('asset')} ({s.get('timeframe')})\n"
 					f"ID: `{sig_id}`\n\n"
 					f"Setup: {s.get('direction').upper()}\n"
@@ -819,35 +888,35 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			
 			if update.message is not None:
 				await update.message.reply_text(msg)
-		except Exception as e:
+		except Exception as e: Exception:
 			_audit_logger.error(f"Error formatting signal for {user_id}: {e}")
 			continue
 
 
-async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
-	arg = (context.args[0] if context.args else "").strip() if context.args else ""
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+	arg: str = (context.args[0] if context.args else "").strip() if context.args else ""
 	if not arg:
 		await update.message.reply_text("Usage: /signal <reference> OR /signal all")
 		return
 
-	def _as_float(v):
+	def _as_float(v) -> float | None:
 		try:
 			return float(v)
 		except Exception:
 			return None
 
-	def _parse_tp(tp_raw):
+	def _parse_tp(tp_raw) -> None | float:
 		if tp_raw is None:
 			return None
 		if isinstance(tp_raw, (int, float)):
 			return float(tp_raw)
-		s = str(tp_raw).strip()
+		s: str = str(tp_raw).strip()
 		if not s:
 			return None
 		try:
@@ -865,11 +934,11 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			return None
 
 	def _is_crypto(symbol: str) -> bool:
-		s = (symbol or "").upper().strip()
+		s: str = (symbol or "").upper().strip()
 		return s.endswith("USDT") or s.endswith("USDC") or s.endswith("BUSD")
 
 	def _binance_symbol(asset: str) -> str:
-		a = (asset or "").upper().strip()
+		a: str = (asset or "").upper().strip()
 		# BTCUSDT -> BTC/USDT
 		if a.endswith("USDT"):
 			return a[:-4] + "/USDT"
@@ -881,11 +950,11 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		return a.replace("USD", "/USDT")
 
 	def _binance_symbol_rest(asset: str) -> str:
-		a = (asset or "").upper().strip()
-		a = a.replace("/", "").replace("-", "")
+		a: str = (asset or "").upper().strip()
+		a: str = a.replace("/", "").replace("-", "")
 		# Normalize USD suffix to USDT
 		if a.endswith("USD") and not a.endswith("USDT"):
-			a = a[:-3] + "USDT"
+			a: str = a[:-3] + "USDT"
 		return a
 
 	def _current_price(asset: str) -> float | None:
@@ -893,13 +962,13 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		try:
 			from data.fetcher import get_candles, get_asset_type
 			
-			asset_type = get_asset_type(asset)
+			asset_type: str = get_asset_type(asset)
 			if asset_type not in {"crypto", "fx", "stock"}:
 				asset_type = "crypto"
 			
 			# Try short timeframes first; fall back if unavailable
 			candles = []
-			for tf in ("1m", "5m", "15m"):
+			for tf: str in ("1m", "5m", "15m"):
 				candles = get_candles(asset, tf)
 				if candles:
 					break
@@ -908,17 +977,17 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				# Last-resort fallbacks per asset type
 				# 1) Crypto: Try Bybit spot tickers, then Yahoo last close
 				try:
-					atype = asset_type
+					atype: str = asset_type
 					if atype == "crypto":
 						# Bybit spot ticker
 						import requests
-						sym = (asset or "").upper().replace("/", "").replace("-", "")
+						sym: str = (asset or "").upper().replace("/", "").replace("-", "")
 						if sym.endswith("USD") and not sym.endswith("USDT"):
-							sym = sym[:-3] + "USDT"
+							sym: str = sym[:-3] + "USDT"
 						url = "https://api.bybit.com/v5/market/tickers"
-						params = {"category": "spot", "symbol": sym}
+						params: dict[str, str] = {"category": "spot", "symbol": sym}
 						try:
-							resp = requests.get(url, params=params, timeout=8)
+							resp: Response = requests.get(url, params=params, timeout=8)
 							data = resp.json() if resp.ok else {}
 							result = (data.get("result") or {}).get("list") or []
 							if isinstance(result, list) and result:
@@ -931,10 +1000,10 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 						# Yahoo Finance quick last close
 						try:
 							import yfinance as yf
-							ysym = (asset or "").upper()
+							ysym: str = (asset or "").upper()
 							if ysym.endswith("USDT"):
-								base = ysym[:-4]
-								ysym = f"{base}-USD"
+								base: str = ysym[:-4]
+								ysym: str = f"{base}-USD"
 							tkr = yf.Ticker(ysym)
 							h = tkr.history(period="1d", interval="1m")
 							if not h.empty:
@@ -946,9 +1015,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					if atype in {"fx", "stock"}:
 						try:
 							import yfinance as yf
-							ysym = (asset or "").upper().replace("_", "").replace("-", "")
+							ysym: str = (asset or "").upper().replace("_", "").replace("-", "")
 							if atype == "fx" and "/" not in ysym and len(ysym) == 6:
-								ysym = f"{ysym[:3]}{ysym[3:]}=X"
+								ysym: str = f"{ysym[:3]}{ysym[3:]}=X"
 							tkr = yf.Ticker(ysym)
 							h = tkr.history(period="1d", interval="1m")
 							if not h.empty:
@@ -966,30 +1035,30 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				return float(close_price)
 			
 			return None
-		except Exception as e:
+		except Exception as e: Exception:
 			logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
 			return None
 
 	def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
 		"""Return (advice_text, metrics)."""
 		direction = (direction or "").lower().strip()
-		risk = abs(entry - sl)
-		reward = abs(tp - entry)
+		risk: float = abs(entry - sl)
+		reward: float = abs(tp - entry)
 		metrics: dict = {"risk": risk, "reward": reward}
 		if risk <= 0 or reward <= 0:
 			return ("Manage risk carefully. Consider waiting for clearer conditions.", metrics)
 
 		if direction == "long":
-			pl_pct = ((price - entry) / entry) * 100.0
-			progress = (price - entry) / (tp - entry) if (tp - entry) != 0 else 0.0
-			dist_to_sl = (price - sl)
+			pl_pct: float = ((price - entry) / entry) * 100.0
+			progress: float = (price - entry) / (tp - entry) if (tp - entry) != 0 else 0.0
+			dist_to_sl: float = (price - sl)
 		else:
-			pl_pct = ((entry - price) / entry) * 100.0
-			progress = (entry - price) / (entry - tp) if (entry - tp) != 0 else 0.0
-			dist_to_sl = (sl - price)
+			pl_pct: float = ((entry - price) / entry) * 100.0
+			progress: float = (entry - price) / (entry - tp) if (entry - tp) != 0 else 0.0
+			dist_to_sl: float = (sl - price)
 
 		metrics.update({"pl_pct": pl_pct, "progress": progress})
-		near_sl = (dist_to_sl / risk) <= 0.2
+		near_sl: bool = (dist_to_sl / risk) <= 0.2
 		if progress >= 1.0:
 			return ("✅ Target zone reached. Consider taking profit (full or partial) and managing trailing risk.", metrics)
 		if progress >= 0.75:
@@ -1010,26 +1079,26 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		from .formatter import format_signal, format_signal_free_limited
 
 		if arg.lower() == "all":
-			async with get_session() as session:
-				rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+			async with get_session() as session: AsyncSession:
+				rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 				await session.commit()
 			if not rows:
 				await update.message.reply_text("No signals delivered to you today.")
 				return
-			lines = ["📌 Today’s signals:", ""]
-			for s in rows[:20]:
+			lines: list[str] = ["📌 Today’s signals:", ""]
+			for s: Signal in rows[:20]:
 				ref = str(getattr(s, "signal_id", "") or "")
 				lines.append(f"• {ref} — {s.asset} {s.timeframe} {s.direction}")
 			await update.message.reply_text("\n".join(lines))
 			return
 
-		async with get_session() as session:
-			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
+		async with get_session() as session: AsyncSession:
+			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			oc = None
 			if sig is not None:
 				try:
 					from db.pg_features import get_outcome_for_signal
-					oc = await get_outcome_for_signal(session, str(sig.signal_id))
+					oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
 				except Exception:
 					oc = None
 			await session.commit()
@@ -1054,15 +1123,15 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			"ml_probability": getattr(sig, "ml_probability", None),
 		}
 		# Enrich with entry_status and current price
-		entry = _as_float(sig_dict.get("entry"))
-		asset = str(sig_dict.get("asset") or "").upper()
+		entry: float | None = _as_float(sig_dict.get("entry"))
+		asset: str = str(sig_dict.get("asset") or "").upper()
 		price = None
 		entry_status = "UNKNOWN"
 		
 		if entry is not None and _is_crypto(asset):
-			price = _current_price(asset)
+			price: float | None = _current_price(asset)
 			if price is not None and entry > 0:
-				distance_pct = abs(price - entry) / entry * 100.0
+				distance_pct: float = abs(price - entry) / entry * 100.0
 				if distance_pct <= 5.0:
 					entry_status = "AT_ENTRY"
 				elif price < entry:
@@ -1073,10 +1142,10 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				sig_dict["current_price"] = price
 				sig_dict["distance_pct"] = distance_pct
 		if oc is not None:
-			status = str(getattr(oc, "status", "") or "").lower()
-			r = getattr(oc, "r_multiple", None)
-			pct = getattr(oc, "percent", None)
-			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			status: str = str(getattr(oc, "status", "") or "").lower()
+			r: os.Any | None = getattr(oc, "r_multiple", None)
+			pct: os.Any | None = getattr(oc, "percent", None)
+			label: str = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
 			
 			# Show entry status with outcome
 			entry_status = sig_dict.get("entry_status", "UNKNOWN")
@@ -1090,7 +1159,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				position_lines.append(f"💰 R-Multiple: {float(r):.2f}R")
 			if pct is not None:
 				position_lines.append(f"📈 Move: {float(pct):.2f}%")
-			advice_line = f"✅ This signal has a completed outcome. Use /outcome {str(arg)[:8]} for full details."
+			advice_line: str = f"✅ This signal has a completed outcome. Use /outcome {str(arg)[:8]} for full details."
 		else:
 			# Show entry status for live signals
 			entry_status = sig_dict.get("entry_status", "UNKNOWN")
@@ -1108,7 +1177,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			
 			# Live estimate (crypto only)
 			if entry is not None and sl is not None and tp is not None:
-				price = _current_price(str(sig_dict.get("asset") or ""))
+				price: float | None = _current_price(str(sig_dict.get("asset") or ""))
 				if price is not None:
 					adv, metrics = _position_advice(
 						direction=str(sig_dict.get("direction") or ""),
@@ -1125,13 +1194,13 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 						position_lines.append(f"Progress to TP (est.): {max(0.0, min(1.0, float(metrics.get('progress')))) * 100.0:.0f}%")
 					except Exception:
 						pass
-					advice_line = adv
+					advice_line: str = adv
 				else:
 					position_lines.append("Live position: unavailable right now.")
 					advice_line = "Check later for a live update."
 
 		if tier_rank(tier) < tier_rank("PREMIUM"):
-			base = format_signal_free_limited(sig_dict)
+			base: str = format_signal_free_limited(sig_dict)
 			if position_lines or advice_line:
 				base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 				if advice_line:
@@ -1139,27 +1208,27 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			await update.message.reply_text(base)
 			return
 
-		base = format_signal(sig_dict)
+		base: None | str = format_signal(sig_dict)
 		if position_lines or advice_line:
 			base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 			if advice_line:
 				base += "\n\n🧠 Suggestion\n" + str(advice_line)
 		await update.message.reply_text(base)
 		return
-	except Exception as e:
+	except Exception as e: Exception:
 		import logging
 		logging.getLogger(__name__).error(f"signal_command failed: {e}", exc_info=True)
 		await update.message.reply_text("Signal lookup is temporarily unavailable.")
 		return
 
 
-async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
-	arg = (context.args[0] if context.args else "").strip() if context.args else ""
+	user_id: int = update.effective_user.id
+	arg: str = (context.args[0] if context.args else "").strip() if context.args else ""
 	if not arg:
 		await update.message.reply_text("Usage: /outcome <reference>")
 		return
@@ -1174,29 +1243,29 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		import json
 		import os
 		
-		async with get_session() as session:
+		async with get_session() as session: AsyncSession:
 			# Get user and their tier
-			user = await get_or_create_user(session, telegram_user_id=int(user_id))
-			user_tier = str(user.tier or "free").strip().lower()
+			user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
+			user_tier: str = str(user.tier or "free").strip().lower()
 			
 			# Owner and admin always get VIP format
 			if user_tier in {"owner", "admin"}:
 				user_tier = "vip"
-			sig = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
+			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			
 			# If signal not delivered to user, check if it exists at all
 			if sig is None:
 				# Try to find the signal by ref without delivery check
-				ref = (arg or "").strip()
-				query = select(Signal)
+				ref: str = (arg or "").strip()
+				query: Select[Tuple[Signal]] = select(Signal)
 				if len(ref) >= 32:
-					query = query.where(Signal.signal_id == ref)
+					query: Select[Tuple[Signal]] = query.where(Signal.signal_id == ref)
 				else:
-					query = query.where(Signal.signal_id.like(f"{ref}%"))
-				query = query.order_by(Signal.created_at.desc()).limit(1)
+					query: Select[Tuple[Signal]] = query.where(Signal.signal_id.like(f"{ref}%"))
+				query: Select[Tuple[Signal]] = query.order_by(Signal.created_at.desc()).limit(1)
 				
-				res_undelivered = await session.execute(query)
-				undelivered_sig = res_undelivered.scalars().first()
+				res_undelivered: Result[Tuple[Signal]] = await session.execute(query)
+				undelivered_sig: Signal | None = res_undelivered.scalars().first()
 				
 				if undelivered_sig is not None:
 					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
@@ -1206,16 +1275,16 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					return
 			
 			# Signal was delivered to user, now check for outcome
-			oc = await get_outcome_for_signal(session, str(sig.signal_id))
+			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
 			await session.commit()
 		
 		# If outcome exists, show it
 		if oc is not None:
-			status = str(getattr(oc, "status", "") or "").lower()
-			r = getattr(oc, "r_multiple", None)
-			pct = getattr(oc, "percent", None)
-			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
-			lines = [
+			status: str = str(getattr(oc, "status", "") or "").lower()
+			r: os.Any | None = getattr(oc, "r_multiple", None)
+			pct: os.Any | None = getattr(oc, "percent", None)
+			label: str = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			lines: list[str] = [
 				"📣 Outcome",
 				"",
 				f"Reference: {sig.signal_id[:8]}",
@@ -1225,9 +1294,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			]
 			
 			# Show entry status at time of signal
-			ml_prob = getattr(sig, "ml_probability", None)
+			ml_prob: os.Any | None = getattr(sig, "ml_probability", None)
 			if ml_prob is not None:
-				ml_pct = round(float(ml_prob) * 100, 1)
+				ml_pct: float = round(float(ml_prob) * 100, 1)
 				lines.append(f"ML Score: {ml_pct}%")
 			
 			if r is not None:
@@ -1249,11 +1318,11 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		if user_tier in {"owner", "admin"}:
 			user_tier = "vip"
 		
-		show_levels = user_tier in {"vip", "premium"}
-		show_strategy = user_tier in {"vip"}
-		show_strength = user_tier in {"vip"}
+		show_levels: bool = user_tier in {"vip", "premium"}
+		show_strategy: bool = user_tier in {"vip"}
+		show_strength: bool = user_tier in {"vip"}
 		
-		lines = ["🔄 Signal In Progress", ""]
+		lines: list[str] = ["🔄 Signal In Progress", ""]
 		
 		# Reference
 		lines.append(f"Reference: {sig.signal_id}")
@@ -1292,10 +1361,10 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			lines.append(f"Score: {sig.score:.2f}")
 			
 			# ML Score
-			ml_prob = getattr(sig, "ml_probability", None)
+			ml_prob: os.Any | None = getattr(sig, "ml_probability", None)
 			if ml_prob is not None:
-				ml_pct = round(float(ml_prob) * 100, 1)
-				ml_emoji = "✅" if float(ml_prob) >= 0.75 else ("⚠️" if float(ml_prob) >= 0.5 else "❌")
+				ml_pct: float = round(float(ml_prob) * 100, 1)
+				ml_emoji: str = "✅" if float(ml_prob) >= 0.75 else ("⚠️" if float(ml_prob) >= 0.5 else "❌")
 				lines.append(f"{ml_emoji} ML Score: {ml_pct}%")
 		
 		# RR Estimate (premium+)
@@ -1316,18 +1385,18 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		lines.append("📍 Current Position")
 		
 		# Get live price and calculate position
-		def _as_float(v):
+		def _as_float(v) -> float | None:
 			try:
 				return float(v)
 			except Exception:
 				return None
 		
-		def _parse_tp(tp_raw):
+		def _parse_tp(tp_raw) -> None | float:
 			if tp_raw is None:
 				return None
 			if isinstance(tp_raw, (int, float)):
 				return float(tp_raw)
-			s = str(tp_raw).strip()
+			s: str = str(tp_raw).strip()
 			if not s:
 				return None
 			try:
@@ -1344,14 +1413,14 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 				return None
 		
 		def _is_crypto(symbol: str) -> bool:
-			s = (symbol or "").upper().strip()
+			s: str = (symbol or "").upper().strip()
 			return s.endswith("USDT") or s.endswith("USDC") or s.endswith("BUSD")
 		
 		def _binance_symbol_rest(asset: str) -> str:
-			a = (asset or "").upper().strip()
-			a = a.replace("/", "").replace("-", "")
+			a: str = (asset or "").upper().strip()
+			a: str = a.replace("/", "").replace("-", "")
 			if a.endswith("USD") and not a.endswith("USDT"):
-				a = a[:-3] + "USDT"
+				a: str = a[:-3] + "USDT"
 			return a
 		
 		def _current_price(asset: str) -> float | None:
@@ -1359,12 +1428,12 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			try:
 				from data.fetcher import get_candles, get_asset_type
 				
-				asset_type = get_asset_type(asset)
+				asset_type: str = get_asset_type(asset)
 				if asset_type not in {"crypto", "fx", "stock"}:
 					asset_type = "crypto"
 			
 				candles = []
-				for tf in ("1m", "5m", "15m"):
+				for tf: str in ("1m", "5m", "15m"):
 					candles = get_candles(asset, tf)
 					if candles:
 						break
@@ -1379,30 +1448,30 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 					return float(close_price)
 				
 				return None
-			except Exception as e:
+			except Exception as e: Exception:
 				logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
 				return None
 		
 		def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
 			"""Return (advice_text, metrics)."""
 			direction = (direction or "").lower().strip()
-			risk = abs(entry - sl)
-			reward = abs(tp - entry)
+			risk: float = abs(entry - sl)
+			reward: float = abs(tp - entry)
 			metrics: dict = {"risk": risk, "reward": reward}
 			if risk <= 0 or reward <= 0:
 				return ("Manage risk carefully. Consider waiting for clearer conditions.", metrics)
 			
 			if direction == "long":
-				pl_pct = ((price - entry) / entry) * 100.0
-				progress = (price - entry) / (tp - entry) if (tp - entry) != 0 else 0.0
-				dist_to_sl = (price - sl)
+				pl_pct: float = ((price - entry) / entry) * 100.0
+				progress: float = (price - entry) / (tp - entry) if (tp - entry) != 0 else 0.0
+				dist_to_sl: float = (price - sl)
 			else:
-				pl_pct = ((entry - price) / entry) * 100.0
-				progress = (entry - price) / (entry - tp) if (entry - tp) != 0 else 0.0
-				dist_to_sl = (sl - price)
+				pl_pct: float = ((entry - price) / entry) * 100.0
+				progress: float = (entry - price) / (entry - tp) if (entry - tp) != 0 else 0.0
+				dist_to_sl: float = (sl - price)
 			
 			metrics.update({"pl_pct": pl_pct, "progress": progress})
-			near_sl = (dist_to_sl / risk) <= 0.2
+			near_sl: bool = (dist_to_sl / risk) <= 0.2
 			if progress >= 1.0:
 				return ("✅ Target zone reached. Consider taking profit (full or partial) and managing trailing risk.", metrics)
 			if progress >= 0.75:
@@ -1414,12 +1483,12 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			return ("⏳ Still developing. Consider waiting; avoid moving SL further away.", metrics)
 		
 		# Calculate current position
-		entry = _as_float(sig.entry)
-		sl = _as_float(sig.stop_loss)
-		tp = _parse_tp(sig.take_profit)
+		entry: float | None = _as_float(sig.entry)
+		sl: float | None = _as_float(sig.stop_loss)
+		tp: None | float = _parse_tp(sig.take_profit)
 		
 		if entry is not None and sl is not None and tp is not None:
-			price = _current_price(str(sig.asset))
+			price: float | None = _current_price(str(sig.asset))
 			if price is not None:
 				advice, metrics = _position_advice(
 					direction=str(sig.direction),
@@ -1455,27 +1524,27 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		
 		await update.message.reply_text("\n".join(lines))
 		return
-	except Exception as e:
+	except Exception as e: Exception:
 		import logging
 		logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
 		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
 		return
 
 
-async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id = update.effective_user.id
+	user_id: int = update.effective_user.id
 	code = None
 	progress = None
 	try:
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_or_create_referral_code, get_referral_progress
-			async with get_session() as session:
-				code = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
+			async with get_session() as session: AsyncSession:
+				code: str = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
 				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
 				await session.commit()
 		else:
@@ -1486,11 +1555,11 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 	bot_username = None
 	try:
-		me = await context.bot.get_me()
-		bot_username = getattr(me, "username", None)
+		me: User = await context.bot.get_me()
+		bot_username: os.Any | None = getattr(me, "username", None)
 	except Exception:
-		bot_username = os.getenv("BOT_USERNAME")
-	progress_line = ""
+		bot_username: str | None = os.getenv("BOT_USERNAME")
+	progress_line: str = ""
 	if progress:
 		need = int(progress.get("needed_for_next", 0) or 0)
 		toward = int(progress.get("toward_next", 0) or 0)
@@ -1498,12 +1567,12 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		# If you're exactly on a multiple of 3, you already earned the previous reward;
 		# the next reward needs 3 more invites.
 		if toward == 0:
-			progress_line = f"\n\nProgress: 0/3 (invite 3 more people to earn +7 days Premium). Total invites: {total}."
+			progress_line: str = f"\n\nProgress: 0/3 (invite 3 more people to earn +7 days Premium). Total invites: {total}."
 		else:
-			progress_line = f"\n\nProgress: {toward}/3 (invite {need} more to earn +7 days Premium). Total invites: {total}."
+			progress_line: str = f"\n\nProgress: {toward}/3 (invite {need} more to earn +7 days Premium). Total invites: {total}."
 
 	if bot_username and code:
-		link = f"https://t.me/{bot_username}?start=ref_{code}"
+		link: str = f"https://t.me/{bot_username}?start=ref_{code}"
 		await update.message.reply_text(
 			f"🎁 Invite link:\n{link}\n\n"
 			"Reward: invite 3 new users → get +7 days Premium."
@@ -1521,7 +1590,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 	else:
 		await update.message.reply_text("Invite system is temporarily unavailable.")
 
-async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	# VIP seat info from Postgres (best-effort)
@@ -1529,17 +1598,17 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		from db.session import ENGINE, get_session
 		from db.repository import count_active_vip_users
 		if ENGINE is not None:
-			async with get_session() as session:
-				used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
+			async with get_session() as session: AsyncSession:
+				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				await session.commit()
 			limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
-			remaining = max(0, limit - used)
+			remaining: int = max(0, limit - used)
 		else:
 			used, remaining, limit = 0, 15, 15
 	except Exception:
 		used, remaining, limit = 0, 15, 15
-	vip_line = f"VIP seats remaining: {remaining}/{limit}"
-	msg = (
+	vip_line: str = f"VIP seats remaining: {remaining}/{limit}"
+	msg: str = (
 		"💎 SignalRankAI Pricing\n\n"
 		"🆓 FREE\n"
 		"• 1–2 delayed signal summaries per day\n"
@@ -1572,31 +1641,31 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		await update.message.reply_text(msg)
 
 
-async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	"""Generates Paystack payment links for subscriptions with tier confirmation."""
-	user_id = update.effective_user.id
+	user_id: int = update.effective_user.id
 	from paystack.paystack import generate_paystack_link
 	from signalrank_telegram.payment_handler import format_tier_upgrade_confirmation
 	
 	# Plan codes (optional; used later when wiring Paystack plans properly)
-	premium_monthly_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_MONTHLY")
-	premium_quarterly_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_QUARTERLY")
-	premium_semiannual_code = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_SEMIANNUAL")
-	vip_monthly_code = os.getenv("PAYSTACK_PLAN_CODE_VIP_MONTHLY")
+	premium_monthly_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_MONTHLY")
+	premium_quarterly_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_QUARTERLY")
+	premium_semiannual_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_SEMIANNUAL")
+	vip_monthly_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_VIP_MONTHLY")
 
 	links = []
 	
 	# PREMIUM options
-	premium_plans = [
+	premium_plans: list[tuple[str, int, int, str | None]] = [
 		("Premium (₦4,000 / 7 days)", 4000, 7, os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY")),
 		("Premium (₦12,000 / 30 days)", 12000, 30, premium_monthly_code),
 		("Premium (₦28,000 / 90 days)", 28000, 90, premium_quarterly_code),
 	]
 	
-	premium_formatted = await format_tier_upgrade_confirmation("PREMIUM", 4000, 7, user_id)
-	premium_msg = premium_formatted + "\n\n📌 PREMIUM Plans:\n"
+	premium_formatted: str = await format_tier_upgrade_confirmation("PREMIUM", 4000, 7, user_id)
+	premium_msg: str = premium_formatted + "\n\n📌 PREMIUM Plans:\n"
 	
 	for label, amount, days, plan_code in premium_plans:
 		link = generate_paystack_link(user_id, amount, tier="premium", duration_days=days, plan_code=plan_code)
@@ -1611,12 +1680,12 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 		from db.repository import count_active_vip_users, get_active_subscription
 		from config import OWNER_IDS
 		if ENGINE is not None:
-			async with get_session() as session:
-				used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
+			async with get_session() as session: AsyncSession:
+				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
-				remaining = max(0, limit - used)
-				sub = await get_active_subscription(session, telegram_user_id=user_id, tier="vip")
-				already_vip = sub is not None
+				remaining: int = max(0, limit - used)
+				sub: Subscription | None = await get_active_subscription(session, telegram_user_id=user_id, tier="vip")
+				already_vip: bool = sub is not None
 				await session.commit()
 		else:
 			remaining, limit, already_vip = 15, 15, False
@@ -1624,16 +1693,16 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 			bypassed = bool(await state.has_temp_owner(user_id))
 		except Exception:
 			bypassed = False
-		is_owner = user_id in OWNER_IDS
-		can_offer_vip = (remaining > 0) or already_vip or bypassed or is_owner
+		is_owner: bool = user_id in OWNER_IDS
+		can_offer_vip: bool = (remaining > 0) or already_vip or bypassed or is_owner
 	except Exception:
 		can_offer_vip = True
 		remaining = None
 		limit = None
 
 	if can_offer_vip:
-		vip_formatted = await format_tier_upgrade_confirmation("VIP", 20000, 30, user_id)
-		vip_msg = vip_formatted + "\n\n"
+		vip_formatted: str = await format_tier_upgrade_confirmation("VIP", 20000, 30, user_id)
+		vip_msg: str = vip_formatted + "\n\n"
 		
 		vip_link = generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code)
 		vip_msg += f"🔗 {vip_link}\n"
@@ -1656,7 +1725,7 @@ from telegram import Update
 
 
 # /policy or /refunds command
-async def policy_command(update, context):
+async def policy_command(update, context) -> None:
 	if await _public_guard(update):
 		return
 	msg = (
@@ -1678,7 +1747,7 @@ async def recap_command(update, context):
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_weekly_recap_stats
-			async with get_session() as session:
+			async with get_session() as session: AsyncSession:
 				stats = await get_weekly_recap_stats(session, int(user_id))
 				await session.commit()
 			total = int((stats or {}).get("total") or 0)
@@ -1689,8 +1758,8 @@ async def recap_command(update, context):
 					"Thank you for trading responsibly."
 				)
 				return
-			most_active = ", ".join(list((stats or {}).get("top_assets") or [])[:2]) or "N/A"
-			best_strategy = ", ".join(list((stats or {}).get("top_strategies") or [])[:1]) or "N/A"
+			most_active: str = ", ".join(list((stats or {}).get("top_assets") or [])[:2]) or "N/A"
+			best_strategy: str = ", ".join(list((stats or {}).get("top_strategies") or [])[:1]) or "N/A"
 			await update.message.reply_text(
 				"\U0001F4CA SignalRankAI Weekly Recap\n\n"
 				"Here’s a quick overview of your past week:\n\n"
@@ -1705,7 +1774,7 @@ async def recap_command(update, context):
 
 	# SQLite fallback
 	trades = []  # Postgres-only
-	total_signals = len(trades)
+	total_signals: int = len(trades)
 	if total_signals == 0:
 		await update.message.reply_text(
 			"\U0001F4CA SignalRankAI Weekly Recap\n\n"
@@ -1716,7 +1785,7 @@ async def recap_command(update, context):
 	from collections import Counter
 	assets = [t[2] for t in trades]  # asset column
 	strategies = [t[9] for t in trades]  # strategy_name column
-	most_active = ', '.join([a for a, _ in Counter(assets).most_common(2)]) if assets else 'N/A'
+	most_active: str = ', '.join([a for a, _ in Counter(assets).most_common(2)]) if assets else 'N/A'
 	best_strategy = Counter(strategies).most_common(1)[0][0] if strategies else 'N/A'
 	await update.message.reply_text(
 		"\U0001F4CA SignalRankAI Weekly Recap\n\n"
@@ -1727,14 +1796,14 @@ async def recap_command(update, context):
 	)
 
 
-TIER_RANKS = {
+TIER_RANKS: dict[str, int] = {
 	"FREE": 0,
 	"PREMIUM": 1,
 	"VIP": 2,
 	"OWNER": 3
 }
 
-def tier_rank(tier):
+def tier_rank(tier) -> int:
 	return TIER_RANKS.get(tier, 0)
 
 
@@ -1749,28 +1818,28 @@ def require_tier(min_tier):
 			user_id = update.effective_user.id
 			# Global kill-switch
 			try:
-				ks = state.get_killswitch_sync()
+				ks: KillSwitchState = state.get_killswitch_sync()
 			except Exception:
-				ks = type("KS", (), {"enabled": False})()
+				ks: KS = type("KS", (), {"enabled": False})()
 			if getattr(ks, "enabled", False):
 				await update.message.reply_text("🚨 Signals are temporarily paused.")
 				return
 
 			# Rate limit (20/min)
 			try:
-				limited = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
+				limited: bool = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
 			except Exception:
 				limited = False
 			if limited:
 				await update.message.reply_text("Rate limit exceeded. Please wait.")
-			tier = _effective_tier(user_id)
+			tier: str = _effective_tier(user_id)
 			if tier_rank(tier) < tier_rank(min_tier):
 				try:
 					from .command_access import check_command_access
 					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
 					_, reason = check_command_access(cmd_name, tier)
 				except Exception:
-					reason = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
 				await update.message.reply_text(reason)
 				return
 			result = func(update, context)
@@ -1818,10 +1887,10 @@ async def start_command(update, context):
 			from db.repository import get_or_create_user
 			from db.pg_features import record_bot_event
 			from db.pg_features import ensure_alert_prefs
-			async with get_session() as session:
-				res = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
-				existing = res.scalar_one_or_none()
-				is_new = existing is None
+			async with get_session() as session: AsyncSession:
+				res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+				existing: User | None = res.scalar_one_or_none()
+				is_new: bool = existing is None
 				await get_or_create_user(session, telegram_user_id=user_id, username=username)
 				# Ensure alert preferences row exists for all users.
 				try:
@@ -1834,8 +1903,8 @@ async def start_command(update, context):
 				if ref_token:
 					code = str(ref_token)
 					if code.startswith("ref_"):
-						code = code[4:]
-					code = (code or "").strip() or None
+						code: str = code[4:]
+					code: str | None = (code or "").strip() or None
 				if code:
 					try:
 						from db.pg_features import process_referral_start as process_referral_start_pg
@@ -1867,7 +1936,7 @@ async def start_command(update, context):
 				await session.commit()
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
-	except Exception as e:
+	except Exception as e: Exception:
 		# Postgres is required; no fallback. Keep bot alive and emit actionable logs.
 		try:
 			print(f"[ERROR] /start failed to access Postgres: {type(e).__name__}: {e}", flush=True)
@@ -1938,7 +2007,7 @@ async def start_command(update, context):
 	await update.message.reply_text(msg)
 
 # /about message
-async def about_command(update, context):
+async def about_command(update, context) -> None:
 	msg = (
 		"\U0001F4CA About SignalRankAI\n\n"
 		"SignalRankAI is a rule-based trading signal platform designed to deliver high-quality, risk-aware trade ideas.\n\n"
@@ -1955,7 +2024,7 @@ async def about_command(update, context):
 		await update.message.reply_text(msg)
 
 # /faq message
-async def faq_command(update, context):
+async def faq_command(update, context) -> None:
 	msg = (
 		"\u2754 Frequently Asked Questions\n\n"
 		"1) Does SignalRankAI place trades for me?\n"
@@ -1977,7 +2046,7 @@ async def faq_command(update, context):
 		await update.message.reply_text(msg)
 
 # /disclaimer message
-async def disclaimer_command(update, context):
+async def disclaimer_command(update, context) -> None:
 	if await _public_guard(update):
 		return
 	msg = (
@@ -1998,7 +2067,7 @@ async def performance_command(update, context):
 		return
 	from datetime import datetime, timedelta
 	user_id = update.effective_user.id
-	tier = _effective_tier(user_id)
+	tier: str = _effective_tier(user_id)
 
 	# Prefer Postgres (deliveries + outcomes)
 	try:
@@ -2009,9 +2078,9 @@ async def performance_command(update, context):
 			# Fetch performance stats
 			stats = {}
 			try:
-				async with get_session() as session:
+				async with get_session() as session: AsyncSession:
 					stats = await get_user_performance_30d(session, int(user_id))
-			except Exception as e:
+			except Exception as e: Exception:
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 
 			total = int((stats or {}).get("total") or 0)
@@ -2029,27 +2098,27 @@ async def performance_command(update, context):
 				try:
 					from sqlalchemy import select, func
 					from db.models import SignalDelivery, User
-					cutoff = datetime.utcnow() - timedelta(days=30)
+					cutoff: datetime = datetime.utcnow() - timedelta(days=30)
 					
-					async with get_session() as session:
-						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
-						u = res_u.scalar_one_or_none()
+					async with get_session() as session: AsyncSession:
+						res_u: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+						u: User | None = res_u.scalar_one_or_none()
 						if u is None:
 							deliveries_30d = 0
 						else:
-							res_d = await session.execute(
+							res_d: Result[Tuple[int]] = await session.execute(
 								select(func.count(SignalDelivery.id)).where(
 									SignalDelivery.user_id == u.id,
 									SignalDelivery.delivered_at >= cutoff,
 								)
 							)
 							deliveries_30d = int(res_d.scalar() or 0)
-				except Exception as e:
+				except Exception as e: Exception:
 					_audit_logger.error(f"/performance delivery count failed for user={user_id}: {e}")
 					deliveries_30d = 0
 
 				if deliveries_30d > 0:
-					msg = (
+					msg: str = (
 						"📊 Performance (pending outcomes)\n\n"
 						f"Signals delivered (30d): {deliveries_30d}\n"
 						"Outcomes not yet tracked for these signals. They will appear once TP/SL is marked."
@@ -2062,8 +2131,8 @@ async def performance_command(update, context):
 				return
 
 			if tier_rank(tier) < tier_rank("PREMIUM"):
-				bucket = "strong" if win_rate >= 0.6 else ("cautious" if win_rate <= 0.4 else "mixed")
-				msg = (
+				bucket: str = "strong" if win_rate >= 0.6 else ("cautious" if win_rate <= 0.4 else "mixed")
+				msg: str = (
 					"📊 Performance (limited)\n\n"
 					f"Recent trend: {bucket}.\n"
 					"Upgrade to Premium for full stats and history."
@@ -2072,12 +2141,12 @@ async def performance_command(update, context):
 					await update.message.reply_text(msg)
 				return
 
-			avg_r_str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
-			net_r_str = f"{float(net_r):.2f}R" if net_r is not None else "N/A"
-			profit_str = f"+{profit_loss:.2f}%" if profit_loss >= 0 else f"{profit_loss:.2f}%"
-			profit_emoji = "✅" if profit_loss >= 0 else "⚠️"
+			avg_r_str: str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
+			net_r_str: str = f"{float(net_r):.2f}R" if net_r is not None else "N/A"
+			profit_str: str = f"+{profit_loss:.2f}%" if profit_loss >= 0 else f"{profit_loss:.2f}%"
+			profit_emoji: str = "✅" if profit_loss >= 0 else "⚠️"
 			
-			msg = (
+			msg: str = (
 				"📊 Performance (last 30 days)\n\n"
 				f"Signals delivered: {total}\n"
 				f"Outcomes tracked: {tracked}/{total}\n"
@@ -2091,25 +2160,25 @@ async def performance_command(update, context):
 			if update.message is not None:
 				await update.message.reply_text(msg)
 			return
-	except Exception as e:
+	except Exception as e: Exception:
 		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
 		if update.message is not None:
 			await update.message.reply_text("Performance is temporarily unavailable. Please try again shortly.")
 		return
-	total = len(trades_30d)
+	total: int = len(trades_30d)
 	if total == 0:
 		if update.message is not None:
 			await update.message.reply_text("No signals in the last 30 days.")
 		return
-	win_count = sum(1 for t in trades_30d if (len(t) > 15 and str(t[15]).upper() == 'TP'))
-	win_rate = win_count / total if total > 0 else 0
+	win_count: int = sum(1 for t in trades_30d if (len(t) > 15 and str(t[15]).upper() == 'TP'))
+	win_rate: float | int = win_count / total if total > 0 else 0
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		bucket = "mixed"
 		if win_rate >= 0.6:
 			bucket = "strong"
 		elif win_rate <= 0.4:
 			bucket = "cautious"
-		msg = (
+		msg: str = (
 			"📊 Performance (limited)\n\n"
 			f"Recent snapshot: {bucket}.\n"
 			"Upgrade to Premium for full stats and history."
@@ -2117,27 +2186,27 @@ async def performance_command(update, context):
 		if update.message is not None:
 			await update.message.reply_text(msg)
 		return
-	msg = f"Last 30 days:\n✔ Signals: {total}\n✔ Snapshot win-rate: {round(win_rate*100,1)}%"
+	msg: str = f"Last 30 days:\n✔ Signals: {total}\n✔ Snapshot win-rate: {round(win_rate*100,1)}%"
 	if update.message is not None:
 		await update.message.reply_text(msg)
 
 
 # -------- Premium commands --------
 @require_tier("PREMIUM")
-async def stats_command(update, context):
+async def stats_command(update, context) -> None:
 	user_id = update.effective_user.id
 	# Postgres-first
 	try:
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
-			async with get_session() as session:
+			async with get_session() as session: AsyncSession:
 				week = await get_weekly_recap_stats(session, int(user_id))
-				today_rows = await list_signals_sent_today(session, int(user_id))
+				today_rows: list[Signal] = await list_signals_sent_today(session, int(user_id))
 				await session.commit()
 			total_week = int((week or {}).get("total") or 0)
-			today = len(today_rows or [])
-			msg = (
+			today: int = len(today_rows or [])
+			msg: str = (
 				"📈 Stats (Premium)\n\n"
 				f"Signals delivered today: {today}\n"
 				f"Signals delivered (last 7 days): {total_week}\n\n"
@@ -2151,7 +2220,7 @@ async def stats_command(update, context):
 
 	# SQLite fallback
 	trades = []  # Postgres-only
-	msg = (
+	msg: str = (
 		"📈 Stats (Premium)\n\n"
 		f"Signals recorded: {len(trades)}\n"
 		"Use /history to view recent signals."
@@ -2166,7 +2235,7 @@ async def history_command(update, context):
 	asset = None
 	tf = None
 	if context.args:
-		asset = str(context.args[0]).upper()
+		asset: str = str(context.args[0]).upper()
 		if len(context.args) > 1:
 			tf = str(context.args[1])
 
@@ -2175,8 +2244,8 @@ async def history_command(update, context):
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import list_recent_signals_delivered
-			async with get_session() as session:
-				rows = await list_recent_signals_delivered(
+			async with get_session() as session: AsyncSession:
+				rows: list[Signal] = await list_recent_signals_delivered(
 					session,
 					telegram_user_id=int(user_id),
 					limit=10,
@@ -2188,8 +2257,8 @@ async def history_command(update, context):
 				if update.message is not None:
 					await update.message.reply_text("No history available yet.")
 				return
-			lines = ["🧾 History (last 10):", ""]
-			for s in rows:
+			lines: list[str] = ["🧾 History (last 10):", ""]
+			for s: Signal in rows:
 				lines.append(
 					f"• {s.asset} {s.timeframe} {s.direction} ref={s.signal_id} entry={s.entry} sl={s.stop_loss} tp={s.take_profit}"
 				)
@@ -2218,7 +2287,7 @@ async def history_command(update, context):
 		if update.message is not None:
 			await update.message.reply_text("No history available yet.")
 		return
-	lines = ["🧾 History (last 10):", ""]
+	lines: list[str] = ["🧾 History (last 10):", ""]
 	for t in filtered:
 		try:
 			lines.append(f"• {t[1]} {t[2]} {t[3]} entry={t[4]} sl={t[5]} tp={t[6]}")
@@ -2229,7 +2298,7 @@ async def history_command(update, context):
 
 
 @require_tier("PREMIUM")
-async def risk_command(update, context):
+async def risk_command(update, context) -> None:
 	if update.message is None:
 		return
 	await update.message.reply_text(
@@ -2240,7 +2309,7 @@ async def risk_command(update, context):
 
 
 @require_tier("PREMIUM")
-async def alerts_command(update, context):
+async def alerts_command(update, context) -> None:
 	if await _public_guard(update):
 		return
 	user_id = update.effective_user.id
@@ -2250,7 +2319,7 @@ async def alerts_command(update, context):
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import get_alert_prefs
-				async with get_session() as session:
+				async with get_session() as session: AsyncSession:
 					prefs = await get_alert_prefs(session, int(user_id))
 					await session.commit()
 					return dict(prefs or {})
@@ -2263,7 +2332,7 @@ async def alerts_command(update, context):
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import set_alert_prefs
-				async with get_session() as session:
+				async with get_session() as session: AsyncSession:
 					prefs = await set_alert_prefs(
 						session,
 						int(user_id),
@@ -2281,13 +2350,13 @@ async def alerts_command(update, context):
 		prefs = await _get_prefs()
 		qs = prefs.get("quiet_start_hour")
 		qe = prefs.get("quiet_end_hour")
-		quiet = "off" if qs is None or qe is None else f"{qs}:00–{qe}:00"
-		status = "on" if prefs.get("tp_sl_enabled", True) else "off"
+		quiet: str = "off" if qs is None or qe is None else f"{qs}:00–{qe}:00"
+		status: str = "on" if prefs.get("tp_sl_enabled", True) else "off"
 		if update.message is not None:
 			await update.message.reply_text(f"🔔 Alerts\n\nTP/SL alerts: {status}\nQuiet hours: {quiet}\n\nUsage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
 		return
 
-	cmd = str(context.args[0]).lower()
+	cmd: str = str(context.args[0]).lower()
 	if cmd in {"on", "off"}:
 		_ = await _set_prefs(tp_sl_enabled=(cmd == "on"))
 		if update.message is not None:
@@ -2311,7 +2380,7 @@ async def alerts_command(update, context):
 
 # -------- VIP commands (hidden from BotFather) --------
 @require_tier("VIP")
-async def elite_command(update, context):
+async def elite_command(update, context) -> None:
 	signals = []  # Postgres-only
 	elite = [s for s in signals if float(s.get("score") or 0) >= 85]
 	if not elite:
@@ -2325,13 +2394,13 @@ async def elite_command(update, context):
 
 
 @require_tier("VIP")
-async def early_command(update, context):
+async def early_command(update, context) -> None:
 	if update.message is not None:
 		await update.message.reply_text("⚡ Early access is automatic for VIP. You’ll receive signals first when available.")
 
 
 @require_tier("VIP")
-async def report_command(update, context):
+async def report_command(update, context) -> None:
 	# Structured text report (monthly)
 	if update.message is None:
 		return

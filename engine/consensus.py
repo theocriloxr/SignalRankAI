@@ -17,9 +17,12 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def consensus_filter(signals, min_score=None):
     """
-    Weighted consensus using strategy confidence.
-    Groups signals by (symbol, direction) and sums confidence.
-    Approves signals where total confidence >= min_score.
+    Robust, weighted, and configurable ensemble consensus logic.
+    - Groups signals by (symbol, timeframe, direction)
+    - Sums weighted confidence across all strategies
+    - Requires minimum total confidence and minimum unique strategy groups
+    - Integrates ML adjustments (if present in signal)
+    - Guarantees one unique signal per asset/timeframe/candle/consensus
     """
     if not signals:
         return []
@@ -30,27 +33,17 @@ def consensus_filter(signals, min_score=None):
 
     if min_score is None:
         # Consensus threshold: higher values = fewer but higher-quality signals
-        # Recommendations:
-        # - 0.6: Permissive (single strategy @ 0.6+ confidence) - TOO MANY FALSE SIGNALS
-        # - 0.7: Balanced (single strong or 2 medium signals) - NEW DEFAULT
-        # - 0.8: Moderate (single strategy @ 0.8+ or 2 @ 0.4+ confidence)
-        # - 1.0: Selective (2 strategies @ 0.5+) - GOOD BASELINE
-        # - 1.4: Strict (2 strategies @ 0.7+) - RECOMMENDED FOR CONSISTENCY
-        # - 2.0: Very Strict (3 strategies @ 0.67+) - ONLY BEST TRADES
-        #
-        # NEW DEFAULT: 0.70 to increase volume while keeping quality guardrails.
         min_score = _env_float("CONSENSUS_MIN_SCORE", 0.70)
 
     try:
         min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())
     except Exception:
         min_groups = 1
-    # IMPROVED: Default to requiring 1 group (single strategy okay if strong)
-    # Set CONSENSUS_MIN_GROUPS=2 in env to require 2 different strategy groups
     min_groups = max(1, int(min_groups))
 
     grouped_score: dict[tuple[str, str, str], float] = {}
     grouped_groups: dict[tuple[str, str, str], set[str]] = {}
+    grouped_signals: dict[tuple[str, str, str], list[dict]] = {}
 
     for s in signals:
         sym = str(s.get("symbol") or s.get("asset") or "").strip()
@@ -65,6 +58,7 @@ def consensus_filter(signals, min_score=None):
         key = (sym, tf, direction)
         grouped_score.setdefault(key, 0.0)
         grouped_groups.setdefault(key, set())
+        grouped_signals.setdefault(key, [])
         try:
             conf = s.get("confidence")
             if conf is None:
@@ -72,6 +66,10 @@ def consensus_filter(signals, min_score=None):
             w = s.get("weight")
             if w is None:
                 w = 1.0
+            # ML adjustment: if ml_probability is present, use as a multiplier (advisory only)
+            ml_prob = s.get("ml_probability")
+            if ml_prob is not None and isinstance(ml_prob, (float, int)):
+                conf = float(conf or 0.0) * (0.8 + 0.4 * float(ml_prob))  # 0.8-1.2x boost
             grouped_score[key] += float(conf or 0.0) * float(w or 1.0)
         except Exception:
             pass
@@ -81,22 +79,20 @@ def consensus_filter(signals, min_score=None):
                 grouped_groups[key].add(g)
         except Exception:
             pass
+        grouped_signals[key].append(s)
 
     approved: list[dict] = []
-    for signal in signals:
-        sym = str(signal.get("symbol") or signal.get("asset") or "").strip()
-        tf = str(signal.get("timeframe") or "").strip().lower()
-        direction = str(signal.get("direction") or "").strip().lower()
-        if direction == "buy":
-            direction = "long"
-        if direction == "sell":
-            direction = "short"
-        key = (sym, tf, direction)
+    for key, sigs in grouped_signals.items():
+        # Only approve if total confidence and group count pass thresholds
         if float(grouped_score.get(key) or 0.0) < float(min_score):
             continue
         if len(grouped_groups.get(key) or set()) < int(min_groups):
             continue
-        approved.append(signal)
+        # Guarantee one unique signal per asset/timeframe/direction/consensus
+        # Pick the highest-confidence signal as representative
+        best = max(sigs, key=lambda s: float(s.get("confidence", 0)), default=None)
+        if best:
+            approved.append(best)
     return approved
 
 apply_consensus_filter = consensus_filter

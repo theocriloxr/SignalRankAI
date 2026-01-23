@@ -20,7 +20,8 @@ class StructureBullStrategy(BaseStrategy):
                     'entry': price,
                     'stop': candles[-1]['low'],
                     'targets': price + (price - candles[-1]['low']) * 2,
-                    'confidence': 0.6
+                    'confidence': 0.6,
+                    'reasoning': f"Price above EMA trend. Structure bull for BUY."
                 }
         return None
 
@@ -38,7 +39,8 @@ class SRBreakRetestStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.65
+                'confidence': 0.65,
+                'reasoning': "S/R breakout and retest confirmed."
             }
         return None
 
@@ -56,7 +58,8 @@ class LiquiditySweepStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.6
+                'confidence': 0.6,
+                'reasoning': "Liquidity sweep detected."
             }
         return None
 

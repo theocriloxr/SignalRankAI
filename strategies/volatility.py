@@ -21,7 +21,8 @@ class ATRBreakoutStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.8
+                'confidence': 0.8,
+                'reasoning': f"ATR breakout: ATR > 1.5x Bollinger width. Volatility surge for BUY."
             }
         return None
 
@@ -39,7 +40,8 @@ class BBWidthVolatilityStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.75
+                'confidence': 0.75,
+                'reasoning': f"Bollinger width > 0.05. Volatility expansion for BUY."
             }
         return None
 
@@ -57,7 +59,8 @@ class KeltnerVolatilityStrategy(BaseStrategy):
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
-                'confidence': 0.7
+                'confidence': 0.7,
+                'reasoning': f"Keltner width > 0.04. Volatility signal for BUY."
             }
         return None
 

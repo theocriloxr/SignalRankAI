@@ -17,7 +17,8 @@ def stock_trend_strategy(asset, timeframe, market_data):
             'entry': entry,
             'stop': stop,
             'targets': target,
-            'confidence': 0.8
+            'confidence': 0.8,
+            'reasoning': "SMA fast > SMA slow. Uptrend for BUY."
         }
     elif sma_fast < sma_slow:
         entry = candles[-1]['close']
@@ -28,7 +29,8 @@ def stock_trend_strategy(asset, timeframe, market_data):
             'entry': entry,
             'stop': stop,
             'targets': target,
-            'confidence': 0.8
+            'confidence': 0.8,
+            'reasoning': "SMA fast < SMA slow. Downtrend for SELL."
         }
     return None
 

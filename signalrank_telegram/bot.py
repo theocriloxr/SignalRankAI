@@ -412,11 +412,36 @@ def notify_trade_outcome(user_id, strategy, result, ret):
         direction = str(strategy.get('direction', '')).lower()
         # For each TP, check if it was hit and not yet notified
         trade_id = strategy.get('trade_id')
-        notified_tps = set()
-        # Load notified TPs from DB if possible (pseudo-code, adapt as needed)
-        # notified_tps = get_notified_tps_for_trade(trade_id, user_id)
-        # For now, assume in-memory or meta field
         notified_tps = set(strategy.get('notified_tps', []))
+
+        # --- Outcome notification and feedback prompt ---
+        # After sending outcome notification, prompt for feedback (premium/vip only)
+        from db.session import get_session, ENGINE
+        from db.pg_features import get_user_performance_30d
+        import asyncio
+        tier_for_feedback = user_tier
+        if ENGINE is not None and user_tier in ("premium", "vip"):
+            async def _notify_and_feedback():
+                async with get_session() as session:
+                    perf = await get_user_performance_30d(session, int(user_id))
+                    # Send tailored follow-up/advisory
+                    summary = (
+                        f"\n\n📈 30D Performance:\n"
+                        f"Signals: {perf['total']} | Win Rate: {perf['win_rate']*100:.1f}% | NetR: {perf['net_r'] or 0:.2f}R\n"
+                        f"Profit/Loss: {perf['profit_loss_pct']:.2f}%"
+                    ) if perf['total'] else ""
+                    # Send feedback prompt
+                    feedback_msg = (
+                        f"\n\nWe value your feedback!\nReply with /feedback {strategy.get('signal_id','')} <rating 1-5|issue> [comment]"
+                    )
+                    try:
+                        bot.send_message(chat_id=user_id, text=summary + feedback_msg)
+                    except Exception:
+                        pass
+            try:
+                asyncio.run(_notify_and_feedback())
+            except Exception:
+                pass
 
         # Determine which TP(s) to notify
         tp_hit = strategy.get('tp_hit')  # e.g., [1,2] if TP1 and TP2 hit
