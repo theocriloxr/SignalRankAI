@@ -423,7 +423,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if len(args) < 2:
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
 		return
-	values: list[str] = [x.strip().upper() for x: str in " ".join(args[1:]).split(",") if x.strip()]
+	values: list[str] = [x.strip().upper() for x in " ".join(args[1:]).split(",") if x.strip()]
 	if cmd == "assets":
 		user_prefs_store.set_prefs(user_id, assets=values)
 		await update.message.reply_text(f"✅ Assets updated: {', '.join(values)}")
