@@ -30,14 +30,6 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
 
     htf_bias = get_htf_bias(market_data)
 
-    def _env_bool(name: str, default: bool) -> bool:
-        try:
-            raw = os.getenv(name)
-            if raw is None:
-                return bool(default)
-            return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
-        except Exception:
-            return bool(default)
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
     from .stock import stock_strategies

@@ -15,11 +15,6 @@ DEFAULT_MODEL_PATH = str(PROJECT_ROOT / "ml" / "model.json")
 MODEL_PATH = os.getenv("ML_MODEL_PATH", DEFAULT_MODEL_PATH)
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return bool(default)
-    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 class MLFilter:

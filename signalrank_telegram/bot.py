@@ -96,7 +96,7 @@ def resend_unsent_signals_job():
                 logger.error(f"[resend] Exception in DB delivery tracking for signal {signal_id} to user {user_id}: {e}")
         # Use ThreadPoolExecutor for parallel delivery
         # Increase pool size to handle more concurrent deliveries
-        max_workers = int(os.getenv("TELEGRAM_POOL_SIZE", "24"))  # Default to 24, configurable
+        max_workers = int(getattr(config, "TELEGRAM_POOL_SIZE", 24))  # Default to 24, configurable
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
             for sig in signals:
@@ -139,12 +139,12 @@ def _audit_handler(command_name: str, handler):
 
 from telegram.ext import Defaults
 # Increase Telegram bot request timeout for connection pool exhaustion
-TELEGRAM_POOL_TIMEOUT = int(os.getenv("TELEGRAM_POOL_TIMEOUT", "30"))  # seconds, configurable
-TELEGRAM_CONNECT_TIMEOUT = int(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "30"))  # seconds, configurable
-TELEGRAM_READ_TIMEOUT = int(os.getenv("TELEGRAM_READ_TIMEOUT", "30"))  # seconds, configurable
-TELEGRAM_WRITE_TIMEOUT = int(os.getenv("TELEGRAM_WRITE_TIMEOUT", "30"))  # seconds, configurable
+TELEGRAM_POOL_TIMEOUT = int(getattr(config, "TELEGRAM_POOL_TIMEOUT", 30))  # seconds, configurable
+TELEGRAM_CONNECT_TIMEOUT = int(getattr(config, "TELEGRAM_CONNECT_TIMEOUT", 30))  # seconds, configurable
+TELEGRAM_READ_TIMEOUT = int(getattr(config, "TELEGRAM_READ_TIMEOUT", 30))  # seconds, configurable
+TELEGRAM_WRITE_TIMEOUT = int(getattr(config, "TELEGRAM_WRITE_TIMEOUT", 30))  # seconds, configurable
 application = Application.builder()
-application = application.token(os.getenv('TELEGRAM_TOKEN'))
+application = application.token(getattr(config, 'TELEGRAM_TOKEN', None))
 application = application.pool_timeout(TELEGRAM_POOL_TIMEOUT)
 application = application.connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
 application = application.read_timeout(TELEGRAM_READ_TIMEOUT)
@@ -259,11 +259,6 @@ def _log_once(key: str, message: str) -> None:
         pass
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return bool(default)
-    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 async def _send_message_async(bot: Bot, chat_id: int, text: str) -> None:
@@ -344,13 +339,13 @@ def _audit_handler(command_name: str, handler):
 
 
 def _require_telegram_token() -> str:
-    token = os.getenv('TELEGRAM_TOKEN')
+    token = getattr(config, 'TELEGRAM_TOKEN', None)
     if token:
         return token
 
     # Local dev convenience: optionally load from a `.env` file.
     # Railway/production should rely on injected environment variables.
-    allow_dotenv = (os.getenv("ALLOW_DOTENV") or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+    allow_dotenv = getattr(config, "ALLOW_DOTENV", False)
     if allow_dotenv:
         env_path = os.path.join(os.getcwd(), '.env')
         if os.path.exists(env_path):
@@ -718,7 +713,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         raise Exception("Binance failed")
                 except Exception:
                     # Fallback to CryptoCompare
-                    api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
+                    api_key = (getattr(config, "CRYPTOCOMPARE_API_KEY", "") or "").strip()
                     headers = {"authorization": f"Apikey {api_key}"} if api_key else {}
                     resp = requests.get(
                         "https://min-api.cryptocompare.com/data/price",
@@ -1865,7 +1860,7 @@ def run_bot() -> None:
                     return
 
                 now_hour = datetime.now().hour
-                per_user_limit = int(os.getenv('FREE_DAILY_LIMIT', '3'))
+                per_user_limit = int(getattr(config, 'FREE_DAILY_LIMIT', 3))
 
                 actions: list[tuple[int, list[int], list[str], str]] = []
 

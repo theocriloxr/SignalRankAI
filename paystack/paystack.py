@@ -7,8 +7,9 @@ import hashlib
 import logging
 
 
-PAYSTACK_SECRET_KEY: str | None = os.getenv('PAYSTACK_SECRET_KEY')
-PAYSTACK_WEBHOOK_SECRET: str | None = os.getenv('PAYSTACK_WEBHOOK_SECRET')
+from config import config
+PAYSTACK_SECRET_KEY: str | None = config.PAYSTACK_SECRET_KEY
+PAYSTACK_WEBHOOK_SECRET: str | None = config.PAYSTACK_WEBHOOK_SECRET
 PAYSTACK_VERIFY_URL = 'https://api.paystack.co/transaction/verify/'
 PAYSTACK_INIT_URL = 'https://api.paystack.co/transaction/initialize'
 

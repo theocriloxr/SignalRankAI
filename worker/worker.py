@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-import os
+from config import config
 import signal
 import threading
 from typing import Optional
@@ -9,11 +9,6 @@ from db.session import ENGINE, get_session
 from db.repository import expire_subscriptions
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    val = os.getenv(name)
-    if val is None:
-        return default
-    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 class Worker:
@@ -28,7 +23,7 @@ class Worker:
 
     def __init__(self) -> None:
         self._stop = asyncio.Event()
-        self.dry_run = _env_bool("DRY_RUN", True)
+        self.dry_run = config.DRY_RUN
 
     def request_stop(self) -> None:
         self._stop.set()
@@ -40,7 +35,7 @@ class Worker:
         ws_task: Optional[asyncio.Task] = None
 
         # Start market monitor for NO TRADE alerts
-        if _env_bool("MARKET_MONITOR_ENABLED", True):
+        if config.MARKET_MONITOR_ENABLED:
             try:
                 from worker.market_monitor import start_market_monitor
                 market_monitor_task = asyncio.create_task(start_market_monitor())
@@ -48,7 +43,7 @@ class Worker:
                 print(f"[worker] Failed to start market monitor: {e}", flush=True)
                 market_monitor_task = None
 
-        if _env_bool("CRYPTO_WS_ENABLED", False):
+        if config.CRYPTO_WS_ENABLED:
             try:
                 from data.ws_ingest import run_ws_ingestor
 
@@ -57,7 +52,7 @@ class Worker:
                 ws_task = None
 
         # ML daily retrain loop (optional)
-        if _env_bool("ML_TRAIN_ENABLED", True):
+        if config.ML_TRAIN_ENABLED:
             try:
                 ml_task = asyncio.create_task(self._ml_train_loop())
             except Exception as e:
@@ -105,7 +100,7 @@ class Worker:
             print(f"[worker] ML train loop disabled (import failed): {exc}", flush=True)
             return
 
-        interval = max(3600, int(os.getenv("ML_TRAIN_INTERVAL_SECONDS", "86400") or "86400"))
+        interval = max(3600, int(getattr(config, "ML_TRAIN_INTERVAL_SECONDS", 86400) or 86400))
 
         while not self._stop.is_set():
             try:

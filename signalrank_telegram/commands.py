@@ -511,16 +511,16 @@ async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if _effective_tier(update.effective_user.id) != "OWNER":
 		return
 	# Non-sensitive fingerprint to confirm which build is running.
-	mode: str = (os.getenv("RUN_MODE") or "engine").strip().lower()
+	mode: str = (getattr(config, "RUN_MODE", "engine") or "engine").strip().lower()
 	lines: list[str] = [
 		"SignalRankAI /version",
 		f"boot_utc: {_BOOT_TS}",
 		f"run_mode: {mode}",
 		f"host: {socket.gethostname()}",
-		f"railway_service: {os.getenv('RAILWAY_SERVICE_NAME')}",
-		f"railway_env: {os.getenv('RAILWAY_ENVIRONMENT')}",
-		f"railway_deployment: {os.getenv('RAILWAY_DEPLOYMENT_ID')}",
-		f"git_sha: {os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
+		f"railway_service: {config.RAILWAY_SERVICE_NAME}",
+		f"railway_env: {config.RAILWAY_ENVIRONMENT}",
+		f"railway_deployment: {config.RAILWAY_DEPLOYMENT_ID}",
+		f"git_sha: {config.GIT_COMMIT_SHA}",
 	]
 	await update.message.reply_text("\n".join(lines))
 
@@ -1310,7 +1310,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		# If outcome not yet determined, show current signal details based on tier
 		# Determine what to show based on tier
 		try:
-			vip_cut = float((os.getenv("VIP_SCORE_THRESHOLD") or "72").strip())
+			vip_cut = float(getattr(config, "VIP_SCORE_THRESHOLD", 72))
 		except Exception:
 			vip_cut = 72.0
 		
@@ -1601,7 +1601,7 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			async with get_session() as session: AsyncSession:
 				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				await session.commit()
-			limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
+			limit = int(getattr(config, "VIP_SEAT_LIMIT", 15))
 			remaining: int = max(0, limit - used)
 		else:
 			used, remaining, limit = 0, 15, 15
@@ -1659,7 +1659,7 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	
 	# PREMIUM options
 	premium_plans: list[tuple[str, int, int, str | None]] = [
-		("Premium (₦4,000 / 7 days)", 4000, 7, os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY")),
+		("Premium (₦4,000 / 7 days)", 4000, 7, getattr(config, "PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY", None)),
 		("Premium (₦12,000 / 30 days)", 12000, 30, premium_monthly_code),
 		("Premium (₦28,000 / 90 days)", 28000, 90, premium_quarterly_code),
 	]

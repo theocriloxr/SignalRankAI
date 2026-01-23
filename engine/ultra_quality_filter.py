@@ -24,18 +24,7 @@ import statistics
 logger = logging.getLogger(__name__)
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return bool(default)
-    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
 def _env_float(name: str, default: float) -> float:
-    try:
-        return float((os.getenv(name) or str(default)).strip())
-    except Exception:
-        return float(default)
 
 
 class UltraQualityFilter:

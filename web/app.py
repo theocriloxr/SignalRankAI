@@ -1,6 +1,6 @@
 import hashlib
 import hmac
-import os
+from config import config
 import socket
 import time
 from datetime import datetime
@@ -31,19 +31,13 @@ webhook_failures = Counter(
 )
 
 
-def _env_bool(name: str, default: bool = False) -> bool:
-    val = os.getenv(name)
-    if val is None:
-        return default
-    return val.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _constant_time_equals(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
 
-def verify_paystack_signature(raw_body: bytes, signature_header: Optional[str]) -> None:
-    secret = os.getenv("PAYSTACK_WEBHOOK_SECRET") or os.getenv("PAYSTACK_SECRET_KEY")
+    secret = config.PAYSTACK_WEBHOOK_SECRET or config.PAYSTACK_SECRET_KEY
     if not secret:
         webhook_failures.labels(reason="missing_secret").inc()
         raise HTTPException(status_code=500, detail="Paystack secret not configured")

@@ -1,4 +1,4 @@
-import os
+from config import config
 from typing import Optional
 
 from telegram import Update
@@ -7,9 +7,8 @@ from telegram.ext import ContextTypes
 from core.redis_state import state
 
 
-def _owner_id() -> int:
     try:
-        return int(os.getenv("OWNER_TELEGRAM_ID", "0"))
+        return int(getattr(config, "OWNER_TELEGRAM_ID", 0))
     except ValueError:
         return 0
 
@@ -21,28 +20,13 @@ async def _is_owner(user_id: int) -> bool:
     return await state.has_temp_owner(user_id)
 
 
-def _strict_owner_ids() -> set[int]:
-    try:
-        from config import OWNER_IDS
-        ids = set(int(x) for x in (OWNER_IDS or set()) if int(x) > 0)
-    except Exception:
-        ids = set()
-    # Fallback to env var
-    try:
-        oid = _owner_id()
-        if oid > 0:
-            ids.add(int(oid))
-    except Exception:
-        pass
-    return ids
 
 
 async def _is_strict_owner(user_id: int) -> bool:
     return int(user_id) in _strict_owner_ids()
 
 
-def _bypass_key() -> Optional[str]:
-    key = os.getenv("BYPASS_KEY")
+    key = getattr(config, "BYPASS_KEY", None)
     return key.strip() if key else None
 
 
