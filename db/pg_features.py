@@ -1073,7 +1073,10 @@ async def process_referral_start(
     tier_to_extend: str = "vip" if current_tier == "vip" else "premium"
 
     # Make idempotent per reward “batch”.
-    reward_ref: str = f"REFERRAL:{referrer_tid}:{total // 3}"
+    grant_days: int = 7
+    total: int = int(referral_count or 0)
+    batch_number: int = int(total // REFERRAL_REQUIREMENT)
+    reward_ref: str = f"REFERRAL:{referrer_tid}:{batch_number}"
     await activate_subscription(
         session,
         telegram_user_id=referrer_tid,
@@ -1303,13 +1306,13 @@ async def get_highest_scoring_available_signal_for_user(
     res_delivered: Result[Tuple[str]] = await session.execute(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
-    already_received: set[Any] = set(row[0] for row: Row[Tuple[str]] in res_delivered.all())
+    already_received: set[Any] = set(row[0] for row in res_delivered.all())
     
     # Get signals with outcomes (resolved trades)
     res_resolved: Result[Tuple[str]] = await session.execute(
         select(Outcome.signal_id).where(Outcome.signal_id.isnot(None))
     )
-    resolved_signals: set[Any] = set(row[0] for row: Row[Tuple[str]] in res_resolved.all())
+    resolved_signals: set[Any] = set(row[0] for row in res_resolved.all())
     
     # Get highest scoring recent signal not yet delivered to user and still ongoing
     # Note: archived filtering will be applied once migration 0009 runs
@@ -1344,7 +1347,7 @@ async def queue_random_free_signals_for_all_users(
     )
     free_users: list[User] = list(res_users.scalars().all())
     
-    for user: User in free_users:
+    for user in free_users:
         # Check user's daily window
         try:
             anchor: datetime = user.created_at
@@ -1383,7 +1386,7 @@ async def queue_random_free_signals_for_all_users(
         
         # Queue them
         delay_minutes: int = _env_int("FREE_DELAY_MINUTES", 30)
-        for sig: Signal in random_signals:
+        for sig in random_signals:
             deliver_after: datetime = now + timedelta(minutes=delay_minutes)
             q = FreeSignalQueue(
                 user_id=user.id,
@@ -1508,7 +1511,7 @@ async def get_strategy_performance(session: AsyncSession, strategy_name: str) ->
         ).where(Signal.strategy_name == strategy_name)
         
         result: Result[Tuple[Outcome]] = await session.execute(stmt)
-        outcomes: os.Sequence[Outcome] = result.scalars().all()
+        outcomes: list[Outcome] = result.scalars().all()
         
         total: int = len(outcomes)
         wins: int = sum(1 for o in outcomes if str(getattr(o, 'status', '')).lower() == 'tp')
