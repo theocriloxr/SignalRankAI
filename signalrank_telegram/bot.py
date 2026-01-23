@@ -111,6 +111,7 @@ def resend_unsent_signals_job():
         pass
 
 import os
+from config import config
 from telegram.ext import Application, CommandHandler
 from signalrank_telegram.httpx_config import httpx_client
 
