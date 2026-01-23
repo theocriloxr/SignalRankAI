@@ -4,9 +4,9 @@ import hashlib
 import os
 import random
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple, Tuple
+from typing import Any, Dict, Optional, Tuple, 
 
-from sqlalchemy import Result, Result, Result, Result, Result, Select, Result, Result, Select, Select, Select, Result, Result, Select, Select, Select, Select, Result, Result, Result, Result, Result, Result, Subquery, Select, Result, Result, Result, Result, Result, Result, Result, Result, Result, Result, Result, Result, Result, Subquery, Result, Result, Result, Update, Update, CursorResult, Result, Result, Result, Result, Result, Result, Result, Result, Select, Result, Result, Row, Result, Row, Result, Row, Result, Result, Row, Result, Row, Result, Result, Result, Result, Result, Select, Result, and_, func, select, update, delete
+from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
@@ -1252,13 +1252,13 @@ async def get_random_available_signals_for_free_user(
     res_delivered: Result[Tuple[str]] = await session.execute(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
-    already_received: set[Any] = set(row[0] for row: Row[Tuple[str]] in res_delivered.all())
+    already_received: set[Any] = set(row[0] for row in res_delivered.all())
     
     # Get signals with outcomes (resolved trades)
     res_resolved: Result[Tuple[str]] = await session.execute(
         select(Outcome.signal_id).where(Outcome.signal_id.isnot(None))
     )
-    resolved_signals: set[Any] = set(row[0] for row: Row[Tuple[str]] in res_resolved.all())
+    resolved_signals: set[Any] = set(row[0] for row in res_resolved.all())
     
     # Get all recent signals (not yet archived)
     # Note: archived filtering will be applied once migration 0009 runs
