@@ -361,10 +361,11 @@ def main_loop(DRY_RUN=False):
                     new_degraded_assets.add(degraded)
                 elif sigs:
                     all_strict_signals.extend(sigs)
+
             selected_signals = all_strict_signals
-                            print(f"[engine] Added {len(stock_list)} stock ticker(s) to asset list", flush=True)
-                except Exception:
-                    pass
+            print(f"[engine] Added {len(stock_list)} stock ticker(s) to asset list", flush=True)
+        except Exception:
+            pass
 
             if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
                 try:
