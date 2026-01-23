@@ -1230,22 +1230,12 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	if await _public_guard(update):
-		return
-	if update.effective_user is None or update.message is None:
-		return
-	user_id: int = update.effective_user.id
-	arg: str = (context.args[0] if context.args else "").strip() if context.args else ""
-	if not arg:
-		await update.message.reply_text("Usage: /outcome <reference>")
-		return
-
 	try:
 		from db.session import ENGINE, get_session
 		if ENGINE is None:
 			raise RuntimeError("Postgres not configured")
 		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal, get_or_create_user
-		from db.models import Signal, User
+		from db.models import Signal, User, Outcome
 		from sqlalchemy import select
 		import json
 		import os
@@ -1281,40 +1271,58 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				else:
 					await update.message.reply_text("Signal not found.")
 					return
-		
+
 			# Signal was delivered to user, now check for outcome
-	oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
-	await session.commit()
-		
-		# If outcome exists, show it
-	if oc is not None:
-			status: str = str(getattr(oc, "status", "") or "").lower()
-			r: os.Any | None = getattr(oc, "r_multiple", None)
-			pct: os.Any | None = getattr(oc, "percent", None)
-			label: str = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
-			lines: list[str] = [
-				"📣 Outcome",
-				"",
-				f"Reference: {sig.signal_id[:8]}",
-				f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
-				f"Entry: {sig.entry}",
-				f"Result: {label} ({status})",
-			]
-			
-			# Show entry status at time of signal
-			ml_prob: os.Any | None = getattr(sig, "ml_probability", None)
-			if ml_prob is not None:
-				ml_pct: float = round(float(ml_prob) * 100, 1)
-				lines.append(f"ML Score: {ml_pct}%")
-			
-			if r is not None:
-				lines.append(f"R-multiple: {float(r):.2f}R")
-			if pct is not None:
-				lines.append(f"Move: {float(pct):.2f}%")
-			
-			await update.message.reply_text("\n".join(lines))
-			return
-		
+			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
+			await session.commit()
+
+			# If outcome exists, show it
+			if oc is not None:
+				status: str = str(getattr(oc, "status", "") or "").lower()
+				r: os.Any | None = getattr(oc, "r_multiple", None)
+				pct: os.Any | None = getattr(oc, "percent", None)
+				label: str = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+				lines: list[str] = [
+					"📣 Outcome",
+					"",
+					f"Reference: {sig.signal_id[:8]}",
+					f"{sig.asset} {sig.timeframe} {sig.direction.upper()}",
+					f"Entry: {sig.entry}",
+					f"Result: {label} ({status})",
+				]
+
+				# Show entry status at time of signal
+				ml_prob: os.Any | None = getattr(sig, "ml_probability", None)
+				if ml_prob is not None:
+					ml_pct: float = round(float(ml_prob) * 100, 1)
+					lines.append(f"ML Score: {ml_pct}%")
+
+				if r is not None:
+					lines.append(f"R-multiple: {float(r):.2f}R")
+				if pct is not None:
+					lines.append(f"Move: {float(pct):.2f}%")
+
+				await update.message.reply_text("\n".join(lines))
+				return
+
+			# If outcome not yet determined, show current signal details based on tier
+			# Determine what to show based on tier
+			try:
+				vip_cut = float(getattr(config, "VIP_SCORE_THRESHOLD", 72))
+			except Exception:
+				vip_cut = 72.0
+
+			# Owner always gets VIP format
+			if user_tier in {"owner", "admin"}:
+				user_tier = "vip"
+
+			show_levels: bool = user_tier in {"vip", "premium"}
+			show_strategy: bool = user_tier in {"vip"}
+			# ...existing code...
+	except Exception as e:
+		import logging
+		logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
+		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
 		# If outcome not yet determined, show current signal details based on tier
 		# Determine what to show based on tier
 	try:
@@ -1456,9 +1464,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					return float(close_price)
 				
 				return None
-			except Exception as e: Exception:
-			logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
-			return None
+			except Exception as e:
+				logging.getLogger(__name__).warning(f"_current_price failed for {asset}: {e}")
+				return None
 		
 		
 	def _position_advice(*, direction: str, entry: float, sl: float, tp: float, price: float) -> tuple[str, dict]:
@@ -1533,7 +1541,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		
 	await update.message.reply_text("\n".join(lines))
 	return
-except Exception as e: Exception:
+except Exception as e:
 import logging
 logging.getLogger(__name__).error(f"outcome_command failed: {e}", exc_info=True)
 await update.message.reply_text("Outcome lookup is temporarily unavailable.")
@@ -1552,7 +1560,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_or_create_referral_code, get_referral_progress
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				code: str = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
 				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
 				await session.commit()
@@ -1607,7 +1615,7 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from db.session import ENGINE, get_session
 		from db.repository import count_active_vip_users
 		if ENGINE is not None:
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				await session.commit()
 			limit = int(getattr(config, "VIP_SEAT_LIMIT", 15))
@@ -1689,7 +1697,7 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from db.repository import count_active_vip_users, get_active_subscription
 		from config import OWNER_IDS
 		if ENGINE is not None:
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
 				remaining: int = max(0, limit - used)
@@ -1896,7 +1904,7 @@ async def start_command(update, context):
 			from db.repository import get_or_create_user
 			from db.pg_features import record_bot_event
 			from db.pg_features import ensure_alert_prefs
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 				existing: User | None = res.scalar_one_or_none()
 				is_new: bool = existing is None
@@ -1945,7 +1953,7 @@ async def start_command(update, context):
 				await session.commit()
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
-	except Exception as e: Exception:
+	except Exception as e:
 		# Postgres is required; no fallback. Keep bot alive and emit actionable logs.
 		try:
 			print(f"[ERROR] /start failed to access Postgres: {type(e).__name__}: {e}", flush=True)
@@ -2087,8 +2095,8 @@ async def performance_command(update, context):
 			# Fetch performance stats
 			stats = {}
 			try:
-				async with get_session() as session: AsyncSession:
-				stats = await get_user_performance_30d(session, int(user_id))
+				async with get_session() as session:
+					stats = await get_user_performance_30d(session, int(user_id))
 			except Exception as e:
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 
@@ -2122,7 +2130,7 @@ async def performance_command(update, context):
 								)
 							)
 							deliveries_30d = int(res_d.scalar() or 0)
-				except Exception as e: Exception:
+				except Exception as e:
 					_audit_logger.error(f"/performance delivery count failed for user={user_id}: {e}")
 					deliveries_30d = 0
 
@@ -2169,7 +2177,7 @@ async def performance_command(update, context):
 			if update.message is not None:
 				await update.message.reply_text(msg)
 			return
-	except Exception as e: Exception:
+	except Exception as e:
 		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
 		if update.message is not None:
 			await update.message.reply_text("Performance is temporarily unavailable. Please try again shortly.")
@@ -2209,7 +2217,7 @@ async def stats_command(update, context) -> None:
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				week = await get_weekly_recap_stats(session, int(user_id))
 				today_rows: list[Signal] = await list_signals_sent_today(session, int(user_id))
 				await session.commit()
@@ -2253,7 +2261,7 @@ async def history_command(update, context):
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import list_recent_signals_delivered
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				rows: list[Signal] = await list_recent_signals_delivered(
 					session,
 					telegram_user_id=int(user_id),
@@ -2267,7 +2275,7 @@ async def history_command(update, context):
 					await update.message.reply_text("No history available yet.")
 				return
 			lines: list[str] = ["🧾 History (last 10):", ""]
-			for s: Signal in rows:
+			for s in rows:
 				lines.append(
 					f"• {s.asset} {s.timeframe} {s.direction} ref={s.signal_id} entry={s.entry} sl={s.stop_loss} tp={s.take_profit}"
 				)
@@ -2328,7 +2336,7 @@ async def alerts_command(update, context) -> None:
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import get_alert_prefs
-				async with get_session() as session: AsyncSession:
+				async with get_session() as session:
 					prefs = await get_alert_prefs(session, int(user_id))
 					await session.commit()
 					return dict(prefs or {})
@@ -2341,7 +2349,7 @@ async def alerts_command(update, context) -> None:
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import set_alert_prefs
-				async with get_session() as session: AsyncSession:
+				async with get_session() as session:
 					prefs = await set_alert_prefs(
 						session,
 						int(user_id),
