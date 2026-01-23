@@ -98,9 +98,8 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     entry: str = _round(signal.get("entry"))
     sl: str = _round(signal.get("stop_loss") or signal.get("stop"))
     tp: Any | None = signal.get("take_profit") or signal.get("targets")
-    tp_norm: Any | None = tp
     if isinstance(tp, (list, tuple)):
-        tp_norm: str = ",".join(_round(x) for x in tp)
+        tp_norm: str = ",".join(_round(x) for x in tp)  # type: ignore
     else:
         tp_norm: str = _round(tp)
 
@@ -126,14 +125,14 @@ async def get_or_create_signal(
     entry = float(signal.get("entry") or 0)
     stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
 
-    take_profit = signal.get("take_profit") or signal.get("targets") or []
-    # Persist TP as JSON-ish string (keeps current schema stable)
+    take_profit: Any = signal.get("take_profit") or signal.get("targets") or []
+    # Normalize take_profit to a list if not already a list/tuple/str
     if isinstance(take_profit, str):
         tp_str: str = take_profit
     elif isinstance(take_profit, (list, tuple)):
-        tp_str = str(list(take_profit))
+        tp_str = str([str(x) for x in list(take_profit or [])])
     else:
-        tp_str = str([take_profit])
+        tp_str = str([str(take_profit)])
 
     rr_estimate = None
     try:
@@ -144,9 +143,9 @@ async def get_or_create_signal(
     score = float(signal.get("score") or 0)
     regime: Any | None = signal.get("regime")
     strength = float(signal.get("strength") or 0)
-    ml_probability: Any | None = signal.get("ml_probability")
+    ml_probability_raw: Any | None = signal.get("ml_probability")
     try:
-        ml_probability: float | None = float(ml_probability) if ml_probability is not None else None
+        ml_probability: float | None = float(ml_probability_raw) if ml_probability_raw is not None else None
     except Exception:
         ml_probability = None
     strategy_name: str = str(signal.get("strategy_name") or signal.get("strategy") or "unknown")[:64]
