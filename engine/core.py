@@ -248,27 +248,27 @@ def main_loop(DRY_RUN=False):
                 for tf, tf_data in (market_data or {}).items():
                     candles = (tf_data or {}).get("candles") or []
                     if not isinstance(candles, list) or len(candles) < min_candles:
+                        needs_refresh = True
+                        break
+                    last_candle = candles[-1] if candles else None
+                    if last_candle:
+                        if 'timestamp' not in last_candle or 'close' not in last_candle:
+                            needs_refresh = True
+                            break
+                        if 'close_time' in last_candle:
+                            import time
+                            now = int(time.time())
+                            close_time = int(last_candle['close_time'])
+                            tf_sec = 60
+                            if 'm' in tf:
+                                tf_sec = int(tf.replace('m','')) * 60
+                            elif 'h' in tf:
+                                tf_sec = int(tf.replace('h','')) * 3600
+                            elif 'd' in tf:
+                                tf_sec = int(tf.replace('d','')) * 86400
+                            if now - close_time > 2 * tf_sec:
                                 needs_refresh = True
                                 break
-                            last_candle = candles[-1] if candles else None
-                            if last_candle:
-                                if 'timestamp' not in last_candle or 'close' not in last_candle:
-                                    needs_refresh = True
-                                    break
-                                if 'close_time' in last_candle:
-                                    import time
-                                    now = int(time.time())
-                                    close_time = int(last_candle['close_time'])
-                                    tf_sec = 60
-                                    if 'm' in tf:
-                                        tf_sec = int(tf.replace('m','')) * 60
-                                    elif 'h' in tf:
-                                        tf_sec = int(tf.replace('h','')) * 3600
-                                    elif 'd' in tf:
-                                        tf_sec = int(tf.replace('d','')) * 86400
-                                    if now - close_time > 2 * tf_sec:
-                                        needs_refresh = True
-                                        break
                     if needs_refresh:
                         try:
                             market_data = asyncio.run(fetch_market_data_cached(asset, list((asset_to_tfs_degraded.get(asset) or []))))
