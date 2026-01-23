@@ -140,6 +140,9 @@ from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio.session import AsyncSession
 
 from sqlalchemy.ext.asyncio.session import AsyncSession
+import os
+import sys
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
 try:
 	from web.api import generate_api_key, set_user_api_key, get_user_api_key
