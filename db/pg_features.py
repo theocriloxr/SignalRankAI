@@ -809,8 +809,8 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
 
     win_statuses: set[str] = {"tp", "tp1", "tp2", "partial_tp"}
     loss_statuses: set[str] = {"sl"}
-    wins: int = sum(outcome_counts.get(s, 0) for s: str in win_statuses)
-    losses: int = sum(outcome_counts.get(s, 0) for s: str in loss_statuses)
+    wins: int = sum(outcome_counts.get(s, 0) for s in win_statuses)
+    losses: int = sum(outcome_counts.get(s, 0) for s in loss_statuses)
     tracked_outcomes: int = wins + losses
 
     win_rate: float = (wins / max(1, wins + losses)) if (wins + losses) > 0 else 0.0

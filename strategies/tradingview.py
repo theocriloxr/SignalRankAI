@@ -117,37 +117,36 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
             symbol=symbol,
             screener=screener,
             exchange=exchange,
-            interval=timeframe,
+            interval=tv_tf,
         )
-        # ...existing TA_Handler arguments...
-        )
-        )
-        def _respect_global_cooldown():
-            """Enforce a global spacing between TradingView requests to avoid 429s."""
-            global _LAST_REQUEST_TS
-            min_gap = _env_float("TRADINGVIEW_GLOBAL_MIN_SECONDS", 15.0)
-            now = time.monotonic()
-            wait = min_gap - (now - _LAST_REQUEST_TS)
-            if wait > 0:
-                time.sleep(wait)
-            _LAST_REQUEST_TS = time.monotonic()
 
+        # Simple get_analysis with configurable retries and a global cooldown
+        max_rl_retries = _env_int("TRADINGVIEW_MAX_RETRIES", 2)
+        rl_delay = _env_float("TRADINGVIEW_RETRY_DELAY", 2.0)
+
+        analysis = None
         for attempt in range(1, max_rl_retries + 1):
             _respect_global_cooldown()
-            result = _try_analysis(h)
-            if result != _RATE_LIMIT:
-                return result
-            if attempt < max_rl_retries:
-                logger.warning(
-                    f"[tradingview] rate_limited symbol={label} attempt={attempt}/{max_rl_retries} sleep={rl_delay}s"
-                )
-                time.sleep(rl_delay)
-        logger.error(
-            f"[tradingview] rate_limit_exhausted symbol={label} retries={max_rl_retries}"
-        )
-        return _RATE_LIMIT
-
-        analysis = _run_with_rate_limit(handler, symbol)
+            try:
+                analysis = handler.get_analysis()
+                break
+            except Exception as e:
+                msg = str(e).lower()
+                # treat obvious rate-limit responses as retryable
+                if "rate" in msg or "429" in msg or "limit" in msg:
+                    if attempt < max_rl_retries:
+                        logger.warning(
+                            f"[tradingview] rate_limited symbol={symbol} attempt={attempt}/{max_rl_retries} sleep={rl_delay}s"
+                        )
+                        time.sleep(rl_delay)
+                        continue
+                    else:
+                        logger.error(f"[tradingview] rate_limit_exhausted symbol={symbol} retries={max_rl_retries}")
+                        return signals
+                else:
+                    logger.error(f"[tradingview] error fetching analysis for {symbol}: {e}", exc_info=True)
+                    analysis = None
+                    break
         # Fallback: some TradingView listings require base-only symbol (rare). Try that once.
         if analysis is None and asset_upper.endswith("USDT"):
             base_only = asset_upper[:-4]

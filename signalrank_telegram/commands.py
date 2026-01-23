@@ -147,7 +147,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'w
 try:
 	from web.api import generate_api_key, set_user_api_key, get_user_api_key
 except Exception:
-	generate_api_key: Callable[[], Literal['demo-key']] = lambda: "demo-key"
+	generate_api_key = lambda: "demo-key"
 	set_user_api_key = lambda user_id, key: None
 	get_user_api_key = lambda user_id: None
 
