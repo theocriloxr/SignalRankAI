@@ -272,7 +272,8 @@ async def record_signal_delivery(
         dedupe_hours = 24
     # Allow DELIVERY_DEDUPE_HOURS=0 to completely disable deduping (force resend).
     dedupe_hours: int = max(0, int(dedupe_hours))
-    cutoff: datetime | None = _utcnow() - timedelta(hours=int(dedupe_hours)) if dedupe_hours > 0 else None
+    from typing import Optional
+    cutoff: Optional[datetime] = _utcnow() - timedelta(hours=int(dedupe_hours)) if dedupe_hours > 0 else None
 
     # Optional deployment reset: ignore any deliveries recorded before this epoch.
     # Set DELIVERY_DEDUPE_RESET_EPOCH to a Unix timestamp (seconds) to treat all
