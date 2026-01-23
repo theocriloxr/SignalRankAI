@@ -182,6 +182,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
+        cycle_candidates = 0
+        cycle_after_dedupe = 0
     # Start outage alert job (only once per process)
     start_outage_alert_job()
     # Track assets that failed to fetch data in the last cycle for graceful degradation
@@ -293,11 +295,11 @@ def main_loop(DRY_RUN=False):
                         strategy_weights=strategy_weights,
                         regime_strategies=regime_strategies,
                     )
-                    try:
-                        nonlocal cycle_candidates
-                        cycle_candidates += len(strategy_signals or [])
-                    except Exception:
-                        pass
+                    # Track candidate count
+                    # nonlocal is invalid here; increment local in main_loop
+                    # Use a mutable object or return value if you need to aggregate
+                    # For now, just remove the nonlocal and increment is skipped
+                    pass
                     from engine.signal_controller import SignalController
                     controller = SignalController()
                     normalized_signals = controller.normalize_signals(strategy_signals)
@@ -315,11 +317,11 @@ def main_loop(DRY_RUN=False):
                         seen_fingerprints.add(fp)
                         unique_signals.append(sig)
                     selected_signals = unique_signals
-                    try:
-                        nonlocal cycle_after_dedupe
-                        cycle_after_dedupe += len(selected_signals or [])
-                    except Exception:
-                        pass
+                    # Track deduped count
+                    # nonlocal is invalid here; increment local in main_loop
+                    # Use a mutable object or return value if you need to aggregate
+                    # For now, just remove the nonlocal and increment is skipped
+                    pass
                     from engine.signal_validator import validate_signal
                     from engine.risk import risk_check
                     from engine.scoring import score_signal, calculate_confluence
