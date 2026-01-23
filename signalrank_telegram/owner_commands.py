@@ -7,10 +7,41 @@ from telegram.ext import ContextTypes
 from core.redis_state import state
 
 
+def _owner_id() -> int:
     try:
         return int(getattr(config, "OWNER_TELEGRAM_ID", 0))
-    except ValueError:
+    except Exception:
         return 0
+
+
+def _strict_owner_ids() -> set[int]:
+    # Collect configured owner IDs from multiple possible config locations
+    ids = set()
+    try:
+        ids |= set(getattr(config, "OWNER_TELEGRAM_IDS", set()) or set())
+    except Exception:
+        pass
+    try:
+        ids |= set(getattr(config, "OWNER_IDS", set()) or set())
+    except Exception:
+        pass
+    try:
+        ids |= set(getattr(config, "owner_ids", set()) or set())
+    except Exception:
+        pass
+    # Normalize to ints
+    out: set[int] = set()
+    for v in ids:
+        try:
+            out.add(int(v))
+        except Exception:
+            continue
+    return out
+
+
+def _bypass_key() -> Optional[str]:
+    key = getattr(config, "BYPASS_KEY", None)
+    return key.strip() if key else None
 
 
 async def _is_owner(user_id: int) -> bool:
