@@ -79,10 +79,9 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _utcnow() -> datetime:
-    # IMPORTANT: Return a timezone-aware UTC datetime.
-    # Our Postgres schema uses TIMESTAMP WITHOUT TIME ZONE, but using timezone-aware objects is recommended.
-    from datetime import timezone
-    return datetime.now(timezone.utc)
+    # Return a timezone-naive UTC datetime to match DateTime columns
+    # defined in `db.models` (which use naive datetimes via `datetime.utcnow()`).
+    return datetime.utcnow()
 
 
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
