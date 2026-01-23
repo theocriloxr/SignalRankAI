@@ -347,8 +347,8 @@ def main_loop(DRY_RUN=False):
                         sig["score"] = score
                         strict_signals.append(sig)
                     return strict_signals, None
-                except Exception:
-                    return None, asset
+        except Exception:
+            return None, asset
 
             # Use ThreadPoolExecutor for true parallelism (avoids GIL for IO-bound work)
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
