@@ -712,7 +712,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import list_unresolved_signals_for_user
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
 				unresolved_signals = [
 					{
@@ -735,7 +735,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					}
 					for r: Signal in rows
 				]
-	except Exception as e: Exception:
+	except Exception as e:
 		_audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
 		unresolved_signals = []
 
