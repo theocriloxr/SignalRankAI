@@ -871,7 +871,7 @@ async def mark_free_signal_summaries_sent(session: AsyncSession, ids: list[int],
     now: datetime = _utcnow()
     stmt: Update = (
         update(FreeSignalQueue)
-        .where(FreeSignalQueue.id.in_([int(x) for x: int in ids]))
+        .where(FreeSignalQueue.id.in_([int(x) for x in ids]))
         .values(sent_at=now, status=str(status)[:16])
     )
     await session.execute(stmt)
