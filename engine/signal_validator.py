@@ -1,7 +1,7 @@
 """Signal validation and correction system."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ async def create_signal_correction(
         corrected_signal_id=corrected_signal_id,
         error_type=error_type,
         error_description=error_description,
-        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        created_at=datetime.utcnow(),
     )
     
     session.add(correction)
@@ -192,7 +192,7 @@ async def notify_signal_correction(
             
             if correction:
                 correction.users_notified = correction_count
-                correction.correction_sent_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                correction.correction_sent_at = datetime.utcnow()
             
             await session.commit()
             

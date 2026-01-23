@@ -500,7 +500,7 @@ import logging
 import inspect
 import socket
 import random
-from datetime import datetime, timezone
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -511,7 +511,7 @@ from .access import resolve_user_tier
 
 _audit_logger: logging.Logger = logging.getLogger("audit")
 
-_BOOT_TS: str = datetime.now(timezone.utc).isoformat()
+_BOOT_TS: str = datetime.utcnow().isoformat() + "Z"
 
 
 async def version_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
