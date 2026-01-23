@@ -130,16 +130,16 @@ def get_tradingview_signals(asset: str, timeframe: str) -> list[dict]:
             _respect_global_cooldown()
             result = _try_analysis(h)
             if result != _RATE_LIMIT:
-                    return result
-                if attempt < max_rl_retries:
-                    logger.warning(
-                        f"[tradingview] rate_limited symbol={label} attempt={attempt}/{max_rl_retries} sleep={rl_delay}s"
-                    )
-                    time.sleep(rl_delay)
-            logger.error(
-                f"[tradingview] rate_limit_exhausted symbol={label} retries={max_rl_retries}"
-            )
-            return _RATE_LIMIT
+                return result
+            if attempt < max_rl_retries:
+                logger.warning(
+                    f"[tradingview] rate_limited symbol={label} attempt={attempt}/{max_rl_retries} sleep={rl_delay}s"
+                )
+                time.sleep(rl_delay)
+        logger.error(
+            f"[tradingview] rate_limit_exhausted symbol={label} retries={max_rl_retries}"
+        )
+        return _RATE_LIMIT
 
         analysis = _run_with_rate_limit(handler, symbol)
         # Fallback: some TradingView listings require base-only symbol (rare). Try that once.

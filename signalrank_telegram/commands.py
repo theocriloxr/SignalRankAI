@@ -470,7 +470,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		from db.session import ENGINE, get_session
 		if ENGINE is not None:
 			from db.pg_features import get_signal_id_by_short_ref
-			async with get_session() as session: AsyncSession:
+			async with get_session() as session:
 				signal_id = await get_signal_id_by_short_ref(session, signal_ref)
 	except Exception:
 		pass
