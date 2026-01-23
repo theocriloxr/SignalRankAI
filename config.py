@@ -2,14 +2,28 @@
 import os
 
 class Config:
-		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
-		self.CRYPTO_WS_ENABLED = self._env_bool("CRYPTO_WS_ENABLED", False)
-		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", True)
-		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
-	"""Centralized configuration, secrets, and feature toggles."""
+	"""
+	Centralized configuration, secrets, and feature toggles for SignalRankAI.
+
+	All environment variables and feature toggles are loaded once at startup.
+	Access all config via the global `config` instance.
+
+	Example usage:
+		from config import config
+		db_url = config.DATABASE_URL
+
+	Environment variable mapping:
+		DATABASE_URL, REDIS_URL, TELEGRAM_BOT_TOKEN, OWNER_TELEGRAM_ID, OWNER_TELEGRAM_IDS,
+		PAYMENTS_ENABLED, PAYSTACK_SECRET_KEY, ALPHAVANTAGE_API_KEY, BINANCE_API_KEY, BINANCE_API_SECRET,
+		FX_PAIRS, FX_MAX_PAIRS_PER_CYCLE, DRY_RUN, MIN_TRADE_SIZE, MAX_ACTIVE_TRADES, RISK_PER_TRADE_PCT,
+		RAILWAY_SERVICE_NAME, RAILWAY_ENVIRONMENT, RAILWAY_DEPLOYMENT_ID, GIT_COMMIT_SHA, etc.
+	"""
 	def __init__(self):
+		# Database and cache
 		self.DATABASE_URL = os.getenv("DATABASE_URL", "")
 		self.REDIS_URL = os.getenv("REDIS_URL", "")
+
+		# Telegram bot and owner(s)
 		self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 		self.OWNER_TELEGRAM_ID = self._env_int("TELEGRAM_OWNER_ID", 0)
 		self.OWNER_TELEGRAM_IDS = self._env_int_set("OWNER_TELEGRAM_IDS")
@@ -17,21 +31,33 @@ class Config:
 		if self.OWNER_TELEGRAM_ID:
 			self.OWNER_IDS.add(self.OWNER_TELEGRAM_ID)
 		self.OWNER_IDS |= self.OWNER_TELEGRAM_IDS
+
+		# Payments and API keys
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
 		self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 		self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+
+		# Trading and risk management
 		self.FX_PAIRS = [p.strip() for p in os.getenv("FX_PAIRS", "").split(",") if p.strip()]
 		self.FX_MAX_PAIRS_PER_CYCLE = self._env_int("FX_MAX_PAIRS_PER_CYCLE", 3)
 		self.DRY_RUN = self._env_bool("DRY_RUN", False)
 		self.MIN_TRADE_SIZE = self._env_float("MIN_TRADE_SIZE", 0.001)
 		self.MAX_ACTIVE_TRADES = self._env_int("MAX_ACTIVE_TRADES", 5)
 		self.RISK_PER_TRADE_PCT = self._env_float("RISK_PER_TRADE_PCT", 1.0)
+
+		# Railway/infra metadata
 		self.RAILWAY_SERVICE_NAME = os.getenv("RAILWAY_SERVICE_NAME", "")
 		self.RAILWAY_ENVIRONMENT = os.getenv("RAILWAY_ENVIRONMENT", "")
 		self.RAILWAY_DEPLOYMENT_ID = os.getenv("RAILWAY_DEPLOYMENT_ID", "")
 		self.GIT_COMMIT_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
+
+		# Feature toggles (add more as needed)
+		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
+		self.CRYPTO_WS_ENABLED = self._env_bool("CRYPTO_WS_ENABLED", False)
+		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", True)
+		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
 
 	def _env_int(self, name: str, default: int = 0) -> int:
 		raw = os.getenv(name)
