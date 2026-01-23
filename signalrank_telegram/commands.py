@@ -665,7 +665,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						}
 						for r in rows
 					]
-		except Exception as e: Exception:
+		except Exception as e:
 			_audit_logger.error(f"Error fetching delivered signals for {user_id}: {e}")
 			signals_list = []
 		
