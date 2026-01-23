@@ -1139,7 +1139,7 @@ async def delete_old_signals(session: AsyncSession, older_than_days: int = 7) ->
     res: Result[Tuple[str]] = await session.execute(
         select(Signal.signal_id).where(Signal.created_at < cutoff)
     )
-    old_signal_ids: list[Any] = [row[0] for row: Row[Tuple[str]] in res.all()]
+    old_signal_ids: list[Any] = [row[0] for row in res.all()]
     if not old_signal_ids:
         return 0
 
