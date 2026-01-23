@@ -81,7 +81,8 @@ def main() -> None:
         pass
 
     if mode == "all":
-        dry_run = _env_bool("DRY_RUN", False)
+        from config import config
+        dry_run = config.DRY_RUN
 
         def _run_thread(name: str, fn) -> None:
             try:
@@ -159,7 +160,8 @@ def main() -> None:
     # engine (default)
     from engine.core import main_loop
 
-    dry_run = _env_bool("DRY_RUN", False)
+    from config import config
+    dry_run = config.DRY_RUN
     main_loop(dry_run)
 
 
