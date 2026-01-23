@@ -146,7 +146,7 @@ TELEGRAM_CONNECT_TIMEOUT = int(getattr(config, "TELEGRAM_CONNECT_TIMEOUT", 30)) 
 TELEGRAM_READ_TIMEOUT = int(getattr(config, "TELEGRAM_READ_TIMEOUT", 30))  # seconds, configurable
 TELEGRAM_WRITE_TIMEOUT = int(getattr(config, "TELEGRAM_WRITE_TIMEOUT", 30))  # seconds, configurable
 application = Application.builder()
-application = application.token(getattr(config, 'TELEGRAM_TOKEN', None))
+application = application.token(getattr(config, 'TELEGRAM_BOT_TOKEN', None))
 application = application.pool_timeout(TELEGRAM_POOL_TIMEOUT)
 application = application.connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
 application = application.read_timeout(TELEGRAM_READ_TIMEOUT)
@@ -341,7 +341,7 @@ def _audit_handler(command_name: str, handler):
 
 
 def _require_telegram_token() -> str:
-    token = getattr(config, 'TELEGRAM_TOKEN', None)
+    token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
     if token:
         return token
 
@@ -365,7 +365,7 @@ def _require_telegram_token() -> str:
             except Exception:
                 pass
 
-    token = os.getenv('TELEGRAM_TOKEN')
+    token = os.getenv('TELEGRAM_BOT_TOKEN')
     if token:
         return token
     raise RuntimeError(

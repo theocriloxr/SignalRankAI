@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 def start_outage_alert_job():
     from telegram import Bot
     def _job():
-        bot_token = os.getenv('TELEGRAM_TOKEN')
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         bot = Bot(token=bot_token) if bot_token else None
         while True:
             try:
@@ -182,8 +182,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
-        cycle_candidates = 0
-        cycle_after_dedupe = 0
+    cycle_candidates = 0
+    cycle_after_dedupe = 0
     # Start outage alert job (only once per process)
     start_outage_alert_job()
     # Track assets that failed to fetch data in the last cycle for graceful degradation

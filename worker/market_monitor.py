@@ -174,9 +174,9 @@ class MarketMonitor:
                 return
             
             # Get telegram token
-            token = os.getenv('TELEGRAM_TOKEN')
+            token = os.getenv('TELEGRAM_BOT_TOKEN')
             if not token:
-                logger.error("[MarketMonitor] No TELEGRAM_TOKEN found")
+                logger.error("[MarketMonitor] No TELEGRAM_BOT_TOKEN found")
                 return
             
             bot = Bot(token=token)
