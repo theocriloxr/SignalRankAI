@@ -230,24 +230,24 @@ def main_loop(DRY_RUN=False):
     # Tier-based notifications
     tier_notifier = TierNotificationManager()
     
-            new_degraded_assets = set()
+    new_degraded_assets = set()
 
-            # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
-            import concurrent.futures
-            import functools
+    # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
+    import concurrent.futures
+    import functools
 
-            def process_asset(asset, market_data):
-                try:
-                    # --- Candle Completeness & Safety Checks ---
-                    min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
-                    min_candles = max(1, int(min_candles))
-                    needs_refresh = False
-                    if not market_data:
-                        needs_refresh = True
-                    else:
-                        for tf, tf_data in (market_data or {}).items():
-                            candles = (tf_data or {}).get("candles") or []
-                            if not isinstance(candles, list) or len(candles) < min_candles:
+    def process_asset(asset, market_data):
+        try:
+            # --- Candle Completeness & Safety Checks ---
+            min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
+            min_candles = max(1, int(min_candles))
+            needs_refresh = False
+            if not market_data:
+                needs_refresh = True
+            else:
+                for tf, tf_data in (market_data or {}).items():
+                    candles = (tf_data or {}).get("candles") or []
+                    if not isinstance(candles, list) or len(candles) < min_candles:
                                 needs_refresh = True
                                 break
                             last_candle = candles[-1] if candles else None
