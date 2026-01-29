@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from config import config
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional

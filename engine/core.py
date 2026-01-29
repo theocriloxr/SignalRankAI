@@ -213,26 +213,30 @@ def main_loop(DRY_RUN=False):
         degraded_assets = set()
         # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
         def process_asset(asset, market_data):
-        try:
-            # --- Candle Completeness & Safety Checks ---
-            min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
-            min_candles = max(1, int(min_candles))
-            needs_refresh = False
-            if not market_data:
-                needs_refresh = True
-            else:
-                for tf, tf_data in (market_data or {}).items():
-                    candles = (tf_data or {}).get("candles") or []
-                    if not isinstance(candles, list) or len(candles) < min_candles:
-                        needs_refresh = True
-                        break
-                    last_candle = candles[-1] if candles else None
-                    if last_candle:
-                        if 'timestamp' not in last_candle or 'close' not in last_candle:
+            try:
+                # --- Candle Completeness & Safety Checks ---
+                min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
+                min_candles = max(1, int(min_candles))
+                needs_refresh = False
+                if not market_data:
+                    needs_refresh = True
+                else:
+                    for tf, tf_data in (market_data or {}).items():
+                        candles = (tf_data or {}).get("candles") or []
+                        if not isinstance(candles, list) or len(candles) < min_candles:
                             needs_refresh = True
                             break
-                        if 'close_time' in last_candle:
-                            import time
+                        last_candle = candles[-1] if candles else None
+                        if last_candle:
+                            if 'timestamp' not in last_candle or 'close' not in last_candle:
+                                needs_refresh = True
+                                break
+                            if 'close_time' in last_candle:
+                                import time
+                # ...existing code...
+            except Exception as e:
+                # Handle/log exception as needed
+                pass
                             now = int(time.time())
                             close_time = int(last_candle['close_time'])
                             tf_sec = 60
