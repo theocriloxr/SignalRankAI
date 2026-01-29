@@ -78,10 +78,10 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+from datetime import timezone
 def _utcnow() -> datetime:
-    # Return a timezone-naive UTC datetime to match DateTime columns
-    # defined in `db.models` (which use naive datetimes via `datetime.utcnow()`).
-    return datetime.utcnow()
+    # Return a timezone-aware UTC datetime (UTC)
+    return datetime.now(timezone.utc)
 
 
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
@@ -1350,17 +1350,17 @@ async def queue_random_free_signals_for_all_users(
         # Check user's daily window
         try:
             anchor: datetime = user.created_at
-            window_start: datetime = now.replace(
+            window_start: datetime = now.astimezone(timezone.utc).replace(
                 hour=int(anchor.hour),
                 minute=int(anchor.minute),
                 second=int(anchor.second),
                 microsecond=0,
+                tzinfo=timezone.utc
             )
             if window_start > now:
                 window_start: datetime = window_start - timedelta(days=1)
         except Exception:
-            window_start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
+            window_start: datetime = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
         window_end: datetime = window_start + timedelta(days=1)
         
         # Check how many already queued/sent today
@@ -1419,7 +1419,7 @@ async def count_signals_delivered_today(
     
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now: datetime = _utcnow()
-    start_of_day: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_day: datetime = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     
     res: Result[Tuple[int]] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
@@ -1443,7 +1443,7 @@ async def get_last_signal_delivery_time(
     
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now: datetime = _utcnow()
-    start_of_day: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_day: datetime = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
     
     res: Result[Tuple[datetime]] = await session.execute(
         select(SignalDelivery.delivered_at)

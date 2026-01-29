@@ -5,7 +5,7 @@ Run this to test formatting before deploying
 
 from signalrank_telegram.formatter import format_signal
 from engine.tier_notifications import TierNotificationManager
-from datetime import datetime
+from datetime import datetime, timezone
 
 print("=" * 60)
 print("Testing Signal-Only Bot Features")
@@ -65,7 +65,7 @@ test_signal = {
         'total_checked': 4
     },
     'session': 'LONDON',
-    'expires_at': datetime.utcnow(),
+    'expires_at': datetime.now(timezone.utc),
     'invalid_if_price': 44200,
     'reason': 'Strong uptrend + volume spike (2.1x) + breakout above resistance + retest confirmed',
     'position_size': 0.05,

@@ -16,12 +16,10 @@ from signalrank_telegram.formatter import (
 
 class TierDeliveryManager:
     """Manages signal delivery based on user tier."""
-    
     # Signal thresholds per tier (QUALITY GATES)
     MIN_SCORE_FREE = 80.0      # Only prove best signals
     MIN_SCORE_PREMIUM = 65.0   # More opportunity
     MIN_SCORE_VIP = 55.0       # Accept all, but show quality-first
-    
     # Daily signal limits (soft limits, quality-based)
     MAX_SIGNALS_PER_DAY = {
         'free': 3,        # 1-3 signals/day
@@ -29,43 +27,31 @@ class TierDeliveryManager:
         'vip': None,      # No limit (quality-filtered)
         'admin': None,    # All signals
     }
-    
     def __init__(self):
         """Initialize delivery manager."""
-        self.signal_counts = {}  # Track signals per user per day
         self.delivery_log = []
-    
-    def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str] = None) -> bool:
-        """Check if signal should be sent to this user based on tier and quality.
-        
-        Args:
-            user_tier: User's subscription tier (free, premium, vip, admin)
-            score: Signal confidence score (0-100)
-            user_id: Optional user ID for tracking daily limits
-        
-        Returns:
-            True if signal should be sent, False otherwise (filtered out)
-        """
+    async def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
+        """Check if signal should be sent to this user based on tier and quality, using DB for daily limit."""
+        import logging
         tier = str(user_tier or 'free').lower()
-        
         # Quality gates (MUST pass)
         if tier == 'free' and score < self.MIN_SCORE_FREE:
+            logging.info(f"[delivery] User {user_id} (free) score {score} < {self.MIN_SCORE_FREE}, not eligible.")
             return False
         elif tier == 'premium' and score < self.MIN_SCORE_PREMIUM:
+            logging.info(f"[delivery] User {user_id} (premium) score {score} < {self.MIN_SCORE_PREMIUM}, not eligible.")
             return False
         elif tier == 'vip' and score < self.MIN_SCORE_VIP:
+            logging.info(f"[delivery] User {user_id} (vip) score {score} < {self.MIN_SCORE_VIP}, not eligible.")
             return False
         # Admin always receives
-        
-        # Daily limit check (optional soft limit)
         max_per_day = self.MAX_SIGNALS_PER_DAY.get(tier)
-        if max_per_day and user_id:
-            today_key = f"{user_id}:{datetime.now(timezone.utc).date()}"
-            count = self.signal_counts.get(today_key, 0)
-            if count >= max_per_day:
-                return False  # Soft limit reached
-            self.signal_counts[today_key] = count + 1
-        
+        if max_per_day and user_id and session is not None:
+            from db.pg_features import count_signals_delivered_today
+            delivered_today = await count_signals_delivered_today(session, int(user_id))
+            if delivered_today >= max_per_day:
+                logging.info(f"[delivery] User {user_id} ({tier}) daily limit {max_per_day} reached: {delivered_today} delivered today.")
+                return False
         return True
     
     def format_for_delivery(self, signal: Dict, user_tier: str) -> Optional[str]:
