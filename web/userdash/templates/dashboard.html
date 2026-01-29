@@ -1,17 +1,10 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Your Dashboard - SignalRankAI</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f7f7f7; }
-        .container { max-width: 800px; margin: 40px auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
-        h2 { text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-        th { background: #f0f0f0; }
-        .tier { font-weight: bold; color: #0077cc; }
-        .logout { float: right; }
-    </style>
+    <link rel="stylesheet" href="/static/userdash.css">
 </head>
 <body>
     <div class="container">
@@ -37,27 +30,6 @@
             </tr>
             {% for s in signals %}
             <tr>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Your Dashboard - SignalRankAI</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f7f7f7; }
-        .container { max-width: 800px; margin: 40px auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
-        h2 { text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-        th { background: #f0f0f0; }
-        .tier { font-weight: bold; color: #0077cc; }
-        .logout { float: right; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <a href="/logout" class="logout">Logout</a>
-        <h2>Your Signal Dashboard</h2>
         <div>Tier: <span class="tier">{{ tier }}</span></div>
         {% if signals and signals|length > 0 %}
         <table>

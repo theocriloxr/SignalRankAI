@@ -212,140 +212,6 @@ def main_loop(DRY_RUN=False):
         new_degraded_assets = set()
         degraded_assets = set()
         # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
-        def process_asset(asset, market_data):
-            try:
-                # --- Candle Completeness & Safety Checks ---
-                min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
-                min_candles = max(1, int(min_candles))
-                needs_refresh = False
-                if not market_data:
-                    needs_refresh = True
-                else:
-                    for tf, tf_data in (market_data or {}).items():
-                        candles = (tf_data or {}).get("candles") or []
-                        if not isinstance(candles, list) or len(candles) < min_candles:
-                            needs_refresh = True
-                            break
-                        last_candle = candles[-1] if candles else None
-                        if last_candle:
-                            if 'timestamp' not in last_candle or 'close' not in last_candle:
-                                needs_refresh = True
-                                break
-                            if 'close_time' in last_candle:
-                                import time
-                # ...existing code...
-            except Exception as e:
-                # Handle/log exception as needed
-                pass
-                            now = int(time.time())
-                            close_time = int(last_candle['close_time'])
-                            tf_sec = 60
-                            if 'm' in tf:
-                                tf_sec = int(tf.replace('m','')) * 60
-                            elif 'h' in tf:
-                                tf_sec = int(tf.replace('h','')) * 3600
-                            elif 'd' in tf:
-                                tf_sec = int(tf.replace('d','')) * 86400
-                            if now - close_time > 2 * tf_sec:
-                                needs_refresh = True
-                                break
-                    if needs_refresh:
-                        try:
-                            market_data = asyncio.run(fetch_market_data_cached(asset, list((asset_to_tfs_degraded.get(asset) or []))))
-                            valid = False
-                            for tf, tf_data in (market_data or {}).items():
-                                candles = (tf_data or {}).get('candles') or []
-                                if isinstance(candles, list) and len(candles) >= min_candles:
-                                    last_candle = candles[-1] if candles else None
-                                    if last_candle and 'timestamp' in last_candle and 'close' in last_candle:
-                                        valid = True
-                                        break
-                            if not valid:
-                                return None, asset
-                        except Exception:
-                            return None, asset
-
-                    regime = detect_market_regime(market_data)
-                    strategy_signals = run_all_strategies(
-                        asset,
-                        market_data,
-                        regime,
-                        strategy_weights=strategy_weights,
-                        regime_strategies=regime_strategies,
-                    )
-                    # Track candidate count
-                    # nonlocal is invalid here; increment local in main_loop
-                    # Use a mutable object or return value if you need to aggregate
-                    # For now, just remove the nonlocal and increment is skipped
-                    pass
-                    from engine.signal_controller import SignalController
-                    controller = SignalController()
-                    normalized_signals = controller.normalize_signals(strategy_signals)
-                    from engine.consensus import consensus_filter
-                    consensus_signals = consensus_filter(normalized_signals)
-                    selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
-                    from db.pg_features import compute_signal_fingerprint
-                    unique_signals = []
-                    seen_fingerprints = set()
-                    for sig in selected_signals:
-                        fp = compute_signal_fingerprint(sig)
-                        sig["fingerprint"] = fp
-                        if fp in seen_fingerprints:
-                            continue
-                        seen_fingerprints.add(fp)
-                        unique_signals.append(sig)
-                    selected_signals = unique_signals
-                    # Track deduped count
-                    # nonlocal is invalid here; increment local in main_loop
-                    # Use a mutable object or return value if you need to aggregate
-                    # For now, just remove the nonlocal and increment is skipped
-                    pass
-                    from engine.signal_validator import validate_signal
-                    from engine.risk import risk_check
-                    from engine.scoring import score_signal, calculate_confluence
-                    strict_signals = []
-                    for sig in selected_signals:
-                        is_valid, err = validate_signal(sig)
-                        if not is_valid:
-                            sig["rejection_reason"] = f"validation: {err}"
-                            continue
-                        account_state = type('AccountState', (), {'drawdown': 0.0})()
-                        if not risk_check(sig, account_state):
-                            sig["rejection_reason"] = "risk/volatility gate"
-                            continue
-                        confluence = calculate_confluence(sig)
-                        if confluence < 50:
-                            sig["rejection_reason"] = f"confluence {confluence:.1f}% < 50%"
-                            continue
-                        if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
-                            sig["rejection_reason"] = f"ml_probability {sig['ml_probability']:.2f} < 0.5"
-                            continue
-                        score = score_signal(sig)
-                        if score < MIN_SCORE_THRESHOLD:
-                            sig["rejection_reason"] = f"score {score:.2f} < {MIN_SCORE_THRESHOLD}"
-                            continue
-                        sig["score"] = score
-                        strict_signals.append(sig)
-                    return strict_signals, None
-        except Exception:
-            return None, asset
-
-            # Use ThreadPoolExecutor for true parallelism (avoids GIL for IO-bound work)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-                futures = [executor.submit(functools.partial(process_asset, asset, (all_market_data or {}).get(asset) or {})) for asset in assets]
-                results = [f.result() for f in futures]
-            # Aggregate results and degraded assets
-            all_strict_signals = []
-            for sigs, degraded in results:
-                if degraded:
-                    new_degraded_assets.add(degraded)
-                elif sigs:
-                    all_strict_signals.extend(sigs)
-
-            selected_signals = all_strict_signals
-            print(f"[engine] Added {len(stock_list)} stock ticker(s) to asset list", flush=True)
-        except Exception:
-            pass
 
             if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
                 try:
@@ -357,7 +223,7 @@ def main_loop(DRY_RUN=False):
                     )
                 except Exception:
                     pass
-
+    
             # No assets => do not run on demo/hardcoded data.
             if not assets:
                 if _env_bool("ENGINE_CYCLE_LOG", True):

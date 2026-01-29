@@ -1,0 +1,10 @@
+body { font-family: Arial, sans-serif; background: #f7f7f7; }
+.container { max-width: 800px; margin: 40px auto; background: #fff; padding: 2em; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
+h2 { text-align: center; }
+table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+th { background: #f0f0f0; }
+.tier { font-weight: bold; color: #0077cc; }
+.logout { float: right; }
+.error { color: red; text-align: center; }
+.hint { font-size:0.9em; color:#888; }

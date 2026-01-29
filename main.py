@@ -65,7 +65,9 @@ def main() -> None:
     if mode == "all":
         from config import config
         dry_run = config.DRY_RUN
-        def _run_thread(name: str, fn) -> None:
+        from typing import Callable
+
+        def _run_thread(name: str, fn: Callable[[], None]) -> None:
             try:
                 print(f"[boot] RUN_MODE=all starting {name}", flush=True)
                 fn()
