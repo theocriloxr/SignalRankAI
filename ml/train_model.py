@@ -56,8 +56,6 @@ async def load_training_data():
     """Load signals + outcomes from Postgres."""
     try:
         from db.session import get_session
-        if ENGINE is None:
-            raise RuntimeError("DATABASE_URL not configured")
 
         from db.models import Signal, Outcome, SignalDelivery
         from sqlalchemy import select, func
