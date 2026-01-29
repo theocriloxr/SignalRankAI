@@ -1,3 +1,5 @@
+# Import actual owner/admin command handlers
+from signalrank_telegram.owner_commands import owner_users, owner_revenue, correct_signal
 # --------- DEV/ADMIN PLACEHOLDER COMMANDS ---------
 async def unlock(update, context):
 	if update.message is not None:
