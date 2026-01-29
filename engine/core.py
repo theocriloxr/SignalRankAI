@@ -258,7 +258,7 @@ def main_loop(DRY_RUN=False):
                 raw_tradable = (os.getenv("TRADABLE_ASSETS") or "").strip()
                 raw_fx = (os.getenv("FX_PAIRS") or "").strip()
                 print(
-                    f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count={len(tradable)} discovered_count={len(discovered)} final_count={len(assets)}",
+                    f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count=0 discovered_count=0 final_count={len(assets)}",
                     flush=True,
                 )
             except Exception:
