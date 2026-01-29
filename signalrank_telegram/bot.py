@@ -110,6 +110,7 @@ def resend_unsent_signals_job():
     except Exception:
         pass
 
+
 import os
 from config import config
 from telegram.ext import Application, CommandHandler
@@ -125,8 +126,8 @@ def _audit_handler(command_name: str, handler):
             return await handler(update, context)
 
         try:
-                from db.session import get_session
-            if ENGINE is not None and getattr(update, "effective_user", None) is not None:
+            from db.session import get_session
+            if getattr(update, "effective_user", None) is not None:
                 user_id = int(update.effective_user.id)
                 username = None
                 try:
