@@ -337,7 +337,7 @@ async def selfcheck_command(update, context) -> None:
 	import os
 	from db.session import ENGINE
 	lines: list[str] = ["🩺 System Self-Check"]
-	lines.append(f"Time: {datetime.datetime.utcnow().isoformat()} UTC")
+	lines.append(f"Time: {datetime.datetime.now(datetime.timezone.utc).isoformat()} UTC")
 	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
 	lines.append(f"Python: {platform.python_version()}")
 	lines.append(f"RAM: {psutil.virtual_memory().percent}% used")

@@ -7,7 +7,7 @@ Market Condition Monitor
 import os
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ class MarketMonitor:
                 logger.info(f"[MarketMonitor] NO TRADE: {reasons} | Session: {session}")
                 
                 # Update last alert time
-                self.last_no_trade_alert = datetime.utcnow()
+                self.last_no_trade_alert = datetime.now(timezone.utc)
         
         except Exception as e:
             logger.error(f"[MarketMonitor] Error in check_and_alert: {e}")

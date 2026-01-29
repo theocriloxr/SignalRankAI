@@ -173,9 +173,9 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
         from db.models import User, Subscription
         from sqlalchemy import select, func
-        from datetime import datetime
+        from datetime import datetime, timezone
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         async with get_session() as session:
             res_users = await session.execute(select(func.count(User.id)))
             total_users = int(res_users.scalar() or 0)

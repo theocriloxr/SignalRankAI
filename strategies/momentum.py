@@ -9,12 +9,12 @@ def momentum_strategies(asset, timeframe, market_data):
     
     # Verify data is recent (not stale) - last candle should be within reasonable time
     try:
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
         last_ts = candles[-1].get('timestamp', 0)
         if last_ts > 0:
-            last_time = datetime.fromtimestamp(last_ts / 1000)
+            last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
             # Data older than 24 hours = stale
-            if datetime.utcnow() - last_time > timedelta(hours=24):
+            if datetime.now(timezone.utc) - last_time > timedelta(hours=24):
                 return []  # Stale data, skip signal
     except Exception:
         pass  # If timestamp check fails, proceed anyway but log it

@@ -8,7 +8,7 @@ Implements the GOLDEN RULE:
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from signalrank_telegram.formatter import (
     format_signal, format_signal_update_tp_hit,
     format_signal_no_trade_alert
@@ -60,7 +60,7 @@ class TierDeliveryManager:
         # Daily limit check (optional soft limit)
         max_per_day = self.MAX_SIGNALS_PER_DAY.get(tier)
         if max_per_day and user_id:
-            today_key = f"{user_id}:{datetime.utcnow().date()}"
+            today_key = f"{user_id}:{datetime.now(timezone.utc).date()}"
             count = self.signal_counts.get(today_key, 0)
             if count >= max_per_day:
                 return False  # Soft limit reached
@@ -241,7 +241,7 @@ class TierDeliveryManager:
             reason: Reason if not delivered
         """
         self.delivery_log.append({
-            'timestamp': datetime.utcnow(),
+            'timestamp': datetime.now(timezone.utc),
             'signal_id': signal_id,
             'user_id': user_id,
             'tier': tier,
@@ -258,7 +258,7 @@ class TierDeliveryManager:
         Returns:
             Dict with delivery stats
         """
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         recent_logs = [log for log in self.delivery_log if log['timestamp'] >= cutoff]
         
         stats = {
