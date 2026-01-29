@@ -205,6 +205,7 @@ def main_loop(DRY_RUN=False):
     import concurrent.futures
     import functools
 
+
     while True:
         # Per-cycle variables
         cycle_candidates = 0
@@ -213,27 +214,26 @@ def main_loop(DRY_RUN=False):
         degraded_assets = set()
         # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
 
-            if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
+        if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
+            try:
+                raw_tradable = (os.getenv("TRADABLE_ASSETS") or "").strip()
+                raw_fx = (os.getenv("FX_PAIRS") or "").strip()
+                print(
+                    f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count={len(tradable)} discovered_count={len(discovered)} final_count={len(assets)}",
+                    flush=True,
+                )
+            except Exception:
+                pass
+
+        # No assets => do not run on demo/hardcoded data.
+        if not assets:
+            if _env_bool("ENGINE_CYCLE_LOG", True):
                 try:
-                    raw_tradable = (os.getenv("TRADABLE_ASSETS") or "").strip()
-                    raw_fx = (os.getenv("FX_PAIRS") or "").strip()
-                    print(
-                        f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count={len(tradable)} discovered_count={len(discovered)} final_count={len(assets)}",
-                        flush=True,
-                    )
+                    print(f"[engine] cycle={cycle_no} skipped=no_assets", flush=True)
                 except Exception:
                     pass
-    
-            # No assets => do not run on demo/hardcoded data.
-            if not assets:
-                if _env_bool("ENGINE_CYCLE_LOG", True):
-                    try:
-                        print(f"[engine] cycle={cycle_no} skipped=no_assets", flush=True)
-                    except Exception:
-                        pass
-                time.sleep(max(5, cycle_sleep_seconds))
-                # Instead of 'continue', use 'return' to exit the function if not in a loop
-                return
+            time.sleep(max(5, cycle_sleep_seconds))
+            continue
 
             # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
             try:
