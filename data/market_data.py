@@ -43,7 +43,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
 
     out: dict = {}
 
-    if use_cache and ENGINE is not None:
+    if use_cache:
         try:
             async with get_session() as session:
                 for tf in tfs:
@@ -70,7 +70,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             out[tf] = payload
 
         # Best-effort write-through into Postgres cache tables.
-        if ENGINE is not None and _env_bool("MARKET_CACHE_WRITE_THROUGH", True):
+        if _env_bool("MARKET_CACHE_WRITE_THROUGH", True):
             try:
                 from datetime import datetime
                 from db.market_cache import upsert_market_candle, upsert_market_tick
