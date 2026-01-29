@@ -291,7 +291,7 @@ def main_loop(DRY_RUN=False):
                     print(f"[engine] cycle={cycle_no} skipped=no_assets", flush=True)
                 except Exception:
                     pass
-            import time  # Ensure time module is accessible in this scope
+            # time is imported at the top of the file
             time.sleep(max(5, cycle_sleep_seconds))
             continue
 
@@ -456,7 +456,7 @@ def main_loop(DRY_RUN=False):
                                     break
                                 # If close_time is present, check staleness
                                 if 'close_time' in last_candle:
-                                    import time
+                                    # time is imported at the top of the file
                                     now = int(time.time())
                                     close_time = int(last_candle['close_time'])
                                     # Assume timeframe in seconds (e.g., 900 for 15m)
