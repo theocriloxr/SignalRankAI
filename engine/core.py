@@ -244,8 +244,8 @@ def main_loop(DRY_RUN=False):
         # Per-cycle variables
         cycle_candidates = 0
         cycle_after_dedupe = 0
-        new_degraded_assets = set()
-        degraded_assets = set()
+        new_degraded_assets: set[str] = set()
+        degraded_assets: set[str] = set()
         # Set a default cycle sleep duration (in seconds)
         cycle_sleep_seconds = 10
         # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
@@ -351,51 +351,50 @@ def main_loop(DRY_RUN=False):
 
         cycle_assets = len(assets)
 
-            # Optional visibility into what we are actually scanning.
-            if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
-                try:
-                    crypto_n = len([a for a in assets if is_crypto(a)])
-                    fx_n = len([a for a in assets if is_fx(a)])
-                    stock_n = len([a for a in assets if is_stock(a)])
-                    sample = ",".join([str(a) for a in list(assets)[:10]])
-                    print(
-                        f"[engine] cycle={cycle_no} assets_split crypto={crypto_n} fx={fx_n} stocks={stock_n} sample={sample}",
-                        flush=True,
-                    )
-                except Exception:
-                    pass
-
-            scored_signals_all = []
-
-            # Fetch all market data once per cycle (avoids per-asset asyncio.run overhead).
-            asset_to_tfs: dict[str, list[str]] = {}
-            for asset in assets:
-                if is_crypto(asset):
-                    tfs = crypto_timeframes
-                elif is_fx(asset):
-                    tfs = fx_timeframes
-                else:
-                    tfs = stock_timeframes
-                asset_to_tfs[str(asset)] = list(tfs)
-
-
-            # Graceful degradation: reduce batch size and skip some timeframes for problematic assets
-            asset_to_tfs_degraded = {}
-            for asset, tfs in asset_to_tfs.items():
-                if asset in degraded_assets:
-                    # Only scan 1 timeframe for degraded assets (lowest timeframe)
-                    asset_to_tfs_degraded[asset] = [tfs[0]] if tfs else []
-                else:
-                    asset_to_tfs_degraded[asset] = tfs
-
+        # Optional visibility into what we are actually scanning.
+        if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
             try:
-                all_market_data = asyncio.run(_fetch_market_data_for_assets(asset_to_tfs_degraded))
+                crypto_n = len([a for a in assets if is_crypto(a)])
+                fx_n = len([a for a in assets if is_fx(a)])
+                stock_n = len([a for a in assets if is_stock(a)])
+                sample = ",".join([str(a) for a in list(assets)[:10]])
+                print(
+                    f"[engine] cycle={cycle_no} assets_split crypto={crypto_n} fx={fx_n} stocks={stock_n} sample={sample}",
+                    flush=True,
+                )
             except Exception:
-                all_market_data = {}
+                pass
 
-            new_degraded_assets = set()
+        scored_signals_all = []
 
-            for asset in assets:
+        # Fetch all market data once per cycle (avoids per-asset asyncio.run overhead).
+        asset_to_tfs: dict[str, list[str]] = {}
+        for asset in assets:
+            if is_crypto(asset):
+                tfs = crypto_timeframes
+            elif is_fx(asset):
+                tfs = fx_timeframes
+            else:
+                tfs = stock_timeframes
+            asset_to_tfs[str(asset)] = list(tfs)
+
+        # Graceful degradation: reduce batch size and skip some timeframes for problematic assets
+        asset_to_tfs_degraded = {}
+        for asset, tfs in asset_to_tfs.items():
+            if asset in degraded_assets:
+                # Only scan 1 timeframe for degraded assets (lowest timeframe)
+                asset_to_tfs_degraded[asset] = [tfs[0]] if tfs else []
+            else:
+                asset_to_tfs_degraded[asset] = tfs
+
+        try:
+            all_market_data = asyncio.run(_fetch_market_data_for_assets(asset_to_tfs_degraded))
+        except Exception:
+            all_market_data = {}
+
+        new_degraded_assets = set()
+
+        for asset in assets:
 
                 try:
                     market_data = (all_market_data or {}).get(asset) or {}
@@ -978,103 +977,103 @@ def main_loop(DRY_RUN=False):
                     # Isolate per-asset failures so the loop stays alive.
                     continue
 
-            # Update degraded_assets for next cycle
-            degraded_assets = new_degraded_assets
+        # Update degraded_assets for next cycle
+        degraded_assets = new_degraded_assets
 
-            # --- Centralized Tier-Based Delivery ---
-            from signalrank_telegram.tier_delivery import TierDeliveryManager
-            delivery_mgr = TierDeliveryManager()
-            from db.pg_compat import get_all_user_ids_compat
-            from signalrank_telegram.access import resolve_user_tier
+        # --- Centralized Tier-Based Delivery ---
+        from signalrank_telegram.tier_delivery import TierDeliveryManager
+        delivery_mgr = TierDeliveryManager()
+        from db.pg_compat import get_all_user_ids_compat
+        from signalrank_telegram.access import resolve_user_tier
+        user_ids = []
+        try:
+            user_ids = list(get_all_user_ids_compat() or [])
+        except Exception:
             user_ids = []
-            try:
-                user_ids = list(get_all_user_ids_compat() or [])
-            except Exception:
-                user_ids = []
-            # Ensure OWNER_IDS are included so owners always receive signals
-            try:
-                for _oid in (OWNER_IDS or set()):
+        # Ensure OWNER_IDS are included so owners always receive signals
+        try:
+            for _oid in (OWNER_IDS or set()):
+                try:
+                    oid = int(_oid)
+                    if oid not in user_ids:
+                        user_ids.append(oid)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        try:
+            cycle_users = len(user_ids or [])
+        except Exception:
+            cycle_users = 0
+        # For each user, resolve tier and deliver only signals allowed by TierDeliveryManager
+        import asyncio
+        from db.session import get_session
+        async def deliver_all():
+            dispatched_count = 0
+            async with get_session() as session:
+                for user_id in user_ids:
                     try:
-                        oid = int(_oid)
-                        if oid not in user_ids:
-                            user_ids.append(oid)
+                        user_tier = resolve_user_tier(user_id).lower()
                     except Exception:
-                        continue
-            except Exception:
-                pass
-            try:
-                cycle_users = len(user_ids or [])
-            except Exception:
-                cycle_users = 0
-            # For each user, resolve tier and deliver only signals allowed by TierDeliveryManager
-            import asyncio
-            from db.session import get_session
-            async def deliver_all():
-                dispatched_count = 0
-                async with get_session() as session:
-                    for user_id in user_ids:
-                        try:
-                            user_tier = resolve_user_tier(user_id).lower()
-                        except Exception:
-                            user_tier = 'free'
-                        user_signals = []
-                        for sig in scored_signals_all:
-                            eligible = await delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=session)
-                            if eligible:
-                                msg = delivery_mgr.format_for_delivery(sig, user_tier)
-                                if msg:
-                                    user_signals.append(msg)
-                        if DRY_RUN:
-                            for msg in user_signals:
-                                print(f"[DRY RUN][{user_tier}] {msg}")
-                        else:
-                            from signalrank_telegram.bot import dispatch_signals
-                            dispatched = dispatch_signals(user_signals, user_id=user_id)
-                        dispatched_count += 1
-                return dispatched_count
-            cycle_dispatched_users += asyncio.run(deliver_all())
+                        user_tier = 'free'
+                    user_signals = []
+                    for sig in scored_signals_all:
+                        eligible = await delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=session)
+                        if eligible:
+                            msg = delivery_mgr.format_for_delivery(sig, user_tier)
+                            if msg:
+                                user_signals.append(msg)
+                    if DRY_RUN:
+                        for msg in user_signals:
+                            print(f"[DRY RUN][{user_tier}] {msg}")
+                    else:
+                        from signalrank_telegram.bot import dispatch_signals
+                        dispatched = dispatch_signals(user_signals, user_id=user_id)
+                    dispatched_count += 1
+            return dispatched_count
+        cycle_dispatched_users += asyncio.run(deliver_all())
 
-            # Optionally flush analytics every N cycles or on interval
-            if cycle_no % 10 == 0:
-                signal_analytics.flush()
+        # Optionally flush analytics every N cycles or on interval
+        if cycle_no % 10 == 0:
+            signal_analytics.flush()
 
-            # Explicit per-cycle max score logging for easier troubleshooting.
-            if _env_bool("ENGINE_CYCLE_LOG", True):
-                if cycle_max_score is not None:
-                    print(
-                        f"[engine] cycle={cycle_no} max_score={cycle_max_score:.2f} max_asset={cycle_max_score_asset or 'n/a'} threshold={MIN_SCORE_THRESHOLD}",
-                        flush=True,
-                    )
-                else:
-                    print(
-                        f"[engine] cycle={cycle_no} max_score=n/a threshold={MIN_SCORE_THRESHOLD}",
-                        flush=True,
-                    )
+        # Explicit per-cycle max score logging for easier troubleshooting.
+        if _env_bool("ENGINE_CYCLE_LOG", True):
+            if cycle_max_score is not None:
+                print(
+                    f"[engine] cycle={cycle_no} max_score={cycle_max_score:.2f} max_asset={cycle_max_score_asset or 'n/a'} threshold={MIN_SCORE_THRESHOLD}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"[engine] cycle={cycle_no} max_score=n/a threshold={MIN_SCORE_THRESHOLD}",
+                    flush=True,
+                )
 
-            # One-line per-cycle health signal for Railway logs.
-            if _env_bool("ENGINE_CYCLE_LOG", True):
-                every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
-                if cycle_no <= 0 or (cycle_no % every) == 0:
-                    crypto_provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
-                    filter_top = ""
-                    if cycle_filter_rejection_counts:
-                        top3 = cycle_filter_rejection_counts.most_common(3)
-                        filter_top = ";".join([f"{r}:{c}" for r, c in top3])
-                    print(
-                        "[engine] cycle="
-                        f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
-                            f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
-                        f"scored>={MIN_SCORE_THRESHOLD:.2f}={cycle_scored} stored={cycle_stored} "
-                        f"rejected_filters={cycle_rejected_filters} rejected_ultra={cycle_rejected_ultra} "
-                        f"score_errors={cycle_score_errors} "
-                        f"store_failures={cycle_store_failures} "
-                            f"store_error={cycle_store_error or 'n/a'} "
-                        f"users={cycle_users} dispatched={cycle_dispatched_users} "
-                            f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "
-                            f"filter_top={filter_top or 'n/a'} "
-                            f"crypto_provider={crypto_provider} fx_enabled={fx_enabled} stocks_enabled={stocks_enabled}",
-                        flush=True,
-                    )
+        # One-line per-cycle health signal for Railway logs.
+        if _env_bool("ENGINE_CYCLE_LOG", True):
+            every = max(1, _env_int("ENGINE_CYCLE_LOG_EVERY", 1))
+            if cycle_no <= 0 or (cycle_no % every) == 0:
+                crypto_provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+                filter_top = ""
+                if cycle_filter_rejection_counts:
+                    top3 = cycle_filter_rejection_counts.most_common(3)
+                    filter_top = ";".join([f"{r}:{c}" for r, c in top3])
+                print(
+                    "[engine] cycle="
+                    f"{cycle_no} assets={cycle_assets} candidates={cycle_candidates} "
+                        f"deduped={cycle_after_dedupe} consensus={cycle_after_consensus} risk_ok={cycle_after_risk} ml_ok={cycle_after_ml} "
+                    f"scored>={MIN_SCORE_THRESHOLD:.2f}={cycle_scored} stored={cycle_stored} "
+                    f"rejected_filters={cycle_rejected_filters} rejected_ultra={cycle_rejected_ultra} "
+                    f"score_errors={cycle_score_errors} "
+                    f"store_failures={cycle_store_failures} "
+                        f"store_error={cycle_store_error or 'n/a'} "
+                    f"users={cycle_users} dispatched={cycle_dispatched_users} "
+                        f"max_score={cycle_max_score if cycle_max_score is not None else 'n/a'} max_score_asset={cycle_max_score_asset or 'n/a'} "
+                        f"filter_top={filter_top or 'n/a'} "
+                        f"crypto_provider={crypto_provider} fx_enabled={fx_enabled} stocks_enabled={stocks_enabled}",
+                    flush=True,
+                )
         # (Removed stray except block that caused SyntaxError)
     
         time.sleep(max(5, cycle_sleep_seconds))
