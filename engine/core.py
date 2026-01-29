@@ -1123,26 +1123,31 @@ def main_loop(DRY_RUN=False):
             except Exception:
                 cycle_users = 0
             # For each user, resolve tier and deliver only signals allowed by TierDeliveryManager
-            for user_id in user_ids:
-                try:
-                    user_tier = resolve_user_tier(user_id).lower()
-                except Exception:
-                    user_tier = 'free'
-                # Filter and format signals for this user/tier
-                user_signals = []
-                for sig in scored_signals_all:
-                    if delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id):
-                        msg = delivery_mgr.format_for_delivery(sig, user_tier)
-                        if msg:
-                            user_signals.append(msg)
-                # Dispatch all formatted signals for this user
-                if DRY_RUN:
-                    for msg in user_signals:
-                        print(f"[DRY RUN][{user_tier}] {msg}")
-                else:
-                    from signalrank_telegram.bot import dispatch_signals
-                    dispatched = dispatch_signals(user_signals, user_id=user_id)
-                cycle_dispatched_users += 1
+            import asyncio
+            from db.session import get_session
+            async def deliver_all():
+                async with get_session() as session:
+                    for user_id in user_ids:
+                        try:
+                            user_tier = resolve_user_tier(user_id).lower()
+                        except Exception:
+                            user_tier = 'free'
+                        user_signals = []
+                        for sig in scored_signals_all:
+                            eligible = await delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=session)
+                            if eligible:
+                                msg = delivery_mgr.format_for_delivery(sig, user_tier)
+                                if msg:
+                                    user_signals.append(msg)
+                        if DRY_RUN:
+                            for msg in user_signals:
+                                print(f"[DRY RUN][{user_tier}] {msg}")
+                        else:
+                            from signalrank_telegram.bot import dispatch_signals
+                            dispatched = dispatch_signals(user_signals, user_id=user_id)
+                        nonlocal cycle_dispatched_users
+                        cycle_dispatched_users += 1
+            asyncio.run(deliver_all())
 
             # Optionally flush analytics every N cycles or on interval
             if cycle_no % 10 == 0:
