@@ -194,8 +194,9 @@ def main_loop(DRY_RUN=False):
     slippage_control = SlippageControl()
     backtest_engine = BacktestEngine()
     optimization_engine = OptimizationEngine()
-    open_positions = []
-    last_trade_times = {}
+    # open_positions and last_trade_times are not accessed in this function
+    # open_positions = []
+    # last_trade_times = {}
     mtf_analyzer = MultiTimeframeAnalyzer()
     signal_context = SignalContext()
     cooldown_manager = SignalCooldownManager()
@@ -226,8 +227,9 @@ def main_loop(DRY_RUN=False):
     cycle_filter_rejection_counts = Counter()
     cycle_users = 0
     cycle_dispatched_users = 0
-    strategy_weights = None
-    regime_strategies = None
+    # strategy_weights and regime_strategies are not accessed in this function
+    # strategy_weights = None
+    # regime_strategies = None
 
     # Remove or comment out variables that are never accessed
     # (No unused variables remain after this initialization)
