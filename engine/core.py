@@ -250,6 +250,16 @@ def main_loop(DRY_RUN=False):
 
 
     while True:
+        # Load assets from env or dynamic discovery
+        assets = load_tradable_assets()
+        if not assets:
+            # Fallback: try dynamic discovery (trending pairs/tickers)
+            try:
+                from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers
+                assets = list(get_all_trending_pairs() or []) + list(get_trending_stock_tickers() or [])
+            except Exception as e:
+                print(f"[engine] asset discovery failed: {e}", flush=True)
+                assets = []
         # Per-cycle variables
         cycle_candidates = 0
         cycle_after_dedupe = 0
