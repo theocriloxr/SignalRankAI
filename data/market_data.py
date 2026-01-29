@@ -6,7 +6,7 @@ from typing import Iterable
 
 from data.fetcher import fetch_market_data as fetch_market_data_rest
 from db.market_cache import get_recent_candles
-from db.session import ENGINE, get_session
+from db.session import get_session
 
 
 def _env_int(name: str, default: int) -> int:

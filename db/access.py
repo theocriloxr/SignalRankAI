@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import desc, select
 
 from db.models import Subscription, User
-from db.session import ENGINE, get_session
+from db.session import get_session
 
 
 def owner_id() -> int:

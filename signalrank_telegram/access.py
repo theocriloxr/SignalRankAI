@@ -5,7 +5,7 @@ from core.redis_state import state
 
 try:
     from db.access import resolve_user_tier as _resolve_user_tier_pg
-    from db.session import ENGINE as _PG_ENGINE
+    # ENGINE import removed; use get_engine_for_event_loop() if needed
 except Exception:  # pragma: no cover
     _resolve_user_tier_pg = None
     _PG_ENGINE = None

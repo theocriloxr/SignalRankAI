@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template, redirect, url_for, session, abort
 import os
-from db.session import ENGINE, get_session
+from db.session import get_session
 from db.pg_features import list_signals_sent_today
 from signalrank_telegram.access import resolve_user_tier
 

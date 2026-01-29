@@ -11,7 +11,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
-from db.session import ENGINE, get_session
+from db.session import get_session
 from db.repository import activate_subscription, count_active_vip_users, get_active_subscription
 from core.redis_state import state
 

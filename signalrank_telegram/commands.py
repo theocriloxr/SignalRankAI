@@ -357,7 +357,7 @@ async def selfcheck_command(update, context) -> None:
 	import platform, psutil, shutil
 	import datetime
 	import os
-	from db.session import ENGINE
+	# ENGINE import removed; use get_engine_for_event_loop() if needed
 	lines: list[str] = ["🩺 System Self-Check"]
 	lines.append(f"Time: {datetime.datetime.now(datetime.timezone.utc).isoformat()} UTC")
 	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
@@ -499,7 +499,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	# Optionally: resolve signal_id from short ref (first 8 chars)
 	signal_id = None
 	try:
-		from db.session import ENGINE, get_session
+		from db.session import get_session
 		if ENGINE is not None:
 			from db.pg_features import get_signal_id_by_short_ref
 			async with get_session() as session:
@@ -654,7 +654,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	# FREE tier: show delivered signals only - now sample 2 random signals with score >= 55
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		try:
-			from db.session import ENGINE, get_session
+			from db.session import get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
 				async with get_session() as session:
@@ -717,7 +717,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	# PREMIUM/VIP: show unresolved signals (ongoing trades)
 	unresolved_signals: list[dict] = []
 	try:
-		from db.session import ENGINE, get_session
+		from db.session import get_session
 		if ENGINE is not None:
 			from db.pg_features import list_unresolved_signals_for_user
 			async with get_session() as session:
@@ -769,7 +769,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		# Fallback: show any signals delivered today (even if already resolved/archived)
 		delivered_today: list[dict] = []
 		try:
-			from db.session import ENGINE, get_session
+			from db.session import get_session
 			if ENGINE is not None:
 				from db.pg_features import list_signals_sent_today
 				async with get_session() as session:

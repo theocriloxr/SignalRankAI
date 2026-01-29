@@ -8,7 +8,7 @@ def strategy_stats(strategy_name):
     Returns: (win_rate, avg_rr)
     """
     try:
-        from db.session import ENGINE
+        # ENGINE import removed; use get_engine_for_event_loop() if needed
         from db.repository import get_strategy_performance
         import asyncio
         

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict
 
-from db.session import ENGINE, get_session
+from db.session import get_session
 
 
 def _run(coro):

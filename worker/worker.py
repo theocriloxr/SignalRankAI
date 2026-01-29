@@ -15,7 +15,7 @@ import signal
 import threading
 from typing import Optional
 
-from db.session import ENGINE, get_session
+from db.session import get_session
 from db.repository import expire_subscriptions
 
 
