@@ -182,63 +182,37 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
     return {asset: data for asset, data in results}
 
 def main_loop(DRY_RUN=False):
-    cycle_candidates = 0
-    cycle_after_dedupe = 0
-    # Start outage alert job (only once per process)
+    # Persistent objects (initialized once)
     start_outage_alert_job()
-    # Track assets that failed to fetch data in the last cycle for graceful degradation
-    degraded_assets = set()
-    # ============================================
-    # INITIALIZE ALL TRADING SYSTEM COMPONENTS
-    # ============================================
-    
-    # Risk management (for SUGGESTIONS, not execution)
     account_equity = 10000.0  # Default, should come from broker API
     risk_manager = RiskManager(account_equity)
     correlation_manager = CorrelationManager()
-    
-    # Exit management (for TRACKING outcomes, not execution)
     exit_manager = ExitManager()
     partial_exit_tracker = PartialExitTracker()
-    
-    # Smart filters
     signal_filter = SignalFilter()
     regime_filter = MarketRegimeFilter()
     slippage_control = SlippageControl()
-    
-    # Analytics (for performance tracking)
     backtest_engine = BacktestEngine()
     optimization_engine = OptimizationEngine()
-    
-    # Position tracking (monitor signal outcomes)
     open_positions = []
     last_trade_times = {}
-    
-    # ============================================
-    # NEW: SIGNAL-ONLY BOT FEATURES
-    # ============================================
-    
-    # Multi-timeframe analysis
     mtf_analyzer = MultiTimeframeAnalyzer()
-    
-    # Signal context management
     signal_context = SignalContext()
     cooldown_manager = SignalCooldownManager()
     bias_manager = OneBiasPerTimeframe()
-    
-    # Advanced filters
     advanced_filters = SmartFilterSuite()
-    
-    # Tier-based notifications
     tier_notifier = TierNotificationManager()
-    
-    new_degraded_assets = set()
-
-    # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
     import concurrent.futures
     import functools
 
-    def process_asset(asset, market_data):
+    while True:
+        # Per-cycle variables
+        cycle_candidates = 0
+        cycle_after_dedupe = 0
+        new_degraded_assets = set()
+        degraded_assets = set()
+        # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
+        def process_asset(asset, market_data):
         try:
             # --- Candle Completeness & Safety Checks ---
             min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
