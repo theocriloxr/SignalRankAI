@@ -197,6 +197,15 @@ def main_loop(DRY_RUN=False):
     exit_manager = ExitManager()
     partial_exit_tracker = PartialExitTracker()
     signal_filter = SignalFilter()
+
+    # Log discovered asset universe each cycle
+    import logging
+    logger = logging.getLogger(__name__)
+    all_assets = get_all_tradable_assets()
+    logger.info(f"[engine] discovered assets: {all_assets}")
+    for asset in all_assets:
+        if is_commodity(asset):
+            logger.info(f"[engine] asset {asset} is a commodity")
     regime_filter = MarketRegimeFilter()
     slippage_control = SlippageControl()
     backtest_engine = BacktestEngine()

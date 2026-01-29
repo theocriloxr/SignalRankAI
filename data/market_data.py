@@ -48,6 +48,10 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             async with get_session() as session:
                 for tf in tfs:
                     candles = await get_recent_candles(session, symbol=asset, timeframe=tf, limit=limit)
+                    if candles:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"[market_data] asset={asset} tf={tf} candles_fetched={len(candles)}")
                     if candles and len(candles) >= want:
                         out[tf] = {"candles": candles}
                 await session.commit()
