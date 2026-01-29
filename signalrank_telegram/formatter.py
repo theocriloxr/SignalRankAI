@@ -396,22 +396,17 @@ Capital Gained: {stats.get('profit_pct', 0):.2f}%
 	return msg
 
 def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None):
-	"""Format a signal for Telegram with tier-appropriate detail.
+	"""
+	Format a signal for Telegram with tier-appropriate detail.
 
-	Routes to tier-specific formatters following the GOLDEN RULE:
-	- FREE: PROOF only (1-3 signals/day, score 80%+)
-	- PREMIUM: MORE OPPORTUNITY (5-10 signals/day, score 65%+)
-	- VIP: LESS NOISE BUT BETTER QUALITY (score-filtered)
-	- ADMIN/OWNER: Everything VIP gets + admin info
-	
-	Args:
-		signal: Signal dict with all fields
-		display_tier: Display tier to show in header (for compatibility)
-		limited: If True, use limited FREE format
-		user_tier: Actual user tier to determine what to send
-	
-	Returns:
-		Formatted signal string for Telegram
+	All signal formatting must use this function, which enforces the GOLDEN RULE:
+	  - FREE: PROOF only (1-3 signals/day, score 80%+)
+	  - PREMIUM: MORE OPPORTUNITY (5-10 signals/day, score 65%+)
+	  - VIP: LESS NOISE BUT BETTER QUALITY (score-filtered)
+	  - ADMIN/OWNER: Everything VIP gets + admin info
+
+	This function routes to tier-specific formatters and applies per-tier quality gates.
+	It is the only supported entry point for Telegram signal formatting.
 	"""
 	
 	# Determine actual tier to show to user

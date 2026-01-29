@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from config import config
 from logging.config import fileConfig
 
 from alembic import context
@@ -16,7 +16,7 @@ if config.config_file_name is not None:
 
 
 def get_url() -> str:
-    url = os.getenv("DATABASE_URL")
+    url = config.DATABASE_URL
     if not url:
         raise RuntimeError("DATABASE_URL is not set")
     # Alembic expects sync URL; allow passing asyncpg URL and convert.

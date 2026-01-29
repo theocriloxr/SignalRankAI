@@ -82,11 +82,19 @@ def consensus_filter(signals, min_score=None):
         grouped_signals[key].append(s)
 
     approved: list[dict] = []
+    required_groups = ["momentum", "trend", "structure", "volatility", "volume"]
     for key, sigs in grouped_signals.items():
         # Only approve if total confidence and group count pass thresholds
         if float(grouped_score.get(key) or 0.0) < float(min_score):
             continue
-        if len(grouped_groups.get(key) or set()) < int(min_groups):
+        groups_present = set(grouped_groups.get(key) or set())
+        # Require at least one from each major group: momentum, (trend or structure), (volatility or volume)
+        has_momentum = "momentum" in groups_present
+        has_trend_or_structure = bool({"trend", "structure"} & groups_present)
+        has_vol_or_volume = bool({"volatility", "volume"} & groups_present)
+        if not (has_momentum and has_trend_or_structure and has_vol_or_volume):
+            continue
+        if len(groups_present) < int(min_groups):
             continue
         # Guarantee one unique signal per asset/timeframe/direction/consensus
         # Pick the highest-confidence signal as representative

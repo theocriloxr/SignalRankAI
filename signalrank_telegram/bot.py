@@ -341,36 +341,13 @@ def _audit_handler(command_name: str, handler):
 
 
 def _require_telegram_token() -> str:
+    # Always use centralized config for secrets
     token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
     if token:
         return token
-
-    # Local dev convenience: optionally load from a `.env` file.
-    # Railway/production should rely on injected environment variables.
-    allow_dotenv = getattr(config, "ALLOW_DOTENV", False)
-    if allow_dotenv:
-        env_path = os.path.join(os.getcwd(), '.env')
-        if os.path.exists(env_path):
-            try:
-                with open(env_path, 'r', encoding='utf-8') as f:
-                    for raw_line in f:
-                        line = raw_line.strip()
-                        if not line or line.startswith('#') or '=' not in line:
-                            continue
-                        key, value = line.split('=', 1)
-                        key = key.strip()
-                        value = value.strip().strip('"').strip("'")
-                        if key and key not in os.environ:
-                            os.environ[key] = value
-            except Exception:
-                pass
-
-    token = os.getenv('TELEGRAM_BOT_TOKEN')
-    if token:
-        return token
     raise RuntimeError(
-        "TELEGRAM_TOKEN is not set. "
-        "Set it in your shell (PowerShell: $env:TELEGRAM_TOKEN='...') or as a Railway Variable."
+        "TELEGRAM_BOT_TOKEN is not set in config. "
+        "Set it as an environment variable or in your .env file."
     )
 
 # Outcome tracking notifications with tier-based formatting

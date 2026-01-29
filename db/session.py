@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from config import config
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
@@ -9,7 +9,7 @@ from sqlalchemy.pool import NullPool
 
 
 def get_database_url() -> Optional[str]:
-    url = os.getenv("DATABASE_URL")
+    url = config.DATABASE_URL
     if not url:
         return None
     url = url.strip()

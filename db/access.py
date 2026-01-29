@@ -11,10 +11,8 @@ from db.session import ENGINE, get_session
 
 
 def owner_id() -> int:
-    try:
-        return int(os.getenv("OWNER_TELEGRAM_ID", "0"))
-    except ValueError:
-        return 0
+    from config import config
+    return int(getattr(config, "OWNER_TELEGRAM_ID", 0) or 0)
 
 
 def is_owner(telegram_user_id: int) -> bool:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
+from config import config
 import time
 import json
 import hashlib
@@ -88,7 +88,7 @@ class RedisState:
     def _get_pg_dsn(self) -> Optional[str]:
         if self._pg_dsn is not None:
             return self._pg_dsn
-        url = (os.getenv("DATABASE_URL") or "").strip()
+        url = (config.DATABASE_URL or "").strip()
         if not url:
             return None
         # psycopg2 expects sync URL. Railway normally provides postgresql:// already.

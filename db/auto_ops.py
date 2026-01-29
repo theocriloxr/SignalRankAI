@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from config import config
 import time
 from datetime import datetime
 from typing import Optional
@@ -14,7 +14,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _sync_database_url() -> Optional[str]:
-    url = (os.getenv("DATABASE_URL") or "").strip()
+    url = (config.DATABASE_URL or "").strip()
     if not url:
         return None
     if url.startswith("postgresql+asyncpg://"):
