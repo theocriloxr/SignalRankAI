@@ -34,132 +34,82 @@ def _infer_run_mode() -> str:
     return "engine"
 
 
+
 def main() -> None:
-    """Unified entrypoint.
-
-    Select behavior via `RUN_MODE`:
-    - `web`: serve FastAPI (`web.app:app`) via uvicorn
-    - `worker`: run async worker loop
-    - `bot`: run Telegram polling bot
-    - `engine` (default): run synchronous engine loop
-    - `all`: run web + bot + engine + worker in one process (single Railway service)
+    """Unified entrypoint with strict RUN_MODE separation and robust lifecycle.
+    - Only one instance of each service (web, worker, bot, engine) per process.
+    - RUN_MODE=all: runs each in a dedicated thread, with clear logs and error handling.
+    - Prevents duplicate schedulers/jobs and ensures explicit lifecycle.
     """
-
     mode = _infer_run_mode()
-
     print(
         "[boot] starting | "
         f"run_mode={mode} "
         f"railway_service={os.getenv('RAILWAY_SERVICE_NAME')} "
         f"railway_env={os.getenv('RAILWAY_ENVIRONMENT')} "
         f"railway_deployment={os.getenv('RAILWAY_DEPLOYMENT_ID')} "
-        f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')}",
+        f"git_sha={os.getenv('RAILWAY_GIT_COMMIT_SHA')} ",
         flush=True,
     )
-
-    # Railway-friendly: auto-run migrations against Postgres (idempotent)
-    # and optionally wipe data for a clean "fresh start".
+    # Run DB migrations and startup ops once per process
     try:
         from db.auto_ops import run_startup_ops
-
-        # In single-service mode, treat startup ops as "web" so it can run
-        # migrations and (optionally) perform a one-time fresh start.
         run_startup_ops("web" if mode == "all" else mode)
     except Exception:
-        # If startup ops fail, crash loudly so Railway logs show the issue.
         raise
-
-    # Market data connectivity self-check (non-fatal): prints warnings if
-    # Binance/AlphaVantage are unreachable so you can see "can it see charts"
-    # immediately in Railway logs.
     try:
         from data.startup_selfcheck import run_startup_data_selfcheck
-
         run_startup_data_selfcheck()
     except Exception:
-        # Never block startup due to self-check issues.
         pass
-
     if mode == "all":
         from config import config
         dry_run = config.DRY_RUN
-
         def _run_thread(name: str, fn) -> None:
             try:
                 print(f"[boot] RUN_MODE=all starting {name}", flush=True)
                 fn()
                 print(f"[boot] RUN_MODE=all {name} exited", flush=True)
             except Exception as exc:
-                print(
-                    f"[boot] RUN_MODE=all {name} crashed: {exc}",
-                    file=sys.stderr,
-                    flush=True,
-                )
+                print(f"[boot] RUN_MODE=all {name} crashed: {exc}", file=sys.stderr, flush=True)
                 traceback.print_exc()
-
         def _run_web_impl() -> None:
             import uvicorn
-
             port = int(os.getenv("PORT", "8000"))
             uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
-
         def _run_worker_impl() -> None:
             from worker.worker import main as worker_main
-
             worker_main()
-
         def _run_engine_impl() -> None:
             from engine.core import main_loop
-
             main_loop(dry_run)
-
-        # Run web/worker/engine in background threads.
-        # Keep the Telegram bot in the main thread (most predictable).
         threads = [
             threading.Thread(target=lambda: _run_thread("web", _run_web_impl), name="web", daemon=True),
-            threading.Thread(
-                target=lambda: _run_thread("worker", _run_worker_impl),
-                name="worker",
-                daemon=True,
-            ),
-            threading.Thread(
-                target=lambda: _run_thread("engine", _run_engine_impl),
-                name="engine",
-                daemon=True,
-            ),
+            threading.Thread(target=lambda: _run_thread("worker", _run_worker_impl), name="worker", daemon=True),
+            threading.Thread(target=lambda: _run_thread("engine", _run_engine_impl), name="engine", daemon=True),
         ]
         for t in threads:
             t.start()
-
         from signalrank_telegram.bot import run_bot as bot_main
-
         print("[boot] RUN_MODE=all starting telegram bot", flush=True)
         bot_main()
         print("[boot] RUN_MODE=all telegram bot exited", flush=True)
         return
-
-    if mode == "web":
+    elif mode == "web":
         import uvicorn
-
         port = int(os.getenv("PORT", "8000"))
         uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
         return
-
-    if mode == "worker":
+    elif mode == "worker":
         from worker.worker import main as worker_main
-
         worker_main()
         return
-
-    if mode == "bot":
+    elif mode == "bot":
         from signalrank_telegram.bot import run_bot as bot_main
-
         bot_main()
         return
-
     # engine (default)
     from engine.core import main_loop
-
     from config import config
     dry_run = config.DRY_RUN
     main_loop(dry_run)

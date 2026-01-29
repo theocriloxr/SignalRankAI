@@ -1126,6 +1126,7 @@ def main_loop(DRY_RUN=False):
             import asyncio
             from db.session import get_session
             async def deliver_all():
+                dispatched_count = 0
                 async with get_session() as session:
                     for user_id in user_ids:
                         try:
@@ -1145,9 +1146,9 @@ def main_loop(DRY_RUN=False):
                         else:
                             from signalrank_telegram.bot import dispatch_signals
                             dispatched = dispatch_signals(user_signals, user_id=user_id)
-                        nonlocal cycle_dispatched_users
-                        cycle_dispatched_users += 1
-            asyncio.run(deliver_all())
+                        dispatched_count += 1
+                return dispatched_count
+            cycle_dispatched_users += asyncio.run(deliver_all())
 
             # Optionally flush analytics every N cycles or on interval
             if cycle_no % 10 == 0:
