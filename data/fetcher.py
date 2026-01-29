@@ -322,6 +322,25 @@ def is_stock(asset):
     return not is_crypto(asset) and not is_fx(asset)
 
 
+def is_commodity(asset):
+    """Check if asset is a commodity ticker (e.g., XAUUSD, XAGUSD, WTI, BRENT, etc.)."""
+    a = (asset or "").upper().strip()
+    # Common commodity codes (expand as needed)
+    commodity_keywords = [
+        "XAU", "XAG", "XPT", "XPD",  # Precious metals
+        "WTI", "BRENT", "OIL", "NG",  # Energy
+        "COPPER", "PLATINUM", "PALLADIUM", "SILVER", "GOLD"
+    ]
+    # Check for common commodity asset codes or names
+    for kw in commodity_keywords:
+        if kw in a:
+            return True
+    # Some brokers use codes like XAUUSD, XAGUSD, etc.
+    if a.endswith("USD") and a[:3] in {"XAU", "XAG", "XPT", "XPD"}:
+        return True
+    return False
+
+
 def get_asset_type(asset):
     """Determine asset type: 'crypto', 'fx', or 'stock'."""
     if is_crypto(asset):
