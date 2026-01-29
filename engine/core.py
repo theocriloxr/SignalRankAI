@@ -7,6 +7,14 @@ from engine.signal_analytics import signal_analytics
 from collections import Counter
 
 from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock
+
+# Fallback for is_commodity if not present in data.fetcher
+try:
+    from data.fetcher import is_commodity
+except ImportError:
+    from typing import Any
+    def is_commodity(asset: Any) -> bool:
+        return False
 from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers
 from data.indicators import calculate_indicators
@@ -212,6 +220,7 @@ def main_loop(DRY_RUN=False):
     crypto_timeframes = os.getenv('CRYPTO_TIMEFRAMES', '1h,4h,1d').split(',')
     fx_timeframes = os.getenv('FX_TIMEFRAMES', '1h,4h,1d').split(',')
     stock_timeframes = os.getenv('STOCK_TIMEFRAMES', '1h,4h,1d').split(',')
+    commodity_timeframes = os.getenv('COMMODITY_TIMEFRAMES', '1h,4h,1d').split(',')
     cycle_max_score = None
     cycle_max_score_asset = None
     cycle_after_consensus = 0
@@ -298,10 +307,12 @@ def main_loop(DRY_RUN=False):
             crypto_assets = [a for a in open_assets if is_crypto(a)]
             fx_assets = [a for a in open_assets if is_fx(a)]
             stock_assets = [a for a in open_assets if is_stock(a)]
+            commodity_assets = [a for a in open_assets if is_commodity(a)]
             if not fx_enabled:
                 fx_assets = []
             if not stocks_enabled:
                 stock_assets = []
+            # Commodities always enabled by default
 
             # FX universe can be moderate; bound per-cycle calls but rotate to cover all.
             fx_pair_rotation = _env_bool("FX_PAIR_ROTATION", True)
@@ -345,7 +356,7 @@ def main_loop(DRY_RUN=False):
                 else:
                     stock_assets = stock_assets[: int(stock_max_pairs)]
 
-            assets = crypto_assets + fx_assets + stock_assets
+            assets = crypto_assets + fx_assets + stock_assets + commodity_assets
         except Exception:
             pass
 
@@ -369,13 +380,17 @@ def main_loop(DRY_RUN=False):
 
         # Fetch all market data once per cycle (avoids per-asset asyncio.run overhead).
         asset_to_tfs: dict[str, list[str]] = {}
-        for asset in assets:
+        for asset in (str(a) for a in assets):
             if is_crypto(asset):
                 tfs = crypto_timeframes
             elif is_fx(asset):
                 tfs = fx_timeframes
-            else:
+            elif is_stock(asset):
                 tfs = stock_timeframes
+            elif is_commodity(asset):
+                tfs = commodity_timeframes
+            else:
+                tfs = stock_timeframes  # fallback
             asset_to_tfs[str(asset)] = list(tfs)
 
         # Graceful degradation: reduce batch size and skip some timeframes for problematic assets
