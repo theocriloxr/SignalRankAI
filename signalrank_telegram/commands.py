@@ -1,3 +1,23 @@
+# --------- DEV/ADMIN PLACEHOLDER COMMANDS ---------
+async def unlock(update, context):
+	if update.message is not None:
+		await update.message.reply_text("🔓 Unlock command received. (No action implemented.)")
+
+async def dev_pause(update, context):
+	if update.message is not None:
+		await update.message.reply_text("⏸️ Dev pause command received. (No action implemented.)")
+
+async def dev_resume(update, context):
+	if update.message is not None:
+		await update.message.reply_text("▶️ Dev resume command received. (No action implemented.)")
+
+async def dev_force_signal(update, context):
+	if update.message is not None:
+		await update.message.reply_text("⚡ Dev force signal command received. (No action implemented.)")
+
+async def dev_invalidate(update, context):
+	if update.message is not None:
+		await update.message.reply_text("❌ Dev invalidate command received. (No action implemented.)")
 def require_tier(min_tier):
 	def wrapper(func):
 		async def inner(update, context):

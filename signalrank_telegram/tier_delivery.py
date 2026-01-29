@@ -15,22 +15,22 @@ from signalrank_telegram.formatter import (
 )
 
 class TierDeliveryManager:
-        """
-        Manages signal delivery based on user tier.
+    """
+    Manages signal delivery based on user tier.
 
-        GOLDEN RULE:
-            - VIP gets LESS noise, not more signals (highest quality, most detail)
-            - Premium gets MORE opportunity (medium+ quality, more signals)
-            - Free gets PROOF (only best signals, attract users)
-            - Admin receives all signals
+    GOLDEN RULE:
+        - VIP gets LESS noise, not more signals (highest quality, most detail)
+        - Premium gets MORE opportunity (medium+ quality, more signals)
+        - Free gets PROOF (only best signals, attract users)
+        - Admin receives all signals
 
-        All delivery and formatting must use should_send_signal and format_for_delivery for:
-            - Per-tier quality gates
-            - Daily limits (DB-backed)
-            - Persistent, idempotent delivery tracking (DB/Redis)
-            - Retry-safe: duplicate sends are deduped at DB and memory level
-            - Tier-appropriate message formatting (see formatter.py)
-        """
+    All delivery and formatting must use should_send_signal and format_for_delivery for:
+        - Per-tier quality gates
+        - Daily limits (DB-backed)
+        - Persistent, idempotent delivery tracking (DB/Redis)
+        - Retry-safe: duplicate sends are deduped at DB and memory level
+        - Tier-appropriate message formatting (see formatter.py)
+    """
     # Signal thresholds per tier (QUALITY GATES)
     MIN_SCORE_FREE = 80.0      # Only prove best signals
     MIN_SCORE_PREMIUM = 65.0   # More opportunity
