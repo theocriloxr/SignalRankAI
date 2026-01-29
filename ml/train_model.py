@@ -55,7 +55,7 @@ def _safe_float(val):
 async def load_training_data():
     """Load signals + outcomes from Postgres."""
     try:
-        from db.session import get_session, ENGINE
+        from db.session import get_session
         if ENGINE is None:
             raise RuntimeError("DATABASE_URL not configured")
 
