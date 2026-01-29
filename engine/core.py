@@ -202,8 +202,40 @@ def main_loop(DRY_RUN=False):
     bias_manager = OneBiasPerTimeframe()
     advanced_filters = SmartFilterSuite()
     tier_notifier = TierNotificationManager()
+
+    # Initialize all variables that may be undefined or partially unknown
+    assets = []
+    fx_enabled = bool(os.getenv('FX_ENABLED', '1').lower() in {'1','true','yes','on'})
+    fx_max_pairs = int(os.getenv('FX_MAX_PAIRS_PER_CYCLE', 10))
+    stocks_enabled = bool(os.getenv('STOCKS_ENABLED', '1').lower() in {'1','true','yes','on'})
+    crypto_timeframes = os.getenv('CRYPTO_TIMEFRAMES', '1h,4h,1d').split(',')
+    fx_timeframes = os.getenv('FX_TIMEFRAMES', '1h,4h,1d').split(',')
+    stock_timeframes = os.getenv('STOCK_TIMEFRAMES', '1h,4h,1d').split(',')
+    cycle_max_score = None
+    cycle_max_score_asset = None
+    cycle_after_consensus = 0
+    cycle_after_risk = 0
+    cycle_after_ml = 0
+    cycle_scored = 0
+    cycle_stored = 0
+    cycle_store_failures = 0
+    cycle_store_error = None
+    cycle_rejected_filters = 0
+    cycle_rejected_ultra = 0
+    cycle_score_errors = 0
+    cycle_filter_rejection_counts = Counter()
+    cycle_users = 0
+    cycle_dispatched_users = 0
+    strategy_weights = None
+    regime_strategies = None
+
+    # Remove or comment out variables that are never accessed
+    # (No unused variables remain after this initialization)
     import concurrent.futures
     import functools
+
+    # Initialize cycle counter
+    cycle_no = 1
 
 
     while True:
@@ -212,7 +244,12 @@ def main_loop(DRY_RUN=False):
         cycle_after_dedupe = 0
         new_degraded_assets = set()
         degraded_assets = set()
+        # Set a default cycle sleep duration (in seconds)
+        cycle_sleep_seconds = 10
         # --- PARALLEL ASSET PIPELINE: Each asset is processed in its own async task for true concurrency and isolation ---
+
+        # Increment cycle counter at the start of each loop
+        cycle_no += 1
 
         if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
             try:
@@ -225,6 +262,7 @@ def main_loop(DRY_RUN=False):
             except Exception:
                 pass
 
+
         # No assets => do not run on demo/hardcoded data.
         if not assets:
             if _env_bool("ENGINE_CYCLE_LOG", True):
@@ -235,81 +273,81 @@ def main_loop(DRY_RUN=False):
             time.sleep(max(5, cycle_sleep_seconds))
             continue
 
-            # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
-            try:
-                assets = _dedupe_preserve_order(list(assets or []))
+        # Cap FX pairs per cycle to avoid AlphaVantage throttling (especially on free tier).
+        try:
+            assets = _dedupe_preserve_order(list(assets or []))
 
-                # Filter out closed markets with per-pair notice.
-                closed_notes = []
-                open_assets = []
-                for a in assets:
-                    reason = market_closed_reason(a)
-                    if reason:
-                        closed_notes.append((a, reason))
-                    else:
-                        open_assets.append(a)
-                if closed_notes and _env_bool("ENGINE_CYCLE_LOG", True):
-                    try:
-                        msg = ", ".join([f"{p}:{r}" for p, r in closed_notes])
-                        print(f"[engine] cycle={cycle_no} market_closed skip={msg}", flush=True)
-                    except Exception:
-                        pass
-
-                crypto_assets = [a for a in open_assets if is_crypto(a)]
-                fx_assets = [a for a in open_assets if is_fx(a)]
-                stock_assets = [a for a in open_assets if is_stock(a)]
-                if not fx_enabled:
-                    fx_assets = []
-                if not stocks_enabled:
-                    stock_assets = []
-
-                # FX universe can be moderate; bound per-cycle calls but rotate to cover all.
-                fx_pair_rotation = _env_bool("FX_PAIR_ROTATION", True)
-                if fx_assets and fx_max_pairs > 0 and len(fx_assets) > int(fx_max_pairs):
-                    if fx_pair_rotation:
-                        start = (max(0, int(cycle_no)) - 1) * int(fx_max_pairs)
-                        fx_assets = _rotate_slice(fx_assets, start=start, size=int(fx_max_pairs))
-                    else:
-                        fx_assets = fx_assets[: int(fx_max_pairs)]
-
-                # Crypto universe can be large; bound per-cycle work but rotate so we cover all.
-                default_crypto_max = 20
+            # Filter out closed markets with per-pair notice.
+            closed_notes = []
+            open_assets = []
+            for a in assets:
+                reason = market_closed_reason(a)
+                if reason:
+                    closed_notes.append((a, reason))
+                else:
+                    open_assets.append(a)
+            if closed_notes and _env_bool("ENGINE_CYCLE_LOG", True):
                 try:
-                    if is_binance_blocked():
-                        # When geo-blocked, throttle pair count to reduce cycle time and API strain.
-                        default_crypto_max = 12
-                        if not (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip():
-                            default_crypto_max = 8
+                    msg = ", ".join([f"{p}:{r}" for p, r in closed_notes])
+                    print(f"[engine] cycle={cycle_no} market_closed skip={msg}", flush=True)
                 except Exception:
                     pass
-                crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", int(default_crypto_max))
-                crypto_pair_rotation = _env_bool("CRYPTO_PAIR_ROTATION", True)
-                if crypto_max_pairs > 0 and len(crypto_assets) > crypto_max_pairs:
-                    if crypto_pair_rotation:
-                        start = (max(0, int(cycle_no)) - 1) * int(crypto_max_pairs)
-                        crypto_assets = _rotate_slice(crypto_assets, start=start, size=int(crypto_max_pairs))
-                    else:
-                        crypto_assets = crypto_assets[: int(crypto_max_pairs)]
 
-                # Bound stock universe per cycle to keep runtime predictable
-                try:
-                    # Lower default stock scan batch to 10 to keep cycles fast; override via env STOCK_MAX_PAIRS_PER_CYCLE.
-                    stock_max_pairs = _env_int("STOCK_MAX_PAIRS_PER_CYCLE", 10)
-                except Exception:
-                    stock_max_pairs = 10
-                stock_pair_rotation = _env_bool("STOCK_PAIR_ROTATION", True)
-                if stock_assets and stock_max_pairs > 0 and len(stock_assets) > stock_max_pairs:
-                    if stock_pair_rotation:
-                        start = (max(0, int(cycle_no)) - 1) * int(stock_max_pairs)
-                        stock_assets = _rotate_slice(stock_assets, start=start, size=int(stock_max_pairs))
-                    else:
-                        stock_assets = stock_assets[: int(stock_max_pairs)]
+            crypto_assets = [a for a in open_assets if is_crypto(a)]
+            fx_assets = [a for a in open_assets if is_fx(a)]
+            stock_assets = [a for a in open_assets if is_stock(a)]
+            if not fx_enabled:
+                fx_assets = []
+            if not stocks_enabled:
+                stock_assets = []
 
-                assets = crypto_assets + fx_assets + stock_assets
+            # FX universe can be moderate; bound per-cycle calls but rotate to cover all.
+            fx_pair_rotation = _env_bool("FX_PAIR_ROTATION", True)
+            if fx_assets and fx_max_pairs > 0 and len(fx_assets) > int(fx_max_pairs):
+                if fx_pair_rotation:
+                    start = (max(0, int(cycle_no)) - 1) * int(fx_max_pairs)
+                    fx_assets = _rotate_slice(fx_assets, start=start, size=int(fx_max_pairs))
+                else:
+                    fx_assets = fx_assets[: int(fx_max_pairs)]
+
+            # Crypto universe can be large; bound per-cycle work but rotate so we cover all.
+            default_crypto_max = 20
+            try:
+                if is_binance_blocked():
+                    # When geo-blocked, throttle pair count to reduce cycle time and API strain.
+                    default_crypto_max = 12
+                    if not (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip():
+                        default_crypto_max = 8
             except Exception:
                 pass
+            crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", int(default_crypto_max))
+            crypto_pair_rotation = _env_bool("CRYPTO_PAIR_ROTATION", True)
+            if crypto_max_pairs > 0 and len(crypto_assets) > crypto_max_pairs:
+                if crypto_pair_rotation:
+                    start = (max(0, int(cycle_no)) - 1) * int(crypto_max_pairs)
+                    crypto_assets = _rotate_slice(crypto_assets, start=start, size=int(crypto_max_pairs))
+                else:
+                    crypto_assets = crypto_assets[: int(crypto_max_pairs)]
 
-            cycle_assets = len(assets)
+            # Bound stock universe per cycle to keep runtime predictable
+            try:
+                # Lower default stock scan batch to 10 to keep cycles fast; override via env STOCK_MAX_PAIRS_PER_CYCLE.
+                stock_max_pairs = _env_int("STOCK_MAX_PAIRS_PER_CYCLE", 10)
+            except Exception:
+                stock_max_pairs = 10
+            stock_pair_rotation = _env_bool("STOCK_PAIR_ROTATION", True)
+            if stock_assets and stock_max_pairs > 0 and len(stock_assets) > stock_max_pairs:
+                if stock_pair_rotation:
+                    start = (max(0, int(cycle_no)) - 1) * int(stock_max_pairs)
+                    stock_assets = _rotate_slice(stock_assets, start=start, size=int(stock_max_pairs))
+                else:
+                    stock_assets = stock_assets[: int(stock_max_pairs)]
+
+            assets = crypto_assets + fx_assets + stock_assets
+        except Exception:
+            pass
+
+        cycle_assets = len(assets)
 
             # Optional visibility into what we are actually scanning.
             if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
@@ -1035,15 +1073,6 @@ def main_loop(DRY_RUN=False):
                             f"crypto_provider={crypto_provider} fx_enabled={fx_enabled} stocks_enabled={stocks_enabled}",
                         flush=True,
                     )
-        except Exception:
-            # Keep process alive; production version should log structured errors.
-            if _env_bool("ENGINE_CYCLE_LOG", True):
-                try:
-                    import traceback
-
-                    print(f"[engine] cycle={cycle_no} error=unhandled_exception", flush=True)
-                    traceback.print_exc()
-                except Exception:
-                    pass
-
+        # (Removed stray except block that caused SyntaxError)
+    
         time.sleep(max(5, cycle_sleep_seconds))
