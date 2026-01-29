@@ -1,7 +1,7 @@
 def resend_unsent_signals_job():
     """Scheduled job: resend unsent signals to eligible users if outcome not reached, respecting tier logic."""
     try:
-        from db.session import ENGINE, get_session
+            from db.session import get_session
         from db.pg_features import list_active_signals, get_signal_outcome_status
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         from db.pg_compat import get_all_user_ids_compat
@@ -125,7 +125,7 @@ def _audit_handler(command_name: str, handler):
             return await handler(update, context)
 
         try:
-            from db.session import ENGINE, get_session
+                from db.session import get_session
             if ENGINE is not None and getattr(update, "effective_user", None) is not None:
                 user_id = int(update.effective_user.id)
                 username = None
