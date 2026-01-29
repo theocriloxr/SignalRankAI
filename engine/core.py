@@ -281,6 +281,7 @@ def main_loop(DRY_RUN=False):
                     print(f"[engine] cycle={cycle_no} skipped=no_assets", flush=True)
                 except Exception:
                     pass
+            import time  # Ensure time module is accessible in this scope
             time.sleep(max(5, cycle_sleep_seconds))
             continue
 
