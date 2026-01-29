@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
 
@@ -278,8 +278,7 @@ class SignalController:
     def _normalize_signal(self, s: Signal) -> Signal:
         out = dict(s)
         out.setdefault("signal_id", str(uuid4()))
-        # Use naive UTC ISO timestamp for signals (append 'Z' to indicate UTC)
-        out.setdefault("timestamp", datetime.utcnow().isoformat() + "Z")
+        out.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
 
         # Normalize key names expected downstream
         if "symbol" in out and "asset" not in out:

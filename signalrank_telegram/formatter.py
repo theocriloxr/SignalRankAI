@@ -1,5 +1,5 @@
 from engine.tier_notifications import TierNotificationManager
-from datetime import datetime, timezone
+from datetime import datetime
 import os
 
 # Initialize tier notification manager
@@ -85,11 +85,9 @@ def _format_expiration(expires_at: str | None) -> str:
 	if not expires_at:
 		return "Open-ended"
 	try:
-		# Parse ISO timestamps; normalize any timezone-aware value to naive UTC
+		from datetime import datetime
 		exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-		if exp_dt.tzinfo is not None:
-			exp_dt = exp_dt.astimezone(timezone.utc).replace(tzinfo=None)
-		now = datetime.utcnow()
+		now = datetime.utcnow().replace(tzinfo=exp_dt.tzinfo) if exp_dt.tzinfo else datetime.utcnow()
 		diff = (exp_dt - now).total_seconds()
 		if diff < 0:
 			return "Expired"
@@ -228,9 +226,7 @@ Stop Loss: {signal.get('stop_loss')}
 	if expires_at:
 		try:
 			exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-			if exp_dt.tzinfo is not None:
-				exp_dt = exp_dt.astimezone(timezone.utc).replace(tzinfo=None)
-			now = datetime.utcnow()
+			now = datetime.utcnow().replace(tzinfo=exp_dt.tzinfo) if exp_dt.tzinfo else datetime.utcnow()
 			diff = (exp_dt - now).total_seconds()
 			candles = max(1, int(diff / 900))  # Assume 15min candles
 			msg += f"⏳ Validity: Next {candles} candles\n"
