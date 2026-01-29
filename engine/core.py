@@ -173,16 +173,15 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: dict[str, list[str]
             try:
                 data = await asyncio.wait_for(fetch_market_data_cached(asset, tfs), timeout=max(5.0, per_asset_timeout))
                 if not data or not any(data.values()):
-                    if _env_bool("ENGINE_ASSET_DEBUG", False):
-                        print(f"[engine] candle_fetch asset={asset} status=empty", flush=True)
+                    logger.error(f"[engine] candle_fetch asset={asset} status=empty (no candles returned)")
+                    raise RuntimeError(f"No candles returned for {asset}")
                 return asset, (data or {})
             except asyncio.TimeoutError:
                 if _env_bool("ENGINE_ASSET_DEBUG", False):
                     print(f"[engine] candle_fetch asset={asset} status=timeout", flush=True)
                 return asset, {}
             except Exception as e:
-                if _env_bool("ENGINE_ASSET_DEBUG", False):
-                    print(f"[engine] candle_fetch asset={asset} status=error err={type(e).__name__}", flush=True)
+                logger.exception(f"[engine] candle_fetch failed for {asset}")
                 return asset, {}
 
     tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
