@@ -236,7 +236,7 @@ async def language_command(update, context) -> None:
 	user_prefs_store.set_prefs(user_id, language=lang)
 	await update.message.reply_text(f"Language set to {LANGUAGES[lang]}.")
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
-from db.session import get_session, ENGINE
+from db.session import get_session
 from db.pg_features import get_or_create_user
 from db.models import Outcome, Outcome, ReferralReward, ReferralAttribution, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Subscription, Signal, Signal, Signal, User
 import asyncio

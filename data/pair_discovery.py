@@ -1,3 +1,4 @@
+import os
 # --- Commodity asset discovery ---
 def get_trending_commodity_tickers(top_n=10):
     """
