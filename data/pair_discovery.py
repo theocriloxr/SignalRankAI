@@ -1,3 +1,18 @@
+# --- Commodity asset discovery ---
+def get_trending_commodity_tickers(top_n=10):
+    """
+    Return popular commodity tickers.
+    Sources:
+    1. Manual configuration via COMMODITY_TICKERS env var
+    2. Default list (XAUUSD, XAGUSD, WTI, BRENT)
+    """
+    manual = (os.getenv("COMMODITY_TICKERS") or "").strip()
+    if manual:
+        tickers = [t.strip().upper() for t in manual.split(",") if t.strip()]
+        return tickers[:top_n]
+    # Default commodities
+    default_commodities = ["XAUUSD", "XAGUSD", "WTI", "BRENT"]
+    return default_commodities[:top_n]
 
 import threading
 import time
@@ -24,10 +39,12 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     crypto = get_trending_crypto_pairs(crypto_limit)
     fx = get_trending_fx_pairs()
     stocks = get_trending_stock_tickers(stock_limit)
+    commodities = get_trending_commodity_tickers(10)
     return {
         "crypto": crypto,
         "fx": fx,
         "stocks": stocks,
+        "commodities": commodities,
     }
 
 # Global cache for auto-refreshed asset universe
@@ -211,7 +228,8 @@ def get_all_trending_pairs():
     crypto = get_trending_crypto_pairs(top_n=max(1, top_n))
     fx = get_trending_fx_pairs()
     stocks = get_trending_stock_tickers(top_n=max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20"))))
-    return crypto + fx + stocks
+    commodities = get_trending_commodity_tickers(10)
+    return crypto + fx + stocks + commodities
 
 
 def get_trending_stock_tickers(top_n=20):
