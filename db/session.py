@@ -44,14 +44,36 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
-ENGINE: Optional[AsyncEngine] = create_engine()
-SessionLocal: Optional[async_sessionmaker[AsyncSession]] = (
-    create_sessionmaker(ENGINE) if ENGINE is not None else None
-)
+
+# --- Per-event-loop engine/session cache ---
+import asyncio
+_engine_cache = {}
+_sessionmaker_cache = {}
+
+def get_engine_for_event_loop() -> Optional[AsyncEngine]:
+    loop = asyncio.get_event_loop()
+    if loop in _engine_cache:
+        return _engine_cache[loop]
+    engine = create_engine()
+    if engine is not None:
+        _engine_cache[loop] = engine
+    return engine
+
+def get_sessionmaker_for_event_loop() -> Optional[async_sessionmaker[AsyncSession]]:
+    loop = asyncio.get_event_loop()
+    if loop in _sessionmaker_cache:
+        return _sessionmaker_cache[loop]
+    engine = get_engine_for_event_loop()
+    if engine is None:
+        return None
+    sm = create_sessionmaker(engine)
+    _sessionmaker_cache[loop] = sm
+    return sm
 
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
+    SessionLocal = get_sessionmaker_for_event_loop()
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL is not configured")
     async with SessionLocal() as session:
