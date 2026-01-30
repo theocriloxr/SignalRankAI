@@ -118,11 +118,22 @@ def _bypass_key() -> Optional[str]:
     return key.strip() if key else None
 
 
+import logging
+_owner_logger = logging.getLogger("owner_debug")
+
 async def _is_owner(user_id: int) -> bool:
     oid = _owner_id()
+    bypass = await state.has_temp_owner(user_id)
+    tier = None
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        tier = resolve_user_tier(user_id)
+    except Exception:
+        tier = None
+    _owner_logger.info(f"[OWNER DEBUG] user_id={user_id} oid={oid} tier={tier} bypass={bypass}")
     if oid and user_id == oid:
         return True
-    return await state.has_temp_owner(user_id)
+    return bypass
 
 
 
