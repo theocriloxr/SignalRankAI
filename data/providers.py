@@ -183,7 +183,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         values = data.get("values", [])
         if not values:
             return []
-        
+
         candles = []
         for bar in values:
             try:
@@ -199,7 +199,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
                 })
             except Exception:
                 continue
-        
+
         logger.info(f"[twelvedata] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
         return candles
     
