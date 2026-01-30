@@ -44,4 +44,29 @@ def setup_logging(level: int = logging.INFO, json: bool = False) -> None:
         root.removeHandler(h)
 
     root.addHandler(handler)
+    # Optionally initialize Sentry if available via env SENTRY_DSN
+    try:
+        import os
+        dsn = os.getenv("SENTRY_DSN") or os.getenv("SENTRY_URL")
+        if dsn:
+            try:
+                import sentry_sdk
+                sentry_kwargs = {}
+                try:
+                    traces = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
+                    sentry_kwargs["traces_sample_rate"] = traces
+                except Exception:
+                    pass
+                try:
+                    environment = os.getenv("SENTRY_ENVIRONMENT")
+                    if environment:
+                        sentry_kwargs["environment"] = environment
+                except Exception:
+                    pass
+                sentry_sdk.init(dsn, **sentry_kwargs)
+                root.info("Sentry initialized")
+            except Exception:
+                root.warning("Sentry SDK not available or failed to initialize")
+    except Exception:
+        pass
 
