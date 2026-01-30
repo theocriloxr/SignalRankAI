@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
+import asyncio
 
 try:
     import yfinance as yf
 except Exception:  # pragma: no cover - optional dependency
     yf = None
+
+from utils.async_runner import run_sync
 
 
 def _normalize_symbol(symbol: str) -> str:
@@ -19,20 +22,13 @@ def _normalize_symbol(symbol: str) -> str:
     return s
 
 
-def get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
-    """Fetch candles via yfinance as a best-effort adapter.
-
-    Returns a list of dicts: {time, open, high, low, close, volume} or
-    an empty list on failure. This adapter is intentionally lightweight
-    and used as a fallback provider.
-    """
+def _sync_get_candles_impl(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
+    """Original synchronous implementation kept as helper for thread execution."""
     if yf is None:
         raise RuntimeError("yfinance not installed")
 
     symbol_norm = _normalize_symbol(symbol)
-    # yfinance intervals: "1m","2m","5m","15m","30m","60m","90m","1h","1d","1wk","1mo"
     interval = timeframe
-    # choose a conservative history period to cover typical limits
     period = "60d" if "d" in timeframe or "h" in timeframe else "7d"
 
     try:
@@ -54,8 +50,17 @@ def get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str,
                     }
                 )
             except Exception:
-                # skip malformed rows
                 continue
         return out[-limit:]
     except Exception:
         return []
+
+
+async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
+    """Async wrapper that runs the blocking yfinance call in a thread."""
+    return await asyncio.to_thread(_sync_get_candles_impl, symbol, timeframe, limit)
+
+
+def get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
+    """Sync-compatible wrapper that runs the async implementation safely."""
+    return run_sync(_async_get_candles(symbol, timeframe, limit=limit))
