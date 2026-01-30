@@ -969,18 +969,27 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     if delivered_today == 0:
                         # First signal: bot randomly decides what time to send a signal today
                         next_send_time = await get_user_next_signal_time(session, int(user_id), signal_number=1)
+                        def to_naive_utc(dt):
+                            import datetime as _dt
+                            if dt is None:
+                                return None
+                            if dt.tzinfo is not None:
+                                return dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+                            return dt
                         if not next_send_time:
                             # Bot decides: random time during the day (0-18 hours from start of day)
                             now = datetime.utcnow()
                             start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
                             random_hours = random.uniform(0, 18)
                             next_send_time = start_of_day + timedelta(hours=random_hours)
+                            next_send_time = to_naive_utc(next_send_time)
                             await set_user_next_signal_time_typed(
                                 session, int(user_id), signal_number=1, send_time=next_send_time
                             )
-                        
                         # Check if it's time to send yet (bot's random choice)
                         now = datetime.utcnow()
+                        now = to_naive_utc(now)
+                        next_send_time = to_naive_utc(next_send_time)
                         if now < next_send_time:
                             return  # Not time yet for 1st signal (bot's choice)
                     
@@ -989,26 +998,37 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         next_send_time = await get_user_next_signal_time(session, int(user_id), signal_number=2)
                         if not next_send_time:
                             last_delivery = await get_last_signal_delivery_time(session, int(user_id))
+                            def to_naive_utc(dt):
+                                import datetime as _dt
+                                if dt is None:
+                                    return None
+                                if dt.tzinfo is not None:
+                                    return dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+                                return dt
                             if last_delivery:
                                 # Random delay between 2-8 hours for second signal
                                 random_delay_hours = random.uniform(2, 8)
                                 next_send_time = last_delivery + timedelta(hours=random_delay_hours)
+                                next_send_time = to_naive_utc(next_send_time)
                                 await set_user_next_signal_time_typed(
                                     session, int(user_id), signal_number=2, send_time=next_send_time
                                 )
-                        
                         if next_send_time:
                             now = datetime.utcnow()
+                            now = to_naive_utc(now)
+                            next_send_time = to_naive_utc(next_send_time)
                             if now < next_send_time:
                                 return  # Not time yet for 2nd signal (bot's choice)
 
                             min_hours = 2
                             max_hours = 8
                             random_delay_hours = random.uniform(min_hours, max_hours)
-                            
+
                             now = datetime.utcnow()
+                            now = to_naive_utc(now)
+                            last_delivery = to_naive_utc(last_delivery)
                             time_since_last = (now - last_delivery).total_seconds() / 3600  # hours
-                            
+
                             # Bot decides: has enough random time passed?
                             if time_since_last < random_delay_hours:
                                 return  # Not time yet for 2nd signal (bot's choice)
