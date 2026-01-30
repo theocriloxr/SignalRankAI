@@ -3,7 +3,12 @@ from __future__ import annotations
 import hashlib
 import os
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+def to_naive_utc(dt: datetime) -> datetime:
+    """Convert any datetime to naive UTC (no tzinfo)."""
+    if dt.tzinfo is not None:
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete
@@ -352,7 +357,7 @@ async def list_signals_sent_today(
     session: AsyncSession,
     telegram_user_id: int,
 ) -> list[Signal]:
-    now: datetime = _utcnow()
+    now: datetime = to_naive_utc(_utcnow())
     start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
@@ -703,7 +708,7 @@ async def queue_free_signal_summary(
     # Daily window is anchored to the user's join time (created_at), not midnight.
     # Example: if user joined at 09:24 UTC, their "day" runs 09:24 → next 09:24.
     try:
-        anchor: datetime = user.created_at
+        anchor: datetime = to_naive_utc(user.created_at)
         window_start: datetime = now.replace(
             hour=int(anchor.hour),
             minute=int(anchor.minute),
@@ -715,6 +720,7 @@ async def queue_free_signal_summary(
     except Exception:
         window_start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    window_start = to_naive_utc(window_start)
     window_end: datetime = window_start + timedelta(days=1)
 
     # Enforce per-day cap (queued + sent)
@@ -746,6 +752,7 @@ async def queue_free_signal_summary(
         return True
 
     deliver_after: datetime = now + timedelta(minutes=max(0, int(delay_minutes)))
+    deliver_after = to_naive_utc(deliver_after)
     q = FreeSignalQueue(
         user_id=user.id,
         date=window_start,
@@ -1385,7 +1392,7 @@ async def queue_random_free_signals_for_all_users(
         # Queue them
         delay_minutes: int = _env_int("FREE_DELAY_MINUTES", 30)
         for sig in random_signals:
-            deliver_after: datetime = (now + timedelta(minutes=delay_minutes)).replace(tzinfo=None)
+            deliver_after: datetime = to_naive_utc(now + timedelta(minutes=delay_minutes))
             q = FreeSignalQueue(
                 user_id=user.id,
                 date=window_start,
