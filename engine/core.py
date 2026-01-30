@@ -203,6 +203,7 @@ def main_loop(DRY_RUN=False):
     logger = logging.getLogger(__name__)
     all_assets = get_all_tradable_assets()
     logger.info(f"[engine] discovered assets: {all_assets}")
+    logger.info(f"[engine] asset universe breakdown: crypto={len([a for a in all_assets if is_crypto(a)])} fx={len([a for a in all_assets if is_fx(a)])} stocks={len([a for a in all_assets if is_stock(a)])} commodities={len([a for a in all_assets if is_commodity(a)])}")
     for asset in all_assets:
         if is_commodity(asset):
             logger.info(f"[engine] asset {asset} is a commodity")
@@ -430,88 +431,67 @@ def main_loop(DRY_RUN=False):
 
         for asset in assets:
 
-                try:
-                    market_data = (all_market_data or {}).get(asset) or {}
+            try:
+                market_data = (all_market_data or {}).get(asset) or {}
+                if not market_data:
+                    logger.warning(f"[engine] No market data for asset={asset}")
+                else:
+                    for tf, tf_data in (market_data or {}).items():
+                        candles = (tf_data or {}).get("candles") or []
+                        logger.info(f"[engine] asset={asset} tf={tf} candles_count={len(candles)}")
 
-                    # --- Candle Completeness & Safety Checks ---
-                    # Only confirmed, closed candles are ever used for strategy execution.
-                    # This block ensures:
-                    #   - Minimum required candles per timeframe
-                    #   - No partial or forming candles
-                    #   - No stale or expired market snapshots
-                    #   - All required fields are present
-                    try:
-                        min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
-                    except Exception:
-                        min_candles = 50
-                    min_candles = max(1, int(min_candles))
-                    needs_refresh = False
-                    if not market_data:
+                # --- Candle Completeness & Safety Checks ---
+                try:
+                    min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
+                except Exception:
+                    min_candles = 50
+                min_candles = max(1, int(min_candles))
+                needs_refresh = False
+                for tf, tf_data in (market_data or {}).items():
+                    candles = (tf_data or {}).get("candles") or []
+                    if not isinstance(candles, list) or len(candles) < min_candles:
+                        logger.warning(f"[engine] asset={asset} tf={tf} insufficient candles: {len(candles)} < {min_candles}")
                         needs_refresh = True
-                    else:
-                        for tf, tf_data in (market_data or {}).items():
-                            candles = (tf_data or {}).get("candles") or []
-                            # Require minimum candles and all required fields
-                            if not isinstance(candles, list) or len(candles) < min_candles:
+                        break
+                    last_candle = candles[-1] if candles else None
+                    if last_candle:
+                        if 'timestamp' not in last_candle or 'close' not in last_candle:
+                            logger.warning(f"[engine] asset={asset} tf={tf} last candle missing fields")
+                            needs_refresh = True
+                            break
+                        if 'close_time' in last_candle:
+                            now = int(time.time())
+                            close_time = int(last_candle['close_time'])
+                            tf_sec = 60
+                            if 'm' in tf:
+                                tf_sec = int(tf.replace('m','')) * 60
+                            elif 'h' in tf:
+                                tf_sec = int(tf.replace('h','')) * 3600
+                            elif 'd' in tf:
+                                tf_sec = int(tf.replace('d','')) * 86400
+                            if now - close_time > 2 * tf_sec:
+                                logger.warning(f"[engine] asset={asset} tf={tf} last candle is stale: now={now} close_time={close_time}")
                                 needs_refresh = True
                                 break
-                            # Check that the last candle is closed/final (not forming)
-                            last_candle = candles[-1] if candles else None
-                            if last_candle:
-                                # Require timestamp and close fields
-                                if 'timestamp' not in last_candle or 'close' not in last_candle:
-                                    needs_refresh = True
-                                    break
-                                # If close_time is present, check staleness
-                                if 'close_time' in last_candle:
-                                    # time is imported at the top of the file
-                                    now = int(time.time())
-                                    close_time = int(last_candle['close_time'])
-                                    # Assume timeframe in seconds (e.g., 900 for 15m)
-                                    tf_sec = 60
-                                    if 'm' in tf:
-                                        tf_sec = int(tf.replace('m','')) * 60
-                                    elif 'h' in tf:
-                                        tf_sec = int(tf.replace('h','')) * 3600
-                                    elif 'd' in tf:
-                                        tf_sec = int(tf.replace('d','')) * 86400
-                                    # If last candle is too old, mark as stale
-                                    if now - close_time > 2 * tf_sec:
-                                        needs_refresh = True
-                                        break
-                    if needs_refresh:
-                        # Re-fetch market data for this asset
-                        try:
-                            market_data = asyncio.run(fetch_market_data_cached(asset, list((asset_to_tfs_degraded.get(asset) or []))))
-                            # After re-fetch, re-validate completeness
-                            valid = False
-                            for tf, tf_data in (market_data or {}).items():
-                                candles = (tf_data or {}).get('candles') or []
-                                if isinstance(candles, list) and len(candles) >= min_candles:
-                                    last_candle = candles[-1] if candles else None
-                                    if last_candle and 'timestamp' in last_candle and 'close' in last_candle:
-                                        valid = True
-                                        break
-                            if not valid:
-                                new_degraded_assets.add(asset)
-                                continue
-                        except Exception:
-                            new_degraded_assets.add(asset)
-                            continue
+                if needs_refresh:
+                    logger.warning(f"[engine] asset={asset} needs refresh, skipping strategy execution")
+                    new_degraded_assets.add(asset)
+                    continue
 
-                    regime = detect_market_regime(market_data)
-                    strategy_signals = run_all_strategies(
-                        asset,
-                        market_data,
-                        regime,
-                        strategy_weights=strategy_weights,
-                        regime_strategies=regime_strategies,
-                    )
+                regime = detect_market_regime(market_data)
+                strategy_signals = run_all_strategies(
+                    asset,
+                    market_data,
+                    regime,
+                    strategy_weights=strategy_weights,
+                    regime_strategies=regime_strategies,
+                )
+                logger.info(f"[engine] asset={asset} strategy_signals_generated={len(strategy_signals) if strategy_signals else 0}")
 
-                    try:
-                        cycle_candidates += len(strategy_signals or [])
-                    except Exception:
-                        pass
+                try:
+                    cycle_candidates += len(strategy_signals or [])
+                except Exception:
+                    pass
 
                     # Signal Controller step (deduplication + normalization)
                     from engine.signal_controller import SignalController
