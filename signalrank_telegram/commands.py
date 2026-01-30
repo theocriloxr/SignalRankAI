@@ -1,12 +1,12 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from db.session import get_session, ENGINE
+from db.session import get_session, get_engine_for_event_loop
 from db.repository import get_active_subscription
 # --- USER COMMAND: /status ---
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	if ENGINE is None:
+	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database not configured.")
 		return
 	try:
@@ -278,7 +278,7 @@ import asyncio
 async def referral_leaderboard_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	if ENGINE is None:
+	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
 	async with get_session() as session:
@@ -316,7 +316,7 @@ async def referral_rewards_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
-	if ENGINE is None:
+	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
 	async with get_session() as session:
@@ -400,7 +400,7 @@ async def selfcheck_command(update, context) -> None:
 	lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
 	# DB status
 	try:
-		if ENGINE is not None:
+		if get_engine_for_event_loop() is not None:
 			lines.append("DB: ✅ Connected")
 		else:
 			lines.append("DB: ❌ Not connected")
@@ -533,8 +533,8 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	# Optionally: resolve signal_id from short ref (first 8 chars)
 	signal_id = None
 	try:
-		from db.session import get_session
-		if ENGINE is not None:
+		from db.session import get_session, get_engine_for_event_loop
+		if get_engine_for_event_loop() is not None:
 			from db.pg_features import get_signal_id_by_short_ref
 			async with get_session() as session:
 				signal_id = await get_signal_id_by_short_ref(session, signal_ref)

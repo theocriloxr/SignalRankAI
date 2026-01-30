@@ -1,6 +1,6 @@
 from telegram import Update
 from telegram.ext import ContextTypes
-from db.session import get_session, ENGINE
+from db.session import get_session, get_engine_for_event_loop
 from db.repository import get_or_create_user
 # --- ADMIN COMMAND: /broadcast ---
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -151,8 +151,8 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Persist bypass usage + tier in Postgres (best-effort).
     try:
-        from db.session import ENGINE, get_session
-        if ENGINE is not None:
+        from db.session import get_engine_for_event_loop, get_session
+            if get_engine_for_event_loop() is not None:
             from db.repository import get_or_create_user
             from db.models import AdminEvent
             from db.pg_features import record_bot_event
@@ -241,8 +241,8 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     try:
-        from db.session import ENGINE, get_session
-        if ENGINE is None:
+        from db.session import get_engine_for_event_loop, get_session
+        if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         from db.models import User, Subscription
@@ -284,8 +284,8 @@ async def owner_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     try:
-        from db.session import ENGINE, get_session
-        if ENGINE is None:
+        from db.session import get_engine_for_event_loop, get_session
+        if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         from db.models import PaymentEvent
@@ -401,8 +401,8 @@ async def correct_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     try:
-        from db.session import ENGINE, get_session
-        if ENGINE is None:
+        from db.session import get_engine_for_event_loop, get_session
+        if get_engine_for_event_loop() is None:
             await update.message.reply_text("Postgres not configured.")
             return
         
