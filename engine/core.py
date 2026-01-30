@@ -486,10 +486,12 @@ def main_loop(DRY_RUN=False):
                 except Exception:
                     pass
 
+
                     # Signal Controller step (deduplication + normalization)
                     from engine.signal_controller import SignalController
                     controller = SignalController()
                     normalized_signals = controller.normalize_signals(strategy_signals)
+                    print(f"[DEBUG] {asset} strategy_signals: {len(strategy_signals) if strategy_signals else 0}", flush=True)
 
                     # Consensus Engine (aggregates across strategies)
                     from engine.consensus import consensus_filter
@@ -497,6 +499,7 @@ def main_loop(DRY_RUN=False):
 
                     # Per pair/timeframe, pick the stronger direction (buy vs sell)
                     selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
+                    print(f"[DEBUG] {asset} selected_signals: {len(selected_signals) if selected_signals else 0}", flush=True)
 
                     # --- Enforce deterministic signal fingerprint and deduplication ---
                     # Each signal must have a unique fingerprint (hash) for asset/timeframe/direction/candle/consensus
@@ -548,6 +551,7 @@ def main_loop(DRY_RUN=False):
                             continue
                         sig["score"] = score
                         strict_signals.append(sig)
+                    print(f"[DEBUG] {asset} strict_signals: {len(strict_signals) if strict_signals else 0}", flush=True)
                     selected_signals = strict_signals
 
                     # Risk Engine
@@ -555,6 +559,7 @@ def main_loop(DRY_RUN=False):
 
                     account_state = type('AccountState', (), {'drawdown': 0.0})()  # Replace with real account state
                     risk_signals = [s for s in selected_signals if risk_check(s, account_state)]
+                    print(f"[DEBUG] {asset} risk_signals: {len(risk_signals) if risk_signals else 0}", flush=True)
                     try:
                         cycle_after_risk += len(risk_signals or [])
                     except Exception:
@@ -600,6 +605,7 @@ def main_loop(DRY_RUN=False):
                             else:
                                 signal["ml_advisory"] = "ML model: Low confidence, high risk."
                         ml_signals.append(signal)
+                    print(f"[DEBUG] {asset} ml_signals: {len(ml_signals) if ml_signals else 0}", flush=True)
                     try:
                         cycle_after_ml += len(ml_signals or [])
                     except Exception:
@@ -938,6 +944,7 @@ def main_loop(DRY_RUN=False):
                                     print(f"[engine] exit plan error: {symbol} - {e}", flush=True)
                             
                             scored_signals_all.append(signal)
+                        print(f"[DEBUG] {asset} scored_signals_all: {len(scored_signals_all)}", flush=True)
                             cycle_scored += 1
                             
                             # Record signal for cooldown/bias tracking
