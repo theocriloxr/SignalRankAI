@@ -39,9 +39,16 @@ def main() -> None:
     # Configure logging early so modules can log during init
     try:
         from utils.logging_config import setup_logging
+        from core.settings import validate_required_settings, get_settings
         import os
         json_logs = str(os.getenv("LOG_JSON") or "0").strip().lower() in {"1", "true", "yes"}
         setup_logging(json=json_logs)
+        # Validate required settings early
+        try:
+            validate_required_settings()
+        except Exception as e:
+            print(f"Missing required settings: {e}", flush=True)
+            raise
     except Exception:
         pass
     """Unified entrypoint with strict RUN_MODE separation and robust lifecycle.
