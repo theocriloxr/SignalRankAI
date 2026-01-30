@@ -71,6 +71,27 @@ import logging
 from datetime import datetime
 
 import requests
+import asyncio
+
+# Async retry helper (uses shared httpx client when available)
+try:
+    from utils.httpx_client import retry_async as retry_async_httpx
+except Exception:
+    # Fallback: simple async wrapper around sync retry (keeps compatibility)
+    async def retry_async_httpx(fn, retries: int = 3, backoff: float = 1.0, *args, **kwargs):
+        last_exc = None
+        for attempt in range(retries):
+            try:
+                # If fn is coroutine function, await it, else run in thread
+                res = fn(*args, **kwargs)
+                if asyncio.iscoroutine(res):
+                    return await res
+                return await asyncio.to_thread(lambda: res)
+            except Exception as exc:
+                last_exc = exc
+                wait = backoff * (2 ** attempt)
+                await asyncio.sleep(wait)
+        raise last_exc
 
 from .indicators import calculate_indicators
 
@@ -1011,3 +1032,62 @@ def discover_tradingview_symbols(exchange: str = "BINANCE") -> list[str]:
         return symbols
     except Exception:
         return symbols
+
+
+async def async_get_candles(asset, timeframe):
+    """Async variant of `get_candles` that prefers async connector callables.
+
+    - If `USE_MULTI_PROVIDER_DATA` is false, runs the sync `get_candles` in a thread.
+    - Otherwise uses `data.connector_registry.get_async_providers_for_asset` and
+      `retry_async_httpx` to call providers without blocking the event loop.
+    """
+    try:
+        asset_type = get_asset_type(asset)
+
+        use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+        if not use_multi_provider:
+            return await asyncio.to_thread(get_candles, asset, timeframe)
+
+        # Import registry locally to avoid import cycles at module import time
+        from data.connector_registry import get_async_providers_for_asset
+
+        # Build provider list
+        provs = get_async_providers_for_asset(asset_type)
+
+        # Split healthy/unhealthy similar to sync path
+        healthy = [p for p in provs if provider_is_healthy(p[0])]
+        unhealthy = [p for p in provs if not provider_is_healthy(p[0])]
+
+        # For crypto we may need a Yahoo-style symbol for certain legacy providers
+        symbol_for_providers = asset
+        if asset_type == "crypto":
+            yahoo_symbol = (asset or "").upper()
+            if yahoo_symbol.endswith("USDT"):
+                base = yahoo_symbol[:-4]
+                yahoo_symbol = f"{base}-USD"
+            elif yahoo_symbol.endswith("USD") and not yahoo_symbol.endswith("-USD"):
+                base = yahoo_symbol[:-3]
+                yahoo_symbol = f"{base}-USD"
+            symbol_for_providers = yahoo_symbol
+
+        # Try healthy first, then unhealthy
+        for provider_name, fetch_fn in healthy + unhealthy:
+            try:
+                # Call the async provider with a small timeout kw; retry via shared async helper
+                candles = await retry_async_httpx(lambda: fetch_fn(symbol_for_providers, timeframe, timeout=10), retries=3, backoff=1)
+                if candles and len(candles) >= 20:
+                    mark_provider_result(provider_name, True)
+                    logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                    return candles
+                else:
+                    mark_provider_result(provider_name, False)
+            except Exception as e:
+                mark_provider_result(provider_name, False)
+                logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")
+                continue
+
+        logger.warning(f"[data][async] fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+        return []
+    except Exception:
+        logger.exception("async_get_candles failed for %s %s", asset, timeframe)
+        return []

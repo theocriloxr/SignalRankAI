@@ -9,7 +9,8 @@ from typing import Dict, Iterable, List, Optional, Any
 
 import asyncio
 
-from data.fetcher import fetch_market_data
+from data.fetcher import async_get_candles
+from data.indicators import calculate_indicators
 from core.validators import validate_candles
 from utils.async_runner import run_sync
 
@@ -30,15 +31,12 @@ async def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bo
     if not tf_list:
         return out
 
-    # Run blocking fetch in thread
-    market = await asyncio.to_thread(fetch_market_data, asset, tf_list)
-
+    # Fetch candles for each timeframe using async_fetcher
     for tf in tf_list:
-        entry = market.get(tf)
-        if not entry:
+        candles = await async_get_candles(asset, tf)
+        if not candles:
             continue
-        candles = entry.get("candles") or []
-        indicators = entry.get("indicators") or {}
+        indicators = calculate_indicators(candles)
 
         if not validate_candles(candles):
             continue

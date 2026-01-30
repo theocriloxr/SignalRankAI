@@ -74,6 +74,11 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
         providers.append(("twelvedata_connector", _wrap_callable(twelvedata_get_candles)))
     except Exception:
         pass
+    try:
+        from data.connectors import cryptocompare_get_candles
+        providers.append(("cryptocompare_connector", _wrap_callable(cryptocompare_get_candles)))
+    except Exception:
+        pass
 
     # Fall back to legacy providers if connectors absent
     try:
@@ -121,6 +126,12 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
         providers.append(("polygon_connector", _wrap_to_async(polygon_get_candles)))
     if twelvedata_get_candles is not None:
         providers.append(("twelvedata_connector", _wrap_to_async(twelvedata_get_candles)))
+    try:
+        from data.connectors import cryptocompare_get_candles
+    except Exception:
+        cryptocompare_get_candles = None
+    if cryptocompare_get_candles is not None:
+        providers.append(("cryptocompare_connector", _wrap_to_async(cryptocompare_get_candles)))
 
     # Legacy fallbacks
     try:
