@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
+import os
+import logging
 
 try:
     import httpx
@@ -10,18 +12,24 @@ except Exception:
 from utils.async_runner import run_sync
 from utils.httpx_client import get_client, retry_async
 
+logger = logging.getLogger(__name__)
+
 
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
     if httpx is None:
         return []
-    # TwelveData requires API key; we'll read at runtime in caller
-    api_key = "e37143a64e9340c8a585771b3f0ffcc0"  # TODO: Set your TwelveData API key here or pass it as a parameter
+    # TwelveData requires API key; read from env
+    api_key = (os.getenv("TWELVEDATA_API_KEY") or "").strip()
+    if not api_key:
+        logger.debug("twelvedata_adapter: TWELVEDATA_API_KEY not set")
+        return []
     url = "https://api.twelvedata.com/time_series"
     tf_map = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"}
     interval = tf_map.get(timeframe, "1h")
     params = {"symbol": symbol, "interval": interval, "outputsize": 200, "apikey": api_key}
     client = get_client()
     if client is None:
+        logger.debug("twelvedata_adapter: httpx client unavailable")
         return []
 
     async def _do():
@@ -53,7 +61,8 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
 
     try:
         return await retry_async(_do, retries=2, backoff=0.5)
-    except Exception:
+    except Exception as e:
+        logger.debug("twelvedata_adapter error: %s", e)
         return []
 
 

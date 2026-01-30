@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import List, Dict, Any
+import os
+import logging
 
 try:
     import httpx
@@ -10,10 +12,13 @@ except Exception:
 from utils.async_runner import run_sync
 from utils.httpx_client import get_client, retry_async
 
+logger = logging.getLogger(__name__)
+
 
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
-    api_key = ("" or "")
+    api_key = (os.getenv("POLYGON_API_KEY") or "").strip()
     if not api_key:
+        logger.debug("polygon_adapter: POLYGON_API_KEY not set")
         return []
     if httpx is None:
         return []
@@ -34,6 +39,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
 
     client = get_client()
     if client is None:
+        logger.debug("polygon_adapter: httpx client unavailable")
         return []
 
     async def _do():
@@ -63,7 +69,8 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
 
     try:
         return await retry_async(_do, retries=2, backoff=1.0)
-    except Exception:
+    except Exception as e:
+        logger.debug("polygon_adapter error: %s", e)
         return []
 
 
