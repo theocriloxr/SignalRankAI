@@ -404,7 +404,8 @@ def main_loop(DRY_RUN: bool = False):
 
         # Fetch market data (async)
         try:
-            all_market_data = asyncio.run(_fetch_market_data_for_assets(asset_to_tfs_degraded))
+            from utils.async_runner import run_sync
+            all_market_data = run_sync(_fetch_market_data_for_assets(asset_to_tfs_degraded))
         except Exception:
             logger.exception("Market data fetch failed")
             all_market_data = {}
@@ -679,7 +680,7 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             # support either async or sync should_send_signal
                             try:
-                                eligible = asyncio.run(delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None))
+                                eligible = run_sync(delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None))
                             except Exception:
                                 # fallback to sync
                                 try:
@@ -708,7 +709,7 @@ def main_loop(DRY_RUN: bool = False):
             return dispatched_count
 
         try:
-            dispatched = asyncio.run(deliver_all())
+            dispatched = run_sync(deliver_all())
         except Exception:
             logger.exception("deliver_all failed")
             dispatched = 0

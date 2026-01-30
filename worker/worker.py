@@ -9,6 +9,7 @@
 # Example config toggles: config.MARKET_MONITOR_ENABLED, config.CRYPTO_WS_ENABLED, config.ML_TRAIN_ENABLED
 #
 import asyncio
+from utils.async_runner import run_sync
 import contextlib
 from config import config
 import signal
@@ -152,7 +153,7 @@ async def _amain() -> None:
 
 
 def main() -> None:
-    asyncio.run(_amain())
+    run_sync(_amain())
 
 
 if __name__ == "__main__":

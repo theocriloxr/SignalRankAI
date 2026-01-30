@@ -1,4 +1,5 @@
 import asyncio
+from utils.async_runner import run_sync
 
 from config import OWNER_IDS
 from core.redis_state import state
@@ -48,13 +49,8 @@ def resolve_user_tier(user_id):
         return "FREE"
 
     try:
-        # PTB sync handlers commonly run in a worker thread; asyncio.run is safe there.
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            # No running loop - safe to use asyncio.run
-            tier = asyncio.run(_resolve_user_tier_pg(user_id_int))
-            return (tier or "FREE").strip().upper()
+        tier = run_sync(_resolve_user_tier_pg(user_id_int))
+        return (tier or "FREE").strip().upper()
     except Exception:
         pass
 

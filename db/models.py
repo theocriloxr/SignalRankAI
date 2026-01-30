@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
+from utils.timeutils import now_utc_naive
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
@@ -14,7 +16,9 @@ class Base(DeclarativeBase):
 
 
 def utcnow() -> datetime:
-    return datetime.utcnow()
+    # Use a consistent naive-UTC timestamp across the codebase as a
+    # stop-gap. Prefer storing timestamptz and using aware datetimes.
+    return now_utc_naive()
 
 
 class User(Base):

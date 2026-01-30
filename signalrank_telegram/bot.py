@@ -1,3 +1,6 @@
+from utils.async_runner import run_sync
+
+
 def resend_unsent_signals_job():
     """Scheduled job: resend unsent signals to eligible users if outcome not reached, respecting tier logic."""
     try:
@@ -18,7 +21,7 @@ def resend_unsent_signals_job():
                 await session.commit()
                 return sigs
         try:
-            signals = asyncio.run(_fetch_signals())
+            signals = run_sync(_fetch_signals())
         except Exception:
             signals = []
         import concurrent.futures
@@ -86,7 +89,7 @@ def resend_unsent_signals_job():
                             except Exception as e:
                                 await session.rollback()
                                 logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {e}")
-                    asyncio.run(do_record())
+                    run_sync(do_record())
                 if loop is None:
                     db_record()
                 else:
@@ -278,7 +281,7 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        asyncio.run(_send_message_async(bot, int(chat_id), str(text)))
+        run_sync(_send_message_async(bot, int(chat_id), str(text)))
         return
     # If we're already in an event loop, schedule it.
     try:
@@ -414,7 +417,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                     except Exception:
                         pass
             try:
-                asyncio.run(_notify_and_feedback())
+                run_sync(_notify_and_feedback())
             except Exception:
                 pass
 
@@ -802,7 +805,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     return to_send
 
                 try:
-                    reserved = asyncio.run(_reserve())
+                    reserved = run_sync(_reserve())
                     reserve_failed = False
                 except Exception as e:
                     reserved = []
@@ -912,7 +915,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         return sent_count
                 
                 try:
-                    asyncio.run(_get_best_signal())
+                    run_sync(_get_best_signal())
                 except Exception as e:
                     _log_once(
                         "extra_signal_failed",
@@ -1101,7 +1104,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     await session.commit()
 
             try:
-                asyncio.run(_send_random_signals_immediately())
+                run_sync(_send_random_signals_immediately())
                 return
             except Exception as e:
                 _log_once(
@@ -1159,7 +1162,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 await session.commit()
 
         try:
-            asyncio.run(_queue())
+            run_sync(_queue())
         except Exception as e:
             _log_once(
                 "queue_free_legacy_failed",
@@ -1190,7 +1193,7 @@ def downgrade_expired_subscriptions_job():
                 else:
                     logger.info("✅ No expired subscriptions to downgrade")
 
-        asyncio.run(_do_downgrade())
+        run_sync(_do_downgrade())
     except Exception as e:
         logger.error(f"❌ Error downgrading subscriptions: {e}")
 
@@ -1211,7 +1214,7 @@ def auto_delete_old_signals_job():
                 else:
                     logger.info("✅ No old signals to delete")
 
-        asyncio.run(_do_delete())
+        run_sync(_do_delete())
     except Exception as e:
         logger.error(f"❌ Error deleting old signals: {e}")
 
@@ -1232,7 +1235,7 @@ def distribute_random_signals_to_free_users_job():
                 else:
                     logger.info("✅ All FREE users have reached daily limit or no new signals")
 
-        asyncio.run(_do_distribute())
+        run_sync(_do_distribute())
     except Exception as e:
         logger.error(f"❌ Error distributing signals to FREE users: {e}")
 
@@ -1340,7 +1343,7 @@ def run_bot() -> None:
 
             for user_id in user_ids:
                 try:
-                    stats = asyncio.run(_fetch(int(user_id)))
+                    stats = run_sync(_fetch(int(user_id)))
                 except Exception:
                     stats = {"total": 0, "top_assets": [], "top_strategies": []}
                 total = int(stats.get("total") or 0)
@@ -1410,7 +1413,7 @@ def run_bot() -> None:
                     return out
 
             try:
-                pending = asyncio.run(_fetch())
+                pending = run_sync(_fetch())
             except Exception:
                 pending = []
             if not pending:
@@ -1471,7 +1474,7 @@ def run_bot() -> None:
                         async def _fetch_delivered():
                             async with get_session() as session:
                                 return await get_delivered_signal_by_ref(session, int(telegram_user_id), str(ref))
-                        delivered_signal = asyncio.run(_fetch_delivered())
+                        delivered_signal = run_sync(_fetch_delivered())
                     except Exception:
                         delivered_signal = None
 
@@ -1530,7 +1533,7 @@ def run_bot() -> None:
                             await mark_outcome_notified(session, int(oid))
                             await session.commit()
 
-                    asyncio.run(_mark(int(getattr(oc, 'id'))))
+                    run_sync(_mark(int(getattr(oc, 'id'))))
                 except Exception:
                     pass
         except Exception:
@@ -1559,7 +1562,7 @@ def run_bot() -> None:
                     return sigs
 
             try:
-                candidates = asyncio.run(_fetch_candidates())
+                candidates = run_sync(_fetch_candidates())
             except Exception:
                 candidates = []
             if not candidates:
@@ -1651,7 +1654,7 @@ def run_bot() -> None:
                         async def _get_prev():
                             async with get_session() as session:
                                 return await get_outcome_for_signal(session, str(sig.signal_id))
-                        prev = asyncio.run(_get_prev())
+                        prev = run_sync(_get_prev())
                         if prev:
                             prev_status = str(getattr(prev, 'status', '') or '').lower()
                     except Exception:
@@ -1784,7 +1787,7 @@ def run_bot() -> None:
                             )
                             await session.commit()
                     try:
-                        asyncio.run(_write())
+                        run_sync(_write())
                     except Exception as e:
                         print(f"[DEBUG][outcome] Exception writing outcome: {e}", flush=True)
 
@@ -1849,7 +1852,7 @@ def run_bot() -> None:
                         return out
 
                 try:
-                    due = asyncio.run(_fetch_due())
+                    due = run_sync(_fetch_due())
                     logger.info(f"📬 Free queue check: {len(due)} user(s) with due signals")
                 except Exception as e:
                     logger.error(f"Error fetching due signals: {e}", exc_info=True)
@@ -1940,7 +1943,7 @@ def run_bot() -> None:
                         await session.commit()
 
                 try:
-                    asyncio.run(_apply_actions())
+                    run_sync(_apply_actions())
                     logger.info(f"💾 Applied {len(actions)} queue action(s)")
                 except Exception as e:
                     logger.error(f"Error applying actions: {e}", exc_info=True)
@@ -1974,7 +1977,7 @@ def run_bot() -> None:
                 except Exception as e:
                     logger.error(f"❌ ML retrain failed: {e}", exc_info=True)
 
-            asyncio.run(_retrain())
+            run_sync(_retrain())
         except Exception as e:
             logger.error(f"Error in ML retrain job: {e}", exc_info=True)
 

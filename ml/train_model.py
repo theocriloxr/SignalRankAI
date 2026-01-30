@@ -277,5 +277,6 @@ async def main():
 
 if __name__ == "__main__":
     import asyncio
-    success = asyncio.run(main())
+    from utils.async_runner import run_sync
+    success = run_sync(main())
     sys.exit(0 if success else 1)

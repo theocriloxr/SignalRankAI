@@ -6,6 +6,7 @@ Run this if Alembic migration hasn't applied yet.
 import sys
 import os
 import asyncio
+from utils.async_runner import run_sync
 from sqlalchemy import text
 
 async def add_ml_probability_column():
@@ -41,5 +42,5 @@ async def add_ml_probability_column():
         return False
 
 if __name__ == "__main__":
-    result = asyncio.run(add_ml_probability_column())
+    result = run_sync(add_ml_probability_column())
     sys.exit(0 if result else 1)

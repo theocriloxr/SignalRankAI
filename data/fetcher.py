@@ -148,27 +148,31 @@ def get_candles(asset, timeframe):
     - FX: AlphaVantage → Yahoo → Polygon → Twelve Data (OANDA disabled for Nigeria)
     - Stocks: Yahoo → Polygon → Twelve Data
     """
-    asset_type = get_asset_type(asset)
-    
-    # Enable multi-provider via env var
-    use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
-    
-    if not use_multi_provider:
-        # Legacy single-provider mode
+    try:
+        asset_type = get_asset_type(asset)
+
+        # Enable multi-provider via env var
+        use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+
+        if not use_multi_provider:
+            # Legacy single-provider mode
+            if asset_type == "crypto":
+                return get_crypto_candles(asset, timeframe)
+            elif asset_type == "fx":
+                return get_fx_candles(asset, timeframe)
+            else:
+                return get_stock_candles(asset, timeframe)
+
+        # Multi-provider mode with fallbacks
         if asset_type == "crypto":
-            return get_crypto_candles(asset, timeframe)
+            return _fetch_crypto_multi_provider(asset, timeframe)
         elif asset_type == "fx":
-            return get_fx_candles(asset, timeframe)
-        else:
-            return get_stock_candles(asset, timeframe)
-    
-    # Multi-provider mode with fallbacks
-    if asset_type == "crypto":
-        return _fetch_crypto_multi_provider(asset, timeframe)
-    elif asset_type == "fx":
-        return _fetch_fx_multi_provider(asset, timeframe)
-    else:  # stock
-        return _fetch_stock_multi_provider(asset, timeframe)
+            return _fetch_fx_multi_provider(asset, timeframe)
+        else:  # stock
+            return _fetch_stock_multi_provider(asset, timeframe)
+    except Exception:
+        logger.exception("get_candles failed for %s %s", asset, timeframe)
+        return []
 
 
 def _fetch_crypto_multi_provider(asset, timeframe):

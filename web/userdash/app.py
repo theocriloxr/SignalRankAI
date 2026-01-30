@@ -1,4 +1,5 @@
 from flask import Flask, request, render_template, redirect, url_for, session, abort
+from utils.async_runner import run_sync
 import os
 from db.session import get_session
 from db.pg_features import list_signals_sent_today
@@ -45,7 +46,7 @@ def dashboard():
                     rows = await list_signals_sent_today(s, telegram_user_id=int(user_id))
                     await s.commit()
                     return rows
-            signals = asyncio.run(fetch())
+            signals = run_sync(fetch())
     except Exception:
         signals = []
     # Determine feature access by tier

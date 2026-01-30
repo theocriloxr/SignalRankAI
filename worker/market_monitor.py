@@ -6,6 +6,7 @@ Market Condition Monitor
 
 import os
 import asyncio
+from utils.async_runner import run_sync
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List
@@ -219,4 +220,4 @@ async def start_market_monitor():
 
 if __name__ == '__main__':
     # For standalone testing
-    asyncio.run(start_market_monitor())
+    run_sync(start_market_monitor())

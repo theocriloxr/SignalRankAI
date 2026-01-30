@@ -4,17 +4,14 @@ import asyncio
 from typing import Any, Dict
 
 from db.session import get_session
+from utils.async_runner import run_sync
 
 
 def _run(coro):
-    try:
-        asyncio.get_running_loop()
-        # In an active loop, caller should await instead.
-        raise RuntimeError("Cannot run sync Postgres helper inside running event loop")
-    except RuntimeError as e:
-        if str(e).startswith("Cannot run sync"):
-            raise
-    return asyncio.run(coro)
+    # Use run_sync shim which safely runs coroutines when an event loop
+    # may already be active. This avoids RuntimeError in environments
+    # where parts of the app already have a running loop.
+    return run_sync(coro)
 
 
 def postgres_enabled() -> bool:
