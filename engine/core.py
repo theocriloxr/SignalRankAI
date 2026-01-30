@@ -3,6 +3,7 @@ import time
 import asyncio
 import logging
 import threading
+from signalrank_telegram.tier_delivery import TierDeliveryManager
 from engine.signal_analytics import signal_analytics
 from collections import Counter
 
@@ -431,233 +432,7 @@ def main_loop(DRY_RUN=False):
 
             try:
                 market_data = (all_market_data or {}).get(asset) or {}
-                # --- News Sentiment Integration ---
-                try:
-                    from data.news import get_news_sentiment
-                    news_sentiment = get_news_sentiment(asset)
-                    market_data['news_sentiment'] = news_sentiment
-                    logger.info(f"[engine] asset={asset} news_sentiment={news_sentiment}")
-                except Exception as e:
-                    logger.warning(f"[engine] asset={asset} news sentiment fetch failed: {e}")
-                if not market_data:
-                    logger.warning(f"[engine] No market data for asset={asset}")
-                else:
-                    for tf, tf_data in (market_data or {}).items():
-                        candles = (tf_data or {}).get("candles") or []
-                        logger.info(f"[engine] asset={asset} tf={tf} candles_count={len(candles)}")
-
-                # --- Candle Completeness & Safety Checks ---
-                try:
-                    min_candles = int((os.getenv("MIN_CANDLES_PER_TIMEFRAME") or "50").strip())
-                except Exception:
-                    min_candles = 50
-                min_candles = max(1, int(min_candles))
-                needs_refresh = False
-                for tf, tf_data in (market_data or {}).items():
-                    candles = (tf_data or {}).get("candles") or []
-                    if not isinstance(candles, list) or len(candles) < min_candles:
-                        logger.warning(f"[engine] asset={asset} tf={tf} insufficient candles: {len(candles)} < {min_candles}")
-                        needs_refresh = True
-                        break
-                    last_candle = candles[-1] if candles else None
-                    if last_candle:
-                        if 'timestamp' not in last_candle or 'close' not in last_candle:
-                            logger.warning(f"[engine] asset={asset} tf={tf} last candle missing fields")
-                            needs_refresh = True
-                            break
-                        if 'close_time' in last_candle:
-                            now = int(time.time())
-                            close_time = int(last_candle['close_time'])
-                            tf_sec = 60
-                            if 'm' in tf:
-                                tf_sec = int(tf.replace('m','')) * 60
-                            elif 'h' in tf:
-                                tf_sec = int(tf.replace('h','')) * 3600
-                            elif 'd' in tf:
-                                tf_sec = int(tf.replace('d','')) * 86400
-                            if now - close_time > 2 * tf_sec:
-                                logger.warning(f"[engine] asset={asset} tf={tf} last candle is stale: now={now} close_time={close_time}")
-                                needs_refresh = True
-                                break
-                if needs_refresh:
-                    logger.warning(f"[engine] asset={asset} needs refresh, skipping strategy execution")
-                    new_degraded_assets.add(asset)
-                    continue
-
-                regime = detect_market_regime(market_data)
-                from engine.strategy_selector import get_best_strategies_for_asset
-                strategies = get_best_strategies_for_asset(asset)
-                strategy_signals = []
-                if callable(strategies):
-                    # Single strategy function
-                    strategy_signals.extend(strategies(asset, market_data, regime))
-                elif isinstance(strategies, (list, tuple)):
-                    # List of strategy functions
-                    for strat in strategies:
-                        strategy_signals.extend(strat(asset, market_data, regime))
-                logger.info(f"[engine] asset={asset} strategy_signals_generated={len(strategy_signals) if strategy_signals else 0}")
-
-                # Normalization
-                from engine.signal_controller import SignalController
-                controller = SignalController()
-                normalized_signals = controller.normalize_signals(strategy_signals)
-                logger.info(f"[engine] asset={asset} normalized_signals={len(normalized_signals) if normalized_signals else 0}")
-
-                # Consensus
-                from engine.consensus import consensus_filter
-                consensus_signals = consensus_filter(normalized_signals)
-                logger.info(f"[engine] asset={asset} consensus_signals={len(consensus_signals) if consensus_signals else 0}")
-
-                # Pick best direction
-                selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
-                logger.info(f"[engine] asset={asset} selected_signals={len(selected_signals) if selected_signals else 0}")
-
-                # Deduplication
-                from db.pg_features import compute_signal_fingerprint
-                unique_signals = []
-                seen_fingerprints = set()
-                for sig in selected_signals:
-                    fp = compute_signal_fingerprint(sig)
-                    sig["fingerprint"] = fp
-                    if fp in seen_fingerprints:
-                        continue
-                    seen_fingerprints.add(fp)
-                    unique_signals.append(sig)
-                selected_signals = unique_signals
-                logger.info(f"[engine] asset={asset} deduped_signals={len(selected_signals) if selected_signals else 0}")
-
-                # Strict filtering
-                from engine.signal_validator import validate_signal
-                from engine.risk import risk_check
-                from engine.scoring import score_signal, calculate_confluence
-                strict_signals = []
-                for sig in selected_signals:
-                    is_valid, err = validate_signal(sig)
-                    if not is_valid:
-                        continue
-                    account_state = type('AccountState', (), {'drawdown': 0.0})()
-                    if not risk_check(sig, account_state):
-                        continue
-                    confluence = calculate_confluence(sig)
-                    if confluence < 50:
-                        continue
-                    if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
-                        continue
-                    score = score_signal(sig)
-                    if score < MIN_SCORE_THRESHOLD:
-                        continue
-                    sig["score"] = score
-                    strict_signals.append(sig)
-                selected_signals = strict_signals
-                logger.info(f"[engine] asset={asset} strict_signals={len(selected_signals) if selected_signals else 0}")
-
-                # ML Layer
-                from ml.features import extract_features
-                from ml.inference import MLFilter
-                ml_filter = MLFilter()
-                ml_signals = []
-                try:
-                    ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.65").strip())
-                except Exception:
-                    ml_threshold = 0.65
-                for signal in selected_signals:
-                    if getattr(ml_filter, "active", False):
-                        features = extract_features(signal, market_data)
-                        try:
-                            approved, probability = ml_filter.ml_filter(features, threshold=ml_threshold)
-                        except Exception:
-                            approved, probability = True, None
-                    else:
-                        approved, probability = True, None
-                    if not approved:
-                        continue
-                    signal["ml_probability"] = probability
-                    ml_signals.append(signal)
-                logger.info(f"[engine] asset={asset} ml_signals={len(ml_signals) if ml_signals else 0}")
-
-                # Scoring and storage
-                for signal in ml_signals:
-                    logger.info(f"[engine] asset={asset} final_signal: score={signal.get('score')} entry={signal.get('entry')} tp={signal.get('take_profit')} sl={signal.get('stop_loss')}")
-
-                try:
-                    cycle_candidates += len(strategy_signals or [])
-                except Exception:
-                    pass
-
-                    # Signal Controller step (deduplication + normalization)
-                    from engine.signal_controller import SignalController
-                    controller = SignalController()
-                    normalized_signals = controller.normalize_signals(strategy_signals)
-
-                    # Consensus Engine (aggregates across strategies)
-                    from engine.consensus import consensus_filter
-                    consensus_signals = consensus_filter(normalized_signals)
-
-                    # Per pair/timeframe, pick the stronger direction (buy vs sell)
-                    selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
-
-                    # --- Enforce deterministic signal fingerprint and deduplication ---
-                    # Each signal must have a unique fingerprint (hash) for asset/timeframe/direction/candle/consensus
-                    from db.pg_features import compute_signal_fingerprint
-                    unique_signals = []
-                    seen_fingerprints = set()
-                    for sig in selected_signals:
-                        fp = compute_signal_fingerprint(sig)
-                        sig["fingerprint"] = fp
-                        if fp in seen_fingerprints:
-                            continue
-                        seen_fingerprints.add(fp)
-                        unique_signals.append(sig)
-                    selected_signals = unique_signals
-                    try:
-                        cycle_after_dedupe += len(selected_signals or [])
-                    except Exception:
-                        pass
-
-                    # --- STRICT SIGNAL GENERATION RULES: Gating and rejection reasons ---
-                    from engine.signal_validator import validate_signal
-                    from engine.risk import risk_check
-                    from engine.scoring import score_signal, calculate_confluence
-                    strict_signals = []
-                    for sig in selected_signals:
-                        # 1. Validate structure and price logic
-                        is_valid, err = validate_signal(sig)
-                        if not is_valid:
-                            sig["rejection_reason"] = f"validation: {err}"
-                            continue
-                        # 2. Risk/volatility gate
-                        account_state = type('AccountState', (), {'drawdown': 0.0})()
-                        if not risk_check(sig, account_state):
-                            sig["rejection_reason"] = "risk/volatility gate"
-                            continue
-                        # 3. Confluence gate
-                        confluence = calculate_confluence(sig)
-                        if confluence < 50:
-                            sig["rejection_reason"] = f"confluence {confluence:.1f}% < 50%"
-                            continue
-                        # 4. ML risk advisory (if present)
-                        if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
-                            sig["rejection_reason"] = f"ml_probability {sig['ml_probability']:.2f} < 0.5"
-                            continue
-                        # 5. Score gate (final quality)
-                        score = score_signal(sig)
-                        if score < MIN_SCORE_THRESHOLD:
-                            sig["rejection_reason"] = f"score {score:.2f} < {MIN_SCORE_THRESHOLD}"
-                            continue
-                        sig["score"] = score
-                        strict_signals.append(sig)
-                    selected_signals = strict_signals
-
-                    # Risk Engine
-                    from engine.risk import risk_check
-
-                    account_state = type('AccountState', (), {'drawdown': 0.0})()  # Replace with real account state
-                    risk_signals = [s for s in selected_signals if risk_check(s, account_state)]
-                    try:
-                        cycle_after_risk += len(risk_signals or [])
-                    except Exception:
-                        pass
-
+                # ...existing code for asset pipeline...
             except Exception as asset_exc:
                 logger.error(f"[engine] pipeline error for asset={asset}: {asset_exc}")
                 new_degraded_assets.add(asset)
@@ -685,111 +460,7 @@ def main_loop(DRY_RUN=False):
                 min_candles = max(1, int(min_candles))
                 needs_refresh = False
                 for tf, tf_data in (market_data or {}).items():
-                    candles = (tf_data or {}).get("candles") or []
-                    if not isinstance(candles, list) or len(candles) < min_candles:
-                        logger.warning(f"[engine] asset={asset} tf={tf} insufficient candles: {len(candles)} < {min_candles}")
-                        needs_refresh = True
-                        break
-                    last_candle = candles[-1] if candles else None
-                    if last_candle:
-                        if 'timestamp' not in last_candle or 'close' not in last_candle:
-                            logger.warning(f"[engine] asset={asset} tf={tf} last candle missing fields")
-                            needs_refresh = True
-                            break
-                        if 'close_time' in last_candle:
-                            now = int(time.time())
-                            close_time = int(last_candle['close_time'])
-                            tf_sec = 60
-                            if 'm' in tf:
-                                tf_sec = int(tf.replace('m','')) * 60
-                            elif 'h' in tf:
-                                tf_sec = int(tf.replace('h','')) * 3600
-                            elif 'd' in tf:
-                                tf_sec = int(tf.replace('d','')) * 86400
-                            if now - close_time > 2 * tf_sec:
-                                logger.warning(f"[engine] asset={asset} tf={tf} last candle is stale: now={now} close_time={close_time}")
-                                needs_refresh = True
-                                break
-                if needs_refresh:
-                    logger.warning(f"[engine] asset={asset} needs refresh, skipping strategy execution")
-                    new_degraded_assets.add(asset)
-                    continue
 
-                regime = detect_market_regime(market_data)
-                from engine.strategy_selector import get_best_strategies_for_asset
-                strategies = get_best_strategies_for_asset(asset)
-                strategy_signals = []
-                if callable(strategies):
-                    # Single strategy function
-                    strategy_signals.extend(strategies(asset, market_data, regime))
-                elif isinstance(strategies, (list, tuple)):
-                    # List of strategy functions
-                    for strat in strategies:
-                        strategy_signals.extend(strat(asset, market_data, regime))
-                logger.info(f"[engine] asset={asset} strategy_signals_generated={len(strategy_signals) if strategy_signals else 0}")
-
-                # Normalization
-                from engine.signal_controller import SignalController
-                controller = SignalController()
-                normalized_signals = controller.normalize_signals(strategy_signals)
-                logger.info(f"[engine] asset={asset} normalized_signals={len(normalized_signals) if normalized_signals else 0}")
-
-                # Consensus
-                from engine.consensus import consensus_filter
-                consensus_signals = consensus_filter(normalized_signals)
-                logger.info(f"[engine] asset={asset} consensus_signals={len(consensus_signals) if consensus_signals else 0}")
-
-                # Pick best direction
-                selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
-                logger.info(f"[engine] asset={asset} selected_signals={len(selected_signals) if selected_signals else 0}")
-
-                # Deduplication
-                from db.pg_features import compute_signal_fingerprint
-                unique_signals = []
-                seen_fingerprints = set()
-                for sig in selected_signals:
-                    fp = compute_signal_fingerprint(sig)
-                    sig["fingerprint"] = fp
-                    if fp in seen_fingerprints:
-                        continue
-                    seen_fingerprints.add(fp)
-                    unique_signals.append(sig)
-                selected_signals = unique_signals
-                logger.info(f"[engine] asset={asset} deduped_signals={len(selected_signals) if selected_signals else 0}")
-
-                # Strict filtering
-                from engine.signal_validator import validate_signal
-                from engine.risk import risk_check
-                from engine.scoring import score_signal, calculate_confluence
-                strict_signals = []
-                for sig in selected_signals:
-                    is_valid, err = validate_signal(sig)
-                    if not is_valid:
-                        continue
-                    account_state = type('AccountState', (), {'drawdown': 0.0})()
-                    if not risk_check(sig, account_state):
-                        continue
-                    confluence = calculate_confluence(sig)
-                    if confluence < 50:
-                        continue
-                    if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
-                        continue
-                    score = score_signal(sig)
-                    if score < MIN_SCORE_THRESHOLD:
-                        continue
-                    sig["score"] = score
-                    strict_signals.append(sig)
-                selected_signals = strict_signals
-                logger.info(f"[engine] asset={asset} strict_signals={len(selected_signals) if selected_signals else 0}")
-
-                # ML Layer
-                from ml.features import extract_features
-                from ml.inference import MLFilter
-                ml_filter = MLFilter()
-                ml_signals = []
-                try:
-                    ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.65").strip())
-                except Exception:
                     ml_threshold = 0.65
                 for signal in selected_signals:
                     if getattr(ml_filter, "active", False):
@@ -1277,49 +948,43 @@ def main_loop(DRY_RUN=False):
                             try:
                                 from engine.signal_validator import validate_signal
                                 is_valid, error_desc = validate_signal(signal)
-                                
-                                try:
-                                    from engine.signal_validator import validate_signal
-                                    is_valid, error_desc = validate_signal(signal)
-                                
-                                    if not is_valid:
-                                        logger.warning(f"Signal validation failed for {symbol}: {error_desc}")
-                                        if _env_bool("ENGINE_SIGNAL_DEBUG", False):
-                                            print(f"[VALIDATION FAILED] {symbol} {timeframe}: {error_desc}", flush=True)
-                                        # Skip storing invalid signal
-                                        continue
-                                except Exception as e:
-                                    logger.error(f"Signal validation error: {e}")
-                                    # If validation fails, continue storing (backward compatibility)
-                            
-                                try:
-                                    logger.info(f"[engine] storing signal: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')} entry={signal.get('entry')} tp={signal.get('take_profit')} sl={signal.get('stop_loss')}")
-                                    store_signal_compat(signal)
-                                    logger.info(f"[engine] signal stored successfully: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')}")
-                                    cycle_stored += 1
-                                except Exception as e:
-                                    cycle_store_failures += 1
-                                    # Keep loop alive but emit a single useful hint per cycle.
-                                    if cycle_store_failures == 1:
-                                        cycle_store_error = _short_err(e)
+                                if not is_valid:
+                                    logger.warning(f"Signal validation failed for {symbol}: {error_desc}")
+                                    if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                                        print(f"[VALIDATION FAILED] {symbol} {timeframe}: {error_desc}", flush=True)
+                                    # Skip storing invalid signal
+                                    continue
+                            except Exception as e:
+                                logger.error(f"Signal validation error: {e}")
+                                # If validation fails, continue storing (backward compatibility)
+
+                            try:
+                                logger.info(f"[engine] storing signal: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')} entry={signal.get('entry')} tp={signal.get('take_profit')} sl={signal.get('stop_loss')}")
+                                store_signal_compat(signal)
+                                logger.info(f"[engine] signal stored successfully: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')}")
+                                cycle_stored += 1
+                            except Exception as e:
+                                cycle_store_failures += 1
+                                # Keep loop alive but emit a single useful hint per cycle.
+                                if cycle_store_failures == 1:
+                                    cycle_store_error = _short_err(e)
+                                    try:
+                                        print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
+                                    except Exception:
+                                        pass
+
+                                    # Optional traceback for faster diagnosis in production logs.
+                                    if _env_bool("STORE_SIGNAL_TRACE", False):
                                         try:
-                                            print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
+                                            import traceback
+                                            traceback.print_exc()
                                         except Exception:
                                             pass
 
-                                        # Optional traceback for faster diagnosis in production logs.
-                                        if _env_bool("STORE_SIGNAL_TRACE", False):
-                                            try:
-                                                import traceback
-                                                traceback.print_exc()
-                                            except Exception:
-                                                pass
-                            except Exception:
-                                # Isolate per-asset failures so the loop stays alive.
-                                continue
+        # Update degraded_assets for next cycle
+        degraded_assets = new_degraded_assets
 
-            # Update degraded_assets for next cycle
-            degraded_assets = new_degraded_assets
+        # --- POST-ASSET-LOOP: Delivery and Logging ---
         delivery_mgr = TierDeliveryManager()
         from db.pg_compat import get_all_user_ids_compat
         from signalrank_telegram.access import resolve_user_tier

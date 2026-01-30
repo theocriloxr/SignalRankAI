@@ -1,3 +1,37 @@
+from telegram import Update
+from telegram.ext import ContextTypes
+from db.session import get_session, ENGINE
+from db.repository import get_active_subscription
+# --- USER COMMAND: /status ---
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	if ENGINE is None:
+		await update.message.reply_text("Database not configured.")
+		return
+	try:
+		async with get_session() as session:
+			sub = await get_active_subscription(session, telegram_user_id=update.effective_user.id)
+			await session.commit()
+		if sub is None:
+			await update.message.reply_text("You are on the FREE tier. Upgrade for more features!")
+			return
+		tier = getattr(sub, "tier", "free").upper()
+		expires = getattr(sub, "expires_at", None)
+		status = getattr(sub, "status", "inactive").capitalize()
+		msg = f"\n<b>Subscription Status</b>\nTier: <b>{tier}</b>\nStatus: <b>{status}</b>"
+		if expires:
+			msg += f"\nExpires: <b>{expires.strftime('%Y-%m-%d %H:%M')}</b>"
+		await update.message.reply_text(msg, parse_mode="HTML")
+	except Exception as e:
+		await update.message.reply_text(f"Unable to fetch status: {e}")
+
+# --- USER COMMAND: /support ---
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	support_contact = "@YourSupportUsername"  # TODO: Set your real support contact here
+	await update.message.reply_text(f"For help or questions, contact support: {support_contact}")
 # Import actual owner/admin command handlers
 from signalrank_telegram.owner_commands import owner_users, owner_revenue, correct_signal
 # --------- DEV/ADMIN PLACEHOLDER COMMANDS ---------

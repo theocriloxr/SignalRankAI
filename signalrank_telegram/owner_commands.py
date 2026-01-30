@@ -1,3 +1,77 @@
+from telegram import Update
+from telegram.ext import ContextTypes
+from db.session import get_session, ENGINE
+from db.repository import get_or_create_user
+# --- ADMIN COMMAND: /broadcast ---
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_owner(update.effective_user.id):
+        return
+    if not context.args:
+        await update.message.reply_text("Usage: /broadcast <message>")
+        return
+    msg = " ".join(context.args)
+    # TODO: Replace with actual user list query
+    from db.pg_compat import get_all_user_ids_compat
+    user_ids = await get_all_user_ids_compat()
+    from signalrank_telegram.bot import application
+    bot = application.bot
+    sent = 0
+    for uid in user_ids:
+        try:
+            await bot.send_message(chat_id=uid, text=msg)
+            sent += 1
+        except Exception:
+            continue
+    await update.message.reply_text(f"Broadcast sent to {sent} users.")
+
+# --- ADMIN COMMAND: /add_vip ---
+async def add_vip_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_owner(update.effective_user.id):
+        return
+    if not context.args or len(context.args) < 1:
+        await update.message.reply_text("Usage: /add_vip <telegram_user_id>")
+        return
+    try:
+        user_id = int(context.args[0])
+        async with get_session() as session:
+            user = await get_or_create_user(session, telegram_user_id=user_id)
+            user.tier = "vip"
+            await session.commit()
+        await update.message.reply_text(f"User {user_id} upgraded to VIP.")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to add VIP: {e}")
+
+# --- ADMIN COMMAND: /remove_user ---
+async def remove_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_owner(update.effective_user.id):
+        return
+    if not context.args or len(context.args) < 1:
+        await update.message.reply_text("Usage: /remove_user <telegram_user_id>")
+        return
+    try:
+        user_id = int(context.args[0])
+        async with get_session() as session:
+            user = await get_or_create_user(session, telegram_user_id=user_id)
+            user.tier = "free"
+            await session.commit()
+        await update.message.reply_text(f"User {user_id} downgraded to FREE.")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to remove user: {e}")
+
+# --- ADMIN COMMAND: /pause_signals ---
+async def pause_signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_owner(update.effective_user.id):
+        return
+    await state.set_killswitch(True, reason="Paused by admin via /pause_signals")
+    await update.message.reply_text("All signals paused (kill-switch enabled).")
 from config import config
 from typing import Optional
 
