@@ -434,6 +434,14 @@ def main_loop(DRY_RUN=False):
 
             try:
                 market_data = (all_market_data or {}).get(asset) or {}
+                # --- News Sentiment Integration ---
+                try:
+                    from data.news import get_news_sentiment
+                    news_sentiment = get_news_sentiment(asset)
+                    market_data['news_sentiment'] = news_sentiment
+                    logger.info(f"[engine] asset={asset} news_sentiment={news_sentiment}")
+                except Exception as e:
+                    logger.warning(f"[engine] asset={asset} news sentiment fetch failed: {e}")
                 if not market_data:
                     logger.warning(f"[engine] No market data for asset={asset}")
                 else:

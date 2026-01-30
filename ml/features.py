@@ -24,5 +24,6 @@ def extract_features(signal, market_data):
         "rr": float(signal.get("rr") if signal.get("rr") is not None else (signal.get("rr_ratio") or 0)),
         "timeframe": timeframe_to_int(tf),
         "strategy_id": strategy_to_int(signal.get("strategy") or signal.get("strategy_name") or ""),
-        "regime": regime_to_int(signal.get("regime", ""))
+        "regime": regime_to_int(signal.get("regime", "")),
+        "news_sentiment": float(market_data.get("news_sentiment", 0.0)),
     }
