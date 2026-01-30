@@ -1075,6 +1075,7 @@ def main_loop(DRY_RUN=False):
                                             traceback.print_exc()
                                         except Exception:
                                             pass
+
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
@@ -1176,6 +1177,4 @@ def main_loop(DRY_RUN=False):
                         f"crypto_provider={crypto_provider} fx_enabled={fx_enabled} stocks_enabled={stocks_enabled}",
                     flush=True,
                 )
-        # (Removed stray except block that caused SyntaxError)
-    
         time.sleep(max(5, cycle_sleep_seconds))
