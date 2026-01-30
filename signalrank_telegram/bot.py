@@ -149,13 +149,28 @@ TELEGRAM_POOL_TIMEOUT = int(getattr(config, "TELEGRAM_POOL_TIMEOUT", 30))  # sec
 TELEGRAM_CONNECT_TIMEOUT = int(getattr(config, "TELEGRAM_CONNECT_TIMEOUT", 30))  # seconds, configurable
 TELEGRAM_READ_TIMEOUT = int(getattr(config, "TELEGRAM_READ_TIMEOUT", 30))  # seconds, configurable
 TELEGRAM_WRITE_TIMEOUT = int(getattr(config, "TELEGRAM_WRITE_TIMEOUT", 30))  # seconds, configurable
-application = Application.builder()
-application = application.token(getattr(config, 'TELEGRAM_BOT_TOKEN', None))
-application = application.pool_timeout(TELEGRAM_POOL_TIMEOUT)
-application = application.connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
-application = application.read_timeout(TELEGRAM_READ_TIMEOUT)
-application = application.write_timeout(TELEGRAM_WRITE_TIMEOUT)
-application = application.build()
+
+# Build the Telegram Application only when a token is provided and not in DRY_RUN
+_token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
+_dry_run_env = str(os.getenv('DRY_RUN') or '').strip().lower() in {'1', 'true', 'yes'}
+if _token and not _dry_run_env:
+    application = Application.builder()
+    application = application.token(_token)
+    application = application.pool_timeout(TELEGRAM_POOL_TIMEOUT)
+    application = application.connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
+    application = application.read_timeout(TELEGRAM_READ_TIMEOUT)
+    application = application.write_timeout(TELEGRAM_WRITE_TIMEOUT)
+    application = application.build()
+else:
+    # Dummy application for environments without a token or when DRY_RUN is set.
+    class _DummyApp:
+        def add_handler(self, *a, **k):
+            return None
+
+        def run(self, *a, **k):
+            return None
+
+    application = _DummyApp()
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command
