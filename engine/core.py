@@ -282,14 +282,12 @@ def main_loop(DRY_RUN=False):
         cycle_no += 1
 
         if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
-            try:
-                raw_tradable = (os.getenv("TRADABLE_ASSETS") or "").strip()
-                raw_fx = (os.getenv("FX_PAIRS") or "").strip()
-                print(
-                    f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count=0 discovered_count=0 final_count={len(assets)}",
-                    flush=True,
-                )
-            # pass  # Removed unreachable except clause
+            raw_tradable = (os.getenv("TRADABLE_ASSETS") or "").strip()
+            raw_fx = (os.getenv("FX_PAIRS") or "").strip()
+            print(
+                f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count=0 discovered_count=0 final_count={len(assets)}",
+                flush=True,
+            )
 
 
         # No assets => do not run on demo/hardcoded data.
