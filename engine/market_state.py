@@ -5,41 +5,34 @@ request recent candles and derived indicators. It's intentionally small and
 defensive: it prefers `data.fetcher.fetch_market_data` which already validates
 candles and computes indicators.
 """
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Any
+
+import asyncio
 
 from data.fetcher import fetch_market_data
 from core.validators import validate_candles
+from utils.async_runner import run_sync
 
-try:
+try:  # ml scorer optional
     from engine import ml as ml_module
 except Exception:
     ml_module = None
 
 
-def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, any]:
-    """Return market state for `asset` keyed by timeframe.
+async def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
+    """Async variant: fetch market data (runs blocking fetch in thread) and build state.
 
-    Structure:
-      {
-          "asset": asset,
-          "timeframes": {
-              "1h": {
-                  "candles": [...],
-                  "indicators": {...},
-                  "last_close": 123.45,
-                  "last_timestamp": 1234567890,
-                  "ml_score": 0.42,  # optional
-              },
-              ...
-          }
-      }
+    Use `asyncio.to_thread` to call the synchronous `fetch_market_data` safely from
+    async contexts. For sync callers, use `get_market_state_sync` below.
     """
-    out: Dict[str, any] = {"asset": asset, "timeframes": {}}
     tf_list: List[str] = list(timeframes or [])
+    out: Dict[str, Any] = {"asset": asset, "timeframes": {}}
     if not tf_list:
         return out
 
-    market = fetch_market_data(asset, tf_list)
+    # Run blocking fetch in thread
+    market = await asyncio.to_thread(fetch_market_data, asset, tf_list)
+
     for tf in tf_list:
         entry = market.get(tf)
         if not entry:
@@ -47,11 +40,9 @@ def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = F
         candles = entry.get("candles") or []
         indicators = entry.get("indicators") or {}
 
-        # Basic defensive validation: prefer `validate_candles` but allow legacy shapes
         if not validate_candles(candles):
             continue
 
-        # Determine last close and timestamp (support both 'time' and 'timestamp')
         last = candles[-1] if candles else None
         last_close = None
         last_ts = None
@@ -59,17 +50,15 @@ def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = F
             last_close = last.get("close") or last.get("close_price")
             last_ts = last.get("timestamp") or last.get("time")
 
-        tf_state: Dict[str, any] = {
+        tf_state: Dict[str, Any] = {
             "candles": candles,
             "indicators": indicators,
             "last_close": last_close,
             "last_timestamp": last_ts,
         }
 
-        # Optionally attach ML score via engine.ml.score_signal when available
         if include_ml and ml_module is not None and hasattr(ml_module, "score_signal"):
             try:
-                # Build minimal signal-like payload for scoring; keep it lightweight.
                 probe = {
                     "asset": asset,
                     "timeframe": tf,
@@ -77,7 +66,8 @@ def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = F
                     "stop_loss": float(last_close) if last_close is not None else 0.0,
                     "score": 0.0,
                 }
-                prob = ml_module.score_signal(probe)
+                # ML scorer is sync; run in thread
+                prob = await asyncio.to_thread(ml_module.score_signal, probe)
                 tf_state["ml_score"] = prob
             except Exception:
                 tf_state["ml_score"] = None
@@ -85,3 +75,8 @@ def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = F
         out["timeframes"][tf] = tf_state
 
     return out
+
+
+def get_market_state_sync(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
+    """Sync wrapper for code that expects blocking call; runs async get_market_state safely."""
+    return run_sync(get_market_state(asset, timeframes, include_ml=include_ml))
