@@ -289,8 +289,7 @@ def main_loop(DRY_RUN=False):
                     f"[engine] env tradable_len={len(raw_tradable)} fx_len={len(raw_fx)} tradable_count=0 discovered_count=0 final_count={len(assets)}",
                     flush=True,
                 )
-            except Exception:
-                pass
+            # pass  # Removed unreachable except clause
 
 
         # No assets => do not run on demo/hardcoded data.
@@ -1079,7 +1078,6 @@ def main_loop(DRY_RUN=False):
                                     if _env_bool("STORE_SIGNAL_TRACE", False):
                                         try:
                                             import traceback
-
                                             traceback.print_exc()
                                         except Exception:
                                             pass
