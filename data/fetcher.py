@@ -193,11 +193,14 @@ def _fetch_crypto_multi_provider(asset, timeframe):
         base = yahoo_symbol[:-3]  # Remove USD
         yahoo_symbol = f"{base}-USD"
     
-    providers = [
-        ("binance/bybit", lambda timeout=10: get_crypto_candles(asset, timeframe)),
-        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
-        # CryptoCompare is called internally by get_crypto_candles when Binance is blocked
-    ]
+    # Build provider list from connector registry (prefer connectors)
+    from data.connector_registry import get_providers_for_asset
+
+    provs = get_providers_for_asset("crypto")
+    providers = []
+    # Wrap provider callables to accept timeout kw param used by retry_with_backoff
+    for name, fn in provs:
+        providers.append((name, lambda timeout=10, _fn=fn: _fn(yahoo_symbol, timeframe, timeout=timeout)))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
@@ -257,11 +260,12 @@ def _fetch_stock_multi_provider(asset, timeframe):
     """Try multiple stock providers in order."""
     from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles
     
-    providers = [
-        ("yahoo", lambda timeout=10: fetch_yahoo_candles(asset, timeframe)),
-        ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "stocks")),
-        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "stocks")),
-    ]
+    from data.connector_registry import get_providers_for_asset
+
+    provs = get_providers_for_asset("stock")
+    providers = []
+    for name, fn in provs:
+        providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
@@ -570,6 +574,21 @@ def get_crypto_candles(asset, timeframe):
                 logger.info(f"[data] crypto_fallback=cryptocompare symbol={base_raw}{tsym} tf={tf} candles={len(out)}")
                 return out
         return []
+
+    # First, try connector adapter if available (preferred, pluggable path)
+    try:
+        from data.connectors.binance_adapter import get_candles as connector_binance
+        try:
+            conn_out = connector_binance(sym, interval, limit=200)  # type: ignore
+            if conn_out:
+                logger.info(f"[data] crypto_connector=binance symbol={sym} tf={interval} candles={len(conn_out)}")
+                return conn_out
+        except Exception:
+            # Adapter failed; fall back to built-in logic
+            pass
+    except Exception:
+        # Connector not available – continue with legacy providers
+        pass
 
     # Allow explicit provider override (but still fall back if empty)
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()

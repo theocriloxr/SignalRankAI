@@ -2,6 +2,7 @@
 python-telegram-bot>=21.0,<22
 pandas
 numpy
+ pydantic-settings
 requests
 alpha_vantage
 fastapi>=0.110
