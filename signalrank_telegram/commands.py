@@ -2330,9 +2330,9 @@ async def history_command(update, context):
 
 	# Postgres-first
 	try:
-			from db.session import get_engine_for_event_loop, get_session
-			engine = get_engine_for_event_loop()
-			if engine is not None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.pg_features import list_recent_signals_delivered
 			async with get_session() as session:
 				rows: list[Signal] = await list_recent_signals_delivered(
