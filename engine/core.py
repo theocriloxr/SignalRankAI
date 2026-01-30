@@ -945,19 +945,19 @@ def main_loop(DRY_RUN=False):
                             
                             scored_signals_all.append(signal)
                         print(f"[DEBUG] {asset} scored_signals_all: {len(scored_signals_all)}", flush=True)
-                            cycle_scored += 1
-                            
-                            # Record signal for cooldown/bias tracking
-                            cooldown_manager.record_signal(symbol, timeframe)
-                            bias_manager.set_bias(symbol, timeframe, direction)
-                            
-                            # VALIDATE SIGNAL BEFORE STORING
-                            try:
-                                from engine.signal_validator import validate_signal
-                                is_valid, error_desc = validate_signal(signal)
-                                if not is_valid:
-                                    logger.warning(f"Signal validation failed for {symbol}: {error_desc}")
-                                    if _env_bool("ENGINE_SIGNAL_DEBUG", False):
+                        cycle_scored += 1
+
+                        # Record signal for cooldown/bias tracking
+                        cooldown_manager.record_signal(symbol, timeframe)
+                        bias_manager.set_bias(symbol, timeframe, direction)
+
+                        # VALIDATE SIGNAL BEFORE STORING
+                        try:
+                            from engine.signal_validator import validate_signal
+                            is_valid, error_desc = validate_signal(signal)
+                            if not is_valid:
+                                logger.warning(f"Signal validation failed for {symbol}: {error_desc}")
+                                if _env_bool("ENGINE_SIGNAL_DEBUG", False):
                                         print(f"[VALIDATION FAILED] {symbol} {timeframe}: {error_desc}", flush=True)
                                     # Skip storing invalid signal
                                     continue
