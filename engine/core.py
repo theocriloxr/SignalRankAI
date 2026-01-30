@@ -1068,6 +1068,7 @@ def main_loop(DRY_RUN=False):
                                 if cycle_store_failures == 1:
                                     cycle_store_error = _short_err(e)
                                     try:
+
                                         print(f"[ERROR] store_signal failed: {type(e).__name__}: {e}", flush=True)
                                     except Exception:
                                         pass
@@ -1079,7 +1080,6 @@ def main_loop(DRY_RUN=False):
                                             traceback.print_exc()
                                         except Exception:
                                             pass
-
                 except Exception:
                     # Isolate per-asset failures so the loop stays alive.
                     continue
