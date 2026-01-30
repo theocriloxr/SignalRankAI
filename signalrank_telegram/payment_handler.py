@@ -18,10 +18,10 @@ async def verify_payment_and_upgrade_tier(
         (success: bool, message: str)
     """
     try:
-        from db.session import ENGINE, get_session
+        from db.session import get_engine_for_event_loop, get_session
         from db.repository import activate_subscription, get_active_subscription
-        
-        if ENGINE is None:
+        engine = get_engine_for_event_loop()
+        if engine is None:
             return False, "Database not configured"
         
         # Check if payment was already processed (idempotency)
@@ -88,9 +88,9 @@ async def check_pending_payments(user_id: int) -> Optional[Dict]:
     Used in upgrade command to show payment status.
     """
     try:
-        from db.session import ENGINE, get_session
-        
-        if ENGINE is None:
+        from db.session import get_engine_for_event_loop, get_session
+        engine = get_engine_for_event_loop()
+        if engine is None:
             return None
         
         # This would check for unpaid subscriptions or pending transactions

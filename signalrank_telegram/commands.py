@@ -1138,8 +1138,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 	# Postgres-backed lookup (required for per-user delivery protection)
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is None:
 			raise RuntimeError("Postgres not configured")
 		from db.pg_features import list_signals_sent_today, get_delivered_signal_by_ref
 		from .formatter import format_signal, format_signal_free_limited
@@ -1302,8 +1303,9 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is None:
 			raise RuntimeError("Postgres not configured")
 		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal, get_or_create_user
 		from db.models import Signal, User, Outcome
@@ -1622,8 +1624,9 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	code = None
 	progress = None
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is not None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.pg_features import get_or_create_referral_code, get_referral_progress
 			async with get_session() as session:
 				code: str = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
@@ -1826,8 +1829,9 @@ async def recap_command(update, context):
 	user_id = update.effective_user.id
 	# Postgres-first recap (delivery-based)
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is not None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats
 			async with get_session() as session:
 				stats = await get_weekly_recap_stats(session, int(user_id))
@@ -1962,8 +1966,9 @@ async def start_command(update, context):
 	referral_outcome = None
 	# Prefer Postgres for user creation + referral attribution + audit (single session)
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is not None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.models import User
 			from sqlalchemy import select
 			from db.repository import get_or_create_user
@@ -2153,8 +2158,9 @@ async def performance_command(update, context):
 
 	# Prefer Postgres (deliveries + outcomes)
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is not None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.pg_features import get_user_performance_30d
 
 			# Fetch performance stats
@@ -2279,8 +2285,9 @@ async def stats_command(update, context) -> None:
 	user_id = update.effective_user.id
 	# Postgres-first
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is not None:
+		from db.session import get_engine_for_event_loop, get_session
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
 			async with get_session() as session:
 				week = await get_weekly_recap_stats(session, int(user_id))
@@ -2323,8 +2330,9 @@ async def history_command(update, context):
 
 	# Postgres-first
 	try:
-		from db.session import ENGINE, get_session
-		if ENGINE is not None:
+			from db.session import get_engine_for_event_loop, get_session
+			engine = get_engine_for_event_loop()
+			if engine is not None:
 			from db.pg_features import list_recent_signals_delivered
 			async with get_session() as session:
 				rows: list[Signal] = await list_recent_signals_delivered(
@@ -2398,8 +2406,9 @@ async def alerts_command(update, context) -> None:
 
 	async def _get_prefs() -> dict:
 		try:
-			from db.session import ENGINE, get_session
-			if ENGINE is not None:
+			from db.session import get_engine_for_event_loop, get_session
+			engine = get_engine_for_event_loop()
+			if engine is not None:
 				from db.pg_features import get_alert_prefs
 				async with get_session() as session:
 					prefs = await get_alert_prefs(session, int(user_id))

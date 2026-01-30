@@ -35,6 +35,7 @@ class Config:
 		# Payments and API keys
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
+		self.PAYSTACK_WEBHOOK_SECRET = os.getenv("PAYSTACK_WEBHOOK_SECRET", "")
 		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
 		self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 		self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
