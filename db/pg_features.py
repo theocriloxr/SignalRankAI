@@ -115,7 +115,7 @@ async def get_or_create_signal(
     signal: Dict[str, Any],
     dedup_hours: int = 24,
 ) -> Signal:
-    now: datetime = _utcnow()
+    now: datetime = _utcnow().replace(tzinfo=None)
     cutoff: datetime = now - timedelta(hours=max(1, int(dedup_hours)))
 
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()[:32]
@@ -1349,18 +1349,17 @@ async def queue_random_free_signals_for_all_users(
     for user in free_users:
         # Check user's daily window
         try:
-            anchor: datetime = user.created_at
-            window_start: datetime = now.astimezone(timezone.utc).replace(
+            anchor: datetime = user.created_at.replace(tzinfo=None)
+            window_start: datetime = now.replace(
                 hour=int(anchor.hour),
                 minute=int(anchor.minute),
                 second=int(anchor.second),
-                microsecond=0,
-                tzinfo=timezone.utc
+                microsecond=0
             )
             if window_start > now:
                 window_start: datetime = window_start - timedelta(days=1)
         except Exception:
-            window_start: datetime = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+            window_start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
         window_end: datetime = window_start + timedelta(days=1)
         
         # Check how many already queued/sent today
@@ -1386,7 +1385,7 @@ async def queue_random_free_signals_for_all_users(
         # Queue them
         delay_minutes: int = _env_int("FREE_DELAY_MINUTES", 30)
         for sig in random_signals:
-            deliver_after: datetime = now + timedelta(minutes=delay_minutes)
+            deliver_after: datetime = (now + timedelta(minutes=delay_minutes)).replace(tzinfo=None)
             q = FreeSignalQueue(
                 user_id=user.id,
                 date=window_start,
