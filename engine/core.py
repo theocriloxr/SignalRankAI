@@ -958,12 +958,12 @@ def main_loop(DRY_RUN=False):
                             if not is_valid:
                                 logger.warning(f"Signal validation failed for {symbol}: {error_desc}")
                                 if _env_bool("ENGINE_SIGNAL_DEBUG", False):
-                                        print(f"[VALIDATION FAILED] {symbol} {timeframe}: {error_desc}", flush=True)
-                                    # Skip storing invalid signal
-                                    continue
-                            except Exception as e:
-                                logger.error(f"Signal validation error: {e}")
-                                # If validation fails, continue storing (backward compatibility)
+                                    print(f"[VALIDATION FAILED] {symbol} {timeframe}: {error_desc}", flush=True)
+                                # Skip storing invalid signal
+                                continue
+                        except Exception as e:
+                            logger.error(f"Signal validation error: {e}")
+                            # If validation fails, continue storing (backward compatibility)
 
                             try:
                                 logger.info(f"[engine] storing signal: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')} entry={signal.get('entry')} tp={signal.get('take_profit')} sl={signal.get('stop_loss')}")
