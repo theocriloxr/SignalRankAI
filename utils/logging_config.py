@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+import logging
+import sys
+from typing import Optional
+
+
+def setup_logging(level: int = logging.INFO, json: bool = False) -> None:
+    """Basic logging setup used by scripts and main entrypoints.
+
+    - `json=True` will use a compact JSON formatter if available, otherwise
+      falls back to plain text.
+    """
+    root = logging.getLogger()
+    root.setLevel(level)
+    handler = logging.StreamHandler(stream=sys.stdout)
+    if json:
+        try:
+            import json as _json
+
+            class JsonFormatter(logging.Formatter):
+                def format(self, record: logging.LogRecord) -> str:
+                    payload = {
+                        "ts": int(record.created),
+                        "level": record.levelname,
+                        "name": record.name,
+                        "msg": record.getMessage(),
+                    }
+                    try:
+                        if record.exc_info:
+                            payload["exc"] = self.formatException(record.exc_info)
+                    except Exception:
+                        pass
+                    return _json.dumps(payload)
+
+            handler.setFormatter(JsonFormatter())
+        except Exception:
+            handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    else:
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+
+    # Remove other handlers to avoid duplicate logs in certain environments
+    for h in list(root.handlers):
+        root.removeHandler(h)
+
+    root.addHandler(handler)
+

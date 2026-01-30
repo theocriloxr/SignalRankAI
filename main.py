@@ -36,6 +36,12 @@ def _infer_run_mode() -> str:
 
 
 def main() -> None:
+    # Configure logging early so modules can log during init
+    try:
+        from utils.logging_config import setup_logging
+        setup_logging()
+    except Exception:
+        pass
     """Unified entrypoint with strict RUN_MODE separation and robust lifecycle.
     - Only one instance of each service (web, worker, bot, engine) per process.
     - RUN_MODE=all: runs each in a dedicated thread, with clear logs and error handling.

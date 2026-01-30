@@ -144,6 +144,7 @@ def _audit_handler(command_name: str, handler):
     return _inner
 
 from telegram.ext import Defaults
+import logging
 # Increase Telegram bot request timeout for connection pool exhaustion
 TELEGRAM_POOL_TIMEOUT = int(getattr(config, "TELEGRAM_POOL_TIMEOUT", 30))  # seconds, configurable
 TELEGRAM_CONNECT_TIMEOUT = int(getattr(config, "TELEGRAM_CONNECT_TIMEOUT", 30))  # seconds, configurable
@@ -171,6 +172,15 @@ else:
             return None
 
     application = _DummyApp()
+    # Log a non-blocking warning so operators see why the real bot isn't running
+    try:
+        _logger = logging.getLogger(__name__)
+        if _dry_run_env:
+            _logger.warning("TELEGRAM_BOT_TOKEN not used because DRY_RUN is enabled; bot disabled for this process.")
+        else:
+            _logger.warning("TELEGRAM_BOT_TOKEN not provided; Telegram bot is disabled in this process.")
+    except Exception:
+        pass
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
 from .commands import filter_command
