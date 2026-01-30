@@ -987,7 +987,9 @@ def main_loop(DRY_RUN=False):
                                 # If validation fails, continue storing (backward compatibility)
                             
                             try:
+                                logger.info(f"[engine] storing signal: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')} entry={signal.get('entry')} tp={signal.get('take_profit')} sl={signal.get('stop_loss')}")
                                 store_signal_compat(signal)
+                                logger.info(f"[engine] signal stored successfully: asset={signal.get('asset')} tf={signal.get('timeframe')} dir={signal.get('direction')} score={signal.get('score')}")
                                 cycle_stored += 1
                             except Exception as e:
                                 cycle_store_failures += 1
