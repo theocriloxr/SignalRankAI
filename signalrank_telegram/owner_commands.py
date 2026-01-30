@@ -150,9 +150,10 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await state.set_temp_owner(update.effective_user.id, ttl_seconds=24 * 3600)
 
     # Persist bypass usage + tier in Postgres (best-effort).
+
     try:
         from db.session import get_engine_for_event_loop, get_session
-            if get_engine_for_event_loop() is not None:
+        if get_engine_for_event_loop() is not None:
             from db.repository import get_or_create_user
             from db.models import AdminEvent
             from db.pg_features import record_bot_event
