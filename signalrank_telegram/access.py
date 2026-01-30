@@ -9,7 +9,6 @@ try:
     # ENGINE import removed; use get_engine_for_event_loop() if needed
 except Exception:  # pragma: no cover
     _resolve_user_tier_pg = None
-    _PG_ENGINE = None
 
 def resolve_user_tier(user_id):
     """Resolve user tier with priority: OWNER > ADMIN (temp) > DB tier > FREE.
@@ -44,7 +43,7 @@ def resolve_user_tier(user_id):
         pass
 
     # PRIORITY 3: Query Postgres for user's tier (fallback)
-    if _PG_ENGINE is None or _resolve_user_tier_pg is None:
+    if _resolve_user_tier_pg is None:
         # If Postgres not available, return FREE
         return "FREE"
 

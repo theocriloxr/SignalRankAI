@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Dict
 
 from db.session import get_session
+from db.session import get_database_url
 from utils.async_runner import run_sync
 
 
@@ -15,7 +16,9 @@ def _run(coro):
 
 
 def postgres_enabled() -> bool:
-    return ENGINE is not None
+    # Previously relied on a global ENGINE; use the session helper to
+    # determine whether a DATABASE_URL is configured instead.
+    return bool(get_database_url())
 
 
 def get_all_user_ids_compat() -> list[int]:

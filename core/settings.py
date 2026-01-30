@@ -3,9 +3,11 @@ from __future__ import annotations
 try:
     # pydantic v2 separates settings into pydantic_settings
     from pydantic_settings import BaseSettings
+    _PYDANTIC_V2_SETTINGS = True
 except Exception:
     try:
         from pydantic import BaseSettings
+        _PYDANTIC_V2_SETTINGS = False
     except Exception:
         raise
 from typing import Optional
@@ -36,14 +38,17 @@ class Settings(BaseSettings):
     TELEGRAM_READ_TIMEOUT: int = 30
     TELEGRAM_WRITE_TIMEOUT: int = 30
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-    # pydantic v2 uses `model_config` for settings; keep both for compatibility
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-    }
+    if not globals().get("_PYDANTIC_V2_SETTINGS", False):
+        class Config:
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+            extra = "ignore"
+    else:
+        model_config = {
+            "env_file": ".env",
+            "env_file_encoding": "utf-8",
+            "extra": "ignore",
+        }
 
 
 _settings: Settings | None = None

@@ -149,3 +149,24 @@ def get_regime_strategies():
 
 def weekly_job():
     return
+
+
+def adjust_weight_based_on_performance(perf: Optional[Dict[str, Any]]) -> Optional[float]:
+    """Adjust strategy weight based on recent performance.
+
+    Minimal backward-compatible placeholder: return None when no performance
+    data is provided. Real implementation will use CV and smoothing.
+    """
+    if perf is None:
+        return None
+    # Placeholder logic: no-op for now
+    return None
+
+
+def disable_strategies_with_drawdown() -> list:
+    """Placeholder to disable strategies when drawdown thresholds exceeded.
+
+    Returns an empty list for now; real implementation will inspect
+    portfolio/strategy metrics and return strategy names to disable.
+    """
+    return None
