@@ -1,3 +1,6 @@
+def best_stock_strategies(asset, market_data, regime):
+    # Use the best available stock strategies (example: SMA crossover)
+    return stock_strategies(asset, '1h', market_data)
 from .base import BaseStrategy
 
 def stock_trend_strategy(asset, timeframe, market_data):

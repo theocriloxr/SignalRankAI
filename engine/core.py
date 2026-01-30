@@ -480,13 +480,16 @@ def main_loop(DRY_RUN=False):
                     continue
 
                 regime = detect_market_regime(market_data)
-                strategy_signals = run_all_strategies(
-                    asset,
-                    market_data,
-                    regime,
-                    strategy_weights=strategy_weights,
-                    regime_strategies=regime_strategies,
-                )
+                from engine.strategy_selector import get_best_strategies_for_asset
+                strategies = get_best_strategies_for_asset(asset)
+                strategy_signals = []
+                if callable(strategies):
+                    # Single strategy function
+                    strategy_signals.extend(strategies(asset, market_data, regime))
+                elif isinstance(strategies, (list, tuple)):
+                    # List of strategy functions
+                    for strat in strategies:
+                        strategy_signals.extend(strat(asset, market_data, regime))
                 logger.info(f"[engine] asset={asset} strategy_signals_generated={len(strategy_signals) if strategy_signals else 0}")
 
                 # Normalization
