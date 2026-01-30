@@ -430,6 +430,7 @@ def main_loop(DRY_RUN=False):
         new_degraded_assets = set()
 
         for asset in assets:
+            logger.info(f"[engine] pipeline: starting asset={asset}")
 
             try:
                 market_data = (all_market_data or {}).get(asset) or {}
@@ -487,6 +488,88 @@ def main_loop(DRY_RUN=False):
                     regime_strategies=regime_strategies,
                 )
                 logger.info(f"[engine] asset={asset} strategy_signals_generated={len(strategy_signals) if strategy_signals else 0}")
+
+                # Normalization
+                from engine.signal_controller import SignalController
+                controller = SignalController()
+                normalized_signals = controller.normalize_signals(strategy_signals)
+                logger.info(f"[engine] asset={asset} normalized_signals={len(normalized_signals) if normalized_signals else 0}")
+
+                # Consensus
+                from engine.consensus import consensus_filter
+                consensus_signals = consensus_filter(normalized_signals)
+                logger.info(f"[engine] asset={asset} consensus_signals={len(consensus_signals) if consensus_signals else 0}")
+
+                # Pick best direction
+                selected_signals = controller.pick_best_direction_per_pair(consensus_signals)
+                logger.info(f"[engine] asset={asset} selected_signals={len(selected_signals) if selected_signals else 0}")
+
+                # Deduplication
+                from db.pg_features import compute_signal_fingerprint
+                unique_signals = []
+                seen_fingerprints = set()
+                for sig in selected_signals:
+                    fp = compute_signal_fingerprint(sig)
+                    sig["fingerprint"] = fp
+                    if fp in seen_fingerprints:
+                        continue
+                    seen_fingerprints.add(fp)
+                    unique_signals.append(sig)
+                selected_signals = unique_signals
+                logger.info(f"[engine] asset={asset} deduped_signals={len(selected_signals) if selected_signals else 0}")
+
+                # Strict filtering
+                from engine.signal_validator import validate_signal
+                from engine.risk import risk_check
+                from engine.scoring import score_signal, calculate_confluence
+                strict_signals = []
+                for sig in selected_signals:
+                    is_valid, err = validate_signal(sig)
+                    if not is_valid:
+                        continue
+                    account_state = type('AccountState', (), {'drawdown': 0.0})()
+                    if not risk_check(sig, account_state):
+                        continue
+                    confluence = calculate_confluence(sig)
+                    if confluence < 50:
+                        continue
+                    if sig.get("ml_probability") is not None and float(sig["ml_probability"]) < 0.5:
+                        continue
+                    score = score_signal(sig)
+                    if score < MIN_SCORE_THRESHOLD:
+                        continue
+                    sig["score"] = score
+                    strict_signals.append(sig)
+                selected_signals = strict_signals
+                logger.info(f"[engine] asset={asset} strict_signals={len(selected_signals) if selected_signals else 0}")
+
+                # ML Layer
+                from ml.features import extract_features
+                from ml.inference import MLFilter
+                ml_filter = MLFilter()
+                ml_signals = []
+                try:
+                    ml_threshold = float((os.getenv("ML_PROB_THRESHOLD") or "0.65").strip())
+                except Exception:
+                    ml_threshold = 0.65
+                for signal in selected_signals:
+                    if getattr(ml_filter, "active", False):
+                        features = extract_features(signal, market_data)
+                        try:
+                            approved, probability = ml_filter.ml_filter(features, threshold=ml_threshold)
+                        except Exception:
+                            approved, probability = True, None
+                    else:
+                        approved, probability = True, None
+                    if not approved:
+                        continue
+                    signal["ml_probability"] = probability
+                    ml_signals.append(signal)
+                logger.info(f"[engine] asset={asset} ml_signals={len(ml_signals) if ml_signals else 0}")
+
+                # Scoring and storage
+                for signal in ml_signals:
+                    logger.info(f"[engine] asset={asset} final_signal: score={signal.get('score')} entry={signal.get('entry')} tp={signal.get('take_profit')} sl={signal.get('stop_loss')}")
 
                 try:
                     cycle_candidates += len(strategy_signals or [])
