@@ -16,7 +16,7 @@ except ImportError:
     def is_commodity(asset: Any) -> bool:
         return False
 from data.market_data import fetch_market_data_cached
-from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers
+from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers, get_all_tradable_assets
 from data.indicators import calculate_indicators
 from engine.regime import detect_market_regime
 from engine.risk_manager import RiskManager, CorrelationManager
