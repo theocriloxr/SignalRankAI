@@ -323,3 +323,16 @@ class RuntimeState(Base):
     value: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class DecisionLog(Base):
+    __tablename__ = "decision_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, nullable=True)
+    asset: Mapped[Optional[str]] = mapped_column(String(32), index=True, nullable=True)
+    timeframe: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    decision: Mapped[str] = mapped_column(String(32), index=True, nullable=False)  # e.g., issued/filtered/rejected
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)

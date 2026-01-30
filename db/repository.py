@@ -178,3 +178,35 @@ async def expire_subscriptions(session: AsyncSession) -> int:
     # SQLAlchemy typing doesn't guarantee rowcount; treat missing as 0.
     rowcount = getattr(res, "rowcount", None)
     return int(rowcount or 0)
+
+
+async def persist_decision_log(
+    session: AsyncSession,
+    signal_id: str | None,
+    asset: str | None,
+    timeframe: str | None,
+    decision: str,
+    reason: str | None = None,
+    meta: dict | None = None,
+) -> int:
+    """Persist a decision/annotation about a signal or market evaluation.
+
+    Returns inserted row id (when available) or 0.
+    """
+    from db.models import DecisionLog
+
+    dl = DecisionLog(
+        signal_id=signal_id,
+        asset=asset,
+        timeframe=timeframe,
+        decision=decision,
+        reason=reason,
+        meta=meta or {},
+    )
+    session.add(dl)
+    await session.flush()
+    # SQLAlchemy may not expose inserted primary key in all backends; try to return it.
+    try:
+        return int(dl.id or 0)
+    except Exception:
+        return 0
