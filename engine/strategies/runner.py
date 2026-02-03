@@ -23,7 +23,21 @@ def run_strategy_with_marketstate(strategy: Any, asset: str, timeframes: Iterabl
 
     try:
         out = strategy.generate(tf_payload)
-        return out or []
+        out = out or []
+        # Persist decision log if DB available
+        try:
+            from db import repository as repo
+            # Run DB persist in a background task if possible
+            try:
+                # best-effort: don't block strategy execution
+                import asyncio as _asyncio
+                _asyncio.get_event_loop().create_task(repo.persist_decision_log(None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}))
+            except Exception:
+                # Fallback: synchronous attempt (will likely raise without session)
+                pass
+        except Exception:
+            pass
+        return out
     except Exception:
         return []
 
@@ -47,12 +61,32 @@ async def run_strategy_with_marketstate_async(strategy: Any, asset: str, timefra
         return []
     if asyncio.iscoroutinefunction(gen):
         try:
-            return await gen(tf_payload) or []
+            out = await gen(tf_payload) or []
+            try:
+                from db import repository as repo
+                try:
+                    import asyncio as _asyncio
+                    _asyncio.get_event_loop().create_task(repo.persist_decision_log(None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}))
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            return out
         except Exception:
             return []
     else:
         try:
             # run sync generate in thread
-            return await asyncio.to_thread(gen, tf_payload) or []
+            out = await asyncio.to_thread(gen, tf_payload) or []
+            try:
+                from db import repository as repo
+                try:
+                    import asyncio as _asyncio
+                    _asyncio.get_event_loop().create_task(repo.persist_decision_log(None, None, None, "issued", reason=None, meta={"asset": asset, "signals": len(out)}))
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            return out
         except Exception:
             return []

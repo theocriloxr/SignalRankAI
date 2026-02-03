@@ -35,6 +35,18 @@ async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml
         try:
             res = await run_once(assets, timeframes, include_ml=include_ml)
             logger.info("engine cycle completed: %s", {k: len(v) for k, v in res.items()})
+            # Persist decision_log for assets with no signals (filtered)
+            try:
+                from db import repository as repo
+                for asset, signals in res.items():
+                    if not signals:
+                        try:
+                            # Best-effort: schedule persistence
+                            asyncio.get_event_loop().create_task(repo.persist_decision_log(None, asset, None, "filtered", reason="no_signals", meta={}))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
         except Exception:
             logger.exception("engine main loop failed")
         await asyncio.sleep(interval_seconds)
