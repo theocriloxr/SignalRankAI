@@ -28,7 +28,8 @@ class User(Base):
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     tier: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="free")
-    referral_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)  # Tracks referrals toward next reward
+    referral_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
+    premium_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Premium/VIP expiry
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")  # type: ignore[name-defined]
@@ -244,8 +245,19 @@ class ReferralCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
-class ReferralAttribution(Base):
+class Referral(Base):
     __tablename__ = "referrals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    referrer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    is_successful: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reward_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    successful_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+class ReferralAttribution(Base):
+    __tablename__ = "referral_attribution_legacy"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)

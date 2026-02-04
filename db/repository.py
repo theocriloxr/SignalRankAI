@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -9,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
-from db.models import Subscription, User
+from db.models import Subscription, User, Signal, DecisionLog
+from db.session import async_session
 
 
 def _env_int(name: str, default: int) -> int:
@@ -181,7 +183,6 @@ async def expire_subscriptions(session: AsyncSession) -> int:
 
 
 async def persist_decision_log(
-    session: AsyncSession,
     signal_id: str | None,
     asset: str | None,
     timeframe: str | None,
@@ -193,20 +194,54 @@ async def persist_decision_log(
 
     Returns inserted row id (when available) or 0.
     """
-    from db.models import DecisionLog
-
-    dl = DecisionLog(
-        signal_id=signal_id,
-        asset=asset,
-        timeframe=timeframe,
-        decision=decision,
-        reason=reason,
-        meta=meta or {},
-    )
-    session.add(dl)
-    await session.flush()
-    # SQLAlchemy may not expose inserted primary key in all backends; try to return it.
     try:
-        return int(dl.id or 0)
-    except Exception:
+        async with async_session() as session:
+            dl = DecisionLog(
+                signal_id=signal_id,
+                asset=asset,
+                timeframe=timeframe,
+                decision=decision,
+                reason=reason,
+                meta=meta or {},
+            )
+            session.add(dl)
+            await session.flush()
+            try:
+                return int(dl.id or 0)
+            except Exception:
+                return 0
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to persist decision log: {e}")
         return 0
+
+
+async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
+    """Persist a new signal to database."""
+    try:
+        async with async_session() as session:
+            # Convert take_profit list to JSON string
+            tp_json = json.dumps(signal_data.get('take_profit', []))
+            
+            signal = Signal(
+                asset=signal_data.get('asset'),
+                timeframe=signal_data.get('timeframe'),
+                direction=signal_data.get('direction'),
+                entry=signal_data.get('entry'),
+                stop_loss=signal_data.get('stop_loss'),
+                take_profit=tp_json,
+                score=signal_data.get('score', 70),
+                strategy_name=signal_data.get('strategy_name', 'unknown'),
+                strategy_group=signal_data.get('strategy_group', 'mixed'),
+                strength=signal_data.get('confidence', 0.7),
+                ml_probability=signal_data.get('ml_probability'),
+                created_at=datetime.utcnow(),
+            )
+            
+            session.add(signal)
+            await session.flush()
+            return signal
+    except Exception as e:
+        import logging
+        logging.error(f"Failed to persist signal: {e}")
+        return None
