@@ -26,11 +26,15 @@ class Config:
 		# Telegram bot and owner(s)
 		self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 		self.OWNER_TELEGRAM_ID = self._env_int("TELEGRAM_OWNER_ID", 0)
+		if not self.OWNER_TELEGRAM_ID:
+			self.OWNER_TELEGRAM_ID = self._env_int("OWNER_TELEGRAM_ID", 0)
 		self.OWNER_TELEGRAM_IDS = self._env_int_set("OWNER_TELEGRAM_IDS")
+		self.OWNER_IDS = self._env_int_set("OWNER_IDS")
 		self.owner_ids: set[int] = set()
 		if self.OWNER_TELEGRAM_ID:
 			self.owner_ids.add(self.OWNER_TELEGRAM_ID)
 		self.owner_ids |= self.OWNER_TELEGRAM_IDS
+		self.owner_ids |= self.OWNER_IDS
 
 		# Payments and API keys
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
