@@ -42,6 +42,10 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
     from .stock import stock_strategies
     for timeframe, data in market_data.items():
+        if not isinstance(data, dict):
+            continue
+        if 'indicators' not in data or 'candles' not in data:
+            continue
         # Only allow lower timeframe trades in direction of HTF bias
         if timeframe in ["5m", "15m", "1h"] and htf_bias:
             allowed_direction = htf_bias

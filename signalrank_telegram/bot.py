@@ -1289,6 +1289,27 @@ def run_bot() -> None:
 
     application = Application.builder().token(_require_telegram_token()).build()
 
+    # Acquire a global DB advisory lock to prevent multiple pollers across replicas.
+    try:
+        from db.session import get_session
+        from sqlalchemy import text
+
+        lock_id = int(os.getenv("TELEGRAM_BOT_LOCK_ID", "739105"))
+
+        async def _try_lock() -> bool:
+            async with get_session() as session:
+                res = await session.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_id})
+                val = res.scalar()
+                await session.commit()
+                return bool(val)
+
+        if not run_sync(_try_lock()):
+            print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
+            return
+    except Exception:
+        # If DB is unavailable, fall back to running (single-instance environments).
+        pass
+
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
         print(f"[bot] error: {err}", flush=True)
@@ -1400,12 +1421,6 @@ def run_bot() -> None:
             return
 
     # Initialize and schedule jobs
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='mon', hour=8, minute=0)
-    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1)
-    scheduler.start()
-
-
     def send_outcome_notifications():
         # Send outcome notifications only once per outcome (notified_at tracks this).
         # Fetches unnotified outcomes and sends them to all users who received the signal.
@@ -2012,15 +2027,10 @@ def run_bot() -> None:
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
     scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)  # Only sends unnotified outcomes (sends once per outcome)
+    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1)
     # Distribute random signals to FREE users every 15 minutes
     scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15)
-    scheduler.add_job(
-        send_weekly_recap,
-        'cron',
-        day_of_week='sun',
-        hour=18,
-        minute=0
-    )
+    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0)
     # Auto-downgrade expired subscriptions (daily at 00:00 UTC)
     scheduler.add_job(
         downgrade_expired_subscriptions_job,
