@@ -30,7 +30,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	support_contact = "@YourSupportUsername"  # TODO: Set your real support contact here
+	support_contact = "@theocrilox"
 	await update.message.reply_text(f"For help or questions, contact support: {support_contact}")
 # Import actual owner/admin command handlers
 from signalrank_telegram.owner_commands import owner_users, owner_revenue, correct_signal

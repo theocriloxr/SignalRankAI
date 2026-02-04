@@ -325,6 +325,25 @@ class RuntimeState(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class MLRejectedSignal(Base):
+    """Track signals rejected by ML for training improvement."""
+    __tablename__ = "ml_rejected_signals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    entry: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[str] = mapped_column(Text, nullable=False)
+    ml_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    rejection_reason: Mapped[str] = mapped_column(String(128), nullable=False)
+    features: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    actual_outcome: Mapped[Optional[str]] = mapped_column(String(32), index=True, nullable=True)
+    outcome_tracked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class DecisionLog(Base):
     __tablename__ = "decision_log"
 
