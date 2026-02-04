@@ -176,7 +176,7 @@ class SignalController:
         return out
 
     def cap_correlation(self, signals: List[Signal]) -> List[Signal]:
-        # Placeholder correlation cap: one per asset (highest score wins)
+        # Correlation cap: one per asset (highest score wins)
         best: Dict[str, Signal] = {}
         for s in signals:
             asset = str(s.get("asset") or "")
@@ -223,7 +223,7 @@ class SignalController:
         Enforces:
         - Consensus: >= 3 strategies
         - Group coverage: (Trend or Structure) + Momentum + (Volatility or Volume)
-        - HTF alignment hook (placeholder): allowed only if aligned
+        - HTF alignment hook: allowed only if aligned
         - Scoring + thresholds (0-100)
         """
 

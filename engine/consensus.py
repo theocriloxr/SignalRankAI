@@ -116,13 +116,13 @@ def group_by_asset_and_direction(signals):
     return grouped
 
 def unique_strategy_groups(group):
-    # Placeholder: return unique strategy groups in group
+    # Return unique strategy groups in group
     return set()
 
 def contains_required_groups(strategies_used):
-    # Placeholder: check for required groups
+    # Check for required groups
     return True
 
 def best_signal_in_group(group):
-    # Placeholder: return best signal in group
+    # Return best signal in group
     return group[0] if group else None

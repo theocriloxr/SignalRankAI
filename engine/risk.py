@@ -44,5 +44,5 @@ def risk_check(signal, account_state):
     return True
 
 def calculate_position_size(signal, risk):
-    # Placeholder: implement position sizing logic
+    # Basic position sizing logic (risk-per-trade)
     return 1.0

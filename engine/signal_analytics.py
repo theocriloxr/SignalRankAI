@@ -37,11 +37,10 @@ class SignalAnalytics:
             }
 
     def flush(self):
-        # Placeholder: Write stats to DB, file, or external analytics system
+        """Flush analytics to logs and reset counters."""
         stats = self.get_stats()
         print("[analytics] Flushing stats:", stats, flush=True)
         self.last_flush = time.time()
-        # Reset counters if needed
         with self.lock:
             self.delivery_stats.clear()
             self.fill_rates.clear()

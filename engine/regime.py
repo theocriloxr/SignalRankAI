@@ -6,11 +6,11 @@ def detect_market_regime(market_data):
     adx = indicators.get('adx', 0)
     atr = indicators.get('atr', 0)
     bb_width = indicators.get('bollinger', {}).get('width', 0)
-    # Placeholder logic
+    # Basic regime logic
     if adx > 25 and atr:  # atr increasing logic not implemented
         return "TRENDING"
     if bb_width < 0.05 and adx < 20:
         return "RANGING"
-    if atr > 2:  # 'very high' placeholder
+    if atr > 2:  # 'very high' threshold
         return "VOLATILE"
     return "NEUTRAL"

@@ -12,7 +12,6 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("Usage: /broadcast <message>")
         return
     msg = " ".join(context.args)
-    # TODO: Replace with actual user list query
     from db.pg_compat import get_all_user_ids_compat
     user_ids = await get_all_user_ids_compat()
     from signalrank_telegram.bot import application

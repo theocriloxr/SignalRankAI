@@ -6,6 +6,58 @@ from db.repository import get_active_subscription
 from engine.market_state import get_market_state_async
 from engine.strategies.signal_generator import SignalGenerator
 from data.news import get_news_sentiment, fetch_news_headlines
+import inspect
+from core.redis_state import KillSwitchState, state
+
+TIER_RANKS: dict[str, int] = {
+	"FREE": 0,
+	"PREMIUM": 1,
+	"VIP": 2,
+	"OWNER": 3,
+}
+
+def tier_rank(tier) -> int:
+	return TIER_RANKS.get(tier, 0)
+
+def require_tier(min_tier):
+	def wrapper(func):
+		async def inner(update, context):
+			if update.effective_user is None or update.message is None:
+				return
+			user_id = update.effective_user.id
+			# Global kill-switch
+			try:
+				ks: KillSwitchState = state.get_killswitch_sync()
+			except Exception:
+				ks: KS = type("KS", (), {"enabled": False})()
+			if getattr(ks, "enabled", False):
+				await update.message.reply_text("🚨 Signals are temporarily paused.")
+				return
+
+			# Rate limit (20/min)
+			try:
+				limited: bool = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
+			except Exception:
+				limited = False
+			if limited:
+				await update.message.reply_text("Rate limit exceeded. Please wait.")
+				return
+			tier: str = _effective_tier(user_id)
+			if tier_rank(tier) < tier_rank(min_tier):
+				try:
+					from .command_access import check_command_access
+					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
+					_, reason = check_command_access(cmd_name, tier)
+				except Exception:
+					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+				await update.message.reply_text(reason)
+				return
+			result = func(update, context)
+			if inspect.isawaitable(result):
+				return await result
+			return result
+		return inner
+	return wrapper
 # --- USER COMMAND: /status ---
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
@@ -13,6 +65,22 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database not configured.")
 		return
+	try:
+		async with get_session() as session:
+			sub = await get_active_subscription(session, telegram_user_id=update.effective_user.id)
+			await session.commit()
+		if sub is None:
+			await update.message.reply_text("You are on the FREE tier. Upgrade for more features!")
+			return
+		tier = getattr(sub, "tier", "free").upper()
+		expires = getattr(sub, "expires_at", None)
+		status = getattr(sub, "status", "inactive").capitalize()
+		msg = f"\n<b>Subscription Status</b>\nTier: <b>{tier}</b>\nStatus: <b>{status}</b>"
+		if expires:
+			msg += f"\nExpires: <b>{expires.strftime('%Y-%m-%d %H:%M')}</b>"
+		await update.message.reply_text(msg, parse_mode="HTML")
+	except Exception as e:
+		await update.message.reply_text(f"Unable to fetch status: {e}")
 
 from sqlalchemy import Result
 
@@ -1756,59 +1824,7 @@ async def recap_command(update, context):
 		f"• Best-performing strategy: {best_strategy}"
 	)
 
-
-TIER_RANKS: dict[str, int] = {
-	"FREE": 0,
-	"PREMIUM": 1,
-	"VIP": 2,
-	"OWNER": 3
-}
-
-def tier_rank(tier) -> int:
-	return TIER_RANKS.get(tier, 0)
-
-
-
 from core.performance import strategy_stats
-
-def require_tier(min_tier):
-	def wrapper(func):
-		async def inner(update, context):
-			if update.effective_user is None or update.message is None:
-				return
-			user_id = update.effective_user.id
-			# Global kill-switch
-			try:
-				ks: KillSwitchState = state.get_killswitch_sync()
-			except Exception:
-				ks: KS = type("KS", (), {"enabled": False})()
-			if getattr(ks, "enabled", False):
-				await update.message.reply_text("🚨 Signals are temporarily paused.")
-				return
-
-			# Rate limit (20/min)
-			try:
-				limited: bool = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
-			except Exception:
-				limited = False
-			if limited:
-				await update.message.reply_text("Rate limit exceeded. Please wait.")
-			tier: str = _effective_tier(user_id)
-			if tier_rank(tier) < tier_rank(min_tier):
-				try:
-					from .command_access import check_command_access
-					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
-					_, reason = check_command_access(cmd_name, tier)
-				except Exception:
-					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
-				await update.message.reply_text(reason)
-				return
-			result = func(update, context)
-			if inspect.isawaitable(result):
-				return await result
-			return result
-		return inner
-	return wrapper
 
 
 # /start or welcome message

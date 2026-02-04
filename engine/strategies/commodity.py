@@ -10,7 +10,7 @@ class CommodityStrategy(Strategy):
     name = "commodity_simple"
 
     def generate(self, market_data: dict) -> List[Signal]:
-        """Simple momentum strategy for commodities as placeholder.
+        """Simple momentum strategy for commodities.
 
         Expects market_data to contain `timeframes` -> candle lists and `indicators`.
         """
