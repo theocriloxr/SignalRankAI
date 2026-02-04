@@ -2056,6 +2056,17 @@ def run_bot() -> None:
     )
     scheduler.start()
 
+    # Ensure an event loop exists for PTB on Python 3.12+
+    try:
+        import asyncio as _asyncio
+        try:
+            _asyncio.get_event_loop()
+        except RuntimeError:
+            loop = _asyncio.new_event_loop()
+            _asyncio.set_event_loop(loop)
+    except Exception:
+        pass
+
     print("[boot] telegram bot polling starting", flush=True)
     application.run_polling()
 
