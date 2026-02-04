@@ -98,6 +98,7 @@ def require_tier(min_tier):
 	return wrapper
 
 # --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
+@require_tier("PREMIUM")
 async def reports_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
@@ -119,6 +120,7 @@ async def reports_command(update, context) -> None:
 	else:
 		await update.message.reply_text("Usage: /reports on|off")
 # --------- CUSTOM SIGNAL FILTERS COMMAND ---------
+@require_tier("PREMIUM")
 async def filter_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
@@ -210,6 +212,7 @@ except Exception:
 	set_user_api_key = lambda user_id, key: None
 	get_user_api_key = lambda user_id: None
 
+@require_tier("PREMIUM")
 async def apikey_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
@@ -459,6 +462,7 @@ from .user_prefs import user_prefs_store
 from telegram import Update
 from telegram.ext import ContextTypes
 # --------- NOTIFICATION CUSTOMIZATION COMMAND ---------
+@require_tier("PREMIUM")
 async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Let users customize which assets, timeframes, or strategies they want to receive signals for.
 	Usage:
@@ -506,6 +510,7 @@ async def notify_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		await update.message.reply_text("Usage: /notify assets|timeframes|strategies <comma-separated-list> OR /notify clear")
 # --------- FEEDBACK COMMAND ---------
 from .feedback import feedback_store
+@require_tier("PREMIUM")
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Allow non-free users to rate a signal or report an issue. Usage: /feedback <signal_ref> <rating|issue> [comment]"""
 	if await _public_guard(update):
@@ -659,6 +664,7 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	await update.message.reply_text(msg, parse_mode="Markdown")
 
 # --------- DASHBOARD COMMAND ---------
+@require_tier("PREMIUM")
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
 		return

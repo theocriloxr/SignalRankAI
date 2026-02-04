@@ -78,3 +78,13 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         raise RuntimeError("DATABASE_URL is not configured")
     async with SessionLocal() as session:
         yield session
+
+
+# Backward-compatible alias used by repository and other modules.
+@asynccontextmanager
+async def async_session() -> AsyncIterator[AsyncSession]:
+    SessionLocal = get_sessionmaker_for_event_loop()
+    if SessionLocal is None:
+        raise RuntimeError("DATABASE_URL is not configured")
+    async with SessionLocal() as session:
+        yield session

@@ -23,6 +23,9 @@ COMMAND_TIERS = {
     "recap": "FREE",
     "buy_extra_signals": "FREE",
     "unlock": "FREE",  # Needed for admins to regain access via bypass key
+    "language": "FREE",
+    "referral_leaderboard": "FREE",
+    "referral_rewards": "FREE",
     
     # PREMIUM COMMANDS
     "performance": "PREMIUM",
@@ -33,6 +36,10 @@ COMMAND_TIERS = {
     "analyze": "PREMIUM",
     "dashboard": "PREMIUM",
     "feedback": "PREMIUM",
+    "apikey": "PREMIUM",
+    "filter": "PREMIUM",
+    "reports": "PREMIUM",
+    "notify": "PREMIUM",
     
     # VIP COMMANDS
     "elite": "VIP",
