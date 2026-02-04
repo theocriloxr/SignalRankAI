@@ -1,5 +1,13 @@
 import os
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    try:
+        raw = (os.getenv(name) or str(default)).strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+    except Exception:
+        return default
+
 from .trend import trend_strategies
 from .momentum import momentum_strategies
 from .volatility import volatility_strategies
@@ -107,5 +115,4 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 except Exception:
                     pass
     
-    return signals
     return signals
