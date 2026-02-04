@@ -2059,22 +2059,12 @@ def run_bot() -> None:
     # Run polling with an explicit event loop (Python 3.12 safe)
     try:
         import asyncio as _asyncio
-
-        async def _poll() -> None:
-            await application.initialize()
-            await application.start()
-            if application.updater is not None:
-                await application.updater.start_polling()
-                await application.updater.wait_until_closed()
-            await application.stop()
-            await application.shutdown()
-
-        print("[boot] telegram bot polling starting", flush=True)
         loop = _asyncio.new_event_loop()
         _asyncio.set_event_loop(loop)
-        loop.run_until_complete(_poll())
+        print("[boot] telegram bot polling starting", flush=True)
+        application.run_polling()
     except Exception:
-        # Fall back to PTB helper if manual loop fails
+        # Last resort: retry without custom loop
         print("[boot] telegram bot polling starting", flush=True)
         application.run_polling()
 
