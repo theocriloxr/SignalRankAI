@@ -245,23 +245,15 @@ class ReferralCode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
-class Referral(Base):
-    __tablename__ = "referrals"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    referrer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
-    referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
-    is_successful: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    reward_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    successful_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
-
 class ReferralAttribution(Base):
-    __tablename__ = "referral_attribution_legacy"
+    __tablename__ = "referrals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     referred_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
     referrer_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    is_successful: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reward_applied: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    successful_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     referrer_notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # When referrer was notified
 

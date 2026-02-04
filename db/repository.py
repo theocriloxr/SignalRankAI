@@ -235,6 +235,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 strategy_group=signal_data.get('strategy_group', 'mixed'),
                 strength=signal_data.get('confidence', 0.7),
                 ml_probability=signal_data.get('ml_probability'),
+                fingerprint=f"{signal_data.get('asset')}_{signal_data.get('timeframe')}_{signal_data.get('direction')}_{int(signal_data.get('entry') or 0)}",
                 created_at=datetime.utcnow(),
             )
             

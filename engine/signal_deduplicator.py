@@ -32,8 +32,8 @@ class SignalDeduplicator:
                     Signal.asset == asset,
                     Signal.timeframe == timeframe,
                     Signal.direction == direction,
-                    Signal.entry_price >= entry_price * 0.99,
-                    Signal.entry_price <= entry_price * 1.01,
+                    Signal.entry >= entry_price * 0.99,
+                    Signal.entry <= entry_price * 1.01,
                     Signal.created_at >= cutoff
                 ).limit(1)
                 

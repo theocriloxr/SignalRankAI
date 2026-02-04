@@ -81,6 +81,7 @@ class SignalGenerator:
             self._volume_breakout,
             self._bollinger_bounce,
             self._range_expansion,
+            self._donchian_breakout,
             self._rsi_divergence,
             self._stochastic_reversal,
             self._momentum_divergence,
@@ -480,6 +481,49 @@ class SignalGenerator:
                 score=score, strategy_name='range_expansion', strategy_group='breakout',
                 ml_features={'range_ratio': float(curr_range / range_20)},
                 confidence=0.72
+            )
+        except Exception:
+            return None
+
+    def _donchian_breakout(self, asset: str, timeframe: str, candles: List, indicators: Dict) -> Optional[StrategySignal]:
+        """Donchian Channel Breakout (20-period)."""
+        try:
+            if len(candles) < 21:
+                return None
+
+            close = candles[-1]['close']
+            if close == 0:
+                return None
+
+            high_20 = max([c['high'] for c in candles[-20:]])
+            low_20 = min([c['low'] for c in candles[-20:]])
+
+            if close > high_20:
+                direction = 'long'
+            elif close < low_20:
+                direction = 'short'
+            else:
+                return None
+
+            score = 74
+            mid = (high_20 + low_20) / 2
+
+            return StrategySignal(
+                asset=asset, timeframe=timeframe, direction=direction,
+                entry=close,
+                stop_loss=mid,
+                take_profit=[
+                    {'price': close * 1.04, 'pct': 4.0, 'exit_percent': 33},
+                    {'price': close * 1.08, 'pct': 8.0, 'exit_percent': 33},
+                    {'price': close * 1.12, 'pct': 12.0, 'exit_percent': 34},
+                ] if direction == 'long' else [
+                    {'price': close * 0.96, 'pct': -4.0, 'exit_percent': 33},
+                    {'price': close * 0.92, 'pct': -8.0, 'exit_percent': 33},
+                    {'price': close * 0.88, 'pct': -12.0, 'exit_percent': 34},
+                ],
+                score=score, strategy_name='donchian_breakout', strategy_group='breakout',
+                ml_features={'donchian_width': float((high_20 - low_20) / close)},
+                confidence=0.74
             )
         except Exception:
             return None

@@ -75,6 +75,11 @@ async def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bo
     return out
 
 
+async def get_market_state_async(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
+    """Async wrapper for compatibility with existing callers."""
+    return await get_market_state(asset, timeframes, include_ml=include_ml)
+
+
 def get_market_state_sync(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
     """Sync wrapper for code that expects blocking call; runs async get_market_state safely."""
     return run_sync(get_market_state(asset, timeframes, include_ml=include_ml))

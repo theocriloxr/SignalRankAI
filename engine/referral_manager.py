@@ -4,7 +4,7 @@ Referral reward system: 3 successful referrals = 7-day premium upgrade.
 import logging
 from datetime import datetime, timedelta
 from typing import Tuple, bool
-from db.models import User, Referral
+from db.models import User, ReferralAttribution
 from db.session import async_session
 from sqlalchemy import select, func
 
@@ -20,9 +20,9 @@ class ReferralManager:
         """Get successful referral count for user."""
         try:
             async with async_session() as session:
-                stmt = select(func.count(Referral.id)).where(
-                    Referral.referrer_id == user_id,
-                    Referral.is_successful == True
+                stmt = select(func.count(ReferralAttribution.id)).where(
+                    ReferralAttribution.referrer_user_id == user_id,
+                    ReferralAttribution.is_successful == True
                 )
                 result = await session.execute(stmt)
                 return result.scalar() or 0
@@ -39,10 +39,10 @@ class ReferralManager:
         try:
             async with async_session() as session:
                 # Get current referral count
-                stmt = select(func.count(Referral.id)).where(
-                    Referral.referrer_id == referrer_id,
-                    Referral.is_successful == True,
-                    Referral.reward_applied == False
+                stmt = select(func.count(ReferralAttribution.id)).where(
+                    ReferralAttribution.referrer_user_id == referrer_id,
+                    ReferralAttribution.is_successful == True,
+                    ReferralAttribution.reward_applied == False
                 )
                 result = await session.execute(stmt)
                 count = result.scalar() or 0
@@ -73,10 +73,10 @@ class ReferralManager:
                         user.premium_until += timedelta(days=self.REWARD_DAYS)
                 
                 # Mark reward as applied
-                ref_stmt = select(Referral).where(
-                    Referral.referrer_id == referrer_id,
-                    Referral.is_successful == True,
-                    Referral.reward_applied == False
+                ref_stmt = select(ReferralAttribution).where(
+                    ReferralAttribution.referrer_user_id == referrer_id,
+                    ReferralAttribution.is_successful == True,
+                    ReferralAttribution.reward_applied == False
                 ).limit(self.REFS_FOR_REWARD)
                 
                 ref_result = await session.execute(ref_stmt)
@@ -100,8 +100,8 @@ class ReferralManager:
         """Record a referral relationship."""
         try:
             async with async_session() as session:
-                referral = Referral(
-                    referrer_id=referrer_id,
+                referral = ReferralAttribution(
+                    referrer_user_id=referrer_id,
                     referred_user_id=referred_user_id,
                     is_successful=is_successful,
                     reward_applied=False,
@@ -120,10 +120,10 @@ class ReferralManager:
         """Mark a referral as successful when referred user makes first purchase."""
         try:
             async with async_session() as session:
-                stmt = select(Referral).where(
-                    Referral.referred_user_id == referred_user_id,
-                    Referral.is_successful == False
-                ).order_by(Referral.created_at.desc()).limit(1)
+                stmt = select(ReferralAttribution).where(
+                    ReferralAttribution.referred_user_id == referred_user_id,
+                    ReferralAttribution.is_successful == False
+                ).order_by(ReferralAttribution.created_at.desc()).limit(1)
                 
                 result = await session.execute(stmt)
                 referral = result.scalars().first()
@@ -133,7 +133,7 @@ class ReferralManager:
                     referral.successful_at = datetime.utcnow()
                     await session.flush()
                     
-                    logger.info(f"Referral marked successful: {referral.referrer_id} → {referred_user_id}")
+                    logger.info(f"Referral marked successful: {referral.referrer_user_id} → {referred_user_id}")
                     return True
                 
                 return False

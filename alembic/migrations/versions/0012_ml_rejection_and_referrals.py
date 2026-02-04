@@ -43,36 +43,20 @@ def upgrade() -> None:
     op.create_index('ix_ml_rejected_signals_timeframe', 'ml_rejected_signals', ['timeframe'])
     op.create_index('ix_ml_rejected_signals_actual_outcome', 'ml_rejected_signals', ['actual_outcome'])
     
-    # Create referrals table (or recreate if needed)
-    # Drop old referrals table if it exists and recreate
-    try:
-        op.drop_table('referral_attribution_legacy')
-    except:
-        pass
-    
-    op.create_table(
-        'referrals',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('referrer_id', sa.Integer(), nullable=False),
-        sa.Column('referred_user_id', sa.Integer(), nullable=False),
-        sa.Column('is_successful', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('reward_applied', sa.Boolean(), nullable=False, server_default='false'),
-        sa.Column('successful_at', sa.DateTime(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), nullable=False),
-        sa.ForeignKeyConstraint(['referrer_id'], ['users.id']),
-        sa.ForeignKeyConstraint(['referred_user_id'], ['users.id']),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_referrals_referrer_id', 'referrals', ['referrer_id'])
-    op.create_index('ix_referrals_referred_user_id', 'referrals', ['referred_user_id'])
+    # Add referral tracking columns to existing referrals table
+    op.add_column('referrals', sa.Column('is_successful', sa.Boolean(), nullable=False, server_default='false'))
+    op.add_column('referrals', sa.Column('reward_applied', sa.Boolean(), nullable=False, server_default='false'))
+    op.add_column('referrals', sa.Column('successful_at', sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:
-    # Drop referrals table
-    op.drop_table('referrals')
-    
+    # Remove referral tracking columns
+    op.drop_column('referrals', 'successful_at')
+    op.drop_column('referrals', 'reward_applied')
+    op.drop_column('referrals', 'is_successful')
+
     # Drop ml_rejected_signals table
     op.drop_table('ml_rejected_signals')
-    
+
     # Remove premium_until column from users table
     op.drop_column('users', 'premium_until')

@@ -2,6 +2,9 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from db.session import get_session, get_engine_for_event_loop
 from db.repository import get_active_subscription
+from engine.market_state import get_market_state_async
+from engine.strategies.signal_generator import SignalGenerator
+from data.news import get_news_sentiment, fetch_news_headlines
 # --- USER COMMAND: /status ---
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
@@ -1724,6 +1727,115 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	)
 	if update.message is not None:
 		await update.message.reply_text(msg)
+
+
+@require_tier("PREMIUM")
+async def analyze_command(update, context) -> None:
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	args = context.args or []
+	if not args:
+		await update.message.reply_text("Usage: /analyze <ASSET> [TIMEFRAME]\nExample: /analyze BTCUSDT 1h")
+		return
+
+	asset = str(args[0]).upper().strip()
+	tf = str(args[1]).strip() if len(args) > 1 else "1h"
+
+	try:
+		market_state = await get_market_state_async(asset, [tf], include_ml=True)
+		tf_data = (market_state.get("timeframes") or {}).get(tf)
+		if not tf_data:
+			await update.message.reply_text("No market data available for that pair/timeframe.")
+			return
+
+		candles = tf_data.get("candles", [])
+		indicators = tf_data.get("indicators", {})
+		if len(candles) < 50:
+			await update.message.reply_text("Not enough data to analyze this pair yet.")
+			return
+
+		gen = SignalGenerator()
+		signals = gen.generate_signals(asset, tf, {"candles": candles, "indicators": indicators, "ml_probability": tf_data.get("ml_score")})
+		if not signals:
+			await update.message.reply_text("No high-confidence setup found right now.")
+			return
+
+		best = sorted(signals, key=lambda s: s.score, reverse=True)[0]
+
+		# News sentiment + AI adjustments
+		sentiment = get_news_sentiment(asset)
+		alignment = 1 if (sentiment > 0 and best.direction == "long") or (sentiment < 0 and best.direction == "short") else -1 if sentiment != 0 else 0
+		adj_scale = max(min(abs(sentiment), 3.0), 0.0) / 3.0
+		score_adj = (adj_scale * 8.0) * (1 if alignment == 1 else -1 if alignment == -1 else 0)
+		adjusted_score = max(min(best.score + score_adj, 99.0), 50.0)
+		adjusted_conf = max(min(best.confidence + (adj_scale * 0.08 * alignment), 0.95), 0.25)
+
+		# Volatility-aware AI recalibration using ATR + news alignment
+		atr = indicators.get("atr")
+		rsi = indicators.get("rsi")
+		adx = indicators.get("adx")
+		macd = indicators.get("macd", {}) or {}
+		macd_hist = macd.get("hist") if isinstance(macd, dict) else None
+		ema_fast = indicators.get("ema_fast")
+		ema_slow = indicators.get("ema_slow")
+
+		atr_mult = 1.3 if alignment == 1 else 1.8 if alignment == -1 else 1.5
+		if not atr:
+			atr = abs(best.entry - best.stop_loss) or (best.entry * 0.01)
+
+		if best.direction == "long":
+			ai_sl = round(best.entry - (atr * atr_mult), 6)
+			ai_tps = [
+				round(best.entry + (atr * 2.5), 6),
+				round(best.entry + (atr * 4.0), 6),
+				round(best.entry + (atr * 6.0), 6),
+			]
+		else:
+			ai_sl = round(best.entry + (atr * atr_mult), 6)
+			ai_tps = [
+				round(best.entry - (atr * 2.5), 6),
+				round(best.entry - (atr * 4.0), 6),
+				round(best.entry - (atr * 6.0), 6),
+			]
+
+		headlines = fetch_news_headlines(asset)[:3]
+		news_lines = []
+		if headlines:
+			for title, published_at, score in headlines:
+				news_lines.append(f"• {title} ({score:+d})")
+
+		sentiment_label = "Positive" if sentiment > 0 else "Negative" if sentiment < 0 else "Neutral"
+
+		trend_label = "Bullish" if (ema_fast and ema_slow and ema_fast > ema_slow) else "Bearish" if (ema_fast and ema_slow and ema_fast < ema_slow) else "Neutral"
+
+		msg_lines = [
+			f"🧠 AI Market Analysis ({asset} {tf})",
+			f"Direction: {best.direction.upper()}",
+			f"Entry: {best.entry}",
+			f"Stop Loss: {best.stop_loss} → AI {ai_sl}",
+		]
+		msg_lines.append("Take Profits (AI):")
+		for i, tp_price in enumerate(ai_tps, 1):
+			msg_lines.append(f"  TP{i}: {tp_price}")
+		msg_lines += [
+			f"Strategy: {best.strategy_name} ({best.strategy_group})",
+			f"Score: {best.score:.1f} → AI-adjusted {adjusted_score:.1f}",
+			f"Confidence: {best.confidence:.2f} → AI-adjusted {adjusted_conf:.2f}",
+			f"News Sentiment: {sentiment_label} ({sentiment:.2f})",
+			f"Trend: {trend_label} | RSI: {rsi:.1f}" if isinstance(rsi, (int, float)) else f"Trend: {trend_label}",
+			f"ADX: {adx:.1f}" if isinstance(adx, (int, float)) else "ADX: n/a",
+			f"MACD hist: {macd_hist:.3f}" if isinstance(macd_hist, (int, float)) else "MACD hist: n/a",
+		]
+		if news_lines:
+			msg_lines.append("Top Headlines:")
+			msg_lines += news_lines
+		msg_lines.append("\n⚠️ Educational only. Not financial advice.")
+		await update.message.reply_text("\n".join(msg_lines))
+		return
+	except Exception as e:
+		await update.message.reply_text(f"Analysis failed: {e}")
 
 
 async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -228,6 +228,7 @@ from .commands import (
     invite_command,
     stats_command,
     history_command,
+    analyze_command,
     risk_command,
     alerts_command,
     elite_command,
@@ -246,6 +247,7 @@ application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", 
 application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
 application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
 application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
+application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
 
 from core.redis_state import state, mark_signal_delivered_sync
 from .owner_commands import (

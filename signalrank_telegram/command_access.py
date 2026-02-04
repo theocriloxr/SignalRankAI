@@ -30,6 +30,7 @@ COMMAND_TIERS = {
     "history": "PREMIUM",
     "risk": "PREMIUM",
     "alerts": "PREMIUM",
+    "analyze": "PREMIUM",
     
     # VIP COMMANDS
     "elite": "VIP",
@@ -106,6 +107,7 @@ COMMAND_HELP = {
             ("history", "Recent signal history"),
             ("risk", "Risk management guidance"),
             ("alerts", "TP/SL alerts + quiet hours settings"),
+            ("analyze", "AI analysis for a specific pair"),
             # ("buy_extra_signals", "Buy extra daily signals (if available)"),
         ],
         "footer": (
@@ -138,6 +140,7 @@ COMMAND_HELP = {
             ("stats", "Detailed stats summary"),
             ("history", "Complete signal history"),
             ("risk", "Advanced risk management"),
+            ("analyze", "AI analysis for a specific pair"),
             ("alerts", "TP/SL alerts + granular settings"),
             ("elite", "VIP-only high-conviction signals"),
             ("early", "Early access to market moves"),
