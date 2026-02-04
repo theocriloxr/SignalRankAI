@@ -1,6 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 from db.session import get_session, get_engine_for_event_loop
+from config import config
 from db.repository import get_active_subscription
 from engine.market_state import get_market_state_async
 from engine.strategies.signal_generator import SignalGenerator
@@ -12,160 +13,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database not configured.")
 		return
-	try:
-		async with get_session() as session:
-			sub = await get_active_subscription(session, telegram_user_id=update.effective_user.id)
-			await session.commit()
-		if sub is None:
-			await update.message.reply_text("You are on the FREE tier. Upgrade for more features!")
-			return
-		tier = getattr(sub, "tier", "free").upper()
-		expires = getattr(sub, "expires_at", None)
-		status = getattr(sub, "status", "inactive").capitalize()
-		msg = f"\n<b>Subscription Status</b>\nTier: <b>{tier}</b>\nStatus: <b>{status}</b>"
-		if expires:
-			msg += f"\nExpires: <b>{expires.strftime('%Y-%m-%d %H:%M')}</b>"
-		await update.message.reply_text(msg, parse_mode="HTML")
-	except Exception as e:
-		await update.message.reply_text(f"Unable to fetch status: {e}")
-
-# --- USER COMMAND: /support ---
-async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	if update.effective_user is None or update.message is None:
-		return
-	support_contact = "@theocrilox"
-	await update.message.reply_text(f"For help or questions, contact support: {support_contact}")
-# Import actual owner/admin command handlers
-from signalrank_telegram.owner_commands import owner_users, owner_revenue, correct_signal
-# --------- DEV/ADMIN PLACEHOLDER COMMANDS ---------
-async def unlock(update, context):
-	if update.message is not None:
-		await update.message.reply_text("🔓 Unlock command received. (No action implemented.)")
-
-async def dev_pause(update, context):
-	if update.message is not None:
-		await update.message.reply_text("⏸️ Dev pause command received. (No action implemented.)")
-
-async def dev_resume(update, context):
-	if update.message is not None:
-		await update.message.reply_text("▶️ Dev resume command received. (No action implemented.)")
-
-async def dev_force_signal(update, context):
-	if update.message is not None:
-		await update.message.reply_text("⚡ Dev force signal command received. (No action implemented.)")
-
-async def dev_invalidate(update, context):
-	if update.message is not None:
-		await update.message.reply_text("❌ Dev invalidate command received. (No action implemented.)")
-def require_tier(min_tier):
-	def wrapper(func):
-		async def inner(update, context):
-			if update.effective_user is None or update.message is None:
-				return
-			user_id = update.effective_user.id
-			# Global kill-switch
-			try:
-				ks: KillSwitchState = state.get_killswitch_sync()
-			except Exception:
-				ks: KS = type("KS", (), {"enabled": False})()
-			if getattr(ks, "enabled", False):
-				await update.message.reply_text("🚨 Signals are temporarily paused.")
-				return
-
-			# Rate limit (20/min)
-			try:
-				limited: bool = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
-			except Exception:
-				limited = False
-			if limited:
-				await update.message.reply_text("Rate limit exceeded. Please wait.")
-				return
-			tier: str = _effective_tier(user_id)
-			if tier_rank(tier) < tier_rank(min_tier):
-				try:
-					from .command_access import check_command_access
-					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
-					_, reason = check_command_access(cmd_name, tier)
-				except Exception:
-					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
-				await update.message.reply_text(reason)
-				return
-			result = func(update, context)
-			if inspect.isawaitable(result):
-				return await result
-			return result
-		return inner
-	return wrapper
-
-# --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
-@require_tier("PREMIUM")
-async def reports_command(update, context) -> None:
-	if update.effective_user is None or update.message is None:
-		return
-	user_id = update.effective_user.id
-	args = context.args or []
-	if not args:
-		prefs = user_prefs_store.get_prefs(user_id)
-		val = prefs.get("reports_optin", False)
-		msg: str = "You are currently " + ("subscribed to" if val else "not receiving") + " daily/weekly reports.\nUse /reports on or /reports off."
-		await update.message.reply_text(msg)
-		return
-	opt = args[0].lower()
-	if opt in {"on", "yes", "true"}:
-		user_prefs_store.set_prefs(user_id, reports_optin=True)
-		await update.message.reply_text("You will now receive daily/weekly performance summaries.")
-	elif opt in {"off", "no", "false"}:
-		user_prefs_store.set_prefs(user_id, reports_optin=False)
-		await update.message.reply_text("You will no longer receive scheduled reports.")
-	else:
-		await update.message.reply_text("Usage: /reports on|off")
-# --------- CUSTOM SIGNAL FILTERS COMMAND ---------
-@require_tier("PREMIUM")
-async def filter_command(update, context) -> None:
-	if update.effective_user is None or update.message is None:
-		return
-	user_id = update.effective_user.id
-	args = context.args or []
-	if not args:
-		prefs = user_prefs_store.get_prefs(user_id)
-		filters = prefs.get("filters", {})
-		if not filters:
-			await update.message.reply_text("No custom filters set. Use /filter min_score 60 or /filter rr 2.0 or /filter regime TRENDING.")
-		else:
-			lines: list[str] = ["Your custom filters:"]
-			for k, v in filters.items():
-				lines.append(f"{k}: {v}")
-			await update.message.reply_text("\n".join(lines))
-		return
-	key = args[0].lower()
-	if key not in {"min_score", "rr", "regime"}:
-		await update.message.reply_text("Supported filters: min_score, rr, regime. Example: /filter min_score 60")
-		return
-	value = args[1] if len(args) > 1 else None
-	if not value:
-		await update.message.reply_text("Usage: /filter <min_score|rr|regime> <value>")
-		return
-	filters = user_prefs_store.get_prefs(user_id).get("filters", {})
-	filters[key] = value
-	user_prefs_store.set_prefs(user_id, filters=filters)
-	await update.message.reply_text(f"Filter set: {key} = {value}")
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-from typing import Tuple
-
-from sqlalchemy import Select
-from typing import Tuple
-
-from sqlalchemy import Select
-from typing import Tuple
-
-from sqlalchemy import Select
-from typing import Tuple
-
-from sqlalchemy import Select
-from typing import Tuple
 
 from sqlalchemy import Result
 
@@ -371,12 +218,33 @@ async def admin_top_strategies_command(update, context) -> None:
 	if not _is_admin(user_id):
 		await update.message.reply_text("Admin only.")
 		return
-	# Placeholder: If strategies are tracked, add here. For now, show fill_rates as proxy.
-	stats = signal_analytics.get_stats()
-	fill_rates = stats.get('fill_rates', {})
-	top = sorted(fill_rates.items(), key=lambda x: x[1], reverse=True)[:10]
-	msg: str = "\n".join([f"{a}: {c:.2f}" for a, c in top]) or "No data."
-	await update.message.reply_text(f"Top Strategies (by fill rate):\n{msg}")
+	from datetime import datetime, timedelta, timezone
+	from sqlalchemy import select, func, desc
+	from db.session import get_session, get_engine_for_event_loop
+	from db.models import Signal
+
+	engine = get_engine_for_event_loop()
+	if engine is None:
+		await update.message.reply_text("Database unavailable.")
+		return
+
+	cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+	async with get_session() as session:
+		res = await session.execute(
+			select(Signal.strategy_name, func.count(Signal.signal_id))
+			.where(Signal.created_at >= cutoff)
+			.group_by(Signal.strategy_name)
+			.order_by(desc(func.count(Signal.signal_id)))
+			.limit(10)
+		)
+		rows = res.fetchall()
+
+	if not rows:
+		await update.message.reply_text("No strategy data available (last 30d).")
+		return
+
+	lines = [f"{name}: {cnt}" for name, cnt in rows]
+	await update.message.reply_text("Top Strategies (last 30d):\n" + "\n".join(lines))
 
 async def admin_user_engagement_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
@@ -394,16 +262,30 @@ async def admin_user_engagement_command(update, context) -> None:
 @require_tier("ADMIN")
 async def selfcheck_command(update, context) -> None:
 	"""Admin/Owner: Show quick health summary of the system."""
-	import platform, psutil, shutil
+	import platform
 	import datetime
 	import os
+	try:
+		import psutil
+		has_psutil = True
+	except Exception:
+		psutil = None
+		has_psutil = False
+	try:
+		import shutil
+		has_shutil = True
+	except Exception:
+		shutil = None
+		has_shutil = False
 	# ENGINE import removed; use get_engine_for_event_loop() if needed
 	lines: list[str] = ["🩺 System Self-Check"]
 	lines.append(f"Time: {datetime.datetime.now(datetime.timezone.utc).isoformat()} UTC")
 	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
 	lines.append(f"Python: {platform.python_version()}")
-	lines.append(f"RAM: {psutil.virtual_memory().percent}% used")
-	lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
+	if has_psutil:
+		lines.append(f"RAM: {psutil.virtual_memory().percent}% used")
+	if has_shutil:
+		lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
 	# DB status
 	try:
 		if get_engine_for_event_loop() is not None:
@@ -692,13 +574,71 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if tier.lower() in {"owner", "admin"}:
 		tier = "VIP"
 
+	# Prefer high-quality fresh signals if any exist (even if not delivered yet).
+	try:
+		engine = get_engine_for_event_loop()
+		if engine is not None:
+			from datetime import datetime, timedelta, timezone
+			from sqlalchemy import select, desc
+			from db.models import Signal as SignalModel
+			async with get_session() as session:
+				cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+				res = await session.execute(
+					select(SignalModel)
+					.where(SignalModel.created_at >= cutoff)
+					.order_by(desc(SignalModel.created_at))
+					.limit(50)
+				)
+				recent_rows = list(res.scalars().all())
+				recent_signals = []
+				for r in recent_rows:
+					recent_signals.append(
+						{
+							"signal_id": r.signal_id,
+							"asset": r.asset,
+							"timeframe": r.timeframe,
+							"direction": r.direction,
+							"entry": r.entry,
+							"stop_loss": r.stop_loss,
+							"take_profit": r.take_profit,
+							"rr_ratio": r.rr_estimate,
+							"score": r.score,
+							"confidence": getattr(r, "confidence", 0.5),
+							"regime": getattr(r, "regime", "NEUTRAL"),
+							"strength": getattr(r, "strength", 0.5),
+							"ml_probability": getattr(r, "ml_probability", 0.5),
+							"strategy_name": r.strategy_name,
+							"strategy_group": r.strategy_group,
+							"created_at": r.created_at,
+						}
+					)
+
+				if recent_signals:
+					from .formatter import format_signal
+					msg_lines: list[str] = []
+					shown = 0
+					for s in recent_signals:
+						formatted = format_signal(s, user_tier=tier)
+						if not formatted:
+							continue
+						msg_lines.append(formatted)
+						shown += 1
+						if shown >= (3 if tier.lower() in {"free"} else 5):
+							break
+					if msg_lines:
+						await update.message.reply_text("\n\n".join(msg_lines))
+						return
+	except Exception:
+		pass
+
 	signals_list: list[dict] = []
 	
 	# FREE tier: show delivered signals only - now sample 2 random signals with score >= 55
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		try:
 			from db.session import get_session
-			if ENGINE is not None:
+			engine = get_engine_for_event_loop()
+			if engine is not None:
 				from db.pg_features import list_signals_sent_today
 				async with get_session() as session:
 					# Fetch ALL signals delivered to user today (no limit)
@@ -761,7 +701,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	unresolved_signals: list[dict] = []
 	try:
 		from db.session import get_session
-		if ENGINE is not None:
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			from db.pg_features import list_unresolved_signals_for_user
 			async with get_session() as session:
 				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
@@ -813,7 +754,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		delivered_today: list[dict] = []
 		try:
 			from db.session import get_session
-			if ENGINE is not None:
+			engine = get_engine_for_event_loop()
+			if engine is not None:
 				from db.pg_features import list_signals_sent_today
 				async with get_session() as session:
 					# type: AsyncSession
@@ -1294,7 +1236,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	except Exception as e:
 		import logging
 		logging.getLogger(__name__).error(f"signal_command failed: {e}", exc_info=True)
-		await update.message.reply_text("Signal lookup is temporarily unavailable.")
+		await update.message.reply_text(
+			"No matching signal found for that reference. Use /signals to list recent references."
+		)
 		return
 
 
@@ -1418,17 +1362,10 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception as e:
 		import logging
 		logging.getLogger(__name__).exception("outcome_command failed")
-		await update.message.reply_text("Outcome lookup is temporarily unavailable.")
+		await update.message.reply_text(
+			"No outcome found for that reference yet. Use /signal <ref> for live details."
+		)
 		return
-		# If outcome not yet determined, show current signal details based on tier
-		# Determine what to show based on tier
-	try:
-			vip_cut = float(getattr(config, "VIP_SCORE_THRESHOLD", 72))
-	except Exception:
-			vip_cut = 72.0
-		
-		# Owner always gets VIP format
-	if user_tier in {"owner", "admin"}:
 			user_tier = "vip"
 		
 	show_levels: bool = user_tier in {"vip", "premium"}
@@ -1644,8 +1581,14 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 	except Exception:
-		code = None
 		progress = None
+		try:
+			import hashlib
+			import base64
+			digest = hashlib.sha1(str(user_id).encode("utf-8")).digest()
+			code = base64.b32encode(digest).decode("utf-8").lower().strip("=")[:8]
+		except Exception:
+			code = str(user_id)
 
 	bot_username = None
 	try:
@@ -1674,24 +1617,22 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		)
 		return
 
-	if code:
-		await update.message.reply_text(
-			f"🎁 Your invite code: {code}\n\n"
-			"Reward: invite 3 new users → get +7 days Premium.\n"
-			"Invite link is unavailable (bot username not resolved)."
-			f"{progress_line}"
-		)
-	else:
-		await update.message.reply_text("Invite system is temporarily unavailable.")
+	await update.message.reply_text(
+		f"🎁 Your invite code: {code}\n\n"
+		"Reward: invite 3 new users → get +7 days Premium.\n"
+		"Invite link not available (bot username not resolved)."
+		f"{progress_line}"
+	)
 
 async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	# VIP seat info from Postgres (best-effort)
 	try:
-		from db.session import ENGINE, get_session
+		from db.session import get_engine_for_event_loop, get_session
 		from db.repository import count_active_vip_users
-		if ENGINE is not None:
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			async with get_session() as session:
 				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				await session.commit()
@@ -2158,7 +2099,7 @@ async def start_command(update, context):
 			pass
 		if update.message is not None:
 			await update.message.reply_text(
-				"Database temporarily unavailable. Please try again in 1–2 minutes."
+				"Database not connected. Please contact support if this persists."
 			)
 		return
 
@@ -2378,26 +2319,8 @@ async def performance_command(update, context):
 	except Exception as e:
 		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
 		if update.message is not None:
-			await update.message.reply_text("Performance is temporarily unavailable. Please try again shortly.")
+			await update.message.reply_text("No performance data available right now. Use /signals for recent activity.")
 		return
-	total: int = len(trades_30d)
-	if total == 0:
-		if update.message is not None:
-			await update.message.reply_text("No signals in the last 30 days.")
-		return
-	win_count: int = sum(1 for t in trades_30d if (len(t) > 15 and str(t[15]).upper() == 'TP'))
-	win_rate: float | int = win_count / total if total > 0 else 0
-	if tier_rank(tier) < tier_rank("PREMIUM"):
-		bucket = "mixed"
-		if win_rate >= 0.6:
-			bucket = "strong"
-		elif win_rate <= 0.4:
-			bucket = "cautious"
-		msg: str = (
-			"📊 Performance (limited)\n\n"
-			f"Recent snapshot: {bucket}.\n"
-			"Upgrade to Premium for full stats and history."
-		)
 		if update.message is not None:
 			await update.message.reply_text(msg)
 		return

@@ -327,8 +327,9 @@ def _audit_handler(command_name: str, handler):
             return await handler(update, context)
 
         try:
-            from db.session import ENGINE, get_session
-            if ENGINE is not None and getattr(update, "effective_user", None) is not None:
+            from db.session import get_engine_for_event_loop, get_session
+            engine = get_engine_for_event_loop()
+            if engine is not None and getattr(update, "effective_user", None) is not None:
                 user_id = int(update.effective_user.id)
                 username = None
                 try:
@@ -421,11 +422,11 @@ def notify_trade_outcome(user_id, strategy, result, ret):
 
         # --- Outcome notification and feedback prompt ---
         # After sending outcome notification, prompt for feedback (premium/vip only)
-        from db.session import get_session, ENGINE
+        from db.session import get_session, get_engine_for_event_loop
         from db.pg_features import get_user_performance_30d
         import asyncio
         tier_for_feedback = user_tier
-        if ENGINE is not None and user_tier in ("premium", "vip"):
+        if get_engine_for_event_loop() is not None and user_tier in ("premium", "vip"):
             async def _notify_and_feedback():
                 async with get_session() as session:
                     perf = await get_user_performance_30d(session, int(user_id))
@@ -780,9 +781,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
     # Postgres-backed delivery dedup + history (preferred)
     try:
-        from db.session import ENGINE, get_session
+        from db.session import get_engine_for_event_loop, get_session
+        engine = get_engine_for_event_loop()
 
-        if ENGINE is not None:
+        if engine is not None:
             effective_tier = tier
             display_tier = tier
             
@@ -1167,8 +1169,9 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
     # FREE: queue delayed summary (max 3/day)
     try:
-        from db.session import ENGINE, get_session
-        if ENGINE is None:
+        from db.session import get_engine_for_event_loop, get_session
+        engine = get_engine_for_event_loop()
+        if engine is None:
             raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
         daily_limit = 3
 
@@ -1379,8 +1382,9 @@ def run_bot() -> None:
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
         # Prefer Postgres-backed recap when configured
-        from db.session import ENGINE, get_session
-        if ENGINE is not None:
+        from db.session import get_engine_for_event_loop, get_session
+        engine = get_engine_for_event_loop()
+        if engine is not None:
             from db.pg_features import get_weekly_recap_stats
 
             async def _fetch(uid: int) -> dict:
@@ -1426,8 +1430,9 @@ def run_bot() -> None:
         # Fetches unnotified outcomes and sends them to all users who received the signal.
         # Once sent and marked as notified, the outcome will never be resent.
         try:
-            from db.session import ENGINE, get_session
-            if ENGINE is None:
+            from db.session import get_engine_for_event_loop, get_session
+            engine = get_engine_for_event_loop()
+            if engine is None:
                 return
             from db.pg_features import (
                 list_unnotified_outcomes,
@@ -1589,8 +1594,9 @@ def run_bot() -> None:
         and records TP/SL if hit. This enables follow-up messages end-to-end.
         """
         try:
-            from db.session import ENGINE, get_session
-            if ENGINE is None:
+            from db.session import get_engine_for_event_loop, get_session
+            engine = get_engine_for_event_loop()
+            if engine is None:
                 return
             from db.pg_features import list_signals_missing_outcomes, upsert_outcome
             from datetime import datetime
@@ -1868,8 +1874,9 @@ def run_bot() -> None:
 
         # Prefer Postgres-backed delayed queue
         try:
-            from db.session import ENGINE, get_session
-            if ENGINE is not None:
+            from db.session import get_engine_for_event_loop, get_session
+            engine = get_engine_for_event_loop()
+            if engine is not None:
                 from db.pg_features import (
                     expire_old_free_signal_summaries as expire_old_free_signal_summaries_pg,
                     get_alert_prefs as get_alert_prefs_pg,

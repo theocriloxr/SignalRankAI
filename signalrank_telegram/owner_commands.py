@@ -226,11 +226,75 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not await _is_owner(update.effective_user.id):
         return
 
-    # Safe synthetic test message (explicitly a test)
-    await update.message.reply_text(
-        "[TEST] Forced signal trigger received.\n"
-        "This is a system test message (not a trade recommendation)."
-    )
+    arg = context.args[0].strip() if context.args else ""
+    from db.session import get_engine_for_event_loop, get_session
+    from db.models import Signal, AdminEvent
+    from sqlalchemy import select, desc, or_
+    from signalrank_telegram.formatter import format_signal
+
+    engine = get_engine_for_event_loop()
+    if engine is None:
+        await update.message.reply_text("Database unavailable.")
+        return
+
+    async with get_session() as session:
+        stmt = select(Signal).where(Signal.archived.is_(False))
+        if arg:
+            asset = arg.upper()
+            stmt = stmt.where(or_(Signal.signal_id.ilike(f"{arg}%"), Signal.asset == asset))
+        stmt = stmt.order_by(desc(Signal.created_at)).limit(1)
+        res = await session.execute(stmt)
+        sig: Signal | None = res.scalar_one_or_none()
+
+        if sig is None:
+            await update.message.reply_text("No signal found to send.")
+            return
+
+        signal_payload = {
+            "signal_id": sig.signal_id,
+            "asset": sig.asset,
+            "timeframe": sig.timeframe,
+            "direction": sig.direction,
+            "entry": sig.entry,
+            "stop_loss": sig.stop_loss,
+            "take_profit": sig.take_profit,
+            "rr_ratio": sig.rr_estimate,
+            "score": sig.score,
+            "regime": sig.regime or "NEUTRAL",
+            "ml_probability": sig.ml_probability or 0.5,
+            "strategy_name": sig.strategy_name,
+            "strategy_group": sig.strategy_group,
+            "strength": sig.strength,
+            "created_at": sig.created_at,
+        }
+
+        msg = format_signal(signal_payload, user_tier="OWNER")
+        if not msg:
+            msg = (
+                "Forced Signal (raw)\n"
+                f"Asset: {sig.asset}\n"
+                f"TF: {sig.timeframe}\n"
+                f"Dir: {sig.direction}\n"
+                f"Entry: {sig.entry}\n"
+                f"SL: {sig.stop_loss}\n"
+                f"TP: {sig.take_profit}\n"
+                f"Score: {sig.score}\n"
+                f"Ref: {sig.signal_id[:8]}"
+            )
+
+        try:
+            session.add(
+                AdminEvent(
+                    event_type="dev_force_signal",
+                    actor_telegram_user_id=int(update.effective_user.id),
+                    details={"signal_id": sig.signal_id, "arg": arg},
+                )
+            )
+            await session.commit()
+        except Exception:
+            pass
+
+    await update.message.reply_text(msg)
 
 
 async def dev_invalidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -240,9 +304,40 @@ async def dev_invalidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     if not context.args or len(context.args) != 1:
         return
-    signal_id = context.args[0]
-    # TODO: persist invalidation to Postgres outcomes/admin_events.
-    await update.message.reply_text(f"Invalidated: {signal_id}")
+    signal_id = context.args[0].strip()
+
+    from db.session import get_engine_for_event_loop, get_session
+    from db.models import Signal, AdminEvent
+    from sqlalchemy import select, or_
+
+    engine = get_engine_for_event_loop()
+    if engine is None:
+        await update.message.reply_text("Database unavailable.")
+        return
+
+    async with get_session() as session:
+        stmt = select(Signal).where(or_(Signal.signal_id == signal_id, Signal.signal_id.ilike(f"{signal_id}%")))
+        res = await session.execute(stmt)
+        sig: Signal | None = res.scalar_one_or_none()
+        if sig is None:
+            await update.message.reply_text("Signal not found.")
+            return
+
+        sig.archived = True
+        try:
+            session.add(
+                AdminEvent(
+                    event_type="dev_invalidate",
+                    actor_telegram_user_id=int(update.effective_user.id),
+                    details={"signal_id": sig.signal_id},
+                )
+            )
+        except Exception:
+            pass
+
+        await session.commit()
+
+    await update.message.reply_text(f"Invalidated: {sig.signal_id[:8]}")
 
 
 async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
