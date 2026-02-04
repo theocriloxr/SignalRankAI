@@ -439,7 +439,7 @@ def main_loop(DRY_RUN: bool = False):
 
                 # Run strategies -> returns list of signals (each is a dict)
                 try:
-                    strategy_signals = run_all_strategies(asset, market_data) or []
+                    strategy_signals = run_all_strategies(asset, market_data, regime) or []
                 except Exception:
                     logger.exception(f"Strategies failed for {asset}")
                     strategy_signals = []
