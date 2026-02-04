@@ -1227,6 +1227,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			return
 
 		base: None | str = format_signal(sig_dict)
+		if base is None:
+			base = format_signal_free_limited(sig_dict)
 		if position_lines or advice_line:
 			base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 			if advice_line:
@@ -2522,16 +2524,61 @@ async def alerts_command(update, context) -> None:
 # -------- VIP commands (hidden from BotFather) --------
 @require_tier("VIP")
 async def elite_command(update, context) -> None:
-	signals = []  # Postgres-only
-	elite = [s for s in signals if float(s.get("score") or 0) >= 85]
-	if not elite:
-		if update.message is not None:
-			await update.message.reply_text("No elite signals available right now.")
+	if update.message is None or update.effective_user is None:
 		return
-	from .formatter import format_signal
-	for s in elite[:5]:
-		if update.message is not None:
-			await update.message.reply_text(format_signal(s))
+	try:
+		from db.session import get_engine_for_event_loop, get_session
+		from sqlalchemy import select, desc
+		from datetime import datetime, timedelta, timezone
+		from db.models import Signal
+		engine = get_engine_for_event_loop()
+		if engine is None:
+			await update.message.reply_text("No elite signals available right now.")
+			return
+		cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+		async with get_session() as session:
+			res = await session.execute(
+				select(Signal)
+				.where(Signal.created_at >= cutoff)
+				.order_by(desc(Signal.score))
+				.limit(25)
+			)
+			rows = list(res.scalars().all())
+			await session.commit()
+		elite = [r for r in rows if float(getattr(r, "score", 0) or 0) >= 85.0]
+		if not elite:
+			await update.message.reply_text("No elite signals available right now.")
+			return
+		from .formatter import format_signal
+		count = 0
+		for r in elite:
+			sig = {
+				"signal_id": r.signal_id,
+				"asset": r.asset,
+				"timeframe": r.timeframe,
+				"direction": r.direction,
+				"entry": r.entry,
+				"stop_loss": r.stop_loss,
+				"take_profit": r.take_profit,
+				"rr_ratio": r.rr_estimate,
+				"score": r.score,
+				"regime": r.regime,
+				"strength": r.strength,
+				"strategy_name": r.strategy_name,
+				"strategy_group": r.strategy_group,
+				"ml_probability": r.ml_probability,
+			}
+			formatted = format_signal(sig, user_tier="VIP")
+			if not formatted:
+				continue
+			await update.message.reply_text(formatted)
+			count += 1
+			if count >= 5:
+				break
+		if count == 0:
+			await update.message.reply_text("No elite signals available right now.")
+	except Exception:
+		await update.message.reply_text("No elite signals available right now.")
 
 
 @require_tier("VIP")
@@ -2545,8 +2592,35 @@ async def report_command(update, context) -> None:
 	# Structured text report (monthly)
 	if update.message is None:
 		return
-	await update.message.reply_text(
-		"🗓️ VIP Monthly Report\n\n"
-		"Monthly reports are delivered automatically.\n"
-		"This command will show the latest report when available."
-	)
+	try:
+		from db.session import get_engine_for_event_loop, get_session
+		from db.pg_features import get_user_performance_30d
+		engine = get_engine_for_event_loop()
+		if engine is None:
+			await update.message.reply_text("No report data available right now.")
+			return
+		user_id = int(update.effective_user.id) if update.effective_user else 0
+		async with get_session() as session:
+			stats = await get_user_performance_30d(session, int(user_id))
+			await session.commit()
+		total = int(stats.get("total", 0) or 0)
+		if total <= 0:
+			await update.message.reply_text("No signals delivered in the last 30 days.")
+			return
+		wins = int(stats.get("wins", 0) or 0)
+		losses = int(stats.get("losses", 0) or 0)
+		win_rate = float(stats.get("win_rate", 0.0) or 0.0) * 100
+		net_r = stats.get("net_r", 0) or 0
+		profit = float(stats.get("profit_loss_pct", 0.0) or 0.0)
+		msg = (
+			"🗓️ VIP Report (last 30 days)\n\n"
+			f"Signals: {total}\n"
+			f"Wins/Losses: {wins}/{losses}\n"
+			f"Win rate: {win_rate:.1f}%\n"
+			f"Net R: {float(net_r):.2f}R\n"
+			f"Est. P/L: {profit:+.2f}%\n"
+			"\nUse /performance for full breakdown."
+		)
+		await update.message.reply_text(msg)
+	except Exception:
+		await update.message.reply_text("No report data available right now.")
