@@ -190,6 +190,29 @@ async def language_command(update, context) -> None:
 		return
 	user_prefs_store.set_prefs(user_id, language=lang)
 	await update.message.reply_text(f"Language set to {LANGUAGES[lang]}.")
+
+# --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
+@require_tier("PREMIUM")
+async def reports_command(update, context) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if not args:
+		prefs = user_prefs_store.get_prefs(user_id)
+		val = prefs.get("reports_optin", False)
+		msg: str = "You are currently " + ("subscribed to" if val else "not receiving") + " daily/weekly reports.\nUse /reports on or /reports off."
+		await update.message.reply_text(msg)
+		return
+	opt = args[0].lower()
+	if opt in {"on", "yes", "true"}:
+		user_prefs_store.set_prefs(user_id, reports_optin=True)
+		await update.message.reply_text("You will now receive daily/weekly performance summaries.")
+	elif opt in {"off", "no", "false"}:
+		user_prefs_store.set_prefs(user_id, reports_optin=False)
+		await update.message.reply_text("You will no longer receive scheduled reports.")
+	else:
+		await update.message.reply_text("Usage: /reports on|off")
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
 from db.session import get_session
 from db.pg_features import get_or_create_user
