@@ -1828,6 +1828,15 @@ async def analyze_command(update, context) -> None:
 			f"ADX: {adx:.1f}" if isinstance(adx, (int, float)) else "ADX: n/a",
 			f"MACD hist: {macd_hist:.3f}" if isinstance(macd_hist, (int, float)) else "MACD hist: n/a",
 		]
+		# Compact risk plan (position sizing + max risk %)
+		sl_distance = abs(best.entry - ai_sl) if isinstance(ai_sl, (int, float)) else abs(best.entry - best.stop_loss)
+		risk_pct = 1.0
+		msg_lines += [
+			"",
+			"Risk Plan (compact):",
+			f"• Max risk: {risk_pct:.1f}% of account",
+			f"• Position size: (Account × {risk_pct/100:.2f}) ÷ {sl_distance:.6f}",
+		]
 		if news_lines:
 			msg_lines.append("Top Headlines:")
 			msg_lines += news_lines

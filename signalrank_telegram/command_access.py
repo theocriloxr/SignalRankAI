@@ -31,6 +31,8 @@ COMMAND_TIERS = {
     "risk": "PREMIUM",
     "alerts": "PREMIUM",
     "analyze": "PREMIUM",
+    "dashboard": "PREMIUM",
+    "feedback": "PREMIUM",
     
     # VIP COMMANDS
     "elite": "VIP",
@@ -145,6 +147,7 @@ COMMAND_HELP = {
             ("elite", "VIP-only high-conviction signals"),
             ("early", "Early access to market moves"),
             ("report", "Detailed monthly performance report"),
+            ("analyze", "AI analysis for a specific pair"),
         ],
         "footer": (
             "🔴 VIP Features:\n"
@@ -194,6 +197,7 @@ COMMAND_HELP = {
             ("owner_revenue", "Revenue analytics"),
             ("version", "System version/deployment info"),
             ("correct_signal", "Correct/modify a signal outcome"),
+            ("analyze", "AI analysis for a specific pair"),
         ],
         "footer": (
             "👑 Full System Access:\n"
@@ -253,35 +257,45 @@ def get_help_message(tier: str) -> str:
         lines.append(f"/{escape_md(cmd)} – {escape_md(desc)}")
 
     # --- Advanced Features Section ---
-    adv_features = [
-        "",
-        "*Advanced Features & Usage*",
-        "",
-        "• /dashboard – Open your analytics dashboard (Premium/VIP/Admin)",
-        "• /apikey – Get your API key for programmatic access",
-        "• /filter – Set custom signal filters (min_score, rr, regime)",
-        "• /reports – Opt-in/out of daily/weekly performance reports",
-        "• /notify – Customize which assets, timeframes, or strategies you receive",
-        "• /language – Change your notification language",
-        "• /referral_leaderboard – See top referrers",
-        "• /referral_rewards – View your referral rewards",
-        "• /feedback – Rate a signal or report an issue (Premium/VIP)",
-        "",
-        "*How to use advanced features:*",
-        "- /apikey regenerate – Reset your API key",
-        "- /filter min_score 60 – Set minimum score",
-        "- /filter rr 2.0 – Set minimum risk/reward",
-        "- /filter regime TRENDING – Set regime filter",
-        "- /reports on|off – Subscribe/unsubscribe to scheduled reports",
-        "- /notify assets BTCUSDT,ETHUSDT – Set asset notifications",
-        "- /notify timeframes 1h,4h – Set timeframes",
-        "- /notify strategies momentum,trend – Set strategies",
-        "- /notify clear – Reset notification preferences",
-        "- /language en|es|fr – Set your language",
-        "- /feedback <signal_ref> <rating|issue> [comment] – Submit feedback",
-        "",
+    adv_cmds = [
+        ("dashboard", "• /dashboard – Open your analytics dashboard"),
+        ("apikey", "• /apikey – Get your API key for programmatic access"),
+        ("filter", "• /filter – Set custom signal filters (min_score, rr, regime)"),
+        ("reports", "• /reports – Opt-in/out of daily/weekly performance reports"),
+        ("notify", "• /notify – Customize which assets, timeframes, or strategies you receive"),
+        ("language", "• /language – Change your notification language"),
+        ("referral_leaderboard", "• /referral_leaderboard – See top referrers"),
+        ("referral_rewards", "• /referral_rewards – View your referral rewards"),
+        ("feedback", "• /feedback – Rate a signal or report an issue"),
+        ("analyze", "• /analyze – AI analysis for a specific pair"),
     ]
-    lines.extend([escape_md(line) if line else "" for line in adv_features])
+    adv_usage = [
+        ("apikey", "- /apikey regenerate – Reset your API key"),
+        ("filter", "- /filter min_score 60 – Set minimum score"),
+        ("filter", "- /filter rr 2.0 – Set minimum risk/reward"),
+        ("filter", "- /filter regime TRENDING – Set regime filter"),
+        ("reports", "- /reports on|off – Subscribe/unsubscribe to scheduled reports"),
+        ("notify", "- /notify assets BTCUSDT,ETHUSDT – Set asset notifications"),
+        ("notify", "- /notify timeframes 1h,4h – Set timeframes"),
+        ("notify", "- /notify strategies momentum,trend – Set strategies"),
+        ("notify", "- /notify clear – Reset notification preferences"),
+        ("language", "- /language en|es|fr – Set your language"),
+        ("feedback", "- /feedback <signal_ref> <rating|issue> [comment] – Submit feedback"),
+        ("analyze", "- /analyze BTCUSDT 1h – Run AI analysis"),
+    ]
+
+    visible_adv = [line for cmd, line in adv_cmds if check_command_access(cmd, tier)[0]]
+    visible_usage = [line for cmd, line in adv_usage if check_command_access(cmd, tier)[0]]
+
+    if visible_adv:
+        lines.append("")
+        lines.append(escape_md("*Advanced Features & Usage*"))
+        lines.append("")
+        lines.extend([escape_md(line) for line in visible_adv])
+        if visible_usage:
+            lines.append("")
+            lines.append(escape_md("*How to use advanced features:*"))
+            lines.extend([escape_md(line) for line in visible_usage])
 
     if footer:
         lines.extend(["", escape_md(footer)])
