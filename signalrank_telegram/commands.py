@@ -1940,6 +1940,7 @@ async def start_command(update, context):
 	is_new = False
 	referral_outcome = None
 	# Prefer Postgres for user creation + referral attribution + audit (single session)
+	upgrade_notice = None
 	try:
 		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
@@ -1949,11 +1950,25 @@ async def start_command(update, context):
 			from db.repository import get_or_create_user
 			from db.pg_features import record_bot_event
 			from db.pg_features import ensure_alert_prefs
+			from signalrank_telegram.access import resolve_user_tier
 			async with get_session() as session:
 				res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 				existing: User | None = res.scalar_one_or_none()
 				is_new: bool = existing is None
-				await get_or_create_user(session, telegram_user_id=user_id, username=username)
+				user_row = await get_or_create_user(session, telegram_user_id=user_id, username=username)
+				effective_tier = str(resolve_user_tier(int(user_id))).upper()
+				if effective_tier in {"OWNER", "ADMIN"}:
+					current = str(getattr(user_row, "tier", "") or "").lower()
+					if current not in {"owner", "admin"}:
+						try:
+							user_row.tier = "owner" if effective_tier == "OWNER" else "admin"
+							upgrade_notice = (
+								"✅ Owner access granted via configuration. Use /help to see owner commands."
+								if effective_tier == "OWNER"
+								else "✅ Admin access granted. Use /help to see admin commands."
+							)
+						except Exception:
+							pass
 				# Ensure alert preferences row exists for all users.
 				try:
 					await ensure_alert_prefs(session, int(user_id))
@@ -2039,6 +2054,9 @@ async def start_command(update, context):
 		elif status == "invalid_code":
 			await update.message.reply_text("⚠️ Referral code not recognized.")
 		# else: silent for self_referral/already_referred/not_new
+
+	if upgrade_notice and update.message is not None:
+		await update.message.reply_text(upgrade_notice)
 
 	# Notify referrer when someone joins with their link or when reward is unlocked
 	try:

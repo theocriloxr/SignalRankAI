@@ -198,6 +198,13 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         pass
 
+    try:
+        await update.message.reply_text(
+            "✅ Admin access unlocked for 24 hours. Use /help to see admin commands."
+        )
+    except Exception:
+        pass
+
     await update.message.reply_text("Access granted.")
 
 
