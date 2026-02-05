@@ -501,6 +501,10 @@ def main_loop(DRY_RUN: bool = False):
                     consensus_signals = apply_consensus_filter(normalized)
                 except Exception:
                     consensus_signals = normalized
+                # Fallback: if consensus is too strict, keep normalized signals to avoid zero output
+                if not consensus_signals:
+                    _log_decision("skipped", {"asset": asset, "timeframe": "*"}, reason="consensus_empty_fallback")
+                    consensus_signals = normalized
                 pipeline_stats["consensus"] += len(consensus_signals)
 
                 # Pick best direction per pair/timeframe
