@@ -17,13 +17,13 @@ _audit_logger: logging.Logger = logging.getLogger("audit")
 
 AMOUNTS = {
     # Recommended pricing (Nigeria-optimized)
-    'PREMIUM_WEEKLY': 4000,
-    'PREMIUM_MONTHLY': 12000,
-    'PREMIUM_QUARTERLY': 28000,
-    'VIP_MONTHLY': 20000,
+    'PREMIUM_WEEKLY': 8000,
+    'PREMIUM_MONTHLY': 24000,
+    'PREMIUM_QUARTERLY': 56000,
+    'VIP_MONTHLY': 40000,
 
     # Legacy/optional weekly pricing (kept for backward compatibility)
-    'VIP_WEEKLY': 8000,
+    'VIP_WEEKLY': 16000,
     'WEEKLY_PLAN': WEEKLY_PLAN['price_ngn']
 }
 DURATIONS = {
@@ -53,7 +53,7 @@ def verify_payment(reference, user_id):
             # Extra signal purchase
             if metadata.get('duration') == 'EXTRA':
                 extra_count = int(metadata.get('extra_count', 1))
-                expected_price: int = 300 * extra_count
+                expected_price: int = 600 * extra_count
                 if amount != expected_price:
                     _audit_logger.warning(f"Fraud attempt: user {user_id} paid wrong amount {amount} for extra_signals")
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund. Please pay the exact amount for your extra signal purchase.", None
@@ -88,9 +88,9 @@ def verify_payment(reference, user_id):
                 if tnorm == "VIP":
                     pass
                 # Amount check for recommended plans
-                if tnorm == "PREMIUM" and amount not in {4000, 12000, 28000}:
+                if tnorm == "PREMIUM" and amount not in {8000, 24000, 56000}:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
-                if tnorm == "VIP" and amount != 20000:
+                if tnorm == "VIP" and amount != 40000:
                     return False, f"❌ Wrong amount paid ({amount}₦). No refund.", None
                 return False, "❌ Manual verification is no longer supported. Please wait for webhook confirmation.", None
             # Block repeat first-time VIP trial

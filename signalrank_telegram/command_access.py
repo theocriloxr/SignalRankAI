@@ -4,6 +4,8 @@ Maps commands to required tier and builds dynamic help based on user's current t
 Handles tier changes (demotion) by checking live tier on each access.
 """
 
+import os
+
 # Map of command -> minimum tier required
 COMMAND_TIERS = {
     # PUBLIC / FREE COMMANDS (accessible to everyone)
@@ -306,7 +308,8 @@ def get_help_message(tier: str) -> str:
         ("analyze", "- /analyze BTCUSDT 1h – Run AI analysis"),
     ]
 
-    visible_adv = [line for cmd, line in adv_cmds if check_command_access(cmd, tier)[0]]
+    dashboard_url = os.getenv("DASHBOARD_URL")
+    visible_adv = [line for cmd, line in adv_cmds if check_command_access(cmd, tier)[0] and (cmd != "dashboard" or dashboard_url)]
     visible_usage = [line for cmd, line in adv_usage if check_command_access(cmd, tier)[0]]
 
     if visible_adv:

@@ -657,13 +657,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	msg: str = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
 	# Add dashboard link for eligible users
 	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
-		base_url = os.getenv("DASHBOARD_URL") or "https://yourdomain.com/userdash/login"
-		sep = "&" if "?" in base_url else "?"
-		dashboard_url: str = f"{base_url}{sep}uid={user_id}"
-		# Escape brackets and parentheses in dashboard link for Markdown V2
-		safe_dashboard_url: str = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
-		safe_dashboard_text: str = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
-		msg += f"\n\n🌐 [{safe_dashboard_text}]({safe_dashboard_url})"
+		base_url = os.getenv("DASHBOARD_URL")
+		if base_url:
+			sep = "&" if "?" in base_url else "?"
+			dashboard_url: str = f"{base_url}{sep}uid={user_id}"
+			# Escape brackets and parentheses in dashboard link for Markdown V2
+			safe_dashboard_url: str = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
+			safe_dashboard_text: str = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
+			msg += f"\n\n🌐 [{safe_dashboard_text}]({safe_dashboard_url})"
 	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="MarkdownV2")
 
 # --------- MYID COMMAND ---------
@@ -685,7 +686,10 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 	if tier.strip().upper() not in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		await update.message.reply_text("The dashboard is only available for Premium, VIP, and above.")
 		return
-	base_url = os.getenv("DASHBOARD_URL") or "https://yourdomain.com/userdash/login"
+	base_url = os.getenv("DASHBOARD_URL")
+	if not base_url:
+		await update.message.reply_text("Dashboard is coming soon.")
+		return
 	sep = "&" if "?" in base_url else "?"
 	dashboard_url: str = f"{base_url}{sep}uid={user_id}"
 	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="Markdown")
@@ -1765,6 +1769,8 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	
 	for label, amount, days, plan_code in premium_plans:
 		link = generate_paystack_link(user_id, amount, tier="premium", duration_days=days, plan_code=plan_code)
+		if isinstance(link, str) and ("PAYSTACK_SECRET_KEY" in link or "Paystack" in link):
+			link = os.getenv("PAYSTACK_URL") or "Paystack checkout unavailable right now."
 		premium_msg += f"• {label}: {link}\n"
 	paystack_url: str | None = os.getenv("PAYSTACK_URL")
 	if paystack_url:
@@ -1805,6 +1811,8 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		vip_msg: str = vip_formatted + "\n\n"
 		
 		vip_link = generate_paystack_link(user_id, 40000, tier="vip", duration_days=30, plan_code=vip_monthly_code)
+		if isinstance(vip_link, str) and ("PAYSTACK_SECRET_KEY" in vip_link or "Paystack" in vip_link):
+			vip_link = os.getenv("PAYSTACK_URL") or "Paystack checkout unavailable right now."
 		vip_msg += f"🔗 {vip_link}\n"
 		if paystack_url:
 			vip_msg += f"\nPaystack: {paystack_url}\n"
