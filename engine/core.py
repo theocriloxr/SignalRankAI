@@ -788,20 +788,14 @@ def main_loop(DRY_RUN: bool = False):
                     user_signals = []
                     for sig in scored_signals_all:
                         try:
-                            # support either async or sync should_send_signal
+                            eligible = False
                             try:
-                                eligible = run_sync(delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None))
+                                eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None)
                             except Exception:
-                                # fallback to sync
-                                try:
-                                    eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None)
-                                except Exception:
-                                    eligible = False
+                                eligible = False
 
                             if eligible:
-                                msg = delivery_mgr.format_for_delivery(sig, user_tier)
-                                if msg:
-                                    user_signals.append(msg)
+                                user_signals.append(sig)
                         except Exception:
                             logger.exception("delivery eligibility check failed")
 

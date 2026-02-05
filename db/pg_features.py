@@ -1424,7 +1424,7 @@ async def count_signals_delivered_today(
     
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now: datetime = _utcnow()
-    start_of_day: datetime = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+    start_of_day: datetime = to_naive_utc(now).replace(hour=0, minute=0, second=0, microsecond=0)
     
     res: Result[Tuple[int]] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
@@ -1448,7 +1448,7 @@ async def get_last_signal_delivery_time(
     
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now: datetime = _utcnow()
-    start_of_day: datetime = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+    start_of_day: datetime = to_naive_utc(now).replace(hour=0, minute=0, second=0, microsecond=0)
     
     res: Result[Tuple[datetime]] = await session.execute(
         select(SignalDelivery.delivered_at)

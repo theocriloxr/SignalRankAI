@@ -45,9 +45,39 @@ class TierDeliveryManager:
     def __init__(self):
         """Initialize delivery manager."""
         self.delivery_log = []
-    async def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
+    def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
         """Check if signal should be sent to this user based on tier and quality, using DB for daily limit."""
         import logging
+        from utils.async_runner import run_sync
+
+        tier = str(user_tier or 'free').lower()
+        # Quality gates (MUST pass)
+        if tier == 'free' and score < self.MIN_SCORE_FREE:
+            logging.info(f"[delivery] User {user_id} (free) score {score} < {self.MIN_SCORE_FREE}, not eligible.")
+            return False
+        elif tier == 'premium' and score < self.MIN_SCORE_PREMIUM:
+            logging.info(f"[delivery] User {user_id} (premium) score {score} < {self.MIN_SCORE_PREMIUM}, not eligible.")
+            return False
+        elif tier == 'vip' and score < self.MIN_SCORE_VIP:
+            logging.info(f"[delivery] User {user_id} (vip) score {score} < {self.MIN_SCORE_VIP}, not eligible.")
+            return False
+        # Admin always receives
+        max_per_day = self.MAX_SIGNALS_PER_DAY.get(tier)
+        if max_per_day and user_id and session is not None:
+            from db.pg_features import count_signals_delivered_today
+            try:
+                delivered_today = run_sync(count_signals_delivered_today(session, int(user_id)))
+            except Exception:
+                delivered_today = 0
+            if delivered_today >= max_per_day:
+                logging.info(f"[delivery] User {user_id} ({tier}) daily limit {max_per_day} reached: {delivered_today} delivered today.")
+                return False
+        return True
+
+    async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
+        """Async variant of should_send_signal for async contexts."""
+        import logging
+
         tier = str(user_tier or 'free').lower()
         # Quality gates (MUST pass)
         if tier == 'free' and score < self.MIN_SCORE_FREE:
