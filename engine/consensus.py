@@ -33,7 +33,7 @@ def consensus_filter(signals, min_score=None):
 
     if min_score is None:
         # Consensus threshold: higher values = fewer but higher-quality signals
-        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.70)
+        min_score = _env_float("CONSENSUS_MIN_SCORE", 0.20)
 
     try:
         min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())
@@ -63,6 +63,11 @@ def consensus_filter(signals, min_score=None):
             conf = s.get("confidence")
             if conf is None:
                 conf = s.get("strength")
+            if conf is None:
+                score = s.get("score")
+                conf = (float(score) / 100.0) if score is not None else None
+            if conf is None:
+                conf = 0.3
             w = s.get("weight")
             if w is None:
                 w = 1.0
@@ -82,23 +87,29 @@ def consensus_filter(signals, min_score=None):
         grouped_signals[key].append(s)
 
     approved: list[dict] = []
+    strict_groups = _env_bool("CONSENSUS_STRICT_GROUPS", False)
     required_groups = ["momentum", "trend", "structure", "volatility", "volume"]
     for key, sigs in grouped_signals.items():
         # Only approve if total confidence and group count pass thresholds
         if float(grouped_score.get(key) or 0.0) < float(min_score):
             continue
         groups_present = set(grouped_groups.get(key) or set())
-        # Require at least one from each major group: momentum, (trend or structure), (volatility or volume)
-        has_momentum = "momentum" in groups_present
-        has_trend_or_structure = bool({"trend", "structure"} & groups_present)
-        has_vol_or_volume = bool({"volatility", "volume"} & groups_present)
-        if not (has_momentum and has_trend_or_structure and has_vol_or_volume):
-            continue
-        if len(groups_present) < int(min_groups):
-            continue
+        if groups_present:
+            # Require at least one from each major group: momentum, (trend or structure), (volatility or volume)
+            has_momentum = "momentum" in groups_present
+            has_trend_or_structure = bool({"trend", "structure"} & groups_present)
+            has_vol_or_volume = bool({"volatility", "volume"} & groups_present)
+            if strict_groups and not (has_momentum and has_trend_or_structure and has_vol_or_volume):
+                continue
+            if len(groups_present) < int(min_groups):
+                continue
+        else:
+            # If strategy groups are missing, allow consensus to pass on score alone (unless strict)
+            if strict_groups:
+                continue
         # Guarantee one unique signal per asset/timeframe/direction/consensus
         # Pick the highest-confidence signal as representative
-        best = max(sigs, key=lambda s: float(s.get("confidence", 0)), default=None)
+        best = max(sigs, key=lambda s: float(s.get("confidence", s.get("strength", s.get("score", 0)) or 0)), default=None)
         if best:
             approved.append(best)
     return approved
