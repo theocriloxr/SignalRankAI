@@ -122,6 +122,7 @@ async def format_tier_upgrade_confirmation(
             "✅ 30-day history\n\n"
             f"💰 Amount: ₦{amount:,.0f}\n"
             f"⏰ Duration: {duration_days} days\n\n"
+            "Auto-renew only if you opt in and link your card.\n"
             "Click below to pay with Paystack."
         )
     elif tier_upper == "VIP":
@@ -138,6 +139,7 @@ async def format_tier_upgrade_confirmation(
             "✅ Monthly performance reports\n\n"
             f"💰 Amount: ₦{amount:,.0f}\n"
             f"⏰ Duration: {duration_days} days\n\n"
+            "Auto-renew only if you opt in and link your card.\n"
             "Limited VIP seats available. Click below to secure yours!"
         )
     else:

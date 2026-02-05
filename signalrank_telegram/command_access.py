@@ -26,6 +26,8 @@ COMMAND_TIERS = {
     "language": "FREE",
     "referral_leaderboard": "FREE",
     "referral_rewards": "FREE",
+    "support": "FREE",
+    "status": "FREE",
     
     # PREMIUM COMMANDS
     "performance": "PREMIUM",
@@ -78,12 +80,14 @@ COMMAND_HELP = {
             ("disclaimer", "Risk disclaimer"),
             ("pricing", "View pricing plans"),
             ("upgrade", "Subscribe to Premium/VIP"),
+            ("status", "Check subscription status"),
             ("signals", "View signals sent to you"),
             ("signal", "Lookup a specific signal (reference)"),
             ("outcome", "Check outcome of a signal"),
             ("invite", "Get your referral link (earn rewards)"),
             ("policy", "Subscription & refund policy"),
             ("recap", "Weekly performance recap"),
+            ("support", "Contact support"),
             # ("buy_extra_signals", "Buy 1-5 extra daily signals (₦300 each)"),
         ],
         "footer": (
@@ -92,6 +96,8 @@ COMMAND_HELP = {
             "• Outcome notifications (basic)\n"
             "• Daily summary\n"
             "• Referral rewards\n\n"
+            "Markets: Crypto (spot) + major FX pairs\n"
+            "Features: AI analysis, risk plans, TP/SL alerts\n\n"
             "💡 Tip: Upgrade to PREMIUM for real-time signals and full details."
         ),
     },
@@ -117,6 +123,11 @@ COMMAND_HELP = {
             ("risk", "Risk management guidance"),
             ("alerts", "TP/SL alerts + quiet hours settings"),
             ("analyze", "AI analysis for a specific pair"),
+            ("reports", "Daily/weekly report opt-in"),
+            ("notify", "Notification preferences"),
+            ("apikey", "API key for signals"),
+            ("filter", "Custom signal filters"),
+            ("support", "Contact support"),
             # ("buy_extra_signals", "Buy extra daily signals (if available)"),
         ],
         "footer": (
@@ -127,6 +138,8 @@ COMMAND_HELP = {
             "• TP/SL hit notifications\n"
             "• Daily & weekly stats\n"
             "• Risk management guidance\n\n"
+            "Markets: Crypto (spot) + major FX pairs\n"
+            "Features: AI analysis, risk plans, TP/SL alerts\n\n"
             "💡 Tip: Upgrade to VIP for elite signals."
         ),
     },
@@ -155,6 +168,7 @@ COMMAND_HELP = {
             ("early", "Early access to market moves"),
             ("report", "Detailed monthly performance report"),
             ("analyze", "AI analysis for a specific pair"),
+            ("support", "Contact support"),
         ],
         "footer": (
             "🔴 VIP Features:\n"
@@ -205,6 +219,7 @@ COMMAND_HELP = {
             ("version", "System version/deployment info"),
             ("correct_signal", "Correct/modify a signal outcome"),
             ("analyze", "AI analysis for a specific pair"),
+            ("support", "Contact support"),
         ],
         "footer": (
             "👑 Full System Access:\n"
@@ -312,7 +327,7 @@ def get_help_message(tier: str) -> str:
         "",
         "📌 Notes",
         "• Signals are real-time from live market data",
-        "• Supports crypto, FX, and stocks",
+        "• Supports crypto and FX",
         "• Signal corrections: automatic + manual fixes",
         "• No duplicate signals per user",
         "• Tier features reflect your current subscription",

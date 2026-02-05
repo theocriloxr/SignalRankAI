@@ -217,6 +217,8 @@ from .commands import (
     about_command,
     faq_command,
     disclaimer_command,
+    status_command,
+    support_command,
     performance_command,
     pricing_command,
     upgrade_command,
@@ -1329,10 +1331,12 @@ def run_bot() -> None:
                     ("pricing", "Pricing"),
                     ("upgrade", "Upgrade / subscribe"),
                     ("help", "Commands"),
+                    ("status", "Subscription status"),
                     ("signals", "Latest signals"),
                     ("signal", "Signal by reference"),
                     ("performance", "Performance"),
                     ("invite", "Invite"),
+                    ("support", "Support"),
                 ]
             )
         except Exception:
@@ -1341,10 +1345,12 @@ def run_bot() -> None:
     application.post_init = _post_init
 
     application.add_handler(CommandHandler("start", _audit_handler("start", start_command)))
+    application.add_handler(CommandHandler("status", _audit_handler("status", status_command)))
     application.add_handler(CommandHandler("help", _audit_handler("help", help_command)))
     application.add_handler(CommandHandler("about", _audit_handler("about", about_command)))
     application.add_handler(CommandHandler("faq", _audit_handler("faq", faq_command)))
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
+    application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))

@@ -58,6 +58,12 @@ def require_tier(min_tier):
 			return result
 		return inner
 	return wrapper
+# --- USER COMMAND: /support ---
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	support_contact = "@theocrilox"
+	await update.message.reply_text(f"For help or questions, contact support: {support_contact}")
 # --- USER COMMAND: /status ---
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
@@ -190,6 +196,37 @@ async def language_command(update, context) -> None:
 		return
 	user_prefs_store.set_prefs(user_id, language=lang)
 	await update.message.reply_text(f"Language set to {LANGUAGES[lang]}.")
+
+# --------- CUSTOM SIGNAL FILTERS COMMAND ---------
+@require_tier("PREMIUM")
+async def filter_command(update, context) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	args = context.args or []
+	if not args:
+		prefs = user_prefs_store.get_prefs(user_id)
+		filters = prefs.get("filters", {})
+		if not filters:
+			await update.message.reply_text("No custom filters set. Use /filter min_score 60 or /filter rr 2.0 or /filter regime TRENDING.")
+		else:
+			lines: list[str] = ["Your custom filters:"]
+			for k, v in filters.items():
+				lines.append(f"{k}: {v}")
+			await update.message.reply_text("\n".join(lines))
+		return
+	key = args[0].lower()
+	if key not in {"min_score", "rr", "regime"}:
+		await update.message.reply_text("Supported filters: min_score, rr, regime. Example: /filter min_score 60")
+		return
+	value = args[1] if len(args) > 1 else None
+	if not value:
+		await update.message.reply_text("Usage: /filter <min_score|rr|regime> <value>")
+		return
+	filters = user_prefs_store.get_prefs(user_id).get("filters", {})
+	filters[key] = value
+	user_prefs_store.set_prefs(user_id, filters=filters)
+	await update.message.reply_text(f"Filter set: {key} = {value}")
 
 # --------- SCHEDULED REPORTS OPT-IN COMMAND ---------
 @require_tier("PREMIUM")
@@ -620,7 +657,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	msg: str = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
 	# Add dashboard link for eligible users
 	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
-		dashboard_url: str = f"https://yourdomain.com/userdash/login?uid={user_id}"
+		base_url = os.getenv("DASHBOARD_URL") or "https://yourdomain.com/userdash/login"
+		sep = "&" if "?" in base_url else "?"
+		dashboard_url: str = f"{base_url}{sep}uid={user_id}"
 		# Escape brackets and parentheses in dashboard link for Markdown V2
 		safe_dashboard_url: str = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
 		safe_dashboard_text: str = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
@@ -646,7 +685,9 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 	if tier.strip().upper() not in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		await update.message.reply_text("The dashboard is only available for Premium, VIP, and above.")
 		return
-	dashboard_url: str = f"https://yourdomain.com/userdash/login?uid={user_id}"
+	base_url = os.getenv("DASHBOARD_URL") or "https://yourdomain.com/userdash/login"
+	sep = "&" if "?" in base_url else "?"
+	dashboard_url: str = f"{base_url}{sep}uid={user_id}"
 	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="Markdown")
 
 
@@ -1525,6 +1566,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
+	paystack_url: str | None = os.getenv("PAYSTACK_URL")
 	# VIP seat info from Postgres (best-effort)
 	try:
 		from db.session import get_engine_for_event_loop, get_session
@@ -1544,15 +1586,15 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	msg: str = (
 		"💎 SignalRankAI Pricing\n\n"
 		"🆓 FREE\n"
-		"• 1–2 delayed signal summaries per day\n"
+		"• 1–3 delayed signal summaries per day\n"
 		"• Outcome notifications (no exact prices)\n"
 		"• Daily performance summary (limited)\n"
 		"• Access to /pricing and /upgrade\n\n"
-		"• Optional: buy extra daily signals (₦300 each, 24h access)\n\n"
+		"• Optional: buy extra daily signals (₦600 each, 24h access)\n\n"
 		"🟡 PREMIUM\n"
-		"₦4,000 / week\n"
-		"₦12,000 / month\n"
-		"₦28,000 / 3 months\n"
+		"₦8,000 / week\n"
+		"₦24,000 / month\n"
+		"₦56,000 / 3 months\n"
 		"• Real-time signals (5m → 24h)\n"
 		"• Exact Entry, SL, TP\n"
 		"• Confidence score per trade\n"
@@ -1560,15 +1602,18 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		"• Daily & weekly performance stats\n"
 		"• Access to /performance\n\n"
 		"🔴 VIP / ELITE\n"
-		"₦20,000 / month (limited seats)\n"
+		"₦40,000 / month (limited seats)\n"
 		+ vip_line + "\n"
 		"• Highest confidence signals only (score ≥ 85)\n"
 		"• Reduced frequency (quality > quantity)\n"
 		"• Early alerts + priority notifications\n"
 		"• Monthly performance report\n\n"
-		"📌 No hype. Transparent tracking.\n"
-		"Use /upgrade to subscribe.\n\n"
-		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
+		"Markets: Crypto (spot) + major FX pairs\n"
+		"Features: AI analysis, risk plans, TP/SL alerts, performance tracking\n\n"
+		"📌 No refunds for now. Auto-renew only if you agree and link your card.\n"
+		"Use /upgrade to subscribe.\n"
+		+ (f"Paystack: {paystack_url}\n" if paystack_url else "")
+		+ "\n⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
 	if update.message is not None:
 		await update.message.reply_text(msg)
@@ -1710,27 +1755,31 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	
 	# PREMIUM options
 	premium_plans: list[tuple[str, int, int, str | None]] = [
-		("Premium (₦4,000 / 7 days)", 4000, 7, getattr(config, "PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY", None)),
-		("Premium (₦12,000 / 30 days)", 12000, 30, premium_monthly_code),
-		("Premium (₦28,000 / 90 days)", 28000, 90, premium_quarterly_code),
+		("Premium (₦8,000 / 7 days)", 8000, 7, getattr(config, "PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY", None)),
+		("Premium (₦24,000 / 30 days)", 24000, 30, premium_monthly_code),
+		("Premium (₦56,000 / 90 days)", 56000, 90, premium_quarterly_code),
 	]
 	
-	premium_formatted: str = await format_tier_upgrade_confirmation("PREMIUM", 4000, 7, user_id)
+	premium_formatted: str = await format_tier_upgrade_confirmation("PREMIUM", 8000, 7, user_id)
 	premium_msg: str = premium_formatted + "\n\n📌 PREMIUM Plans:\n"
 	
 	for label, amount, days, plan_code in premium_plans:
 		link = generate_paystack_link(user_id, amount, tier="premium", duration_days=days, plan_code=plan_code)
 		premium_msg += f"• {label}: {link}\n"
+	paystack_url: str | None = os.getenv("PAYSTACK_URL")
+	if paystack_url:
+		premium_msg += f"\nPaystack: {paystack_url}\n"
 	
 	if update.message is not None:
 		await update.message.reply_text(premium_msg)
 	
 	# VIP link only if seats available (or user is owner/bypassed/already VIP)
 	try:
-		from db.session import ENGINE, get_session
+		from db.session import get_engine_for_event_loop, get_session
 		from db.repository import count_active_vip_users, get_active_subscription
 		from config import OWNER_IDS
-		if ENGINE is not None:
+		engine = get_engine_for_event_loop()
+		if engine is not None:
 			async with get_session() as session:
 				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 				limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
@@ -1752,11 +1801,13 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		limit = None
 
 	if can_offer_vip:
-		vip_formatted: str = await format_tier_upgrade_confirmation("VIP", 20000, 30, user_id)
+		vip_formatted: str = await format_tier_upgrade_confirmation("VIP", 40000, 30, user_id)
 		vip_msg: str = vip_formatted + "\n\n"
 		
-		vip_link = generate_paystack_link(user_id, 20000, tier="vip", duration_days=30, plan_code=vip_monthly_code)
+		vip_link = generate_paystack_link(user_id, 40000, tier="vip", duration_days=30, plan_code=vip_monthly_code)
 		vip_msg += f"🔗 {vip_link}\n"
+		if paystack_url:
+			vip_msg += f"\nPaystack: {paystack_url}\n"
 		
 		if remaining is not None:
 			vip_msg += f"\n⚠️ {remaining}/{limit} VIP seats remaining"
@@ -1781,9 +1832,11 @@ async def policy_command(update, context) -> None:
 		return
 	msg = (
 		"📄 Subscription & Refund Policy\n\n"
-		"• Due to the digital and time-sensitive nature of the service, payments are non-refundable.\n"
+		"• Payments are non-refundable.\n"
+		"• Auto-renew only applies if you explicitly agree and link your card.\n"
+		"• If you do not link a card, your plan expires at the end of the purchased period.\n"
 		"• If technical issues prevent delivery, subscription time may be extended.\n\n"
-		"Subscriptions activate after successful verification and expire at the end of the purchased period.\n\n"
+		"Subscriptions activate after successful verification.\n\n"
 		"⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
 	)
 	await update.message.reply_text(msg)
@@ -2014,12 +2067,17 @@ async def about_command(update, context) -> None:
 		"SignalRankAI is a rule-based trading signal platform designed to deliver high-quality, risk-aware trade ideas.\n\n"
 		"The system:\n"
 		"• Uses multiple market strategies\n"
+		"• Applies ML-assisted quality filters\n"
 		"• Filters out weak or risky setups\n"
 		"• Ranks signals by quality\n"
 		"• Limits signal frequency to avoid noise\n\n"
+		"Markets:\n"
+		"• Crypto (spot)\n"
+		"• Major FX pairs\n\n"
 		"SignalRankAI does not execute trades and does not guarantee profits.\n"
 		"All signals are for educational and informational purposes only.\n\n"
-		"Trade responsibly."
+		"Trade responsibly.\n\n"
+		"Support: @theocrilox"
 	)
 	if update.message is not None:
 		await update.message.reply_text(msg)
@@ -2035,11 +2093,11 @@ async def faq_command(update, context) -> None:
 		"3) How often are signals sent?\n"
 		"Only when high-quality setups appear. Some days may have fewer or no signals.\n\n"
 		"4) What markets are covered?\n"
-		"Major crypto markets and timeframes, depending on current conditions.\n\n"
+		"Crypto (spot) and major FX pairs, depending on current conditions and data availability.\n\n"
 		"5) What’s the difference between Free, Premium, and VIP?\n"
 		"Free users receive delayed summaries.\nPremium and VIP users receive real-time signals, with higher tiers getting more detail and earlier access.\n\n"
 		"6) Can I cancel anytime?\n"
-		"Yes. Subscriptions expire automatically and do not auto-renew unless stated.\n\n"
+		"Yes. Subscriptions expire automatically. Auto-renew only applies if you opt in and link a card.\n\n"
 		"7) Is this financial advice?\n"
 		"No. Signals are for informational purposes only."
 	)
