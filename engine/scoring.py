@@ -35,7 +35,7 @@ def score_signal(signal):
     Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
-    confluence_min = _env_float("CONFLUENCE_MIN", 35.0)
+    confluence_min = _env_float("CONFLUENCE_MIN", 25.0)
     confluence_score = calculate_confluence(signal)
     if confluence_score < confluence_min:
         return 0.0
@@ -113,55 +113,67 @@ def calculate_confluence(signal: dict) -> float:
     All factors weighted equally. Score = % of confirmations met.
     """
     confirmations = 0
-    total_checks = 5
+    total_checks = 0
     
     # 1. Trend alignment
-    trend_ema = signal.get("trend_ema", 0)
-    trend_sma = signal.get("trend_sma", 0)
+    trend_ema = signal.get("trend_ema")
+    trend_sma = signal.get("trend_sma")
     direction = _direction_sign(signal.get("direction", 0))
 
-    if (direction > 0 and trend_ema > 0 and trend_sma > 0) or \
-       (direction < 0 and trend_ema < 0 and trend_sma < 0):
-        confirmations += 1
+    if trend_ema is not None and trend_sma is not None:
+        total_checks += 1
+        if (direction > 0 and trend_ema > 0 and trend_sma > 0) or \
+           (direction < 0 and trend_ema < 0 and trend_sma < 0):
+            confirmations += 1
     
     # 2. Momentum confirmation
-    rsi = signal.get("rsi", 50)
-    macd_trend = signal.get("macd_trend", 0)
+    rsi = signal.get("rsi")
+    macd_trend = signal.get("macd_trend")
 
-    if direction > 0:
-        # For longs: RSI > 50 (upward momentum) and MACD positive
-        if rsi > 50 and macd_trend > 0:
-            confirmations += 1
-    elif direction < 0:
-        # For shorts: RSI < 50 (downward momentum) and MACD negative
-        if rsi < 50 and macd_trend < 0:
-            confirmations += 1
+    if rsi is not None and macd_trend is not None:
+        total_checks += 1
+        if direction > 0:
+            # For longs: RSI > 50 (upward momentum) and MACD positive
+            if rsi > 50 and macd_trend > 0:
+                confirmations += 1
+        elif direction < 0:
+            # For shorts: RSI < 50 (downward momentum) and MACD negative
+            if rsi < 50 and macd_trend < 0:
+                confirmations += 1
     
     # 3. Volume confirmation
-    volume_ratio = signal.get("volume_ratio", 1.0)
-    if volume_ratio > 1.5:  # Above average volume
-        confirmations += 1
+    volume_ratio = signal.get("volume_ratio")
+    if volume_ratio is not None:
+        total_checks += 1
+        if volume_ratio > _env_float("VOLUME_RATIO_MIN", 1.2):  # Above average volume
+            confirmations += 1
     
     # 4. Support/Resistance respect
-    nearest_support = signal.get("nearest_support", 0)
-    nearest_resistance = signal.get("nearest_resistance", 0)
-    current_price = signal.get("close_price", 0)
-    
-    if direction > 0 and current_price > nearest_support:
-        confirmations += 1  # Price is above support
-    elif direction < 0 and current_price < nearest_resistance:
-        confirmations += 1  # Price is below resistance
+    nearest_support = signal.get("nearest_support")
+    nearest_resistance = signal.get("nearest_resistance")
+    current_price = signal.get("close_price")
+
+    if current_price is not None and (nearest_support is not None or nearest_resistance is not None):
+        total_checks += 1
+        if nearest_support is not None and direction > 0 and current_price > nearest_support:
+            confirmations += 1  # Price is above support
+        elif nearest_resistance is not None and direction < 0 and current_price < nearest_resistance:
+            confirmations += 1  # Price is below resistance
     
     # 5. Market regime alignment
-    regime = signal.get("regime", "unknown")
-    adx_strength = signal.get("adx_trend", "weak")
-    
-    if regime == "trending" and adx_strength in ("moderate", "strong"):
-        confirmations += 1
-    elif regime == "ranging" and adx_strength == "weak":
-        confirmations += 1
+    regime = signal.get("regime")
+    adx_strength = signal.get("adx_trend")
+
+    if regime in ("trending", "ranging") and adx_strength in ("weak", "moderate", "strong"):
+        total_checks += 1
+        if regime == "trending" and adx_strength in ("moderate", "strong"):
+            confirmations += 1
+        elif regime == "ranging" and adx_strength == "weak":
+            confirmations += 1
     
     # Calculate percentage
+    if total_checks <= 0:
+        return 50.0
     confluence_pct = (confirmations / total_checks) * 100
     return confluence_pct
 
