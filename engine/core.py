@@ -437,6 +437,7 @@ def main_loop(DRY_RUN: bool = False):
             all_market_data = {}
 
         scored_signals_all: List[Dict] = []
+        max_candidate_score = None
 
         # Per-asset pipeline
         for asset in assets:
@@ -634,6 +635,13 @@ def main_loop(DRY_RUN: bool = False):
                         sig['score'] = score
                         sig.setdefault('confidence', min(1.0, score / 100.0))
 
+                        # track highest scored candidate even if it doesn't pass final gates
+                        try:
+                            if max_candidate_score is None or score > max_candidate_score:
+                                max_candidate_score = score
+                        except Exception:
+                            pass
+
                         # advanced filters
                         market_filter_data = {
                             'price': sig.get('entry', sig.get('close_price', 0)),
@@ -794,7 +802,13 @@ def main_loop(DRY_RUN: bool = False):
         if _env_bool("ENGINE_CYCLE_LOG", True):
             try:
                 top_score = max((s.get('score', 0) for s in scored_signals_all), default=None)
-                print(f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} max_score={top_score}", flush=True)
+                if top_score is None:
+                    top_score = max_candidate_score
+                print(
+                    f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} "
+                    f"max_score={top_score} max_score_pre_threshold={max_candidate_score}",
+                    flush=True,
+                )
             except Exception:
                 pass
 
