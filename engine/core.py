@@ -438,6 +438,17 @@ def main_loop(DRY_RUN: bool = False):
 
         scored_signals_all: List[Dict] = []
         max_candidate_score = None
+        pipeline_stats = {
+            "strategy_signals": 0,
+            "normalized": 0,
+            "consensus": 0,
+            "selected": 0,
+            "unique": 0,
+            "strict_candidates": 0,
+            "risk_passed": 0,
+            "final_signals": 0,
+            "stored": 0,
+        }
 
         # Per-asset pipeline
         for asset in assets:
@@ -471,6 +482,7 @@ def main_loop(DRY_RUN: bool = False):
                     logger.exception(f"Strategies failed for {asset}")
                     strategy_signals = []
 
+                pipeline_stats["strategy_signals"] += len(strategy_signals)
                 if not strategy_signals:
                     logger.debug(f"[engine] No strategy signals for {asset}")
                     continue
@@ -482,12 +494,14 @@ def main_loop(DRY_RUN: bool = False):
                     normalized = controller.normalize_signals(strategy_signals)
                 except Exception:
                     normalized = strategy_signals
+                pipeline_stats["normalized"] += len(normalized)
 
                 # Consensus filter
                 try:
                     consensus_signals = apply_consensus_filter(normalized)
                 except Exception:
                     consensus_signals = normalized
+                pipeline_stats["consensus"] += len(consensus_signals)
 
                 # Pick best direction per pair/timeframe
                 try:
@@ -497,6 +511,7 @@ def main_loop(DRY_RUN: bool = False):
                         selected_signals = consensus_signals
                 except Exception:
                     selected_signals = consensus_signals
+                pipeline_stats["selected"] += len(selected_signals)
 
                 # Compute fingerprints & unique
                 try:
@@ -518,6 +533,7 @@ def main_loop(DRY_RUN: bool = False):
                     selected_signals = unique_signals
                 except Exception:
                     pass
+                pipeline_stats["unique"] += len(selected_signals)
 
                 # Validate/strict gates
                 strict_candidates = []
@@ -574,6 +590,7 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         logger.exception("candidate gating failed")
 
+                pipeline_stats["strict_candidates"] += len(strict_candidates)
                 if not strict_candidates:
                     continue
 
@@ -618,6 +635,7 @@ def main_loop(DRY_RUN: bool = False):
                     sig['ml_probability'] = prob
                     risk_passed.append(sig)
 
+                pipeline_stats["risk_passed"] += len(risk_passed)
                 if not risk_passed:
                     continue
 
@@ -714,12 +732,14 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         logger.exception("scoring/filtering failed for signal")
 
+                pipeline_stats["final_signals"] += len(final_signals)
                 # store final_signals
                 for sig in final_signals:
                     try:
                         logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')}")
                         store_signal_compat(sig)
                         scored_signals_all.append(sig)
+                        pipeline_stats["stored"] += 1
                     except Exception as e:
                         logger.exception("store_signal failed")
 
@@ -813,9 +833,13 @@ def main_loop(DRY_RUN: bool = False):
                 top_score = max((s.get('score', 0) for s in scored_signals_all), default=None)
                 if top_score is None:
                     top_score = max_candidate_score
+                if _env_bool("ENGINE_PIPELINE_DEBUG", True):
+                    stats_str = " ".join([f"{k}={v}" for k, v in pipeline_stats.items()])
+                else:
+                    stats_str = ""
                 print(
                     f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} "
-                    f"max_score={top_score} max_score_pre_threshold={max_candidate_score}",
+                    f"max_score={top_score} max_score_pre_threshold={max_candidate_score} {stats_str}",
                     flush=True,
                 )
             except Exception:
