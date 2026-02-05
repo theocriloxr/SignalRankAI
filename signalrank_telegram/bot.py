@@ -1294,6 +1294,21 @@ def run_bot() -> None:
 
     application = Application.builder().token(_require_telegram_token()).build()
 
+    # Ensure required schema exists (hotfix for missing premium_until).
+    try:
+        from db.session import get_engine_for_event_loop, get_session
+        from sqlalchemy import text
+
+        if get_engine_for_event_loop() is not None:
+            async def _ensure_schema() -> None:
+                async with get_session() as session:
+                    await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP"))
+                    await session.commit()
+
+            run_sync(_ensure_schema())
+    except Exception as e:
+        _log_once("ensure_schema_failed", f"[bot] schema ensure failed: {type(e).__name__}: {e}")
+
     # Acquire a global DB advisory lock to prevent multiple pollers across replicas.
     try:
         from db.session import get_session

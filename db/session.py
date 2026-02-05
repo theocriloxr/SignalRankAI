@@ -47,8 +47,10 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
 
 # --- Per-event-loop engine/session cache ---
 import asyncio
+from sqlalchemy import text
 _engine_cache = {}
 _sessionmaker_cache = {}
+_schema_checked = False
 
 def get_engine_for_event_loop() -> Optional[AsyncEngine]:
     loop = asyncio.get_event_loop()
@@ -77,6 +79,18 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL is not configured")
     async with SessionLocal() as session:
+        global _schema_checked
+        if not _schema_checked:
+            try:
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP"))
+                await session.commit()
+            except Exception:
+                # Best-effort; keep app running
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+            _schema_checked = True
         yield session
 
 
