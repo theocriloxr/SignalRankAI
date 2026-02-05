@@ -12,6 +12,16 @@ def _direction_sign(direction_val) -> float:
         return 0.0
 
 
+import os
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
 def score_signal(signal):
     """Score a signal based on multiple factors with confluence validation.
     
@@ -25,8 +35,9 @@ def score_signal(signal):
     Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
+    confluence_min = _env_float("CONFLUENCE_MIN", 35.0)
     confluence_score = calculate_confluence(signal)
-    if confluence_score < 50:  # Need at least 50% confluence
+    if confluence_score < confluence_min:
         return 0.0
     
     # Target: 0..100 score
@@ -34,7 +45,8 @@ def score_signal(signal):
     confidence = min(max(confidence, 0.0), 1.0)
     
     # ULTRA-STRICT QUALITY GATE: Only trade-worthy setups
-    if confidence < 0.50:
+    confidence_min = _env_float("CONFIDENCE_MIN", 0.35)
+    if confidence < confidence_min:
         return 0.0
 
     entry = signal.get("entry")
@@ -48,8 +60,9 @@ def score_signal(signal):
     # Base score: weighted components
     score = (confidence * 30.0) + (rr_component * 30.0) + (vol_component * 20.0) + (confluence_score * 0.2)
     
-    # Hard rejection for poor R/R (2.0:1 minimum)
-    if rr < 2.0:
+    min_rr = _env_float("MIN_RR", 1.5)
+    # Hard rejection for poor R/R
+    if rr < min_rr:
         return 0.0
     
     # REGIME ALIGNMENT BONUS
@@ -175,12 +188,15 @@ def rr_score(rr):
     except Exception:
         rr = 0.0
     
-    # Hard floor: reject RR < 2.0 (need 2:1 minimum)
-    if rr < 2.0:
+    min_rr = _env_float("MIN_RR", 1.5)
+    # Hard floor: reject RR below configured minimum
+    if rr < min_rr:
         return 0.0
     
     # Scale: 2.0 is 50%, 3.0 is 100%
-    return float(min(max((rr - 2.0) / 1.0, 0.0), 1.0))
+    base = max(min_rr, 1.0)
+    scale = max(0.5, 3.0 - base)
+    return float(min(max((rr - base) / scale, 0.0), 1.0))
 
 
 def htf_alignment_score(signal):
@@ -208,13 +224,15 @@ def volatility_quality_score(signal):
     except Exception:
         vol = 0.0
     
-    if vol <= 0.08:
+    max_vol = _env_float("MAX_VOLATILITY", 0.16)
+    ideal_vol = _env_float("IDEAL_VOLATILITY", 0.10)
+    if vol <= ideal_vol:
         return 1.0  # Perfect
-    elif vol >= 0.12:
+    elif vol >= max_vol:
         return 0.0  # Hard reject: too volatile
     else:
-        # Linear scale: 0.08→0.12 maps to 1.0→0.0
-        return float((0.12 - vol) / (0.12 - 0.08))
+        # Linear scale: ideal_vol→max_vol maps to 1.0→0.0
+        return float((max_vol - vol) / max(1e-9, (max_vol - ideal_vol)))
 
 
 def historical_winrate_score(signal):

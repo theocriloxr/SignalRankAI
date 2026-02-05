@@ -296,7 +296,7 @@ async def _maybe_await(func, *a, **k):
         return func(*a, **k)
 
 
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 55)
 
 
 def load_tradable_assets() -> List[str]:
@@ -522,6 +522,25 @@ def main_loop(DRY_RUN: bool = False):
                 strict_candidates = []
                 for sig in selected_signals:
                     try:
+                        # Enrich signal with indicator context for confluence scoring
+                        tf = sig.get('timeframe') or (list(market_data.keys())[0] if market_data else None)
+                        tf_data = market_data.get(tf, {}) if tf else {}
+                        ind = tf_data.get('indicators', {}) if isinstance(tf_data, dict) else {}
+
+                        if isinstance(ind, dict):
+                            sig.setdefault('trend_ema', ind.get('trend_ema', 0))
+                            sig.setdefault('trend_sma', ind.get('trend_sma', 0))
+                            sig.setdefault('rsi', ind.get('rsi', 50))
+                            sig.setdefault('macd_trend', ind.get('macd_trend', 0))
+                            sig.setdefault('volume_ratio', ind.get('volume_ratio', 1.0))
+                            sig.setdefault('nearest_support', ind.get('nearest_support', 0))
+                            sig.setdefault('nearest_resistance', ind.get('nearest_resistance', 0))
+                            sig.setdefault('close_price', ind.get('close_price', sig.get('entry', 0)))
+                            sig.setdefault('adx_trend', ind.get('adx_trend', 'weak'))
+                            sig.setdefault('regime', ind.get('regime', regime))
+                            if sig.get('volatility') is None:
+                                sig['volatility'] = float(ind.get('atr_percent', 0) or ind.get('bollinger', {}).get('width', 0) or 0)
+
                         # basic validation (structure)
                         from engine.signal_validator import validate_signal
                         ok, reason = validate_signal(sig)
