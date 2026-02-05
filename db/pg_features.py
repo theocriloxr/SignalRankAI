@@ -83,10 +83,9 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-from datetime import timezone
 def _utcnow() -> datetime:
-    # Return a timezone-aware UTC datetime (UTC)
-    return datetime.now(timezone.utc)
+    # Return a naive UTC datetime to match DB columns (TIMESTAMP WITHOUT TIME ZONE)
+    return datetime.utcnow()
 
 
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
