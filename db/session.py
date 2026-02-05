@@ -83,6 +83,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         if not _schema_checked:
             try:
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP"))
+                await session.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER"))
                 await session.commit()
             except Exception:
                 # Best-effort; keep app running

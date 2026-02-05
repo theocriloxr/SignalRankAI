@@ -1305,6 +1305,7 @@ def run_bot() -> None:
             async def _ensure_schema() -> None:
                 async with get_session() as session:
                     await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP"))
+                    await session.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER"))
                     await session.commit()
 
             run_sync(_ensure_schema())
