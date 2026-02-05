@@ -123,6 +123,55 @@ def run_startup_ops(run_mode: str) -> None:
             # Column may already exist or table may not exist yet; not critical
             pass
 
+        # 4) Ensure critical audit tables exist (failsafe if migrations didn't run)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS decision_log (
+                        id SERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36),
+                        asset VARCHAR(32),
+                        timeframe VARCHAR(8),
+                        decision VARCHAR(32) NOT NULL,
+                        reason TEXT,
+                        meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_signal_id ON decision_log(signal_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_asset ON decision_log(asset)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_timeframe ON decision_log(timeframe)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_decision ON decision_log(decision)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_created_at ON decision_log(created_at)")
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ml_rejected_signals (
+                        id SERIAL PRIMARY KEY,
+                        asset VARCHAR(32) NOT NULL,
+                        timeframe VARCHAR(8) NOT NULL,
+                        direction VARCHAR(8) NOT NULL,
+                        entry DOUBLE PRECISION NOT NULL,
+                        stop_loss DOUBLE PRECISION NOT NULL,
+                        take_profit TEXT NOT NULL,
+                        ml_probability DOUBLE PRECISION NOT NULL,
+                        rejection_reason VARCHAR(128) NOT NULL,
+                        features JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        actual_outcome VARCHAR(32),
+                        outcome_tracked_at TIMESTAMP,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_asset ON ml_rejected_signals(asset)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_timeframe ON ml_rejected_signals(timeframe)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_actual_outcome ON ml_rejected_signals(actual_outcome)")
+                conn.commit()
+        except Exception:
+            pass
+
     finally:
         if conn is not None:
             try:

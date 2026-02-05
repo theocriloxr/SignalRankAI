@@ -45,6 +45,8 @@ from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk, risk_check
 from engine.scoring import calculate_signal_score as score_signal, calculate_confluence
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
+from db.repository import persist_decision_log
+from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals, _send_message_sync
 from core.redis_state import state
@@ -110,6 +112,30 @@ except Exception:
         def calculate_dynamic_position_size(self, *a, **k):
             return 1.0, {'method': 'stub'}
     ultra_quality = _UltraStub()
+
+try:
+    from utils.async_runner import run_sync
+except Exception:
+    def run_sync(coro):
+        return asyncio.get_event_loop().run_until_complete(coro)
+
+_ml_rejection_tracker = MLRejectionTracker()
+
+
+def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
+    try:
+        run_sync(
+            persist_decision_log(
+                sig.get("signal_id"),
+                sig.get("asset"),
+                sig.get("timeframe"),
+                decision,
+                reason=reason,
+                meta=meta or {},
+            )
+        )
+    except Exception:
+        pass
 
 try:
     from engine.advanced_exit_manager import advanced_exit
@@ -483,6 +509,7 @@ def main_loop(DRY_RUN: bool = False):
                             fp = None
                         sig['fingerprint'] = fp
                         if fp and fp in seen:
+                            _log_decision("skipped", sig, reason="duplicate_fingerprint", meta={"fingerprint": fp})
                             continue
                         if fp:
                             seen.add(fp)
@@ -500,16 +527,19 @@ def main_loop(DRY_RUN: bool = False):
                         ok, reason = validate_signal(sig)
                         if not ok:
                             sig['rejection_reason'] = f"validation:{reason}"
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
                         # risk gate
                         account_state = type('AccountState', (), {'drawdown': 0.0})()
                         if not risk_check(sig, account_state):
                             sig['rejection_reason'] = 'risk/volatility'
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
                         # confluence
                         conf = calculate_confluence(sig)
                         if conf < 20:  # relaxed here; tune via env
                             sig['rejection_reason'] = f'confluence {conf:.1f}%'
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
                             continue
                         strict_candidates.append(sig)
                     except Exception:
@@ -538,6 +568,23 @@ def main_loop(DRY_RUN: bool = False):
                             approved, prob = True, None
                     if not approved:
                         sig['ml_advisory'] = 'filtered_by_ml'
+                        _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
+                        try:
+                            run_sync(
+                                _ml_rejection_tracker.persist_rejection(
+                                    asset=str(sig.get("asset") or ""),
+                                    timeframe=str(sig.get("timeframe") or ""),
+                                    direction=str(sig.get("direction") or ""),
+                                    entry_price=float(sig.get("entry") or 0),
+                                    stop_loss=float(sig.get("stop_loss") or 0),
+                                    take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
+                                    ml_probability=float(prob or 0),
+                                    rejection_reason="ml_filter",
+                                    features=features if isinstance(features, dict) else {},
+                                )
+                            )
+                        except Exception:
+                            pass
                         continue
                     sig['ml_probability'] = prob
                     risk_passed.append(sig)
@@ -578,6 +625,7 @@ def main_loop(DRY_RUN: bool = False):
                         passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, None)
                         if not passed_filters:
                             sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
 
                         # ultra quality (optional)
@@ -585,6 +633,7 @@ def main_loop(DRY_RUN: bool = False):
                             should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
                             if not should_trade:
                                 sig['rejection_reason'] = f'ultra:{rejection}'
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
 
                         # calculate stops / tps if missing (ATR-based fallback)
@@ -618,6 +667,7 @@ def main_loop(DRY_RUN: bool = False):
                         # final gating by score threshold
                         if sig.get('score', 0) < MIN_SCORE_THRESHOLD:
                             sig['rejection_reason'] = f"score {sig.get('score',0)} < {MIN_SCORE_THRESHOLD}"
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
 
                         # attach regime & expiration
