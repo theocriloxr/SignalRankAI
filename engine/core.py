@@ -542,6 +542,15 @@ def main_loop(DRY_RUN: bool = False):
                             if sig.get('volatility') is None:
                                 sig['volatility'] = float(ind.get('atr_percent', 0) or ind.get('bollinger', {}).get('width', 0) or 0)
 
+                        # preview score (even if it doesn't pass validation/gates)
+                        try:
+                            preview_score = float(score_signal(sig)) if score_signal else 0
+                            sig['_preview_score'] = preview_score
+                            if max_candidate_score is None or preview_score > max_candidate_score:
+                                max_candidate_score = preview_score
+                        except Exception:
+                            pass
+
                         # basic validation (structure)
                         from engine.signal_validator import validate_signal
                         ok, reason = validate_signal(sig)
