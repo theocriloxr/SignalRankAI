@@ -1272,6 +1272,8 @@ def distribute_random_signals_to_free_users_job():
         logger.error(f"❌ Error distributing signals to FREE users: {e}")
 
 
+_bot_lock_conn = None
+
 def run_bot() -> None:
     """Run the Telegram polling bot.
 
@@ -1311,23 +1313,30 @@ def run_bot() -> None:
 
     # Acquire a global DB advisory lock to prevent multiple pollers across replicas.
     try:
-        from db.session import get_session
-        from sqlalchemy import text
+        import psycopg2
 
         lock_id = int(os.getenv("TELEGRAM_BOT_LOCK_ID", "739105"))
+        dsn = (os.getenv("DATABASE_URL") or "").strip()
+        if dsn.startswith("postgresql+asyncpg://"):
+            dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
 
-        async def _try_lock() -> bool:
-            async with get_session() as session:
-                res = await session.execute(text("SELECT pg_try_advisory_lock(:key)"), {"key": lock_id})
-                val = res.scalar()
-                await session.commit()
-                return bool(val)
-
-        if not run_sync(_try_lock()):
-            print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
-            return
+        if dsn:
+            conn = psycopg2.connect(dsn, connect_timeout=5)
+            conn.autocommit = True
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
+                locked = bool(cur.fetchone()[0])
+            if not locked:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
+                return
+            global _bot_lock_conn
+            _bot_lock_conn = conn
     except Exception:
-        # If DB is unavailable, fall back to running (single-instance environments).
+        # If DB is unavailable or lock fails, fall back to running (single-instance environments).
         pass
 
     async def _on_error(update, context) -> None:
