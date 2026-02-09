@@ -126,6 +126,14 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
 async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120):
     logger.info("engine loop starting assets=%s tf=%s interval=%s", assets, timeframes, interval_seconds)
     
+    # Start signal monitor
+    try:
+        from engine.signal_monitor import start_signal_monitor
+        await start_signal_monitor()
+        logger.info("Signal monitor started alongside main loop")
+    except Exception as e:
+        logger.error(f"Failed to start signal monitor: {e}")
+    
     while True:
         try:
             res = await run_once(assets, timeframes, include_ml=include_ml)
