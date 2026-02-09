@@ -955,7 +955,8 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             from engine.price_validator import (
                                 is_signal_fresh, validate_price_drift, 
-                                check_sl_tp_hit, get_current_price
+                                check_sl_tp_hit, get_current_price,
+                                enrich_signal_with_live_price
                             )
                             
                             # Check signal freshness
@@ -970,7 +971,8 @@ def main_loop(DRY_RUN: bool = False):
                             
                             if current_price is None:
                                 logger.warning(f"[engine] Failed to fetch current price for {asset}, using signal as-is")
-                                # Still deliver if we can't fetch price
+                                # Still deliver if we can't fetch price - enrich with age at least
+                                sig = enrich_signal_with_live_price(sig)
                             else:
                                 # Check if SL/TP already hit
                                 should_skip, skip_reason = check_sl_tp_hit(sig, current_price)
@@ -983,11 +985,12 @@ def main_loop(DRY_RUN: bool = False):
                                 if updated_sig:
                                     logger.info(f"[engine] Updated signal prices for {asset}: {drift_reason}")
                                     sig = updated_sig
-                                    # Add current price to signal
-                                    sig['current_price'] = current_price
+                                    # Enrich with current price and age
+                                    sig = enrich_signal_with_live_price(sig)
                                     sig['price_updated'] = True
                                 else:
-                                    sig['current_price'] = current_price
+                                    # Enrich with current price and age
+                                    sig = enrich_signal_with_live_price(sig)
                                     sig['price_updated'] = False
                         except Exception as e:
                             logger.warning(f"[engine] Price validation failed for signal: {e}")

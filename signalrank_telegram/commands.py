@@ -719,6 +719,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
+	
+	# Import freshness validation at function level
+	from engine.price_validator import enrich_signal_with_live_price
 
 	# Owner and admin always get VIP format
 	if tier.lower() in {"owner", "admin"}:
@@ -742,26 +745,32 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				recent_rows = list(res.scalars().all())
 				recent_signals = []
 				for r in recent_rows:
-					recent_signals.append(
-						{
-							"signal_id": r.signal_id,
-							"asset": r.asset,
-							"timeframe": r.timeframe,
-							"direction": r.direction,
-							"entry": r.entry,
-							"stop_loss": r.stop_loss,
-							"take_profit": r.take_profit,
-							"rr_ratio": r.rr_estimate,
-							"score": r.score,
-							"confidence": getattr(r, "confidence", 0.5),
-							"regime": getattr(r, "regime", "NEUTRAL"),
-							"strength": getattr(r, "strength", 0.5),
-							"ml_probability": getattr(r, "ml_probability", 0.5),
-							"strategy_name": r.strategy_name,
-							"strategy_group": r.strategy_group,
-							"created_at": r.created_at,
-						}
-					)
+					sig_dict = {
+						"signal_id": r.signal_id,
+						"asset": r.asset,
+						"timeframe": r.timeframe,
+						"direction": r.direction,
+						"entry": r.entry,
+						"stop_loss": r.stop_loss,
+						"take_profit": r.take_profit,
+						"rr_ratio": r.rr_estimate,
+						"score": r.score,
+						"confidence": getattr(r, "confidence", 0.5),
+						"regime": getattr(r, "regime", "NEUTRAL"),
+						"strength": getattr(r, "strength", 0.5),
+						"ml_probability": getattr(r, "ml_probability", 0.5),
+						"strategy_name": r.strategy_name,
+						"strategy_group": r.strategy_group,
+						"created_at": r.created_at,
+					}
+					
+					# Enrich with live price and freshness info
+					try:
+						sig_dict = enrich_signal_with_live_price(sig_dict)
+					except Exception:
+						pass
+					
+					recent_signals.append(sig_dict)
 
 				if recent_signals:
 					from .formatter import format_signal
@@ -793,8 +802,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				async with get_session() as session:
 					# Fetch ALL signals delivered to user today (no limit)
 					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
-					signals_list = [
-						{
+					signals_list = []
+					for r in rows:
+						sig_dict = {
 							"signal_id": r.signal_id,
 							"asset": r.asset,
 							"timeframe": r.timeframe,
@@ -804,9 +814,16 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 							"take_profit": r.take_profit,
 							"rr_ratio": r.rr_estimate,
 							"score": r.score,
+							"created_at": getattr(r, "created_at", None),
 						}
-						for r in rows
-					]
+						
+						# Enrich with live price and freshness info
+						try:
+							sig_dict = enrich_signal_with_live_price(sig_dict)
+						except Exception:
+							pass
+						
+						signals_list.append(sig_dict)
 		except Exception as e:
 			_audit_logger.error(f"Error fetching delivered signals for {user_id}: {e}")
 			signals_list = []
@@ -1289,7 +1306,40 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			"strategy_name": getattr(sig, "strategy_name", None),
 			"strategy_group": getattr(sig, "strategy_group", None),
 			"ml_probability": getattr(sig, "ml_probability", None),
+			"created_at": getattr(sig, "created_at", None),
 		}
+		
+		# Enrich signal with live price and freshness info
+		staleness_warning = None
+		try:
+			from engine.price_validator import (
+				enrich_signal_with_live_price, 
+				is_signal_fresh, 
+				get_asset_type
+			)
+			from core.tier_constants import MAX_SIGNAL_AGE_SECONDS
+			
+			sig_dict = enrich_signal_with_live_price(sig_dict)
+			
+			# Check if signal is stale
+			is_fresh, fresh_reason = is_signal_fresh(sig_dict)
+			if not is_fresh:
+				staleness_warning = f"⚠️ Warning: Signal is stale ({fresh_reason})"
+			else:
+				# Check age against threshold
+				age_seconds = sig_dict.get('signal_age_seconds')
+				if age_seconds:
+					asset = sig_dict.get('asset', '')
+					asset_type = get_asset_type(asset)
+					max_age = MAX_SIGNAL_AGE_SECONDS.get(asset_type, 300)
+					# Warning if over 50% of max age
+					if age_seconds > (max_age * 0.5):
+						age_minutes = int(age_seconds / 60)
+						staleness_warning = f"⏰ Signal is {age_minutes} minutes old"
+		except Exception as e:
+			import logging
+			logging.getLogger(__name__).debug(f"Failed to check signal freshness: {e}")
+		
 		# Enrich with entry_status and current price
 		entry: float | None = _as_float(sig_dict.get("entry"))
 		asset: str = str(sig_dict.get("asset") or "").upper()
@@ -1369,6 +1419,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 		if tier_rank(tier) < tier_rank("PREMIUM"):
 			base: str = format_signal_free_limited(sig_dict)
+			if staleness_warning:
+				base = f"{staleness_warning}\n\n{base}"
 			if position_lines or advice_line:
 				base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 				if advice_line:
@@ -1379,6 +1431,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		base: None | str = format_signal(sig_dict)
 		if base is None:
 			base = format_signal_free_limited(sig_dict)
+		if staleness_warning:
+			base = f"{staleness_warning}\n\n{base}"
 		if position_lines or advice_line:
 			base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 			if advice_line:

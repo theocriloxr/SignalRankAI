@@ -193,3 +193,166 @@ def get_current_price(asset: str) -> Optional[float]:
         logger.error(f"Failed to fetch current price for {asset}: {e}")
     
     return None
+
+
+def enrich_signal_with_live_price(signal: Dict) -> Dict:
+    """
+    Enrich signal dict with current price, price distance, and age.
+    
+    Adds fields:
+    - current_price: float or None
+    - price_distance_pct: float (percentage from entry)
+    - signal_age_seconds: float
+    
+    Returns:
+        Enriched signal dict (copy of original)
+    """
+    enriched = signal.copy()
+    
+    # Add signal age
+    created_at = signal.get('created_at')
+    if created_at:
+        try:
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                if created_at.tzinfo is not None:
+                    created_at = created_at.replace(tzinfo=None)
+            
+            age_seconds = (datetime.utcnow() - created_at).total_seconds()
+            enriched['signal_age_seconds'] = age_seconds
+        except Exception as e:
+            logger.warning(f"Failed to calculate signal age: {e}")
+            enriched['signal_age_seconds'] = None
+    else:
+        enriched['signal_age_seconds'] = None
+    
+    # Fetch and add current price
+    asset = signal.get('asset')
+    if asset:
+        current_price = get_current_price(asset)
+        enriched['current_price'] = current_price
+        
+        # Calculate price distance from entry
+        entry = signal.get('entry')
+        if current_price and entry:
+            try:
+                entry_float = float(entry)
+                distance_pct = ((current_price - entry_float) / entry_float) * 100
+                enriched['price_distance_pct'] = distance_pct
+            except Exception as e:
+                logger.warning(f"Failed to calculate price distance: {e}")
+                enriched['price_distance_pct'] = None
+        else:
+            enriched['price_distance_pct'] = None
+    else:
+        enriched['current_price'] = None
+        enriched['price_distance_pct'] = None
+    
+    return enriched
+
+
+def is_signal_stale(signal: Dict) -> bool:
+    """
+    Comprehensive staleness check combining age and price movement.
+    
+    A signal is stale if:
+    - Age exceeds MAX_SIGNAL_AGE_SECONDS for asset type
+    - Price has moved past entry significantly (half of TP distance)
+    - SL or TP already hit
+    
+    Returns:
+        bool: True if stale, False if fresh
+    """
+    # Check age freshness
+    is_fresh, _ = is_signal_fresh(signal)
+    if not is_fresh:
+        return True
+    
+    # Check if SL/TP hit
+    asset = signal.get('asset')
+    if asset:
+        current_price = get_current_price(asset)
+        if current_price:
+            should_skip, _ = check_sl_tp_hit(signal, current_price)
+            if should_skip:
+                return True
+            
+            # Check if price moved past entry significantly
+            entry = signal.get('entry')
+            direction = signal.get('direction', 'long').lower()
+            take_profit = signal.get('take_profit')
+            
+            if entry and take_profit:
+                try:
+                    entry_float = float(entry)
+                    
+                    # Parse TP
+                    import json
+                    if isinstance(take_profit, str):
+                        tp_values = json.loads(take_profit)
+                    else:
+                        tp_values = take_profit
+                    
+                    if isinstance(tp_values, list) and tp_values:
+                        tp_price = float(tp_values[0])
+                        tp_distance = abs(tp_price - entry_float)
+                        half_tp_distance = tp_distance / 2
+                        
+                        # For longs: stale if price > entry + half of TP distance
+                        # For shorts: stale if price < entry - half of TP distance
+                        if direction == 'long':
+                            if current_price > (entry_float + half_tp_distance):
+                                return True
+                        else:  # short
+                            if current_price < (entry_float - half_tp_distance):
+                                return True
+                except Exception as e:
+                    logger.debug(f"Failed to check price movement: {e}")
+    
+    return False
+
+
+def filter_stale_signals(signals: list) -> list:
+    """
+    Filter out stale signals from a list.
+    
+    Logs each filtered signal for debugging.
+    
+    Args:
+        signals: List of signal dicts
+    
+    Returns:
+        List of fresh signals
+    """
+    fresh_signals = []
+    
+    for sig in signals:
+        if is_signal_stale(sig):
+            sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
+            asset = sig.get('asset', 'unknown')
+            
+            # Get enrichment info for logging
+            age_seconds = sig.get('signal_age_seconds')
+            if age_seconds is None:
+                created_at = sig.get('created_at')
+                if created_at:
+                    try:
+                        if isinstance(created_at, str):
+                            created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            if created_at.tzinfo is not None:
+                                created_at = created_at.replace(tzinfo=None)
+                        age_seconds = (datetime.utcnow() - created_at).total_seconds()
+                    except Exception:
+                        age_seconds = 'unknown'
+            
+            price_moved = sig.get('price_distance_pct')
+            if price_moved is None:
+                price_moved = 'unknown'
+            else:
+                price_moved = f"{price_moved:.2f}%"
+            
+            logger.info(f"[freshness] signal {sig_id} filtered: age={age_seconds}s price_moved={price_moved} asset={asset}")
+        else:
+            fresh_signals.append(sig)
+    
+    return fresh_signals
