@@ -986,86 +986,23 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     if not user:
                         return
                     
-                    # Check how many signals user already received today
-                    from db.pg_features import count_signals_delivered_today, get_last_signal_delivery_time
-                    delivered_today = await count_signals_delivered_today(session, int(user_id))
+                    # Check how many signals user already received today using Redis
+                    from core.redis_state import state
+                    date_str = datetime.utcnow().strftime('%Y-%m-%d')
+                    redis_key = f"signals_sent:{user_id}:{date_str}"
+                    signals_sent_today = 0
+                    try:
+                        signals_sent_today = int(state.get_sync(redis_key) or 0)
+                    except Exception:
+                        signals_sent_today = 0
                     
                     # FREE users get 2 signals per day
-                    daily_limit = 3
-                    remaining = max(0, daily_limit - delivered_today)
+                    daily_limit = 2
+                    remaining = max(0, daily_limit - signals_sent_today)
                     
                     if remaining <= 0:
+                        logger.info(f"[bot] daily limit reached for user={user_id} tier=free sent={signals_sent_today}")
                         return  # Already hit daily limit
-                    
-                    # Bot randomly decides WHEN to check for and send signals
-                    # For 1st signal: bot picks random time during day (0-18 hours from day start)
-                    # For 2nd signal: bot picks random time 2-8 hours after 1st signal
-                    if delivered_today == 0:
-                        # First signal: bot randomly decides what time to send a signal today
-                        next_send_time = await get_user_next_signal_time(session, int(user_id), signal_number=1)
-                        def to_naive_utc(dt):
-                            import datetime as _dt
-                            if dt is None:
-                                return None
-                            if dt.tzinfo is not None:
-                                return dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
-                            return dt
-                        if not next_send_time:
-                            # Bot decides: random time during the day (0-18 hours from start of day)
-                            now = datetime.utcnow()
-                            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                            random_hours = random.uniform(0, 18)
-                            next_send_time = start_of_day + timedelta(hours=random_hours)
-                            next_send_time = to_naive_utc(next_send_time)
-                            await set_user_next_signal_time_typed(
-                                session, int(user_id), signal_number=1, send_time=next_send_time
-                            )
-                        # Check if it's time to send yet (bot's random choice)
-                        now = datetime.utcnow()
-                        now = to_naive_utc(now)
-                        next_send_time = to_naive_utc(next_send_time)
-                        if now < next_send_time:
-                            return  # Not time yet for 1st signal (bot's choice)
-                    
-                    elif delivered_today == 1:
-                        # Second signal: bot decides random time after 1st signal
-                        next_send_time = await get_user_next_signal_time(session, int(user_id), signal_number=2)
-                        if not next_send_time:
-                            last_delivery = await get_last_signal_delivery_time(session, int(user_id))
-                            def to_naive_utc(dt):
-                                import datetime as _dt
-                                if dt is None:
-                                    return None
-                                if dt.tzinfo is not None:
-                                    return dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
-                                return dt
-                            if last_delivery:
-                                # Random delay between 2-8 hours for second signal
-                                random_delay_hours = random.uniform(2, 8)
-                                next_send_time = last_delivery + timedelta(hours=random_delay_hours)
-                                next_send_time = to_naive_utc(next_send_time)
-                                await set_user_next_signal_time_typed(
-                                    session, int(user_id), signal_number=2, send_time=next_send_time
-                                )
-                        if next_send_time:
-                            now = datetime.utcnow()
-                            now = to_naive_utc(now)
-                            next_send_time = to_naive_utc(next_send_time)
-                            if now < next_send_time:
-                                return  # Not time yet for 2nd signal (bot's choice)
-
-                            min_hours = 2
-                            max_hours = 8
-                            random_delay_hours = random.uniform(min_hours, max_hours)
-
-                            now = datetime.utcnow()
-                            now = to_naive_utc(now)
-                            last_delivery = to_naive_utc(last_delivery)
-                            time_since_last = (now - last_delivery).total_seconds() / 3600  # hours
-
-                            # Bot decides: has enough random time passed?
-                            if time_since_last < random_delay_hours:
-                                return  # Not time yet for 2nd signal (bot's choice)
                     
                     # Get completely random available signals (bot's choice - no quality filter)
                     # Different users get different random signals from the same pool
@@ -1129,6 +1066,12 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     mark_signal_delivered_sync(user_id, str(sig_dict.get('signal_id')))
                                 except Exception:
                                     pass
+                                # Increment daily counter
+                                try:
+                                    from core.redis_state import state
+                                    state.incr_sync(redis_key, ex=86400)
+                                except Exception:
+                                    pass
                             except Exception:
                                 pass
                     
@@ -1149,12 +1092,42 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         )
 
     if tier in ('premium', 'vip', 'owner', 'admin'):
+        from core.redis_state import state
+        from datetime import datetime
+        
+        # Check daily limit
+        date_str = datetime.utcnow().strftime('%Y-%m-%d')
+        redis_key = f"signals_sent:{user_id}:{date_str}"
+        signals_sent_today = 0
+        try:
+            signals_sent_today = int(state.get_sync(redis_key) or 0)
+        except Exception:
+            signals_sent_today = 0
+        
+        # Define tier limits
+        TIER_DAILY_LIMITS = {
+            "free": 2,
+            "premium": 20,
+            "vip": float('inf'),
+            "owner": float('inf'),
+            "admin": float('inf'),
+        }
+        
+        daily_limit = TIER_DAILY_LIMITS.get(tier, 2)
+        
+        if signals_sent_today >= daily_limit:
+            logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")
+            return
+        
         bot = Bot(token=_require_telegram_token())
         limit = TIER_LIMITS.get(tier, 0)
         sent = 0
         # OWNER and ADMIN always get VIP format
         display_tier = 'vip' if tier in ('owner', 'admin') else tier
         for signal in signals_list:
+            # Check if we've hit the daily limit
+            if signals_sent_today + sent >= daily_limit:
+                break
             if sent >= limit:
                 break
             try:
@@ -1162,6 +1135,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 # Mark as delivered in Redis
                 try:
                     mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))
+                except Exception:
+                    pass
+                # Increment daily counter
+                try:
+                    state.incr_sync(redis_key, ex=86400)
                 except Exception:
                     pass
                 sent += 1
