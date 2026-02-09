@@ -785,19 +785,36 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         user_tier = 'free'
 
+                    # Check daily limit
+                    from datetime import datetime
+                    from core.redis_state import state
+                    date_str = datetime.utcnow().strftime('%Y-%m-%d')
+                    redis_key = f"signals_sent:{user_id}:{date_str}"
+                    signals_sent_today = 0
+                    try:
+                        signals_sent_today = int(state.get_sync(redis_key) or 0)
+                    except Exception:
+                        signals_sent_today = 0
+                    
+                    daily_limit = {"free": 2, "premium": 20, "vip": float('inf'), "owner": float('inf'), "admin": float('inf')}.get(user_tier, 2)
+                    
+                    if signals_sent_today >= daily_limit:
+                        logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")
+                        continue
+
                     user_signals = []
                     for sig in scored_signals_all:
+                        if signals_sent_today + len(user_signals) >= daily_limit:
+                            break
                         try:
-                            eligible = False
-                            try:
-                                eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None)
-                            except Exception:
-                                eligible = False
-
+                            eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
                             if eligible:
                                 user_signals.append(sig)
                         except Exception:
-                            logger.exception("delivery eligibility check failed")
+                            pass
+
+                    if not user_signals:
+                        continue
 
                     if DRY_RUN:
                         for msg in user_signals:
@@ -805,6 +822,12 @@ def main_loop(DRY_RUN: bool = False):
                     else:
                         try:
                             dispatch_signals(user_signals, user_id=user_id)
+                            # Increment Redis counter
+                            try:
+                                new_count = signals_sent_today + len(user_signals)
+                                state.set_sync(redis_key, str(new_count), ex=86400)
+                            except Exception:
+                                pass
                         except Exception:
                             logger.exception("dispatch_signals failed")
                     dispatched_count += 1
