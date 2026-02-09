@@ -6,6 +6,8 @@ import os
 import time
 from typing import Iterable
 
+import yfinance as yf
+
 from data.fetcher import fetch_market_data as fetch_market_data_rest
 from db.market_cache import get_recent_candles
 from db.session import get_session
@@ -138,11 +140,14 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
 async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
     """Fetch market data from Postgres cache first, then fallback to REST.
 
-    The WS ingestor continuously upserts candles into Postgres. This reader
-    allows the engine to consume the stream-derived cache.
 
-    If the cache is missing/insufficient, we fallback to existing REST fetching
-    so production keeps working even when WS is unavailable.
+async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
+    """Fetch market data from yfinance first, then Postgres cache, then fallback to REST.
+
+    Priority order:
+    1. yfinance (primary source for all assets)
+    2. Postgres cache (from WS ingestor)
+    3. REST providers (Binance/Bybit/etc)
     """
 
     tfs = [str(tf).strip() for tf in (timeframes or []) if str(tf).strip()]
@@ -152,13 +157,40 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     want = _env_int("MARKET_CACHE_MIN_CANDLES", 80)
     limit = _env_int("MARKET_CACHE_READ_LIMIT", 200)
     use_cache = _env_bool("MARKET_CACHE_ENABLED", True)
+    use_yfinance = _env_bool("YFINANCE_ENABLED", True)
 
     out: dict = {}
+    
+    # 1. Try yfinance first (primary source)
+    if use_yfinance:
+        for tf in tfs:
+            try:
+                yf_candles = await asyncio.to_thread(_fetch_via_yfinance, asset, tf, limit)
+                if yf_candles and len(yf_candles) >= want:
+                    # Add data age calculation
+                    if yf_candles:
+                        latest_ts = yf_candles[-1].get("timestamp", 0)
+                        data_age = int(_time.time() - latest_ts) if latest_ts > 0 else None
+                    else:
+                        data_age = None
+                    
+                    out[tf] = {
+                        "candles": yf_candles,
+                        "source": "yfinance",
+                        "data_age_seconds": data_age
+                    }
+                    logger.info(f"[market_data] yfinance success for {asset} {tf}: {len(yf_candles)} candles")
+                else:
+                    logger.warning(f"yfinance failed/insufficient for {asset} {tf}, falling back to cache/REST")
+            except Exception as e:
+                logger.warning(f"yfinance exception for {asset} {tf}: {e}")
 
-    if use_cache:
+    # 2. Try cache for missing timeframes
+    missing_after_yf = [tf for tf in tfs if tf not in out]
+    if use_cache and missing_after_yf:
         try:
             async with get_session() as session:
-                for tf in tfs:
+                for tf in missing_after_yf:
                     candles = await get_recent_candles(session, symbol=asset, timeframe=tf, limit=limit)
                     if candles:
                         logger.info(f"[market_data] asset={asset} tf={tf} candles_fetched={len(candles)}")
@@ -184,7 +216,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
         except Exception:
             out = out or {}
 
-    # Backfill missing timeframes via REST fetcher (and indicators calculation).
+    # 3. Backfill still-missing timeframes via REST fetcher
     missing = [tf for tf in tfs if tf not in out]
     if missing:
         # Fallback providers (CryptoCompare/Bybit) can be slower when Binance is blocked; allow longer by default.

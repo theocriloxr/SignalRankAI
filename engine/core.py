@@ -424,6 +424,18 @@ def main_loop(DRY_RUN: bool = False):
                 tfs = stock_timeframes
             asset_to_tfs[asset] = list(tfs)
 
+        # Dynamic cycle sleep based on smallest timeframe
+        _TF_SLEEP_MAP = {"1m": 60, "5m": 120, "15m": 300, "1h": 300, "4h": 900, "1d": 3600, "1w": 7200}
+        env_sleep = _env_int("ENGINE_CYCLE_SLEEP_SECONDS", 0)
+        if env_sleep > 0:
+            cycle_sleep_seconds = env_sleep
+        else:
+            all_tfs = []
+            for tfs in asset_to_tfs.values():
+                all_tfs.extend(tfs)
+            smallest_tf = min(all_tfs, key=lambda tf: _TF_SLEEP_MAP.get(tf, 300)) if all_tfs else "1h"
+            cycle_sleep_seconds = _TF_SLEEP_MAP.get(smallest_tf, 300)
+
         # Graceful degradation slice
         degraded_assets = set()
         asset_to_tfs_degraded = {a: (tfs[:1] if a in degraded_assets else tfs) for a, tfs in asset_to_tfs.items()}
@@ -460,6 +472,23 @@ def main_loop(DRY_RUN: bool = False):
                 has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
                 if not has_candles:
                     logger.warning(f"[engine] No market data for asset={asset}")
+                    continue
+
+                # Check data age for each timeframe
+                # Data is considered stale if older than 2x the timeframe interval
+                # (e.g., 1h candles stale after 2 hours, allows for provider delays)
+                _TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
+                stale_data = False
+                for tf, tf_data in market_data.items():
+                    if isinstance(tf_data, dict):
+                        data_age = tf_data.get("data_age_seconds")
+                        tf_interval = _TF_SECONDS.get(tf, 3600)
+                        max_age = tf_interval * 2  # Allow 2x interval for provider delays
+                        if data_age is not None and data_age > max_age:
+                            logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
+                            stale_data = True
+                            break
+                if stale_data:
                     continue
 
                 # Detect regime
@@ -654,6 +683,9 @@ def main_loop(DRY_RUN: bool = False):
                         candles = tf_data.get('candles', [])
                         last_close = candles[-1]['close'] if candles else None
 
+                        # Add data freshness to signal
+                        sig['data_age_seconds'] = tf_data.get('data_age_seconds', None)
+
                         sig.setdefault('close_price', ind.get('close_price', last_close or 0))
                         sig.setdefault('atr', ind.get('atr', sig.get('atr', 0)))
 
@@ -746,6 +778,22 @@ def main_loop(DRY_RUN: bool = False):
                         pipeline_stats["stored"] += 1
                     except Exception as e:
                         logger.exception("store_signal failed")
+
+                # Track new signals as open trades
+                from core.trade_tracker import add_trade, update_trade_outcomes
+                for sig in final_signals:
+                    try:
+                        add_trade(sig)
+                    except Exception:
+                        logger.exception("Failed to add trade for tracking")
+
+                # Update existing trade outcomes
+                try:
+                    closed_trades = update_trade_outcomes()
+                    if closed_trades:
+                        logger.info(f"[engine] {len(closed_trades)} trades closed: {[(t.symbol, t.outcome) for t in closed_trades]}")
+                except Exception:
+                    logger.exception("Failed to update trade outcomes")
 
             except Exception as e:
                 logger.exception(f"[engine] pipeline error for asset={asset}")

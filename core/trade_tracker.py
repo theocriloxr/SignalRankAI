@@ -20,10 +20,8 @@ class TradeRecord:
 
 open_trades_list = []
 
-# Example: update outcomes on each candle close
-
 def open_trades():
-    return open_trades_list
+    return list(open_trades_list)
 
 def _convert_symbol_for_yfinance(symbol):
     """Convert crypto symbols from Binance format to yfinance format."""
@@ -144,10 +142,36 @@ def price_hit_sl(trade, market_data):
     
     return False
 
-def close_trade(trade, outcome):
-    trade.close_time = datetime.utcnow()
-    trade.outcome = outcome
+def price_hit_sl(trade: TradeRecord, market_data=None) -> bool:
+    """Check if stop-loss has been hit."""
+    if trade.stop <= 0:
+        return False
+    price = _get_current_price(trade.symbol)
+    if price is None:
+        return False
+    
+    if trade.direction == "long":
+        hit = price <= trade.stop
+    else:  # short
+        hit = price >= trade.stop
+    
+    if hit:
+        logger.info(f"SL hit for {trade.symbol}: stop={trade.stop}, price={price}, direction={trade.direction}")
+    return hit
 
+def close_trade(trade: TradeRecord, outcome: str):
+    trade.close_time = datetime.utcnow()
+    if trade.targets_hit and len(trade.targets_hit) < len(trade.targets):
+        trade.outcome = "PARTIAL_TP"
+    else:
+        trade.outcome = outcome
+
+def add_trade(signal: dict):
+    """Add a new trade to track."""
+    trade = TradeRecord(signal)
+    open_trades_list.append(trade)
+    logger.info(f"Trade opened: {trade.symbol} {trade.direction} entry={trade.entry}")
+    return trade
 
 def update_trade_outcomes(market_data):
     """
