@@ -155,7 +155,9 @@ class RedisState:
                         reason = str(data.get("reason", ""))
                         updated_at = float(data.get("updated_at", 0.0) or 0.0)
                         return KillSwitchState(enabled, reason, updated_at)
-                    except Exception:
+                    except Exception as e:
+                        import logging
+                        logging.debug(f"[redis_state] Failed to parse killswitch state from Postgres: {e}")
                         pass
             raw = self._memory.get(_KILL_KEY)
             if not isinstance(raw, dict):
@@ -259,7 +261,9 @@ class RedisState:
             # Legacy format; treat as revoked when we enforce fingerprints.
             try:
                 r.delete(key)
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.debug(f"[redis_state] Failed to delete legacy temp owner key: {e}")
                 pass
             return False
         prefix, stored_fp = val.split(":", 1)
@@ -269,7 +273,9 @@ class RedisState:
             return True
         try:
             r.delete(key)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to delete mismatched temp owner key: {e}")
             pass
         return False
 
@@ -340,7 +346,9 @@ class RedisState:
         payload = json.dumps({"total": int(total), "used": int(used)})
         try:
             r.set(key, payload, ex=(ttl if isinstance(ttl, int) and ttl > 0 else ttl_seconds))
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to set extra signals in Redis: {e}")
             pass
         return int(total)
 
@@ -529,7 +537,9 @@ class RedisState:
                 r.set(key, str(value), ex=ex)
             else:
                 r.set(key, str(value))
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to set value in Redis: {e}")
             pass
 
     def incr_sync(self, key: str, ex: Optional[int] = None) -> int:

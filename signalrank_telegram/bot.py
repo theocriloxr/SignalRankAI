@@ -110,7 +110,8 @@ def resend_unsent_signals_job():
                 for user_id in user_ids:
                     futures.append(executor.submit(deliver_signal_to_user, sig, user_id))
             concurrent.futures.wait(futures)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[resend] Failed to resend unsent signals: {e}")
         pass
 
 
@@ -135,10 +136,12 @@ def _audit_handler(command_name: str, handler):
                 username = None
                 try:
                     username = update.effective_user.username
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[audit] Failed to get username from update: {e}")
                     pass
                 # ...existing code for auditing...
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[audit] Failed to audit command wrapper: {e}")
             pass
         return await handler(update, context)
     return _inner
@@ -179,7 +182,8 @@ else:
             _logger.warning("TELEGRAM_BOT_TOKEN not used because DRY_RUN is enabled; bot disabled for this process.")
         else:
             _logger.warning("TELEGRAM_BOT_TOKEN not provided; Telegram bot is disabled in this process.")
-    except Exception:
+    except Exception as e:
+        _logger.warning(f"[bot] Failed to initialize Telegram bot token: {e}")
         pass
 from .commands import reports_command
 application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
@@ -290,7 +294,8 @@ def _log_once(key: str, message: str) -> None:
     _LOG_ONCE_KEYS.add(key)
     try:
         print(message, flush=True)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[log_once] Failed to print log message: {e}")
         pass
 
 
@@ -315,7 +320,8 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str) -> None:
     # If we're already in an event loop, schedule it.
     try:
         loop.create_task(_send_message_async(bot, int(chat_id), str(text)))
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[send_message] Failed to create async task for message: {e}")
         pass
 
 
@@ -444,11 +450,13 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                     )
                     try:
                         bot.send_message(chat_id=user_id, text=summary + feedback_msg)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"[notify] Failed to send feedback message to user {user_id}: {e}")
                         pass
             try:
                 run_sync(_notify_and_feedback())
-            except Exception:
+            except Exception as e:
+                logger.warning(f"[notify] Failed to run notify and feedback: {e}")
                 pass
 
         # Determine which TP(s) to notify
@@ -641,7 +649,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     try:
         if state.get_killswitch_sync().enabled:
             return
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[dispatch] Failed to check killswitch: {e}")
         pass
 
     # Support passing ranked buckets (vip/premium/free)
@@ -857,7 +866,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                             if tier == 'free' and extra_left > 0:
                                 try:
                                     state.consume_extra_signals_sync(int(user_id), 1)
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                     pass
                         except Exception as e:
                             print(f"[DEBUG][dispatch] Exception in fallback send: {e}", flush=True)
@@ -871,7 +881,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                 pass
                     except Exception as e:
                         print(f"[DEBUG][dispatch] Exception in reserved send: {e}", flush=True)
@@ -908,7 +919,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     # Parse JSON-encoded TP list
                                     if isinstance(best_sig.take_profit, str):
                                         tp_parsed = json.loads(best_sig.take_profit)
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug(f"[dispatch] Failed to parse TP levels: {e}")
                                     pass
                                 
                                 sig_dict = {
@@ -940,7 +952,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=signal_display_tier))
                                     sent_count += 1
                                     state.consume_extra_signals_sync(int(user_id), 1)
-                                except Exception:
+                                except Exception as e:
+                                    logger.warning(f"[dispatch] Failed to send extra signal to user {user_id}: {e}")
                                     pass
                         await session.commit()
                         return sent_count
@@ -1041,7 +1054,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 # Parse JSON-encoded TP list
                                 if isinstance(sig.take_profit, str):
                                     tp_parsed = json.loads(sig.take_profit)
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"[dispatch] Failed to parse TP levels: {e}")
                                 pass
                             
                             sig_dict = {
@@ -1074,15 +1088,18 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 # Mark as delivered in Redis
                                 try:
                                     mark_signal_delivered_sync(user_id, str(sig_dict.get('signal_id')))
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug(f"[dispatch] Failed to mark signal as delivered in Redis: {e}")
                                     pass
                                 # Increment daily counter
                                 try:
                                     from core.redis_state import state
                                     state.incr_sync(redis_key, ex=86400)
-                                except Exception:
+                                except Exception as e:
+                                    logger.debug(f"[dispatch] Failed to increment daily counter in Redis: {e}")
                                     pass
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {e}")
                                 pass
                     
                     await session.commit()
@@ -1137,12 +1154,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 # Mark as delivered in Redis
                 try:
                     mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[dispatch] Failed to mark signal as delivered in Redis for user {user_id}: {e}")
                     pass
                 # Increment daily counter
                 try:
                     state.incr_sync(redis_key, ex=86400)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[dispatch] Failed to increment daily counter in Redis for user {user_id}: {e}")
                     pass
                 sent += 1
             except Exception:
@@ -1185,7 +1204,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         try:
             bot = Bot(token=_require_telegram_token())
             _send_message_sync(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[dispatch] Failed to send free preview to user {user_id}: {e}")
             pass
 
 
@@ -1267,11 +1287,13 @@ def run_bot() -> None:
     # We keep errors, but silence INFO/DEBUG.
     try:
         logging.getLogger("httpx").setLevel(logging.WARNING)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[bot] Failed to set httpx logging level: {e}")
         pass
     try:
         logging.getLogger("telegram").setLevel(logging.WARNING)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"[bot] Failed to set telegram logging level: {e}")
         pass
 
     application = Application.builder().token(_require_telegram_token()).build()
@@ -1310,7 +1332,8 @@ def run_bot() -> None:
             if not locked:
                 try:
                     conn.close()
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[boot] Failed to close database connection: {e}")
                     pass
                 print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
                 return
@@ -1344,7 +1367,8 @@ def run_bot() -> None:
                     ("support", "Support"),
                 ]
             )
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[bot] Failed to set bot commands: {e}")
             pass
 
     application.post_init = _post_init
@@ -1431,7 +1455,8 @@ def run_bot() -> None:
                     )
                 try:
                     _send_message_sync(application.bot, chat_id=int(user_id), text=recap_msg)
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"[recap] Failed to send weekly recap to user {user_id}: {e}")
                     pass
             return
 
@@ -1508,7 +1533,8 @@ def run_bot() -> None:
                                 # Wrap-around (e.g. 22 -> 6)
                                 if now_hour >= qs or now_hour < qe:
                                     continue
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"[dispatch] Failed to check quiet hours for user: {e}")
                         pass
 
                     # Check if user is owner/admin for VIP formatting
@@ -1548,7 +1574,8 @@ def run_bot() -> None:
                         mkt = fetch_market_data_cached(asset, timeframe)
                         if mkt and 'candles' in mkt and mkt['candles']:
                             current_market_price = mkt['candles'][-1].get('close')
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"[outcome] Failed to fetch current market price for {asset}: {e}")
                         pass
 
                     if user_tier in ("owner", "admin", "vip"):
@@ -1576,11 +1603,13 @@ def run_bot() -> None:
                     if notify and msg:
                         try:
                             _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
                             pass
                     try:
                         _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"[outcome] Failed to send outcome message to user {telegram_user_id}: {e}")
                         pass
 
                 # Mark as notified so this outcome is never sent again.
@@ -1592,7 +1621,8 @@ def run_bot() -> None:
                             await session.commit()
 
                     run_sync(_mark(int(getattr(oc, 'id'))))
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[outcome] Failed to mark outcome as handled: {e}")
                     pass
         except Exception:
             return
@@ -1643,7 +1673,8 @@ def run_bot() -> None:
                         return float(data[0])
                     if isinstance(data, (int, float)):
                         return float(data)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[outcome] Failed to parse price from data: {e}")
                     pass
                 try:
                     return float(s)
@@ -1787,7 +1818,8 @@ def run_bot() -> None:
                             if curr_idx <= prev_idx:
                                 print(f"[DEBUG][outcome] Skipping duplicate/regressive outcome for {sig.signal_id}: {status} (prev: {prev_status})", flush=True)
                                 continue
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[outcome] Failed to check outcome progression: {e}")
                             pass
 
                     risk = abs(entry - sl)
@@ -1878,7 +1910,8 @@ def run_bot() -> None:
         try:
             if state.get_killswitch_sync().enabled:
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[free_summary] Failed to check killswitch: {e}")
             pass
 
         logger.info("🔄 send_free_delayed_summaries job triggered")
@@ -1901,7 +1934,8 @@ def run_bot() -> None:
                     async with get_session() as session:
                         try:
                             await expire_old_free_signal_summaries_pg(session, max_age_hours=24)
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[free_summary] Failed to expire old free signal summaries: {e}")
                             pass
                         due = await get_due_free_signal_summaries_pg(session)
                         out: dict[int, dict] = {}
@@ -1947,7 +1981,8 @@ def run_bot() -> None:
                             if _in_quiet_hours(now_hour, int(qs), int(qe)):
                                 logger.info(f"🔇 User {uid} in quiet hours ({qs}-{qe}), skipping")
                                 continue
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[free_summary] Failed to check quiet hours for user {uid}: {e}")
                             pass
 
                     items_to_send = items[:per_user_limit]
@@ -2008,7 +2043,8 @@ def run_bot() -> None:
                 except Exception as e:
                     logger.error(f"Error applying actions: {e}", exc_info=True)
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[free_summary] Failed to send free summaries: {e}")
             pass
 
         # Postgres-only: no SQLite fallback
@@ -2019,7 +2055,8 @@ def run_bot() -> None:
         try:
             if state.get_killswitch_sync().enabled:
                 return
-        except Exception:
+        except Exception as e:
+            logger.debug(f"[ml_retrain] Failed to check killswitch: {e}")
             pass
 
         logger.info("🤖 ML auto-retrain job triggered")

@@ -230,7 +230,9 @@ Stop Loss: {signal.get('stop_loss')}
 			diff = (exp_dt - now).total_seconds()
 			candles = max(1, int(diff / 900))  # Assume 15min candles
 			msg += f"⏳ Validity: Next {candles} candles\n"
-		except Exception:
+		except Exception as e:
+			import logging
+			logging.debug(f"[formatter] Failed to calculate validity window: {e}")
 			pass
 	
 	msg += f"""

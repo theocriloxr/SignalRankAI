@@ -66,7 +66,8 @@ class TierDeliveryManager:
                 if sent_today >= limit:
                     logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
                     return False
-            except Exception:
+            except Exception as e:
+                logging.warning(f"[delivery] Failed to check Redis daily limit for user {user_id}: {e}")
                 pass
         
         # Quality gates (MUST pass)
@@ -97,7 +98,8 @@ class TierDeliveryManager:
                 if sent_today >= limit:
                     logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
                     return False
-            except Exception:
+            except Exception as e:
+                logging.warning(f"[delivery] Failed to check Redis daily limit for user {user_id} (async): {e}")
                 pass
         
         # Quality gates (MUST pass)

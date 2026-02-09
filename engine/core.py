@@ -134,7 +134,8 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                 meta=meta or {},
             )
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[engine] Failed to publish analytics event: {e}")
         pass
 
 try:
@@ -535,7 +536,8 @@ def main_loop(DRY_RUN: bool = False):
                             seen.add(fp)
                         unique_signals.append(sig)
                     selected_signals = unique_signals
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[engine] Failed to deduplicate signals: {e}")
                     pass
                 pipeline_stats["unique"] += len(selected_signals)
 
@@ -568,7 +570,8 @@ def main_loop(DRY_RUN: bool = False):
                             sig['_preview_score'] = preview_score
                             if max_candidate_score is None or preview_score > max_candidate_score:
                                 max_candidate_score = preview_score
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to compute preview score: {e}")
                             pass
 
                         # basic validation (structure)
@@ -633,7 +636,8 @@ def main_loop(DRY_RUN: bool = False):
                                     features=features if isinstance(features, dict) else {},
                                 )
                             )
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to record ML rejection: {e}")
                             pass
                         continue
                     sig['ml_probability'] = prob
@@ -670,7 +674,8 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             if max_candidate_score is None or score > max_candidate_score:
                                 max_candidate_score = score
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to update max candidate score: {e}")
                             pass
 
                         # advanced filters
@@ -717,7 +722,8 @@ def main_loop(DRY_RUN: bool = False):
                                     tp = entry_f + abs(entry_f - slf) * rr
                                 else:
                                     tp = entry_f - abs(entry_f - slf) * rr
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"[engine] Failed to compute take profit level: {e}")
                                 pass
                         sig['stop_loss'] = sl
                         sig['take_profit'] = tp
@@ -765,7 +771,8 @@ def main_loop(DRY_RUN: bool = False):
                 oid = int(_oid)
                 if oid not in user_ids:
                     user_ids.append(oid)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[engine] Failed to parse user ID from OWNER_TELEGRAM_ID: {e}")
                 pass
 
         async def deliver_all():
@@ -812,7 +819,8 @@ def main_loop(DRY_RUN: bool = False):
                             eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
                             if eligible:
                                 user_signals.append(sig)
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                             pass
 
                     if not user_signals:
@@ -828,7 +836,8 @@ def main_loop(DRY_RUN: bool = False):
                             try:
                                 new_count = signals_sent_today + len(user_signals)
                                 state.set_sync(redis_key, str(new_count), ex=86400)
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"[engine] Failed to update signal count in Redis: {e}")
                                 pass
                         except Exception:
                             logger.exception("dispatch_signals failed")
@@ -865,7 +874,8 @@ def main_loop(DRY_RUN: bool = False):
                     f"max_score={top_score} max_score_pre_threshold={max_candidate_score} {stats_str}",
                     flush=True,
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[engine] Failed to print analytics stats: {e}")
                 pass
 
         time.sleep(max(5, cycle_sleep_seconds))
