@@ -586,8 +586,10 @@ Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 		msg += f"""
 📈 Expected Profit: +{expected_profit:.2f}%"""
 	if expected_loss is not None:
+		# Display loss as negative value
+		loss_display = expected_loss if expected_loss < 0 else -abs(expected_loss)
 		msg += f"""
-📉 Expected Loss: {expected_loss:.2f}%"""
+📉 Expected Loss: {loss_display:.2f}%"""
 	
 	msg += f"""
 📊 Risk/Reward: 1:{rr_ratio:.1f}
@@ -710,8 +712,10 @@ Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 		msg += f"""
 📈 Expected Profit: +{expected_profit:.2f}%"""
 	if expected_loss is not None:
+		# Display loss as negative value
+		loss_display = expected_loss if expected_loss < 0 else -abs(expected_loss)
 		msg += f"""
-📉 Expected Loss: {expected_loss:.2f}%"""
+📉 Expected Loss: {loss_display:.2f}%"""
 	
 	msg += f"""
 📊 Risk/Reward: 1:{rr_ratio:.1f}

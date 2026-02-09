@@ -154,8 +154,11 @@ def fetch_market_data(asset, timeframes):
             tf_seconds = _timeframe_to_seconds(tf)
             current_time = time.time()
             
-            # Candles should be at most 2x the timeframe interval old
-            max_age = tf_seconds * 2
+            # Import candle staleness multiplier
+            from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
+            
+            # Candles should be at most N times the timeframe interval old
+            max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
             candle_age = current_time - latest_timestamp
             
             if candle_age > max_age:

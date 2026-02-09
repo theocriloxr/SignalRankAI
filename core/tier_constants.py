@@ -33,3 +33,12 @@ PRICE_DRIFT_TOLERANCE = {
     "stock": 0.003,    # 0.3% for stocks
     "commodity": 0.004 # 0.4% for commodities
 }
+
+# Candle staleness multiplier: max age = timeframe * this value
+CANDLE_STALENESS_MULTIPLIER = 2
+
+# News sentiment threshold for conflict detection
+STRONG_SENTIMENT_THRESHOLD = 2
+
+# Active signal monitoring
+ACTIVE_SIGNAL_LOOKBACK_HOURS = 24

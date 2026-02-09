@@ -71,10 +71,11 @@ async def check_news_impact_on_active_signals():
         from db.models import Signal, SignalDelivery
         from sqlalchemy import select
         from core.redis_state import state
+        from core.tier_constants import ACTIVE_SIGNAL_LOOKBACK_HOURS, STRONG_SENTIMENT_THRESHOLD
         
-        # Get active signals from last 24 hours
+        # Get active signals from last N hours
         async with get_session() as session:
-            cutoff = datetime.utcnow() - timedelta(hours=24)
+            cutoff = datetime.utcnow() - timedelta(hours=ACTIVE_SIGNAL_LOOKBACK_HOURS)
             stmt = select(Signal).where(
                 Signal.archived == False,
                 Signal.created_at >= cutoff
@@ -106,7 +107,7 @@ async def check_news_impact_on_active_signals():
                         continue
                     
                     # Get most recent headline with strong sentiment
-                    strong_news = [h for h in headlines if abs(h[2]) >= 2]  # At least 2 sentiment points
+                    strong_news = [h for h in headlines if abs(h[2]) >= STRONG_SENTIMENT_THRESHOLD]
                     
                     if not strong_news:
                         continue

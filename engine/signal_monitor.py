@@ -90,10 +90,11 @@ class SignalMonitor:
             from db.session import get_session
             from db.models import Signal
             from sqlalchemy import select
+            from core.tier_constants import ACTIVE_SIGNAL_LOOKBACK_HOURS
             
             async with get_session() as session:
-                # Get signals created in last 24 hours that are not archived
-                cutoff = datetime.utcnow() - timedelta(hours=24)
+                # Get signals created in last N hours that are not archived
+                cutoff = datetime.utcnow() - timedelta(hours=ACTIVE_SIGNAL_LOOKBACK_HOURS)
                 stmt = select(Signal).where(
                     Signal.archived == False,
                     Signal.created_at >= cutoff
