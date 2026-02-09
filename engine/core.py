@@ -403,7 +403,31 @@ def main_loop(DRY_RUN: bool = False):
             start = (cycle_no - 1) * stock_max_pairs
             stock_assets = _rotate_slice(stock_assets, start, stock_max_pairs) if stock_pair_rotation else stock_assets[:stock_max_pairs]
 
-        assets = crypto_assets + fx_assets + stock_assets + commodity_assets
+        # Ensure minimum diversity: at least 1 from each open category
+        def _ensure_minimum(assets_list, category_name, min_count=1):
+            """Log if category has fewer assets than minimum."""
+            if len(assets_list) < min_count and len(assets_list) > 0:
+                logger.info(f"[engine] {category_name} has {len(assets_list)} assets, below minimum {min_count}")
+            return assets_list
+
+        crypto_assets = _ensure_minimum(crypto_assets, "crypto", 1)
+        fx_assets = _ensure_minimum(fx_assets, "fx", 1) if fx_enabled else []
+        stock_assets = _ensure_minimum(stock_assets, "stocks", 1) if stocks_enabled else []
+        commodity_assets = _ensure_minimum(commodity_assets, "commodities", 1)
+
+        # Build cycle_assets ensuring diversity (round-robin from each category)
+        cycle_assets_list = []
+        # Add at least 1 from each category first (if available)
+        for category in [crypto_assets, fx_assets, stock_assets, commodity_assets]:
+            if category and category[0] not in cycle_assets_list:
+                cycle_assets_list.append(category[0])
+        # Then add remaining assets
+        for category in [crypto_assets, fx_assets, stock_assets, commodity_assets]:
+            for a in category:
+                if a not in cycle_assets_list:
+                    cycle_assets_list.append(a)
+        
+        assets = cycle_assets_list
         cycle_assets = len(assets)
 
         if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
@@ -798,6 +822,68 @@ def main_loop(DRY_RUN: bool = False):
                     closed_trades = update_trade_outcomes()
                     if closed_trades:
                         logger.info(f"[engine] {len(closed_trades)} trades closed: {[(t.symbol, t.outcome) for t in closed_trades]}")
+                        
+                        # Notify users about trade outcomes
+                        async def notify_users_about_outcomes():
+                            """Send outcome notifications to users who received the signal."""
+                            try:
+                                from db.session import get_session
+                                from db.models import SignalDelivery, User
+                                from sqlalchemy import select
+                                
+                                async with get_session() as session:
+                                    for trade in closed_trades:
+                                        try:
+                                            # Find users who received this signal
+                                            result = await session.execute(
+                                                select(SignalDelivery.user_id).where(
+                                                    SignalDelivery.signal_id == trade.signal_id
+                                                )
+                                            )
+                                            user_ids = [row[0] for row in result.fetchall()]
+                                            
+                                            # Get user telegram IDs and send notifications
+                                            for uid in user_ids:
+                                                try:
+                                                    user_result = await session.execute(
+                                                        select(User.telegram_user_id, User.tier).where(User.id == uid)
+                                                    )
+                                                    user_row = user_result.first()
+                                                    if user_row:
+                                                        telegram_id, tier = user_row
+                                                        # Format outcome message
+                                                        emoji = "✅" if trade.outcome in ("TP", "tp") else "🛑" if trade.outcome in ("SL", "sl") else "⚠️"
+                                                        r_str = f"{trade.r_multiple:.2f}R" if hasattr(trade, 'r_multiple') and trade.r_multiple else ""
+                                                        msg = (
+                                                            f"{emoji} Signal Outcome\n\n"
+                                                            f"Asset: {trade.symbol}\n"
+                                                            f"Direction: {trade.direction.upper()}\n"
+                                                            f"Outcome: {trade.outcome}\n"
+                                                            f"R-Multiple: {r_str}\n"
+                                                            f"Entry: {trade.entry}\n"
+                                                            f"Close: {getattr(trade, 'close_price', 'N/A')}\n\n"
+                                                            f"Ref: {trade.signal_id}"
+                                                        )
+                                                        try:
+                                                            from signalrank_telegram.bot import application
+                                                            if application and application.bot:
+                                                                await application.bot.send_message(chat_id=telegram_id, text=msg)
+                                                        except Exception as e:
+                                                            logger.debug(f"Failed to send outcome notification to user {uid}: {e}")
+                                                except Exception as e:
+                                                    logger.debug(f"Failed to process user {uid} for outcome notification: {e}")
+                                        except Exception as e:
+                                            logger.debug(f"Failed to notify users about outcome for signal {trade.signal_id}: {e}")
+                            except Exception as e:
+                                logger.warning(f"Failed to send outcome notifications: {e}")
+                        
+                        # Run notification in background (don't block main loop)
+                        try:
+                            import asyncio
+                            asyncio.create_task(notify_users_about_outcomes())
+                        except Exception:
+                            pass
+                            
                 except Exception:
                     logger.exception("Failed to update trade outcomes")
 
