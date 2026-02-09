@@ -73,6 +73,18 @@ from datetime import datetime
 import requests
 import asyncio
 
+# Import market hours module for holiday checks
+try:
+    from data.market_hours import is_stock_holiday, is_commodity_holiday, is_fx_low_liquidity
+except ImportError:
+    # Fallback if module doesn't exist yet
+    def is_stock_holiday(now_utc=None):
+        return None
+    def is_commodity_holiday(now_utc=None):
+        return None
+    def is_fx_low_liquidity(now_utc=None):
+        return False
+
 # Async retry helper (uses shared httpx client when available)
 try:
     from utils.httpx_client import retry_async as retry_async_httpx
@@ -347,8 +359,8 @@ def is_fx(asset):
 
 def is_stock(asset):
     """Check if asset is a stock ticker."""
-    # If not crypto and not FX, assume stock
-    return not is_crypto(asset) and not is_fx(asset)
+    # If not crypto and not FX and not commodity, assume stock
+    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset)
 
 
 def is_commodity(asset):
@@ -371,11 +383,13 @@ def is_commodity(asset):
 
 
 def get_asset_type(asset):
-    """Determine asset type: 'crypto', 'fx', or 'stock'."""
+    """Determine asset type: 'crypto', 'fx', 'stock', or 'commodity'."""
     if is_crypto(asset):
         return "crypto"
     elif is_fx(asset):
         return "fx"
+    elif is_commodity(asset):
+        return "commodity"
     else:
         return "stock"
 
@@ -385,6 +399,7 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
 
     - Crypto: 24/7, always open
     - FX: Closed over weekend; open Sunday 22:00 UTC → Friday 22:00 UTC
+    - Commodities: CME/COMEX hours - Sunday 23:00 UTC → Friday 22:00 UTC (with daily break 21:00-22:00 UTC)
     - Stocks: Default to US market hours (NYSE/NASDAQ): Mon–Fri 13:30–20:00 UTC
       Note: This is a simplified schedule (no holidays). Override via env if needed.
     """
@@ -395,6 +410,26 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     wd = now.weekday()  # Monday=0 ... Sunday=6
     hr = now.hour
     minute = now.minute
+
+    # Commodity schedule (CME/COMEX hours)
+    # Gold/Silver: Sunday 23:00 UTC - Friday 22:00 UTC (with daily break 21:00-22:00 UTC)
+    # Oil: Similar schedule
+    if is_commodity(asset):
+        # Check for holidays first
+        holiday = is_commodity_holiday(now)
+        if holiday:
+            return holiday
+        # Weekend closed
+        if wd == 5:  # Saturday
+            return "Commodities closed (Saturday)"
+        if wd == 6 and hr < 23:  # Sunday before 23:00
+            return "Commodities closed (Sunday until 23:00 UTC)"
+        if wd == 4 and hr >= 22:  # Friday after 22:00
+            return "Commodities closed (Friday after 22:00 UTC)"
+        # Daily maintenance break (21:00-22:00 UTC Mon-Thu)
+        if wd in (0, 1, 2, 3) and hr == 21:
+            return "Commodities closed (daily maintenance 21:00-22:00 UTC)"
+        return None
 
     # FX schedule
     if is_fx(asset):
@@ -412,6 +447,11 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     # Stocks schedule (US default). Allow overrides via env:
     # STOCK_OPEN_UTC=13:30, STOCK_CLOSE_UTC=20:00 (HH:MM)
     if is_stock(asset):
+        # Check for holidays first
+        holiday = is_stock_holiday(now)
+        if holiday:
+            return holiday
+        
         try:
             open_str = (os.getenv("STOCK_OPEN_UTC") or "13:30").strip()
             close_str = (os.getenv("STOCK_CLOSE_UTC") or "20:00").strip()
