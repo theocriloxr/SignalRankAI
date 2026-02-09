@@ -2207,14 +2207,9 @@ async def performance_command(update, context):
 	except Exception as e:
 		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
 		if update.message is not None:
+			if update.message is not None:
 			await update.message.reply_text("No performance data available right now. Use /signals for recent activity.")
 		return
-		if update.message is not None:
-			await update.message.reply_text(msg)
-		return
-	msg: str = f"Last 30 days:\n✔ Signals: {total}\n✔ Snapshot win-rate: {round(win_rate*100,1)}%"
-	if update.message is not None:
-		await update.message.reply_text(msg)
 
 
 # -------- Premium commands --------
@@ -2244,16 +2239,9 @@ async def stats_command(update, context) -> None:
 			return
 	except Exception:
 		pass
-
-	# SQLite fallback
-	trades = []  # Postgres-only
-	msg: str = (
-		"📈 Stats (Premium)\n\n"
-		f"Signals recorded: {len(trades)}\n"
-		"Use /history to view recent signals."
-	)
+	
 	if update.message is not None:
-		await update.message.reply_text(msg)
+		await update.message.reply_text("Stats unavailable right now.")
 
 
 @require_tier("PREMIUM")
@@ -2295,34 +2283,9 @@ async def history_command(update, context):
 			return
 	except Exception:
 		pass
-
-	# SQLite fallback
-	trades = []  # Postgres-only
-	filtered = []
-	for t in trades:
-		try:
-			row_asset = str(t[1])
-			row_tf = str(t[2])
-			if asset and row_asset != asset:
-				continue
-			if tf and row_tf != tf:
-				continue
-			filtered.append(t)
-		except Exception:
-			continue
-	filtered = filtered[-10:]
-	if not filtered:
-		if update.message is not None:
-			await update.message.reply_text("No history available yet.")
-		return
-	lines: list[str] = ["🧾 History (last 10):", ""]
-	for t in filtered:
-		try:
-			lines.append(f"• {t[1]} {t[2]} {t[3]} entry={t[4]} sl={t[5]} tp={t[6]}")
-		except Exception:
-			continue
+	
 	if update.message is not None:
-		await update.message.reply_text("\n".join(lines))
+		await update.message.reply_text("No history available yet.")
 
 
 @require_tier("PREMIUM")
