@@ -17,3 +17,28 @@ TIER_SCORE_THRESHOLDS = {
     "owner": 45,
     "admin": 45,
 }
+
+# Signal freshness: max age in seconds before signal is considered stale
+MAX_SIGNAL_AGE_SECONDS = {
+    "crypto": 180,   # 3 minutes for crypto (fast-moving markets)
+    "fx": 300,       # 5 minutes for forex
+    "stock": 300,    # 5 minutes for stocks
+    "commodity": 300 # 5 minutes for commodities
+}
+
+# Price drift tolerance: max % deviation from entry price
+PRICE_DRIFT_TOLERANCE = {
+    "crypto": 0.005,   # 0.5% for crypto
+    "fx": 0.002,       # 0.2% for forex
+    "stock": 0.003,    # 0.3% for stocks
+    "commodity": 0.004 # 0.4% for commodities
+}
+
+# Candle staleness multiplier: max age = timeframe * this value
+CANDLE_STALENESS_MULTIPLIER = 2
+
+# News sentiment threshold for conflict detection
+STRONG_SENTIMENT_THRESHOLD = 2
+
+# Active signal monitoring
+ACTIVE_SIGNAL_LOOKBACK_HOURS = 24

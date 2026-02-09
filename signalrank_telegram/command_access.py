@@ -30,6 +30,8 @@ COMMAND_TIERS = {
     "referral_rewards": "FREE",
     "support": "FREE",
     "status": "FREE",
+    "liveprice": "FREE",  # NEW: Live price for any asset
+    "market": "FREE",  # NEW: Market overview
     
     # PREMIUM COMMANDS
     "performance": "PREMIUM",
@@ -44,6 +46,7 @@ COMMAND_TIERS = {
     "filter": "PREMIUM",
     "reports": "PREMIUM",
     "notify": "PREMIUM",
+    "portfolio": "PREMIUM",  # NEW: Show active signals with P&L
     
     # VIP COMMANDS
     "elite": "VIP",
@@ -90,6 +93,8 @@ COMMAND_HELP = {
             ("policy", "Subscription & refund policy"),
             ("recap", "Weekly performance recap"),
             ("support", "Contact support"),
+            ("liveprice", "Get real-time price for any asset"),
+            ("market", "Market overview & major assets"),
             # ("buy_extra_signals", "Buy 1-5 extra daily signals (₦300 each)"),
         ],
         "footer": (
@@ -97,7 +102,8 @@ COMMAND_HELP = {
             "• 1–3 signals/day (delayed)\n"
             "• Outcome notifications (basic)\n"
             "• Daily summary\n"
-            "• Referral rewards\n\n"
+            "• Referral rewards\n"
+            "• Live prices & market overview\n\n"
             "Markets: Crypto (spot) + major FX pairs\n"
             "Features: AI analysis, risk plans, TP/SL alerts\n\n"
             "💡 Tip: Upgrade to PREMIUM for real-time signals and full details."
@@ -130,6 +136,9 @@ COMMAND_HELP = {
             ("apikey", "API key for signals"),
             ("filter", "Custom signal filters"),
             ("support", "Contact support"),
+            ("liveprice", "Get real-time price for any asset"),
+            ("portfolio", "View all active signals with P&L"),
+            ("market", "Market overview & major assets"),
             # ("buy_extra_signals", "Buy extra daily signals (if available)"),
         ],
         "footer": (
@@ -139,7 +148,8 @@ COMMAND_HELP = {
             "• Confidence scores\n"
             "• TP/SL hit notifications\n"
             "• Daily & weekly stats\n"
-            "• Risk management guidance\n\n"
+            "• Risk management guidance\n"
+            "• Portfolio tracking with live P&L\n\n"
             "Markets: Crypto (spot) + major FX pairs\n"
             "Features: AI analysis, risk plans, TP/SL alerts\n\n"
             "💡 Tip: Upgrade to VIP for elite signals."

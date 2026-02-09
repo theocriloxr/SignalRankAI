@@ -143,7 +143,7 @@ def _alphavantage_rate_limit() -> None:
     _ALPHA_LAST_CALL_TS = time.monotonic()
 
 def fetch_market_data(asset, timeframes):
-    """Fetch live market data with validation."""
+    """Fetch live market data with validation and freshness checks."""
     data = {}
     for tf in timeframes:
         try:
@@ -158,6 +158,25 @@ def fetch_market_data(asset, timeframes):
             if not all(k in first for k in required_keys):
                 continue
             
+            # Check candle freshness - most recent candle should not be too old
+            latest_candle = candles[-1]
+            latest_timestamp = latest_candle.get('timestamp', 0)
+            
+            # Convert timeframe to seconds
+            tf_seconds = _timeframe_to_seconds(tf)
+            current_time = time.time()
+            
+            # Import candle staleness multiplier
+            from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
+            
+            # Candles should be at most N times the timeframe interval old
+            max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
+            candle_age = current_time - latest_timestamp
+            
+            if candle_age > max_age:
+                logger.warning(f"[fetcher] Candle data for {asset} {tf} is stale: {candle_age:.0f}s old (max: {max_age:.0f}s)")
+                # Still use the data but log the warning
+            
             # Calculate indicators from real candle data
             indicators = calculate_indicators(candles)
             if not indicators:
@@ -165,12 +184,40 @@ def fetch_market_data(asset, timeframes):
             
             data[tf] = {
                 'candles': candles,
-                'indicators': indicators
+                'indicators': indicators,
+                'fetched_at': current_time,
+                'latest_candle_timestamp': latest_timestamp,
+                'candle_age_seconds': candle_age
             }
         except Exception as e:
             print(f"[WARN] Skipping {asset} {tf} due to error: {e}")
             continue
     return data
+
+
+def _timeframe_to_seconds(timeframe: str) -> int:
+    """Convert timeframe string to seconds."""
+    tf = timeframe.lower().strip()
+    multipliers = {
+        'm': 60,
+        'h': 3600,
+        'd': 86400,
+        'w': 604800
+    }
+    
+    # Extract number and unit (e.g., "5m" -> 5, "m")
+    import re
+    match = re.match(r'(\d+)([mhdw])', tf)
+    if match:
+        num, unit = match.groups()
+        return int(num) * multipliers.get(unit, 60)
+    
+    # Default mappings for common timeframes
+    defaults = {
+        '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+        '1h': 3600, '4h': 14400, '1d': 86400
+    }
+    return defaults.get(tf, 300)
 
 def get_candles(asset, timeframe):
     """

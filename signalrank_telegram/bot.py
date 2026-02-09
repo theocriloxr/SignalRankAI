@@ -245,6 +245,9 @@ from .commands import (
     selfcheck_command,
     myid_command,
     dashboard_command,
+    liveprice_command,
+    portfolio_command,
+    market_command,
 )
 
 # Register new commands
@@ -265,6 +268,7 @@ from .owner_commands import (
     owner_users,
     owner_revenue,
     correct_signal,
+    provider_status_command,
 )
 
 # Import tier-based notification manager
@@ -1394,6 +1398,11 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("history", _audit_handler("history", history_command)))
     application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
     application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
+    
+    # New commands for live prices and portfolio
+    application.add_handler(CommandHandler("liveprice", _audit_handler("liveprice", liveprice_command)))
+    application.add_handler(CommandHandler("portfolio", _audit_handler("portfolio", portfolio_command)))
+    application.add_handler(CommandHandler("market", _audit_handler("market", market_command)))
 
     # VIP (not advertised)
     application.add_handler(CommandHandler("elite", _audit_handler("elite", elite_command)))
@@ -1414,6 +1423,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("owner_users", _audit_handler("owner_users", owner_users)))
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
     application.add_handler(CommandHandler("correct_signal", _audit_handler("correct_signal", correct_signal)))
+    application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
