@@ -864,6 +864,49 @@ def main_loop(DRY_RUN: bool = False):
                     for sig in scored_signals_all:
                         if signals_sent_today + len(user_signals) >= daily_limit:
                             break
+                        
+                        # Validate signal freshness and price before delivery
+                        try:
+                            from engine.price_validator import (
+                                is_signal_fresh, validate_price_drift, 
+                                check_sl_tp_hit, get_current_price
+                            )
+                            
+                            # Check signal freshness
+                            is_fresh, fresh_reason = is_signal_fresh(sig)
+                            if not is_fresh:
+                                logger.info(f"[engine] Skipping stale signal for {sig.get('asset')}: {fresh_reason}")
+                                continue
+                            
+                            # Get current market price
+                            asset = sig.get('asset')
+                            current_price = get_current_price(asset)
+                            
+                            if current_price is None:
+                                logger.warning(f"[engine] Failed to fetch current price for {asset}, using signal as-is")
+                                # Still deliver if we can't fetch price
+                            else:
+                                # Check if SL/TP already hit
+                                should_skip, skip_reason = check_sl_tp_hit(sig, current_price)
+                                if should_skip:
+                                    logger.info(f"[engine] Skipping signal for {asset}: {skip_reason}")
+                                    continue
+                                
+                                # Validate price drift and update if needed
+                                is_valid, drift_reason, updated_sig = validate_price_drift(sig, current_price)
+                                if updated_sig:
+                                    logger.info(f"[engine] Updated signal prices for {asset}: {drift_reason}")
+                                    sig = updated_sig
+                                    # Add current price to signal
+                                    sig['current_price'] = current_price
+                                    sig['price_updated'] = True
+                                else:
+                                    sig['current_price'] = current_price
+                                    sig['price_updated'] = False
+                        except Exception as e:
+                            logger.warning(f"[engine] Price validation failed for signal: {e}")
+                            # Continue with signal delivery even if validation fails
+                        
                         try:
                             eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
                             if eligible:

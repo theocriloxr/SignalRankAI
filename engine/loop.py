@@ -123,7 +123,7 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
     return results
 
 
-async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 300):
+async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120):
     logger.info("engine loop starting assets=%s tf=%s interval=%s", assets, timeframes, interval_seconds)
     
     while True:
@@ -146,7 +146,7 @@ async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml
         await asyncio.sleep(interval_seconds)
 
 
-def start_engine_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 300):
+def start_engine_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml: bool = False, interval_seconds: int = 120):
     """Sync entrypoint to run the async main loop using `run_sync` shim."""
     return run_sync(main_loop(assets, timeframes, include_ml=include_ml, interval_seconds=interval_seconds))
 
