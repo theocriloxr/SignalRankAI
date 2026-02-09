@@ -527,7 +527,9 @@ Confidence: {confidence}/100
 	return msg
 
 def format_signal_premium_new(signal: dict) -> str:
-	"""Format signal for PREMIUM tier with full details."""
+	"""Format signal for PREMIUM tier with full details and enhanced data."""
+	from engine.signal_calculations import format_enhanced_signal_data
+	
 	asset = signal.get('asset', 'UNKNOWN')
 	direction = signal.get('direction', 'LONG').upper()
 	timeframe = signal.get('timeframe', 'N/A')
@@ -541,6 +543,19 @@ def format_signal_premium_new(signal: dict) -> str:
 	expires_at = signal.get('expires_at')
 	ref = signal.get('signal_id', 'N/A')
 	
+	# Get enhanced data
+	enhanced = format_enhanced_signal_data(signal)
+	expected_profit = enhanced.get('expected_profit_pct')
+	expected_loss = enhanced.get('expected_loss_pct')
+	rr_calculated = enhanced.get('risk_reward_ratio')
+	signal_age = enhanced.get('signal_age_minutes')
+	price_indicator = enhanced.get('price_status_indicator', 'ℹ️')
+	current_price = signal.get('current_price')
+	
+	# Use calculated RR if available
+	if rr_calculated:
+		rr_ratio = rr_calculated
+	
 	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
 	
 	# Format expiration
@@ -548,28 +563,64 @@ def format_signal_premium_new(signal: dict) -> str:
 	if expires_at:
 		expiry_str = _format_expiration(expires_at)
 	
+	# Build message with enhanced data
 	msg = f"""📊 Signal Alert ⭐
 
 Asset: {asset}
 Direction: {direction} {direction_emoji}
 Timeframe: {timeframe}
-Entry: {_format_price(entry, asset)}
+Entry: {_format_price(entry, asset)}"""
+	
+	# Add current price if available
+	if current_price:
+		msg += f"""
+Current Price: {_format_price(current_price, asset)} {price_indicator}"""
+	
+	msg += f"""
 
 🛡️ Stop Loss: {_format_price(stop_loss, asset)}
-🎯 Take Profit: {_format_price(take_profit, asset)}
+🎯 Take Profit: {_format_price(take_profit, asset)}"""
+	
+	# Add profit/loss expectations
+	if expected_profit is not None:
+		msg += f"""
+📈 Expected Profit: +{expected_profit:.2f}%"""
+	if expected_loss is not None:
+		msg += f"""
+📉 Expected Loss: {expected_loss:.2f}%"""
+	
+	msg += f"""
 📊 Risk/Reward: 1:{rr_ratio:.1f}
-🔥 Confidence: {confidence}/100
+🔥 Confidence: {confidence}/100"""
+	
+	# Add pips for FX pairs
+	pips_to_tp = enhanced.get('pips_to_tp')
+	pips_to_sl = enhanced.get('pips_to_sl')
+	if pips_to_tp:
+		msg += f"""
+📍 Pips to TP: {pips_to_tp:.1f} | SL: {pips_to_sl:.1f}"""
+	
+	msg += f"""
 
 📈 Strategy: {strategy}
 📉 Regime: {regime}
-⏰ Expires: {expiry_str}
+⏰ Expires: {expiry_str}"""
+	
+	# Add signal age if available
+	if signal_age is not None:
+		msg += f"""
+🕐 Signal Age: {signal_age} min ago"""
+	
+	msg += f"""
 
 Ref: SIG-{str(ref)[:8]}"""
 	
 	return msg
 
 def format_signal_vip_new(signal: dict) -> str:
-	"""Format signal for VIP tier with everything + extras."""
+	"""Format signal for VIP tier with everything + extras and enhanced data."""
+	from engine.signal_calculations import format_enhanced_signal_data
+	
 	asset = signal.get('asset', 'UNKNOWN')
 	direction = signal.get('direction', 'LONG').upper()
 	timeframe = signal.get('timeframe', 'N/A')
@@ -596,6 +647,20 @@ def format_signal_vip_new(signal: dict) -> str:
 	entry_zone_low = signal.get('entry_zone_low', entry)
 	entry_zone_high = signal.get('entry_zone_high', entry)
 	
+	# Get enhanced data
+	enhanced = format_enhanced_signal_data(signal)
+	expected_profit = enhanced.get('expected_profit_pct')
+	expected_loss = enhanced.get('expected_loss_pct')
+	rr_calculated = enhanced.get('risk_reward_ratio')
+	suggested_position = enhanced.get('suggested_position_size')
+	signal_age = enhanced.get('signal_age_minutes')
+	price_indicator = enhanced.get('price_status_indicator', 'ℹ️')
+	current_price = signal.get('current_price')
+	
+	# Use calculated RR if available
+	if rr_calculated:
+		rr_ratio = rr_calculated
+	
 	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
 	
 	# Format expiration
@@ -615,7 +680,14 @@ Asset: {asset}
 Direction: {direction} {direction_emoji}
 Timeframe: {timeframe}
 Entry Zone: {_format_price(entry_zone_low, asset)} – {_format_price(entry_zone_high, asset)}
-Entry: {_format_price(entry, asset)}
+Entry: {_format_price(entry, asset)}"""
+	
+	# Add current price if available
+	if current_price:
+		msg += f"""
+Current Price: {_format_price(current_price, asset)} {price_indicator}"""
+	
+	msg += f"""
 
 🛡️ Stop Loss: {_format_price(stop_loss, asset)}"""
 	
@@ -633,6 +705,14 @@ Entry: {_format_price(entry, asset)}
 		msg += f"""
 🎯 Take Profit: {_format_price(tp_levels[0], asset)}"""
 	
+	# Add profit/loss expectations
+	if expected_profit is not None:
+		msg += f"""
+📈 Expected Profit: +{expected_profit:.2f}%"""
+	if expected_loss is not None:
+		msg += f"""
+📉 Expected Loss: {expected_loss:.2f}%"""
+	
 	msg += f"""
 📊 Risk/Reward: 1:{rr_ratio:.1f}
 🔥 Confidence: {confidence}/100"""
@@ -645,13 +725,32 @@ Entry: {_format_price(entry, asset)}
 		msg += f"""
 📐 Confluence: {int(confluence)}%"""
 	
+	# Add pips for FX pairs
+	pips_to_tp = enhanced.get('pips_to_tp')
+	pips_to_sl = enhanced.get('pips_to_sl')
+	if pips_to_tp:
+		msg += f"""
+📍 Pips to TP: {pips_to_tp:.1f} | SL: {pips_to_sl:.1f}"""
+	
+	# Add suggested position size
+	if suggested_position:
+		msg += f"""
+💰 Suggested Size: {suggested_position:.2f} units (1% risk)"""
+	
 	msg += f"""
 
 📈 Strategy: {strategy}
 📉 Regime: {regime}
 💡 Score: {score_explanation}
 {freshness}
-⏰ Expires: {expiry_str}
+⏰ Expires: {expiry_str}"""
+	
+	# Add signal age if available
+	if signal_age is not None:
+		msg += f"""
+🕐 Signal Age: {signal_age} min ago"""
+	
+	msg += f"""
 
 Ref: SIG-{str(ref)[:8]}"""
 	
