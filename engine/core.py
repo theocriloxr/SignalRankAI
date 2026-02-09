@@ -134,7 +134,8 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                 meta=meta or {},
             )
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"[engine] Failed to publish analytics event: {e}")
         pass
 
 try:
@@ -564,7 +565,8 @@ def main_loop(DRY_RUN: bool = False):
                             seen.add(fp)
                         unique_signals.append(sig)
                     selected_signals = unique_signals
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"[engine] Failed to deduplicate signals: {e}")
                     pass
                 pipeline_stats["unique"] += len(selected_signals)
 
@@ -597,7 +599,8 @@ def main_loop(DRY_RUN: bool = False):
                             sig['_preview_score'] = preview_score
                             if max_candidate_score is None or preview_score > max_candidate_score:
                                 max_candidate_score = preview_score
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to compute preview score: {e}")
                             pass
 
                         # basic validation (structure)
@@ -662,7 +665,8 @@ def main_loop(DRY_RUN: bool = False):
                                     features=features if isinstance(features, dict) else {},
                                 )
                             )
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to record ML rejection: {e}")
                             pass
                         continue
                     sig['ml_probability'] = prob
@@ -702,7 +706,8 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             if max_candidate_score is None or score > max_candidate_score:
                                 max_candidate_score = score
-                        except Exception:
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to update max candidate score: {e}")
                             pass
 
                         # advanced filters
@@ -749,7 +754,8 @@ def main_loop(DRY_RUN: bool = False):
                                     tp = entry_f + abs(entry_f - slf) * rr
                                 else:
                                     tp = entry_f - abs(entry_f - slf) * rr
-                            except Exception:
+                            except Exception as e:
+                                logger.debug(f"[engine] Failed to compute take profit level: {e}")
                                 pass
                         sig['stop_loss'] = sl
                         sig['take_profit'] = tp
@@ -813,7 +819,8 @@ def main_loop(DRY_RUN: bool = False):
                 oid = int(_oid)
                 if oid not in user_ids:
                     user_ids.append(oid)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[engine] Failed to parse user ID from OWNER_TELEGRAM_ID: {e}")
                 pass
 
         async def deliver_all():
@@ -830,22 +837,43 @@ def main_loop(DRY_RUN: bool = False):
                     user_tier = 'free'
                     try:
                         user_tier = resolve_user_tier(user_id).lower()
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"[engine] Failed to resolve user tier for user {user_id}: {e}")
                         user_tier = 'free'
+
+                    # Check daily limit
+                    from datetime import datetime
+                    from core.redis_state import state
+                    from core.tier_constants import TIER_DAILY_LIMITS
+                    
+                    date_str = datetime.utcnow().strftime('%Y-%m-%d')
+                    redis_key = f"signals_sent:{user_id}:{date_str}"
+                    signals_sent_today = 0
+                    try:
+                        signals_sent_today = int(state.get_sync(redis_key) or 0)
+                    except Exception:
+                        signals_sent_today = 0
+                    
+                    daily_limit = TIER_DAILY_LIMITS.get(user_tier, 2)
+                    
+                    if signals_sent_today >= daily_limit:
+                        logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")
+                        continue
 
                     user_signals = []
                     for sig in scored_signals_all:
+                        if signals_sent_today + len(user_signals) >= daily_limit:
+                            break
                         try:
-                            eligible = False
-                            try:
-                                eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id, session=None)
-                            except Exception:
-                                eligible = False
-
+                            eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
                             if eligible:
                                 user_signals.append(sig)
-                        except Exception:
-                            logger.exception("delivery eligibility check failed")
+                        except Exception as e:
+                            logger.debug(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
+                            pass
+
+                    if not user_signals:
+                        continue
 
                     if DRY_RUN:
                         for msg in user_signals:
@@ -853,7 +881,15 @@ def main_loop(DRY_RUN: bool = False):
                     else:
                         try:
                             dispatch_signals(user_signals, user_id=user_id)
-                        except Exception:
+                            # Increment Redis counter
+                            try:
+                                new_count = signals_sent_today + len(user_signals)
+                                state.set_sync(redis_key, str(new_count), ex=86400)
+                            except Exception as e:
+                                logger.debug(f"[engine] Failed to update signal count in Redis: {e}")
+                                pass
+                        except Exception as e:
+                            logger.warning(f"[engine] Failed to dispatch signals: {e}")
                             logger.exception("dispatch_signals failed")
                     dispatched_count += 1
                 except Exception:
@@ -888,7 +924,8 @@ def main_loop(DRY_RUN: bool = False):
                     f"max_score={top_score} max_score_pre_threshold={max_candidate_score} {stats_str}",
                     flush=True,
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[engine] Failed to print analytics stats: {e}")
                 pass
 
         time.sleep(max(5, cycle_sleep_seconds))

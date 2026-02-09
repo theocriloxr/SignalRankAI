@@ -5,6 +5,7 @@ from config import config
 import time
 import json
 import hashlib
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -154,7 +155,9 @@ class RedisState:
                         reason = str(data.get("reason", ""))
                         updated_at = float(data.get("updated_at", 0.0) or 0.0)
                         return KillSwitchState(enabled, reason, updated_at)
-                    except Exception:
+                    except Exception as e:
+                        import logging
+                        logging.debug(f"[redis_state] Failed to parse killswitch state from Postgres: {e}")
                         pass
             raw = self._memory.get(_KILL_KEY)
             if not isinstance(raw, dict):
@@ -258,7 +261,9 @@ class RedisState:
             # Legacy format; treat as revoked when we enforce fingerprints.
             try:
                 r.delete(key)
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.debug(f"[redis_state] Failed to delete legacy temp owner key: {e}")
                 pass
             return False
         prefix, stored_fp = val.split(":", 1)
@@ -268,7 +273,9 @@ class RedisState:
             return True
         try:
             r.delete(key)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to delete mismatched temp owner key: {e}")
             pass
         return False
 
@@ -339,7 +346,9 @@ class RedisState:
         payload = json.dumps({"total": int(total), "used": int(used)})
         try:
             r.set(key, payload, ex=(ttl if isinstance(ttl, int) and ttl > 0 else ttl_seconds))
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to set extra signals in Redis: {e}")
             pass
         return int(total)
 
@@ -465,6 +474,117 @@ class RedisState:
         if count == 1:
             r.expire(key, window)
         return count > int(limit)
+
+    def get_sync(self, key: str) -> Optional[str]:
+        """Get a value from the state store (Postgres or memory)."""
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                row = self._pg_exec_one(
+                    "SELECT value FROM runtime_state WHERE key=%s AND (expires_at IS NULL OR expires_at > NOW())",
+                    (key,),
+                )
+                if row and row[0] is not None:
+                    try:
+                        # If it's a dict, try to get a 'value' field, otherwise convert to string
+                        data = row[0]
+                        if isinstance(data, dict):
+                            return str(data.get('value', ''))
+                        return str(data)
+                    except Exception as e:
+                        import logging
+                        logging.warning(f"[redis_state] Failed to parse value for key {key}: {e}")
+                        return None
+                return None
+            # Memory fallback
+            return self._memory.get(key)
+        # Redis path (not used in this project)
+        try:
+            val = r.get(key)
+            return val.decode('utf-8') if isinstance(val, bytes) else val
+        except Exception as e:
+            import logging
+            logging.warning(f"[redis_state] Failed to get key {key} from Redis: {e}")
+            return None
+
+    def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
+        """Set a value in the state store (Postgres or memory) with optional expiration."""
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                data = {"value": str(value)}
+                if ex:
+                    self._pg_exec_one(
+                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                        "VALUES (%s, %s::jsonb, NOW() + (%s || ' seconds')::interval, NOW()) "
+                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=EXCLUDED.expires_at, updated_at=NOW()",
+                        (key, json.dumps(data), str(ex)),
+                    )
+                else:
+                    self._pg_exec_one(
+                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                        "VALUES (%s, %s::jsonb, NULL, NOW()) "
+                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=NULL, updated_at=NOW()",
+                        (key, json.dumps(data)),
+                    )
+                return
+            # Memory fallback
+            self._memory[key] = str(value)
+            return
+        # Redis path (not used in this project)
+        try:
+            if ex:
+                r.set(key, str(value), ex=ex)
+            else:
+                r.set(key, str(value))
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to set value in Redis: {e}")
+            pass
+
+    def incr_sync(self, key: str, ex: Optional[int] = None) -> int:
+        """Increment a counter in the state store (Postgres or memory) with optional expiration."""
+        r = self._get_redis_sync()
+        if r is None:
+            if self._pg_available():
+                if ex:
+                    row = self._pg_exec_one(
+                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                        "VALUES (%s, jsonb_build_object('value', 1), NOW() + (%s || ' seconds')::interval, NOW()) "
+                        "ON CONFLICT (key) DO UPDATE SET "
+                        "value = jsonb_build_object('value', "
+                        "CASE WHEN runtime_state.expires_at IS NOT NULL AND runtime_state.expires_at > NOW() "
+                        "THEN COALESCE((runtime_state.value->>'value')::int, 0) + 1 ELSE 1 END), "
+                        "expires_at = EXCLUDED.expires_at, updated_at = NOW() "
+                        "RETURNING (value->>'value')::int",
+                        (key, str(ex)),
+                    )
+                else:
+                    row = self._pg_exec_one(
+                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                        "VALUES (%s, jsonb_build_object('value', 1), NULL, NOW()) "
+                        "ON CONFLICT (key) DO UPDATE SET "
+                        "value = jsonb_build_object('value', COALESCE((runtime_state.value->>'value')::int, 0) + 1), "
+                        "updated_at = NOW() "
+                        "RETURNING (value->>'value')::int",
+                        (key,),
+                    )
+                return int((row or (0,))[0] or 0)
+            # Memory fallback
+            current = int(self._memory.get(key, 0))
+            current += 1
+            self._memory[key] = current
+            return current
+        # Redis path (not used in this project)
+        try:
+            count = int(r.incr(key))
+            if ex and count == 1:
+                r.expire(key, ex)
+            return count
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to increment counter in Redis: {e}")
+            return 0
 
     # -------- Async API (FastAPI/worker) --------
     async def get_killswitch(self) -> KillSwitchState:
