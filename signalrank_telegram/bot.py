@@ -705,6 +705,37 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
+    # --- FRESHNESS FILTERING ---
+    # Filter out stale signals before delivery
+    try:
+        from engine.price_validator import is_signal_stale, enrich_signal_with_live_price
+        
+        fresh_signals = []
+        for sig in signals_list:
+            # Enrich with current price and age info
+            try:
+                sig = enrich_signal_with_live_price(sig)
+            except Exception as e:
+                logger.debug(f"[dispatch] Failed to enrich signal {sig.get('signal_id')}: {e}")
+            
+            # Check if stale
+            if is_signal_stale(sig):
+                sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
+                asset = sig.get('asset', 'unknown')
+                age_seconds = sig.get('signal_age_seconds', 'unknown')
+                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: age={age_seconds}s asset={asset}")
+            else:
+                fresh_signals.append(sig)
+        
+        signals_list = fresh_signals
+        
+        if not signals_list:
+            logger.info(f"[dispatch] All signals filtered as stale for user {user_id}")
+            return
+    except Exception as e:
+        logger.warning(f"[dispatch] Freshness filtering failed for user {user_id}: {e}")
+        # Continue with unfiltered signals on error
+
     # Entry validation: check that current price is within entry zone (±3%)
     # Add entry_status flag to track if entry has been hit or is pending
     def _check_entry_status(signal: dict) -> tuple[bool, str]:
