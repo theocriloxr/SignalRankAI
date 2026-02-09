@@ -591,3 +591,69 @@ async def correct_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         import traceback
         traceback.print_exc()
         await update.message.reply_text(f"❌ Error correcting signal: {e}")
+
+
+async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner command to check health status of data providers."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_owner(update.effective_user.id):
+        await update.message.reply_text("⚠️ Owner access required.")
+        return
+    
+    try:
+        from data.fetcher import get_unhealthy_providers, _PROVIDER_HEALTH
+        from datetime import datetime
+        
+        # Get unhealthy providers
+        unhealthy = get_unhealthy_providers(min_minutes=5)
+        
+        message = "📊 **Data Provider Status**\n\n"
+        
+        # Show all tracked providers
+        if _PROVIDER_HEALTH:
+            message += "**All Providers:**\n"
+            for provider, health_info in _PROVIDER_HEALTH.items():
+                failures = len(health_info.get('failures', []))
+                last_success = health_info.get('last_success', 0)
+                
+                if last_success > 0:
+                    import time
+                    minutes_since_success = int((time.time() - last_success) / 60)
+                    success_str = f"{minutes_since_success}m ago"
+                else:
+                    success_str = "Never"
+                
+                # Determine status
+                if failures == 0:
+                    status_emoji = "🟢"
+                    status_text = "Healthy"
+                elif failures < 3:
+                    status_emoji = "🟡"
+                    status_text = f"Warning ({failures} fails)"
+                else:
+                    status_emoji = "🔴"
+                    status_text = f"Unhealthy ({failures} fails)"
+                
+                message += f"{status_emoji} **{provider}**: {status_text}\n"
+                message += f"   Last Success: {success_str}\n\n"
+        else:
+            message += "No provider health data available yet.\n\n"
+        
+        # Show unhealthy providers summary
+        if unhealthy:
+            message += f"\n⚠️ **Unhealthy Providers ({len(unhealthy)}):**\n"
+            for provider, minutes_down in unhealthy:
+                message += f"🔴 {provider}: Down for {minutes_down:.0f} minutes\n"
+        else:
+            message += "\n✅ All providers healthy (or not yet tracked)\n"
+        
+        # Add timestamp
+        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        message += f"\n📅 Checked: {timestamp}"
+        
+        await update.message.reply_text(message)
+    
+    except Exception as e:
+        await update.message.reply_text(f"Error checking provider status: {str(e)}")
+

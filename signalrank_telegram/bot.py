@@ -268,6 +268,7 @@ from .owner_commands import (
     owner_users,
     owner_revenue,
     correct_signal,
+    provider_status_command,
 )
 
 # Import tier-based notification manager
@@ -1422,6 +1423,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("owner_users", _audit_handler("owner_users", owner_users)))
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
     application.add_handler(CommandHandler("correct_signal", _audit_handler("correct_signal", correct_signal)))
+    application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
