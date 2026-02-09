@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import time
 from typing import Iterable
 
 from data.fetcher import fetch_market_data as fetch_market_data_rest
 from db.market_cache import get_recent_candles
 from db.session import get_session
+
+logger = logging.getLogger(__name__)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -21,6 +25,109 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _timeframe_to_seconds(tf: str) -> int:
+    """Convert timeframe string to seconds."""
+    mapping = {
+        "1m": 60,
+        "5m": 300,
+        "15m": 900,
+        "1h": 3600,
+        "4h": 14400,
+        "1d": 86400,
+    }
+    return mapping.get(tf, 3600)
+
+
+def _validate_ohlcv(candles: list) -> bool:
+    """Validate OHLCV data integrity.
+    
+    Returns True if all candles pass validation, False otherwise.
+    """
+    if not candles:
+        return True
+    
+    for i, c in enumerate(candles):
+        try:
+            o = float(c.get("open", 0))
+            h = float(c.get("high", 0))
+            l = float(c.get("low", 0))
+            close = float(c.get("close", 0))
+            
+            # Validate high >= max(open, close)
+            if h < max(o, close):
+                logger.warning(f"OHLCV validation failed at candle {i}: high={h} < max(open={o}, close={close})")
+                return False
+            
+            # Validate low <= min(open, close)
+            if l > min(o, close):
+                logger.warning(f"OHLCV validation failed at candle {i}: low={l} > min(open={o}, close={close})")
+                return False
+        except (ValueError, TypeError) as e:
+            logger.warning(f"OHLCV validation failed at candle {i}: {e}")
+            return False
+    
+    # Validate candles are sorted by timestamp ascending
+    timestamps = []
+    for c in candles:
+        ts = c.get("timestamp")
+        if ts is not None:
+            # Handle both ms and seconds
+            ts_val = int(ts) if isinstance(ts, (int, float)) else 0
+            if ts_val > 10**12:  # milliseconds
+                ts_val = ts_val // 1000
+            timestamps.append(ts_val)
+    
+    if timestamps and timestamps != sorted(timestamps):
+        logger.warning("OHLCV validation failed: candles not sorted by timestamp ascending")
+        return False
+    
+    return True
+
+
+def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
+    """Check if cached candles are stale.
+    
+    Returns (is_fresh, data_age_seconds).
+    Candles are stale if the latest candle is older than 2× the timeframe interval.
+    """
+    if not candles:
+        return False, 0.0
+    
+    # Get the latest candle's timestamp
+    latest_candle = candles[-1]
+    ts = latest_candle.get("timestamp")
+    
+    if ts is None:
+        logger.warning(f"Staleness check failed for {timeframe}: no timestamp in latest candle")
+        return False, 0.0
+    
+    # Convert timestamp to seconds
+    try:
+        ts_val = int(ts) if isinstance(ts, (int, float)) else 0
+        if ts_val > 10**12:  # milliseconds
+            ts_val = ts_val // 1000
+        
+        current_time = time.time()
+        data_age = current_time - ts_val
+        
+        # Calculate staleness threshold (2× timeframe interval)
+        tf_seconds = _timeframe_to_seconds(timeframe)
+        threshold = 2 * tf_seconds
+        
+        is_fresh = data_age <= threshold
+        
+        if not is_fresh:
+            logger.warning(
+                f"Staleness check failed for {timeframe}: "
+                f"data age={data_age:.0f}s exceeds threshold={threshold}s (2×{tf_seconds}s)"
+            )
+        
+        return is_fresh, data_age
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Staleness check failed for {timeframe}: {e}")
+        return False, 0.0
 
 
 async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
@@ -49,11 +156,25 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 for tf in tfs:
                     candles = await get_recent_candles(session, symbol=asset, timeframe=tf, limit=limit)
                     if candles:
-                        import logging
-                        logger = logging.getLogger(__name__)
                         logger.info(f"[market_data] asset={asset} tf={tf} candles_fetched={len(candles)}")
+                    
                     if candles and len(candles) >= want:
-                        out[tf] = {"candles": candles}
+                        # Validate OHLCV
+                        if not _validate_ohlcv(candles):
+                            logger.warning(f"Cached candles for {asset} {tf} failed OHLCV validation, skipping cache")
+                            continue
+                        
+                        # Check staleness
+                        is_fresh, data_age = _check_staleness(candles, tf)
+                        if not is_fresh:
+                            logger.warning(f"Cached candles for {asset} {tf} are stale (age={data_age:.0f}s), skipping cache")
+                            continue
+                        
+                        # Cache is valid
+                        out[tf] = {
+                            "candles": candles,
+                            "data_age_seconds": data_age
+                        }
                 await session.commit()
         except Exception:
             out = out or {}
@@ -70,7 +191,22 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             )
         except asyncio.TimeoutError:
             rest = {}
+        
+        # Validate and add data_age_seconds for REST data
         for tf, payload in (rest or {}).items():
+            candles = (payload or {}).get("candles") or []
+            
+            # Validate OHLCV for REST candles
+            if candles and not _validate_ohlcv(candles):
+                logger.warning(f"REST candles for {asset} {tf} failed OHLCV validation, skipping")
+                continue
+            
+            # Calculate data age for REST candles
+            if candles:
+                _, data_age = _check_staleness(candles, tf)
+                if "data_age_seconds" not in payload:
+                    payload["data_age_seconds"] = data_age
+            
             out[tf] = payload
 
         # Best-effort write-through into Postgres cache tables.
