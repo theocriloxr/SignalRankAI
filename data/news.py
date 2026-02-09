@@ -1,40 +1,118 @@
-import requests
 import os
+import requests
+import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from typing import List, Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
+_NEWS_CACHE = {}
+_NEWS_CACHE_TTL = 300  # 5 minutes
 
-def fetch_news_headlines(asset, lookback_minutes=120):
+def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[str, str, int]]:
     """
-    Fetch recent news headlines for the given asset using NewsAPI (or similar).
-    Returns a list of (headline, published_at, sentiment_score) tuples.
+    Fetch news headlines from multiple sources.
+    Returns list of (title, published_at, sentiment_score).
+    
+    Sources tried in order:
+    1. NewsAPI.org (NEWSAPI_KEY env var)
+    2. CryptoCompare News API (free, no key for basic)
+    3. Fallback empty
     """
-    # Example: Use NewsAPI (https://newsapi.org/)
-    api_key = os.getenv('NEWSAPI_KEY')
-    if not api_key:
-        return []
-    url = f'https://newsapi.org/v2/everything?q={asset}&language=en&sortBy=publishedAt&pageSize=10&apiKey={api_key}'
-    try:
-        resp = requests.get(url, timeout=10)
-        data = resp.json()
-        headlines = []
-        for article in data.get('articles', []):
-            headline = article.get('title', '')
-            published_at = article.get('publishedAt', '')
-            # Simple sentiment: +1 if positive, -1 if negative, 0 if neutral
-            sentiment = simple_sentiment_score(headline)
-            headlines.append((headline, published_at, sentiment))
-        return headlines
-    except Exception:
-        return []
+    cache_key = f"{asset}:{lookback_minutes}"
+    cached = _NEWS_CACHE.get(cache_key)
+    if cached and (time.time() - cached["ts"]) < _NEWS_CACHE_TTL:
+        return cached["data"]
+    
+    headlines = []
+    
+    # 1. Try NewsAPI
+    newsapi_key = os.getenv("NEWSAPI_KEY", "").strip()
+    if newsapi_key:
+        try:
+            # Map asset to search query
+            query = _asset_to_news_query(asset)
+            cutoff = (datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)).isoformat()
+            resp = requests.get(
+                "https://newsapi.org/v2/everything",
+                params={
+                    "q": query,
+                    "from": cutoff,
+                    "sortBy": "publishedAt",
+                    "pageSize": 10,
+                    "apiKey": newsapi_key,
+                },
+                timeout=8,
+            )
+            if resp.ok:
+                articles = resp.json().get("articles", [])
+                for art in articles:
+                    title = art.get("title", "")
+                    pub = art.get("publishedAt", "")
+                    score = simple_sentiment_score(title + " " + (art.get("description") or ""))
+                    headlines.append((title, pub, score))
+        except Exception as e:
+            logger.warning(f"NewsAPI fetch failed: {e}")
+    
+    # 2. CryptoCompare News (free, good for crypto)
+    if not headlines and _is_crypto_asset(asset):
+        try:
+            base = asset.upper().replace("USDT", "").replace("USD", "").replace("BUSD", "")
+            resp = requests.get(
+                f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
+                timeout=8,
+            )
+            if resp.ok:
+                articles = resp.json().get("Data", [])
+                for art in articles[:10]:
+                    title = art.get("title", "")
+                    pub = datetime.fromtimestamp(art.get("published_on", 0), tz=timezone.utc).isoformat()
+                    score = simple_sentiment_score(title + " " + (art.get("body", "")[:200]))
+                    headlines.append((title, pub, score))
+        except Exception as e:
+            logger.warning(f"CryptoCompare news failed: {e}")
+    
+    _NEWS_CACHE[cache_key] = {"ts": time.time(), "data": headlines}
+    return headlines
 
-def simple_sentiment_score(text):
-    """Very basic sentiment scoring for demonstration."""
+def _asset_to_news_query(asset: str) -> str:
+    """Convert asset symbol to news search query."""
+    a = asset.upper().strip()
+    # Crypto
+    mapping = {
+        "BTCUSDT": "Bitcoin BTC",
+        "ETHUSDT": "Ethereum ETH",
+        "SOLUSDT": "Solana SOL",
+        "XRPUSDT": "Ripple XRP",
+        "BNBUSDT": "BNB Binance",
+        "XAUUSD": "Gold XAUUSD",
+        "XAGUSD": "Silver XAGUSD",
+        "EURUSD": "EUR USD forex",
+        "GBPUSD": "GBP USD forex",
+        "USDJPY": "USD JPY forex",
+    }
+    return mapping.get(a, a)
+
+def _is_crypto_asset(asset: str) -> bool:
+    a = (asset or "").upper()
+    return a.endswith("USDT") or a.endswith("USD") or a.endswith("BUSD") or a.endswith("USDC")
+
+def simple_sentiment_score(text: str) -> int:
+    """Enhanced sentiment scoring with more keywords."""
     text = text.lower()
-    positive = ['surge', 'rally', 'gain', 'rise', 'bull', 'record', 'beat']
-    negative = ['fall', 'drop', 'loss', 'bear', 'miss', 'crash', 'plunge']
+    positive = [
+        'surge', 'rally', 'gain', 'rise', 'bull', 'record', 'beat', 'soar',
+        'breakout', 'upgrade', 'strong', 'momentum', 'outperform', 'growth',
+        'recovery', 'rebound', 'highs', 'buy', 'accumulate', 'bullish',
+        'optimism', 'upside', 'profit', 'boost', 'support'
+    ]
+    negative = [
+        'fall', 'drop', 'loss', 'bear', 'miss', 'crash', 'plunge', 'decline',
+        'sell', 'warning', 'risk', 'fear', 'dump', 'collapse', 'downgrade',
+        'weak', 'correction', 'selloff', 'panic', 'bearish', 'concern',
+        'uncertainty', 'recession', 'inflation', 'crisis', 'fraud'
+    ]
     score = 0
     for word in positive:
         if word in text:
@@ -42,171 +120,13 @@ def simple_sentiment_score(text):
     for word in negative:
         if word in text:
             score -= 1
-    return score
+    return max(-3, min(3, score))
 
-def get_news_sentiment(asset, lookback_minutes=120):
-    """
-    Aggregate sentiment for recent news headlines for the asset.
-    Returns a float: positive (>0), negative (<0), or neutral (0).
-    """
+def get_news_sentiment(asset: str, lookback_minutes: int = 120) -> float:
+    """Aggregate sentiment for recent news headlines."""
     headlines = fetch_news_headlines(asset, lookback_minutes)
     if not headlines:
         return 0.0
     total = sum(s for _, _, s in headlines)
     return total / max(1, len(headlines))
-
-
-async def check_news_impact_on_active_signals():
-    """
-    Check if recent news affects any active signals and notify users.
-    
-    This function:
-    1. Gets all active signals
-    2. Fetches recent news for each asset
-    3. Compares news sentiment against signal direction
-    4. Sends alerts to users if news conflicts with their signals
-    """
-    try:
-        from db.session import get_session
-        from db.models import Signal, SignalDelivery
-        from sqlalchemy import select
-        from core.redis_state import state
-        from core.tier_constants import ACTIVE_SIGNAL_LOOKBACK_HOURS, STRONG_SENTIMENT_THRESHOLD
-        
-        # Get active signals from last N hours
-        async with get_session() as session:
-            cutoff = datetime.utcnow() - timedelta(hours=ACTIVE_SIGNAL_LOOKBACK_HOURS)
-            stmt = select(Signal).where(
-                Signal.archived == False,
-                Signal.created_at >= cutoff
-            )
-            result = await session.execute(stmt)
-            signals = result.scalars().all()
-            
-            if not signals:
-                logger.debug("No active signals to check for news impact")
-                return
-            
-            logger.info(f"Checking news impact on {len(signals)} active signals")
-            
-            # Group signals by asset
-            signals_by_asset = {}
-            for sig in signals:
-                asset = sig.asset
-                if asset not in signals_by_asset:
-                    signals_by_asset[asset] = []
-                signals_by_asset[asset].append(sig)
-            
-            # Check news for each asset
-            for asset, asset_signals in signals_by_asset.items():
-                try:
-                    # Fetch recent news (last 2 hours)
-                    headlines = fetch_news_headlines(asset, lookback_minutes=120)
-                    
-                    if not headlines:
-                        continue
-                    
-                    # Get most recent headline with strong sentiment
-                    strong_news = [h for h in headlines if abs(h[2]) >= STRONG_SENTIMENT_THRESHOLD]
-                    
-                    if not strong_news:
-                        continue
-                    
-                    latest_headline, published_at, sentiment = strong_news[0]
-                    
-                    # Check each signal for this asset
-                    for sig in asset_signals:
-                        direction = sig.direction.lower()
-                        
-                        # Check if news conflicts with signal direction
-                        conflicts = False
-                        if direction == 'long' and sentiment < -1:
-                            conflicts = True
-                            conflict_type = "bearish news on LONG signal"
-                        elif direction == 'short' and sentiment > 1:
-                            conflicts = True
-                            conflict_type = "bullish news on SHORT signal"
-                        
-                        if conflicts:
-                            logger.info(f"News conflict detected for signal {sig.signal_id[:8]}: {conflict_type}")
-                            
-                            # Check if we've already notified about this news
-                            redis_key = f"news_alert:{sig.signal_id}:{latest_headline[:50]}"
-                            already_notified = state.get_sync(redis_key)
-                            
-                            if already_notified:
-                                logger.debug(f"Already notified users about news for signal {sig.signal_id[:8]}")
-                                continue
-                            
-                            # Get users who received this signal
-                            stmt = select(SignalDelivery.user_id).where(
-                                SignalDelivery.signal_id == sig.signal_id
-                            ).distinct()
-                            result = await session.execute(stmt)
-                            user_ids = [row[0] for row in result]
-                            
-                            # Get current price
-                            try:
-                                from engine.price_validator import get_current_price
-                                current_price = get_current_price(asset)
-                                price_str = f"${current_price:.4f}" if current_price else "N/A"
-                            except:
-                                price_str = "N/A"
-                            
-                            # Notify users
-                            for user_id in user_ids:
-                                try:
-                                    await notify_news_alert(
-                                        user_id=user_id,
-                                        signal=sig,
-                                        headline=latest_headline,
-                                        sentiment=sentiment,
-                                        current_price=price_str
-                                    )
-                                except Exception as e:
-                                    logger.error(f"Failed to send news alert to user {user_id}: {e}")
-                            
-                            # Mark as notified (expires in 12 hours)
-                            state.set_sync(redis_key, "1", ex=43200)
-                            logger.info(f"Sent news alerts for signal {sig.signal_id[:8]} to {len(user_ids)} users")
-                
-                except Exception as e:
-                    logger.error(f"Error checking news for asset {asset}: {e}")
-    
-    except Exception as e:
-        logger.error(f"Error in check_news_impact_on_active_signals: {e}", exc_info=True)
-
-
-async def notify_news_alert(user_id: int, signal, headline: str, sentiment: float, current_price: str):
-    """Send a news alert notification to a user."""
-    try:
-        from signalrank_telegram.bot import send_message_to_user
-        
-        asset = signal.asset
-        direction = signal.direction.upper()
-        ref = signal.signal_id[:8]
-        
-        # Determine sentiment emoji
-        if sentiment > 0:
-            sentiment_emoji = "📈🟢"
-            sentiment_text = "BULLISH"
-        else:
-            sentiment_emoji = "📉🔴"
-            sentiment_text = "BEARISH"
-        
-        message = (
-            f"⚠️ **NEWS ALERT**\n\n"
-            f"News may affect your {asset} {direction} signal:\n\n"
-            f"{sentiment_emoji} **{sentiment_text} News:**\n"
-            f"_{headline}_\n\n"
-            f"📊 Signal Ref: `{ref}`\n"
-            f"💰 Current Price: {current_price}\n\n"
-            f"💡 **Consider reviewing your position**\n"
-            f"Use /signal {ref} for details"
-        )
-        
-        await send_message_to_user(user_id, message)
-    
-    except Exception as e:
-        logger.error(f"Failed to send news alert: {e}", exc_info=True)
 

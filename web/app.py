@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import os
 from config import config
 import socket
 import time
@@ -211,9 +212,10 @@ async def metrics_middleware(request: Request, call_next):
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
-    # Include non-sensitive deployment hints to verify which instance is serving traffic.
-    return {
-        "ok": True,
+    """Health check endpoint for Railway."""
+    checks = {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
         "service": APP_NAME,
         "run_mode": (os.getenv("RUN_MODE") or "").strip().lower() or None,
         "hostname": socket.gethostname(),
@@ -224,6 +226,25 @@ async def health() -> Dict[str, Any]:
             "commit_sha": os.getenv("RAILWAY_GIT_COMMIT_SHA"),
         },
     }
+    
+    # Check database
+    try:
+        async with get_session() as session:
+            from sqlalchemy import text
+            await session.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = f"error: {str(e)}"
+        checks["status"] = "degraded"
+    
+    # Check Redis
+    try:
+        state.set_sync("health_check", "ok", ex=60)
+        checks["redis"] = "ok"
+    except Exception:
+        checks["redis"] = "unavailable"
+    
+    return checks
 
 
 @app.get("/metrics")
