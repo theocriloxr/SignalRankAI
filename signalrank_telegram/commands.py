@@ -68,25 +68,50 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
 		return
-	if get_engine_for_event_loop() is None:
-		await update.message.reply_text("Database not configured.")
-		return
+	user_id = update.effective_user.id
+	
+	tier = "free"
+	expiry = None
 	try:
+		from signalrank_telegram.access import resolve_user_tier
+		tier = str(resolve_user_tier(int(user_id))).lower()
+	except Exception:
+		tier = "free"
+	
+	# Get subscription expiry from Postgres
+	try:
+		from db.session import get_session
+		from db.repository import get_or_create_user
 		async with get_session() as session:
-			sub = await get_active_subscription(session, telegram_user_id=update.effective_user.id)
-			await session.commit()
-		if sub is None:
-			await update.message.reply_text("You are on the FREE tier. Upgrade for more features!")
-			return
-		tier = getattr(sub, "tier", "free").upper()
-		expires = getattr(sub, "expires_at", None)
-		status = getattr(sub, "status", "inactive").capitalize()
-		msg = f"\n<b>Subscription Status</b>\nTier: <b>{tier}</b>\nStatus: <b>{status}</b>"
-		if expires:
-			msg += f"\nExpires: <b>{expires.strftime('%Y-%m-%d %H:%M')}</b>"
-		await update.message.reply_text(msg, parse_mode="HTML")
-	except Exception as e:
-		await update.message.reply_text(f"Unable to fetch status: {e}")
+			user = await get_or_create_user(session, telegram_user_id=user_id)
+			expiry = getattr(user, 'premium_until', None)
+	except Exception:
+		pass
+	
+	# Get signals sent today
+	signals_today = 0
+	try:
+		from core.redis_state import state
+		from datetime import datetime
+		date_str = datetime.utcnow().strftime('%Y-%m-%d')
+		signals_today = int(state.get_sync(f"signals_sent:{user_id}:{date_str}") or 0)
+	except Exception:
+		pass
+	
+	limits = {"free": 2, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
+	limit = limits.get(tier, 2)
+	
+	tier_emoji = {"free": "🆓", "premium": "⭐", "vip": "👑", "owner": "🔧", "admin": "🔧"}.get(tier, "🆓")
+	
+	msg = f"{tier_emoji} Status: {tier.upper()}\n\n"
+	if expiry:
+		msg += f"📅 Expires: {expiry.strftime('%Y-%m-%d %H:%M UTC')}\n"
+	msg += f"📊 Signals today: {signals_today}/{limit}\n"
+	
+	if tier == "free":
+		msg += "\n/upgrade to unlock more signals"
+	
+	await update.message.reply_text(msg)
 
 from sqlalchemy import Result
 
@@ -268,7 +293,7 @@ async def referral_leaderboard_command(update, context) -> None:
 		res = await session.execute(
 			text("""
 			SELECT referrer_user_id, COUNT(*) as cnt
-			FROM referrals
+			FROM referral_attributions
 			GROUP BY referrer_user_id
 			ORDER BY cnt DESC
 			LIMIT 10
@@ -284,12 +309,18 @@ async def referral_leaderboard_command(update, context) -> None:
 		if ids:
 			from sqlalchemy import text
 			res2 = await session.execute(
-				text("SELECT id, username FROM users WHERE id = ANY(:ids)"), {"ids": ids}
+				text("SELECT id, telegram_user_id, username FROM users WHERE id = ANY(:ids)"), {"ids": ids}
 			)
-			users = {r[0]: r[1] for r in res2.fetchall()}
+			users = {r[0]: (r[1], r[2]) for r in res2.fetchall()}
 		msg = "🏆 Referral Leaderboard:\n\n"
 		for i, (uid, cnt) in enumerate(rows, 1):
-			uname = users.get(uid) or f"User {uid}"
+			telegram_uid, username = users.get(uid, (None, None))
+			if username:
+				uname = username
+			elif telegram_uid:
+				uname = f"User ***{str(telegram_uid)[-3:]}"
+			else:
+				uname = f"User ***{str(uid)[-3:]}"
 			msg += f"{i}. {uname}: {cnt} referrals\n"
 		await update.message.reply_text(msg)
 
@@ -309,11 +340,19 @@ async def referral_rewards_command(update, context) -> None:
 		)
 		rows = res.fetchall()
 		if not rows:
-			await update.message.reply_text("No rewards earned yet. Refer friends to earn rewards!")
-			return
-		msg = "🎁 Your Referral Rewards:\n"
-		for rtype, cnt, total in rows:
-			msg += f"{rtype}: {cnt} times, total value: {total}\n"
+			msg = "No rewards earned yet. Refer friends to earn rewards!"
+		else:
+			msg = "🎁 Your Referral Rewards:\n"
+			for rtype, cnt, total in rows:
+				msg += f"{rtype}: {cnt} times, total value: {total}\n"
+		
+		# Show progress toward next reward
+		from db.pg_features import get_referral_progress
+		progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
+		total = progress.get("total", 0)
+		needed = progress.get("needed_for_next", 3)
+		msg += f"\n\n📊 Progress: {total} total referrals\n"
+		msg += f"🎯 {needed} more referrals for next reward (7 premium days)"
 		await update.message.reply_text(msg)
 from engine.signal_analytics import signal_analytics
 # --------- ADMIN ANALYTICS COMMANDS ---------
@@ -390,84 +429,59 @@ async def admin_user_engagement_command(update, context) -> None:
 @require_tier("ADMIN")
 async def selfcheck_command(update, context) -> None:
 	"""Admin/Owner: Show quick health summary of the system."""
-	import platform
-	import datetime
-	import os
+	checks = []
+	
+	# DB check
 	try:
-		import psutil
-		has_psutil = True
+		from db.session import get_engine_for_event_loop
+		engine = get_engine_for_event_loop()
+		checks.append("✅ Database: connected" if engine else "❌ Database: not connected")
 	except Exception:
-		psutil = None
-		has_psutil = False
+		checks.append("❌ Database: error")
+	
+	# Redis check
 	try:
-		import shutil
-		has_shutil = True
+		from core.redis_state import state
+		state.get_sync("health_check")
+		checks.append("✅ Redis: connected")
 	except Exception:
-		shutil = None
-		has_shutil = False
-	# ENGINE import removed; use get_engine_for_event_loop() if needed
-	lines: list[str] = ["🩺 System Self-Check"]
-	lines.append(f"Time: {datetime.datetime.now(datetime.timezone.utc).isoformat()} UTC")
-	lines.append(f"Host: {platform.node()} | OS: {platform.system()} {platform.release()}")
-	lines.append(f"Python: {platform.python_version()}")
-	if has_psutil:
-		lines.append(f"RAM: {psutil.virtual_memory().percent}% used")
-	if has_shutil:
-		lines.append(f"Disk: {shutil.disk_usage('/').percent}% used")
-	# DB status
+		checks.append("❌ Redis: not connected")
+	
+	# yfinance check
 	try:
-		if get_engine_for_event_loop() is not None:
-			lines.append("DB: ✅ Connected")
-		else:
-			lines.append("DB: ❌ Not connected")
+		import yfinance as yf
+		t = yf.Ticker("AAPL")
+		p = t.fast_info.get('lastPrice')
+		checks.append(f"✅ yfinance: working (AAPL=${p:.2f})" if p else "⚠️ yfinance: no price")
 	except Exception:
-		lines.append("DB: ❓ Unknown")
-		# ML drift
-		try:
-			import json
-			from pathlib import Path
-			drift_path: Path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
-			if drift_path.exists():
-				with open(drift_path, "r") as f:
-					drift = json.load(f)
-				acc = drift.get("accuracy")
-				auc = drift.get("auc")
-				lines.append(f"ML: acc={acc:.3f} auc={auc:.3f}")
+		checks.append("❌ yfinance: not available")
+	
+	# Bot token check
+	try:
+		from signalrank_telegram.bot import application
+		bot = application.bot
+		me = await bot.get_me()
+		checks.append(f"✅ Bot: @{me.username}")
+	except Exception:
+		checks.append("❌ Bot: token invalid")
+	
+	# Last signal check
+	try:
+		from db.session import get_session
+		from sqlalchemy import select, desc
+		from db.models import Signal
+		async with get_session() as session:
+			res = await session.execute(select(Signal).order_by(desc(Signal.created_at)).limit(1))
+			last = res.scalar_one_or_none()
+			if last:
+				checks.append(f"✅ Last signal: {last.asset} {last.timeframe} at {last.created_at}")
 			else:
-				lines.append("ML: No drift data")
-		except Exception:
-			lines.append("ML: Drift check error")
-		# Uptime
-		try:
-			import time
-			uptime: float = time.time() - psutil.boot_time()
-			lines.append(f"Uptime: {uptime/3600:.1f}h")
-		except Exception:
-			pass
-		await update.message.reply_text("\n".join(lines))
-	# ML drift
-	try:
-		import json
-		from pathlib import Path
-		drift_path: Path = Path(__file__).parent.parent / "ml" / "ml_drift.json"
-		if drift_path.exists():
-			with open(drift_path, "r") as f:
-				drift = json.load(f)
-			acc = drift.get("accuracy")
-			auc = drift.get("auc")
-			lines.append(f"ML: acc={acc:.3f} auc={auc:.3f}")
-		else:
-			lines.append("ML: No drift data")
+				checks.append("⚠️ Last signal: none found")
 	except Exception:
-		lines.append("ML: Drift check error")
-	# Uptime
-	try:
-		import time
-		uptime: float = time.time() - psutil.boot_time()
-		lines.append(f"Uptime: {uptime/3600:.1f}h")
-	except Exception:
-		pass
-	await update.message.reply_text("\n".join(lines))
+		checks.append("⚠️ Last signal: check failed")
+	
+	if update.message is not None:
+		await update.message.reply_text("🔍 System Health\n\n" + "\n".join(checks))
 from .user_prefs import user_prefs_store
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -1570,55 +1584,29 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
-	paystack_url: str | None = os.getenv("PAYSTACK_URL")
-	# VIP seat info from Postgres (best-effort)
-	try:
-		from db.session import get_engine_for_event_loop, get_session
-		from db.repository import count_active_vip_users
-		engine = get_engine_for_event_loop()
-		if engine is not None:
-			async with get_session() as session:
-				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
-				await session.commit()
-			limit = int(getattr(config, "VIP_SEAT_LIMIT", 15))
-			remaining: int = max(0, limit - used)
-		else:
-			used, remaining, limit = 0, 15, 15
-	except Exception:
-		used, remaining, limit = 0, 15, 15
-	vip_line: str = f"VIP seats remaining: {remaining}/{limit}"
-	msg: str = (
-		"💎 SignalRankAI Pricing\n\n"
-		"🆓 FREE\n"
-		"• 1–3 delayed signal summaries per day\n"
-		"• Outcome notifications (no exact prices)\n"
-		"• Daily performance summary (limited)\n"
-		"• Access to /pricing and /upgrade\n\n"
-		"• Optional: buy extra daily signals (₦600 each, 24h access)\n\n"
-		"🟡 PREMIUM\n"
-		"₦8,000 / week\n"
-		"₦24,000 / month\n"
-		"₦56,000 / 3 months\n"
-		"• Real-time signals (5m → 24h)\n"
-		"• Exact Entry, SL, TP\n"
-		"• Confidence score per trade\n"
-		"• TP/SL hit notifications\n"
-		"• Daily & weekly performance stats\n"
-		"• Access to /performance\n\n"
-		"🔴 VIP / ELITE\n"
-		"₦40,000 / month (limited seats)\n"
-		+ vip_line + "\n"
-		"• Highest confidence signals only (score ≥ 85)\n"
-		"• Reduced frequency (quality > quantity)\n"
-		"• Early alerts + priority notifications\n"
-		"• Monthly performance report\n\n"
-		"Markets: Crypto (spot) + major FX pairs\n"
-		"Features: AI analysis, risk plans, TP/SL alerts, performance tracking\n\n"
-		"📌 No refunds for now. Auto-renew only if you agree and link your card.\n"
-		"Use /upgrade to subscribe.\n"
-		+ (f"Paystack: {paystack_url}\n" if paystack_url else "")
-		+ "\n⚠️ Disclaimer: Educational only. Not financial advice. Trading involves risk."
+	msg = (
+		"💰 SignalRankAI Plans\n\n"
+		"🆓 Free Plan\n"
+		"• 2 signals per day\n"
+		"• Entry price shown\n"
+		"• SL/TP locked\n\n"
+		"⭐ Premium\n"
+		"• ₦8,000/week | ₦24,000/month | ₦56,000/quarter\n"
+		"• Up to 20 signals per day\n"
+		"• Full signals with Entry, SL, TP\n"
+		"• Performance analytics & history\n"
+		"• Custom filters & alerts\n\n"
+		"👑 VIP\n"
+		"• ₦16,000/week | ₦40,000/month\n"
+		"• Unlimited signals\n"
+		"• Everything in Premium\n"
+		"• ML probability scores\n"
+		"• Entry zones & partial TPs\n"
+		"• Elite signals (score 85+)\n\n"
+		"📱 Weekly Plan — ₦4,000/week (full access)\n\n"
+		"Use /upgrade to subscribe."
 	)
+	if update.message is not None:
 	if update.message is not None:
 		await update.message.reply_text(msg)
 
@@ -1744,50 +1732,40 @@ async def analyze_command(update, context) -> None:
 async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
-	"""Generates Paystack payment links for subscriptions with tier confirmation."""
-	user_id: int = update.effective_user.id
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
+	
 	from paystack.paystack import generate_paystack_link
-	from signalrank_telegram.payment_handler import format_tier_upgrade_confirmation
 	
-	# Plan codes (optional; used later when wiring Paystack plans properly)
-	premium_monthly_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_MONTHLY")
-	premium_quarterly_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_QUARTERLY")
-	premium_semiannual_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_PREMIUM_SEMIANNUAL")
-	vip_monthly_code: str | None = os.getenv("PAYSTACK_PLAN_CODE_VIP_MONTHLY")
-
-	links = []
-	
-	# PREMIUM options
-	premium_plans: list[tuple[str, int, int, str | None]] = [
-		("Premium (₦8,000 / 7 days)", 8000, 7, getattr(config, "PAYSTACK_PLAN_CODE_PREMIUM_WEEKLY", None)),
-		("Premium (₦24,000 / 30 days)", 24000, 30, premium_monthly_code),
-		("Premium (₦56,000 / 90 days)", 56000, 90, premium_quarterly_code),
+	plans = [
+		("Premium Weekly", 8000, "PREMIUM", "WEEKLY", 7),
+		("Premium Monthly", 24000, "PREMIUM", "MONTHLY", 30),
+		("Premium Quarterly", 56000, "PREMIUM", "QUARTERLY", 90),
+		("VIP Weekly", 16000, "VIP", "WEEKLY", 7),
+		("VIP Monthly", 40000, "VIP", "MONTHLY", 30),
+		("Weekly Plan", 4000, "WEEKLY_PLAN", "WEEKLY", 7),
 	]
 	
-	premium_formatted: str = await format_tier_upgrade_confirmation("PREMIUM", 8000, 7, user_id)
-	premium_msg: str = premium_formatted + "\n\n📌 PREMIUM Plans:\n"
+	lines = ["📋 Choose a plan:\n"]
+	for name, price, tier, duration, days in plans:
+		try:
+			link = generate_paystack_link(
+				user_id=user_id,
+				price=price,
+				tier=tier,
+				duration=duration,
+				duration_days=days,
+			)
+			if link and link.startswith("http"):
+				lines.append(f"• {name} (₦{price:,}) → {link}")
+			else:
+				lines.append(f"• {name} (₦{price:,}) — Payment link unavailable")
+		except Exception:
+			lines.append(f"• {name} (₦{price:,}) — Payment link unavailable")
 	
-	for label, amount, days, plan_code in premium_plans:
-		link = generate_paystack_link(user_id, amount, tier="premium", duration_days=days, plan_code=plan_code)
-		if isinstance(link, str) and ("PAYSTACK_SECRET_KEY" in link or "Paystack" in link):
-			link = os.getenv("PAYSTACK_URL") or "Paystack checkout unavailable right now."
-		premium_msg += f"• {label}: {link}\n"
-	paystack_url: str | None = os.getenv("PAYSTACK_URL")
-	if paystack_url:
-		premium_msg += f"\nPaystack: {paystack_url}\n"
-	
-	if update.message is not None:
-		await update.message.reply_text(premium_msg)
-	
-	# VIP link only if seats available (or user is owner/bypassed/already VIP)
-	try:
-		from db.session import get_engine_for_event_loop, get_session
-		from db.repository import count_active_vip_users, get_active_subscription
-		from config import OWNER_IDS
-		engine = get_engine_for_event_loop()
-		if engine is not None:
-			async with get_session() as session:
-				used: int = await count_active_vip_users(session, exclude_telegram_user_ids=set())
+	lines.append("\nOr contact support: @theocrilox")
+	await update.message.reply_text("\n".join(lines))
 				limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
 				remaining: int = max(0, limit - used)
 				sub: Subscription | None = await get_active_subscription(session, telegram_user_id=user_id, tier="vip")
@@ -1809,29 +1787,6 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if can_offer_vip:
 		vip_formatted: str = await format_tier_upgrade_confirmation("VIP", 40000, 30, user_id)
 		vip_msg: str = vip_formatted + "\n\n"
-		
-		vip_link = generate_paystack_link(user_id, 40000, tier="vip", duration_days=30, plan_code=vip_monthly_code)
-		if isinstance(vip_link, str) and ("PAYSTACK_SECRET_KEY" in vip_link or "Paystack" in vip_link):
-			vip_link = os.getenv("PAYSTACK_URL") or "Paystack checkout unavailable right now."
-		vip_msg += f"🔗 {vip_link}\n"
-		if paystack_url:
-			vip_msg += f"\nPaystack: {paystack_url}\n"
-		
-		if remaining is not None:
-			vip_msg += f"\n⚠️ {remaining}/{limit} VIP seats remaining"
-		
-		if update.message is not None:
-			await update.message.reply_text(vip_msg)
-	else:
-		if update.message is not None:
-			await update.message.reply_text(
-				"🏆 VIP TIER (SOLD OUT)\n\n"
-				"VIP seats are currently full.\n"
-				"Check /pricing later or upgrade to Premium to get started!"
-			)
-# --- Extra Signal Purchase Logic ---
-from telegram import Update
-
 
 
 # /policy or /refunds command
@@ -2098,8 +2053,10 @@ async def about_command(update, context) -> None:
 		"• Ranks signals by quality\n"
 		"• Limits signal frequency to avoid noise\n\n"
 		"Markets:\n"
-		"• Crypto (spot)\n"
-		"• Major FX pairs\n\n"
+		"• Crypto (BTC, ETH, SOL, and more)\n"
+		"• Forex (EUR/USD, GBP/USD, USD/JPY, and more)\n"
+		"• Stocks (AAPL, TSLA, MSFT, and more)\n"
+		"• Commodities (Gold, Silver, Oil, Natural Gas)\n\n"
 		"SignalRankAI does not execute trades and does not guarantee profits.\n"
 		"All signals are for educational and informational purposes only.\n\n"
 		"Trade responsibly.\n\n"
@@ -2119,10 +2076,11 @@ async def faq_command(update, context) -> None:
 		"3) How often are signals sent?\n"
 		"Only when high-quality setups appear. Some days may have fewer or no signals.\n\n"
 		"4) What markets are covered?\n"
-		"Crypto (spot) and major FX pairs, depending on current conditions and data availability.\n\n"
+		"Crypto (BTC, ETH, SOL), Forex (EUR/USD, GBP/USD, USD/JPY), Stocks (AAPL, TSLA, MSFT), and Commodities (Gold, Silver, Oil, Natural Gas).\n\n"
 		"5) What’s the difference between Free, Premium, and VIP?\n"
-		"Free users receive delayed summaries.\nPremium and VIP users receive real-time signals, with higher tiers getting more detail and earlier access.\n\n"
-		"6) Can I cancel anytime?\n"
+		"Free: 2 signals/day with limited details.\n"
+		"Premium: 20 signals/day with full Entry, SL, TP, and analytics.\n"
+		"VIP: Unlimited signals with ML probability scores and elite signals.\n\n"
 		"Yes. Subscriptions expire automatically. Auto-renew only applies if you opt in and link a card.\n\n"
 		"7) Is this financial advice?\n"
 		"No. Signals are for informational purposes only."
