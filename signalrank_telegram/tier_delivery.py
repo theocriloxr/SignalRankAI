@@ -49,6 +49,7 @@ class TierDeliveryManager:
         """Check if signal should be sent to this user based on tier and quality, using Redis for daily limit."""
         import logging
         from utils.async_runner import run_sync
+        from core.tier_constants import TIER_DAILY_LIMITS, TIER_SCORE_THRESHOLDS
 
         tier = str(user_tier or 'free').lower()
         
@@ -61,15 +62,6 @@ class TierDeliveryManager:
                 key = f"signals_sent:{user_id}:{date_str}"
                 sent_today = int(state.get_sync(key) or 0)
                 
-                # Define tier daily limits
-                TIER_DAILY_LIMITS = {
-                    "free": 2,
-                    "premium": 20,
-                    "vip": float('inf'),
-                    "owner": float('inf'),
-                    "admin": float('inf'),
-                }
-                
                 limit = TIER_DAILY_LIMITS.get(tier, 2)
                 if sent_today >= limit:
                     logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
@@ -78,14 +70,9 @@ class TierDeliveryManager:
                 pass
         
         # Quality gates (MUST pass)
-        if tier == 'free' and score < 70:
-            logging.info(f"[delivery] User {user_id} (free) score {score} < 70, not eligible.")
-            return False
-        elif tier == 'premium' and score < 55:
-            logging.info(f"[delivery] User {user_id} (premium) score {score} < 55, not eligible.")
-            return False
-        elif tier in ('vip', 'owner', 'admin') and score < 45:
-            logging.info(f"[delivery] User {user_id} (vip) score {score} < 45, not eligible.")
+        min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
+        if score < min_score:
+            logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
@@ -93,6 +80,7 @@ class TierDeliveryManager:
     async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
         """Async variant of should_send_signal for async contexts."""
         import logging
+        from core.tier_constants import TIER_DAILY_LIMITS, TIER_SCORE_THRESHOLDS
 
         tier = str(user_tier or 'free').lower()
         
@@ -105,15 +93,6 @@ class TierDeliveryManager:
                 key = f"signals_sent:{user_id}:{date_str}"
                 sent_today = int(state.get_sync(key) or 0)
                 
-                # Define tier daily limits
-                TIER_DAILY_LIMITS = {
-                    "free": 2,
-                    "premium": 20,
-                    "vip": float('inf'),
-                    "owner": float('inf'),
-                    "admin": float('inf'),
-                }
-                
                 limit = TIER_DAILY_LIMITS.get(tier, 2)
                 if sent_today >= limit:
                     logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
@@ -122,14 +101,9 @@ class TierDeliveryManager:
                 pass
         
         # Quality gates (MUST pass)
-        if tier == 'free' and score < 70:
-            logging.info(f"[delivery] User {user_id} (free) score {score} < 70, not eligible.")
-            return False
-        elif tier == 'premium' and score < 55:
-            logging.info(f"[delivery] User {user_id} (premium) score {score} < 55, not eligible.")
-            return False
-        elif tier in ('vip', 'owner', 'admin') and score < 45:
-            logging.info(f"[delivery] User {user_id} (vip) score {score} < 45, not eligible.")
+        min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
+        if score < min_score:
+            logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
             return False
         
         return True

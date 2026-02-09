@@ -788,6 +788,8 @@ def main_loop(DRY_RUN: bool = False):
                     # Check daily limit
                     from datetime import datetime
                     from core.redis_state import state
+                    from core.tier_constants import TIER_DAILY_LIMITS
+                    
                     date_str = datetime.utcnow().strftime('%Y-%m-%d')
                     redis_key = f"signals_sent:{user_id}:{date_str}"
                     signals_sent_today = 0
@@ -796,7 +798,7 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         signals_sent_today = 0
                     
-                    daily_limit = {"free": 2, "premium": 20, "vip": float('inf'), "owner": float('inf'), "admin": float('inf')}.get(user_tier, 2)
+                    daily_limit = TIER_DAILY_LIMITS.get(user_tier, 2)
                     
                     if signals_sent_today >= daily_limit:
                         logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")

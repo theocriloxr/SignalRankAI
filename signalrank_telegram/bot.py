@@ -988,6 +988,9 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     
                     # Check how many signals user already received today using Redis
                     from core.redis_state import state
+                    from core.tier_constants import TIER_DAILY_LIMITS
+                    from signalrank_telegram.access import resolve_user_tier
+                    
                     date_str = datetime.utcnow().strftime('%Y-%m-%d')
                     redis_key = f"signals_sent:{user_id}:{date_str}"
                     signals_sent_today = 0
@@ -996,12 +999,19 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     except Exception:
                         signals_sent_today = 0
                     
-                    # FREE users get 2 signals per day
-                    daily_limit = 2
-                    remaining = max(0, daily_limit - signals_sent_today)
+                    # Get user's actual tier for accurate logging
+                    user_tier_actual = 'free'
+                    try:
+                        user_tier_actual = resolve_user_tier(user_id).lower()
+                    except Exception:
+                        user_tier_actual = 'free'
+                    
+                    # Get tier limit from constants
+                    daily_limit = TIER_DAILY_LIMITS.get(user_tier_actual, 2)
+                    remaining = max(0, daily_limit - signals_sent_today) if daily_limit != float('inf') else 999
                     
                     if remaining <= 0:
-                        logger.info(f"[bot] daily limit reached for user={user_id} tier=free sent={signals_sent_today}")
+                        logger.info(f"[bot] daily limit reached for user={user_id} tier={user_tier_actual} sent={signals_sent_today}")
                         return  # Already hit daily limit
                     
                     # Get completely random available signals (bot's choice - no quality filter)
@@ -1093,6 +1103,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
     if tier in ('premium', 'vip', 'owner', 'admin'):
         from core.redis_state import state
+        from core.tier_constants import TIER_DAILY_LIMITS
         from datetime import datetime
         
         # Check daily limit
@@ -1103,15 +1114,6 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             signals_sent_today = int(state.get_sync(redis_key) or 0)
         except Exception:
             signals_sent_today = 0
-        
-        # Define tier limits
-        TIER_DAILY_LIMITS = {
-            "free": 2,
-            "premium": 20,
-            "vip": float('inf'),
-            "owner": float('inf'),
-            "admin": float('inf'),
-        }
         
         daily_limit = TIER_DAILY_LIMITS.get(tier, 2)
         

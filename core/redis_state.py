@@ -483,7 +483,9 @@ class RedisState:
                         if isinstance(data, dict):
                             return str(data.get('value', ''))
                         return str(data)
-                    except Exception:
+                    except Exception as e:
+                        import logging
+                        logging.warning(f"[redis_state] Failed to parse value for key {key}: {e}")
                         return None
                 return None
             # Memory fallback
@@ -492,7 +494,9 @@ class RedisState:
         try:
             val = r.get(key)
             return val.decode('utf-8') if isinstance(val, bytes) else val
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.warning(f"[redis_state] Failed to get key {key} from Redis: {e}")
             return None
 
     def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:

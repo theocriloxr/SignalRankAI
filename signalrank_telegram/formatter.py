@@ -458,7 +458,7 @@ def _get_score_explanation(signal: dict) -> str:
 	if signal.get('trend_ema'):
 		explanations.append("Strong trend confirmation")
 	if signal.get('volume_ratio', 0) > 1.5:
-		explanations.append("volume spike")
+		explanations.append("Volume spike")
 	if signal.get('rsi'):
 		rsi = signal.get('rsi', 50)
 		if rsi < 30:
@@ -470,7 +470,7 @@ def _get_score_explanation(signal: dict) -> str:
 	
 	# Add support/resistance if available
 	if signal.get('support_bounce'):
-		explanations.append("support bounce")
+		explanations.append("Support bounce")
 	
 	if not explanations:
 		return "Multiple confluence factors"
@@ -490,7 +490,7 @@ def _format_price(price, asset: str = "") -> str:
 		else:
 			# Stocks and alts: 4 decimals
 			return f"${p:,.4f}"
-	except:
+	except Exception:
 		return str(price)
 
 def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:
@@ -646,7 +646,7 @@ Entry: {_format_price(entry, asset)}
 📈 Strategy: {strategy}
 📉 Regime: {regime}
 💡 Score: {score_explanation}
-{freshness} Data: Fresh (< 5 min)
+{freshness}
 ⏰ Expires: {expiry_str}
 
 Ref: SIG-{str(ref)[:8]}"""
