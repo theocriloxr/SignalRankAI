@@ -16,7 +16,6 @@ class TradeRecord:
         self.open_time = signal["timestamp"]
         self.close_time = None
         self.outcome = None  # "TP" | "SL"
-        self.signal = signal  # Keep reference to original signal
 
 open_trades_list = []
 
@@ -52,10 +51,9 @@ def _get_current_price(symbol):
         logger.debug(f"yfinance failed for {symbol}: {e}")
     
     # Fallback to Binance for crypto
-    if symbol.endswith("USDT") or symbol.endswith("USD"):
+    if symbol.endswith("USDT"):
         try:
-            binance_symbol = symbol if symbol.endswith("USDT") else f"{symbol}T"
-            url = f"https://api.binance.com/api/v3/ticker/price?symbol={binance_symbol}"
+            url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 data = response.json()
