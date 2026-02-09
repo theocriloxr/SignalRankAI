@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time as _time
 from typing import Iterable
 
 import yfinance as yf
@@ -129,7 +130,7 @@ def _fetch_via_yfinance(asset: str, timeframe: str, limit: int) -> list[dict]:
         if timeframe == "4h" and interval == "60m":
             aggregated = []
             i = 0
-            while i + 3 < len(candles):
+            while i + 4 <= len(candles):  # Ensure we have a complete 4-candle window
                 chunk = candles[i:i+4]
                 agg_candle = {
                     "open": chunk[0]["open"],
@@ -225,7 +226,6 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 yf_candles = await asyncio.to_thread(_fetch_via_yfinance, asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
                     # Add data age calculation
-                    import time as _time
                     if yf_candles:
                         latest_ts = yf_candles[-1].get("timestamp", 0)
                         data_age = int(_time.time() - latest_ts) if latest_ts > 0 else None
@@ -254,7 +254,6 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                         logger.info(f"[market_data] cache: asset={asset} tf={tf} candles_fetched={len(candles)}")
                     if candles and len(candles) >= want:
                         # Add data age calculation
-                        import time as _time
                         if candles:
                             latest_ts = candles[-1].get("timestamp", 0)
                             data_age = int(_time.time() - latest_ts) if latest_ts > 0 else None
@@ -284,7 +283,6 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             rest = {}
         
         # Add data age to REST responses
-        import time as _time
         for tf, payload in (rest or {}).items():
             if isinstance(payload, dict):
                 candles = payload.get("candles", [])

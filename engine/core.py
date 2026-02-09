@@ -475,13 +475,15 @@ def main_loop(DRY_RUN: bool = False):
                     continue
 
                 # Check data age for each timeframe
+                # Data is considered stale if older than 2x the timeframe interval
+                # (e.g., 1h candles stale after 2 hours, allows for provider delays)
                 _TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
                 stale_data = False
                 for tf, tf_data in market_data.items():
                     if isinstance(tf_data, dict):
                         data_age = tf_data.get("data_age_seconds")
                         tf_interval = _TF_SECONDS.get(tf, 3600)
-                        max_age = tf_interval * 2
+                        max_age = tf_interval * 2  # Allow 2x interval for provider delays
                         if data_age is not None and data_age > max_age:
                             logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
                             stale_data = True
