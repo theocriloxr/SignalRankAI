@@ -245,6 +245,9 @@ from .commands import (
     selfcheck_command,
     myid_command,
     dashboard_command,
+    liveprice_command,
+    portfolio_command,
+    market_command,
 )
 
 # Register new commands
@@ -1394,6 +1397,11 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("history", _audit_handler("history", history_command)))
     application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
     application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
+    
+    # New commands for live prices and portfolio
+    application.add_handler(CommandHandler("liveprice", _audit_handler("liveprice", liveprice_command)))
+    application.add_handler(CommandHandler("portfolio", _audit_handler("portfolio", portfolio_command)))
+    application.add_handler(CommandHandler("market", _audit_handler("market", market_command)))
 
     # VIP (not advertised)
     application.add_handler(CommandHandler("elite", _audit_handler("elite", elite_command)))

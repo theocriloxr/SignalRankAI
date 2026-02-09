@@ -2450,3 +2450,227 @@ async def report_command(update, context) -> None:
 		await update.message.reply_text(msg)
 	except Exception:
 		await update.message.reply_text("No report data available right now.")
+
+
+# ============================================================
+# NEW COMMANDS: Live Price, Portfolio, Market
+# ============================================================
+
+async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show real-time price for any asset."""
+	if update.effective_user is None or update.message is None:
+		return
+	
+	# Get asset from arguments
+	if not context.args:
+		await update.message.reply_text(
+			"Usage: /liveprice <asset>\n\n"
+			"Examples:\n"
+			"/liveprice BTCUSDT\n"
+			"/liveprice EUR/USD\n"
+			"/liveprice AAPL"
+		)
+		return
+	
+	asset = context.args[0].strip().upper()
+	
+	try:
+		from engine.price_validator import get_current_price
+		
+		# Fetch current price
+		current_price = get_current_price(asset)
+		
+		if current_price is None:
+			await update.message.reply_text(
+				f"❌ Could not fetch current price for {asset}.\n\n"
+				f"Please check the asset symbol and try again."
+			)
+			return
+		
+		# Format price based on asset type
+		if 'USDT' in asset or 'USDC' in asset or 'BUSD' in asset:
+			price_str = f"${current_price:,.4f}"
+			asset_type = "Crypto"
+		elif '/' in asset:
+			price_str = f"{current_price:.5f}"
+			asset_type = "Forex"
+		else:
+			price_str = f"${current_price:,.2f}"
+			asset_type = "Stock"
+		
+		# Get timestamp
+		from datetime import datetime
+		timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+		
+		message = (
+			f"💰 **Live Price**\n\n"
+			f"Asset: {asset}\n"
+			f"Type: {asset_type}\n"
+			f"Price: **{price_str}**\n\n"
+			f"📅 {timestamp}\n\n"
+			f"💡 Use /signal to view active signals"
+		)
+		
+		await update.message.reply_text(message)
+	
+	except Exception as e:
+		await update.message.reply_text(f"Error fetching price: {str(e)}")
+
+
+async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show all active signals with current P&L for the user."""
+	if update.effective_user is None or update.message is None:
+		return
+	
+	user_id = update.effective_user.id
+	
+	try:
+		from db.session import get_session
+		from db.models import Signal, SignalDelivery
+		from sqlalchemy import select
+		from datetime import datetime, timedelta
+		from engine.price_validator import get_current_price
+		from engine.signal_calculations import calculate_profit_loss_pct
+		
+		# Get active signals for this user
+		async with get_session() as session:
+			# Get signals delivered to this user in last 48 hours
+			cutoff = datetime.utcnow() - timedelta(hours=48)
+			stmt = (
+				select(Signal)
+				.join(SignalDelivery, Signal.signal_id == SignalDelivery.signal_id)
+				.where(
+					SignalDelivery.user_id == user_id,
+					Signal.archived == False,
+					Signal.created_at >= cutoff
+				)
+				.distinct()
+			)
+			result = await session.execute(stmt)
+			signals = result.scalars().all()
+		
+		if not signals:
+			await update.message.reply_text(
+				"📊 **Portfolio**\n\n"
+				"You have no active signals.\n\n"
+				"Use /signals to view available signals."
+			)
+			return
+		
+		# Build portfolio message
+		message = f"📊 **Your Active Signals** ({len(signals)})\n\n"
+		
+		total_pnl = 0.0
+		valid_signals = 0
+		
+		for sig in signals:
+			try:
+				asset = sig.asset
+				direction = sig.direction.upper()
+				entry = sig.entry
+				ref = sig.signal_id[:8]
+				
+				# Get current price
+				current_price = get_current_price(asset)
+				
+				if current_price is None:
+					continue
+				
+				# Calculate P&L
+				pnl_pct = calculate_profit_loss_pct(entry, current_price, direction)
+				total_pnl += pnl_pct
+				valid_signals += 1
+				
+				# Format
+				pnl_sign = "+" if pnl_pct >= 0 else ""
+				pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
+				
+				message += (
+					f"{pnl_emoji} **{asset}** {direction}\n"
+					f"   Entry: {entry:.4f} | Now: {current_price:.4f}\n"
+					f"   P&L: {pnl_sign}{pnl_pct:.2f}% | Ref: `{ref}`\n\n"
+				)
+			
+			except Exception as e:
+				continue
+		
+		# Add summary
+		if valid_signals > 0:
+			avg_pnl = total_pnl / valid_signals
+			avg_sign = "+" if avg_pnl >= 0 else ""
+			summary_emoji = "📈" if avg_pnl >= 0 else "📉"
+			
+			message += (
+				f"━━━━━━━━━━━━━━━━\n"
+				f"{summary_emoji} **Average P&L:** {avg_sign}{avg_pnl:.2f}%\n\n"
+				f"💡 Use /signal <ref> for details"
+			)
+		
+		await update.message.reply_text(message)
+	
+	except Exception as e:
+		await update.message.reply_text(f"Error fetching portfolio: {str(e)}")
+
+
+async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show overall market conditions."""
+	if update.effective_user is None or update.message is None:
+		return
+	
+	try:
+		from engine.price_validator import get_current_price
+		from data.news import get_news_sentiment
+		
+		# Define major assets to track
+		major_assets = [
+			('BTCUSDT', 'Bitcoin'),
+			('ETHUSDT', 'Ethereum'),
+			('EUR/USD', 'Euro/USD'),
+			('XAUUSD', 'Gold')
+		]
+		
+		message = "🌐 **Market Overview**\n\n"
+		
+		# Get prices and sentiment for each
+		for asset, name in major_assets:
+			try:
+				price = get_current_price(asset)
+				
+				if price is None:
+					continue
+				
+				# Format price
+				if 'USDT' in asset or 'USD' in asset:
+					price_str = f"${price:,.2f}" if price > 100 else f"${price:,.4f}"
+				else:
+					price_str = f"{price:.5f}"
+				
+				# Get news sentiment (simplified - just show if available)
+				try:
+					sentiment = get_news_sentiment(asset, lookback_minutes=120)
+					if sentiment > 0:
+						sentiment_emoji = "📈🟢"
+					elif sentiment < 0:
+						sentiment_emoji = "📉🔴"
+					else:
+						sentiment_emoji = "➡️⚪"
+				except:
+					sentiment_emoji = "ℹ️"
+				
+				message += f"{sentiment_emoji} **{name}**: {price_str}\n"
+			
+			except Exception:
+				continue
+		
+		# Add timestamp
+		from datetime import datetime
+		timestamp = datetime.utcnow().strftime("%H:%M UTC")
+		
+		message += f"\n📅 Updated: {timestamp}\n\n"
+		message += "💡 Use /liveprice <asset> for specific prices\n"
+		message += "📊 Use /signals to see available signals"
+		
+		await update.message.reply_text(message)
+	
+	except Exception as e:
+		await update.message.reply_text(f"Error fetching market data: {str(e)}")
