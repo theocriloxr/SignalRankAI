@@ -1164,7 +1164,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     logger.debug(f"[dispatch] Failed to increment daily counter in Redis for user {user_id}: {e}")
                     pass
                 sent += 1
-            except Exception:
+            except Exception as e:
+                logger.warning(f"[dispatch] Failed to dispatch signal to user {user_id}: {e}")
                 continue
         return
 
@@ -1624,7 +1625,8 @@ def run_bot() -> None:
                 except Exception as e:
                     logger.debug(f"[outcome] Failed to mark outcome as handled: {e}")
                     pass
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[outcome] Failed to process outcomes: {e}")
             return
 
 

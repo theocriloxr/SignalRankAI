@@ -581,7 +581,9 @@ class RedisState:
             if ex and count == 1:
                 r.expire(key, ex)
             return count
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.debug(f"[redis_state] Failed to increment counter in Redis: {e}")
             return 0
 
     # -------- Async API (FastAPI/worker) --------

@@ -492,7 +492,9 @@ def _format_price(price, asset: str = "") -> str:
 		else:
 			# Stocks and alts: 4 decimals
 			return f"${p:,.4f}"
-	except Exception:
+	except Exception as e:
+		import logging
+		logging.debug(f"[formatter] Failed to format price {price}: {e}")
 		return str(price)
 
 def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:

@@ -789,7 +789,8 @@ def main_loop(DRY_RUN: bool = False):
                     user_tier = 'free'
                     try:
                         user_tier = resolve_user_tier(user_id).lower()
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"[engine] Failed to resolve user tier for user {user_id}: {e}")
                         user_tier = 'free'
 
                     # Check daily limit
@@ -839,7 +840,8 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as e:
                                 logger.debug(f"[engine] Failed to update signal count in Redis: {e}")
                                 pass
-                        except Exception:
+                        except Exception as e:
+                            logger.warning(f"[engine] Failed to dispatch signals: {e}")
                             logger.exception("dispatch_signals failed")
                     dispatched_count += 1
                 except Exception:
