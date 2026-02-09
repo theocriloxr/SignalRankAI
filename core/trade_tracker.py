@@ -12,7 +12,7 @@ class TradeRecord:
         self.entry = signal["entry"]
         self.stop = signal["stop"]
         self.target = signal["targets"]
-        self.direction = signal.get("direction", signal.get("side", "LONG")).upper()
+        self.direction = (signal.get("direction") or signal.get("side") or "LONG").upper()
         self.open_time = signal["timestamp"]
         self.close_time = None
         self.outcome = None  # "TP" | "SL"
@@ -86,6 +86,8 @@ def price_hit_tp(trade, market_data):
     
     # Handle targets - can be a single value or list
     targets = trade.target
+    if targets is None or (isinstance(targets, list) and len(targets) == 0):
+        return False
     if not isinstance(targets, list):
         targets = [targets]
     
@@ -94,6 +96,8 @@ def price_hit_tp(trade, market_data):
     
     # Check if any target is hit
     for target in targets:
+        if target is None:
+            continue
         if direction == "LONG":
             if current_price >= target:
                 logger.info(f"TP hit for {trade.symbol} LONG: price={current_price} >= target={target}")
@@ -124,6 +128,9 @@ def price_hit_sl(trade, market_data):
     # Get trade direction and stop loss
     direction = trade.direction
     stop = trade.stop
+    
+    if stop is None:
+        return False
     
     # Check if stop loss is hit
     if direction == "LONG":
