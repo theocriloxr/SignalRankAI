@@ -3,7 +3,7 @@ Referral reward system: 3 successful referrals = 7-day premium upgrade.
 """
 import logging
 from datetime import datetime, timedelta
-from typing import Tuple, bool
+from typing import Tuple
 from db.models import User, ReferralAttribution
 from db.session import async_session
 from sqlalchemy import select, func
@@ -85,7 +85,7 @@ class ReferralManager:
                 for ref in refs:
                     ref.reward_applied = True
                 
-                await session.flush()
+                await session.commit()
                 
                 msg = f"✅ Reward applied! Tier: {user.tier}, Premium until: {user.premium_until}"
                 logger.info(f"Referral reward applied to user {referrer_id}: {msg}")
@@ -109,7 +109,7 @@ class ReferralManager:
                 )
                 
                 session.add(referral)
-                await session.flush()
+                await session.commit()
                 logger.info(f"Referral recorded: {referrer_id} → {referred_user_id}")
                 return True
         except Exception as e:
@@ -131,7 +131,7 @@ class ReferralManager:
                 if referral:
                     referral.is_successful = True
                     referral.successful_at = datetime.utcnow()
-                    await session.flush()
+                    await session.commit()
                     
                     logger.info(f"Referral marked successful: {referral.referrer_user_id} → {referred_user_id}")
                     return True
