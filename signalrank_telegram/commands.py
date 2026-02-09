@@ -719,6 +719,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
+	
+	# Import freshness validation at function level
+	from engine.price_validator import enrich_signal_with_live_price
 
 	# Owner and admin always get VIP format
 	if tier.lower() in {"owner", "admin"}:
@@ -763,7 +766,6 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 					
 					# Enrich with live price and freshness info
 					try:
-						from engine.price_validator import enrich_signal_with_live_price
 						sig_dict = enrich_signal_with_live_price(sig_dict)
 					except Exception:
 						pass
@@ -817,7 +819,6 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						
 						# Enrich with live price and freshness info
 						try:
-							from engine.price_validator import enrich_signal_with_live_price
 							sig_dict = enrich_signal_with_live_price(sig_dict)
 						except Exception:
 							pass
@@ -1311,9 +1312,12 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		# Enrich signal with live price and freshness info
 		staleness_warning = None
 		try:
-			from engine.price_validator import enrich_signal_with_live_price, is_signal_fresh
+			from engine.price_validator import (
+				enrich_signal_with_live_price, 
+				is_signal_fresh, 
+				get_asset_type
+			)
 			from core.tier_constants import MAX_SIGNAL_AGE_SECONDS
-			from engine.price_validator import get_asset_type
 			
 			sig_dict = enrich_signal_with_live_price(sig_dict)
 			

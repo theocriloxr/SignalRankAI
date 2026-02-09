@@ -566,13 +566,25 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	age_indicator = _get_signal_age_indicator(signal)
 	
 	msg = f"""📊 Signal Alert (Free)
+
+Asset: {asset}
+Direction: {direction} {direction_emoji}
+Timeframe: {timeframe}
+Entry: {_format_price(entry, asset)}
+Confidence: {confidence}/100"""
+	
+	# Add age indicator if available
+	if age_indicator:
+		msg = f"""📊 Signal Alert (Free)
 {age_indicator}
 
 Asset: {asset}
 Direction: {direction} {direction_emoji}
 Timeframe: {timeframe}
 Entry: {_format_price(entry, asset)}
-Confidence: {confidence}/100
+Confidence: {confidence}/100"""
+	
+	msg += """
 
 🔒 Stop Loss: Upgrade to Premium
 🔒 Take Profit: Upgrade to Premium
@@ -630,6 +642,15 @@ def format_signal_premium_new(signal: dict) -> str:
 	
 	# Build message with enhanced data
 	msg = f"""📊 Signal Alert ⭐
+
+Asset: {asset}
+Direction: {direction} {direction_emoji}
+Timeframe: {timeframe}
+Entry: {_format_price(entry, asset)}"""
+	
+	# Add age indicator if available
+	if age_indicator:
+		msg = f"""📊 Signal Alert ⭐
 {age_indicator}
 
 Asset: {asset}
@@ -753,6 +774,16 @@ def format_signal_vip_new(signal: dict) -> str:
 	score_explanation = _get_score_explanation(signal)
 	
 	msg = f"""📊 Signal Alert 👑
+
+Asset: {asset}
+Direction: {direction} {direction_emoji}
+Timeframe: {timeframe}
+Entry Zone: {_format_price(entry_zone_low, asset)} – {_format_price(entry_zone_high, asset)}
+Entry: {_format_price(entry, asset)}"""
+	
+	# Add age indicator if available
+	if age_indicator:
+		msg = f"""📊 Signal Alert 👑
 {age_indicator}
 
 Asset: {asset}
