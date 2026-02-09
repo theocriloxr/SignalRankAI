@@ -42,9 +42,22 @@ class SignalMonitor:
     
     async def _monitor_loop(self):
         """Main monitoring loop."""
+        news_check_counter = 0  # Check news every 10th iteration (5 minutes)
+        
         while self.running:
             try:
                 await self.check_active_signals()
+                
+                # Check news impact periodically (every 5 minutes)
+                news_check_counter += 1
+                if news_check_counter >= 10:
+                    news_check_counter = 0
+                    try:
+                        from data.news import check_news_impact_on_active_signals
+                        await check_news_impact_on_active_signals()
+                    except Exception as e:
+                        logger.error(f"Error checking news impact: {e}")
+            
             except Exception as e:
                 logger.error(f"Error in signal monitor loop: {e}", exc_info=True)
             
