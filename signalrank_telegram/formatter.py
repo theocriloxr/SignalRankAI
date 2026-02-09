@@ -395,18 +395,26 @@ Capital Gained: {stats.get('profit_pct', 0):.2f}%
 """
 	return msg
 
-def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None):
+def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None, signals_sent_today: int = 0, daily_limit: int = 2):
 	"""
 	Format a signal for Telegram with tier-appropriate detail.
 
 	All signal formatting must use this function, which enforces the GOLDEN RULE:
-	  - FREE: PROOF only (1-3 signals/day, score 80%+)
-	  - PREMIUM: MORE OPPORTUNITY (5-10 signals/day, score 65%+)
-	  - VIP: LESS NOISE BUT BETTER QUALITY (score-filtered)
+	  - FREE: Entry shown but SL/TP locked (2 signals/day, score 70%+)
+	  - PREMIUM: Full details (20 signals/day, score 55%+)
+	  - VIP: Everything + extras (unlimited, score 45%+)
 	  - ADMIN/OWNER: Everything VIP gets + admin info
 
 	This function routes to tier-specific formatters and applies per-tier quality gates.
 	It is the only supported entry point for Telegram signal formatting.
+	
+	Args:
+	    signal: Signal dictionary
+	    display_tier: Tier to display (for backwards compatibility)
+	    limited: Whether to show limited info (for backwards compatibility)
+	    user_tier: User's actual tier
+	    signals_sent_today: Number of signals sent today
+	    daily_limit: Daily limit for the tier
 	"""
 	
 	# Determine actual tier to show to user
@@ -420,18 +428,230 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	if not _should_send_signal_for_tier(tier, score):
 		return None  # Signal filtered out for this tier
 	
-	# Route to tier-specific formatter
+	# Route to tier-specific formatter with new parameters
 	if tier == TIER_FREE:
-		return format_signal_free(signal)
+		return format_signal_free_new(signal, signals_sent_today, daily_limit)
 	elif tier == TIER_PREMIUM:
-		return format_signal_premium(signal)
+		return format_signal_premium_new(signal)
 	elif tier == TIER_VIP:
-		return format_signal_vip(signal)
+		return format_signal_vip_new(signal)
 	elif tier in {TIER_ADMIN, TIER_OWNER}:
-		return format_signal_admin(signal)
+		return format_signal_vip_new(signal)  # VIP format for admin/owner
 	
 	# Fallback to PREMIUM format
-	return format_signal_premium(signal)
+	return format_signal_premium_new(signal)
+
+def _get_freshness_badge(signal: dict) -> str:
+	"""Get data freshness badge based on data_age_seconds."""
+	data_age = signal.get('data_age_seconds', 0)
+	if data_age < 300:  # < 5 min
+		return "🟢 Fresh"
+	elif data_age < 1800:  # 5-30 min
+		return "🟡 Recent"
+	else:  # > 30 min
+		return "🔴 Delayed"
+
+def _get_score_explanation(signal: dict) -> str:
+	"""Build score explanation based on indicator values."""
+	explanations = []
+	
+	if signal.get('trend_ema'):
+		explanations.append("Strong trend confirmation")
+	if signal.get('volume_ratio', 0) > 1.5:
+		explanations.append("volume spike")
+	if signal.get('rsi'):
+		rsi = signal.get('rsi', 50)
+		if rsi < 30:
+			explanations.append("RSI oversold bounce")
+		elif rsi > 70:
+			explanations.append("RSI overbought reversal")
+	if signal.get('adx_trend'):
+		explanations.append("ADX trend strength")
+	
+	# Add support/resistance if available
+	if signal.get('support_bounce'):
+		explanations.append("support bounce")
+	
+	if not explanations:
+		return "Multiple confluence factors"
+	
+	return " + ".join(explanations)
+
+def _format_price(price, asset: str = "") -> str:
+	"""Format price with proper decimal places."""
+	try:
+		p = float(price)
+		# Crypto: 2 decimals for BTC, 4 for alts
+		if 'BTC' in asset.upper() or 'ETH' in asset.upper():
+			return f"${p:,.2f}"
+		elif 'USD' in asset.upper():
+			# Forex: 4-5 decimals
+			return f"{p:.5f}"
+		else:
+			# Stocks and alts: 4 decimals
+			return f"${p:,.4f}"
+	except:
+		return str(price)
+
+def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:
+	"""Format signal for FREE tier with locked fields."""
+	asset = signal.get('asset', 'UNKNOWN')
+	direction = signal.get('direction', 'LONG').upper()
+	timeframe = signal.get('timeframe', 'N/A')
+	entry = signal.get('entry', 'N/A')
+	confidence = int(signal.get('score', 0))
+	
+	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
+	
+	msg = f"""📊 Signal Alert (Free)
+
+Asset: {asset}
+Direction: {direction} {direction_emoji}
+Timeframe: {timeframe}
+Entry: {_format_price(entry, asset)}
+Confidence: {confidence}/100
+
+🔒 Stop Loss: Upgrade to Premium
+🔒 Take Profit: Upgrade to Premium
+🔒 Risk/Reward: Upgrade to Premium
+🔒 Analysis: Upgrade to Premium
+
+📈 Signals remaining today: {max(0, daily_limit - signals_sent_today)}/{daily_limit}
+
+/upgrade to unlock full signals"""
+	
+	return msg
+
+def format_signal_premium_new(signal: dict) -> str:
+	"""Format signal for PREMIUM tier with full details."""
+	asset = signal.get('asset', 'UNKNOWN')
+	direction = signal.get('direction', 'LONG').upper()
+	timeframe = signal.get('timeframe', 'N/A')
+	entry = signal.get('entry', 'N/A')
+	stop_loss = signal.get('stop_loss', 'N/A')
+	take_profit = signal.get('take_profit', 'N/A')
+	rr_ratio = signal.get('rr_ratio', 0) or signal.get('rr_estimate', 0)
+	confidence = int(signal.get('score', 0))
+	strategy = signal.get('strategy_name') or signal.get('strategy', 'Multi-Strategy')
+	regime = signal.get('regime', 'N/A')
+	expires_at = signal.get('expires_at')
+	ref = signal.get('signal_id', 'N/A')
+	
+	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
+	
+	# Format expiration
+	expiry_str = "8h"
+	if expires_at:
+		expiry_str = _format_expiration(expires_at)
+	
+	msg = f"""📊 Signal Alert ⭐
+
+Asset: {asset}
+Direction: {direction} {direction_emoji}
+Timeframe: {timeframe}
+Entry: {_format_price(entry, asset)}
+
+🛡️ Stop Loss: {_format_price(stop_loss, asset)}
+🎯 Take Profit: {_format_price(take_profit, asset)}
+📊 Risk/Reward: 1:{rr_ratio:.1f}
+🔥 Confidence: {confidence}/100
+
+📈 Strategy: {strategy}
+📉 Regime: {regime}
+⏰ Expires: {expiry_str}
+
+Ref: SIG-{str(ref)[:8]}"""
+	
+	return msg
+
+def format_signal_vip_new(signal: dict) -> str:
+	"""Format signal for VIP tier with everything + extras."""
+	asset = signal.get('asset', 'UNKNOWN')
+	direction = signal.get('direction', 'LONG').upper()
+	timeframe = signal.get('timeframe', 'N/A')
+	entry = signal.get('entry', 'N/A')
+	stop_loss = signal.get('stop_loss', 'N/A')
+	
+	# Multiple TPs
+	tp_levels = signal.get('tp_levels', [])
+	if not tp_levels:
+		take_profit = signal.get('take_profit', 'N/A')
+		if isinstance(take_profit, list):
+			tp_levels = take_profit
+		else:
+			tp_levels = [take_profit]
+	
+	rr_ratio = signal.get('rr_ratio', 0) or signal.get('rr_estimate', 0)
+	confidence = int(signal.get('score', 0))
+	ml_probability = signal.get('ml_probability', 0)
+	confluence = signal.get('confluence_count', 0) or signal.get('confluence', 0)
+	strategy = signal.get('strategy_name') or signal.get('strategy', 'Multi-Strategy')
+	regime = signal.get('regime', 'N/A')
+	expires_at = signal.get('expires_at')
+	ref = signal.get('signal_id', 'N/A')
+	entry_zone_low = signal.get('entry_zone_low', entry)
+	entry_zone_high = signal.get('entry_zone_high', entry)
+	
+	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
+	
+	# Format expiration
+	expiry_str = "8h"
+	if expires_at:
+		expiry_str = _format_expiration(expires_at)
+	
+	# Freshness badge
+	freshness = _get_freshness_badge(signal)
+	
+	# Score explanation
+	score_explanation = _get_score_explanation(signal)
+	
+	msg = f"""📊 Signal Alert 👑
+
+Asset: {asset}
+Direction: {direction} {direction_emoji}
+Timeframe: {timeframe}
+Entry Zone: {_format_price(entry_zone_low, asset)} – {_format_price(entry_zone_high, asset)}
+Entry: {_format_price(entry, asset)}
+
+🛡️ Stop Loss: {_format_price(stop_loss, asset)}"""
+	
+	# Add multiple TPs
+	if len(tp_levels) >= 3:
+		msg += f"""
+🎯 TP1: {_format_price(tp_levels[0], asset)} (partial 33%)
+🎯 TP2: {_format_price(tp_levels[1], asset)} (partial 33%)
+🎯 TP3: {_format_price(tp_levels[2], asset)} (final 34%)"""
+	elif len(tp_levels) == 2:
+		msg += f"""
+🎯 TP1: {_format_price(tp_levels[0], asset)} (partial 50%)
+🎯 TP2: {_format_price(tp_levels[1], asset)} (final 50%)"""
+	elif len(tp_levels) == 1:
+		msg += f"""
+🎯 Take Profit: {_format_price(tp_levels[0], asset)}"""
+	
+	msg += f"""
+📊 Risk/Reward: 1:{rr_ratio:.1f}
+🔥 Confidence: {confidence}/100"""
+	
+	if ml_probability:
+		msg += f"""
+🤖 ML Probability: {int(ml_probability)}%"""
+	
+	if confluence:
+		msg += f"""
+📐 Confluence: {int(confluence)}%"""
+	
+	msg += f"""
+
+📈 Strategy: {strategy}
+📉 Regime: {regime}
+💡 Score: {score_explanation}
+{freshness} Data: Fresh (< 5 min)
+⏰ Expires: {expiry_str}
+
+Ref: SIG-{str(ref)[:8]}"""
+	
+	return msg
 
 def format_signal_legacy(signal, display_tier: str | None = None, limited: bool = False):
 	"""DEPRECATED: Legacy format_signal function. Use new tier-based formatters instead.

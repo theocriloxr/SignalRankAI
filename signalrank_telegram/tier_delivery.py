@@ -46,32 +46,48 @@ class TierDeliveryManager:
         """Initialize delivery manager."""
         self.delivery_log = []
     def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
-        """Check if signal should be sent to this user based on tier and quality, using DB for daily limit."""
+        """Check if signal should be sent to this user based on tier and quality, using Redis for daily limit."""
         import logging
         from utils.async_runner import run_sync
 
         tier = str(user_tier or 'free').lower()
-        # Quality gates (MUST pass)
-        if tier == 'free' and score < self.MIN_SCORE_FREE:
-            logging.info(f"[delivery] User {user_id} (free) score {score} < {self.MIN_SCORE_FREE}, not eligible.")
-            return False
-        elif tier == 'premium' and score < self.MIN_SCORE_PREMIUM:
-            logging.info(f"[delivery] User {user_id} (premium) score {score} < {self.MIN_SCORE_PREMIUM}, not eligible.")
-            return False
-        elif tier == 'vip' and score < self.MIN_SCORE_VIP:
-            logging.info(f"[delivery] User {user_id} (vip) score {score} < {self.MIN_SCORE_VIP}, not eligible.")
-            return False
-        # Admin always receives
-        max_per_day = self.MAX_SIGNALS_PER_DAY.get(tier)
-        if max_per_day and user_id and session is not None:
-            from db.pg_features import count_signals_delivered_today
+        
+        # Check daily limit using Redis
+        if user_id is not None:
             try:
-                delivered_today = run_sync(count_signals_delivered_today(session, int(user_id)))
+                from core.redis_state import state
+                from datetime import datetime
+                date_str = datetime.utcnow().strftime('%Y-%m-%d')
+                key = f"signals_sent:{user_id}:{date_str}"
+                sent_today = int(state.get_sync(key) or 0)
+                
+                # Define tier daily limits
+                TIER_DAILY_LIMITS = {
+                    "free": 2,
+                    "premium": 20,
+                    "vip": float('inf'),
+                    "owner": float('inf'),
+                    "admin": float('inf'),
+                }
+                
+                limit = TIER_DAILY_LIMITS.get(tier, 2)
+                if sent_today >= limit:
+                    logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
+                    return False
             except Exception:
-                delivered_today = 0
-            if delivered_today >= max_per_day:
-                logging.info(f"[delivery] User {user_id} ({tier}) daily limit {max_per_day} reached: {delivered_today} delivered today.")
-                return False
+                pass
+        
+        # Quality gates (MUST pass)
+        if tier == 'free' and score < 70:
+            logging.info(f"[delivery] User {user_id} (free) score {score} < 70, not eligible.")
+            return False
+        elif tier == 'premium' and score < 55:
+            logging.info(f"[delivery] User {user_id} (premium) score {score} < 55, not eligible.")
+            return False
+        elif tier in ('vip', 'owner', 'admin') and score < 45:
+            logging.info(f"[delivery] User {user_id} (vip) score {score} < 45, not eligible.")
+            return False
+        
         return True
 
     async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
@@ -79,24 +95,43 @@ class TierDeliveryManager:
         import logging
 
         tier = str(user_tier or 'free').lower()
+        
+        # Check daily limit using Redis
+        if user_id is not None:
+            try:
+                from core.redis_state import state
+                from datetime import datetime
+                date_str = datetime.utcnow().strftime('%Y-%m-%d')
+                key = f"signals_sent:{user_id}:{date_str}"
+                sent_today = int(state.get_sync(key) or 0)
+                
+                # Define tier daily limits
+                TIER_DAILY_LIMITS = {
+                    "free": 2,
+                    "premium": 20,
+                    "vip": float('inf'),
+                    "owner": float('inf'),
+                    "admin": float('inf'),
+                }
+                
+                limit = TIER_DAILY_LIMITS.get(tier, 2)
+                if sent_today >= limit:
+                    logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
+                    return False
+            except Exception:
+                pass
+        
         # Quality gates (MUST pass)
-        if tier == 'free' and score < self.MIN_SCORE_FREE:
-            logging.info(f"[delivery] User {user_id} (free) score {score} < {self.MIN_SCORE_FREE}, not eligible.")
+        if tier == 'free' and score < 70:
+            logging.info(f"[delivery] User {user_id} (free) score {score} < 70, not eligible.")
             return False
-        elif tier == 'premium' and score < self.MIN_SCORE_PREMIUM:
-            logging.info(f"[delivery] User {user_id} (premium) score {score} < {self.MIN_SCORE_PREMIUM}, not eligible.")
+        elif tier == 'premium' and score < 55:
+            logging.info(f"[delivery] User {user_id} (premium) score {score} < 55, not eligible.")
             return False
-        elif tier == 'vip' and score < self.MIN_SCORE_VIP:
-            logging.info(f"[delivery] User {user_id} (vip) score {score} < {self.MIN_SCORE_VIP}, not eligible.")
+        elif tier in ('vip', 'owner', 'admin') and score < 45:
+            logging.info(f"[delivery] User {user_id} (vip) score {score} < 45, not eligible.")
             return False
-        # Admin always receives
-        max_per_day = self.MAX_SIGNALS_PER_DAY.get(tier)
-        if max_per_day and user_id and session is not None:
-            from db.pg_features import count_signals_delivered_today
-            delivered_today = await count_signals_delivered_today(session, int(user_id))
-            if delivered_today >= max_per_day:
-                logging.info(f"[delivery] User {user_id} ({tier}) daily limit {max_per_day} reached: {delivered_today} delivered today.")
-                return False
+        
         return True
     
     def format_for_delivery(self, signal: Dict, user_tier: str) -> Optional[str]:
