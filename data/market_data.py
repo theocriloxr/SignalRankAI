@@ -55,6 +55,11 @@ def _validate_ohlcv(candles: list) -> bool:
             l = float(c.get("low", 0))
             close = float(c.get("close", 0))
             
+            # Validate high >= low (fundamental relationship)
+            if h < l:
+                logger.warning(f"OHLCV validation failed at candle {i}: high={h} < low={l}")
+                return False
+            
             # Validate high >= max(open, close)
             if h < max(o, close):
                 logger.warning(f"OHLCV validation failed at candle {i}: high={h} < max(open={o}, close={close})")
@@ -201,7 +206,8 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 logger.warning(f"REST candles for {asset} {tf} failed OHLCV validation, skipping")
                 continue
             
-            # Calculate data age for REST candles
+            # Calculate data age for REST candles (note: REST data is freshly fetched,
+            # so we don't reject it for staleness, only report age for monitoring)
             if candles:
                 _, data_age = _check_staleness(candles, tf)
                 if "data_age_seconds" not in payload:
