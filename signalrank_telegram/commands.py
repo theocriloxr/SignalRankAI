@@ -1607,7 +1607,6 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		"Use /upgrade to subscribe."
 	)
 	if update.message is not None:
-	if update.message is not None:
 		await update.message.reply_text(msg)
 
 
@@ -1766,27 +1765,6 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	
 	lines.append("\nOr contact support: @theocrilox")
 	await update.message.reply_text("\n".join(lines))
-				limit = int(os.getenv("VIP_SEAT_LIMIT", "15") or "15")
-				remaining: int = max(0, limit - used)
-				sub: Subscription | None = await get_active_subscription(session, telegram_user_id=user_id, tier="vip")
-				already_vip: bool = sub is not None
-				await session.commit()
-		else:
-			remaining, limit, already_vip = 15, 15, False
-		try:
-			bypassed = bool(await state.has_temp_owner(user_id))
-		except Exception:
-			bypassed = False
-		is_owner: bool = user_id in OWNER_IDS
-		can_offer_vip: bool = (remaining > 0) or already_vip or bypassed or is_owner
-	except Exception:
-		can_offer_vip = True
-		remaining = None
-		limit = None
-
-	if can_offer_vip:
-		vip_formatted: str = await format_tier_upgrade_confirmation("VIP", 40000, 30, user_id)
-		vip_msg: str = vip_formatted + "\n\n"
 
 
 # /policy or /refunds command
@@ -2207,7 +2185,6 @@ async def performance_command(update, context):
 	except Exception as e:
 		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
 		if update.message is not None:
-			if update.message is not None:
 			await update.message.reply_text("No performance data available right now. Use /signals for recent activity.")
 		return
 
