@@ -453,6 +453,61 @@ def _get_freshness_badge(signal: dict) -> str:
 	else:  # > 30 min
 		return "🔴 Delayed"
 
+def _get_signal_age_indicator(signal: dict) -> str:
+	"""Get signal age indicator based on signal_age_seconds."""
+	age_seconds = signal.get('signal_age_seconds')
+	if age_seconds is None:
+		return ""
+	
+	age_minutes = age_seconds / 60
+	age_hours = age_seconds / 3600
+	
+	if age_seconds < 180:  # < 3 minutes
+		return "⚡ Live"
+	elif age_minutes < 10:
+		return f"⏱️ {int(age_minutes)}m ago"
+	elif age_hours < 1:
+		return f"⏰ {int(age_minutes)}m ago"
+	elif age_hours < 24:
+		return f"⏰ {int(age_hours)}h ago"
+	else:
+		days = int(age_hours / 24)
+		return f"📆 {days}d ago"
+
+def _get_price_context(signal: dict) -> str:
+	"""Get price context string showing current price vs entry."""
+	current_price = signal.get('current_price')
+	entry = signal.get('entry')
+	price_distance_pct = signal.get('price_distance_pct')
+	
+	if current_price is None or entry is None:
+		return ""
+	
+	try:
+		entry_float = float(entry)
+		direction = signal.get('direction', 'long').lower()
+		
+		# Format prices
+		asset = signal.get('asset', '')
+		current_str = _format_price(current_price, asset)
+		entry_str = _format_price(entry_float, asset)
+		
+		# Price distance indicator
+		if price_distance_pct is not None:
+			abs_dist = abs(price_distance_pct)
+			if abs_dist < 0.5:
+				dist_emoji = "✅"  # Very close
+			elif abs_dist < 2.0:
+				dist_emoji = "⚠️"  # Moderate distance
+			else:
+				dist_emoji = "🚨"  # Far from entry
+			
+			return f"{dist_emoji} Current: {current_str} | Entry: {entry_str} ({price_distance_pct:+.2f}%)"
+		else:
+			return f"Current: {current_str} | Entry: {entry_str}"
+	except Exception:
+		return ""
+
 def _get_score_explanation(signal: dict) -> str:
 	"""Build score explanation based on indicator values."""
 	explanations = []
@@ -507,7 +562,11 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	
 	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
 	
+	# Signal age indicator
+	age_indicator = _get_signal_age_indicator(signal)
+	
 	msg = f"""📊 Signal Alert (Free)
+{age_indicator}
 
 Asset: {asset}
 Direction: {direction} {direction_emoji}
@@ -563,16 +622,27 @@ def format_signal_premium_new(signal: dict) -> str:
 	if expires_at:
 		expiry_str = _format_expiration(expires_at)
 	
+	# Signal age indicator
+	age_indicator = _get_signal_age_indicator(signal)
+	
+	# Price context
+	price_context = _get_price_context(signal)
+	
 	# Build message with enhanced data
 	msg = f"""📊 Signal Alert ⭐
+{age_indicator}
 
 Asset: {asset}
 Direction: {direction} {direction_emoji}
 Timeframe: {timeframe}
 Entry: {_format_price(entry, asset)}"""
 	
-	# Add current price if available
-	if current_price:
+	# Add price context if available
+	if price_context:
+		msg += f"""
+{price_context}"""
+	elif current_price:
+		# Fallback to simple current price
 		msg += f"""
 Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 	
@@ -673,10 +743,17 @@ def format_signal_vip_new(signal: dict) -> str:
 	# Freshness badge
 	freshness = _get_freshness_badge(signal)
 	
+	# Signal age indicator
+	age_indicator = _get_signal_age_indicator(signal)
+	
+	# Price context
+	price_context = _get_price_context(signal)
+	
 	# Score explanation
 	score_explanation = _get_score_explanation(signal)
 	
 	msg = f"""📊 Signal Alert 👑
+{age_indicator}
 
 Asset: {asset}
 Direction: {direction} {direction_emoji}
@@ -684,8 +761,12 @@ Timeframe: {timeframe}
 Entry Zone: {_format_price(entry_zone_low, asset)} – {_format_price(entry_zone_high, asset)}
 Entry: {_format_price(entry, asset)}"""
 	
-	# Add current price if available
-	if current_price:
+	# Add price context if available
+	if price_context:
+		msg += f"""
+{price_context}"""
+	elif current_price:
+		# Fallback to simple current price
 		msg += f"""
 Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 	
