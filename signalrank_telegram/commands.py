@@ -253,7 +253,7 @@ async def reports_command(update, context) -> None:
 # --------- REFERRAL LEADERBOARD & REWARDS ---------
 from db.session import get_session
 from db.pg_features import get_or_create_user
-from db.models import Outcome, Outcome, ReferralReward, ReferralAttribution, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Signal, Subscription, Signal, Signal, Signal, User
+from db.models import Outcome, ReferralReward, ReferralAttribution, Signal, Subscription, User
 import asyncio
 
 async def referral_leaderboard_command(update, context) -> None:
