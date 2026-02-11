@@ -1,0 +1,25 @@
+# .dockerignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+*.sqlite3
+*.db
+*.log
+alembic/versions/
+
+# Ignore test and dev artifacts
+tests/
+*.ipynb
+*.bak
+*.swp
+*.tmp
+*.old
+*.orig
+*.egg-info/
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
