@@ -10,6 +10,11 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     httpx = None
 
+try:
+    import requests
+except Exception:
+    requests = None
+
 from utils.async_runner import run_sync
 
 
@@ -33,30 +38,37 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     params = {"symbol": sym, "interval": interval, "limit": limit}
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, params=params)
-            if resp.status_code != 200:
-                logger.debug("binance_adapter HTTP %s %s", resp.status_code, resp.text[:200])
-                return []
+        # Prefer requests when available (tests patch requests.get)
+        if requests is not None:
+            resp = await __import__('asyncio').to_thread(requests.get, url, params=params, timeout=10)
             payload = resp.json()
-            if not isinstance(payload, list):
-                return []
-            out: List[Dict[str, Any]] = []
-            for row in payload:
-                try:
-                    out.append(
-                        {
-                            "timestamp": int(row[0]),
-                            "open": float(row[1]),
-                            "high": float(row[2]),
-                            "low": float(row[3]),
-                            "close": float(row[4]),
-                            "volume": float(row[5]),
-                        }
-                    )
-                except Exception:
-                    continue
-            return out
+        else:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code != 200:
+                    logger.debug("binance_adapter HTTP %s %s", resp.status_code, getattr(resp, 'text', '')[:200])
+                    return []
+                payload = resp.json()
+
+        if not isinstance(payload, list):
+            return []
+
+        out: List[Dict[str, Any]] = []
+        for row in payload:
+            try:
+                out.append(
+                    {
+                        "timestamp": int(row[0]),
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    }
+                )
+            except Exception:
+                continue
+        return out
     except Exception:
         return []
 

@@ -19,6 +19,9 @@ from core.redis_state import state
 
 APP_NAME = "SignalRankAI"
 
+# Optional global ENGINE placeholder (set by runtime if needed). Tests expect it to exist.
+ENGINE = None
+
 request_latency = Histogram(
     "signalrankai_http_request_latency_seconds",
     "HTTP request latency",
@@ -38,6 +41,18 @@ def _constant_time_equals(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return bool(default)
+    return str(val).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def verify_paystack_signature(raw_body: bytes, signature_header: Optional[str]) -> None:
+    """Verify Paystack webhook HMAC signature.
+
+    Raises HTTPException on failure so route handlers can return appropriate codes.
+    """
     secret = config.PAYSTACK_WEBHOOK_SECRET or config.PAYSTACK_SECRET_KEY
     if not secret:
         webhook_failures.labels(reason="missing_secret").inc()

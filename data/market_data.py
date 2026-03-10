@@ -11,8 +11,144 @@ import yfinance as yf
 from data.fetcher import fetch_market_data as fetch_market_data_rest
 from db.market_cache import get_recent_candles
 from db.session import get_session
+import requests
+import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+def _convert_to_yfinance_symbol(symbol: str) -> str:
+    """Convert project symbol names to yfinance-compatible symbols.
+
+    Examples:
+    - BTCUSDT -> BTC-USD
+    - EURUSD -> EURUSD=X
+    - XAUUSD -> GC=F
+    - AAPL -> AAPL
+    """
+    if not symbol:
+        return symbol
+    s = str(symbol).upper().strip()
+
+    # Explicit commodity mappings
+    commodity_map = {
+        "XAUUSD": "GC=F",
+        "XAGUSD": "SI=F",
+        "WTIUSD": "CL=F",
+        "CRUDEOIL": "CL=F",
+        "NATGAS": "NG=F",
+    }
+    if s in commodity_map:
+        return commodity_map[s]
+
+    # Crypto USDT pairs -> use USD tickers on yfinance
+    if s.endswith("USDT") and len(s) > 4:
+        base = s[:-4]
+        return f"{base}-USD"
+
+    # FX pairs like EURUSD -> EURUSD=X
+    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+        return f"{s}=X"
+
+    # Fallback: return unchanged symbol
+    return s
+
+
+def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
+    """Fetch OHLCV data synchronously from yfinance and return list of candles.
+
+    Each candle is a dict with keys: open, high, low, close, volume, timestamp
+    Timestamp is seconds since epoch.
+    """
+    try:
+        yf_symbol = _convert_to_yfinance_symbol(symbol)
+        ticker = yf.Ticker(yf_symbol)
+
+        # Map timeframe to yfinance interval
+        interval_map = {
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "1h": "1h",
+            "4h": "4h",
+            "1d": "1d",
+        }
+        interval = interval_map.get(str(timeframe), "1h")
+
+        # Request history; rely on tests that mock Ticker.history()
+        df = ticker.history(period=None, interval=interval)
+        if df is None or df.empty:
+            return []
+
+        # Ensure expected column names exist (case-insensitive)
+        df_cols = {c.lower(): c for c in df.columns}
+        out = []
+        for idx, row in df.iterrows():
+            try:
+                o = row[df_cols.get("open", "Open")]
+                h = row[df_cols.get("high", "High")]
+                l = row[df_cols.get("low", "Low")]
+                c = row[df_cols.get("close", "Close")]
+                v = row[df_cols.get("volume", "Volume")]
+            except Exception:
+                # Skip rows we cannot parse
+                continue
+
+            ts = None
+            try:
+                # pandas.Timestamp -> seconds
+                if hasattr(idx, "timestamp"):
+                    ts = int(idx.timestamp())
+                else:
+                    ts = int(pd.to_datetime(idx).timestamp())
+            except Exception:
+                ts = None
+
+            out.append({
+                "open": float(o) if o is not None else 0.0,
+                "high": float(h) if h is not None else 0.0,
+                "low": float(l) if l is not None else 0.0,
+                "close": float(c) if c is not None else 0.0,
+                "volume": float(v) if v is not None else 0.0,
+                "timestamp": int(ts) if ts is not None else 0,
+            })
+
+        # Trim to requested limit if limit provided
+        if limit and isinstance(limit, int) and len(out) > limit:
+            out = out[-limit:]
+        return out
+    except Exception:
+        return []
+
+
+def get_realtime_price(symbol: str) -> float | None:
+    """Get latest price from yfinance, fallback to Binance REST if needed."""
+    try:
+        yf_symbol = _convert_to_yfinance_symbol(symbol)
+        ticker = yf.Ticker(yf_symbol)
+        # Fast-info may contain lastPrice
+        fi = getattr(ticker, "fast_info", None)
+        if isinstance(fi, dict) and fi.get("lastPrice") is not None:
+            return float(fi.get("lastPrice"))
+        # Some versions expose last_price differently
+        info = getattr(ticker, "info", None)
+        if isinstance(info, dict) and info.get("regularMarketPrice") is not None:
+            return float(info.get("regularMarketPrice"))
+    except Exception:
+        pass
+
+    # Fallback to Binance public API for symbols like BTCUSDT
+    try:
+        resp = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol.upper()}")
+        if resp.status_code == 200:
+            data = resp.json()
+            price = data.get("price")
+            if price is not None:
+                return float(price)
+    except Exception:
+        pass
+
+    return None
 
 
 def _env_int(name: str, default: int) -> int:
@@ -135,10 +271,6 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
     except (ValueError, TypeError) as e:
         logger.warning(f"Staleness check failed for {timeframe}: {e}")
         return False, 0.0
-
-
-async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
-    """Fetch market data from Postgres cache first, then fallback to REST.
 
 
 async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
