@@ -20,7 +20,7 @@ except Exception:
     ml_module = None
 
 
-async def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
+async def _get_market_state_async(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
     """Async variant: fetch market data (runs blocking fetch in thread) and build state.
 
     Use `asyncio.to_thread` to call the synchronous `fetch_market_data` safely from
@@ -31,58 +31,62 @@ async def get_market_state(asset: str, timeframes: Iterable[str], include_ml: bo
     if not tf_list:
         return out
 
-    # Fetch candles for each timeframe using async_fetcher
-    for tf in tf_list:
-        candles = await async_get_candles(asset, tf)
-        if not candles:
-            continue
-        indicators = calculate_indicators(candles)
+        # Prefer the synchronous fetch_market_data (tests patch this function).
+        market = await asyncio.to_thread(fetch_market_data, asset, tf_list)
 
-        if not validate_candles(candles):
-            continue
+        for tf in tf_list:
+            tf_data = market.get(tf) if isinstance(market, dict) else None
+            if not tf_data:
+                continue
 
-        last = candles[-1] if candles else None
-        last_close = None
-        last_ts = None
-        if last:
-            last_close = last.get("close") or last.get("close_price")
-            last_ts = last.get("timestamp") or last.get("time")
+            candles = tf_data.get("candles")
+            indicators = tf_data.get("indicators") or (calculate_indicators(candles) if candles else {})
 
-        tf_state: Dict[str, Any] = {
-            "candles": candles,
-            "indicators": indicators,
-            "last_close": last_close,
-            "last_timestamp": last_ts,
-        }
+            if not candles or not validate_candles(candles):
+                continue
 
-        if include_ml and ml_module is not None and hasattr(ml_module, "score_signal"):
-            try:
-                probe = {
-                    "asset": asset,
-                    "timeframe": tf,
-                    "entry": float(last_close) if last_close is not None else 0.0,
-                    "stop_loss": float(last_close) if last_close is not None else 0.0,
-                    "score": 0.0,
-                }
-                # ML scorer is sync; run in thread
-                prob = await asyncio.to_thread(ml_module.score_signal, probe)
-                tf_state["ml_score"] = prob
-            except Exception:
-                tf_state["ml_score"] = None
+            last = candles[-1] if candles else None
+            last_close = None
+            last_ts = None
+            if last:
+                last_close = last.get("close") or last.get("close_price")
+                last_ts = last.get("timestamp") or last.get("time")
 
-        out["timeframes"][tf] = tf_state
+            tf_state: Dict[str, Any] = {
+                "candles": candles,
+                "indicators": indicators,
+                "last_close": last_close,
+                "last_timestamp": last_ts,
+            }
 
-    return out
+            if include_ml and ml_module is not None and hasattr(ml_module, "score_signal"):
+                try:
+                    probe = {
+                        "asset": asset,
+                        "timeframe": tf,
+                        "entry": float(last_close) if last_close is not None else 0.0,
+                        "stop_loss": float(last_close) if last_close is not None else 0.0,
+                        "score": 0.0,
+                    }
+                    # ML scorer is sync; run in thread
+                    prob = await asyncio.to_thread(ml_module.score_signal, probe)
+                    tf_state["ml_score"] = prob
+                except Exception:
+                    tf_state["ml_score"] = None
+
+            out["timeframes"][tf] = tf_state
+
+        return out
 
 
 async def get_market_state_async(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
     """Async wrapper for compatibility with existing callers."""
-    return await get_market_state(asset, timeframes, include_ml=include_ml)
+    return await _get_market_state_async(asset, timeframes, include_ml=include_ml)
 
 
 def get_market_state_sync(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
     """Sync wrapper for code that expects blocking call; runs async get_market_state safely."""
-    return run_sync(get_market_state(asset, timeframes, include_ml=include_ml))
+    return run_sync(_get_market_state_async(asset, timeframes, include_ml=include_ml))
 
 
 # Backwards-compatible sync entrypoint used by tests and callers that import
