@@ -1,25 +1,30 @@
-# syntax=docker/dockerfile:1
-FROM nixos/nix:2.18.1 AS builder
+FROM python:3.11-slim
 
-# Install Python, pip, and build tools
-RUN nix-env -iA nixpkgs.python311 nixpkgs.python311Packages.pip nixpkgs.gcc
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Copy only requirements first for caching
-COPY requirements.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+# Install system dependencies required by some Python packages (e.g. psycopg2)
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends gcc libpq-dev \
+	&& rm -rf /var/lib/apt/lists/*
 
-# Copy the rest of the code
+# Copy requirements first to leverage Docker layer caching
+COPY requirements.txt ./
+
+# Ensure pip/tools are up-to-date and install Python deps
+RUN python -m pip install --upgrade pip setuptools wheel \
+	&& pip install -r requirements.txt
+
+# Copy application code
 COPY . .
 
-# Expose port for web (if needed)
+# Ensure start script is executable and use it as entrypoint so migrations/run-time
+# setup happens when the container starts (not during image build).
+RUN chmod +x ./start.sh || true
+
 EXPOSE 8000
 
-# Use environment variables for secrets (do not hardcode or use ARG for secrets)
-# Railway/production will inject these automatically
-
-# Run migrations before starting (optional, can be handled by entrypoint/start.sh)
-# RUN python -m alembic upgrade head || true
-
-CMD ["python", "main.py"]
+# Use the start script which runs migrations and then starts the appropriate service
+ENTRYPOINT ["/bin/bash", "./start.sh"]
