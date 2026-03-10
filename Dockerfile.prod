@@ -1,0 +1,47 @@
+# Multi-stage production Dockerfile for smaller runtime image
+
+# Builder: install build deps and python packages into a venv
+FROM python:3.11-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps into virtualenv
+COPY requirements.txt ./
+RUN python -m venv $VIRTUAL_ENV \
+    && pip install --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copy project sources (used for any build-time steps; runtime image will copy final app)
+COPY . /app
+
+
+# Runtime: minimal image containing the venv from builder + app sources
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
+
+# Copy the prebuilt virtualenv and app
+COPY --from=builder /opt/venv /opt/venv
+WORKDIR /app
+COPY --from=builder /app /app
+
+# Ensure the start script is executable and expose default port
+RUN chmod +x ./start.sh || true
+
+EXPOSE 8000
+
+# Keep existing start entrypoint (start.sh handles migrations + server start)
+CMD ["./start.sh"]
