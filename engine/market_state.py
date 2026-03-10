@@ -9,7 +9,7 @@ from typing import Dict, Iterable, List, Optional, Any
 
 import asyncio
 
-from data.fetcher import async_get_candles
+from data.fetcher import async_get_candles, fetch_market_data
 from data.indicators import calculate_indicators
 from core.validators import validate_candles
 from utils.async_runner import run_sync
@@ -31,52 +31,52 @@ async def _get_market_state_async(asset: str, timeframes: Iterable[str], include
     if not tf_list:
         return out
 
-        # Prefer the synchronous fetch_market_data (tests patch this function).
-        market = await asyncio.to_thread(fetch_market_data, asset, tf_list)
+    # Prefer the synchronous fetch_market_data (tests patch this function).
+    market = await asyncio.to_thread(fetch_market_data, asset, tf_list)
 
-        for tf in tf_list:
-            tf_data = market.get(tf) if isinstance(market, dict) else None
-            if not tf_data:
-                continue
+    for tf in tf_list:
+        tf_data = market.get(tf) if isinstance(market, dict) else None
+        if not tf_data:
+            continue
 
-            candles = tf_data.get("candles")
-            indicators = tf_data.get("indicators") or (calculate_indicators(candles) if candles else {})
+        candles = tf_data.get("candles")
+        indicators = tf_data.get("indicators") or (calculate_indicators(candles) if candles else {})
 
-            if not candles or not validate_candles(candles):
-                continue
+        if not candles or not validate_candles(candles):
+            continue
 
-            last = candles[-1] if candles else None
-            last_close = None
-            last_ts = None
-            if last:
-                last_close = last.get("close") or last.get("close_price")
-                last_ts = last.get("timestamp") or last.get("time")
+        last = candles[-1] if candles else None
+        last_close = None
+        last_ts = None
+        if last:
+            last_close = last.get("close") or last.get("close_price")
+            last_ts = last.get("timestamp") or last.get("time")
 
-            tf_state: Dict[str, Any] = {
-                "candles": candles,
-                "indicators": indicators,
-                "last_close": last_close,
-                "last_timestamp": last_ts,
-            }
+        tf_state: Dict[str, Any] = {
+            "candles": candles,
+            "indicators": indicators,
+            "last_close": last_close,
+            "last_timestamp": last_ts,
+        }
 
-            if include_ml and ml_module is not None and hasattr(ml_module, "score_signal"):
-                try:
-                    probe = {
-                        "asset": asset,
-                        "timeframe": tf,
-                        "entry": float(last_close) if last_close is not None else 0.0,
-                        "stop_loss": float(last_close) if last_close is not None else 0.0,
-                        "score": 0.0,
-                    }
-                    # ML scorer is sync; run in thread
-                    prob = await asyncio.to_thread(ml_module.score_signal, probe)
-                    tf_state["ml_score"] = prob
-                except Exception:
-                    tf_state["ml_score"] = None
+        if include_ml and ml_module is not None and hasattr(ml_module, "score_signal"):
+            try:
+                probe = {
+                    "asset": asset,
+                    "timeframe": tf,
+                    "entry": float(last_close) if last_close is not None else 0.0,
+                    "stop_loss": float(last_close) if last_close is not None else 0.0,
+                    "score": 0.0,
+                }
+                # ML scorer is sync; run in thread
+                prob = await asyncio.to_thread(ml_module.score_signal, probe)
+                tf_state["ml_score"] = prob
+            except Exception:
+                tf_state["ml_score"] = None
 
-            out["timeframes"][tf] = tf_state
+        out["timeframes"][tf] = tf_state
 
-        return out
+    return out
 
 
 async def get_market_state_async(asset: str, timeframes: Iterable[str], include_ml: bool = False) -> Dict[str, Any]:
