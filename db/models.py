@@ -6,7 +6,7 @@ from utils.timeutils import now_utc_naive
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Table, Column, MetaData
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -359,3 +359,57 @@ class DecisionLog(Base):
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# MT5 / MetaApi credential storage (password encrypted with Fernet)
+# ---------------------------------------------------------------------------
+class MT5Credentials(Base):
+    """Stores encrypted MT5 credentials per Telegram user.
+
+    The ``password_encrypted`` column holds the Fernet-encrypted password.
+    Never store plain-text passwords here.
+    """
+    __tablename__ = "mt5_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), unique=True, index=True, nullable=False
+    )
+    mt5_login: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Fernet token (URL-safe base64). Max ~512 bytes for a short password.
+    password_encrypted: Mapped[str] = mapped_column(String(512), nullable=False)
+    server: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Optional MetaApi account ID (returned by MetaApi after provisioning)
+    metaapi_account_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# UNLOGGED tables for ephemeral/high-write state (rate limits, daily counters)
+# These are NOT created via Alembic migrations but via raw DDL at startup.
+# Defined here as SQLAlchemy Core Table objects for reference only.
+# ---------------------------------------------------------------------------
+from sqlalchemy import Table, Column, MetaData, event
+
+_unlogged_meta = MetaData()
+
+# Per-user per-day signal counter (replaces Redis daily counter)
+_t_daily_counters = Table(
+    "daily_signal_counters",
+    _unlogged_meta,
+    Column("user_id", BigInteger, nullable=False),
+    Column("date", Date, nullable=False),
+    Column("count", Integer, nullable=False, default=0),
+)
+
+# Per-user rate-limit window tokens
+_t_rate_limits = Table(
+    "rate_limit_tokens",
+    _unlogged_meta,
+    Column("user_id", BigInteger, nullable=False),
+    Column("window_key", String(64), nullable=False),
+    Column("hits", Integer, nullable=False, default=0),
+    Column("window_start", DateTime, nullable=False),
+)

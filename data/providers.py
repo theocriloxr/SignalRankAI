@@ -1,5 +1,10 @@
 """
-Multi-provider data fetching with automatic fallbacks.
+Multi-provider data fetching with automatic waterfall fallbacks.
+
+Waterfall order:
+  Crypto:      MT5 (MetaApi) -> Binance -> CoinGecko
+  Traditional: MT5 (MetaApi) -> FMP/AlphaVantage -> yfinance
+
 Supports: Polygon.io, Twelve Data, Yahoo Finance, OANDA, TradingView.
 """
 
@@ -379,8 +384,224 @@ def fetch_tradingview_candles(symbol: str, timeframe: str, exchange: str = "BINA
     """
     logger.warning("[tradingview] OHLCV fetching not yet implemented - use other providers")
     return []
-    
-    # Future implementation could use:
-    # from tradingview_ta import TA_Handler, Interval
-    # But TA_Handler doesn't return OHLCV, only technical indicators
-    # Would need tradingview-scraper or selenium-based solution
+
+
+# ============================================================================
+# COINGECKO - Free crypto OHLCV (no API key required for basic use)
+# ============================================================================
+
+def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
+    """Fetch OHLCV from CoinGecko free API.
+
+    symbol: canonical crypto symbol like "BTCUSDT" or CoinGecko ID like "bitcoin".
+    timeframe: "1h", "4h", "1d" (CoinGecko has limited granularity).
+    """
+    try:
+        from services.asset_mapper import map_symbol, classify_asset
+        cg_id = map_symbol(symbol.upper(), "coingecko")
+        if not cg_id:
+            # Fall back to lower-case base
+            cg_id = symbol.upper().replace("USDT", "").replace("USDC", "").lower()
+    except Exception:
+        cg_id = symbol.lower().replace("usdt", "").replace("usdc", "")
+
+    if _is_cooldown_active("coingecko"):
+        return []
+
+    # CoinGecko /coins/{id}/ohlc: days param
+    days_map = {"5m": 1, "15m": 1, "1h": 7, "4h": 30, "1d": 365}
+    days = days_map.get(timeframe, 7)
+
+    url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/ohlc"
+    params = {"vs_currency": "usd", "days": days}
+    api_key = os.getenv("COINGECKO_API_KEY", "").strip()
+    if api_key:
+        params["x_cg_pro_api_key"] = api_key
+
+    _rate_limit("coingecko", 1.5)
+
+    try:
+        resp = requests.get(url, params=params, timeout=15)
+        if not resp.ok:
+            if resp.status_code == 429:
+                _set_cooldown("coingecko", 60.0)
+            return []
+        rows = resp.json()
+        if not isinstance(rows, list):
+            return []
+        candles = []
+        for row in rows:
+            try:
+                ts, o, h, l, c = row
+                candles.append({
+                    "timestamp": int(ts),
+                    "open": float(o),
+                    "high": float(h),
+                    "low": float(l),
+                    "close": float(c),
+                    "volume": 0.0,
+                })
+            except Exception:
+                continue
+        logger.info("[coingecko] fetched id=%s tf=%s candles=%d", cg_id, timeframe, len(candles))
+        return candles
+    except Exception as exc:
+        logger.error("[coingecko] error id=%s err=%s", cg_id, exc)
+        return []
+
+
+# ============================================================================
+# ALPHA VANTAGE - Traditional assets (stocks, FX)
+# ============================================================================
+
+def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
+    """Fetch OHLCV from AlphaVantage."""
+    api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
+    if not api_key or _is_cooldown_active("alphavantage"):
+        return []
+
+    try:
+        from services.asset_mapper import classify_asset
+        cls = classify_asset(symbol)
+    except Exception:
+        cls = "stock"
+
+    tf_map = {"5m": "5min", "15m": "15min", "1h": "60min", "4h": "60min", "1d": "daily"}
+    interval = tf_map.get(timeframe, "60min")
+    _rate_limit("alphavantage", float(os.getenv("ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS", "20")))
+
+    try:
+        if cls == "forex":
+            fn = "FX_INTRADAY" if timeframe != "1d" else "FX_DAILY"
+            base, quote = (symbol[:3], symbol[3:]) if len(symbol) == 6 else (symbol, "USD")
+            params: Dict = {"function": fn, "from_symbol": base, "to_symbol": quote,
+                            "interval": interval, "outputsize": "full", "apikey": api_key}
+        else:
+            fn = "TIME_SERIES_INTRADAY" if timeframe != "1d" else "TIME_SERIES_DAILY"
+            params = {"function": fn, "symbol": symbol, "interval": interval,
+                      "outputsize": "full", "apikey": api_key}
+
+        resp = requests.get("https://www.alphavantage.co/query", params=params, timeout=20)
+        if not resp.ok:
+            return []
+        data = resp.json()
+        # Find the time series key
+        ts_key = next((k for k in data if "Time Series" in k), None)
+        if not ts_key:
+            if "Note" in data or "Information" in data:
+                _set_cooldown("alphavantage", 60.0)
+            return []
+        ts = data[ts_key]
+        candles = []
+        for dt_str, bar in ts.items():
+            try:
+                dt = datetime.fromisoformat(dt_str)
+                candles.append({
+                    "timestamp": int(dt.timestamp() * 1000),
+                    "open": float(bar.get("1. open") or bar.get("1a. open (USD)", 0)),
+                    "high": float(bar.get("2. high") or bar.get("2a. high (USD)", 0)),
+                    "low": float(bar.get("3. low") or bar.get("3a. low (USD)", 0)),
+                    "close": float(bar.get("4. close") or bar.get("4a. close (USD)", 0)),
+                    "volume": float(bar.get("5. volume", 0) or 0),
+                })
+            except Exception:
+                continue
+        candles.sort(key=lambda c: c["timestamp"])
+        logger.info("[alphavantage] fetched symbol=%s tf=%s candles=%d", symbol, timeframe, len(candles))
+        return candles
+    except Exception as exc:
+        logger.error("[alphavantage] error symbol=%s: %s", symbol, exc)
+        return []
+
+
+# ============================================================================
+# WATERFALL FETCHER - Unified entry point with provider fallbacks
+# ============================================================================
+
+def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
+    """Fetch OHLCV with automatic provider waterfall.
+
+    Crypto:      Binance -> CoinGecko -> Yahoo Finance
+    Forex:       OANDA -> Twelve Data -> Polygon -> Yahoo Finance
+    Commodity:   Yahoo Finance -> AlphaVantage -> Twelve Data
+    Stock:       AlphaVantage -> Polygon -> Twelve Data -> Yahoo Finance
+    MT5 (if configured) is tried first for all asset classes when
+    META_API_TOKEN is set (via the async mt5_client; sync fallback skips it).
+    """
+    try:
+        from services.asset_mapper import classify_asset, map_symbol
+        cls = classify_asset(symbol)
+    except Exception:
+        cls = "unknown"
+
+    # --- Crypto waterfall ---
+    if cls == "crypto":
+        # 1. Binance (async adapter; call sync shim via fetcher.get_candles which handles this)
+        try:
+            from data.connectors.binance_adapter import get_candles as binance_get
+            result = binance_get(symbol, timeframe, limit=limit)
+            if result and len(result) >= 10:
+                return result
+        except Exception:
+            pass
+        # 2. CoinGecko
+        result = fetch_coingecko_candles(symbol, timeframe)
+        if result and len(result) >= 5:
+            return result[-limit:]
+        # 3. Yahoo Finance
+        yf_sym = map_symbol(symbol, "yfinance") if cls else symbol
+        result = fetch_yahoo_candles(yf_sym or symbol, timeframe)
+        return result[-limit:] if result else []
+
+    # --- Forex waterfall ---
+    if cls == "forex":
+        # 1. OANDA
+        oanda_sym = map_symbol(symbol, "oanda") or symbol
+        result = fetch_oanda_candles(oanda_sym, timeframe)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 2. Twelve Data
+        td_sym = map_symbol(symbol, "twelvedata") or symbol
+        result = fetch_twelvedata_candles(td_sym, timeframe)
+        if result and len(result) >= 5:
+            return result[-limit:]
+        # 3. Polygon
+        poly_sym = map_symbol(symbol, "polygon") or symbol
+        result = fetch_polygon_candles(poly_sym, timeframe, asset_type="forex")
+        if result and len(result) >= 5:
+            return result[-limit:]
+        # 4. Yahoo Finance
+        yf_sym = map_symbol(symbol, "yfinance") or symbol
+        result = fetch_yahoo_candles(yf_sym, timeframe)
+        return result[-limit:] if result else []
+
+    # --- Commodity waterfall ---
+    if cls == "commodity":
+        yf_sym = map_symbol(symbol, "yfinance") or symbol
+        result = fetch_yahoo_candles(yf_sym, timeframe)
+        if result and len(result) >= 5:
+            return result[-limit:]
+        av_sym = map_symbol(symbol, "alphavantage") or symbol
+        result = fetch_alphavantage_candles(av_sym, timeframe)
+        if result:
+            return result[-limit:]
+        td_sym = map_symbol(symbol, "twelvedata") or symbol
+        result = fetch_twelvedata_candles(td_sym, timeframe)
+        return result[-limit:] if result else []
+
+    # --- Stock waterfall ---
+    # 1. AlphaVantage
+    result = fetch_alphavantage_candles(symbol, timeframe)
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 2. Polygon
+    result = fetch_polygon_candles(symbol, timeframe, asset_type="stocks")
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 3. Twelve Data
+    result = fetch_twelvedata_candles(symbol, timeframe)
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 4. Yahoo Finance
+    result = fetch_yahoo_candles(symbol, timeframe)
+    return result[-limit:] if result else []

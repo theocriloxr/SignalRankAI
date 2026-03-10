@@ -126,6 +126,47 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                 await session.execute(text("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_asset ON ml_rejected_signals(asset)"))
                 await session.execute(text("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_timeframe ON ml_rejected_signals(timeframe)"))
                 await session.execute(text("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_actual_outcome ON ml_rejected_signals(actual_outcome)"))
+
+                # MT5 credentials table
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS mt5_credentials (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        mt5_login VARCHAR(64) NOT NULL,
+                        password_encrypted VARCHAR(512) NOT NULL,
+                        server VARCHAR(128) NOT NULL,
+                        metaapi_account_id VARCHAR(128),
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                ))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_mt5_credentials_user_id ON mt5_credentials(user_id)"))
+
+                # UNLOGGED tables for high-frequency ephemeral state (replaces Redis)
+                await session.execute(text(
+                    """
+                    CREATE UNLOGGED TABLE IF NOT EXISTS daily_signal_counters (
+                        user_id BIGINT NOT NULL,
+                        date DATE NOT NULL,
+                        count INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY (user_id, date)
+                    )
+                    """
+                ))
+                await session.execute(text(
+                    """
+                    CREATE UNLOGGED TABLE IF NOT EXISTS rate_limit_tokens (
+                        user_id BIGINT NOT NULL,
+                        window_key VARCHAR(64) NOT NULL,
+                        hits INTEGER NOT NULL DEFAULT 0,
+                        window_start TIMESTAMP NOT NULL,
+                        PRIMARY KEY (user_id, window_key)
+                    )
+                    """
+                ))
+
                 await session.commit()
             except Exception:
                 # Best-effort; keep app running
