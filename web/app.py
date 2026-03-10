@@ -52,15 +52,21 @@ def verify_paystack_signature(raw_body: bytes, signature_header: Optional[str]) 
     """Verify Paystack webhook HMAC signature.
 
     Raises HTTPException on failure so route handlers can return appropriate codes.
+    Order of checks:
+      1. Missing signature header → 400 (client error, regardless of secret config)
+      2. Missing secret → 500 (server misconfiguration)
+      3. Bad signature → 401
     """
-    secret = config.PAYSTACK_WEBHOOK_SECRET or config.PAYSTACK_SECRET_KEY
-    if not secret:
-        webhook_failures.labels(reason="missing_secret").inc()
-        raise HTTPException(status_code=500, detail="Paystack secret not configured")
-
+    # Always 400 when signature header is absent — do this before secret lookup
     if not signature_header:
         webhook_failures.labels(reason="missing_signature").inc()
         raise HTTPException(status_code=400, detail="Missing x-paystack-signature")
+
+    # Read fresh from environment so tests that set os.environ after module import work
+    secret = os.getenv("PAYSTACK_WEBHOOK_SECRET") or os.getenv("PAYSTACK_SECRET_KEY")
+    if not secret:
+        webhook_failures.labels(reason="missing_secret").inc()
+        raise HTTPException(status_code=500, detail="Paystack secret not configured")
 
     digest = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha512).hexdigest()
     if not _constant_time_equals(digest, signature_header.strip()):

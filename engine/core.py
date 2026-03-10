@@ -953,6 +953,19 @@ def main_loop(DRY_RUN: bool = False):
                         
                         # Validate signal freshness and price before delivery
                         try:
+                            # Zero-stale-signal gate: check live price drift against entry zone
+                            from engine.stale_signal_validator import validate_signal_freshness_sync
+                            _sval_fresh, _sval_reason, _sval_price = validate_signal_freshness_sync(sig)
+                            if not _sval_fresh:
+                                logger.info(
+                                    f"[engine] Stale signal dropped — {sig.get('asset')} "
+                                    f"{sig.get('timeframe')}: {_sval_reason}"
+                                )
+                                continue
+                        except Exception as _sval_err:
+                            logger.debug(f"[engine] stale_signal_validator unavailable: {_sval_err}")
+
+                        try:
                             from engine.price_validator import (
                                 is_signal_fresh, validate_price_drift, 
                                 check_sl_tp_hit, get_current_price,

@@ -13,7 +13,7 @@ def test_signals_no_limit():
     """Verify /signals command shows all signals (no [:5] or [:10] limits)"""
     print("\n=== Test 1: /signals Command Shows ALL Signals ===")
     
-    with open('signalrank_telegram/commands.py', 'r') as f:
+    with open('signalrank_telegram/commands.py', 'r', encoding='utf-8') as f:
         content = f.read()
         
     # Check that old limits are removed
@@ -44,7 +44,7 @@ def test_tradingview_fx_crypto():
     print("\n=== Test 2: TradingView FX & Crypto Support ===")
     
     # Check strategies/tradingview.py
-    with open('strategies/tradingview.py', 'r') as f:
+    with open('strategies/tradingview.py', 'r', encoding='utf-8') as f:
         content = f.read()
     
     if 'BINANCE' in content and 'FX_IDC' in content:
@@ -54,7 +54,7 @@ def test_tradingview_fx_crypto():
         return False
     
     # Check data/fetcher.py for TradingView integration
-    with open('data/fetcher.py', 'r') as f:
+    with open('data/fetcher.py', 'r', encoding='utf-8') as f:
         fetcher_content = f.read()
     
     if 'get_tradingview_candles' in fetcher_content:
@@ -89,7 +89,7 @@ def test_strategy_pipeline():
     """Verify TradingView is integrated into strategy pipeline"""
     print("\n=== Test 3: TradingView Strategy Pipeline Integration ===")
     
-    with open('strategies/__init__.py', 'r') as f:
+    with open('strategies/__init__.py', 'r', encoding='utf-8') as f:
         content = f.read()
     
     if 'from .tradingview import tradingview_strategies' in content:
@@ -127,7 +127,7 @@ def test_environment_variables():
     if os.path.exists('TRADINGVIEW_SETUP.md'):
         print("✅ PASS: TRADINGVIEW_SETUP.md documentation exists")
         
-        with open('TRADINGVIEW_SETUP.md', 'r') as f:
+        with open('TRADINGVIEW_SETUP.md', 'r', encoding='utf-8') as f:
             doc = f.read()
         
         required_vars = [

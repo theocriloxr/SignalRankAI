@@ -2728,3 +2728,135 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	
 	except Exception as e:
 		await update.message.reply_text(f"Error fetching market data: {str(e)}")
+
+
+# --------- MT5 LINK COMMAND ---------
+async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Link a MetaTrader 5 account for one-click trade execution.
+
+	Usage: /mt5_link <login> <password> <server>
+	Example: /mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo
+
+	Credentials are encrypted with Fernet symmetric encryption before storage.
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	# Require at least PREMIUM tier to link MT5
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 MT5 account linking requires a Premium or VIP subscription.\n"
+			"Use /upgrade to unlock one-click MT5 execution."
+		)
+		return
+
+	args = (context.args or [])
+	if len(args) < 3:
+		await update.message.reply_text(
+			"⚙️ *Link your MT5 Account*\n\n"
+			"Usage: `/mt5_link <login> <password> <server>`\n\n"
+			"Example:\n`/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo`\n\n"
+			"🔒 Your password is encrypted end-to-end with AES-256 (Fernet) before storage.\n"
+			"Neither SignalRankAI staff nor Railway can read it in plaintext.",
+			parse_mode="Markdown"
+		)
+		return
+
+	mt5_login = args[0].strip()
+	mt5_password = args[1].strip()
+	mt5_server = " ".join(args[2:]).strip()  # server names can contain spaces
+
+	# Delete the message immediately to prevent credential exposure in chat history
+	try:
+		await update.message.delete()
+	except Exception:
+		pass
+
+	processing_msg = await update.effective_chat.send_message(
+		"🔄 Linking your MT5 account… please wait."
+	)
+
+	try:
+		from services.mt5_client import link_mt5_account
+		result = await link_mt5_account(
+			telegram_user_id=user_id,
+			mt5_login=mt5_login,
+			mt5_password=mt5_password,
+			mt5_server=mt5_server,
+		)
+		if result.get("ok"):
+			meta_id = result.get("metaapi_account_id") or ""
+			reply = (
+				"✅ *MT5 Account Linked Successfully!*\n\n"
+				f"🏦 Server: `{mt5_server}`\n"
+				f"🔐 Login: `{mt5_login}` *(credentials encrypted)*\n"
+			)
+			if meta_id:
+				reply += f"☁️ MetaApi Account ID: `{meta_id}`\n"
+			reply += (
+				"\nYou can now use the ⚡ *Trade on MT5* button "
+				"on any signal to execute instantly."
+			)
+		else:
+			err = result.get("error", "Unknown error")
+			reply = (
+				f"❌ *MT5 Link Failed*\n\n"
+				f"Error: `{err}`\n\n"
+				"Please check your login, password and server name, then try again.\n"
+				"Use /mt5_link <login> <password> <server>"
+			)
+	except Exception as exc:
+		reply = (
+			f"❌ *MT5 Link Error*\n\n`{type(exc).__name__}: {exc}`\n\n"
+			"Please try again or contact support with /support"
+		)
+
+	try:
+		await processing_msg.edit_text(reply, parse_mode="Markdown")
+	except Exception:
+		await update.effective_chat.send_message(reply, parse_mode="Markdown")
+
+
+# --------- MT5 STATUS COMMAND ---------
+async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show the linked MT5 account details for the current user."""
+	if update.effective_user is None or update.message is None:
+		return
+
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 MT5 features require Premium or VIP.\nUse /upgrade to subscribe."
+		)
+		return
+
+	try:
+		from services.mt5_client import get_user_mt5_account_id
+		from db.session import get_session
+		from db.models import MT5Credentials
+		from sqlalchemy import select
+		async with get_session() as session:
+			row = (await session.execute(
+				select(MT5Credentials).where(MT5Credentials.user_id == user_id)
+			)).scalar_one_or_none()
+		if row is None:
+			await update.message.reply_text(
+				"No MT5 account linked.\n\nUse /mt5_link <login> <password> <server> to connect."
+			)
+			return
+		reply = (
+			"⚙️ *Your Linked MT5 Account*\n\n"
+			f"🏦 Server: `{row.server}`\n"
+			f"🔐 Login: `{row.mt5_login}` *(password encrypted)*\n"
+		)
+		if row.metaapi_account_id:
+			reply += f"☁️ MetaApi ID: `{row.metaapi_account_id}`\n"
+		reply += "\nUse ⚡ buttons on signals to trade instantly."
+		await update.message.reply_text(reply, parse_mode="Markdown")
+	except Exception as exc:
+		await update.message.reply_text(f"Error fetching MT5 status: {exc}")

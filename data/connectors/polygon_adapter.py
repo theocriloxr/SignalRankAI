@@ -37,13 +37,13 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
     params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
 
-    client = get_client()
-    if client is None:
-        logger.debug("polygon_adapter: httpx client unavailable")
-        return []
-
     async def _do():
-        resp = await client.get(url, params=params)
+        # Resolve client inside _do() so test patches to get_client are respected at call time
+        _client = get_client()
+        if _client is None:
+            logger.debug("polygon_adapter: httpx client unavailable")
+            return []
+        resp = await _client.get(url, params=params)
         if resp.status_code != 200:
             if resp.status_code == 429:
                 return []

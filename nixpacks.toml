@@ -1,11 +1,34 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Railway nixpacks config — optimised for the 500 MB hobby tier
+# Memory strategy: venv isolation + malloc tuning + minimal system packages
+# ──────────────────────────────────────────────────────────────────────────────
+
 [phases.setup]
-nixPkgs = ["python311", "gcc"]
+# gcc required for psycopg2 / cryptography native extensions
+nixPkgs = ["python311", "gcc", "libffi", "openssl"]
 
 [phases.install]
-cmds = ["pip install --upgrade pip", "pip install -r requirements.txt"]
+cmds = [
+  "python -m venv /opt/venv",
+  "/opt/venv/bin/pip install --upgrade pip --quiet",
+  "/opt/venv/bin/pip install -r requirements.txt --quiet --no-cache-dir",
+]
 
 [phases.build]
-cmds = ["python -m alembic upgrade head || true"]
+cmds = [
+  # Run migrations with the venv python so alembic picks up asyncpg/psycopg2
+  "/opt/venv/bin/python -m alembic upgrade head || true",
+]
 
 [start]
-cmd = "python main.py"
+# MALLOC_ARENA_MAX=2  — limit glibc malloc arenas; cuts RSS by ~30 % on multi-threaded Python
+# PYTHONMALLOC=malloc — use system malloc (avoids pymalloc arena fragmentation)
+# PYTHONDONTWRITEBYTECODE=1 — skip .pyc writes (saves ~10 MB on cold start I/O)
+# PYTHONUNBUFFERED=1 — line-buffered stdout so Railway log tailing works in real time
+cmd = "MALLOC_ARENA_MAX=2 PYTHONMALLOC=malloc PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 /opt/venv/bin/python main.py"
+
+[variables]
+PYTHONUNBUFFERED = "1"
+PYTHONDONTWRITEBYTECODE = "1"
+MALLOC_ARENA_MAX = "2"
+PYTHONMALLOC = "malloc"

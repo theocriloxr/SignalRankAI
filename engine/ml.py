@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import gc
 import json
 import os
 from pathlib import Path
@@ -55,7 +56,11 @@ def _load_model() -> None:
 
         raw_bytes = base64.b64decode(model_bytes_b64)
         booster = xgb.Booster()
+        # Memory-optimised config for Railway 500 MB tier
+        booster.set_param("nthread", int(os.getenv("XGB_NTHREAD", "2")))
         booster.load_model(bytearray(raw_bytes))
+        del raw_bytes  # release raw bytes immediately
+        gc.collect()  # free any cyclic garbage from model initialisation
 
         _MODEL_CACHE["feature_cols"] = feature_cols
         _MODEL_CACHE["booster"] = booster
@@ -128,6 +133,8 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
     try:
         dm = xgb.DMatrix(x, feature_names=feature_cols)
         preds = booster.predict(dm)
+        del dm  # release DMatrix immediately
+        gc.collect()  # free cyclic garbage after inference
         if preds is None or len(preds) == 0:
             return None
         prob = float(preds[0])

@@ -1382,27 +1382,84 @@ def run_bot() -> None:
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
         print(f"[bot] error: {err}", flush=True)
-        # Avoid crashing the bot on handler errors; PTB will continue polling.
+        # Alert all owners about every unhandled exception so nothing is silent
+        try:
+            import traceback
+            tb = "".join(traceback.format_exception(type(err), err, err.__traceback__)) if err else "(no traceback)"
+            alert = f"🚨 *Bot Error*\n`{type(err).__name__}: {err}`\n\n```\n{tb[:800]}\n```"
+            from config import OWNER_IDS
+            for _oid in (OWNER_IDS or []):
+                try:
+                    await application.bot.send_message(
+                        chat_id=int(_oid), text=alert, parse_mode="Markdown"
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Never let the error handler itself crash the bot
 
     application.add_error_handler(_on_error)
 
     async def _post_init(app):
         # BotFather-visible commands must remain concise.
+        _global_cmds = [
+            ("start", "Start"),
+            ("pricing", "Pricing"),
+            ("upgrade", "Upgrade / subscribe"),
+            ("help", "Commands"),
+            ("status", "Subscription status"),
+            ("signals", "Latest signals"),
+            ("signal", "Signal by reference"),
+            ("performance", "Performance"),
+            ("invite", "Invite"),
+            ("support", "Support"),
+        ]
+        _premium_cmds = _global_cmds + [
+            ("dashboard", "Dashboard"),
+            ("history", "Trade history"),
+            ("risk", "Risk settings"),
+            ("alerts", "Alerts"),
+            ("mt5_link", "Link MT5 account"),
+            ("mt5_status", "MT5 account status"),
+        ]
+        _vip_cmds = _premium_cmds + [
+            ("elite", "Elite signals"),
+            ("early", "Early access"),
+            ("report", "Full report"),
+        ]
+        _owner_cmds = _vip_cmds + [
+            ("unlock", "Owner: unlock tier"),
+            ("dev_pause", "Owner: pause engine"),
+            ("dev_resume", "Owner: resume engine"),
+            ("owner_users", "Owner: user list"),
+            ("owner_revenue", "Owner: revenue"),
+            ("provider_status", "Owner: provider health"),
+        ]
         try:
-            await app.bot.set_my_commands(
-                [
-                    ("start", "Start"),
-                    ("pricing", "Pricing"),
-                    ("upgrade", "Upgrade / subscribe"),
-                    ("help", "Commands"),
-                    ("status", "Subscription status"),
-                    ("signals", "Latest signals"),
-                    ("signal", "Signal by reference"),
-                    ("performance", "Performance"),
-                    ("invite", "Invite"),
-                    ("support", "Support"),
-                ]
-            )
+            from telegram import BotCommandScopeChat
+            from signalrank_telegram.access import resolve_user_tier
+            from db.pg_compat import get_all_user_ids_compat
+            user_ids = get_all_user_ids_compat()
+            for _uid in (user_ids or []):
+                try:
+                    _t = (resolve_user_tier(int(_uid)) or "free").lower()
+                    if _t in ("owner", "admin"):
+                        _cmds = _owner_cmds
+                    elif _t == "vip":
+                        _cmds = _vip_cmds
+                    elif _t == "premium":
+                        _cmds = _premium_cmds
+                    else:
+                        _cmds = _global_cmds
+                    await app.bot.set_my_commands(
+                        _cmds, scope=BotCommandScopeChat(chat_id=int(_uid))
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"[bot] BotCommandScopeChat update skipped: {e}")
+        try:
+            await app.bot.set_my_commands(_global_cmds)
         except Exception as e:
             logger.warning(f"[bot] Failed to set bot commands: {e}")
             pass
@@ -1455,6 +1512,58 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
     application.add_handler(CommandHandler("correct_signal", _audit_handler("correct_signal", correct_signal)))
     application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
+
+    # MT5 commands (Premium+)
+    from .commands import mt5_link_command, mt5_status_command
+    application.add_handler(CommandHandler("mt5_link", _audit_handler("mt5_link", mt5_link_command)))
+    application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
+
+    # ⚡ One-click MT5 execution via inline keyboard
+    # Callback data format: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
+    from telegram.ext import CallbackQueryHandler
+    async def _mt5_trade_callback(update, context):
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id is None:
+            return
+        try:
+            parts = (query.data or "").replace("mt5_trade_", "", 1).split("|")
+            signal_id, asset, direction, entry, sl, tp = parts[0], parts[1], parts[2], float(parts[3]), float(parts[4]), float(parts[5])
+        except Exception:
+            await query.edit_message_text("❌ Invalid trade button data.")
+            return
+        try:
+            from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
+            account_id = await get_user_mt5_account_id(user_id)
+            if not account_id:
+                await query.edit_message_text(
+                    "⚠️ No MT5 account linked.\nUse /mt5_link <login> <password> <server> first."
+                )
+                return
+            within_tol, slip, live_px = await validate_slippage(account_id, asset, entry)
+            if not within_tol:
+                await query.edit_message_text(
+                    f"⚠️ *Slippage Warning*\n\nSignal entry: `{entry}`\nLive price: `{live_px:.5f}`\nSlippage: `{slip:.1f}` pts\n\nToo far from entry — trade not executed.",
+                    parse_mode="Markdown"
+                )
+                return
+            result = await execute_trade(
+                account_id=account_id, symbol=asset, direction=direction,
+                volume=0.01, stop_loss=sl, take_profit=tp, signal_entry=entry
+            )
+            if result.get("ok"):
+                oid = result.get("order_id", "")
+                await query.edit_message_text(
+                    f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{live_px:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`",
+                    parse_mode="Markdown"
+                )
+            else:
+                await query.edit_message_text(f"❌ Trade failed: `{result.get('error', 'unknown')}`", parse_mode="Markdown")
+        except Exception as exc:
+            await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="Markdown")
+
+    application.add_handler(CallbackQueryHandler(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
@@ -2121,6 +2230,51 @@ def run_bot() -> None:
         except Exception as e:
             logger.error(f"Error in ML retrain job: {e}", exc_info=True)
 
+    def vip_scarcity_broadcast_job():
+        """Broadcast a VIP scarcity nudge to PREMIUM users when seats are available."""
+        try:
+            if state.get_killswitch_sync().enabled:
+                return
+        except Exception:
+            pass
+        try:
+            from db.session import get_session
+            from db.repository import count_active_vip_users
+            from config import OWNER_IDS
+
+            async def _check():
+                async with get_session() as session:
+                    exclude = set(OWNER_IDS or [])
+                    used = await count_active_vip_users(session, exclude_telegram_user_ids=exclude)
+                    return used
+
+            used = run_sync(_check())
+            vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
+            available = max(0, vip_limit - used)
+            if available <= 0:
+                return
+
+            from db.pg_compat import get_all_user_ids_compat
+            from signalrank_telegram.access import resolve_user_tier
+            msg = (
+                f"🔥 *VIP Seats Available — {available} of {vip_limit} open!*\n\n"
+                "VIP members get:\n"
+                "• Real-time signals (30/day)\n"
+                "• TP1/TP2/TP3 notifications\n"
+                "• One-click MT5 execution\n"
+                "• Trailing SL to break-even on TP1\n\n"
+                "Seats fill fast. Use /upgrade to claim yours."
+            )
+            for _uid in (get_all_user_ids_compat() or []):
+                try:
+                    _t = (resolve_user_tier(int(_uid)) or "free").lower()
+                    if _t == "premium":
+                        _send_message_sync(application.bot, chat_id=int(_uid), text=msg)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"[vip_scarcity] job failed: {e}")
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
@@ -2128,6 +2282,8 @@ def run_bot() -> None:
     scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1)
     # Distribute random signals to FREE users every 15 minutes
     scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15)
+    # VIP scarcity nudge: every 6 hours, nudge PREMIUM users if VIP seats open
+    scheduler.add_job(vip_scarcity_broadcast_job, 'interval', hours=6)
     scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0)
     # Auto-downgrade expired subscriptions (daily at 00:00 UTC)
     scheduler.add_job(

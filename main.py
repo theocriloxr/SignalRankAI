@@ -1,6 +1,6 @@
 import os
 import sys
-import threading
+import asyncio
 import traceback
 
 
@@ -80,37 +80,63 @@ def main() -> None:
     if mode == "all":
         from config import config
         dry_run = config.DRY_RUN
-        from typing import Callable
 
-        def _run_thread(name: str, fn: Callable[[], None]) -> None:
-            try:
-                print(f"[boot] RUN_MODE=all starting {name}", flush=True)
-                fn()
-                print(f"[boot] RUN_MODE=all {name} exited", flush=True)
-            except Exception as exc:
-                print(f"[boot] RUN_MODE=all {name} crashed: {exc}", file=sys.stderr, flush=True)
-                traceback.print_exc()
-        def _run_web_impl() -> None:
-            import uvicorn
-            port = int(os.getenv("PORT", "8000"))
-            uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
-        def _run_worker_impl() -> None:
-            from worker.worker import main as worker_main
-            worker_main()
-        def _run_engine_impl() -> None:
-            from engine.core import main_loop
-            main_loop(dry_run)
-        threads = [
-            threading.Thread(target=lambda: _run_thread("web", _run_web_impl), name="web", daemon=True),
-            threading.Thread(target=lambda: _run_thread("worker", _run_worker_impl), name="worker", daemon=True),
-            threading.Thread(target=lambda: _run_thread("engine", _run_engine_impl), name="engine", daemon=True),
-        ]
-        for t in threads:
-            t.start()
-        from signalrank_telegram.bot import run_bot as bot_main
-        print("[boot] RUN_MODE=all starting telegram bot", flush=True)
-        bot_main()
-        print("[boot] RUN_MODE=all telegram bot exited", flush=True)
+        async def _run_all() -> None:
+            """Run web, worker, engine, and bot concurrently.
+
+            - Web:    uvicorn.Server (native async)
+            - Engine: ThreadPoolExecutor (blocking main_loop)
+            - Worker: ThreadPoolExecutor (blocking worker_main)
+            - Bot:    ThreadPoolExecutor (PTB run_polling owns its own event loop)
+
+            asyncio.gather() supervises all four; any unrecoverable crash is logged.
+            """
+            loop = asyncio.get_running_loop()
+
+            async def _web() -> None:
+                import uvicorn
+                port = int(os.getenv("PORT", "8000"))
+                cfg = uvicorn.Config(
+                    "web.app:app", host="0.0.0.0", port=port, log_level="info"
+                )
+                server = uvicorn.Server(cfg)
+                print("[boot] RUN_MODE=all web starting", flush=True)
+                await server.serve()
+                print("[boot] RUN_MODE=all web exited", flush=True)
+
+            async def _engine() -> None:
+                from engine.core import main_loop
+                print("[boot] RUN_MODE=all engine starting", flush=True)
+                try:
+                    await loop.run_in_executor(None, lambda: main_loop(dry_run))
+                except Exception as exc:
+                    print(f"[boot] engine crashed: {exc}", file=sys.stderr, flush=True)
+                    traceback.print_exc()
+                print("[boot] RUN_MODE=all engine exited", flush=True)
+
+            async def _worker() -> None:
+                from worker.worker import main as worker_main
+                print("[boot] RUN_MODE=all worker starting", flush=True)
+                try:
+                    await loop.run_in_executor(None, worker_main)
+                except Exception as exc:
+                    print(f"[boot] worker crashed: {exc}", file=sys.stderr, flush=True)
+                print("[boot] RUN_MODE=all worker exited", flush=True)
+
+            async def _bot() -> None:
+                from signalrank_telegram.bot import run_bot as bot_main
+                print("[boot] RUN_MODE=all bot starting", flush=True)
+                try:
+                    # PTB run_polling() manages its own event loop; run in executor
+                    # to avoid conflicting with the outer asyncio loop.
+                    await loop.run_in_executor(None, bot_main)
+                except Exception as exc:
+                    print(f"[boot] bot crashed: {exc}", file=sys.stderr, flush=True)
+                print("[boot] RUN_MODE=all bot exited", flush=True)
+
+            await asyncio.gather(_web(), _engine(), _worker(), _bot())
+
+        asyncio.run(_run_all())
         return
     elif mode == "web":
         import uvicorn
