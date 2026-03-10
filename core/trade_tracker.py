@@ -7,16 +7,35 @@ logger = logging.getLogger(__name__)
 
 class TradeRecord:
     def __init__(self, signal):
-        self.signal_id = signal["id"]
-        self.symbol = signal["symbol"]
-        self.entry = signal["entry"]
-        self.stop = signal["stop"]
-        self.target = signal["targets"]
-        self.direction = (signal.get("direction") or signal.get("side") or "LONG").upper()
-        self.open_time = signal["timestamp"]
+        # Normalize common signal field names used across the codebase/tests
+        self.signal_id = signal.get("id") or signal.get("signal_id")
+        self.symbol = signal.get("symbol") or signal.get("asset")
+        self.entry = signal.get("entry") or signal.get("price") or signal.get("entry_price")
+        # stop can be provided as 'stop', 'stop_loss' or 'stopLoss'
+        self.stop = signal.get("stop") or signal.get("stop_loss") or signal.get("stopLoss")
+        # targets may be 'targets' (list) or 'take_profit' / 'take_profits' (single)
+        t = signal.get("targets") or signal.get("targets_list") or signal.get("take_profit") or signal.get("take_profits") or signal.get("take_profit")
+        self.target = t
+        # Normalize direction to lowercase 'long' or 'short' (tests expect lowercase)
+        self.direction = (signal.get("direction") or signal.get("side") or "long").lower()
+        # Timestamp fallback
+        self.open_time = signal.get("timestamp") or signal.get("created_at") or datetime.utcnow().isoformat()
         self.close_time = None
         self.outcome = None  # "TP" | "SL"
         self.signal = signal  # Keep reference to original signal
+        # Helper: ensure targets list for easier checks
+        if self.target is None:
+            self.targets = []
+        elif isinstance(self.target, list):
+            self.targets = self.target
+        else:
+            # single numeric target
+            try:
+                self.targets = [float(self.target)]
+            except Exception:
+                self.targets = []
+        # Track which targets have been hit (for partial TP handling)
+        self.targets_hit = []
 
 open_trades_list = []
 
@@ -66,7 +85,7 @@ def _get_current_price(symbol):
     logger.warning(f"Could not fetch price for {symbol}")
     return None
 
-def price_hit_tp(trade, market_data):
+def price_hit_tp(trade, market_data=None):
     """
     Check if take profit is hit.
     For LONG: TP hit when current price >= target
@@ -82,32 +101,39 @@ def price_hit_tp(trade, market_data):
     if current_price is None:
         return False
     
-    # Handle targets - can be a single value or list
-    targets = trade.target
-    if targets is None or (isinstance(targets, list) and len(targets) == 0):
+    # Use normalized targets list
+    targets = getattr(trade, "targets", []) or []
+    if not targets:
         return False
-    if not isinstance(targets, list):
-        targets = [targets]
-    
-    # Get trade direction
-    direction = trade.direction
+    direction = (getattr(trade, "direction", "long") or "long").lower()
     
     # Check if any target is hit
+    any_hit = False
     for target in targets:
         if target is None:
             continue
-        if direction == "LONG":
+        if direction == "long":
             if current_price >= target:
                 logger.info(f"TP hit for {trade.symbol} LONG: price={current_price} >= target={target}")
-                return True
-        elif direction == "SHORT":
+                try:
+                    if target not in trade.targets_hit:
+                        trade.targets_hit.append(target)
+                        any_hit = True
+                except Exception:
+                    pass
+        elif direction == "short":
             if current_price <= target:
                 logger.info(f"TP hit for {trade.symbol} SHORT: price={current_price} <= target={target}")
-                return True
-    
-    return False
+                try:
+                    if target not in trade.targets_hit:
+                        trade.targets_hit.append(target)
+                        any_hit = True
+                except Exception:
+                    pass
 
-def price_hit_sl(trade, market_data):
+    return any_hit
+
+def price_hit_sl(trade, market_data=None):
     """
     Check if stop loss is hit.
     For LONG: SL hit when current price <= stop
@@ -123,41 +149,28 @@ def price_hit_sl(trade, market_data):
     if current_price is None:
         return False
     
-    # Get trade direction and stop loss
-    direction = trade.direction
-    stop = trade.stop
-    
+    # Normalize direction and stop
+    direction = (getattr(trade, "direction", "LONG") or "LONG").upper()
+    stop = getattr(trade, "stop", None)
     if stop is None:
         return False
-    
-    # Check if stop loss is hit
+
+    # Ensure numeric
+    try:
+        stop_val = float(stop)
+    except Exception:
+        return False
+
     if direction == "LONG":
-        if current_price <= stop:
-            logger.info(f"SL hit for {trade.symbol} LONG: price={current_price} <= stop={stop}")
+        if current_price <= stop_val:
+            logger.info(f"SL hit for {trade.symbol} LONG: price={current_price} <= stop={stop_val}")
             return True
     elif direction == "SHORT":
-        if current_price >= stop:
-            logger.info(f"SL hit for {trade.symbol} SHORT: price={current_price} >= stop={stop}")
+        if current_price >= stop_val:
+            logger.info(f"SL hit for {trade.symbol} SHORT: price={current_price} >= stop={stop_val}")
             return True
-    
-    return False
 
-def price_hit_sl(trade: TradeRecord, market_data=None) -> bool:
-    """Check if stop-loss has been hit."""
-    if trade.stop <= 0:
-        return False
-    price = _get_current_price(trade.symbol)
-    if price is None:
-        return False
-    
-    if trade.direction == "long":
-        hit = price <= trade.stop
-    else:  # short
-        hit = price >= trade.stop
-    
-    if hit:
-        logger.info(f"SL hit for {trade.symbol}: stop={trade.stop}, price={price}, direction={trade.direction}")
-    return hit
+    return False
 
 def close_trade(trade: TradeRecord, outcome: str):
     trade.close_time = datetime.utcnow()
@@ -173,13 +186,13 @@ def add_trade(signal: dict):
     logger.info(f"Trade opened: {trade.symbol} {trade.direction} entry={trade.entry}")
     return trade
 
-def update_trade_outcomes(market_data):
+def update_trade_outcomes(market_data=None):
     """
     Update trade outcomes based on current market data.
     Closes trades that hit TP/SL and removes them from open_trades_list.
     """
     trades_to_remove = []
-    
+
     for trade in open_trades():
         if price_hit_tp(trade, market_data):
             close_trade(trade, "TP")
@@ -187,9 +200,16 @@ def update_trade_outcomes(market_data):
         elif price_hit_sl(trade, market_data):
             close_trade(trade, "SL")
             trades_to_remove.append(trade)
-    
-    # Remove closed trades from open_trades_list
+
+    closed = []
+    # Remove closed trades from open_trades_list and collect for return
     for trade in trades_to_remove:
         if trade in open_trades_list:
-            open_trades_list.remove(trade)
+            try:
+                open_trades_list.remove(trade)
+            except ValueError:
+                pass
             logger.info(f"Removed closed trade {trade.signal_id} ({trade.outcome}) from open_trades_list")
+        closed.append(trade)
+
+    return closed

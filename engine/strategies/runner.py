@@ -45,7 +45,8 @@ def run_strategy_with_marketstate(strategy: Any, asset: str, timeframes: Iterabl
 async def run_strategy_with_marketstate_async(strategy: Any, asset: str, timeframes: Iterable[str], include_ml: bool = False) -> List[Signal]:
     """Async runner: await `get_market_state` and invoke strategy.generate in thread if it's sync."""
     try:
-        from engine.market_state import get_market_state
+        # Prefer the explicit async variant to avoid awaiting a sync wrapper
+        from engine.market_state import get_market_state_async as get_market_state
     except Exception:
         return []
 
