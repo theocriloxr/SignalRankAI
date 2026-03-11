@@ -201,6 +201,65 @@ def start_outage_alert_job():
     t.start()
 
 
+def _rebuild_stale_signal(sig: Dict[str, Any], live_price: float) -> Dict[str, Any] | None:
+    """Return a refreshed copy of *sig* rebased onto *live_price*.
+
+    Keeps the original direction, strategy vote, score, ATR, and regime.
+    Recomputes entry/SL/TP so the signal is immediately valid at the current
+    market price.
+
+    SL distance priority:
+      1. ATR-based (2 × ATR) — same multiplier the engine used originally.
+      2. Preserve original relative %-distance if ATR is unavailable.
+    TP is set at SL_distance × DEFAULT_RR (default 2.0).
+
+    Returns None when a safe SL/TP cannot be computed.
+    """
+    try:
+        if not live_price or live_price <= 0:
+            return None
+
+        direction = str(sig.get('direction') or 'long').lower()
+        atr_val   = float(sig.get('atr') or 0)
+        orig_entry = float(sig.get('entry') or 0)
+        orig_sl    = float(sig.get('stop_loss') or sig.get('stop') or 0)
+        rr         = float(os.getenv('DEFAULT_RR', '2.0'))
+
+        # Determine SL distance
+        if atr_val > 0:
+            sl_dist = 2.0 * atr_val
+        elif orig_entry > 0 and orig_sl > 0:
+            sl_dist = abs(orig_entry - orig_sl)   # preserve relative %
+        else:
+            return None  # cannot compute a sensible SL
+
+        if direction == 'long':
+            new_sl = live_price - sl_dist
+            new_tp = live_price + sl_dist * rr
+        else:
+            new_sl = live_price + sl_dist
+            new_tp = live_price - sl_dist * rr
+
+        if new_sl <= 0 or new_tp <= 0:
+            return None
+
+        now = datetime.utcnow()
+        refreshed = dict(sig)               # shallow copy — keeps score, votes, etc.
+        refreshed.pop('signal_id', None)    # DB assigns a fresh UUID
+        refreshed['entry']                  = live_price
+        refreshed['stop_loss']              = new_sl
+        refreshed['take_profit']            = new_tp
+        refreshed['created_at']             = now
+        refreshed['expires_at']             = now + _timedelta(hours=12)
+        refreshed['refreshed_from']         = str(sig.get('signal_id') or '')
+        refreshed['price_updated']          = True
+        refreshed['entry_price_refreshed']  = True
+        return refreshed
+    except Exception as _e:
+        logger.debug(f"[engine] _rebuild_stale_signal failed: {_e}")
+        return None
+
+
 def _env_float(name: str, default: float) -> float:
     try:
         return float((os.getenv(name) or str(default)).strip())
@@ -961,7 +1020,32 @@ def main_loop(DRY_RUN: bool = False):
                                 f"[engine] Stale signal dropped — {_sig.get('asset')} "
                                 f"{_sig.get('timeframe')}: {_reason}"
                             )
-                            # Mark expired in DB so resend job / next cycle skip it.
+                            # --- Rebuild with live price, keeping direction + strategy vote ---
+                            _rebuilt = None
+                            if _price and _price > 0:
+                                _rebuilt = _rebuild_stale_signal(_sig, _price)
+                            if _rebuilt is not None:
+                                try:
+                                    if get_session is not None:
+                                        from db.pg_features import get_or_create_signal
+                                        async with get_session() as _rs:
+                                            _new_sig_row = await get_or_create_signal(_rs, _rebuilt)
+                                            await _rs.commit()
+                                            _rebuilt['signal_id'] = str(_new_sig_row.signal_id)
+                                    _fresh_scored_signals.append(_rebuilt)
+                                    logger.info(
+                                        f"[engine] Stale signal REFRESHED — {_rebuilt.get('asset')} "
+                                        f"{_rebuilt.get('timeframe')} "
+                                        f"new_entry={_rebuilt['entry']:.5f}"
+                                    )
+                                except Exception as _store_err:
+                                    logger.debug(f"[engine] Failed to store refreshed signal: {_store_err}")
+                            else:
+                                logger.debug(
+                                    f"[engine] Could not rebuild stale signal for "
+                                    f"{_sig.get('asset')} — no live price or bad SL/TP"
+                                )
+                            # Mark original as expired in DB so resend job skips it.
                             try:
                                 _sig_id = _sig.get('signal_id') or _sig.get('id')
                                 if _sig_id and get_session is not None:
