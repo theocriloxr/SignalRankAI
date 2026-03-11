@@ -1,12 +1,49 @@
 from __future__ import annotations
 
 import os
+import socket as _socket
 from config import config
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+
+
+def _prefer_ipv4_url(url: str) -> str:
+    """Resolve the database hostname to an IPv4 address and substitute it in
+    the URL before handing it to asyncpg.
+
+    Railway's internal Postgres hostnames (*.railway.internal) sometimes
+    resolve to an IPv6 address first.  asyncpg picks that address, attempts to
+    connect, and gets ECONNREFUSED because Railway's Postgres only listens on
+    IPv4.  psycopg2 (used by Alembic / auto_ops) retries all addresses and
+    falls back to IPv4 automatically, which is why migrations succeed while
+    async DB calls fail.
+
+    This helper resolves the host to its first AF_INET (IPv4) address and
+    rewrites the URL so asyncpg never even sees the IPv6 address.
+    Returns the original URL unchanged on any error or when the host is
+    already an IP literal.
+    """
+    try:
+        from sqlalchemy.engine.url import make_url
+        sa_url = make_url(url)
+        host = sa_url.host
+        if not host:
+            return url
+        # Already an IPv4 literal (digits + dots) or bracketed IPv6 literal — skip
+        if ":" in host or all(c in "0123456789." for c in host):
+            return url
+        port = int(sa_url.port or 5432)
+        infos = _socket.getaddrinfo(host, port, _socket.AF_INET, _socket.SOCK_STREAM)
+        if not infos:
+            return url
+        ipv4 = infos[0][4][0]
+        return str(sa_url.set(host=ipv4))
+    except Exception:
+        # Never break the connection — fall back to original URL
+        return url
 
 
 def get_database_url() -> Optional[str]:
@@ -17,11 +54,11 @@ def get_database_url() -> Optional[str]:
     # Railway commonly provides postgres:// or postgresql:// URLs.
     # SQLAlchemy async requires the asyncpg dialect.
     if url.startswith("postgresql+asyncpg://"):
-        return url
+        return _prefer_ipv4_url(url)
     if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        return _prefer_ipv4_url(url.replace("postgres://", "postgresql+asyncpg://", 1))
     if url.startswith("postgresql://"):
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return _prefer_ipv4_url(url.replace("postgresql://", "postgresql+asyncpg://", 1))
     return url
 
 

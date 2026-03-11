@@ -5,7 +5,7 @@
     "buildCommand": "pip install -r requirements.txt"
   },
   "deploy": {
-    "startCommand": "sh -c 'uvicorn railway_main:app --host 0.0.0.0 --port $PORT'",
+    "startCommand": "sh -c 'RUN_MODE=all uvicorn railway_main:app --host 0.0.0.0 --port $PORT'",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
