@@ -105,22 +105,44 @@ def run_startup_ops(run_mode: str) -> None:
         # 2) Optional one-time wipe to "start fresh"
         if _env_bool("FRESH_START", False) and run_mode in {"web", "all"}:
             _fresh_start_if_needed(conn)
-        
-        # 3) Ensure ml_probability column exists (post-migration fix for 0011)
+
+        # 3) Belt-and-suspenders column patches — safe ADD COLUMN IF NOT EXISTS for
+        #    all columns that 0010_consolidate_full_schema migration covers, in case
+        #    Alembic is skipped or the DB was bootstrapped outside of migrations.
         try:
             with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name='signals' AND column_name='ml_probability'
-                    )
-                """)
-                if not cur.fetchone()[0]:
-                    # Column doesn't exist, add it
-                    cur.execute("ALTER TABLE signals ADD COLUMN ml_probability FLOAT")
-                    conn.commit()
-        except Exception as e:
-            # Column may already exist or table may not exist yet; not critical
+                _column_patches = [
+                    # users
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS fixed_lot_size FLOAT NOT NULL DEFAULT 0.01",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_today INTEGER NOT NULL DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0",
+                    # subscriptions
+                    "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
+                    # signals
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS ml_probability FLOAT",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE",
+                    # referrals
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS is_successful BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS successful_at TIMESTAMP",
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
+                ]
+                for stmt in _column_patches:
+                    try:
+                        cur.execute(stmt)
+                    except Exception:
+                        pass  # column already exists or table not yet created
+                conn.commit()
+        except Exception:
             pass
 
         # 4) Ensure critical audit tables exist (failsafe if migrations didn't run)

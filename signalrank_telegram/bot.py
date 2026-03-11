@@ -1492,16 +1492,49 @@ def run_bot() -> None:
         .build()
     )
 
-    # Ensure required schema exists (hotfix for missing premium_until).
+    # Ensure required schema exists — belt-and-suspenders patch for any live DB
+    # that was bootstrapped before Alembic migration 0010_consolidate_full_schema ran.
+    # Every statement uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so it is safe
+    # to run against any DB state on every bot restart.
     try:
         from db.session import get_engine_for_event_loop, get_session
         from sqlalchemy import text
 
         if get_engine_for_event_loop() is not None:
             async def _ensure_schema() -> None:
+                _stmts = [
+                    # users — columns added after 0001_init / 0008_user_tier_column
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS fixed_lot_size FLOAT NOT NULL DEFAULT 0.01",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_today INTEGER NOT NULL DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0",
+                    # subscriptions
+                    "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
+                    # signals
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS ml_probability FLOAT",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE",
+                    # referrals
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS is_successful BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS successful_at TIMESTAMP",
+                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
+                    # managed_assets
+                    "ALTER TABLE managed_assets ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP",
+                ]
                 async with get_session() as session:
-                    await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP"))
-                    await session.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER"))
+                    for stmt in _stmts:
+                        try:
+                            await session.execute(text(stmt))
+                        except Exception:
+                            pass  # Column/table may already exist
                     await session.commit()
 
             run_sync(_ensure_schema())
