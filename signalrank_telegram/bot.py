@@ -315,14 +315,53 @@ async def _send_signal_with_engagement_async(
     text: str,
     signal_id: str,
     telegram_user_id: int,
+    signal: dict | None = None,
 ) -> None:
-    """Send a signal message with 🔥/👀 engagement inline buttons and save the
-    resulting message_id to ActiveSignalMessage so we can edit it later."""
+    """Send a signal message with engagement buttons (+ ⚡ MT5 button for PREMIUM+)
+    and save message_id to ActiveSignalMessage for live-edit support."""
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-    keyboard = InlineKeyboardMarkup([[
+    # Row 1: engagement reactions (always present)
+    _kb_rows = [[
         InlineKeyboardButton("🔥 Taking it", callback_data=f"signal_reaction_{signal_id}|taking_it"),
         InlineKeyboardButton("👀 Watching",  callback_data=f"signal_reaction_{signal_id}|watching"),
-    ]])
+    ]]
+    # Row 2: ⚡ Trade on MT5 button (PREMIUM+ only, when signal data is available)
+    if signal:
+        try:
+            from signalrank_telegram.access import resolve_user_tier
+            from signalrank_telegram.commands import tier_rank
+            _ut = (resolve_user_tier(int(telegram_user_id)) or "FREE").upper()
+            if tier_rank(_ut) >= tier_rank("PREMIUM"):
+                import json as _j
+                _asset = str(signal.get('asset') or '')
+                _dir   = str(signal.get('direction') or '').lower()
+                _entry = signal.get('entry') or 0
+                _sl    = signal.get('stop_loss') or 0
+                _tp_r  = signal.get('take_profit') or signal.get('tp_levels') or 0
+                # Reduce TP to first scalar value
+                if isinstance(_tp_r, list) and _tp_r:
+                    _tp = _tp_r[0]
+                elif isinstance(_tp_r, str):
+                    try:
+                        _pd = _j.loads(_tp_r)
+                        _tp = _pd[0] if isinstance(_pd, list) else _pd
+                    except Exception:
+                        try:
+                            _tp = float(_tp_r.strip("[]'\" ").split(',')[0])
+                        except Exception:
+                            _tp = 0
+                else:
+                    _tp = _tp_r or 0
+                _sid8 = str(signal_id)[:8]
+                if _asset and _dir and _entry and _sl and _tp:
+                    _cb = f"mt5_trade_{_sid8}|{_asset}|{_dir}|{_entry}|{_sl}|{_tp}"
+                    if len(_cb.encode()) <= 64:
+                        _kb_rows.append([
+                            InlineKeyboardButton("⚡ Trade on MT5", callback_data=_cb)
+                        ])
+        except Exception as _me:
+            logger.debug(f"[send_signal] MT5 button error: {_me}")
+    keyboard = InlineKeyboardMarkup(_kb_rows)
     try:
         msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
         # Persist message location so tiered_executor can live-edit it later
@@ -358,18 +397,19 @@ def _send_signal_with_engagement_sync(
     text: str,
     signal_id: str,
     telegram_user_id: int,
+    signal: dict | None = None,
 ) -> None:
     """Sync wrapper for _send_signal_with_engagement_async."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         run_sync(_send_signal_with_engagement_async(
-            bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id)
+            bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
         return
     try:
         loop.create_task(_send_signal_with_engagement_async(
-            bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id)
+            bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
     except Exception as _e:
         logger.debug(f"[send_signal] Failed to schedule engagement send: {_e}")
@@ -984,6 +1024,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                             text=format_signal(signal, display_tier=display_tier),
                             signal_id=str(signal.get('signal_id', '')),
                             telegram_user_id=int(user_id),
+                            signal=signal,
                         )
                         if tier == 'free' and extra_left > 0:
                             try:
@@ -1590,6 +1631,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
     application.add_handler(CommandHandler("correct_signal", _audit_handler("correct_signal", correct_signal)))
     application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
+    from .commands import version_command
+    application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
 
     # MT5 commands (Premium+)
     from .commands import (
@@ -1686,9 +1729,23 @@ def run_bot() -> None:
                     parse_mode="Markdown"
                 )
                 return
+            # Use user's configured lot size (/setlot) or default 0.01
+            _exec_vol = 0.01
+            try:
+                from db.session import get_session as _gs_mt5
+                from db.models import User as _UserMT5
+                from sqlalchemy import select as _sel_mt5
+                async with _gs_mt5() as _sm5:
+                    _ur = (await _sm5.execute(
+                        _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
+                    )).scalar_one_or_none()
+                    if _ur and getattr(_ur, 'fixed_lot_size', None):
+                        _exec_vol = float(_ur.fixed_lot_size)
+            except Exception:
+                pass
             result = await execute_trade(
                 account_id=account_id, symbol=asset, direction=direction,
-                volume=0.01, stop_loss=sl, take_profit=tp, signal_entry=entry
+                volume=_exec_vol, stop_loss=sl, take_profit=tp, signal_entry=entry
             )
             if result.get("ok"):
                 oid = result.get("order_id", "")

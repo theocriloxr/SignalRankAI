@@ -130,13 +130,30 @@ async def get_or_create_signal(
     stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
 
     take_profit: Any = signal.get("take_profit") or signal.get("targets") or []
-    # Normalize take_profit to a list if not already a list/tuple/str
+    # Normalize take_profit to a JSON-encoded list string for consistent DB storage
+    import json as _tp_json
     if isinstance(take_profit, str):
-        tp_str: str = take_profit
+        # If already a string, normalize to proper JSON (handles Python repr like "['1.2']")
+        try:
+            _tp_parsed = _tp_json.loads(take_profit)
+            tp_str: str = _tp_json.dumps(_tp_parsed if isinstance(_tp_parsed, list) else [float(_tp_parsed)])
+        except Exception:
+            try:
+                _tp_clean = take_profit.strip("[]").replace("'", "").replace('"', "")
+                _tp_parts = [float(p.strip()) for p in _tp_clean.split(',') if p.strip()]
+                tp_str = _tp_json.dumps(_tp_parts)
+            except Exception:
+                tp_str = take_profit  # last resort
     elif isinstance(take_profit, (list, tuple)):
-        tp_str = str([str(x) for x in list(take_profit or [])])
+        try:
+            tp_str = _tp_json.dumps([float(x) for x in take_profit])
+        except Exception:
+            tp_str = _tp_json.dumps([str(x) for x in take_profit])
     else:
-        tp_str = str([str(take_profit)])
+        try:
+            tp_str = _tp_json.dumps([float(take_profit)])
+        except Exception:
+            tp_str = _tp_json.dumps([str(take_profit)])
 
     rr_estimate = None
     try:

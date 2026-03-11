@@ -552,6 +552,57 @@ def _format_price(price, asset: str = "") -> str:
 		logging.debug(f"[formatter] Failed to format price {price}: {e}")
 		return str(price)
 
+def _parse_tp_list(tp_raw) -> list:
+	"""Parse take_profit into a list of floats.
+
+	Handles all storage formats:
+	  - float/int           → [float_val]
+	  - list of float/str   → [float, ...]
+	  - JSON string         → parsed list
+	  - Python repr string  → parsed list  (e.g. "['112.94']")
+	  - plain float string  → [float_val]
+	"""
+	import json as _j
+	if tp_raw is None:
+		return []
+	if isinstance(tp_raw, (int, float)):
+		try:
+			return [float(tp_raw)]
+		except Exception:
+			return []
+	if isinstance(tp_raw, list):
+		result = []
+		for item in tp_raw:
+			try:
+				result.append(float(item))
+			except (TypeError, ValueError):
+				pass
+		return result
+	# String forms
+	s = str(tp_raw).strip()
+	if not s or s in ('N/A', 'None', 'nan', ''):
+		return []
+	# Try proper JSON first
+	try:
+		data = _j.loads(s)
+		if isinstance(data, list):
+			return [float(x) for x in data if x is not None]
+		return [float(data)]
+	except Exception:
+		pass
+	# Python repr like "['112.94']" or "['112.94', '115.0']"
+	try:
+		s_clean = s.strip('[]').replace("'", '').replace('"', '')
+		parts = [p.strip() for p in s_clean.split(',') if p.strip()]
+		return [float(p) for p in parts]
+	except Exception:
+		pass
+	# Plain float string
+	try:
+		return [float(s)]
+	except Exception:
+		return []
+
 def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:
 	"""Format signal for FREE tier with locked fields."""
 	asset = signal.get('asset', 'UNKNOWN')
@@ -667,11 +718,21 @@ Entry: {_format_price(entry, asset)}"""
 		msg += f"""
 Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 	
+	_prem_tp = _parse_tp_list(take_profit)
 	msg += f"""
 
-🛡️ Stop Loss: {_format_price(stop_loss, asset)}
-🎯 Take Profit: {_format_price(take_profit, asset)}"""
-	
+🛡️ Stop Loss: {_format_price(stop_loss, asset)}"""
+	if len(_prem_tp) >= 2:
+		msg += f"""
+🎯 TP1: {_format_price(_prem_tp[0], asset)}
+🎯 TP2: {_format_price(_prem_tp[1], asset)}"""
+	elif len(_prem_tp) == 1:
+		msg += f"""
+🎯 Take Profit: {_format_price(_prem_tp[0], asset)}"""
+	else:
+		msg += """
+🎯 Take Profit: N/A"""
+
 	# Add profit/loss expectations
 	if expected_profit is not None:
 		msg += f"""
@@ -720,15 +781,10 @@ def format_signal_vip_new(signal: dict) -> str:
 	entry = signal.get('entry', 'N/A')
 	stop_loss = signal.get('stop_loss', 'N/A')
 	
-	# Multiple TPs
-	tp_levels = signal.get('tp_levels', [])
-	if not tp_levels:
-		take_profit = signal.get('take_profit', 'N/A')
-		if isinstance(take_profit, list):
-			tp_levels = take_profit
-		else:
-			tp_levels = [take_profit]
-	
+	# Multiple TPs — parse robustly from tp_levels or take_profit (handles DB string, list, float)
+	_tp_raw = signal.get('tp_levels') or signal.get('take_profit')
+	tp_levels = _parse_tp_list(_tp_raw)
+
 	rr_ratio = signal.get('rr_ratio', 0) or signal.get('rr_estimate', 0)
 	confidence = int(signal.get('score', 0))
 	ml_probability = signal.get('ml_probability', 0)
@@ -772,15 +828,24 @@ def format_signal_vip_new(signal: dict) -> str:
 	
 	# Score explanation
 	score_explanation = _get_score_explanation(signal)
-	
+
+	# Entry zone: only show low–high range if they differ meaningfully (>0.01%)
+	try:
+		_ez_lo_f, _ez_hi_f = float(entry_zone_low), float(entry_zone_high)
+		_entry_zone_str = (
+			f"Entry Zone: {_format_price(_ez_lo_f, asset)} – {_format_price(_ez_hi_f, asset)}\n"
+			if abs(_ez_hi_f - _ez_lo_f) > abs(_ez_lo_f) * 0.0001 else ""
+		)
+	except Exception:
+		_entry_zone_str = ""
+
 	msg = f"""📊 Signal Alert 👑
 
 Asset: {asset}
 Direction: {direction} {direction_emoji}
 Timeframe: {timeframe}
-Entry Zone: {_format_price(entry_zone_low, asset)} – {_format_price(entry_zone_high, asset)}
-Entry: {_format_price(entry, asset)}"""
-	
+{_entry_zone_str}Entry: {_format_price(entry, asset)}"""
+
 	# Add age indicator if available
 	if age_indicator:
 		msg = f"""📊 Signal Alert 👑
@@ -789,8 +854,7 @@ Entry: {_format_price(entry, asset)}"""
 Asset: {asset}
 Direction: {direction} {direction_emoji}
 Timeframe: {timeframe}
-Entry Zone: {_format_price(entry_zone_low, asset)} – {_format_price(entry_zone_high, asset)}
-Entry: {_format_price(entry, asset)}"""
+{_entry_zone_str}Entry: {_format_price(entry, asset)}"""
 	
 	# Add price context if available
 	if price_context:
