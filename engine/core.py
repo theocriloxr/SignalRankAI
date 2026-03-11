@@ -410,20 +410,28 @@ def main_loop(DRY_RUN: bool = False):
 
     cycle_no = 0
 
+    # Round-robin queue — covers every open asset exactly once per round
+    # before any asset is repeated.  Persists across cycles; new assets
+    # discovered mid-run are appended to the current round's tail.
+    from engine.cycle_queue import AssetCycleQueue
+    _cycle_queue = AssetCycleQueue()
+
     # Keep the main loop simple and robust
     while True:
         cycle_no += 1
         cycle_sleep_seconds = 10
 
-        # Acquire assets list
-        assets = load_tradable_assets()
-        if not assets:
-            try:
-                assets = list(get_all_trending_pairs() or []) + list(get_trending_stock_tickers() or [])
-            except Exception:
-                assets = []
-
-        assets = _dedupe_preserve_order(assets)
+        # Acquire assets list — ALWAYS merge manually-configured (saved) assets
+        # with discovered trending pairs so nothing the user pinned is missed.
+        _saved_assets = [
+            x.strip() for x in (os.getenv("TRADABLE_ASSETS") or "").split(",") if x.strip()
+        ]
+        _discovered_assets: List[str] = []
+        try:
+            _discovered_assets = list(get_all_trending_pairs() or [])
+        except Exception:
+            pass
+        assets = _dedupe_preserve_order(_saved_assets + _discovered_assets)
         if not assets:
             logger.info(f"[engine] cycle={cycle_no} skipped=no_assets")
             time.sleep(max(5, cycle_sleep_seconds))
@@ -456,55 +464,46 @@ def main_loop(DRY_RUN: bool = False):
         if not stocks_enabled:
             stock_assets = []
 
-        # Bound crypto/fx/stocks per cycle using rotation
-        crypto_max_pairs = _env_int("CRYPTO_MAX_PAIRS_PER_CYCLE", 20)
-        crypto_pair_rotation = _env_bool("CRYPTO_PAIR_ROTATION", True)
-        if crypto_max_pairs > 0 and len(crypto_assets) > crypto_max_pairs:
-            start = (cycle_no - 1) * crypto_max_pairs
-            crypto_assets = _rotate_slice(crypto_assets, start, crypto_max_pairs) if crypto_pair_rotation else crypto_assets[:crypto_max_pairs]
+        # ── Round-robin queue: cover every open asset once per round ──────────
+        # Interleave asset classes so each batch has natural diversity
+        # (e.g. batch of 10 gets ~3 crypto, 2 FX, 3 stocks, 2 commodities).
+        _all_open: list[str] = []
+        _cat_iters = [
+            iter(c)
+            for c in [crypto_assets, fx_assets, stock_assets, commodity_assets]
+            if c
+        ]
+        while _cat_iters:
+            _next_iters = []
+            for _it in _cat_iters:
+                try:
+                    _a = next(_it)
+                    if _a not in _all_open:
+                        _all_open.append(_a)
+                    _next_iters.append(_it)
+                except StopIteration:
+                    pass
+            _cat_iters = _next_iters
 
-        fx_max_pairs = _env_int("FX_MAX_PAIRS_PER_CYCLE", 10)
-        fx_pair_rotation = _env_bool("FX_PAIR_ROTATION", True)
-        if fx_max_pairs > 0 and len(fx_assets) > fx_max_pairs:
-            start = (cycle_no - 1) * fx_max_pairs
-            fx_assets = _rotate_slice(fx_assets, start, fx_max_pairs) if fx_pair_rotation else fx_assets[:fx_max_pairs]
+        # Feed the queue; refresh_universe only rebuilds once per hour
+        # (CYCLE_UNIVERSE_REFRESH_INTERVAL env var) unless this is wakeup #1.
+        _cycle_queue.refresh_universe(_all_open, force=(cycle_no == 1))
 
-        stock_max_pairs = _env_int("STOCK_MAX_PAIRS_PER_CYCLE", 10)
-        stock_pair_rotation = _env_bool("STOCK_PAIR_ROTATION", True)
-        if stock_max_pairs > 0 and len(stock_assets) > stock_max_pairs:
-            start = (cycle_no - 1) * stock_max_pairs
-            stock_assets = _rotate_slice(stock_assets, start, stock_max_pairs) if stock_pair_rotation else stock_assets[:stock_max_pairs]
-
-        # Ensure minimum diversity: at least 1 from each open category
-        def _ensure_minimum(assets_list, category_name, min_count=1):
-            """Log if category has fewer assets than minimum."""
-            if len(assets_list) < min_count and len(assets_list) > 0:
-                logger.info(f"[engine] {category_name} has {len(assets_list)} assets, below minimum {min_count}")
-            return assets_list
-
-        crypto_assets = _ensure_minimum(crypto_assets, "crypto", 1)
-        fx_assets = _ensure_minimum(fx_assets, "fx", 1) if fx_enabled else []
-        stock_assets = _ensure_minimum(stock_assets, "stocks", 1) if stocks_enabled else []
-        commodity_assets = _ensure_minimum(commodity_assets, "commodities", 1)
-
-        # Build cycle_assets ensuring diversity (round-robin from each category)
-        cycle_assets_list = []
-        # Add at least 1 from each category first (if available)
-        for category in [crypto_assets, fx_assets, stock_assets, commodity_assets]:
-            if category and category[0] not in cycle_assets_list:
-                cycle_assets_list.append(category[0])
-        # Then add remaining assets
-        for category in [crypto_assets, fx_assets, stock_assets, commodity_assets]:
-            for a in category:
-                if a not in cycle_assets_list:
-                    cycle_assets_list.append(a)
-        
-        assets = cycle_assets_list
+        # Pop this batch from the queue.
+        CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", 10)
+        assets = _cycle_queue.pop_batch(CYCLE_BATCH_SIZE)
         cycle_assets = len(assets)
 
-        if _env_bool("ENGINE_CYCLE_LOG", True) and _env_bool("ENGINE_ASSET_DEBUG", False):
-            sample = ",".join(assets[:10])
-            logger.info(f"[engine] cycle={cycle_no} assets={cycle_assets} sample={sample}")
+        if not assets:
+            logger.info(f"[engine] cycle={cycle_no} skipped=empty_queue")
+            time.sleep(max(5, cycle_sleep_seconds))
+            continue
+
+        if _env_bool("ENGINE_CYCLE_LOG", True):
+            logger.info(
+                f"[engine] {_cycle_queue.round_progress} "
+                f"batch={cycle_assets} wakeup={cycle_no}"
+            )
 
         # Build timeframes map
         asset_to_tfs: Dict[str, List[str]] = {}
@@ -1176,7 +1175,13 @@ def main_loop(DRY_RUN: bool = False):
             logger.exception("deliver_all failed")
             dispatched = 0
 
-        # flush analytics periodically
+        # Record this batch as processed and update round stats.
+        _cycle_queue.mark_done(assets, signals_generated=len(scored_signals_all))
+        if _env_bool("ENGINE_CYCLE_LOG", True):
+            logger.info(
+                f"[engine] batch_complete {_cycle_queue.round_progress} "
+                f"signals_this_batch={len(scored_signals_all)} dispatched={dispatched}"
+            )
         if cycle_no % 10 == 0:
             try:
                 signal_analytics.flush()
