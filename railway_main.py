@@ -45,11 +45,13 @@ async def _run_startup_ops() -> None:
 
 
 def _build_scheduler() -> AsyncIOScheduler:
-    """Create scheduler and register jobs.
+    """Create the AsyncIOScheduler for web-layer background jobs.
 
-    Reuses existing jobs already defined in web.app and signalrank_telegram.bot.
-    Each job is added in its own try/except so a missing function doesn't abort
-    the entire scheduler.
+    Bot-specific recurring jobs (downgrade_expired, delete_old_signals,
+    free_distribution, resend_unsent) are already owned by run_bot()'s
+    APScheduler BackgroundScheduler — adding them here too would cause
+    duplicate execution.  This scheduler only registers jobs that are
+    unique to the web layer (VIP waitlist TTL management).
     """
     from web.app import (
         _check_waitlist_capacity_job,
@@ -58,7 +60,7 @@ def _build_scheduler() -> AsyncIOScheduler:
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
-    # Web waitlist jobs (currently in web.app lifespan)
+    # VIP waitlist TTL — web layer only, not present in run_bot()
     try:
         scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")
     except Exception as exc:
@@ -68,71 +70,57 @@ def _build_scheduler() -> AsyncIOScheduler:
     except Exception as exc:
         logger.warning(f"[sched] could not add wl_monitor job: {exc}")
 
-    # Bot/ops jobs — import lazily so a bot import error doesn't crash the scheduler
-    try:
-        from signalrank_telegram.bot import (
-            downgrade_expired_subscriptions_job,
-            auto_delete_old_signals_job,
-            distribute_random_signals_to_free_users_job,
-            resend_unsent_signals_job,
-        )
-        scheduler.add_job(downgrade_expired_subscriptions_job, "cron", hour=0, minute=0, id="downgrade_expired")
-        scheduler.add_job(auto_delete_old_signals_job, "cron", day_of_week="sun", hour=3, minute=0, id="delete_old_signals")
-        scheduler.add_job(distribute_random_signals_to_free_users_job, "interval", minutes=30, id="free_random_distribution")
-        scheduler.add_job(resend_unsent_signals_job, "interval", minutes=10, id="resend_unsent")
-    except Exception as exc:
-        logger.warning(f"[sched] could not add bot jobs (bot import may have failed): {exc}")
-
     return scheduler
 
 
 async def _start_telegram_polling() -> "tuple[object, bool]":
-    """Start PTB polling using the existing global Application.
+    """Start the Telegram bot by running run_bot() in a thread executor.
 
-    The repo defines `signalrank_telegram.bot.application` at import time.
-    We start it using the explicit initialize/start/updater.start_polling API.
+    run_bot() builds its own Application with every command handler
+    registered, starts an APScheduler BackgroundScheduler, and calls
+    application.run_polling() which creates its own asyncio event loop.
+    Running it in a thread executor isolates it from uvicorn's loop.
 
-    Returns (application, started_bool).  Never raises — failures are logged
-    as warnings so the web server continues to run even without the bot.
+    The module-level `application` object in bot.py only carries ~16
+    miscellaneous handlers added at import time.  The full handler set
+    (start, help, status, signals …) is only registered inside run_bot().
+    Using run_bot() directly ensures every command works.
+
+    Returns (None, True) on successful dispatch — the thread manages its
+    own lifecycle and will stop cleanly when the process receives SIGTERM.
     """
-    try:
-        from signalrank_telegram import bot as bot_module
-    except Exception as exc:
-        logger.warning(f"[bot] Could not import signalrank_telegram.bot: {exc}; skipping polling")
-        return None, False
-
-    application = getattr(bot_module, "application", None)
-
-    # If the module built a Dummy app (DRY_RUN or missing token), do nothing.
-    if application is None or not hasattr(application, "initialize"):
-        logger.warning("[bot] Telegram application not available (no token or DRY_RUN); skipping polling")
-        return application, False
-
-    # If DRY_RUN, do not start polling
     if _env_bool("DRY_RUN", False):
         logger.warning("[bot] DRY_RUN enabled; skipping polling")
-        return application, False
+        return None, False
+
+    bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not bot_token:
+        logger.warning("[bot] TELEGRAM_BOT_TOKEN not set; skipping polling")
+        return None, False
 
     try:
-        await application.initialize()
-        await application.start()
+        from signalrank_telegram.bot import run_bot
     except Exception as exc:
-        logger.warning(f"[bot] application.initialize/start failed: {exc}; skipping polling")
-        return application, False
+        logger.warning(f"[bot] Could not import run_bot: {exc}; skipping polling")
+        return None, False
 
-    # updater must exist for polling
-    updater = getattr(application, "updater", None)
-    if updater is None:
-        logger.warning("[bot] Telegram Application.updater is None; skipping polling (use run_bot() for webhook mode)")
-        return application, False
+    def _run_bot_safe() -> None:
+        """Wrapper so any immediate exception from run_bot() appears in logs."""
+        try:
+            run_bot()
+        except Exception as exc:
+            logger.error(f"[bot] run_bot() exited with error: {exc}")
 
     try:
-        await updater.start_polling()
-        logger.info("[bot] polling started")
-        return application, True
+        loop = asyncio.get_running_loop()
+        # run_bot() is blocking — it calls application.run_polling() which
+        # creates its own event loop.  run_in_executor keeps uvicorn's loop free.
+        loop.run_in_executor(None, _run_bot_safe)
+        logger.info("[bot] run_bot() dispatched to thread executor — all handlers registered")
+        return None, True
     except Exception as exc:
-        logger.warning(f"[bot] updater.start_polling failed: {exc}; skipping polling")
-        return application, False
+        logger.warning(f"[bot] Failed to dispatch run_bot to executor: {exc}; skipping polling")
+        return None, False
 
 
 async def _stop_telegram_polling(application: object) -> None:

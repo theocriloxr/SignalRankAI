@@ -671,6 +671,7 @@ from .access import resolve_user_tier
 
 
 _audit_logger: logging.Logger = logging.getLogger("audit")
+logger: logging.Logger = logging.getLogger(__name__)
 
 _BOOT_TS: str = datetime.now(timezone.utc).isoformat()
 
@@ -2004,9 +2005,21 @@ from core.performance import strategy_stats
 # /start or welcome message
 
 async def start_command(update, context):
+	# ── Diagnostic entry log — visible in Railway logs ───────────────────────
+	try:
+		logger.info(
+			"[/start] handler invoked user_id=%s username=%s chat_id=%s",
+			getattr(getattr(update, 'effective_user', None), 'id', 'unknown'),
+			getattr(getattr(update, 'effective_user', None), 'username', 'unknown'),
+			getattr(getattr(update, 'effective_chat', None), 'id', 'unknown'),
+		)
+	except Exception:
+		pass
 	if update.effective_user is None or update.message is None:
+		logger.warning("[/start] update missing effective_user or message — ignoring")
 		return
 	user_id = update.effective_user.id
+	logger.info("[/start] processing user_id=%s — checking rate limit", user_id)
 	# Do not block user registration on kill-switch.
 	# Keep only a light rate limit to prevent abuse.
 	try:
@@ -2031,6 +2044,7 @@ async def start_command(update, context):
 	referral_outcome = None
 	# Prefer Postgres for user creation + referral attribution + audit (single session)
 	upgrade_notice = None
+	logger.info("[/start] user_id=%s — opening DB session", user_id)
 	try:
 		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
@@ -2042,6 +2056,7 @@ async def start_command(update, context):
 			from db.pg_features import ensure_alert_prefs
 			from signalrank_telegram.access import resolve_user_tier
 			async with get_session() as session:
+				logger.info("[/start] user_id=%s — DB session open, querying user row", user_id)
 				res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 				existing: User | None = res.scalar_one_or_none()
 				is_new: bool = existing is None
