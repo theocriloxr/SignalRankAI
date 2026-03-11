@@ -341,6 +341,21 @@ async def set_killswitch(
     return {"enabled": ks.enabled, "reason": ks.reason, "updated_at": ks.updated_at}
 
 
+async def _send_telegram_dm(telegram_user_id: int, text: str) -> None:
+    """Fire-and-forget Telegram DM from the web layer (uses Bot API directly)."""
+    try:
+        token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        if not token:
+            return
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": telegram_user_id, "text": text, "parse_mode": "Markdown"},
+            )
+    except Exception as _e:
+        logger.warning(f"[dm] Failed to send DM to {telegram_user_id}: {_e}")
+
+
 @app.post("/webhooks/paystack")
 async def paystack_webhook(
     request: Request,
@@ -350,6 +365,13 @@ async def paystack_webhook(
     verify_paystack_signature(raw, x_paystack_signature)
 
     event = await request.json()
+    event_type = str(event.get("event") or "")
+
+    # ── Payment failure: no reference to confirm — handle directly then ACK ───
+    if event_type == "invoice.payment_failed":
+        await _handle_payment_failed(event)
+        return JSONResponse({"received": True, "event": event_type})
+
     confirmation = await confirm_paystack_event(event)
     if not confirmation.get("ok"):
         raise HTTPException(status_code=400, detail="Payment not verified")
@@ -370,6 +392,10 @@ async def paystack_webhook(
     # ── Referral bonus ────────────────────────────────────────────────────
     if persisted.get("persisted"):
         await _apply_referral_bonus(event)
+
+    # ── Recurring billing: save codes + send renewal DM on auto-charge ───
+    if event_type == "charge.success":
+        await _handle_charge_success_recurring(event, persisted)
 
     return JSONResponse(
         {
@@ -466,6 +492,131 @@ async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
         logger.warning(f"[referral] _apply_referral_bonus failed: {exc}")
 
 
+async def _handle_charge_success_recurring(
+    event: Dict[str, Any],
+    persisted: Dict[str, Any],
+) -> None:
+    """On every charge.success, save subscription/customer codes and send a
+    renewal DM when the charge is an automatic monthly renewal (not first-time)."""
+    if ENGINE is None:
+        return
+    try:
+        data = event.get("data") or {}
+        meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
+        telegram_user_id = int(meta.get("telegram_user_id") or meta.get("user_id") or 0)
+        if not telegram_user_id:
+            return
+
+        subscription_code = str(data.get("subscription_code") or "").strip() or None
+        customer_code = str((data.get("customer") or {}).get("customer_code") or "").strip() or None
+        tier = str(meta.get("tier") or "premium").strip().lower()
+
+        from sqlalchemy import select, update as sa_update
+        from db.models import User
+
+        async with get_session() as session:
+            row = await session.execute(
+                select(User).where(User.telegram_user_id == telegram_user_id)
+            )
+            user = row.scalars().first()
+            if not user:
+                return
+
+            # Renewal = user already had a subscription code on file
+            is_renewal = bool(getattr(user, "paystack_subscription_code", None))
+
+            update_vals: Dict[str, Any] = {"auto_renew": True}
+            if subscription_code:
+                update_vals["paystack_subscription_code"] = subscription_code
+            if customer_code:
+                update_vals["paystack_customer_code"] = customer_code
+            await session.execute(
+                sa_update(User).where(User.id == user.id).values(**update_vals)
+            )
+            await session.commit()
+
+        if is_renewal:
+            await _send_telegram_dm(
+                telegram_user_id,
+                f"\u2705 *Payment Successful!*\n\n"
+                f"Your {tier.upper()} subscription has automatically renewed. "
+                f"You are good for another 30 days. Let's catch these pips! \U0001f680",
+            )
+    except Exception as exc:
+        logger.warning(f"[recurring] _handle_charge_success_recurring failed: {exc}")
+
+
+async def _handle_payment_failed(event: Dict[str, Any]) -> None:
+    """Handle invoice.payment_failed: downgrade to FREE, clear auto_renew, send DM."""
+    if ENGINE is None:
+        return
+    try:
+        data = event.get("data") or {}
+        meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
+        telegram_user_id_raw = meta.get("telegram_user_id") or meta.get("user_id")
+
+        # Fallback: resolve via subscription_code if metadata is missing
+        if not telegram_user_id_raw:
+            sub_code = str(
+                (data.get("subscription") or {}).get("subscription_code")
+                or data.get("subscription_code")
+                or ""
+            ).strip()
+            if sub_code:
+                from sqlalchemy import select
+                from db.models import User
+                async with get_session() as session:
+                    row = await session.execute(
+                        select(User).where(User.paystack_subscription_code == sub_code)
+                    )
+                    found = row.scalars().first()
+                    if found:
+                        telegram_user_id_raw = found.telegram_user_id
+
+        if not telegram_user_id_raw:
+            logger.warning("[payment_failed] Cannot resolve user from event")
+            return
+
+        telegram_user_id = int(telegram_user_id_raw)
+
+        from sqlalchemy import select, update as sa_update
+        from db.models import User
+
+        was_vip = False
+        async with get_session() as session:
+            row = await session.execute(
+                select(User).where(User.telegram_user_id == telegram_user_id)
+            )
+            user = row.scalars().first()
+            if not user:
+                return
+            was_vip = getattr(user, "tier", "free").lower() == "vip"
+            await session.execute(
+                sa_update(User)
+                .where(User.id == user.id)
+                .values(tier="free", auto_renew=False)
+            )
+            await session.commit()
+
+        logger.info(
+            f"[payment_failed] Downgraded user {telegram_user_id} to free "
+            f"(was_vip={was_vip})"
+        )
+
+        upgrade_url = os.getenv(
+            "PAYSTACK_CALLBACK_URL", "https://t.me/SignalRankAIBot"
+        )
+        await _send_telegram_dm(
+            telegram_user_id,
+            f"\u26a0\ufe0f *Payment Failed*\n\n"
+            f"We couldn't process your automatic renewal. "
+            f"Your access has been downgraded to FREE.\n\n"
+            f"[\U0001f4b3 Click here to update your card and restore your access.]({upgrade_url})",
+        )
+    except Exception as exc:
+        logger.warning(f"[payment_failed] _handle_payment_failed failed: {exc}")
+
+
 async def create_paystack_checkout(
     telegram_user_id: int,
     tier: str,
@@ -496,9 +647,13 @@ async def create_paystack_checkout(
     import uuid
 
     reference = f"sr-{tier.lower()}-{telegram_user_id}-{uuid.uuid4().hex[:8]}"
+
+    # Recurring plan code — configure PAYSTACK_PREMIUM_PLAN_CODE / PAYSTACK_VIP_PLAN_CODE
+    # in the environment after creating plans in the Paystack dashboard.
+    plan_code = os.getenv(f"PAYSTACK_{tier.upper()}_PLAN_CODE", "").strip()
+
     payload: Dict[str, Any] = {
         "email": email,
-        "amount": amount_kobo,
         "reference": reference,
         "currency": "NGN",
         "metadata": {
@@ -509,6 +664,12 @@ async def create_paystack_checkout(
         },
         "callback_url": os.getenv("PAYSTACK_CALLBACK_URL", ""),
     }
+    if plan_code:
+        # Recurring: Paystack manages the billing amount from the plan definition
+        payload["plan"] = plan_code
+    else:
+        # One-off: pass explicit amount in kobo
+        payload["amount"] = amount_kobo
     headers = {"Authorization": f"Bearer {secret_key}", "Content-Type": "application/json"}
 
     try:

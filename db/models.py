@@ -45,6 +45,13 @@ class User(Base):
     # Editable via /setrisk. Engine calculates lot from account balance + SL distance.
     max_risk_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
+    # ── Paystack recurring subscription tracking ────────────────────────────────
+    # Set when Paystack creates a recurring subscription (charge.success event).
+    paystack_subscription_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    paystack_customer_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    # False after /cancel or invoice.payment_failed — prevents re-renewal messaging
+    auto_renew: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")  # type: ignore[name-defined]
 
 

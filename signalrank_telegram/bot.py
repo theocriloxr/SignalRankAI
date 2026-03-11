@@ -1596,6 +1596,7 @@ def run_bot() -> None:
         mt5_link_command, mt5_status_command,
         setlot_command, setrisk_command, tiers_command,
         mystats_command, referral_command, build_connect_broker_conversation,
+        cancel_command,
     )
     application.add_handler(CommandHandler("mt5_link", _audit_handler("mt5_link", mt5_link_command)))
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
@@ -1604,6 +1605,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("tiers", _audit_handler("tiers", tiers_command)))
     application.add_handler(CommandHandler("mystats", _audit_handler("mystats", mystats_command)))
     application.add_handler(CommandHandler("referral", _audit_handler("referral", referral_command)))
+    application.add_handler(CommandHandler("cancel", _audit_handler("cancel", cancel_command)))
     application.add_handler(build_connect_broker_conversation())
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)

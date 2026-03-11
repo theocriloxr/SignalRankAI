@@ -274,6 +274,10 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP"))
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0"))
                 await session.execute(text("CREATE INDEX IF NOT EXISTS ix_users_referred_by ON users(referred_by)"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_users_paystack_subscription_code ON users(paystack_subscription_code)"))
 
                 # signals: auto-expiry + order-block enrichment
                 await session.execute(text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))

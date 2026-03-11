@@ -3360,3 +3360,97 @@ def build_connect_broker_conversation():
 		fallbacks=[_CH("cancel", connect_broker_cancel)],
 		conversation_timeout=300,
 	)
+
+
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Cancel active paid subscription and disable Paystack auto-renewal.
+
+	- Calls Paystack /subscription/disable to stop gateway-level billing.
+	- Sets user.auto_renew = False in DB (access remains until period ends).
+	Safe to call on FREE tier (shows informational message).
+	"""
+	user_id = update.effective_user.id if update.effective_user else None
+	if not user_id:
+		return
+
+	try:
+		from db.session import get_session
+		from db.models import User
+		from sqlalchemy import select, update as sa_update
+
+		async with get_session() as session:
+			row = await session.execute(
+				select(User).where(User.telegram_user_id == int(user_id))
+			)
+			user = row.scalars().first()
+
+			if not user:
+				await update.message.reply_text("\u26a0\ufe0f No account found. Use /start to register.")
+				return
+
+			current_tier = getattr(user, "tier", "free").lower()
+			if current_tier == "free":
+				await update.message.reply_text(
+					"\u2139\ufe0f You don't have an active paid subscription to cancel."
+				)
+				return
+
+			sub_code = getattr(user, "paystack_subscription_code", None)
+
+			# Disable Paystack recurring billing at the gateway (2-step: fetch token then disable)
+			gateway_cancelled = False
+			if sub_code:
+				try:
+					import httpx as _httpx, os as _os
+					secret = _os.getenv("PAYSTACK_SECRET_KEY", "").strip()
+					if secret:
+						headers = {
+							"Authorization": f"Bearer {secret}",
+							"Content-Type": "application/json",
+						}
+						async with _httpx.AsyncClient(timeout=15) as client:
+							# Step 1: fetch subscription to get email_token
+							r1 = await client.get(
+								f"https://api.paystack.co/subscription/{sub_code}",
+								headers=headers,
+							)
+							email_token = ""
+							if r1.status_code < 400:
+								email_token = (r1.json().get("data") or {}).get("email_token", "")
+							# Step 2: disable with code + email_token
+							r2 = await client.post(
+								"https://api.paystack.co/subscription/disable",
+								json={"code": sub_code, "token": email_token},
+								headers=headers,
+							)
+							gateway_cancelled = r2.status_code < 400
+			except Exception as _ge:
+				# Non-fatal — DB cancellation still proceeds
+				logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
+
+			# Mark auto_renew = False; access expires naturally at period end
+			await session.execute(
+				sa_update(User)
+				.where(User.id == user.id)
+				.values(auto_renew=False)
+			)
+			await session.commit()
+
+		msg = (
+			f"\u2705 *Subscription Cancellation Confirmed*\n\n"
+			f"Your {current_tier.upper()} subscription has been cancelled.\n"
+			f"Auto-renewal is now *OFF* \u2014 you keep access until your current period ends.\n\n"
+			+ (
+				"\u2705 Gateway billing stopped (Paystack)."
+				if gateway_cancelled
+				else "\u26a0\ufe0f Please also cancel in your Paystack dashboard if billed directly."
+			)
+			+ "\n\nYou can re-subscribe anytime with /upgrade. \U0001f64f"
+		)
+		await update.message.reply_text(msg, parse_mode="Markdown")
+
+	except Exception as e:
+		logger.error(f"[cancel] cancel_command failed for user {user_id}: {e}")
+		await update.message.reply_text(
+			"\u274c Could not process cancellation. Please contact /support."
+		)
