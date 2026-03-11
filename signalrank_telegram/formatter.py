@@ -574,10 +574,16 @@ def _parse_tp_list(tp_raw) -> list:
 		result = []
 		for item in tp_raw:
 			try:
-				result.append(float(item))
+				if isinstance(item, dict):
+					# StrategySignal format: {'price': X, 'pct': Y, 'exit_percent': Z}
+					price_val = item.get('price') or item.get('tp') or item.get('target')
+					if price_val is not None:
+						result.append(float(price_val))
+				else:
+					result.append(float(item))
 			except (TypeError, ValueError):
 				pass
-		return result
+		return [x for x in result if x > 0]
 	# String forms
 	s = str(tp_raw).strip()
 	if not s or s in ('N/A', 'None', 'nan', ''):
@@ -635,7 +641,7 @@ Timeframe: {timeframe}
 Entry: {_format_price(entry, asset)}
 Confidence: {confidence}/100"""
 	
-	msg += """
+	msg += f"""
 
 🔒 Stop Loss: Upgrade to Premium
 🔒 Take Profit: Upgrade to Premium

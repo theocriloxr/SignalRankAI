@@ -146,7 +146,16 @@ async def get_or_create_signal(
                 tp_str = take_profit  # last resort
     elif isinstance(take_profit, (list, tuple)):
         try:
-            tp_str = _tp_json.dumps([float(x) for x in take_profit])
+            prices = []
+            for x in take_profit:
+                if isinstance(x, dict):
+                    # StrategySignal format: {'price': X, 'pct': Y, 'exit_percent': Z}
+                    p = x.get('price') or x.get('tp') or x.get('target')
+                    if p is not None:
+                        prices.append(float(p))
+                else:
+                    prices.append(float(x))
+            tp_str = _tp_json.dumps([p for p in prices if p > 0])
         except Exception:
             tp_str = _tp_json.dumps([str(x) for x in take_profit])
     else:

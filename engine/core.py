@@ -867,6 +867,21 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as e:
                                 logger.debug(f"[engine] Failed to compute take profit level: {e}")
                                 pass
+                        # Normalize take_profit: list-of-dicts (StrategySignal) → list of price floats
+                        if isinstance(tp, (list, tuple)):
+                            _tp_normalized = []
+                            for _tp_item in tp:
+                                try:
+                                    if isinstance(_tp_item, dict):
+                                        _p = _tp_item.get('price') or _tp_item.get('tp') or _tp_item.get('target')
+                                        if _p is not None:
+                                            _tp_normalized.append(float(_p))
+                                    else:
+                                        _tp_normalized.append(float(_tp_item))
+                                except (TypeError, ValueError):
+                                    pass
+                            if _tp_normalized:
+                                tp = [p for p in _tp_normalized if p > 0]
                         sig['stop_loss'] = sl
                         sig['take_profit'] = tp
 
