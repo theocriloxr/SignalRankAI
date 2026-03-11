@@ -1419,10 +1419,16 @@ def run_bot() -> None:
             ("history", "Trade history"),
             ("risk", "Risk settings"),
             ("alerts", "Alerts"),
+            ("tiers", "Tier comparison"),
+            ("mystats", "My P&L stats"),
+            ("referral", "Referral link"),
+            ("setlot", "Set lot size"),
+            ("connect_broker", "Connect MT5 broker"),
             ("mt5_link", "Link MT5 account"),
             ("mt5_status", "MT5 account status"),
         ]
         _vip_cmds = _premium_cmds + [
+            ("setrisk", "Set risk %"),
             ("elite", "Elite signals"),
             ("early", "Early access"),
             ("report", "Full report"),
@@ -1514,9 +1520,61 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
 
     # MT5 commands (Premium+)
-    from .commands import mt5_link_command, mt5_status_command
+    from .commands import (
+        mt5_link_command, mt5_status_command,
+        setlot_command, setrisk_command, tiers_command,
+        mystats_command, referral_command, build_connect_broker_conversation,
+    )
     application.add_handler(CommandHandler("mt5_link", _audit_handler("mt5_link", mt5_link_command)))
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
+    application.add_handler(CommandHandler("setlot", _audit_handler("setlot", setlot_command)))
+    application.add_handler(CommandHandler("setrisk", _audit_handler("setrisk", setrisk_command)))
+    application.add_handler(CommandHandler("tiers", _audit_handler("tiers", tiers_command)))
+    application.add_handler(CommandHandler("mystats", _audit_handler("mystats", mystats_command)))
+    application.add_handler(CommandHandler("referral", _audit_handler("referral", referral_command)))
+    application.add_handler(build_connect_broker_conversation())
+
+    # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
+    from telegram.ext import CallbackQueryHandler as _CQH
+    async def _signal_reaction_callback(update, context):
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id if update.effective_user else None
+        if user_id is None:
+            return
+        try:
+            # Callback data: signal_reaction_<signal_id>|<reaction>
+            data = (query.data or "").replace("signal_reaction_", "", 1)
+            signal_id_str, reaction = data.split("|", 1)
+            signal_id = int(signal_id_str)
+        except Exception:
+            return
+        try:
+            from db.session import get_session as _gs
+            from db.models import SignalEngagement
+            from sqlalchemy import select
+            async with _gs() as session:
+                existing = (await session.execute(
+                    select(SignalEngagement).where(
+                        SignalEngagement.user_id == user_id,
+                        SignalEngagement.signal_id == signal_id,
+                    )
+                )).scalar_one_or_none()
+                if existing:
+                    existing.reaction = reaction
+                else:
+                    session.add(SignalEngagement(
+                        user_id=user_id,
+                        signal_id=signal_id,
+                        reaction=reaction,
+                    ))
+                await session.commit()
+            emoji = "🔥" if reaction == "taking_it" else "👀"
+            await query.answer(f"{emoji} Noted!", show_alert=False)
+        except Exception as exc:
+            logger.debug(f"[engagement] reaction save failed: {exc}")
+
+    application.add_handler(_CQH(_signal_reaction_callback, pattern=r"^signal_reaction_"))
 
     # ⚡ One-click MT5 execution via inline keyboard
     # Callback data format: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
@@ -2275,6 +2333,153 @@ def run_bot() -> None:
         except Exception as e:
             logger.debug(f"[vip_scarcity] job failed: {e}")
 
+    # ── FOMO engine ─────────────────────────────────────────────────────────
+    def fomo_engine_job():
+        """Broadcast today's VIP highlights to FREE users at 5PM UTC."""
+        try:
+            if state.get_killswitch_sync().enabled:
+                return
+        except Exception:
+            pass
+        try:
+            from db.session import get_session as _gs
+            from db.models import MT5Execution
+            from sqlalchemy import select, func
+            from datetime import datetime, timedelta
+
+            async def _fetch_vip_pnl():
+                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                async with _gs() as session:
+                    rows = await session.execute(
+                        select(
+                            func.count().label("trades"),
+                            func.sum(MT5Execution.realized_pnl).label("total_pnl"),
+                        ).where(
+                            MT5Execution.executed_at >= today_start,
+                            MT5Execution.tier_at_execution == "VIP",
+                            MT5Execution.realized_pnl.isnot(None),
+                        )
+                    )
+                    row = rows.one_or_none()
+                    return row
+
+            stats = run_sync(_fetch_vip_pnl())
+            trades = int(getattr(stats, "trades", 0) or 0)
+            total_pnl = float(getattr(stats, "total_pnl", 0.0) or 0.0)
+            if trades == 0:
+                return  # Nothing to FOMO about today
+
+            sign = "+" if total_pnl >= 0 else ""
+            msg = (
+                f"⚡ <b>Today's VIP Execution Recap</b>\n\n"
+                f"📊 VIP members executed <b>{trades}</b> trade(s) today\n"
+                f"💰 Combined P&amp;L: <b>{sign}${total_pnl:.2f}</b>\n\n"
+                f"🎯 Upgrade to VIP for unlimited automated executions.\n"
+                f"👉 /tiers to compare plans • /upgrade to subscribe"
+            )
+            from db.pg_compat import get_all_user_ids_compat
+            from signalrank_telegram.access import resolve_user_tier
+            for _uid in (get_all_user_ids_compat() or []):
+                try:
+                    _t = (resolve_user_tier(int(_uid)) or "free").lower()
+                    if _t == "free":
+                        _send_message_sync(application.bot, chat_id=int(_uid), text=msg)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug(f"[fomo] job failed: {exc}")
+
+    # ── Friday leaderboard ──────────────────────────────────────────────────
+    def friday_leaderboard_job():
+        """Every Friday at 5PM UTC — broadcast the week's top signals and traders."""
+        try:
+            if state.get_killswitch_sync().enabled:
+                return
+        except Exception:
+            pass
+        try:
+            from db.session import get_session as _gs
+            from db.models import MT5Execution
+            from sqlalchemy import select, func
+            from datetime import datetime, timedelta
+
+            week_start = datetime.utcnow() - timedelta(days=7)
+
+            async def _fetch_leaderboard():
+                async with _gs() as session:
+                    rows = await session.execute(
+                        select(
+                            MT5Execution.user_id,
+                            func.sum(MT5Execution.realized_pnl).label("pnl"),
+                            func.count().label("trades"),
+                        ).where(
+                            MT5Execution.executed_at >= week_start,
+                            MT5Execution.realized_pnl.isnot(None),
+                            MT5Execution.tier_at_execution == "VIP",
+                        ).group_by(
+                            MT5Execution.user_id
+                        ).order_by(
+                            func.sum(MT5Execution.realized_pnl).desc()
+                        ).limit(3)
+                    )
+                    return rows.all()
+
+            top_traders = run_sync(_fetch_leaderboard())
+            if not top_traders:
+                return
+
+            lines = ["🏆 <b>This Week's VIP Leaderboard</b>\n"]
+            medals = ["🥇", "🥈", "🥉"]
+            for i, row in enumerate(top_traders):
+                uid = row.user_id
+                pnl = float(row.pnl or 0)
+                trades = int(row.trades or 0)
+                sign = "+" if pnl >= 0 else ""
+                lines.append(
+                    f"{medals[i]} <b>Trader #{uid}</b>  "
+                    f"{sign}${pnl:.2f}  ({trades} trades)"
+                )
+
+            lines.append(
+                "\n💡 Join VIP for automated execution and leaderboard inclusion.\n"
+                "👉 /upgrade"
+            )
+            msg = "\n".join(lines)
+            from db.pg_compat import get_all_user_ids_compat
+            for _uid in (get_all_user_ids_compat() or []):
+                try:
+                    _send_message_sync(application.bot, chat_id=int(_uid), text=msg)
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug(f"[leaderboard] job failed: {exc}")
+
+    # ── Signal auto-expiry ──────────────────────────────────────────────────
+    def expire_old_signals_job():
+        """Mark signals where expires_at < now as expired=True."""
+        try:
+            from db.session import get_session as _gs
+            from db.models import Signal
+            from sqlalchemy import select, update
+            from datetime import datetime
+
+            async def _expire():
+                now = datetime.utcnow()
+                async with _gs() as session:
+                    await session.execute(
+                        update(Signal)
+                        .where(
+                            Signal.expires_at <= now,
+                            Signal.expired.is_(False),
+                        )
+                        .values(expired=True)
+                    )
+                    await session.commit()
+
+            run_sync(_expire())
+        except Exception as exc:
+            logger.debug(f"[expiry] expire_old_signals_job failed: {exc}")
+
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
@@ -2284,6 +2489,12 @@ def run_bot() -> None:
     scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15)
     # VIP scarcity nudge: every 6 hours, nudge PREMIUM users if VIP seats open
     scheduler.add_job(vip_scarcity_broadcast_job, 'interval', hours=6)
+    # FOMO engine: 5PM UTC daily — show FREE users what VIP earnt today
+    scheduler.add_job(fomo_engine_job, 'cron', hour=17, minute=0)
+    # Friday leaderboard: Fridays at 5PM UTC
+    scheduler.add_job(friday_leaderboard_job, 'cron', day_of_week='fri', hour=17, minute=0)
+    # Signal auto-expiry: mark signals older than 12h as expired
+    scheduler.add_job(expire_old_signals_job, 'interval', minutes=30)
     scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0)
     # Auto-downgrade expired subscriptions (daily at 00:00 UTC)
     scheduler.add_job(

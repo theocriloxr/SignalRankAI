@@ -669,8 +669,38 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	from .command_access import get_help_message
 	lang = _get_user_language(user_id)
 	msg: str = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
+
+	# Append tier-specific command hints
+	tier_upper = tier.strip().upper()
+	if tier_upper == "FREE":
+		msg += (
+			"\n\n💡 *Upgrade to unlock more:*\n"
+			"  /tiers — Compare plans\n"
+			"  /upgrade — Subscribe now\n"
+			"  /referral — Earn free days"
+		)
+	elif tier_upper == "PREMIUM":
+		msg += (
+			"\n\n⚙️ *Your PREMIUM commands:*\n"
+			"  /setlot — Set lot size for MT5 auto-exec\n"
+			"  /connect_broker — Link your MT5 account\n"
+			"  /mt5_status — Check linked account\n"
+			"  /mystats — Personal P&L stats\n"
+			"  /referral — Earn +7 days per referral"
+		)
+	elif tier_upper in ("VIP", "OWNER", "ADMIN"):
+		msg += (
+			"\n\n👑 *Your VIP commands:*\n"
+			"  /setrisk — Set risk % per trade\n"
+			"  /setlot — Override lot size\n"
+			"  /connect_broker — Link/update MT5\n"
+			"  /mt5_status — Account details\n"
+			"  /mystats — Personal P&L stats\n"
+			"  /referral — Earn +7 days per referral"
+		)
+
 	# Add dashboard link for eligible users
-	if tier.strip().upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
+	if tier_upper in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		base_url = os.getenv("DASHBOARD_URL")
 		if base_url:
 			sep = "&" if "?" in base_url else "?"
@@ -2860,3 +2890,473 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		await update.message.reply_text(reply, parse_mode="Markdown")
 	except Exception as exc:
 		await update.message.reply_text(f"Error fetching MT5 status: {exc}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /setlot  — PREMIUM: set fixed lot size
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Set the fixed lot size used for PREMIUM automated executions.
+
+	Usage: /setlot <0.001–1.0>
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 /setlot is available on <b>PREMIUM</b> and above.\n"
+			"Use /upgrade to subscribe.",
+			parse_mode="HTML",
+		)
+		return
+
+	args = context.args or []
+	if not args:
+		await update.message.reply_text(
+			"Usage: <code>/setlot 0.01</code>\n"
+			"Valid range: 0.001 – 1.0 lots",
+			parse_mode="HTML",
+		)
+		return
+
+	try:
+		lot = float(args[0])
+	except ValueError:
+		await update.message.reply_text("❌ Invalid lot size. Example: <code>/setlot 0.05</code>", parse_mode="HTML")
+		return
+
+	if not (0.001 <= lot <= 1.0):
+		await update.message.reply_text("❌ Lot size must be between 0.001 and 1.0.", parse_mode="HTML")
+		return
+
+	lot = round(lot, 3)
+
+	try:
+		from db.session import get_session as _gs
+		from db.models import User
+		from sqlalchemy import select
+
+		async with _gs() as session:
+			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
+			if row:
+				row.fixed_lot_size = lot
+				await session.commit()
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not save lot size: {exc}")
+		return
+
+	await update.message.reply_text(
+		f"✅ Fixed lot size set to <b>{lot}</b>.\n"
+		"All future PREMIUM executions will use this lot size.",
+		parse_mode="HTML",
+	)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /setrisk  — VIP: set risk percentage per trade
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Set the risk percentage per trade for VIP automated executions.
+
+	Usage: /setrisk <0.1–5.0>
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	if tier_rank(tier) < tier_rank("VIP"):
+		await update.message.reply_text(
+			"🔒 /setrisk is available on <b>VIP</b> only.\n"
+			"Risk-based lot sizing is an exclusive VIP feature. Use /upgrade.",
+			parse_mode="HTML",
+		)
+		return
+
+	args = context.args or []
+	if not args:
+		await update.message.reply_text(
+			"Usage: <code>/setrisk 1.5</code>\n"
+			"Valid range: 0.1% – 5.0% of account balance per trade.",
+			parse_mode="HTML",
+		)
+		return
+
+	try:
+		pct = float(args[0])
+	except ValueError:
+		await update.message.reply_text("❌ Invalid value. Example: <code>/setrisk 1.5</code>", parse_mode="HTML")
+		return
+
+	if not (0.1 <= pct <= 5.0):
+		await update.message.reply_text("❌ Risk must be between 0.1% and 5.0%.", parse_mode="HTML")
+		return
+
+	pct = round(pct, 2)
+
+	try:
+		from db.session import get_session as _gs
+		from db.models import User
+		from sqlalchemy import select
+
+		async with _gs() as session:
+			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
+			if row:
+				row.max_risk_percentage = pct
+				await session.commit()
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not save risk setting: {exc}")
+		return
+
+	await update.message.reply_text(
+		f"✅ Risk per trade set to <b>{pct}%</b>.\n"
+		"Lot size will be calculated automatically based on your account balance and SL distance.",
+		parse_mode="HTML",
+	)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /tiers  — Subscription comparison table
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Display a tier comparison table and upgrade links."""
+	if update.effective_user is None or update.message is None:
+		return
+
+	premium_price = int(os.getenv("PREMIUM_PRICE_NGN", "15000"))
+	vip_price = int(os.getenv("VIP_PRICE_NGN", "30000"))
+	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
+
+	msg = (
+		"<b>📊 SignalRankAI Subscription Tiers</b>\n\n"
+		"<b>🆓 FREE</b>\n"
+		"  • Delayed signals (top 3/day)\n"
+		"  • Basic win-rate stats\n"
+		"  • Community access\n"
+		"  • No MT5 execution\n\n"
+		f"<b>💎 PREMIUM — ₦{premium_price:,}/month</b>\n"
+		"  • All signals in real time\n"
+		"  • Up to <b>3 automated MT5 executions/day</b>\n"
+		"  • Fixed lot size (set with /setlot)\n"
+		"  • TP2 targeting only\n"
+		"  • Personal win-rate dashboard\n\n"
+		f"<b>👑 VIP — ₦{vip_price:,}/month</b> (only {vip_limit} seats)\n"
+		"  • Everything in PREMIUM, plus:\n"
+		"  • <b>Unlimited</b> automated executions\n"
+		"  • Risk-based lot sizing (/setrisk)\n"
+		"  • Multi-stage TPs: TP1 → SL to entry → TP2 → TP3\n"
+		"  • FOMO broadcast priority\n"
+		"  • Friday leaderboard inclusion\n"
+		"  • Direct support line\n\n"
+		"👉 Use /upgrade to subscribe"
+	)
+	await update.message.reply_text(msg, parse_mode="HTML")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /mystats  — Personal performance stats
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show the user's personal trading statistics."""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	try:
+		from db.session import get_session as _gs
+		from db.models import MT5Execution, User
+		from sqlalchemy import select, func
+
+		async with _gs() as session:
+			# User info
+			user_row = (await session.execute(
+				select(User).where(User.telegram_user_id == user_id)
+			)).scalar_one_or_none()
+
+			# Total executions
+			total_exec = (await session.execute(
+				select(func.count()).where(MT5Execution.user_id == user_id)
+			)).scalar() or 0
+
+			# Win / loss
+			wins = (await session.execute(
+				select(func.count()).where(
+					MT5Execution.user_id == user_id,
+					MT5Execution.status == "tp_hit",
+				)
+			)).scalar() or 0
+
+			losses = (await session.execute(
+				select(func.count()).where(
+					MT5Execution.user_id == user_id,
+					MT5Execution.status == "sl_hit",
+				)
+			)).scalar() or 0
+
+			# Total realized PnL
+			total_pnl = (await session.execute(
+				select(func.sum(MT5Execution.realized_pnl)).where(
+					MT5Execution.user_id == user_id,
+					MT5Execution.realized_pnl.isnot(None),
+				)
+			)).scalar() or 0.0
+
+		win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0.0
+
+		sub_expiry = ""
+		if user_row:
+			from datetime import timezone as _tz
+			from datetime import datetime as _dt
+
+			# Try premium_until / vip_until fields
+			for field in ("vip_until", "premium_until"):
+				expiry = getattr(user_row, field, None)
+				if expiry:
+					if hasattr(expiry, "tzinfo") and expiry.tzinfo is None:
+						expiry = expiry.replace(tzinfo=_tz.utc)
+					sub_expiry = f"\n📅 Subscription expires: <b>{expiry.strftime('%d %b %Y')}</b>"
+					break
+
+		daily_exec = 0
+		if user_row:
+			from engine.tiered_executor import reset_daily_counter_if_needed
+			reset_daily_counter_if_needed(user_row)
+			daily_exec = int(getattr(user_row, "daily_executions_today", 0) or 0)
+
+		msg = (
+			f"<b>📈 My Stats — {tier}</b>\n\n"
+			f"🔢 Total executions: <b>{total_exec}</b>\n"
+			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
+			f"🎯 Win rate: <b>{win_rate:.1f}%</b>\n"
+			f"💰 Total realized P&amp;L: <b>${total_pnl:+.2f}</b>\n"
+		)
+		if tier == "PREMIUM":
+			from engine.tiered_executor import PREMIUM_DAILY_LIMIT
+			remaining = max(0, PREMIUM_DAILY_LIMIT - daily_exec)
+			msg += f"📋 Today's executions: <b>{daily_exec}/{PREMIUM_DAILY_LIMIT}</b> ({remaining} remaining)\n"
+		msg += sub_expiry
+		await update.message.reply_text(msg, parse_mode="HTML")
+
+	except Exception as exc:
+		await update.message.reply_text(f"⚠️ Could not load stats: {exc}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /referral  — Generate referral deep-link
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Generate a personal referral link and show referral stats."""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id: int = update.effective_user.id
+
+	bot_username = ""
+	try:
+		bot_username = (await context.bot.get_me()).username or ""
+	except Exception:
+		bot_username = os.getenv("BOT_USERNAME", "SignalRankBot")
+
+	referral_url = f"https://t.me/{bot_username}?start=ref_{user_id}"
+	bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "7"))
+
+	# Count how many users were referred by this user
+	referred_count = 0
+	bonus_earned_days = 0
+	try:
+		from db.session import get_session as _gs
+		from db.models import User
+		from sqlalchemy import select, func
+
+		async with _gs() as session:
+			referred_count = (await session.execute(
+				select(func.count()).where(User.referred_by == user_id)
+			)).scalar() or 0
+			# Bonus is earned when referred user pays — count paying referrals
+			# (users who are PREMIUM or VIP and were referred by this user)
+			paying = (await session.execute(
+				select(func.count()).where(
+					User.referred_by == user_id,
+					User.tier.in_(["PREMIUM", "VIP"]),
+				)
+			)).scalar() or 0
+			bonus_earned_days = paying * bonus_days
+	except Exception:
+		pass
+
+	msg = (
+		f"🔗 <b>Your Referral Link</b>\n\n"
+		f"<code>{referral_url}</code>\n\n"
+		f"📊 Referrals: <b>{referred_count}</b>\n"
+		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n\n"
+		f"💡 Earn <b>+{bonus_days} free days</b> every time someone you refer upgrades to PREMIUM or VIP.\n"
+		f"Share your link and grow your streak!"
+	)
+	await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /connect_broker  — FSM-guided MT5 account setup
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Conversation states
+_CB_ASK_LOGIN = 0
+_CB_ASK_PASSWORD = 1
+_CB_ASK_SERVER = 2
+_CB_CONFIRM = 3
+
+
+async def connect_broker_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+	"""Entry point for the /connect_broker conversation."""
+	if update.effective_user is None or update.message is None:
+		return -1
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 MT5 broker connection requires <b>PREMIUM</b> or above.\nUse /upgrade.",
+			parse_mode="HTML",
+		)
+		return -1  # ConversationHandler.END
+
+	await update.message.reply_text(
+		"🔗 <b>Connect Your MT5 Broker</b>\n\n"
+		"I'll walk you through linking your MetaTrader 5 account.\n\n"
+		"<b>Step 1/3</b> — Enter your <b>MT5 login number</b> (numeric account ID):\n\n"
+		"Type /cancel at any time to abort.",
+		parse_mode="HTML",
+	)
+	return _CB_ASK_LOGIN
+
+
+async def connect_broker_got_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+	if update.message is None or update.message.text is None:
+		return _CB_ASK_LOGIN
+	login_text = update.message.text.strip()
+	if not login_text.isdigit():
+		await update.message.reply_text("❌ Login must be a numeric account ID. Try again:")
+		return _CB_ASK_LOGIN
+	context.user_data["mt5_login"] = login_text
+	await update.message.reply_text(
+		"<b>Step 2/3</b> — Enter your <b>MT5 password</b>:\n\n"
+		"⚠️ Your password will be <b>encrypted</b> before storage. "
+		"We never store it in plain text.",
+		parse_mode="HTML",
+	)
+	return _CB_ASK_PASSWORD
+
+
+async def connect_broker_got_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+	if update.message is None or update.message.text is None:
+		return _CB_ASK_PASSWORD
+	context.user_data["mt5_password"] = update.message.text.strip()
+	# Delete the password message for security
+	try:
+		await update.message.delete()
+	except Exception:
+		pass
+	await update.message.reply_text(
+		"✅ Password received and will be encrypted.\n\n"
+		"<b>Step 3/3</b> — Enter your <b>MT5 server name</b> (e.g. <code>ICMarkets-Demo</code>):",
+		parse_mode="HTML",
+	)
+	return _CB_ASK_SERVER
+
+
+async def connect_broker_got_server(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+	if update.message is None or update.message.text is None:
+		return _CB_ASK_SERVER
+	server = update.message.text.strip()
+	if not server:
+		await update.message.reply_text("❌ Server name cannot be empty. Try again:")
+		return _CB_ASK_SERVER
+	context.user_data["mt5_server"] = server
+	login = context.user_data.get("mt5_login", "")
+	await update.message.reply_text(
+		f"<b>Confirm your MT5 details:</b>\n\n"
+		f"🔢 Login: <code>{login}</code>\n"
+		f"🏦 Server: <code>{server}</code>\n"
+		f"🔐 Password: <code>{'*' * 8}</code> (hidden)\n\n"
+		"Reply <b>YES</b> to confirm or <b>NO</b> to cancel.",
+		parse_mode="HTML",
+	)
+	return _CB_CONFIRM
+
+
+async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+	if update.message is None or update.effective_user is None:
+		return -1
+	text = (update.message.text or "").strip().upper()
+	if text != "YES":
+		await update.message.reply_text("❌ Setup cancelled. Use /connect_broker to start again.")
+		context.user_data.clear()
+		return -1  # END
+
+	user_id: int = update.effective_user.id
+	login: str = context.user_data.get("mt5_login", "")
+	password: str = context.user_data.get("mt5_password", "")
+	server: str = context.user_data.get("mt5_server", "")
+	context.user_data.clear()
+
+	await update.message.reply_text("⏳ Linking your account via MetaApi… (this may take 30–60 s)")
+
+	try:
+		from services.mt5_client import link_mt5_account
+		result = await link_mt5_account(
+			telegram_user_id=user_id,
+			mt5_login=login,
+			mt5_password=password,
+			server=server,
+		)
+		account_id = result.get("metaapi_account_id") or result.get("id") or "unknown"
+		await update.message.reply_text(
+			f"✅ <b>MT5 account linked!</b>\n\n"
+			f"☁️ MetaApi ID: <code>{account_id}</code>\n\n"
+			"You can now use ⚡ buttons on signals to execute trades instantly.\n"
+			"Use /setlot to configure your lot size.",
+			parse_mode="HTML",
+		)
+	except Exception as exc:
+		await update.message.reply_text(
+			f"❌ <b>Failed to link account:</b> {exc}\n\n"
+			"Check your login/password/server and try /connect_broker again.",
+			parse_mode="HTML",
+		)
+	return -1  # END
+
+
+async def connect_broker_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+	if update.message:
+		await update.message.reply_text("❌ Broker setup cancelled.")
+	if context.user_data:
+		context.user_data.clear()
+	return -1  # END
+
+
+def build_connect_broker_conversation():
+	"""Build and return the ConversationHandler for /connect_broker.
+
+	Register this in bot.py with ``application.add_handler()``.
+	"""
+	from telegram.ext import ConversationHandler, MessageHandler, filters, CommandHandler as _CH
+
+	return ConversationHandler(
+		entry_points=[_CH("connect_broker", connect_broker_start)],
+		states={
+			_CB_ASK_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_got_login)],
+			_CB_ASK_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_got_password)],
+			_CB_ASK_SERVER: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_got_server)],
+			_CB_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, connect_broker_confirm)],
+		},
+		fallbacks=[_CH("cancel", connect_broker_cancel)],
+		conversation_timeout=300,
+	)
