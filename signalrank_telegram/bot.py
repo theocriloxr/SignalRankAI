@@ -200,9 +200,10 @@ from .commands import referral_leaderboard_command, referral_rewards_command
 # Register referral leaderboard and rewards commands
 application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
 application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
-from .commands import admin_top_assets_command, admin_top_strategies_command, admin_user_engagement_command
+from .commands import admin_top_assets_command, admin_top_strategies_command, admin_user_engagement_command, assets_command
 # Register admin analytics commands
 application.add_handler(CommandHandler("admin_top_assets", _audit_handler("admin_top_assets", admin_top_assets_command)))
+application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
 application.add_handler(CommandHandler("admin_top_strategies", _audit_handler("admin_top_strategies", admin_top_strategies_command)))
 application.add_handler(CommandHandler("admin_user_engagement", _audit_handler("admin_user_engagement", admin_user_engagement_command)))
 import os

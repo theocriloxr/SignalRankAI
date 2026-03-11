@@ -69,6 +69,7 @@ COMMAND_TIERS = {
     "selfcheck": "OWNER",
     "provider_status": "OWNER",
     "broadcast": "OWNER",
+    "assets": "OWNER",
 }
 
 # Tier ranking (higher = more access)
@@ -251,6 +252,7 @@ COMMAND_HELP = {
             ("admin_top_strategies", "Top performing strategies"),
             ("admin_user_engagement", "User engagement analytics"),
             ("broadcast", "Broadcast a message to all users"),
+            ("assets", "Manage pinned asset universe (add/remove/list)"),
             ("analyze", "AI analysis for a specific pair"),
             ("support", "Contact support"),
         ],

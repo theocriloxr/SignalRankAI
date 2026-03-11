@@ -422,16 +422,27 @@ def main_loop(DRY_RUN: bool = False):
         cycle_sleep_seconds = 10
 
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets
-        # with discovered trending pairs so nothing the user pinned is missed.
+        # with DB-managed assets and discovered trending pairs so nothing pinned is missed.
         _saved_assets = [
             x.strip() for x in (os.getenv("TRADABLE_ASSETS") or "").split(",") if x.strip()
         ]
+        _managed_assets: List[str] = []
+        try:
+            from db.session import get_session
+            from db.pg_features import get_active_managed_assets
+            from utils.async_runner import run_sync as _run_sync
+            async def _fetch_managed():
+                async with get_session() as _session:
+                    return await get_active_managed_assets(_session)
+            _managed_assets = list(_run_sync(_fetch_managed()) or [])
+        except Exception:
+            pass
         _discovered_assets: List[str] = []
         try:
             _discovered_assets = list(get_all_trending_pairs() or [])
         except Exception:
             pass
-        assets = _dedupe_preserve_order(_saved_assets + _discovered_assets)
+        assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
         if not assets:
             logger.info(f"[engine] cycle={cycle_no} skipped=no_assets")
             time.sleep(max(5, cycle_sleep_seconds))
