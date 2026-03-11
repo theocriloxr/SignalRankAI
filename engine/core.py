@@ -946,6 +946,36 @@ def main_loop(DRY_RUN: bool = False):
             except Exception:
                 get_session = None
 
+            # Pre-filter stale signals ONCE before the per-user loop.
+            # Without this, each stale signal gets logged N times (once per user).
+            _fresh_scored_signals: list = []
+            try:
+                from engine.stale_signal_validator import validate_signal_freshness_sync
+                for _sig in scored_signals_all:
+                    try:
+                        _fresh, _reason, _price = validate_signal_freshness_sync(_sig)
+                        if _fresh:
+                            _fresh_scored_signals.append(_sig)
+                        else:
+                            logger.info(
+                                f"[engine] Stale signal dropped — {_sig.get('asset')} "
+                                f"{_sig.get('timeframe')}: {_reason}"
+                            )
+                            # Mark expired in DB so resend job / next cycle skip it.
+                            try:
+                                _sig_id = _sig.get('signal_id') or _sig.get('id')
+                                if _sig_id and get_session is not None:
+                                    from db.pg_features import expire_signal
+                                    async with get_session() as _es:
+                                        await expire_signal(_es, str(_sig_id))
+                                        await _es.commit()
+                            except Exception as _exp_err:
+                                logger.debug(f"[engine] Could not expire stale signal in DB: {_exp_err}")
+                    except Exception:
+                        _fresh_scored_signals.append(_sig)
+            except Exception:
+                _fresh_scored_signals = list(scored_signals_all)
+
             for user_id in user_ids:
                 try:
                     from signalrank_telegram.access import resolve_user_tier
@@ -976,24 +1006,10 @@ def main_loop(DRY_RUN: bool = False):
                         continue
 
                     user_signals = []
-                    for sig in scored_signals_all:
+                    for sig in _fresh_scored_signals:
                         if signals_sent_today + len(user_signals) >= daily_limit:
                             break
                         
-                        # Validate signal freshness and price before delivery
-                        try:
-                            # Zero-stale-signal gate: check live price drift against entry zone
-                            from engine.stale_signal_validator import validate_signal_freshness_sync
-                            _sval_fresh, _sval_reason, _sval_price = validate_signal_freshness_sync(sig)
-                            if not _sval_fresh:
-                                logger.info(
-                                    f"[engine] Stale signal dropped — {sig.get('asset')} "
-                                    f"{sig.get('timeframe')}: {_sval_reason}"
-                                )
-                                continue
-                        except Exception as _sval_err:
-                            logger.debug(f"[engine] stale_signal_validator unavailable: {_sval_err}")
-
                         try:
                             from engine.price_validator import (
                                 is_signal_fresh, validate_price_drift, 

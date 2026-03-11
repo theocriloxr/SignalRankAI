@@ -1603,3 +1603,17 @@ def get_signal_outcome_status(signal_id: str) -> dict | None:
         return run_sync(_check())
     except Exception:
         return None
+
+
+async def expire_signal(session: AsyncSession, signal_id: str) -> None:
+    """Mark a Signal row as expired so it is excluded from active-signal queries.
+
+    Called when the delivery phase determines a signal's entry price has drifted
+    too far from the live price (stale signal). Prevents the resend job and future
+    delivery cycles from re-attempting to deliver the same stale signal.
+    """
+    await session.execute(
+        update(Signal)
+        .where(Signal.signal_id == str(signal_id))
+        .values(expired=True)
+    )

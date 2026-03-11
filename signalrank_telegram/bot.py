@@ -1895,11 +1895,6 @@ def run_bot() -> None:
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
                             pass
-                    try:
-                        _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
-                    except Exception as e:
-                        logger.warning(f"[outcome] Failed to send outcome message to user {telegram_user_id}: {e}")
-                        pass
 
                 # Mark as notified so this outcome is never sent again.
                 # Once marked, list_unnotified_outcomes() won't return it.
