@@ -1,33 +1,57 @@
 """
-services/mt5_client.py - MetaApi Cloud Bridge for Linux-compatible MT5 integration.
+services/mt5_client.py — Pure aiohttp REST bridge for MetaApi Cloud MT5 integration.
 
-The official MetaTrader5 Python library only works on Windows.
-This module uses the metaapi.cloud async Python SDK as a Linux-compatible bridge.
+Uses the MetaApi cloud REST API v1 over aiohttp — no SDK dependency, fully
+Linux-compatible, works on Railway.
+
+Same public API:
+    execute_trade, validate_slippage, get_live_price,
+    link_mt5_account, get_user_mt5_account_id, update_stop_loss
 
 Environment variables:
-    META_API_TOKEN       - MetaApi cloud token (get from metaapi.cloud dashboard)
-    META_API_DOMAIN      - Optional: override MetaApi domain (default: agiliumtrade.agiliumtrade.ai)
-    SLIPPAGE_TOLERANCE   - Max pips/points allowed between signal price and live price (default: 10)
+    META_API_TOKEN       — MetaApi cloud token (https://metaapi.cloud dashboard)
+    META_API_DOMAIN      — Optional: domain override
+                           (default: agiliumtrade.agiliumtrade.ai)
+    META_API_REGION      — Optional: region prefix
+                           (default: mt-client-api-v1)
+    SLIPPAGE_TOLERANCE   — Max pips/points between signal price and live price
+                           (default: 10)
 """
 from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+
+import aiohttp
 
 logger = logging.getLogger(__name__)
 
-try:
-    from metaapi_cloud_sdk import MetaApi
-    _METAAPI_AVAILABLE = True
-except ImportError:
-    MetaApi = None  # type: ignore
-    _METAAPI_AVAILABLE = False
-    logger.warning(
-        "[mt5_client] metaapi-cloud-sdk not installed. "
-        "MT5 one-click execution will be disabled. "
-        "Install with: pip install metaapi-cloud-sdk"
-    )
+# ---------------------------------------------------------------------------
+# URL helpers
+# ---------------------------------------------------------------------------
+
+def _client_base(account_id: str | None = None) -> str:
+    """Base URL for the MetaApi *client* REST API (prices + trading)."""
+    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
+    region = os.getenv("META_API_REGION", "mt-client-api-v1")
+    root = f"https://{region}.{domain}/users/current/accounts"
+    return f"{root}/{account_id}" if account_id else root
+
+
+def _provisioning_base() -> str:
+    """Base URL for the MetaApi *provisioning* REST API (account management)."""
+    domain = os.getenv("META_API_DOMAIN", "agiliumtrade.agiliumtrade.ai")
+    return f"https://mt-provisioning-api-v1.{domain}/users/current/accounts"
+
+
+def _headers() -> Dict[str, str]:
+    token = (os.getenv("META_API_TOKEN") or "").strip()
+    return {
+        "auth-token": token,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
 
 
 def _slippage_tolerance() -> float:
@@ -37,49 +61,113 @@ def _slippage_tolerance() -> float:
         return 10.0
 
 
-async def _get_account(account_id: str) -> Optional[Any]:
-    """Retrieve a MetaApi account object by ID."""
-    token = (os.getenv("META_API_TOKEN") or "").strip()
-    if not token:
-        logger.error("[mt5_client] META_API_TOKEN not set")
-        return None
-    if not _METAAPI_AVAILABLE:
-        logger.error("[mt5_client] metaapi-cloud-sdk not installed")
+def _check_token() -> bool:
+    if not (os.getenv("META_API_TOKEN") or "").strip():
+        logger.error("[mt5_client] META_API_TOKEN is not set")
+        return False
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Low-level HTTP helpers
+# ---------------------------------------------------------------------------
+
+async def _http_get(url: str, params: Dict | None = None) -> Optional[Dict]:
+    """Authenticated GET → parsed JSON or None."""
+    if not _check_token():
         return None
     try:
-        domain = os.getenv("META_API_DOMAIN")
-        api = MetaApi(token, {"domain": domain} if domain else {})
-        account = await api.metatrader_account_api.get_account(account_id)
-        return account
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers=_headers(),
+                params=params or {},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status in (200, 201):
+                    return await resp.json()
+                body = await resp.text()
+                logger.error("[mt5_client] GET %s → %d  %s", url, resp.status, body[:200])
+                return None
     except Exception as exc:
-        logger.error("[mt5_client] Failed to get account %s: %s", account_id, exc)
+        logger.error("[mt5_client] GET %s failed: %s", url, exc)
         return None
 
+
+async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
+    """Authenticated POST → parsed JSON or None."""
+    if not _check_token():
+        return None
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                headers=_headers(),
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status in (200, 201, 204):
+                    try:
+                        return await resp.json()
+                    except Exception:
+                        return {"status": resp.status}
+                body = await resp.text()
+                logger.error("[mt5_client] POST %s → %d  %s", url, resp.status, body[:200])
+                return None
+    except Exception as exc:
+        logger.error("[mt5_client] POST %s failed: %s", url, exc)
+        return None
+
+
+async def _http_put(url: str, payload: Dict) -> bool:
+    """Authenticated PUT → True on success."""
+    if not _check_token():
+        return False
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                url,
+                headers=_headers(),
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status in (200, 201, 204):
+                    return True
+                body = await resp.text()
+                logger.error("[mt5_client] PUT %s → %d  %s", url, resp.status, body[:200])
+                return False
+    except Exception as exc:
+        logger.error("[mt5_client] PUT %s failed: %s", url, exc)
+        return False
+
+
+async def _deploy_account(account_id: str) -> None:
+    """Ensure the account is deployed (connected to MT5) before trading."""
+    url = f"{_client_base(account_id)}/deploy"
+    try:
+        await _http_post(url, {})
+    except Exception as exc:
+        logger.debug("[mt5_client] deploy_account %s: %s", account_id, exc)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 async def get_live_price(account_id: str, symbol: str) -> Optional[float]:
-    """Fetch the current ask/bid mid price for a symbol from MT5 via MetaApi.
-
-    Returns the mid price (bid+ask)/2 or None on failure.
-    """
-    account = await _get_account(account_id)
-    if account is None:
+    """Return the current mid-price for *symbol* via MetaApi REST."""
+    await _deploy_account(account_id)
+    url = f"{_client_base(account_id)}/symbols/{symbol}/current-price"
+    data = await _http_get(url)
+    if not data:
         return None
     try:
-        # Ensure account is connected
-        if account.state not in ("DEPLOYED", "DEPLOYING"):
-            await account.deploy()
-        connection = account.get_rpc_connection()
-        await connection.connect()
-        await connection.wait_synchronized()
-        price_data = await connection.get_symbol_price(symbol)
-        if price_data:
-            bid = float(price_data.get("bid", 0) or 0)
-            ask = float(price_data.get("ask", 0) or 0)
-            mid = (bid + ask) / 2.0 if bid and ask else (bid or ask)
-            return mid if mid else None
-        return None
+        bid = float(data.get("bid") or 0)
+        ask = float(data.get("ask") or 0)
+        mid = (bid + ask) / 2.0 if bid and ask else (bid or ask)
+        return mid or None
     except Exception as exc:
-        logger.error("[mt5_client] get_live_price error symbol=%s: %s", symbol, exc)
+        logger.error("[mt5_client] get_live_price parse error symbol=%s: %s", symbol, exc)
         return None
 
 
@@ -88,15 +176,14 @@ async def validate_slippage(
     symbol: str,
     signal_price: float,
 ) -> Tuple[bool, float, Optional[float]]:
-    """Check if the live price is within slippage tolerance of the signal entry.
+    """Check whether the live price is within slippage tolerance.
 
     Returns:
-        (within_tolerance: bool, slippage_points: float, live_price: Optional[float])
+        (within_tolerance, slippage_points, live_price)
     """
     live = await get_live_price(account_id, symbol)
     if live is None:
-        # Can't validate — allow with warning
-        logger.warning("[mt5_client] validate_slippage: could not fetch live price for %s", symbol)
+        logger.warning("[mt5_client] validate_slippage: no live price for %s — allowing", symbol)
         return True, 0.0, None
     slippage = abs(live - signal_price)
     within = slippage <= _slippage_tolerance()
@@ -113,20 +200,21 @@ async def execute_trade(
     signal_entry: float,
     comment: str = "SignalRankAI",
 ) -> Dict[str, Any]:
-    """Place a market order via MetaApi.
+    """Place a market order via MetaApi REST.
 
     Args:
-        account_id: MetaApi account ID.
-        symbol:     MT5 symbol (e.g. "BTCUSD", "EURUSD").
-        direction:  "long" or "short".
-        volume:     Lot size.
-        stop_loss:  Stop-loss price.
-        take_profit: Take-profit price.
-        signal_entry: Original signal entry price (used for slippage check).
-        comment:    Order comment tag.
+        account_id:   MetaApi account ID.
+        symbol:       MT5 symbol (e.g. ``"BTCUSD"``, ``"EURUSD"``).
+        direction:    ``"long"`` or ``"short"``.
+        volume:       Lot size.
+        stop_loss:    Stop-loss price.
+        take_profit:  Take-profit price.
+        signal_entry: Original signal entry price (slippage reference).
+        comment:      Order comment tag (MT5 max 31 chars).
 
     Returns:
-        Dict with keys: success, order_id, live_price, slippage, error.
+        ``dict`` with keys: ``success``, ``order_id``, ``live_price``,
+        ``slippage``, ``error``.
     """
     result: Dict[str, Any] = {
         "success": False,
@@ -136,83 +224,68 @@ async def execute_trade(
         "error": None,
     }
 
-    # 1. Validate slippage
+    # 1. Slippage guard
     ok, slippage, live_price = await validate_slippage(account_id, symbol, signal_entry)
     result["live_price"] = live_price
     result["slippage"] = slippage
 
     if not ok:
         result["error"] = (
-            f"Slippage too high: {slippage:.4f} points "
+            f"Slippage too high: {slippage:.4f} pts "
             f"(tolerance: {_slippage_tolerance():.0f})"
         )
         logger.warning(
-            "[mt5_client] execute_trade rejected: slippage=%.4f > tolerance=%.0f "
-            "symbol=%s signal_entry=%.5f live=%.5f",
+            "[mt5_client] execute_trade rejected — slippage=%.4f > tol=%.0f  "
+            "symbol=%s entry=%.5f live=%.5f",
             slippage, _slippage_tolerance(), symbol, signal_entry, live_price or 0,
         )
         return result
 
-    # 2. Place order
-    account = await _get_account(account_id)
-    if account is None:
-        result["error"] = "Could not retrieve MetaApi account"
+    # 2. Submit market order via REST
+    await _deploy_account(account_id)
+    url = f"{_client_base(account_id)}/trade"
+    action = "ORDER_TYPE_BUY" if str(direction).lower() == "long" else "ORDER_TYPE_SELL"
+    payload = {
+        "actionType": action,
+        "symbol": symbol,
+        "volume": volume,
+        "stopLoss": stop_loss,
+        "takeProfit": take_profit,
+        "comment": comment[:31],
+    }
+    data = await _http_post(url, payload)
+    if data is None:
+        result["error"] = "MetaApi trade request failed (see logs)"
         return result
 
-    try:
-        if account.state not in ("DEPLOYED", "DEPLOYING"):
-            await account.deploy()
-        connection = account.get_rpc_connection()
-        await connection.connect()
-        await connection.wait_synchronized()
-
-        action = "ORDER_TYPE_BUY" if str(direction).lower() == "long" else "ORDER_TYPE_SELL"
-        order_result = await connection.create_market_order(
-            symbol=symbol,
-            action_type=action,
-            volume=volume,
-            stop_loss=stop_loss,
-            take_profit=take_profit,
-            options={"comment": comment[:31]},  # MT5 comment max 31 chars
-        )
-        result["success"] = True
-        result["order_id"] = order_result.get("orderId") or order_result.get("order_id")
-        logger.info(
-            "[mt5_client] Order placed: symbol=%s dir=%s vol=%.2f order_id=%s",
-            symbol, direction, volume, result["order_id"],
-        )
-    except Exception as exc:
-        result["error"] = str(exc)
-        logger.error("[mt5_client] execute_trade failed symbol=%s: %s", symbol, exc)
-
+    result["success"] = True
+    result["order_id"] = (
+        data.get("orderId") or data.get("order_id") or data.get("positionId")
+    )
+    logger.info(
+        "[mt5_client] Order placed: symbol=%s dir=%s vol=%.2f order_id=%s",
+        symbol, direction, volume, result["order_id"],
+    )
     return result
 
 
 async def update_stop_loss(
     account_id: str,
-    order_id: str,
+    position_id: str,
     new_sl: float,
 ) -> bool:
-    """Modify an open position's stop-loss (e.g. move to break-even after TP1)."""
-    account = await _get_account(account_id)
-    if account is None:
-        return False
-    try:
-        if account.state not in ("DEPLOYED", "DEPLOYING"):
-            await account.deploy()
-        connection = account.get_rpc_connection()
-        await connection.connect()
-        await connection.wait_synchronized()
-        await connection.modify_position(order_id, stop_loss=new_sl)
-        logger.info("[mt5_client] SL updated: order_id=%s new_sl=%.5f", order_id, new_sl)
-        return True
-    except Exception as exc:
-        logger.error("[mt5_client] update_stop_loss failed order_id=%s: %s", order_id, exc)
-        return False
+    """Move stop-loss on an open position (e.g. break-even after TP1)."""
+    url = f"{_client_base(account_id)}/positions/{position_id}"
+    ok = await _http_put(url, {"stopLoss": new_sl})
+    if ok:
+        logger.info("[mt5_client] SL updated  position_id=%s  new_sl=%.5f", position_id, new_sl)
+    else:
+        logger.error("[mt5_client] update_stop_loss failed  position_id=%s", position_id)
+    return ok
 
 
 # ---------------------------------------------------------------------------
-# Credential management helpers (used by /mt5_link command)
+# Credential management (used by /mt5_link command)
 # ---------------------------------------------------------------------------
 
 async def link_mt5_account(
@@ -221,9 +294,9 @@ async def link_mt5_account(
     mt5_password: str,
     mt5_server: str,
 ) -> Dict[str, Any]:
-    """Provision a MetaApi account for the user and save encrypted credentials to DB.
+    """Provision a MetaApi account for *telegram_user_id* and persist credentials.
 
-    Returns dict with: success, metaapi_account_id, error.
+    Returns ``dict`` with keys: ``success``, ``metaapi_account_id``, ``error``.
     """
     from services.security import encrypt_secret, is_encryption_available
     from db.session import get_session
@@ -242,31 +315,35 @@ async def link_mt5_account(
 
     metaapi_account_id: Optional[str] = None
 
-    # Optionally provision on MetaApi cloud
-    if _METAAPI_AVAILABLE:
-        token = (os.getenv("META_API_TOKEN") or "").strip()
-        if token:
-            try:
-                domain = os.getenv("META_API_DOMAIN")
-                api = MetaApi(token, {"domain": domain} if domain else {})
-                account = await api.metatrader_account_api.create_account({
-                    "name": f"SignalRankAI-{telegram_user_id}",
-                    "type": "cloud",
-                    "login": mt5_login,
-                    "password": mt5_password,
-                    "server": mt5_server,
-                    "platform": "mt5",
-                    "magic": 12345,
-                })
-                metaapi_account_id = account.id
+    # --- Provision on MetaApi cloud ----------------------------------------
+    if _check_token():
+        try:
+            url = _provisioning_base()
+            payload = {
+                "name": f"SignalRankAI-{telegram_user_id}",
+                "type": "cloud",
+                "login": mt5_login,
+                "password": mt5_password,
+                "server": mt5_server,
+                "platform": "mt5",
+                "magic": 12345,
+            }
+            data = await _http_post(url, payload)
+            if data and data.get("id"):
+                metaapi_account_id = data["id"]
                 logger.info(
-                    "[mt5_client] MetaApi account provisioned: user=%d account_id=%s",
+                    "[mt5_client] MetaApi account provisioned: user=%d  account_id=%s",
                     telegram_user_id, metaapi_account_id,
                 )
-            except Exception as exc:
-                logger.warning("[mt5_client] MetaApi provisioning failed (will save creds only): %s", exc)
+            else:
+                logger.warning(
+                    "[mt5_client] MetaApi provisioning returned no account ID "
+                    "— credentials will be saved locally only"
+                )
+        except Exception as exc:
+            logger.warning("[mt5_client] MetaApi provisioning failed: %s", exc)
 
-    # Persist to Postgres
+    # --- Persist to Postgres -------------------------------------------------
     try:
         async with get_session() as session:
             user = await get_or_create_user(session, telegram_user_id=telegram_user_id)
@@ -274,14 +351,18 @@ async def link_mt5_account(
             await session.execute(
                 text(
                     """
-                    INSERT INTO mt5_credentials (user_id, mt5_login, password_encrypted, server, metaapi_account_id, created_at, updated_at)
+                    INSERT INTO mt5_credentials
+                        (user_id, mt5_login, password_encrypted, server,
+                         metaapi_account_id, created_at, updated_at)
                     VALUES (:uid, :login, :pw_enc, :server, :ma_id, NOW(), NOW())
                     ON CONFLICT (user_id) DO UPDATE
-                        SET mt5_login = EXCLUDED.mt5_login,
-                            password_encrypted = EXCLUDED.password_encrypted,
-                            server = EXCLUDED.server,
-                            metaapi_account_id = COALESCE(EXCLUDED.metaapi_account_id, mt5_credentials.metaapi_account_id),
-                            updated_at = NOW()
+                        SET mt5_login            = EXCLUDED.mt5_login,
+                            password_encrypted   = EXCLUDED.password_encrypted,
+                            server               = EXCLUDED.server,
+                            metaapi_account_id   = COALESCE(
+                                                       EXCLUDED.metaapi_account_id,
+                                                       mt5_credentials.metaapi_account_id),
+                            updated_at           = NOW()
                     """
                 ),
                 {
@@ -297,13 +378,16 @@ async def link_mt5_account(
             result["metaapi_account_id"] = metaapi_account_id
     except Exception as exc:
         result["error"] = f"DB save failed: {exc}"
-        logger.error("[mt5_client] Failed to save credentials for user %d: %s", telegram_user_id, exc)
+        logger.error(
+            "[mt5_client] Failed to save credentials for user %d: %s",
+            telegram_user_id, exc,
+        )
 
     return result
 
 
 async def get_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
-    """Return the stored MetaApi account ID for a Telegram user, or None."""
+    """Return the stored MetaApi account ID for a Telegram user, or ``None``."""
     try:
         from db.session import get_session
         from sqlalchemy import text
@@ -312,9 +396,9 @@ async def get_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
                 text(
                     """
                     SELECT c.metaapi_account_id
-                    FROM mt5_credentials c
-                    JOIN users u ON u.id = c.user_id
-                    WHERE u.telegram_user_id = :tid
+                    FROM   mt5_credentials c
+                    JOIN   users u ON u.id = c.user_id
+                    WHERE  u.telegram_user_id = :tid
                     """
                 ),
                 {"tid": telegram_user_id},

@@ -330,7 +330,7 @@ async def _send_signal_with_engagement_async(
         InlineKeyboardButton("🔥 Taking it", callback_data=f"signal_reaction_{signal_id}|taking_it"),
         InlineKeyboardButton("👀 Watching",  callback_data=f"signal_reaction_{signal_id}|watching"),
     ]]
-    # Row 2: ⚡ Trade on MT5 button (PREMIUM+ only, when signal data is available)
+    # Row 2: ⚡ Take Trade button (PREMIUM+ only, when signal data is available)
     if signal:
         try:
             from signalrank_telegram.access import resolve_user_tier
@@ -362,7 +362,7 @@ async def _send_signal_with_engagement_async(
                     _cb = f"mt5_trade_{_sid8}|{_asset}|{_dir}|{_entry}|{_sl}|{_tp}"
                     if len(_cb.encode()) <= 64:
                         _kb_rows.append([
-                            InlineKeyboardButton("⚡ Trade on MT5", callback_data=_cb)
+                            InlineKeyboardButton("⚡ Take Trade", callback_data=_cb)
                         ])
         except Exception as _me:
             logger.debug(f"[send_signal] MT5 button error: {_me}")
@@ -2718,7 +2718,83 @@ def run_bot() -> None:
         except Exception as exc:
             logger.debug(f"[expiry] expire_old_signals_job failed: {exc}")
 
+    # ── ML market analysis scan ────────────────────────────────────────────
+    def ml_market_analysis_job():
+        """Every 15 min: run the ML filter over recent unscored signals.
+
+        This makes ML activity visible in APScheduler logs.  Live market
+        features are taken from the signal rows already stored by the engine
+        loop (which populates indicators, ATR, regime, etc. before persisting).
+        """
+        try:
+            if state.get_killswitch_sync().enabled:
+                return
+        except Exception:
+            pass
+
+        logger.info("🤖 [ML] Market analysis scan starting …")
+
+        try:
+            from ml.inference import MLFilter
+            from ml.features import extract_features
+        except ImportError:
+            logger.warning("[ML] ml.inference not available — analysis scan skipped")
+            return
+
+        try:
+            ml_filter = MLFilter()
+            if not getattr(ml_filter, "active", False):
+                logger.info("[ML] Model not loaded — scan skipped (train first)")
+                return
+
+            threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.65"))
+
+            async def _scan():
+                from db.session import get_session
+                from db.models import Signal
+                from sqlalchemy import select
+                from datetime import datetime, timedelta
+
+                cutoff = datetime.utcnow() - timedelta(hours=4)
+                async with get_session() as session:
+                    rows = await session.execute(
+                        select(Signal).where(
+                            Signal.created_at >= cutoff,
+                            Signal.ml_probability.is_(None),
+                            Signal.expired.is_(False),
+                        ).limit(50)
+                    )
+                    signals = rows.scalars().all()
+
+                approved = rejected = errors = 0
+                for sig_row in signals:
+                    try:
+                        sig_dict = {
+                            col.name: getattr(sig_row, col.name)
+                            for col in sig_row.__table__.columns
+                        }
+                        features = extract_features(sig_dict, {})
+                        ok, prob = ml_filter.ml_filter(features, threshold=threshold)
+                        if ok:
+                            approved += 1
+                        else:
+                            rejected += 1
+                    except Exception as fe:
+                        errors += 1
+                        logger.debug("[ML] feature error: %s", fe)
+                return len(signals), approved, rejected, errors
+
+            total, approved, rejected, errors = run_sync(_scan())
+            logger.info(
+                "🤖 [ML] Scan done — signals=%d  approved=%d  rejected=%d  "
+                "errors=%d  threshold=%.2f",
+                total, approved, rejected, errors, threshold,
+            )
+        except Exception as exc:
+            logger.error("[ML] ml_market_analysis_job failed: %s", exc, exc_info=True)
+
     scheduler = BackgroundScheduler()
+    scheduler.add_job(ml_market_analysis_job, 'interval', minutes=15, id='ml_market_analysis')
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
     scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)  # Only sends unnotified outcomes (sends once per outcome)
