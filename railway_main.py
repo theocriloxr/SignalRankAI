@@ -48,29 +48,40 @@ def _build_scheduler() -> AsyncIOScheduler:
     """Create scheduler and register jobs.
 
     Reuses existing jobs already defined in web.app and signalrank_telegram.bot.
+    Each job is added in its own try/except so a missing function doesn't abort
+    the entire scheduler.
     """
     from web.app import (
         _check_waitlist_capacity_job,
         _monitor_expired_invites_job,
     )
-    from signalrank_telegram.bot import (
-        downgrade_expired_subscriptions_job,
-        auto_delete_old_signals_job,
-        distribute_random_signals_to_free_users_job,
-        resend_unsent_signals_job,
-    )
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     # Web waitlist jobs (currently in web.app lifespan)
-    scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")
-    scheduler.add_job(_monitor_expired_invites_job, "interval", minutes=15, id="wl_monitor")
+    try:
+        scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")
+    except Exception as exc:
+        logger.warning(f"[sched] could not add wl_capacity job: {exc}")
+    try:
+        scheduler.add_job(_monitor_expired_invites_job, "interval", minutes=15, id="wl_monitor")
+    except Exception as exc:
+        logger.warning(f"[sched] could not add wl_monitor job: {exc}")
 
-    # Bot/ops jobs
-    scheduler.add_job(downgrade_expired_subscriptions_job, "cron", hour=0, minute=0, id="downgrade_expired")
-    scheduler.add_job(auto_delete_old_signals_job, "cron", day_of_week="sun", hour=3, minute=0, id="delete_old_signals")
-    scheduler.add_job(distribute_random_signals_to_free_users_job, "interval", minutes=30, id="free_random_distribution")
-    scheduler.add_job(resend_unsent_signals_job, "interval", minutes=10, id="resend_unsent")
+    # Bot/ops jobs — import lazily so a bot import error doesn't crash the scheduler
+    try:
+        from signalrank_telegram.bot import (
+            downgrade_expired_subscriptions_job,
+            auto_delete_old_signals_job,
+            distribute_random_signals_to_free_users_job,
+            resend_unsent_signals_job,
+        )
+        scheduler.add_job(downgrade_expired_subscriptions_job, "cron", hour=0, minute=0, id="downgrade_expired")
+        scheduler.add_job(auto_delete_old_signals_job, "cron", day_of_week="sun", hour=3, minute=0, id="delete_old_signals")
+        scheduler.add_job(distribute_random_signals_to_free_users_job, "interval", minutes=30, id="free_random_distribution")
+        scheduler.add_job(resend_unsent_signals_job, "interval", minutes=10, id="resend_unsent")
+    except Exception as exc:
+        logger.warning(f"[sched] could not add bot jobs (bot import may have failed): {exc}")
 
     return scheduler
 
@@ -81,15 +92,20 @@ async def _start_telegram_polling() -> "tuple[object, bool]":
     The repo defines `signalrank_telegram.bot.application` at import time.
     We start it using the explicit initialize/start/updater.start_polling API.
 
-    Returns (application, started_bool).
+    Returns (application, started_bool).  Never raises — failures are logged
+    as warnings so the web server continues to run even without the bot.
     """
-    from signalrank_telegram import bot as bot_module
+    try:
+        from signalrank_telegram import bot as bot_module
+    except Exception as exc:
+        logger.warning(f"[bot] Could not import signalrank_telegram.bot: {exc}; skipping polling")
+        return None, False
 
     application = getattr(bot_module, "application", None)
 
     # If the module built a Dummy app (DRY_RUN or missing token), do nothing.
     if application is None or not hasattr(application, "initialize"):
-        logger.warning("[bot] Telegram application not available; skipping polling")
+        logger.warning("[bot] Telegram application not available (no token or DRY_RUN); skipping polling")
         return application, False
 
     # If DRY_RUN, do not start polling
@@ -97,18 +113,26 @@ async def _start_telegram_polling() -> "tuple[object, bool]":
         logger.warning("[bot] DRY_RUN enabled; skipping polling")
         return application, False
 
-    # Start polling
-    await application.initialize()
-    await application.start()
+    try:
+        await application.initialize()
+        await application.start()
+    except Exception as exc:
+        logger.warning(f"[bot] application.initialize/start failed: {exc}; skipping polling")
+        return application, False
 
     # updater must exist for polling
     updater = getattr(application, "updater", None)
     if updater is None:
-        raise RuntimeError("Telegram Application.updater is None; cannot start polling")
+        logger.warning("[bot] Telegram Application.updater is None; skipping polling (use run_bot() for webhook mode)")
+        return application, False
 
-    await updater.start_polling()
-    logger.info("[bot] polling started")
-    return application, True
+    try:
+        await updater.start_polling()
+        logger.info("[bot] polling started")
+        return application, True
+    except Exception as exc:
+        logger.warning(f"[bot] updater.start_polling failed: {exc}; skipping polling")
+        return application, False
 
 
 async def _stop_telegram_polling(application: object) -> None:
@@ -140,37 +164,64 @@ def _start_engine_loop_in_background() -> asyncio.Task:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # 1) DB auto-migration / startup ops FIRST
-    await _run_startup_ops()
+    # ── 1) DB auto-migration / startup ops ────────────────────────────────────
+    # Must succeed — if DB is truly unreachable after retries, let it propagate
+    # so Railway shows a clear failure reason rather than a silent crash loop.
+    try:
+        await _run_startup_ops()
+    except Exception as exc:
+        logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
 
-    # 2) Start engine loop (keeps running)
-    engine_task = _start_engine_loop_in_background()
+    # ── 2) Engine loop (long-running background task) ─────────────────────────
+    engine_task = None
+    try:
+        engine_task = _start_engine_loop_in_background()
+        logger.info("[startup] Engine loop task created")
+    except Exception as exc:
+        logger.warning(f"[startup] Could not start engine loop: {exc}")
 
-    # 3) Start APScheduler jobs
-    scheduler = _build_scheduler()
-    scheduler.start()
-    logger.info("[sched] started")
+    # ── 3) APScheduler jobs ───────────────────────────────────────────────────
+    scheduler = None
+    try:
+        scheduler = _build_scheduler()
+        scheduler.start()
+        logger.info("[sched] started")
+    except Exception as exc:
+        logger.warning(f"[startup] Scheduler failed to start: {exc}")
+        scheduler = None
 
-    # 4) Start Telegram polling
-    application, bot_started = await _start_telegram_polling()
+    # ── 4) Telegram polling ───────────────────────────────────────────────────
+    application, bot_started = None, False
+    try:
+        application, bot_started = await _start_telegram_polling()
+    except Exception as exc:
+        logger.warning(f"[startup] Telegram polling setup error (caught at lifespan level): {exc}")
+
+    logger.info(
+        f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
+        f"scheduler={'ok' if scheduler else 'skipped'} "
+        f"bot={'polling' if bot_started else 'skipped'}"
+    )
 
     try:
         yield
     finally:
-        # 5) Shutdown order: bot -> scheduler -> engine task
-        try:
-            if bot_started:
+        # ── Shutdown order: bot → scheduler → engine task ─────────────────────
+        if bot_started and application is not None:
+            try:
                 await _stop_telegram_polling(application)
                 logger.info("[bot] stopped")
-        finally:
+            except Exception as exc:
+                logger.warning(f"[shutdown] bot stop error: {exc}")
+
+        if scheduler is not None:
             try:
                 scheduler.shutdown(wait=False)
                 logger.info("[sched] shutdown")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(f"[shutdown] scheduler shutdown error: {exc}")
 
-            # Cancel engine task; engine loop is blocking and may not honor cancellation.
-            # Railway sends SIGTERM and Uvicorn will exit; this is best-effort.
+        if engine_task is not None:
             try:
                 engine_task.cancel()
             except Exception:
