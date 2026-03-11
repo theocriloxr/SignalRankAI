@@ -28,6 +28,7 @@ from db.models import (
     User,
     StrategyStat,  # <-- Added import for StrategyStat
     Subscription,  # <-- Added import for Subscription
+    ManagedAsset,
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
 
@@ -1643,3 +1644,72 @@ async def expire_signal(session: AsyncSession, signal_id: str) -> None:
         .where(Signal.signal_id == str(signal_id))
         .values(expired=True)
     )
+
+
+# ---------------------------------------------------------------------------
+# Managed-asset helpers
+# ---------------------------------------------------------------------------
+
+async def get_active_managed_assets(session: AsyncSession) -> list[str]:
+    """Return symbols for all active managed assets (admin-pinned)."""
+    res = await session.execute(
+        select(ManagedAsset.symbol)
+        .where(ManagedAsset.is_active.is_(True))
+        .order_by(ManagedAsset.symbol)
+    )
+    return [row[0] for row in res.fetchall()]
+
+
+async def add_managed_asset(
+    session: AsyncSession,
+    symbol: str,
+    asset_type: str = "crypto",
+    added_by: int | None = None,
+    note: str | None = None,
+) -> ManagedAsset:
+    """Pin an asset. Re-activates it if it was previously soft-deleted."""
+    from datetime import datetime
+    symbol = symbol.upper().strip()
+    res = await session.execute(
+        select(ManagedAsset).where(ManagedAsset.symbol == symbol)
+    )
+    existing = res.scalar_one_or_none()
+    if existing:
+        existing.is_active = True
+        existing.asset_type = asset_type
+        existing.added_by = added_by
+        existing.note = note
+        existing.updated_at = datetime.utcnow()
+        return existing
+    asset = ManagedAsset(
+        symbol=symbol,
+        asset_type=asset_type,
+        is_active=True,
+        added_by=added_by,
+        note=note,
+    )
+    session.add(asset)
+    return asset
+
+
+async def remove_managed_asset(session: AsyncSession, symbol: str) -> bool:
+    """Soft-delete a pinned asset. Returns True if it existed."""
+    from datetime import datetime
+    symbol = symbol.upper().strip()
+    res = await session.execute(
+        select(ManagedAsset).where(ManagedAsset.symbol == symbol)
+    )
+    existing = res.scalar_one_or_none()
+    if not existing:
+        return False
+    existing.is_active = False
+    existing.updated_at = datetime.utcnow()
+    return True
+
+
+async def list_all_managed_assets(session: AsyncSession) -> list[ManagedAsset]:
+    """Return all managed-asset rows (active and inactive) for admin display."""
+    res = await session.execute(
+        select(ManagedAsset).order_by(ManagedAsset.symbol)
+    )
+    return list(res.scalars().all())

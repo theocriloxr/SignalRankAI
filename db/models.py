@@ -496,6 +496,30 @@ class VIPWaitlist(Base):
 
 
 # ---------------------------------------------------------------------------
+# Managed assets (admin-pinned asset list, merged with auto-discovered pairs)
+# ---------------------------------------------------------------------------
+class ManagedAsset(Base):
+    """Admin-pinned assets that the engine ALWAYS includes in its universe.
+
+    Assets can be added/removed via /assets add|remove <SYMBOL> and are merged
+    with auto-discovered trending pairs on every engine cycle.
+
+    ``is_active=True``  → include in engine universe
+    ``is_active=False`` → soft-delete (pinned assets an admin has removed)
+    """
+    __tablename__ = "managed_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    asset_type: Mapped[str] = mapped_column(String(16), nullable=False, default="crypto")  # crypto/fx/stock/commodity
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # telegram_user_id of admin
+    note: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
 # MT5 / MetaApi credential storage (password encrypted with Fernet)
 # ---------------------------------------------------------------------------
 class MT5Credentials(Base):

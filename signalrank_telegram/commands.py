@@ -133,40 +133,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	
 	await update.message.reply_text(msg)
 
-from sqlalchemy import Result
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from telegram._user import User
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-from typing import Tuple
-
-from sqlalchemy import Result
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-from typing import Tuple
-
-from sqlalchemy import Result
-from typing import Tuple
-
-from sqlalchemy import Result
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
-
-from sqlalchemy.ext.asyncio.session import AsyncSession
 import os
 import sys
 
@@ -389,6 +355,83 @@ def _is_admin(user_id) -> bool:
 		return tier in ("ADMIN", "OWNER")
 	except Exception:
 		return False
+
+
+# --------- ADMIN /assets COMMAND ---------
+async def assets_command(update, context) -> None:
+	"""Admin: manage the pinned asset universe.
+
+	Usage:
+	  /assets list            – show all managed assets
+	  /assets add BTCUSDT     – pin an asset
+	  /assets remove BTCUSDT  – unpin an asset
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		return  # silent for non-admins
+
+	from db.session import get_session
+	from db.pg_features import (
+		get_active_managed_assets,
+		add_managed_asset,
+		remove_managed_asset,
+		list_all_managed_assets,
+	)
+	from data.fetcher import get_asset_type
+
+	args = context.args or []
+	subcmd = args[0].lower() if args else "list"
+
+	if subcmd == "list":
+		async with get_session() as session:
+			rows = await list_all_managed_assets(session)
+		if not rows:
+			await update.message.reply_text("No managed assets yet.\nUse /assets add <SYMBOL> to pin one.")
+			return
+		lines: list[str] = []
+		for r in rows:
+			status = "✅" if r.is_active else "❌"
+			lines.append(f"{status} `{r.symbol}` ({r.asset_type})")
+		await update.message.reply_text(
+			f"*Managed Assets ({len(rows)}):*\n" + "\n".join(lines),
+			parse_mode="Markdown",
+		)
+		return
+
+	if subcmd == "add":
+		if len(args) < 2:
+			await update.message.reply_text("Usage: /assets add <SYMBOL>")
+			return
+		symbol = args[1].upper().strip()
+		atype = get_asset_type(symbol)
+		async with get_session() as session:
+			await add_managed_asset(
+				session, symbol=symbol, asset_type=atype,
+				added_by=update.effective_user.id,
+			)
+			await session.commit()
+		await update.message.reply_text(f"✅ `{symbol}` pinned ({atype}).", parse_mode="Markdown")
+		return
+
+	if subcmd == "remove":
+		if len(args) < 2:
+			await update.message.reply_text("Usage: /assets remove <SYMBOL>")
+			return
+		symbol = args[1].upper().strip()
+		async with get_session() as session:
+			found = await remove_managed_asset(session, symbol=symbol)
+			await session.commit()
+		if found:
+			await update.message.reply_text(f"❌ `{symbol}` unpinned.", parse_mode="Markdown")
+		else:
+			await update.message.reply_text(f"`{symbol}` was not in the managed list.", parse_mode="Markdown")
+		return
+
+	await update.message.reply_text(
+		"Usage:\n/assets list\n/assets add <SYMBOL>\n/assets remove <SYMBOL>"
+	)
+
 
 async def admin_top_assets_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:

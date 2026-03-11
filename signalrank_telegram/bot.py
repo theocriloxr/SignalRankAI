@@ -309,8 +309,8 @@ def _log_once(key: str, message: str) -> None:
 
 
 
-async def _send_message_async(bot: Bot, chat_id: int, text: str) -> None:
-    await bot.send_message(chat_id=chat_id, text=text)
+async def _send_message_async(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
+    await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
 
 
 async def _send_signal_with_engagement_async(
@@ -419,7 +419,7 @@ def _send_signal_with_engagement_sync(
         logger.debug(f"[send_signal] Failed to schedule engagement send: {_e}")
 
 
-def _send_message_sync(bot: Bot, chat_id: int, text: str) -> None:
+def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
     """Send a Telegram message from sync code.
 
     python-telegram-bot v20+ uses async methods. The engine and APScheduler jobs
@@ -429,11 +429,11 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        run_sync(_send_message_async(bot, int(chat_id), str(text)))
+        run_sync(_send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode))
         return
     # If we're already in an event loop, schedule it.
     try:
-        loop.create_task(_send_message_async(bot, int(chat_id), str(text)))
+        loop.create_task(_send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode))
     except Exception as e:
         logger.debug(f"[send_message] Failed to create async task for message: {e}")
         pass
@@ -1519,8 +1519,7 @@ def run_bot() -> None:
 
     async def _post_init(app):
         # BotFather-visible commands must remain concise.
-        _global_cmds = [
-            ("start", "Start"),
+        _global_cmds = [            ("start", "Start"),
             ("pricing", "Pricing"),
             ("upgrade", "Upgrade / subscribe"),
             ("help", "Commands"),
@@ -1587,7 +1586,25 @@ def run_bot() -> None:
             logger.warning(f"[bot] Failed to set bot commands: {e}")
             pass
 
+        # Start the real-time outcome tracker (polls open signals every 15s for TP/SL hits)
+        try:
+            from engine.realtime_outcome_tracker import outcome_tracker
+            await outcome_tracker.start()
+            logger.info("[bot] RealtimeOutcomeTracker started")
+        except Exception as _e:
+            logger.warning(f"[bot] RealtimeOutcomeTracker failed to start: {_e}")
+
+    async def _post_stop(app):
+        """Gracefully stop background tasks when the bot shuts down."""
+        try:
+            from engine.realtime_outcome_tracker import outcome_tracker
+            await outcome_tracker.stop()
+            logger.info("[bot] RealtimeOutcomeTracker stopped")
+        except Exception as _e:
+            logger.debug(f"[bot] RealtimeOutcomeTracker stop error: {_e}")
+
     application.post_init = _post_init
+    application.post_stop = _post_stop
 
     application.add_handler(CommandHandler("start", _audit_handler("start", start_command)))
     application.add_handler(CommandHandler("status", _audit_handler("status", status_command)))

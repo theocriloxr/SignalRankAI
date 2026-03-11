@@ -483,6 +483,14 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
 
     # FX schedule
     if is_fx(asset):
+        # Check for major holidays first (Christmas / New Year)
+        try:
+            from data.market_hours import is_fx_holiday
+            fx_holiday = is_fx_holiday(now)
+            if fx_holiday:
+                return fx_holiday
+        except Exception:
+            pass
         # Friday after 22:00 UTC closed
         if wd == 4 and hr >= 22:
             return "FX closed Friday after 22:00 UTC"
