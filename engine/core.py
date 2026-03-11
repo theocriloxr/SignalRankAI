@@ -169,13 +169,8 @@ logger = logging.getLogger(__name__)
 # Background outage alert job
 def start_outage_alert_job():
     def _job():
+        import requests as _requests
         bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
-        bot = None
-        try:
-            from telegram import Bot
-            bot = Bot(token=bot_token) if bot_token else None
-        except Exception:
-            bot = None
         while True:
             try:
                 unhealthy = []
@@ -184,18 +179,23 @@ def start_outage_alert_job():
                     unhealthy = get_unhealthy_providers()
                 except Exception:
                     unhealthy = []
-                if unhealthy and bot is not None:
+                if unhealthy and bot_token:
                     for name, mins in unhealthy:
                         msg = f"🚨 Provider outage: {name} has been down for {mins:.1f} minutes."
                         for admin_id in (OWNER_IDS or []):
                             try:
-                                _send_message_sync(bot, admin_id, msg)
+                                _requests.post(
+                                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                                    json={"chat_id": admin_id, "text": msg},
+                                    timeout=10,
+                                )
                             except Exception:
                                 logger.exception("Failed to send outage message")
                 time.sleep(120)
             except Exception:
                 logger.exception("outage alert job failed")
                 time.sleep(120)
+
     t = threading.Thread(target=_job, daemon=True)
     t.start()
 

@@ -1552,3 +1552,54 @@ async def get_strategy_performance(session: AsyncSession, strategy_name: str) ->
             'wins': 0,
             'losses': 0
         }
+
+
+async def list_active_signals(
+    session: AsyncSession,
+    *,
+    max_age_days: int = 3,
+    limit: int = 100,
+) -> list[Signal]:
+    """Return recent non-expired, non-archived signals within max_age_days."""
+    now: datetime = _utcnow()
+    start: datetime = now - timedelta(days=max(1, int(max_age_days)))
+    q: Select[Tuple[Signal]] = (
+        select(Signal)
+        .where(
+            Signal.created_at >= start,
+            Signal.archived.is_(False),
+            Signal.expired.is_(False),
+        )
+        .order_by(Signal.created_at.desc())
+        .limit(max(1, int(limit)))
+    )
+    res: Result[Tuple[Signal]] = await session.execute(q)
+    return list(res.scalars().all())
+
+
+def get_signal_outcome_status(signal_id: str) -> dict | None:
+    """Sync helper: return outcome status dict for a signal, or None if no outcome exists.
+
+    Returns ``{"reached": bool, "status": str}`` when an Outcome row is found.
+    Called from sync delivery threads so it runs the async query in a fresh loop.
+    """
+    try:
+        from utils.async_runner import run_sync
+        from db.session import get_session
+
+        async def _check() -> dict | None:
+            async with get_session() as s:
+                res = await s.execute(
+                    select(Outcome)
+                    .where(Outcome.signal_id == str(signal_id))
+                    .limit(1)
+                )
+                oc: Outcome | None = res.scalar_one_or_none()
+                if oc is None:
+                    return None
+                terminal = {"tp", "tp1", "tp2", "tp3", "sl", "invalid"}
+                return {"reached": oc.status in terminal, "status": oc.status}
+
+        return run_sync(_check())
+    except Exception:
+        return None

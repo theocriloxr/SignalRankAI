@@ -47,6 +47,9 @@ def get_unhealthy_providers(min_minutes=None):
         for name, entry in _PROVIDER_HEALTH.items():
             if len(entry["failures"]) >= _PROVIDER_FAIL_THRESHOLD:
                 last_success = entry["last_success"]
+                if last_success == 0:
+                    # Provider was never successfully polled in this process; skip
+                    continue
                 down_for = (now - last_success) / 60.0
                 if down_for >= min_minutes:
                     unhealthy.append((name, down_for))
