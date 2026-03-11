@@ -1460,6 +1460,13 @@ def distribute_random_signals_to_free_users_job():
 
 _bot_lock_conn = None
 
+# ── Webhook mode module-level state ──────────────────────────────────────────
+# When TELEGRAM_USE_WEBHOOK=1, run_bot() stores the fully-configured Application
+# here instead of blocking in run_polling().  railway_main.py reads this variable
+# after run_bot() returns to obtain the application for process_update() calls.
+_webhook_application = None
+_bot_scheduler = None  # keeps the BackgroundScheduler alive after run_bot() returns
+
 def run_bot() -> None:
     """Run the Telegram polling bot.
 
@@ -1541,34 +1548,37 @@ def run_bot() -> None:
     except Exception as e:
         _log_once("ensure_schema_failed", f"[bot] schema ensure failed: {type(e).__name__}: {e}")
 
-    # Acquire a global DB advisory lock to prevent multiple pollers across replicas.
-    try:
-        import psycopg2
+    # Advisory lock: only needed in polling mode to prevent duplicate pollers
+    # across Railway replicas.  In webhook mode Telegram delivers each update
+    # exactly once to the registered URL, so the lock is unnecessary.
+    if not os.getenv("TELEGRAM_USE_WEBHOOK"):
+        try:
+            import psycopg2
 
-        lock_id = int(os.getenv("TELEGRAM_BOT_LOCK_ID", "739105"))
-        dsn = (os.getenv("DATABASE_URL") or "").strip()
-        if dsn.startswith("postgresql+asyncpg://"):
-            dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+            lock_id = int(os.getenv("TELEGRAM_BOT_LOCK_ID", "739105"))
+            dsn = (os.getenv("DATABASE_URL") or "").strip()
+            if dsn.startswith("postgresql+asyncpg://"):
+                dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
 
-        if dsn:
-            conn = psycopg2.connect(dsn, connect_timeout=5)
-            conn.autocommit = True
-            with conn.cursor() as cur:
-                cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-                locked = bool(cur.fetchone()[0])
-            if not locked:
-                try:
-                    conn.close()
-                except Exception as e:
-                    logger.debug(f"[boot] Failed to close database connection: {e}")
-                    pass
-                print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
-                return
-            global _bot_lock_conn
-            _bot_lock_conn = conn
-    except Exception:
-        # If DB is unavailable or lock fails, fall back to running (single-instance environments).
-        pass
+            if dsn:
+                conn = psycopg2.connect(dsn, connect_timeout=5)
+                conn.autocommit = True
+                with conn.cursor() as cur:
+                    cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
+                    locked = bool(cur.fetchone()[0])
+                if not locked:
+                    try:
+                        conn.close()
+                    except Exception as e:
+                        logger.debug(f"[boot] Failed to close database connection: {e}")
+                        pass
+                    print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
+                    return
+                global _bot_lock_conn
+                _bot_lock_conn = conn
+        except Exception:
+            # If DB is unavailable or lock fails, fall back to running (single-instance environments).
+            pass
 
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
@@ -2749,6 +2759,19 @@ def run_bot() -> None:
     )
     scheduler.start()
 
+    # ── Webhook mode ──────────────────────────────────────────────────────────
+    # When TELEGRAM_USE_WEBHOOK is set, railway_main.py owns the event loop and
+    # calls application.process_update() via the POST /telegram/webhook FastAPI
+    # route.  Store the configured application and scheduler so they survive
+    # this function's scope, then return without starting long-polling.
+    if os.getenv("TELEGRAM_USE_WEBHOOK"):
+        global _webhook_application, _bot_scheduler
+        _webhook_application = application
+        _bot_scheduler = scheduler  # prevent GC; daemon threads keep running
+        print("[bot] webhook mode: application ready, scheduler running, not polling", flush=True)
+        return
+
+    # ── Polling mode ──────────────────────────────────────────────────────────
     # Run polling with an explicit event loop (Python 3.12 safe)
     try:
         import asyncio as _asyncio

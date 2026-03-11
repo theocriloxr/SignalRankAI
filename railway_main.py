@@ -15,11 +15,34 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
 logger = logging.getLogger(__name__)
+
+# Module-level reference to the fully-configured PTB Application in webhook mode.
+# Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
+_bot_application: object = None
+
+
+def _get_webhook_url() -> str:
+    """Derive the public HTTPS URL for the Telegram webhook.
+
+    Uses RAILWAY_PUBLIC_DOMAIN (set automatically by Railway) or the
+    explicit WEBHOOK_DOMAIN / WEBHOOK_URL env var as a fallback.
+    """
+    domain = (
+        os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("WEBHOOK_DOMAIN")
+        or os.getenv("WEBHOOK_URL")
+        or ""
+    ).strip()
+    if not domain:
+        return ""
+    if not domain.startswith("https://"):
+        domain = f"https://{domain}"
+    return domain.rstrip("/")
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -73,67 +96,122 @@ def _build_scheduler() -> AsyncIOScheduler:
     return scheduler
 
 
-async def _start_telegram_polling() -> "tuple[object, bool]":
-    """Start the Telegram bot by running run_bot() in a thread executor.
+async def _start_telegram_bot() -> "tuple[object, bool]":
+    """Configure the Telegram bot for webhook mode and register the webhook URL.
 
-    run_bot() builds its own Application with every command handler
-    registered, starts an APScheduler BackgroundScheduler, and calls
-    application.run_polling() which creates its own asyncio event loop.
-    Running it in a thread executor isolates it from uvicorn's loop.
+    Process:
+      1. Set TELEGRAM_USE_WEBHOOK so run_bot() registers all handlers, stores
+         the Application in bot._webhook_application, and returns immediately
+         instead of blocking in run_polling().
+      2. Await run_bot() in a thread executor so we know all handlers are
+         registered before proceeding.
+      3. Initialize + start the Application on uvicorn's event loop.
+      4. Delete any stale webhook, then register the new one with Telegram.
 
-    The module-level `application` object in bot.py only carries ~16
-    miscellaneous handlers added at import time.  The full handler set
-    (start, help, status, signals …) is only registered inside run_bot().
-    Using run_bot() directly ensures every command works.
-
-    Returns (None, True) on successful dispatch — the thread manages its
-    own lifecycle and will stop cleanly when the process receives SIGTERM.
+    Returns (application, True) on success, (None, False) on any failure.
+    Never raises — failures are logged so the web server keeps running.
     """
+    global _bot_application
+
     if _env_bool("DRY_RUN", False):
-        logger.warning("[bot] DRY_RUN enabled; skipping polling")
+        logger.warning("[bot] DRY_RUN enabled; skipping webhook setup")
         return None, False
 
     bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not bot_token:
-        logger.warning("[bot] TELEGRAM_BOT_TOKEN not set; skipping polling")
+        logger.warning("[bot] TELEGRAM_BOT_TOKEN not set; skipping webhook setup")
         return None, False
 
     try:
         from signalrank_telegram.bot import run_bot
     except Exception as exc:
-        logger.warning(f"[bot] Could not import run_bot: {exc}; skipping polling")
+        logger.warning(f"[bot] Could not import run_bot: {exc}; skipping webhook setup")
         return None, False
 
+    # Signal webhook mode before calling run_bot()
+    os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
+
     def _run_bot_safe() -> None:
-        """Wrapper so any immediate exception from run_bot() appears in logs."""
         try:
             run_bot()
         except Exception as exc:
-            logger.error(f"[bot] run_bot() exited with error: {exc}")
+            logger.error(f"[bot] run_bot() setup error: {exc}")
 
+    # Await the executor so all handlers are registered before we call initialize()
     try:
         loop = asyncio.get_running_loop()
-        # run_bot() is blocking — it calls application.run_polling() which
-        # creates its own event loop.  run_in_executor keeps uvicorn's loop free.
-        loop.run_in_executor(None, _run_bot_safe)
-        logger.info("[bot] run_bot() dispatched to thread executor — all handlers registered")
-        return None, True
+        await loop.run_in_executor(None, _run_bot_safe)
     except Exception as exc:
-        logger.warning(f"[bot] Failed to dispatch run_bot to executor: {exc}; skipping polling")
+        logger.warning(f"[bot] run_bot() executor failed: {exc}; skipping webhook setup")
         return None, False
 
+    # Retrieve the fully-configured Application stored by run_bot()
+    try:
+        from signalrank_telegram import bot as _bot_module
+        app_obj = getattr(_bot_module, "_webhook_application", None)
+    except Exception as exc:
+        logger.warning(f"[bot] Could not access _webhook_application: {exc}; skipping webhook setup")
+        return None, False
 
-async def _stop_telegram_polling(application: object) -> None:
-    """Stop PTB polling gracefully."""
+    if app_obj is None:
+        logger.warning("[bot] _webhook_application is None after run_bot(); skipping webhook setup")
+        return None, False
+
+    # Initialize and start the Application on uvicorn's event loop
+    try:
+        await app_obj.initialize()
+        await app_obj.start()
+    except Exception as exc:
+        logger.warning(f"[bot] application initialize/start failed: {exc}; skipping webhook setup")
+        return None, False
+
+    _bot_application = app_obj
+
+    # Register webhook with Telegram
+    webhook_url = _get_webhook_url()
+    if webhook_url:
+        webhook_endpoint = f"{webhook_url}/telegram/webhook"
+        try:
+            await app_obj.bot.delete_webhook(drop_pending_updates=True)
+            await app_obj.bot.set_webhook(webhook_endpoint)
+            logger.info("[bot] webhook registered: %s", webhook_endpoint)
+        except Exception as exc:
+            logger.warning(
+                f"[bot] set_webhook failed: {exc} — bot initialized but Telegram may not route updates here"
+            )
+    else:
+        logger.warning(
+            "[bot] RAILWAY_PUBLIC_DOMAIN / WEBHOOK_URL not set — webhook NOT registered with Telegram. "
+            "Set RAILWAY_PUBLIC_DOMAIN env var to enable inbound commands."
+        )
+
+    logger.info("[bot] webhook mode active — all handlers registered, awaiting updates via POST /telegram/webhook")
+    return _bot_application, True
+
+
+async def _stop_telegram_bot(application: object) -> None:
+    """Stop the Telegram bot gracefully (webhook or polling mode)."""
     if application is None:
         return
+    # Delete webhook first so Telegram stops queuing updates during shutdown
+    if os.getenv("TELEGRAM_USE_WEBHOOK"):
+        try:
+            await application.bot.delete_webhook()
+        except Exception:
+            pass
+    # Stop the updater if it was started (polling mode only)
     updater = getattr(application, "updater", None)
     try:
         if updater is not None and hasattr(updater, "stop"):
             await updater.stop()
-    finally:
+    except Exception:
+        pass
+    # Stop the application — triggers _post_stop callback
+    try:
         if hasattr(application, "stop"):
             await application.stop()
+    except Exception:
+        pass
 
 
 def _start_engine_loop_in_background() -> asyncio.Task:
@@ -178,17 +256,17 @@ async def lifespan(_: FastAPI):
         logger.warning(f"[startup] Scheduler failed to start: {exc}")
         scheduler = None
 
-    # ── 4) Telegram polling ───────────────────────────────────────────────────
+    # ── 4) Telegram webhook ───────────────────────────────────────────────────
     application, bot_started = None, False
     try:
-        application, bot_started = await _start_telegram_polling()
+        application, bot_started = await _start_telegram_bot()
     except Exception as exc:
-        logger.warning(f"[startup] Telegram polling setup error (caught at lifespan level): {exc}")
+        logger.warning(f"[startup] Telegram webhook setup error (caught at lifespan level): {exc}")
 
     logger.info(
         f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
         f"scheduler={'ok' if scheduler else 'skipped'} "
-        f"bot={'polling' if bot_started else 'skipped'}"
+        f"bot={'webhook' if bot_started else 'skipped'}"
     )
 
     try:
@@ -197,7 +275,7 @@ async def lifespan(_: FastAPI):
         # ── Shutdown order: bot → scheduler → engine task ─────────────────────
         if bot_started and application is not None:
             try:
-                await _stop_telegram_polling(application)
+                await _stop_telegram_bot(application)
                 logger.info("[bot] stopped")
             except Exception as exc:
                 logger.warning(f"[shutdown] bot stop error: {exc}")
@@ -216,12 +294,42 @@ async def lifespan(_: FastAPI):
                 pass
 
 
-# Serve the existing FastAPI app from web.app, but wrap with our monolith lifespan.
-# This ensures routes/middleware remain unchanged.
 from web.app import app as _web_app
 
-# Recreate a FastAPI instance isn't necessary; we can reuse the existing one by swapping lifespan.
-# FastAPI doesn't officially support reassigning lifespan after creation, so we create a new app
-# and mount the existing app.
 app = FastAPI(lifespan=lifespan)
+
+
+@app.post("/telegram/webhook")
+async def _telegram_webhook_route(req: Request) -> dict:
+    """Receive Telegram updates and dispatch them to the bot application.
+
+    Telegram POSTs to this URL for every incoming message or command.
+    PTB's Application.process_update() dispatches the update to the
+    correct CommandHandler on uvicorn's event loop — no polling conflict.
+    """
+    logger.info(
+        "[webhook] incoming update — content_type=%s",
+        req.headers.get("content-type", ""),
+    )
+    if _bot_application is None:
+        logger.warning("[webhook] _bot_application not initialized — dropping update")
+        return {"ok": False, "reason": "bot_not_initialized"}
+    try:
+        from telegram import Update
+        data = await req.json()
+        update_id = (data or {}).get("update_id", "?")
+        update_type = next(
+            (k for k in (data or {}) if k not in ("update_id",)), "unknown"
+        )
+        logger.info("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
+        update = Update.de_json(data, _bot_application.bot)
+        await _bot_application.process_update(update)
+        return {"ok": True}
+    except Exception as exc:
+        logger.error("[webhook] failed to process update: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+# Mount the existing web app AFTER the webhook route — FastAPI checks routes
+# in registration order, so /telegram/webhook is matched before the catch-all.
 app.mount("/", _web_app)
