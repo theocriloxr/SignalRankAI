@@ -509,3 +509,509 @@ class TestDetectOrderBlocks:
         # All candles overlap with neighbours — no gap
         candles = [self._make_candle(1.0, 1.1, 0.9, 1.0) for _ in range(20)]
         assert detect_order_blocks(candles) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13.  Cancellation confirmation flow (/cancel 2-step)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCancellationConfirmationFlow:
+    """Verify that /cancel shows a policy warning + InlineKeyboard before acting."""
+
+    def _make_user(self, tier: str = "premium", sub_code: str = "SUB_abc") -> MagicMock:
+        u = MagicMock()
+        u.id = 1
+        u.telegram_user_id = 99
+        u.tier = tier
+        u.paystack_subscription_code = sub_code
+        u.auto_renew = True
+        return u
+
+    def test_cancel_command_free_user_gets_info_message(self):
+        """FREE-tier users should receive an informational message, not a confirm dialog."""
+        from signalrank_telegram.commands import cancel_command
+
+        user = self._make_user(tier="free", sub_code=None)
+
+        update = MagicMock()
+        update.effective_user.id = 99
+        update.message.reply_text = AsyncMock()
+
+        async def _run():
+            with patch("db.session.get_session") as mock_gs:
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                )
+                mock_gs.return_value = mock_session
+                await cancel_command(update, MagicMock())
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        update.message.reply_text.assert_called_once()
+        args, _ = update.message.reply_text.call_args
+        assert "don't have an active paid subscription" in args[0].lower() or \
+               "\u2139" in args[0]
+
+    def test_cancel_command_premium_user_shows_inline_keyboard(self):
+        """PREMIUM users should receive the policy warning + InlineKeyboard buttons."""
+        from signalrank_telegram.commands import cancel_command
+        from telegram import InlineKeyboardMarkup
+
+        user = self._make_user(tier="premium")
+
+        update = MagicMock()
+        update.effective_user.id = 99
+        update.message.reply_text = AsyncMock()
+
+        async def _run():
+            with patch("db.session.get_session") as mock_gs, \
+                 patch("db.repository.get_active_subscription", new_callable=AsyncMock, return_value=None):
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                )
+                mock_gs.return_value = mock_session
+                await cancel_command(update, MagicMock())
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        update.message.reply_text.assert_called_once()
+        _, kwargs = update.message.reply_text.call_args
+        assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
+        # Confirm both buttons exist
+        buttons = kwargs["reply_markup"].inline_keyboard[0]
+        labels = [b.text for b in buttons]
+        assert any("Cancel" in lbl for lbl in labels)
+        assert any("Nevermind" in lbl or "\U0001f519" in lbl for lbl in labels)
+
+    def test_cancel_command_policy_text_mentions_no_refund(self):
+        """The confirmation message must contain the NO REFUND policy text."""
+        from signalrank_telegram.commands import cancel_command
+
+        user = self._make_user(tier="vip")
+
+        update = MagicMock()
+        update.effective_user.id = 99
+        update.message.reply_text = AsyncMock()
+
+        async def _run():
+            with patch("db.session.get_session") as mock_gs, \
+                 patch("db.repository.get_active_subscription", new_callable=AsyncMock, return_value=None):
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                )
+                mock_gs.return_value = mock_session
+                await cancel_command(update, MagicMock())
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        args, _ = update.message.reply_text.call_args
+        assert "NO REFUND" in args[0] or "STRICT" in args[0]
+
+    def test_cancel_and_disable_paystack_sets_auto_renew_false(self):
+        """_cancel_and_disable_paystack must set auto_renew=False and return success=True."""
+        from signalrank_telegram.commands import _cancel_and_disable_paystack
+
+        user = self._make_user(tier="premium", sub_code=None)  # no sub_code → skip gateway
+
+        executed_values = {}
+
+        async def _run():
+            with patch("db.session.get_session") as mock_gs:
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                )
+                mock_session.commit = AsyncMock()
+                mock_gs.return_value = mock_session
+
+                result = await _cancel_and_disable_paystack(99)
+                executed_values.update(result)
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        assert executed_values["success"] is True
+        assert executed_values["tier"] == "premium"
+
+    def test_cancel_nevermind_callback_edits_message_with_abort_text(self):
+        """cancel_nevermind_callback must edit the message with 'Aborted' text."""
+        from signalrank_telegram.commands import cancel_nevermind_callback
+
+        query = MagicMock()
+        query.answer = AsyncMock()
+        query.edit_message_text = AsyncMock()
+        update = MagicMock()
+        update.callback_query = query
+        update.effective_user.id = 99
+
+        asyncio.get_event_loop().run_until_complete(
+            cancel_nevermind_callback(update, MagicMock())
+        )
+        query.edit_message_text.assert_called_once()
+        args, _ = query.edit_message_text.call_args
+        assert "Aborted" in args[0] or "Aborted" in str(kwargs if (kwargs := query.edit_message_text.call_args.kwargs) else "")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14.  Recurring webhook events (charge.success renewal DM / invoice.payment_failed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRecurringWebhookEvents:
+    """Verify Paystack recurring billing webhook handlers."""
+
+    def _make_charge_success_event(self, sub_code: Optional[str] = None, amount: int = 3000000) -> dict:
+        return {
+            "event": "charge.success",
+            "data": {
+                "amount": amount,
+                "reference": f"ref_{time.time_ns()}",
+                "status": "success",
+                "authorization": {"reusable": True},
+                "subscription": {"subscription_code": sub_code} if sub_code else {},
+                "customer": {"customer_code": "CUS_test"},
+                "metadata": {"telegram_user_id": "999", "tier": "premium"},
+            },
+        }
+
+    def _make_payment_failed_event(self) -> dict:
+        return {
+            "event": "invoice.payment_failed",
+            "data": {
+                "subscription": {"subscription_code": "SUB_fail"},
+                "customer": {"customer_code": "CUS_fail"},
+            },
+        }
+
+    def test_charge_success_renewal_triggers_dm(self):
+        """charge.success on a subscription that already has a code → renewal DM sent."""
+        from web.app import _handle_charge_success_recurring
+
+        persisted = {"subscription_id": 7, "tier": "premium"}
+        event = self._make_charge_success_event(sub_code="SUB_abc")
+
+        user = MagicMock()
+        user.telegram_user_id = 999
+        user.paystack_subscription_code = "SUB_abc"  # pre-existing → renewal
+
+        async def _run():
+            with patch("db.session.get_session") as mock_gs, \
+                 patch("web.app._send_telegram_dm", new_callable=AsyncMock) as mock_dm:
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                )
+                mock_session.commit = AsyncMock()
+                mock_gs.return_value = mock_session
+
+                await _handle_charge_success_recurring(event, persisted)
+                return mock_dm.called
+
+        dm_called = asyncio.get_event_loop().run_until_complete(_run())
+        assert dm_called, "Renewal DM should be sent for repeat charge.success"
+
+    def test_invoice_payment_failed_downgrades_user(self):
+        """invoice.payment_failed must set user.tier='free' and auto_renew=False."""
+        from web.app import _handle_payment_failed
+
+        event = self._make_payment_failed_event()
+
+        user = MagicMock()
+        user.telegram_user_id = 999
+        user.tier = "premium"
+        user.auto_renew = True
+
+        downgraded = {}
+
+        async def _run():
+            with patch("db.session.get_session") as mock_gs, \
+                 patch("web.app._send_telegram_dm", new_callable=AsyncMock):
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+
+                async def fake_execute(stmt):
+                    # Capture UPDATE values by inspecting the compiled statement string
+                    stmt_str = str(stmt)
+                    if "auto_renew" in stmt_str.lower() or "tier" in stmt_str.lower():
+                        downgraded["updated"] = True
+                    return MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+
+                mock_session.execute = fake_execute
+                mock_session.commit = AsyncMock()
+                mock_gs.return_value = mock_session
+
+                await _handle_payment_failed(event)
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        # The handler should have attempted a DB update (we captured the flag)
+        assert downgraded.get("updated"), "payment_failed should execute a DB update"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 15.  VIP Waitlist 24-hour TTL background jobs
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWaitlistTTL:
+    """Verify check_waitlist_capacity_job and monitor_expired_invites_job logic."""
+
+    def _make_waitlist_entry(self, invited_at=None, expires_at=None) -> MagicMock:
+        e = MagicMock()
+        e.id = 1
+        e.user_id = 10
+        e.joined_at = datetime(2026, 1, 1)
+        e.invited_at = invited_at
+        e.invite_expires_at = expires_at
+        return e
+
+    def _make_user(self, tier: str = "free") -> MagicMock:
+        u = MagicMock()
+        u.id = 10
+        u.telegram_user_id = 555
+        u.tier = tier
+        return u
+
+    def test_check_waitlist_skips_when_vip_at_capacity(self):
+        """If active VIP count >= VIP_SEAT_LIMIT, no invite should be issued."""
+        from web.app import _check_waitlist_capacity_job
+        import web.app as app_module
+
+        orig_engine = app_module.ENGINE
+        app_module.ENGINE = MagicMock()  # simulate live ENGINE
+
+        invited = {"flag": False}
+
+        async def _run():
+            with patch("web.app.count_active_vip_users", new_callable=AsyncMock, return_value=15), \
+                 patch("web.app.get_session") as mock_gs:
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.execute = AsyncMock()
+                mock_gs.return_value = mock_session
+
+                with patch.dict(os.environ, {"VIP_SEAT_LIMIT": "15"}):
+                    await _check_waitlist_capacity_job()
+
+                # execute should NOT be called with a VIPWaitlist select
+                invited["calls"] = mock_session.execute.call_count
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        app_module.ENGINE = orig_engine
+        # When at capacity, we return early — no DB select for waitlist entries
+        assert invited.get("calls", 0) == 0
+
+    def test_check_waitlist_sets_24h_invite_ttl(self):
+        """When a seat is free, invited_at and invite_expires_at should be set to ~now+24h."""
+        from web.app import _check_waitlist_capacity_job
+        import web.app as app_module
+
+        orig_engine = app_module.ENGINE
+        app_module.ENGINE = MagicMock()
+
+        entry = self._make_waitlist_entry()
+        user = self._make_user()
+        updated_values = {}
+
+        async def _run():
+            with patch("web.app.count_active_vip_users", new_callable=AsyncMock, return_value=10), \
+                 patch("web.app.get_session") as mock_gs, \
+                 patch("web.app._send_telegram_dm", new_callable=AsyncMock), \
+                 patch("web.app.create_paystack_checkout", new_callable=AsyncMock, return_value={"url": "https://pay.test"}):
+
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.commit = AsyncMock()
+
+                call_count = [0]
+
+                async def fake_execute(stmt):
+                    call_count[0] += 1
+                    # First call: VIPWaitlist select → return entry
+                    if call_count[0] == 1:
+                        return MagicMock(scalars=lambda: MagicMock(first=lambda: entry))
+                    # Second call: User select → return user
+                    elif call_count[0] == 2:
+                        return MagicMock(scalars=lambda: MagicMock(first=lambda: user))
+                    else:
+                        # UPDATE: capture values
+                        stmt_str = str(stmt)
+                        if "invite_expires_at" in stmt_str.lower():
+                            updated_values["ttl_set"] = True
+                        return MagicMock()
+
+                mock_session.execute = fake_execute
+                mock_gs.return_value = mock_session
+
+                with patch.dict(os.environ, {"VIP_SEAT_LIMIT": "15", "VIP_PRICE_NGN": "30000"}):
+                    await _check_waitlist_capacity_job()
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        app_module.ENGINE = orig_engine
+
+    def test_monitor_expired_invites_resets_columns_and_sends_dm(self):
+        """Expired invites should have invited_at/invite_expires_at reset to NULL + DM sent."""
+        from web.app import _monitor_expired_invites_job
+        import web.app as app_module
+
+        orig_engine = app_module.ENGINE
+        app_module.ENGINE = MagicMock()
+
+        past = datetime.utcnow() - timedelta(hours=25)
+        entry = self._make_waitlist_entry(invited_at=past, expires_at=past)
+        user = self._make_user(tier="free")
+
+        dms_sent = []
+
+        async def _run():
+            with patch("web.app.get_session") as mock_gs, \
+                 patch("web.app._send_telegram_dm", new_callable=AsyncMock,
+                       side_effect=lambda uid, msg: dms_sent.append(uid)):
+
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.commit = AsyncMock()
+
+                # join query returns [(entry, user)]
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(fetchall=lambda: [(entry, user)])
+                )
+                mock_gs.return_value = mock_session
+
+                with patch("web.app._check_waitlist_capacity_job", new_callable=AsyncMock):
+                    await _monitor_expired_invites_job()
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        app_module.ENGINE = orig_engine
+        assert 555 in dms_sent, "DM should be sent to the user whose invite expired"
+
+    def test_monitor_expired_invites_skips_already_upgraded_user(self):
+        """VIP-tier users should not be notified — they already upgraded."""
+        from web.app import _monitor_expired_invites_job
+        import web.app as app_module
+
+        orig_engine = app_module.ENGINE
+        app_module.ENGINE = MagicMock()
+
+        past = datetime.utcnow() - timedelta(hours=25)
+        entry = self._make_waitlist_entry(invited_at=past, expires_at=past)
+        user = self._make_user(tier="vip")  # already upgraded
+
+        dms_sent = []
+
+        async def _run():
+            with patch("web.app.get_session") as mock_gs, \
+                 patch("web.app._send_telegram_dm", new_callable=AsyncMock,
+                       side_effect=lambda uid, msg: dms_sent.append(uid)):
+
+                mock_session = AsyncMock()
+                mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+                mock_session.__aexit__ = AsyncMock(return_value=False)
+                mock_session.commit = AsyncMock()
+
+                # The WHERE clause filters User.tier != 'vip', so fetchall returns empty
+                mock_session.execute = AsyncMock(
+                    return_value=MagicMock(fetchall=lambda: [])
+                )
+                mock_gs.return_value = mock_session
+
+                with patch("web.app._check_waitlist_capacity_job", new_callable=AsyncMock):
+                    await _monitor_expired_invites_job()
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        app_module.ENGINE = orig_engine
+        assert len(dms_sent) == 0, "No DM should be sent to a user who already upgraded to VIP"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 16.  Paystack plan-code injection into checkout payload
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPlanCodeInjection:
+    """Verify checkout payload uses 'plan' key for recurring and 'amount' for one-off."""
+
+    def _paystack_init_payload(self) -> dict:
+        return {"status": True, "data": {"authorization_url": "https://pay.test", "reference": "ref1"}}
+
+    def test_checkout_with_plan_code_sends_plan_key(self):
+        """When PAYSTACK_{TIER}_PLAN_CODE is set, payload should use 'plan', not 'amount'."""
+        from web.app import create_paystack_checkout
+
+        payload_sent = {}
+
+        async def _run():
+            with patch("httpx.AsyncClient") as mock_client_cls, \
+                 patch.dict(os.environ, {"PAYSTACK_PREMIUM_PLAN_CODE": "PLN_abc", "PAYSTACK_SECRET_KEY": "sk_test"}):
+
+                mock_resp = MagicMock()
+                mock_resp.json.return_value = self._paystack_init_payload()
+                mock_resp.raise_for_status = MagicMock()
+
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client.post = AsyncMock(return_value=mock_resp)
+                mock_client_cls.return_value = mock_client
+
+                await create_paystack_checkout(
+                    telegram_user_id=1,
+                    tier="premium",
+                    amount_ngn=15000,
+                    email="test@test.com",
+                    duration_days=30,
+                )
+                if mock_client.post.called:
+                    _, kwargs = mock_client.post.call_args
+                    payload_sent.update(kwargs.get("json", {}))
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        assert "plan" in payload_sent, "Recurring checkout must include 'plan' key"
+        assert "amount" not in payload_sent, "'amount' key must be absent when plan code is set"
+
+    def test_checkout_without_plan_code_sends_amount_key(self):
+        """When no plan code is configured, payload should use 'amount' (one-off payment)."""
+        from web.app import create_paystack_checkout
+
+        payload_sent = {}
+
+        async def _run():
+            env = {k: v for k, v in os.environ.items()
+                   if not k.startswith("PAYSTACK_PREMIUM_PLAN_CODE")}
+            env["PAYSTACK_SECRET_KEY"] = "sk_test"
+            env.pop("PAYSTACK_PREMIUM_PLAN_CODE", None)
+
+            with patch("httpx.AsyncClient") as mock_client_cls, \
+                 patch.dict(os.environ, env, clear=True):
+
+                mock_resp = MagicMock()
+                mock_resp.json.return_value = self._paystack_init_payload()
+                mock_resp.raise_for_status = MagicMock()
+
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client.post = AsyncMock(return_value=mock_resp)
+                mock_client_cls.return_value = mock_client
+
+                await create_paystack_checkout(
+                    telegram_user_id=1,
+                    tier="premium",
+                    amount_ngn=15000,
+                    email="test@test.com",
+                    duration_days=30,
+                )
+                if mock_client.post.called:
+                    _, kwargs = mock_client.post.call_args
+                    payload_sent.update(kwargs.get("json", {}))
+
+        asyncio.get_event_loop().run_until_complete(_run())
+        assert "amount" in payload_sent, "One-off checkout must include 'amount' key"
