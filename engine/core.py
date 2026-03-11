@@ -1239,6 +1239,24 @@ def main_loop(DRY_RUN: bool = False):
                 logger.debug(f"[engine] Failed to print analytics stats: {e}")
                 pass
 
+        # ── Anti-stagnation: stamp last_analyzed_at for managed assets ────────
+        # Only DB-pinned assets need the timestamp; env/discovered assets are
+        # excluded so the managed_assets table stays minimal.
+        _managed_set = set(_managed_assets)
+        _batch_managed = [a for a in assets if a in _managed_set]
+        if _batch_managed:
+            try:
+                from db.session import get_session as _get_session
+                from db.pg_features import update_managed_asset_last_analyzed as _stamp
+                from utils.async_runner import run_sync as _rs
+                async def _do_stamp():
+                    async with _get_session() as _s:
+                        await _stamp(_s, _batch_managed)
+                        await _s.commit()
+                _rs(_do_stamp())
+            except Exception:
+                pass
+
         time.sleep(max(5, cycle_sleep_seconds))
 
 

@@ -1651,11 +1651,17 @@ async def expire_signal(session: AsyncSession, signal_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def get_active_managed_assets(session: AsyncSession) -> list[str]:
-    """Return symbols for all active managed assets (admin-pinned)."""
+    """Return symbols for all active managed assets, oldest-analyzed first.
+
+    Ordering by last_analyzed_at ASC NULLS FIRST ensures assets that have
+    never been (or were least recently) analyzed bubble to the top of the
+    engine queue each cycle, preventing any symbol from being perpetually
+    starved (anti-stagnation guarantee).
+    """
     res = await session.execute(
         select(ManagedAsset.symbol)
         .where(ManagedAsset.is_active.is_(True))
-        .order_by(ManagedAsset.symbol)
+        .order_by(ManagedAsset.last_analyzed_at.asc().nulls_first())
     )
     return [row[0] for row in res.fetchall()]
 
@@ -1713,3 +1719,23 @@ async def list_all_managed_assets(session: AsyncSession) -> list[ManagedAsset]:
         select(ManagedAsset).order_by(ManagedAsset.symbol)
     )
     return list(res.scalars().all())
+
+
+async def update_managed_asset_last_analyzed(
+    session: AsyncSession, symbols: list[str]
+) -> None:
+    """Stamp last_analyzed_at=NOW() for a batch of symbols after the engine
+    processes them.  Called once per cycle so the queue always rotates through
+    the full asset universe (anti-stagnation guarantee).  Safe to call with an
+    empty list — it is a no-op.
+    """
+    if not symbols:
+        return
+    normalized = [s.upper().strip() for s in symbols if s and s.strip()]
+    if not normalized:
+        return
+    await session.execute(
+        update(ManagedAsset)
+        .where(ManagedAsset.symbol.in_(normalized))
+        .values(last_analyzed_at=datetime.utcnow())
+    )
