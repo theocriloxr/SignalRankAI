@@ -378,7 +378,17 @@ from engine.signal_analytics import signal_analytics
 # --------- ADMIN ANALYTICS COMMANDS ---------
 from config import OWNER_IDS
 def _is_admin(user_id) -> bool:
-	return int(user_id) in OWNER_IDS
+	"""Return True if user has admin or owner privileges (config or DB tier)."""
+	try:
+		if int(user_id) in OWNER_IDS:
+			return True
+	except Exception:
+		pass
+	try:
+		tier = _effective_tier(int(user_id)).upper()
+		return tier in ("ADMIN", "OWNER")
+	except Exception:
+		return False
 
 async def admin_top_assets_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:

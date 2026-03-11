@@ -62,6 +62,12 @@ COMMAND_TIERS = {
     "owner_revenue": "OWNER",
     "version": "OWNER",
     "correct_signal": "OWNER",
+    "admin_top_assets": "OWNER",
+    "admin_top_strategies": "OWNER",
+    "admin_user_engagement": "OWNER",
+    "myid": "FREE",  # everyone can see their own ID
+    "selfcheck": "OWNER",
+    "provider_status": "OWNER",
 }
 
 # Tier ranking (higher = more access)
@@ -93,6 +99,7 @@ COMMAND_HELP = {
             ("policy", "Subscription & refund policy"),
             ("recap", "Weekly performance recap"),
             ("support", "Contact support"),
+            ("myid", "Show your Telegram user ID and tier"),
             ("liveprice", "Get real-time price for any asset"),
             ("market", "Market overview & major assets"),
             # ("buy_extra_signals", "Buy 1-5 extra daily signals (₦300 each)"),
