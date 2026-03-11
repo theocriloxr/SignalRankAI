@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 import os
+from contextlib import asynccontextmanager
 from config import config
 import socket
 import time
@@ -215,7 +216,193 @@ async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str
         return {"persisted": True, "subscription_id": sub.id, "tier": sub.tier}
 
 
-app = FastAPI(title=APP_NAME, version="0.1.0")
+async def _check_waitlist_capacity_job() -> None:
+    """Pop the oldest uninvited VIP waitlist entry when a seat becomes available.
+
+    - Counts active VIP subscribers; if below VIP_SEAT_LIMIT, invites the oldest
+      uninvited entry: sets invited_at + invite_expires_at = now + 24 h, DMs the user.
+    Scheduled: every 1 hour via the FastAPI lifespan AsyncIOScheduler.
+    """
+    if ENGINE is None:
+        return
+    try:
+        from db.models import VIPWaitlist, User
+        from sqlalchemy import select, update as sa_update
+        from datetime import timedelta
+
+        vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
+
+        async with get_session() as session:
+            # Count current active VIP subscribers
+            used = await count_active_vip_users(session)
+            if used >= vip_limit:
+                return  # Still at capacity
+
+            # Find oldest uninvited waitlist entry
+            result = await session.execute(
+                select(VIPWaitlist)
+                .where(VIPWaitlist.invited_at.is_(None))
+                .order_by(VIPWaitlist.joined_at.asc())
+                .limit(1)
+            )
+            entry = result.scalars().first()
+            if not entry:
+                return  # Waitlist is empty
+
+            # Look up the user for their telegram_user_id
+            user_res = await session.execute(
+                select(User).where(User.id == entry.user_id)
+            )
+            user = user_res.scalars().first()
+            if not user:
+                # Orphaned entry — clean up
+                await session.delete(entry)
+                await session.commit()
+                return
+
+            # Set invite TTL = 24 h from now
+            now = datetime.utcnow()
+            expires = now + timedelta(hours=24)
+            await session.execute(
+                sa_update(VIPWaitlist).where(VIPWaitlist.id == entry.id).values(
+                    invited_at=now,
+                    invite_expires_at=expires,
+                    notified_at=now,
+                )
+            )
+            await session.commit()
+
+            # Generate a Paystack checkout link for VIP
+            link = ""
+            try:
+                vip_price = int(os.getenv("VIP_PRICE_NGN", "30000"))
+                checkout = await create_paystack_checkout(
+                    telegram_user_id=user.telegram_user_id,
+                    tier="vip",
+                    amount_ngn=vip_price,
+                    email=f"user{user.telegram_user_id}@signalrank.ai",
+                    duration_days=30,
+                )
+                link = checkout.get("url", "")
+            except Exception as _le:
+                logger.warning(f"[waitlist] Checkout link generation failed: {_le}")
+
+            link_text = f"\n\n[\U0001f680 Complete Your VIP Upgrade Now]({link})" if link else ""
+            await _send_telegram_dm(
+                user.telegram_user_id,
+                f"\U0001f6a8 *VIP SPOT UNLOCKED!*\n\n"
+                f"A seat has opened up just for you. You have exactly *24 hours* to "
+                f"complete your payment before this link expires and the spot is passed "
+                f"to the next trader in line."
+                + link_text
+                + f"\n\n\u23f0 Link expires: *{expires.strftime('%Y-%m-%d %H:%M')} UTC*",
+            )
+            logger.info(
+                f"[waitlist] Invited user {user.telegram_user_id}, expires {expires}"
+            )
+    except Exception as exc:
+        logger.warning(f"[waitlist] check_waitlist_capacity_job failed: {exc}")
+
+
+async def _monitor_expired_invites_job() -> None:
+    """Expire VIP invitations not acted upon within 24 hours.
+
+    - Finds entries where invite_expires_at < now AND user has not upgraded to VIP.
+    - Resets invited_at + invite_expires_at = NULL (re-queues for next cycle).
+    - DMs the user that their spot was passed on.
+    - Triggers _check_waitlist_capacity_job to immediately fill any freed seat.
+    Scheduled: every 15 minutes via the FastAPI lifespan AsyncIOScheduler.
+    """
+    if ENGINE is None:
+        return
+    try:
+        from db.models import VIPWaitlist, User
+        from sqlalchemy import select, update as sa_update
+
+        now = datetime.utcnow()
+        expired_count = 0
+
+        async with get_session() as session:
+            result = await session.execute(
+                select(VIPWaitlist, User)
+                .join(User, User.id == VIPWaitlist.user_id)
+                .where(
+                    VIPWaitlist.invite_expires_at.is_not(None),
+                    VIPWaitlist.invite_expires_at < now,
+                    User.tier != "vip",
+                )
+            )
+            expired_rows = result.fetchall()
+
+            for entry, user in expired_rows:
+                # Reset invite columns — entry stays on waitlist for next cycle
+                await session.execute(
+                    sa_update(VIPWaitlist).where(VIPWaitlist.id == entry.id).values(
+                        invited_at=None,
+                        invite_expires_at=None,
+                    )
+                )
+                await _send_telegram_dm(
+                    user.telegram_user_id,
+                    "\u23f3 *VIP Invite Expired*\n\n"
+                    "Your 24-hour VIP spot has been passed to the next trader in line. "
+                    "Don't worry \u2014 you're still on the waitlist and will be notified "
+                    "again when the next seat opens.\n\n"
+                    "You can also try /upgrade directly if more seats open. \U0001f64f",
+                )
+                expired_count += 1
+
+            if expired_count:
+                await session.commit()
+                logger.info(
+                    f"[waitlist] Expired {expired_count} VIP invite(s); re-queued for next cycle"
+                )
+                # Immediately check whether a freshly freed seat can be filled
+                await _check_waitlist_capacity_job()
+    except Exception as exc:
+        logger.warning(f"[waitlist] monitor_expired_invites_job failed: {exc}")
+
+
+@asynccontextmanager
+async def _lifespan(app_: FastAPI):
+    """FastAPI lifespan: run DB migration on startup, start waitlist scheduler."""
+    # ── Startup ──────────────────────────────────────────────────────────────
+    # 1. Auto-run Alembic migrations (idempotent "upgrade head")
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        import asyncio, concurrent.futures
+
+        alembic_cfg = AlembicConfig("alembic.ini")
+        db_url = os.getenv("DATABASE_URL", "")
+        # Alembic needs a sync URL; strip asyncpg driver if present
+        sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
+        alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, lambda: alembic_command.upgrade(alembic_cfg, "head")
+        )
+        logger.info("[lifespan] Alembic upgrade head: OK")
+    except Exception as _ae:
+        logger.warning(f"[lifespan] Alembic upgrade skipped (continuing): {_ae}")
+
+    # 2. Start AsyncIOScheduler for waitlist TTL background jobs
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+    _scheduler = AsyncIOScheduler(timezone="UTC")
+    _scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")
+    _scheduler.add_job(_monitor_expired_invites_job, "interval", minutes=15, id="wl_monitor")
+    _scheduler.start()
+    logger.info("[lifespan] Waitlist scheduler started (capacity=1h, monitor=15min)")
+
+    yield  # ── Application runs ──────────────────────────────────────────────
+
+    # ── Shutdown ──────────────────────────────────────────────────────────────
+    _scheduler.shutdown(wait=False)
+    logger.info("[lifespan] Waitlist scheduler stopped")
+
+
+app = FastAPI(title=APP_NAME, version="0.1.0", lifespan=_lifespan)
 
 
 @app.middleware("http")
