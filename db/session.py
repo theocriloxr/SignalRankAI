@@ -264,6 +264,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                     """
                 ))
                 await session.execute(text("CREATE INDEX IF NOT EXISTS ix_vip_waitlist_user_id ON vip_waitlist(user_id)"))
+                await session.execute(text("ALTER TABLE vip_waitlist ADD COLUMN IF NOT EXISTS invited_at TIMESTAMP"))
+                await session.execute(text("ALTER TABLE vip_waitlist ADD COLUMN IF NOT EXISTS invite_expires_at TIMESTAMP"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_vip_waitlist_invite_expires_at ON vip_waitlist(invite_expires_at)"))
 
                 # ── New columns on existing tables (idempotent via IF NOT EXISTS) ───────
 

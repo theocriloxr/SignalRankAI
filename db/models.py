@@ -490,6 +490,9 @@ class VIPWaitlist(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
     joined_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # 24-hour invite TTL: set by check_waitlist_capacity_job when a seat opens
+    invited_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    invite_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
 
 
 # ---------------------------------------------------------------------------

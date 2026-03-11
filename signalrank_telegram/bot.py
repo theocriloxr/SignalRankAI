@@ -1608,6 +1608,12 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("cancel", _audit_handler("cancel", cancel_command)))
     application.add_handler(build_connect_broker_conversation())
 
+    # Subscription cancellation confirmation callbacks
+    from .commands import cancel_confirm_callback, cancel_nevermind_callback
+    from telegram.ext import CallbackQueryHandler as _CQH_cancel
+    application.add_handler(_CQH_cancel(cancel_confirm_callback, pattern="^cancel_confirm$"))
+    application.add_handler(_CQH_cancel(cancel_nevermind_callback, pattern="^cancel_nevermind$"))
+
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
     async def _signal_reaction_callback(update, context):
