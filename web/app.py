@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import logging
 import os
 from config import config
 import socket
@@ -18,6 +19,7 @@ from core.redis_state import state
 
 
 APP_NAME = "SignalRankAI"
+logger = logging.getLogger(__name__)
 
 # Optional global ENGINE placeholder (set by runtime if needed). Tests expect it to exist.
 ENGINE = None
@@ -354,7 +356,20 @@ async def paystack_webhook(
 
     persisted = await _persist_subscription_if_configured(event)
     if persisted.get("persisted") is False and str(persisted.get("reason", "")).startswith("vip_full"):
-        raise HTTPException(status_code=409, detail="VIP is currently full. Please try again later.")
+        # Auto-add to waitlist
+        try:
+            data = event.get("data") or {}
+            meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
+            uid = int(meta.get("telegram_user_id") or meta.get("user_id") or 0)
+            if uid:
+                await _add_to_vip_waitlist(uid)
+        except Exception:
+            pass
+        raise HTTPException(status_code=409, detail="VIP is currently full. You have been added to the waitlist.")
+
+    # ── Referral bonus ────────────────────────────────────────────────────
+    if persisted.get("persisted"):
+        await _apply_referral_bonus(event)
 
     return JSONResponse(
         {
@@ -363,3 +378,230 @@ async def paystack_webhook(
             "persisted": persisted.get("persisted", False),
         }
     )
+
+
+async def _add_to_vip_waitlist(telegram_user_id: int) -> None:
+    """Insert a row into vip_waitlist if not already present."""
+    if ENGINE is None:
+        return
+    try:
+        from db.models import VIPWaitlist
+        from sqlalchemy import select
+
+        async with get_session() as session:
+            exists = await session.execute(
+                select(VIPWaitlist).where(VIPWaitlist.user_id == telegram_user_id)
+            )
+            if exists.scalars().first() is None:
+                session.add(
+                    VIPWaitlist(
+                        user_id=telegram_user_id,
+                        joined_at=datetime.utcnow(),
+                    )
+                )
+                await session.commit()
+                logger.info(f"[waitlist] Added user {telegram_user_id} to VIP waitlist")
+    except Exception as exc:
+        logger.warning(f"[waitlist] Could not add {telegram_user_id}: {exc}")
+
+
+async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
+    """Grant +7 days to the referrer when a referred user pays.
+
+    Looks up ``referred_by`` on the paying user and extends the referrer's
+    active subscription by 7 days (or adds 7 days to their PREMIUM tier).
+    """
+    if ENGINE is None:
+        return
+    REFERRAL_BONUS_DAYS = int(os.getenv("REFERRAL_BONUS_DAYS", "7"))
+    try:
+        data = event.get("data") or {}
+        meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
+        buyer_id = int(meta.get("telegram_user_id") or meta.get("user_id") or 0)
+        if not buyer_id:
+            return
+
+        from sqlalchemy import select, update
+        from db.models import User, Subscription
+
+        async with get_session() as session:
+            buyer_row = await session.execute(
+                select(User).where(User.telegram_user_id == buyer_id)
+            )
+            buyer = buyer_row.scalars().first()
+            if not buyer or not getattr(buyer, "referred_by", None):
+                return
+
+            referrer_id = int(buyer.referred_by)
+            referrer_row = await session.execute(
+                select(User).where(User.telegram_user_id == referrer_id)
+            )
+            referrer = referrer_row.scalars().first()
+            if not referrer:
+                return
+
+            # Extend the referrer's active subscription
+            sub_row = await session.execute(
+                select(Subscription).where(
+                    Subscription.telegram_user_id == referrer_id,
+                    Subscription.is_active.is_(True),
+                ).order_by(Subscription.expires_at.desc())
+            )
+            sub = sub_row.scalars().first()
+            if sub and sub.expires_at:
+                from datetime import timedelta
+
+                new_expiry = sub.expires_at + timedelta(days=REFERRAL_BONUS_DAYS)
+                await session.execute(
+                    update(Subscription)
+                    .where(Subscription.id == sub.id)
+                    .values(expires_at=new_expiry)
+                )
+                await session.commit()
+                logger.info(
+                    f"[referral] Granted +{REFERRAL_BONUS_DAYS} days to referrer {referrer_id} "
+                    f"(buyer: {buyer_id})"
+                )
+    except Exception as exc:
+        logger.warning(f"[referral] _apply_referral_bonus failed: {exc}")
+
+
+async def create_paystack_checkout(
+    telegram_user_id: int,
+    tier: str,
+    amount_ngn: int,
+    email: str = "user@signalrank.ai",
+    duration_days: int = 30,
+    referral_code: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Call Paystack /transaction/initialize and return the checkout URL.
+
+    Args:
+        telegram_user_id: The buyer's Telegram user ID.
+        tier:             "premium" or "vip".
+        amount_ngn:       Price in Nigerian Naira (converted to kobo internally).
+        email:            Customer email (required by Paystack).
+        duration_days:    Subscription length in days.
+        referral_code:    Optional referrer telegram_user_id (for bonus tracking).
+
+    Returns:
+        ``{"url": str, "reference": str}`` on success.
+        ``{"error": str}`` on failure.
+    """
+    secret_key = os.getenv("PAYSTACK_SECRET_KEY")
+    if not secret_key:
+        return {"error": "PAYSTACK_SECRET_KEY not configured"}
+
+    amount_kobo = amount_ngn * 100
+    import uuid
+
+    reference = f"sr-{tier.lower()}-{telegram_user_id}-{uuid.uuid4().hex[:8]}"
+    payload: Dict[str, Any] = {
+        "email": email,
+        "amount": amount_kobo,
+        "reference": reference,
+        "currency": "NGN",
+        "metadata": {
+            "telegram_user_id": telegram_user_id,
+            "tier": tier.lower(),
+            "duration_days": duration_days,
+            "referral_code": referral_code,
+        },
+        "callback_url": os.getenv("PAYSTACK_CALLBACK_URL", ""),
+    }
+    headers = {"Authorization": f"Bearer {secret_key}", "Content-Type": "application/json"}
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(
+                "https://api.paystack.co/transaction/initialize",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        if data.get("status") and data.get("data"):
+            return {
+                "url": data["data"]["authorization_url"],
+                "reference": data["data"]["reference"],
+            }
+        return {"error": data.get("message", "Paystack init failed")}
+    except Exception as exc:
+        logger.error(f"[paystack_checkout] {exc}")
+        return {"error": str(exc)}
+
+
+@app.post("/upgrade")
+async def upgrade_endpoint(request: Request) -> JSONResponse:
+    """Generate a dynamic Paystack checkout link for tier upgrades.
+
+    Body (JSON):
+        telegram_user_id: int  (required)
+        tier:             str  "premium" | "vip"
+        email:            str  (optional)
+        referral_code:    str  (optional)
+
+    Returns:
+        200: {"checkout_url": str, "reference": str}
+        409: VIP full → add to waitlist
+    """
+    body = await request.json()
+    uid: int = int(body.get("telegram_user_id") or 0)
+    tier: str = str(body.get("tier") or "premium").lower().strip()
+    email: str = str(body.get("email") or f"user{uid}@signalrank.ai")
+    referral_code: Optional[str] = body.get("referral_code")
+
+    if not uid:
+        raise HTTPException(status_code=400, detail="telegram_user_id required")
+    if tier not in ("premium", "vip"):
+        raise HTTPException(status_code=400, detail="tier must be 'premium' or 'vip'")
+
+    PRICES: Dict[str, int] = {
+        "premium": int(os.getenv("PREMIUM_PRICE_NGN", "15000")),
+        "vip": int(os.getenv("VIP_PRICE_NGN", "30000")),
+    }
+
+    # VIP capacity check
+    if tier == "vip" and ENGINE is not None:
+        vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
+        try:
+            from core.redis_state import state as _state
+
+            exclude_ids = set()
+            try:
+                from config import config as _cfg  # type: ignore
+
+                exclude_ids = set(getattr(_cfg, "OWNER_IDS", set()) or set())
+            except Exception:
+                pass
+            async with get_session() as session:
+                active_sub = await get_active_subscription(session, telegram_user_id=uid, tier="vip")
+                if active_sub is None:
+                    used = await count_active_vip_users(session, exclude_telegram_user_ids=exclude_ids)
+                    if used >= vip_limit and uid not in exclude_ids:
+                        await _add_to_vip_waitlist(uid)
+                        return JSONResponse(
+                            status_code=409,
+                            content={
+                                "error": "VIP is full",
+                                "waitlist": True,
+                                "message": (
+                                    "VIP is currently full. You've been added to the waitlist "
+                                    "and will be notified when a seat opens."
+                                ),
+                            },
+                        )
+        except Exception as exc:
+            logger.warning(f"[upgrade] VIP capacity check failed: {exc}")
+
+    result = await create_paystack_checkout(
+        telegram_user_id=uid,
+        tier=tier,
+        amount_ngn=PRICES[tier],
+        email=email,
+        duration_days=30,
+        referral_code=referral_code,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return JSONResponse({"checkout_url": result["url"], "reference": result["reference"]})

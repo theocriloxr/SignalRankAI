@@ -32,6 +32,19 @@ class User(Base):
     premium_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)  # Premium/VIP expiry
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
+    # ── Referral tracking ───────────────────────────────────────────────────────
+    referred_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)  # referrer telegram_user_id
+
+    # ── PREMIUM tier: fixed-lot MT5 execution settings ─────────────────────────
+    # Max 3 executions/day. Fixed lot only. Editable via /setlot.
+    fixed_lot_size: Mapped[float] = mapped_column(Float, nullable=False, default=0.01)
+    daily_executions_today: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    daily_executions_reset_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # ── VIP tier: risk-based auto-sizing ───────────────────────────────────────
+    # Editable via /setrisk. Engine calculates lot from account balance + SL distance.
+    max_risk_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")  # type: ignore[name-defined]
 
 
@@ -108,7 +121,12 @@ class Signal(Base):
     # Soft delete: signal with outcome is excluded from /signals queries but kept for history
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    # ── Signal auto-expiry (12 hours after creation) ────────────────────────────
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    expired: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
 
+    # ── ML order-block enrichment ───────────────────────────────────────────────
+    is_near_order_block: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 class MarketTick(Base):
     __tablename__ = "market_ticks"
@@ -359,6 +377,112 @@ class DecisionLog(Base):
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Signal engagement polling (🔥 Taking It / 👀 Watching)
+# ---------------------------------------------------------------------------
+class SignalEngagement(Base):
+    """Tracks user reactions to signals for gamification and fantasy scoring."""
+    __tablename__ = "signal_engagements"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_signal_engagement_user_signal"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
+    # 'taking_it' = 🔥  |  'watching' = 👀
+    reaction: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Active signal message tracking (for inline keyboard editing)
+# ---------------------------------------------------------------------------
+class ActiveSignalMessage(Base):
+    """Tracks the Telegram message_id of live signal DMs for real-time editing.
+
+    When a user updates /setlot or /setrisk, we edit their pinned signal messages
+    with the updated execution button.
+    """
+    __tablename__ = "active_signal_messages"
+    __table_args__ = (
+        UniqueConstraint("user_id", "signal_id", name="uq_active_signal_msg_user_signal"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Becomes False when signal expires, outcome reached, or bot catches edit error
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Economic calendar events (macro news protector)
+# ---------------------------------------------------------------------------
+class EconomicEvent(Base):
+    """Cached economic calendar events (fetched from free APIs daily)."""
+    __tablename__ = "economic_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_date: Mapped[datetime] = mapped_column(DateTime, index=True, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), index=True, nullable=False)  # USD, EUR, GBP…
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    # 'high' (red folder) | 'medium' | 'low'
+    impact: Mapped[str] = mapped_column(String(8), index=True, nullable=False, default="low")
+    source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)  # which API supplied it
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# MT5 execution log (tier-gated order tracking)
+# ---------------------------------------------------------------------------
+class MT5Execution(Base):
+    """Tracks each automated MT5 trade execution for tier enforcement and P&L."""
+    __tablename__ = "mt5_executions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    signal_id: Mapped[Optional[str]] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=True)
+    metaapi_account_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    order_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)  # long/short
+    lot_size: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[str] = mapped_column(Text, nullable=False)  # JSON-encoded list
+
+    # 'pending' | 'open' | 'tp1' | 'tp2' | 'tp3' | 'sl' | 'closed' | 'error'
+    status: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="pending")
+    # Tier at execution time drives which TP logic applies
+    tier_at_execution: Mapped[str] = mapped_column(String(16), nullable=False, default="premium")
+
+    # Realised P&L (filled by outcome tracker)
+    realized_pnl: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    realized_pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    executed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# VIP waitlist
+# ---------------------------------------------------------------------------
+class VIPWaitlist(Base):
+    """Queue of users who tried to subscribe VIP when seats were full."""
+    __tablename__ = "vip_waitlist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 # ---------------------------------------------------------------------------

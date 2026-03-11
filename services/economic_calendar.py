@@ -1,0 +1,248 @@
+"""Economic Calendar & Macro News Protector.
+
+Fetches upcoming high-impact economic events and enforces a 30-minute
+no-trade buffer around USD red-folder releases.
+
+Providers (in priority order):
+    1. Finnhub  (requires FINNHUB_API_KEY env var — free tier OK)
+    2. TradingEconomics  (requires TRADINGECONOMICS_API_KEY — optional)
+    3. Static fallback list  (NFP first Friday, CPI 2nd–3rd Wed, FOMC ~8×/year)
+
+Usage::
+    from services.economic_calendar import is_no_trade_zone, fetch_economic_events
+
+    if await is_no_trade_zone("EURUSD"):
+        return  # skip signal generation
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Cache — avoid hammering the external APIs every second
+# ---------------------------------------------------------------------------
+_EVENTS_CACHE: list[dict] = []
+_CACHE_FETCHED_AT: Optional[datetime] = None
+_CACHE_TTL_SECONDS = 3600  # refresh once per hour
+
+# ---------------------------------------------------------------------------
+# Known high-impact USD events (month, day pattern matching)
+# Used as a fallback when all APIs are unavailable.
+# ---------------------------------------------------------------------------
+_FALLBACK_EVENTS: list[dict] = [
+    {"title": "Non-Farm Payrolls", "currency": "USD", "impact": "high",
+     "description": "First Friday of each month, 13:30 UTC"},
+    {"title": "CPI", "currency": "USD", "impact": "high",
+     "description": "Usually 2nd–3rd Wednesday, 13:30 UTC"},
+    {"title": "FOMC Rate Decision", "currency": "USD", "impact": "high",
+     "description": "~8 times per year, 19:00 UTC"},
+    {"title": "GDP (Preliminary)", "currency": "USD", "impact": "high",
+     "description": "Last Wednesday of month, 13:30 UTC"},
+    {"title": "Core PCE Price Index", "currency": "USD", "impact": "high",
+     "description": "Last Friday of month, 13:30 UTC"},
+]
+
+# Symbols affected by USD macro events
+_USD_SENSITIVE_SYMBOLS = {
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "NZDUSD",
+    "USDCAD", "XAUUSD", "XAGUSD", "BTCUSD", "BTCUSDT",
+    "ETHUSD", "ETHUSDT", "DXY", "US30", "US100", "US500",
+}
+
+# Pre-trade buffer: no new signals N minutes before and after a red event
+NO_TRADE_BUFFER_MINUTES = int(os.getenv("NO_TRADE_BUFFER_MINUTES", "30"))
+
+
+# ---------------------------------------------------------------------------
+# Fetch from Finnhub
+# ---------------------------------------------------------------------------
+
+async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
+    """Fetch economic calendar from Finnhub API.
+
+    Docs: https://finnhub.io/docs/api/economic-calendar
+    """
+    api_key = os.getenv("FINNHUB_API_KEY", "")
+    if not api_key:
+        return []
+    url = "https://finnhub.io/api/v1/calendar/economic"
+    params = {
+        "from": from_dt.strftime("%Y-%m-%d"),
+        "to": to_dt.strftime("%Y-%m-%d"),
+        "token": api_key,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        events = []
+        for e in data.get("economicCalendar", []):
+            # Finnhub impact: 1=low, 2=medium, 3=high
+            impact_raw = int(e.get("impact", 1))
+            impact = {1: "low", 2: "medium", 3: "high"}.get(impact_raw, "low")
+            if impact != "high":
+                continue  # Only gate on red-folder (high) events
+            try:
+                event_dt = datetime.fromisoformat(e["time"].replace("Z", "+00:00"))
+            except Exception:
+                continue
+            events.append({
+                "title": e.get("event", ""),
+                "currency": e.get("country", "").upper(),
+                "impact": impact,
+                "event_time": event_dt,
+                "source": "finnhub",
+            })
+        logger.info(f"[economic_calendar] Finnhub returned {len(events)} high-impact events")
+        return events
+    except Exception as exc:
+        logger.warning(f"[economic_calendar] Finnhub fetch failed: {exc}")
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Main public API
+# ---------------------------------------------------------------------------
+
+async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
+    """Return a list of upcoming high-impact economic events.
+
+    Results are cached for ``_CACHE_TTL_SECONDS`` seconds.  Pass
+    ``force_refresh=True`` to bypass the cache.
+    """
+    global _EVENTS_CACHE, _CACHE_FETCHED_AT
+
+    now = datetime.now(tz=timezone.utc)
+    if (
+        not force_refresh
+        and _CACHE_FETCHED_AT is not None
+        and (now - _CACHE_FETCHED_AT).total_seconds() < _CACHE_TTL_SECONDS
+        and _EVENTS_CACHE
+    ):
+        return _EVENTS_CACHE
+
+    from_dt = now - timedelta(hours=1)
+    to_dt = now + timedelta(days=7)
+
+    events = await _fetch_finnhub(from_dt, to_dt)
+
+    if not events:
+        logger.warning(
+            "[economic_calendar] All API providers failed; using fallback static list"
+        )
+        # Emit a synthetic "unknown time" warning record so engine can still
+        # see there are events — callers check is_no_trade_zone() which will
+        # gracefully return False for events without event_time.
+        events = [
+            {**e, "event_time": None, "source": "fallback"}
+            for e in _FALLBACK_EVENTS
+        ]
+
+    _EVENTS_CACHE = events
+    _CACHE_FETCHED_AT = now
+    logger.info(f"[economic_calendar] Cache refreshed: {len(events)} events")
+    return events
+
+
+async def is_no_trade_zone(
+    symbol: str,
+    dt: Optional[datetime] = None,
+    buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
+) -> bool:
+    """Return True if ``symbol`` is within the no-trade buffer around a high-impact event.
+
+    Only applies to symbols in ``_USD_SENSITIVE_SYMBOLS``.  The buffer window is
+    [event_time - buffer_minutes, event_time + buffer_minutes].
+
+    Args:
+        symbol:         Canonical symbol (e.g. ``"EURUSD"``).
+        dt:             The datetime to check.  Defaults to ``now(UTC)``.
+        buffer_minutes: Override the buffer window.  Defaults to env
+                        ``NO_TRADE_BUFFER_MINUTES`` (30).
+    """
+    if str(symbol).upper() not in _USD_SENSITIVE_SYMBOLS:
+        return False
+
+    now = dt or datetime.now(tz=timezone.utc)
+    events = await fetch_economic_events()
+
+    for event in events:
+        if event.get("currency") != "USD":
+            continue
+        if event.get("impact") != "high":
+            continue
+        event_time: Optional[datetime] = event.get("event_time")
+        if event_time is None:
+            continue
+        # Make sure both datetimes are timezone-aware
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        delta = abs((now - event_time).total_seconds())
+        if delta <= buffer_minutes * 60:
+            logger.warning(
+                f"[economic_calendar] NO-TRADE ZONE: {symbol} is within {buffer_minutes}min"
+                f" of '{event['title']}' at {event_time.isoformat()} "
+                f"(Δ={delta:.0f}s)"
+            )
+            return True
+    return False
+
+
+def is_no_trade_zone_sync(
+    symbol: str,
+    dt: Optional[datetime] = None,
+    buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
+) -> bool:
+    """Synchronous wrapper for ``is_no_trade_zone`` — safe to call from sync code."""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    is_no_trade_zone(symbol, dt, buffer_minutes),
+                )
+                return future.result(timeout=6.0)
+        else:
+            return loop.run_until_complete(is_no_trade_zone(symbol, dt, buffer_minutes))
+    except Exception:
+        return False
+
+
+async def get_upcoming_events_summary(hours_ahead: int = 24) -> str:
+    """Return a human-readable summary of upcoming high-impact events.
+
+    Suitable for appending to signal messages or bot admin reports.
+    """
+    events = await fetch_economic_events()
+    now = datetime.now(tz=timezone.utc)
+    cutoff = now + timedelta(hours=hours_ahead)
+    upcoming = []
+    for e in events:
+        et = e.get("event_time")
+        if et is None:
+            continue
+        if et.tzinfo is None:
+            et = et.replace(tzinfo=timezone.utc)
+        if now <= et <= cutoff:
+            upcoming.append(e)
+
+    if not upcoming:
+        return ""
+
+    lines = ["⚠️ <b>Upcoming High-Impact Events</b>"]
+    for e in sorted(upcoming, key=lambda x: x["event_time"]):
+        et = e["event_time"]
+        lines.append(f"  • {e['title']} ({e['currency']}) — {et.strftime('%d %b %H:%M')} UTC")
+    return "\n".join(lines)

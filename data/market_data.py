@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time as _time
 import time
 from typing import Iterable
 
@@ -17,41 +18,226 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def _convert_to_yfinance_symbol(symbol: str) -> str:
-    """Convert project symbol names to yfinance-compatible symbols.
+# ---------------------------------------------------------------------------
+# Unified ticker formatter — maps canonical SignalRankAI symbols to each
+# provider's required format. Use this instead of ad-hoc conversions.
+# ---------------------------------------------------------------------------
+
+_BINANCE_OVERRIDES: dict[str, str] = {
+    "XAUUSD": "XAUUSDT",
+    "BTCUSD": "BTCUSDT",
+    "ETHUSD": "ETHUSDT",
+}
+
+_OANDA_OVERRIDES: dict[str, str] = {
+    "XAUUSD": "XAU_USD",
+    "XAGUSD": "XAG_USD",
+    "BTCUSD": "BTC_USD",
+    "ETHUSD": "ETH_USD",
+}
+
+_YFINANCE_OVERRIDES: dict[str, str] = {
+    "XAUUSD": "GC=F",
+    "XAGUSD": "SI=F",
+    "WTIUSD": "CL=F",
+    "CRUDEOIL": "CL=F",
+    "NATGAS": "NG=F",
+    "BTCUSD": "BTC-USD",
+    "ETHUSD": "ETH-USD",
+    "BNBUSD": "BNB-USD",
+    "SOLUSD": "SOL-USD",
+}
+
+_METAAPI_OVERRIDES: dict[str, str] = {
+    "XAUUSD": "XAUUSD",
+    "BTCUSD": "BTCUSD",
+    "ETHUSD": "ETHUSD",
+}
+
+
+def format_ticker(symbol: str, provider: str = "yfinance") -> str:
+    """Convert a canonical SignalRankAI symbol to the format required by a given provider.
+
+    Args:
+        symbol:   Canonical symbol, e.g. ``"BTCUSDT"``, ``"EURUSD"``, ``"XAUUSD"``.
+        provider: One of ``"yfinance"``, ``"binance"``, ``"oanda"``, ``"metaapi"``,
+                  ``"polygon"``, ``"twelvedata"``, ``"alphavantage"``.
+
+    Returns:
+        The provider-specific ticker string.
 
     Examples:
-    - BTCUSDT -> BTC-USD
-    - EURUSD -> EURUSD=X
-    - XAUUSD -> GC=F
-    - AAPL -> AAPL
+        >>> format_ticker("XAUUSD", "yfinance")
+        'GC=F'
+        >>> format_ticker("BTCUSDT", "binance")
+        'BTCUSDT'
+        >>> format_ticker("EURUSD", "oanda")
+        'EUR_USD'
+        >>> format_ticker("AAPL", "polygon")
+        'AAPL'
     """
     if not symbol:
         return symbol
     s = str(symbol).upper().strip()
+    p = str(provider).lower().strip()
 
-    # Explicit commodity mappings
-    commodity_map = {
-        "XAUUSD": "GC=F",
-        "XAGUSD": "SI=F",
-        "WTIUSD": "CL=F",
-        "CRUDEOIL": "CL=F",
-        "NATGAS": "NG=F",
-    }
-    if s in commodity_map:
-        return commodity_map[s]
+    if p == "yfinance":
+        if s in _YFINANCE_OVERRIDES:
+            return _YFINANCE_OVERRIDES[s]
+        if s.endswith("USDT") and len(s) > 4:
+            return f"{s[:-4]}-USD"
+        if s.endswith("USD") and len(s) > 3 and s[:3].isalpha() and s[3:] == "USD":
+            return f"{s[:-3]}-USD"
+        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+            return f"{s}=X"
+        return s
 
-    # Crypto USDT pairs -> use USD tickers on yfinance
-    if s.endswith("USDT") and len(s) > 4:
-        base = s[:-4]
-        return f"{base}-USD"
+    if p == "binance":
+        if s in _BINANCE_OVERRIDES:
+            return _BINANCE_OVERRIDES[s]
+        if s.endswith("-USD"):
+            return s[:-4] + "USDT"
+        return s
 
-    # FX pairs like EURUSD -> EURUSD=X
-    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
-        return f"{s}=X"
+    if p == "oanda":
+        if s in _OANDA_OVERRIDES:
+            return _OANDA_OVERRIDES[s]
+        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+            return f"{s[:3]}_{s[3:]}"
+        return s
 
-    # Fallback: return unchanged symbol
+    if p == "metaapi":
+        return _METAAPI_OVERRIDES.get(s, s)
+
+    if p in ("polygon", "twelvedata", "alphavantage"):
+        if s.endswith("USDT"):
+            return s[:-1]  # BTCUSDT -> BTCUST  — callers apply their own suffix
+        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+            return f"{s[:3]}/{s[3:]}"
+        return s
+
     return s
+
+
+# ---------------------------------------------------------------------------
+# Async circuit-breaker waterfall for OHLCV fetching
+# ---------------------------------------------------------------------------
+
+async def fetch_candles_with_circuit_breaker(
+    symbol: str,
+    timeframe: str,
+    limit: int = 200,
+    timeout: float = 3.0,
+) -> list:
+    """Fetch OHLCV data with async circuit-breaker fallback chain.
+
+    Priority:
+        1. Binance REST (fastest for crypto; 3 s timeout)
+        2. yfinance (universal; 3 s timeout)
+        3. MetaApi live price only (price-only stub for non-zero return)
+
+    Each provider is wrapped in ``asyncio.wait_for(..., timeout=timeout)`` so a
+    hanging upstream never blocks the engine.
+    """
+
+    async def _try_binance() -> list:
+        url = (
+            f"https://api.binance.com/api/v3/klines"
+            f"?symbol={format_ticker(symbol, 'binance')}"
+            f"&interval={timeframe}&limit={min(limit, 1000)}"
+        )
+        import httpx
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            raw = resp.json()
+            candles = []
+            for k in raw:
+                candles.append({
+                    "timestamp": int(k[0]) // 1000,
+                    "open": float(k[1]),
+                    "high": float(k[2]),
+                    "low": float(k[3]),
+                    "close": float(k[4]),
+                    "volume": float(k[5]),
+                })
+            return candles
+
+    async def _try_yfinance() -> list:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_via_yfinance, symbol, timeframe, limit),
+            timeout=timeout,
+        )
+
+    # 1 — Binance (crypto only; skip for FX/commodities)
+    if symbol.endswith("USDT") or symbol.endswith("BTC") or symbol.endswith("ETH"):
+        try:
+            candles = await asyncio.wait_for(_try_binance(), timeout=timeout)
+            if candles:
+                logger.debug(f"[circuit_breaker] Binance OK for {symbol} {timeframe}")
+                return candles
+        except (asyncio.TimeoutError, Exception) as exc:
+            logger.warning(f"[circuit_breaker] Binance failed for {symbol}: {exc}; trying yfinance")
+
+    # 2 — yfinance
+    try:
+        candles = await _try_yfinance()
+        if candles:
+            logger.debug(f"[circuit_breaker] yfinance OK for {symbol} {timeframe}")
+            return candles
+    except (asyncio.TimeoutError, Exception) as exc:
+        logger.warning(f"[circuit_breaker] yfinance failed for {symbol}: {exc}")
+
+    logger.error(f"[circuit_breaker] All providers failed for {symbol} {timeframe}")
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Order-block / FVG detection (appends is_near_order_block flag)
+# ---------------------------------------------------------------------------
+
+def detect_order_blocks(candles: list, lookback: int = 100) -> bool:
+    """Scan the last ``lookback`` candles for Fair Value Gaps / Imbalances.
+
+    An FVG exists when candle[i-2].high < candle[i].low (bullish) or
+    candle[i-2].low > candle[i].high (bearish) — leaving an unfilled gap.
+
+    Returns True if the current price (last close) sits within 0.5% of any FVG.
+    """
+    if not candles or len(candles) < 3:
+        return False
+    recent = candles[-lookback:] if len(candles) > lookback else candles
+    try:
+        current_price = float(recent[-1].get("close", 0))
+        if current_price <= 0:
+            return False
+        for i in range(2, len(recent)):
+            prev2_high = float(recent[i - 2].get("high", 0))
+            prev2_low = float(recent[i - 2].get("low", 0))
+            curr_low = float(recent[i].get("low", 0))
+            curr_high = float(recent[i].get("high", 0))
+            # Bullish FVG: gap between candle[i-2].high and candle[i].low
+            if prev2_high < curr_low:
+                mid = (prev2_high + curr_low) / 2
+                if abs(current_price - mid) / current_price <= 0.005:
+                    return True
+            # Bearish FVG: gap between candle[i].high and candle[i-2].low
+            if curr_high < prev2_low:
+                mid = (curr_high + prev2_low) / 2
+                if abs(current_price - mid) / current_price <= 0.005:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Legacy shim — kept for callers that have not been updated yet
+# ---------------------------------------------------------------------------
+
+def _convert_to_yfinance_symbol(symbol: str) -> str:
+    """Deprecated: use ``format_ticker(symbol, 'yfinance')`` instead."""
+    return format_ticker(symbol, "yfinance")
 
 
 def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
