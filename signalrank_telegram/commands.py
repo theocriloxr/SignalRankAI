@@ -3363,11 +3363,12 @@ def build_connect_broker_conversation():
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Cancel active paid subscription and disable Paystack auto-renewal.
+	"""Step 1 of /cancel — show policy warning + InlineKeyboard confirmation.
 
-	- Calls Paystack /subscription/disable to stop gateway-level billing.
-	- Sets user.auto_renew = False in DB (access remains until period ends).
-	Safe to call on FREE tier (shows informational message).
+	Displays the NO REFUND policy, subscription expiry date, and two buttons:
+	  ❌ Yes, Cancel Auto-Renew  →  cancel_confirm_callback (actual gateway disable)
+	  🔙 Nevermind               →  cancel_nevermind_callback (no-op, dismiss)
+	Safe to call on FREE tier (shows informational message and exits).
 	"""
 	user_id = update.effective_user.id if update.effective_user else None
 	if not user_id:
@@ -3376,7 +3377,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	try:
 		from db.session import get_session
 		from db.models import User
-		from sqlalchemy import select, update as sa_update
+		from db.repository import get_active_subscription
+		from sqlalchemy import select
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 		async with get_session() as session:
 			row = await session.execute(
@@ -3395,9 +3398,70 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				)
 				return
 
+			# Retrieve subscription expiry for the policy message
+			expiry_str = "the end of your current billing period"
+			try:
+				sub = await get_active_subscription(
+					session, telegram_user_id=int(user_id), tier=current_tier
+				)
+				if sub and sub.expires_at:
+					expiry_str = f"*{sub.expires_at.strftime('%B %d, %Y')}*"
+			except Exception:
+				pass
+
+		vip_note = (
+			"\n\n\u26a0\ufe0f *Note to VIPs: Once your period ends, your seat is permanently "
+			"given to the next trader on the waitlist.*"
+			if current_tier == "vip"
+			else ""
+		)
+		msg = (
+			"\u26a0\ufe0f *Subscription Cancellation* \u26a0\ufe0f\n\n"
+			"\U0001f4dc *Our Policy:* We operate a *STRICT NO REFUND* policy. "
+			"If you cancel, you will *NOT* be billed again, but you will retain "
+			"your current tier access until your billing cycle ends on "
+			f"{expiry_str}."
+			+ vip_note
+			+ "\n\nAre you sure you want to cancel auto-renewal?"
+		)
+		keyboard = InlineKeyboardMarkup([[
+			InlineKeyboardButton("\u274c Yes, Cancel Auto-Renew", callback_data="cancel_confirm"),
+			InlineKeyboardButton("\U0001f519 Nevermind", callback_data="cancel_nevermind"),
+		]])
+		await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+
+	except Exception as e:
+		logger.error(f"[cancel] cancel_command failed for user {user_id}: {e}")
+		await update.message.reply_text(
+			"\u274c Could not process cancellation. Please contact /support."
+		)
+
+
+async def _cancel_and_disable_paystack(user_id: int) -> dict:
+	"""Shared helper: call Paystack /subscription/disable and set auto_renew=False in DB.
+
+	Returns:
+	  {"success": bool, "gateway_cancelled": bool, "tier": str}
+	Used by cancel_confirm_callback to perform the actual cancellation work.
+	"""
+	try:
+		from db.session import get_session
+		from db.models import User
+		from sqlalchemy import select, update as sa_update
+
+		async with get_session() as session:
+			row = await session.execute(
+				select(User).where(User.telegram_user_id == int(user_id))
+			)
+			user = row.scalars().first()
+
+			if not user:
+				return {"success": False, "gateway_cancelled": False, "tier": "free"}
+
+			current_tier = getattr(user, "tier", "free").lower()
 			sub_code = getattr(user, "paystack_subscription_code", None)
 
-			# Disable Paystack recurring billing at the gateway (2-step: fetch token then disable)
+			# Disable Paystack recurring billing (2-step: fetch email_token → POST disable)
 			gateway_cancelled = False
 			if sub_code:
 				try:
@@ -3424,33 +3488,82 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 								headers=headers,
 							)
 							gateway_cancelled = r2.status_code < 400
-			except Exception as _ge:
-				# Non-fatal — DB cancellation still proceeds
-				logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
+				except Exception as _ge:
+					# Non-fatal — DB cancellation still proceeds
+					logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
 
-			# Mark auto_renew = False; access expires naturally at period end
+			# Mark auto_renew=False; access expires naturally at period end (no downgrade)
 			await session.execute(
-				sa_update(User)
-				.where(User.id == user.id)
-				.values(auto_renew=False)
+				sa_update(User).where(User.id == user.id).values(auto_renew=False)
 			)
 			await session.commit()
-
-		msg = (
-			f"\u2705 *Subscription Cancellation Confirmed*\n\n"
-			f"Your {current_tier.upper()} subscription has been cancelled.\n"
-			f"Auto-renewal is now *OFF* \u2014 you keep access until your current period ends.\n\n"
-			+ (
-				"\u2705 Gateway billing stopped (Paystack)."
-				if gateway_cancelled
-				else "\u26a0\ufe0f Please also cancel in your Paystack dashboard if billed directly."
-			)
-			+ "\n\nYou can re-subscribe anytime with /upgrade. \U0001f64f"
-		)
-		await update.message.reply_text(msg, parse_mode="Markdown")
+			return {"success": True, "gateway_cancelled": gateway_cancelled, "tier": current_tier}
 
 	except Exception as e:
-		logger.error(f"[cancel] cancel_command failed for user {user_id}: {e}")
-		await update.message.reply_text(
-			"\u274c Could not process cancellation. Please contact /support."
+		logger.error(f"[cancel] _cancel_and_disable_paystack failed for user {user_id}: {e}")
+		return {"success": False, "gateway_cancelled": False, "tier": "free"}
+
+
+async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Step 2 of /cancel (confirmed) — execute Paystack disable + set auto_renew=False.
+
+	Triggered by the '❌ Yes, Cancel Auto-Renew' InlineKeyboard button.
+	Edits the original confirmation message with the result summary.
+	"""
+	query = update.callback_query
+	await query.answer("Processing cancellation...")
+	user_id = update.effective_user.id if update.effective_user else None
+	if not user_id:
+		return
+
+	try:
+		result = await _cancel_and_disable_paystack(user_id)
+
+		if not result["success"]:
+			await query.edit_message_text(
+				"\u274c Cancellation failed. Please contact /support.",
+				parse_mode="Markdown",
+			)
+			return
+
+		tier = result["tier"].upper()
+		gateway_note = (
+			"\u2705 Paystack auto-billing stopped at the gateway."
+			if result["gateway_cancelled"]
+			else "\u26a0\ufe0f Please also cancel via your Paystack dashboard if billed directly."
 		)
+		await query.edit_message_text(
+			f"\u2705 *Cancellation Confirmed*\n\n"
+			f"Your {tier} auto-renewal is now *OFF*. "
+			f"You keep full access until your billing cycle ends.\n\n"
+			f"{gateway_note}\n\n"
+			f"You can re-subscribe anytime with /upgrade. \U0001f64f",
+			parse_mode="Markdown",
+		)
+
+	except Exception as e:
+		logger.error(f"[cancel] cancel_confirm_callback failed for user {user_id}: {e}")
+		try:
+			await query.edit_message_text(
+				"\u274c Cancellation failed. Please contact /support."
+			)
+		except Exception:
+			pass
+
+
+async def cancel_nevermind_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Step 2 of /cancel (aborted) — user clicked Nevermind; no DB changes.
+
+	Triggered by the '🔙 Nevermind' InlineKeyboard button.
+	Edits the original message to confirm no action was taken.
+	"""
+	query = update.callback_query
+	await query.answer("Good choice! \U0001f4aa")
+	try:
+		await query.edit_message_text(
+			"\U0001f519 *Cancellation Aborted*\n\n"
+			"Your subscription remains fully active. Keep catching those pips! \U0001f680",
+			parse_mode="Markdown",
+		)
+	except Exception as e:
+		logger.warning(f"[cancel] cancel_nevermind_callback edit failed: {e}")
