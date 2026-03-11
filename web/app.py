@@ -365,29 +365,16 @@ async def _monitor_expired_invites_job() -> None:
 
 @asynccontextmanager
 async def _lifespan(app_: FastAPI):
-    """FastAPI lifespan: run DB migration on startup, start waitlist scheduler."""
+    """FastAPI lifespan: start waitlist scheduler.
+
+    DB migrations are handled by main.py::run_startup_ops() with a
+    pg_advisory_lock BEFORE uvicorn starts.  Running alembic upgrade again
+    inside the lifespan would attempt to acquire the same lock, block the
+    event-loop thread, and prevent FastAPI from ever emitting
+    'Application startup complete' — causing Railway healthchecks to fail.
+    """
     # ── Startup ──────────────────────────────────────────────────────────────
-    # 1. Auto-run Alembic migrations (idempotent "upgrade head")
-    try:
-        from alembic.config import Config as AlembicConfig
-        from alembic import command as alembic_command
-        import asyncio, concurrent.futures
-
-        alembic_cfg = AlembicConfig("alembic.ini")
-        db_url = os.getenv("DATABASE_URL", "")
-        # Alembic needs a sync URL; strip asyncpg driver if present
-        sync_url = db_url.replace("postgresql+asyncpg://", "postgresql://")
-        alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
-
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None, lambda: alembic_command.upgrade(alembic_cfg, "head")
-        )
-        logger.info("[lifespan] Alembic upgrade head: OK")
-    except Exception as _ae:
-        logger.warning(f"[lifespan] Alembic upgrade skipped (continuing): {_ae}")
-
-    # 2. Start AsyncIOScheduler for waitlist TTL background jobs
+    # Start AsyncIOScheduler for waitlist TTL background jobs
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     _scheduler = AsyncIOScheduler(timezone="UTC")
     _scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")

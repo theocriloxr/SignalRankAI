@@ -272,6 +272,7 @@ from .owner_commands import (
     owner_revenue,
     correct_signal,
     provider_status_command,
+    broadcast_command,
 )
 
 # Import tier-based notification manager
@@ -1634,6 +1635,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
     application.add_handler(CommandHandler("correct_signal", _audit_handler("correct_signal", correct_signal)))
     application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
+    application.add_handler(CommandHandler("broadcast", _audit_handler("broadcast", broadcast_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))
 

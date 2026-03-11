@@ -68,6 +68,7 @@ COMMAND_TIERS = {
     "myid": "FREE",  # everyone can see their own ID
     "selfcheck": "OWNER",
     "provider_status": "OWNER",
+    "broadcast": "OWNER",
 }
 
 # Tier ranking (higher = more access)
@@ -249,6 +250,7 @@ COMMAND_HELP = {
             ("admin_top_assets", "Top performing assets"),
             ("admin_top_strategies", "Top performing strategies"),
             ("admin_user_engagement", "User engagement analytics"),
+            ("broadcast", "Broadcast a message to all users"),
             ("analyze", "AI analysis for a specific pair"),
             ("support", "Contact support"),
         ],
