@@ -54,6 +54,18 @@ from config import OWNER_IDS
 
 # Optional advanced features (graceful fallback if missing)
 try:
+    from data.market_data import detect_order_blocks as _detect_order_blocks
+except Exception:
+    def _detect_order_blocks(candles, lookback=100) -> bool:  # type: ignore
+        return False
+
+try:
+    from services.economic_calendar import is_no_trade_zone_sync as _is_no_trade_zone_sync
+except Exception:
+    def _is_no_trade_zone_sync(symbol: str, buffer_minutes: int = 30) -> bool:  # type: ignore
+        return False
+
+try:
     from engine.mtf_analysis import MultiTimeframeAnalyzer
 except Exception:
     class MultiTimeframeAnalyzer:
@@ -516,6 +528,14 @@ def main_loop(DRY_RUN: bool = False):
                 if stale_data:
                     continue
 
+                # Economic calendar no-trade-zone gate (30-min buffer around high-impact events)
+                try:
+                    if _is_no_trade_zone_sync(asset):
+                        logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 30 min)")
+                        continue
+                except Exception:
+                    pass
+
                 # Detect regime
                 try:
                     regime = detect_market_regime(market_data)
@@ -711,6 +731,13 @@ def main_loop(DRY_RUN: bool = False):
                         candles = tf_data.get('candles', [])
                         last_close = candles[-1]['close'] if candles else None
 
+                        # Order-block proximity enrichment (best-effort)
+                        if 'is_near_order_block' not in sig:
+                            try:
+                                sig['is_near_order_block'] = _detect_order_blocks(candles)
+                            except Exception:
+                                sig['is_near_order_block'] = False
+
                         # Add data freshness to signal
                         sig['data_age_seconds'] = tf_data.get('data_age_seconds', None)
 
@@ -790,9 +817,10 @@ def main_loop(DRY_RUN: bool = False):
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
 
-                        # attach regime & expiration
+                        # attach regime & expiration (12 h from now — hard cap)
                         sig['regime'] = regime
-                        sig['expires_at'] = signal_context.calculate_signal_expiration(sig.get('timeframe', '1h'))
+                        from datetime import timedelta as _timedelta
+                        sig['expires_at'] = datetime.utcnow() + _timedelta(hours=12)
 
                         final_signals.append(sig)
                     except Exception:

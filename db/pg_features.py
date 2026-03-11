@@ -210,6 +210,15 @@ async def get_or_create_signal(
     except Exception:
         pass
 
+    # Resolve expires_at: honour engine-set value (12h) or fall back to 12h from now
+    _raw_expires = signal.get('expires_at')
+    if isinstance(_raw_expires, datetime):
+        signal_expires_at: datetime | None = _raw_expires.replace(tzinfo=None) if _raw_expires.tzinfo else _raw_expires
+    else:
+        signal_expires_at = now + timedelta(hours=12)
+
+    signal_near_ob: bool = bool(signal.get('is_near_order_block', False))
+
     # Create Signal - try with ml_probability, fallback if column missing (migration pending)
     try:
         s = Signal(
@@ -228,9 +237,11 @@ async def get_or_create_signal(
             strength=strength,
             fingerprint=fingerprint,
             created_at=now,
+            expires_at=signal_expires_at,
+            is_near_order_block=signal_near_ob,
         )
     except Exception:
-        # Fallback if ml_probability column doesn't exist yet
+        # Fallback if new columns don't exist yet
         s = Signal(
             asset=asset,
             timeframe=timeframe,

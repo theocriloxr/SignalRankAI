@@ -167,6 +167,121 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                     """
                 ))
 
+                # ── Enterprise feature tables ───────────────────────────────────────────
+
+                # User engagement reactions (🔥 taking_it / 👀 watching)
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS signal_engagements (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        signal_id VARCHAR(36) NOT NULL REFERENCES signals(signal_id) ON DELETE CASCADE,
+                        reaction VARCHAR(16) NOT NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        CONSTRAINT uq_signal_engagement_user_signal UNIQUE (user_id, signal_id)
+                    )
+                    """
+                ))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_signal_engagements_user_id ON signal_engagements(user_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_signal_engagements_signal_id ON signal_engagements(signal_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_signal_engagements_reaction ON signal_engagements(reaction)"))
+
+                # Active signal message tracking (for inline keyboard live-editing)
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS active_signal_messages (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        signal_id VARCHAR(36) NOT NULL REFERENCES signals(signal_id) ON DELETE CASCADE,
+                        chat_id BIGINT NOT NULL,
+                        message_id BIGINT NOT NULL,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        CONSTRAINT uq_active_signal_msg_user_signal UNIQUE (user_id, signal_id)
+                    )
+                    """
+                ))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_active_signal_messages_user_id ON active_signal_messages(user_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_active_signal_messages_signal_id ON active_signal_messages(signal_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_active_signal_messages_is_active ON active_signal_messages(is_active)"))
+
+                # Economic calendar events (macro news protector cache)
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS economic_events (
+                        id SERIAL PRIMARY KEY,
+                        event_date TIMESTAMP NOT NULL,
+                        currency VARCHAR(8) NOT NULL,
+                        title VARCHAR(256) NOT NULL,
+                        impact VARCHAR(8) NOT NULL DEFAULT 'low',
+                        source VARCHAR(64),
+                        fetched_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                ))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_economic_events_event_date ON economic_events(event_date)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_economic_events_currency ON economic_events(currency)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_economic_events_impact ON economic_events(impact)"))
+
+                # MT5 execution log (tier-gated order tracking)
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS mt5_executions (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        signal_id VARCHAR(36) REFERENCES signals(signal_id) ON DELETE SET NULL,
+                        metaapi_account_id VARCHAR(128) NOT NULL,
+                        order_id VARCHAR(128),
+                        symbol VARCHAR(32) NOT NULL,
+                        direction VARCHAR(8) NOT NULL,
+                        lot_size FLOAT NOT NULL,
+                        entry_price FLOAT NOT NULL,
+                        stop_loss FLOAT NOT NULL,
+                        take_profit TEXT NOT NULL,
+                        status VARCHAR(16) NOT NULL DEFAULT 'pending',
+                        tier_at_execution VARCHAR(16) NOT NULL DEFAULT 'premium',
+                        realized_pnl FLOAT,
+                        realized_pnl_pct FLOAT,
+                        executed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        closed_at TIMESTAMP,
+                        meta JSONB NOT NULL DEFAULT '{}'
+                    )
+                    """
+                ))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_mt5_executions_user_id ON mt5_executions(user_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_mt5_executions_signal_id ON mt5_executions(signal_id)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_mt5_executions_status ON mt5_executions(status)"))
+
+                # VIP waitlist (capacity overflow queue)
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS vip_waitlist (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        joined_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        notified_at TIMESTAMP
+                    )
+                    """
+                ))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_vip_waitlist_user_id ON vip_waitlist(user_id)"))
+
+                # ── New columns on existing tables (idempotent via IF NOT EXISTS) ───────
+
+                # users: referral + MT5 execution settings
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS fixed_lot_size FLOAT NOT NULL DEFAULT 0.01"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_today INTEGER NOT NULL DEFAULT 0"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_users_referred_by ON users(referred_by)"))
+
+                # signals: auto-expiry + order-block enrichment
+                await session.execute(text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP"))
+                await session.execute(text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE"))
+                await session.execute(text("ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_signals_expires_at ON signals(expires_at)"))
+                await session.execute(text("CREATE INDEX IF NOT EXISTS ix_signals_expired ON signals(expired)"))
+
                 await session.commit()
             except Exception:
                 # Best-effort; keep app running

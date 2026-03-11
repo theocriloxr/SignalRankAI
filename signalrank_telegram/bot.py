@@ -309,6 +309,72 @@ async def _send_message_async(bot: Bot, chat_id: int, text: str) -> None:
     await bot.send_message(chat_id=chat_id, text=text)
 
 
+async def _send_signal_with_engagement_async(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    signal_id: str,
+    telegram_user_id: int,
+) -> None:
+    """Send a signal message with 🔥/👀 engagement inline buttons and save the
+    resulting message_id to ActiveSignalMessage so we can edit it later."""
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🔥 Taking it", callback_data=f"signal_reaction_{signal_id}|taking_it"),
+        InlineKeyboardButton("👀 Watching",  callback_data=f"signal_reaction_{signal_id}|watching"),
+    ]])
+    try:
+        msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+        # Persist message location so tiered_executor can live-edit it later
+        try:
+            from db.session import get_session
+            from db.models import ActiveSignalMessage
+            from db.pg_features import get_or_create_user
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            async with get_session() as session:
+                user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+                stmt = pg_insert(ActiveSignalMessage).values(
+                    user_id=user.id,
+                    signal_id=str(signal_id),
+                    chat_id=int(chat_id),
+                    message_id=int(msg.message_id),
+                    is_active=True,
+                ).on_conflict_do_update(
+                    constraint="uq_active_signal_msg_user_signal",
+                    set_={"message_id": int(msg.message_id), "is_active": True},
+                )
+                await session.execute(stmt)
+                await session.commit()
+        except Exception as _e:
+            logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
+    except Exception:
+        # Fallback: send without buttons so the signal still reaches the user
+        await bot.send_message(chat_id=chat_id, text=text)
+
+
+def _send_signal_with_engagement_sync(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    signal_id: str,
+    telegram_user_id: int,
+) -> None:
+    """Sync wrapper for _send_signal_with_engagement_async."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        run_sync(_send_signal_with_engagement_async(
+            bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id)
+        ))
+        return
+    try:
+        loop.create_task(_send_signal_with_engagement_async(
+            bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id)
+        ))
+    except Exception as _e:
+        logger.debug(f"[send_signal] Failed to schedule engagement send: {_e}")
+
+
 def _send_message_sync(bot: Bot, chat_id: int, text: str) -> None:
     """Send a Telegram message from sync code.
 
@@ -912,7 +978,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         print(f"[DEBUG][dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
-                        _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                        _send_signal_with_engagement_sync(
+                            bot,
+                            chat_id=user_id,
+                            text=format_signal(signal, display_tier=display_tier),
+                            signal_id=str(signal.get('signal_id', '')),
+                            telegram_user_id=int(user_id),
+                        )
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
