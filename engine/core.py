@@ -889,6 +889,10 @@ def main_loop(DRY_RUN: bool = False):
                 # store final_signals
                 for sig in final_signals:
                     try:
+                        # Stamp created_at so freshness checks in the delivery loop have a timestamp.
+                        # store_signal_compat sets it on the DB row but doesn't write it back
+                        # to the dict; without this every is_signal_fresh() call returns False.
+                        sig.setdefault('created_at', datetime.utcnow())
                         logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')}")
                         store_signal_compat(sig)
                         scored_signals_all.append(sig)

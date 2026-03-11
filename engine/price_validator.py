@@ -34,7 +34,10 @@ def is_signal_fresh(signal: Dict, current_time: Optional[datetime] = None) -> Tu
     
     created_at = signal.get('created_at')
     if not created_at:
-        return False, "No creation timestamp"
+        # No timestamp — assume the signal was just created and allow it through.
+        # Blocking on missing timestamp would silently drop all signals that
+        # weren't explicitly stamped before entering the delivery loop.
+        return True, "no_timestamp_allow"
     
     # Handle both datetime objects and string timestamps
     if isinstance(created_at, str):

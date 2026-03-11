@@ -54,7 +54,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         # Determine which groups to run.
         # Default: run ALL strategy groups, then let consensus + scoring pick the winner.
         if run_all:
-            groups = ["trend", "momentum", "volatility", "structure", "tradingview"]
+            groups = ["trend", "momentum", "volatility", "structure", "stock", "tradingview"]
         else:
             groups = []
             if regime_strategies and regime in regime_strategies:
