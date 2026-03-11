@@ -146,66 +146,158 @@ async def _is_strict_owner(user_id: int) -> bool:
 
 
 async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """One-time unlock: grants 7 days of Premium to anyone with the right key.
+
+    Rules:
+    - Silent if wrong key or no args
+    - Each user can only redeem the key ONCE. After that they must pay.
+    - Grants premium tier + 7-day expiry in DB
+    - Records the use in Redis (long TTL) + BotEvent (permanent)
+    """
     if update.effective_user is None or update.message is None:
         return
     if not context.args or len(context.args) != 1:
         return  # silent
 
-    provided = context.args[0]
+    provided = context.args[0].strip()
     expected = _bypass_key()
     if not expected or provided != expected:
-        return  # silent
+        return  # silent — wrong key
 
-    # 24h temporary admin access (bypass)
-    await state.set_temp_owner(update.effective_user.id, ttl_seconds=24 * 3600)
+    user_id = int(update.effective_user.id)
+    redis_key = f"unlock_key_used:{user_id}"
 
-    # Persist bypass usage + tier in Postgres (best-effort).
+    # ── Check one-use gate (Redis fast path) ────────────────────────────────
+    already_used_redis = False
+    try:
+        already_used_redis = bool(state.get_sync(redis_key))
+    except Exception:
+        pass
+
+    if already_used_redis:
+        await update.message.reply_text(
+            "🔒 You've already used this unlock key.\n"
+            "Use /upgrade to subscribe and keep your Premium access."
+        )
+        return
+
+    # ── Check DB for belt-and-suspenders (in case Redis was flushed) ────────
+    already_used_db = False
+    try:
+        from db.session import get_engine_for_event_loop, get_session
+        from db.models import BotEvent
+        from db.repository import get_or_create_user
+        from sqlalchemy import select
+        if get_engine_for_event_loop() is not None:
+            async with get_session() as session:
+                db_user = await get_or_create_user(
+                    session,
+                    telegram_user_id=user_id,
+                    username=getattr(update.effective_user, "username", None),
+                )
+                res = await session.execute(
+                    select(BotEvent)
+                    .where(
+                        BotEvent.user_id == db_user.id,
+                        BotEvent.event_type == "unlock_key_used",
+                    )
+                    .limit(1)
+                )
+                already_used_db = res.scalar_one_or_none() is not None
+    except Exception:
+        pass
+
+    if already_used_db:
+        # Re-stamp Redis so future checks are fast
+        try:
+            state.set_sync(redis_key, "1", ex=60 * 60 * 24 * 365 * 10)  # 10 years
+        except Exception:
+            pass
+        await update.message.reply_text(
+            "🔒 You've already used this unlock key.\n"
+            "Use /upgrade to subscribe and keep your Premium access."
+        )
+        return
+
+    # ── Grant 7-day Premium ─────────────────────────────────────────────────
+    from datetime import datetime, timedelta
+    premium_until = datetime.utcnow() + timedelta(days=7)
 
     try:
         from db.session import get_engine_for_event_loop, get_session
-        if get_engine_for_event_loop() is not None:
-            from db.repository import get_or_create_user
-            from db.models import AdminEvent
-            from db.pg_features import record_bot_event
+        from db.repository import get_or_create_user
+        from db.models import BotEvent, Subscription, AdminEvent
+        from db.pg_features import record_bot_event
 
+        if get_engine_for_event_loop() is not None:
             async with get_session() as session:
-                u = await get_or_create_user(session, telegram_user_id=int(update.effective_user.id), username=getattr(update.effective_user, "username", None))
+                db_user = await get_or_create_user(
+                    session,
+                    telegram_user_id=user_id,
+                    username=getattr(update.effective_user, "username", None),
+                )
+                # Upgrade tier + set expiry on User row
+                db_user.tier = "premium"
+                db_user.premium_until = premium_until
+
+                # Create a real Subscription record so tier-resolution sees it
+                import uuid as _uuid
+                sub = Subscription(
+                    user_id=db_user.id,
+                    tier="premium",
+                    status="active",
+                    started_at=datetime.utcnow(),
+                    expires_at=premium_until,
+                    meta={"source": "unlock_key"},
+                    paystack_reference=f"unlock_{user_id}_{_uuid.uuid4().hex[:8]}",
+                )
+                session.add(sub)
+
+                # Audit events
                 try:
-                    u.tier = "admin"
-                except Exception:
-                    pass
-                try:
-                    session.add(
-                        AdminEvent(
-                            event_type="bypass_unlock",
-                            actor_telegram_user_id=int(update.effective_user.id),
-                            details={"source": "unlock"},
-                        )
-                    )
+                    session.add(AdminEvent(
+                        event_type="unlock_key_used",
+                        actor_telegram_user_id=user_id,
+                        details={"tier": "premium", "days": 7},
+                    ))
                 except Exception:
                     pass
                 try:
                     await record_bot_event(
                         session,
-                        telegram_user_id=int(update.effective_user.id),
+                        telegram_user_id=user_id,
                         username=getattr(update.effective_user, "username", None),
-                        event_type="bypass_unlock",
-                        meta={"tier": "admin"},
+                        event_type="unlock_key_used",
+                        meta={"tier": "premium", "days": 7},
                     )
                 except Exception:
                     pass
+
                 await session.commit()
-    except Exception:
-        pass
-
-    try:
+    except Exception as _e:
+        _owner_logger.warning(f"[unlock] DB grant failed for user {user_id}: {_e}")
         await update.message.reply_text(
-            "✅ Admin access unlocked for 24 hours. Use /help to see admin commands."
+            "⚠️ Could not activate premium right now. Please contact support."
         )
+        return
+
+    # ── Stamp Redis so next call is instant ─────────────────────────────────
+    try:
+        state.set_sync(redis_key, "1", ex=60 * 60 * 24 * 365 * 10)  # 10 years
     except Exception:
         pass
 
-    await update.message.reply_text("Access granted.")
+    await update.message.reply_text(
+        "🎉 *Premium Unlocked for 7 Days!*\n\n"
+        "You now have access to:\n"
+        "⭐ Real-time signals with full Entry / SL / TP\n"
+        "📊 Confidence scores & risk/reward\n"
+        "📈 Performance stats & signal history\n"
+        "⚡ Trade directly on MT5\n\n"
+        f"📅 Your premium expires on: {premium_until.strftime('%Y-%m-%d')}\n\n"
+        "🔒 This key can only be used once. After expiry, use /upgrade to continue.",
+        parse_mode="Markdown",
+    )
 
 
 async def dev_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

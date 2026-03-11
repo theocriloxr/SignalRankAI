@@ -13,11 +13,12 @@ TIER_RANKS: dict[str, int] = {
 	"FREE": 0,
 	"PREMIUM": 1,
 	"VIP": 2,
+	"ADMIN": 3,
 	"OWNER": 3,
 }
 
 def tier_rank(tier) -> int:
-	return TIER_RANKS.get(tier, 0)
+	return TIER_RANKS.get((tier or "").strip().upper(), 0)
 
 def require_tier(min_tier):
 	def wrapper(func):
@@ -78,13 +79,32 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	except Exception:
 		tier = "free"
 	
-	# Get subscription expiry from Postgres
+	# Get subscription expiry from Postgres — check premium_until first, then active Subscription
 	try:
 		from db.session import get_session
 		from db.repository import get_or_create_user
+		from db.models import Subscription
+		from sqlalchemy import select, desc
+		from datetime import datetime as _dt
 		async with get_session() as session:
 			user = await get_or_create_user(session, telegram_user_id=user_id)
 			expiry = getattr(user, 'premium_until', None)
+			if expiry is None:
+				# Fall back to active subscription expiry
+				now_dt = _dt.utcnow()
+				res_sub = await session.execute(
+					select(Subscription)
+					.where(
+						Subscription.user_id == user.id,
+						Subscription.status == "active",
+						Subscription.expires_at > now_dt,
+					)
+					.order_by(desc(Subscription.expires_at))
+					.limit(1)
+				)
+				sub = res_sub.scalars().first()
+				if sub is not None:
+					expiry = sub.expires_at
 	except Exception:
 		pass
 	

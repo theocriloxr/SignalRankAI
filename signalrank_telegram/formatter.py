@@ -80,25 +80,43 @@ def _confluence_display(confluence_count: int | None, confluence_total: int | No
 	checks = "✅" * count + "⭕" * (total - count)
 	return f"{checks} ({count}/{total})"
 
-def _format_expiration(expires_at: str | None) -> str:
-	"""Format expiration time nicely."""
+def _format_expiration(expires_at) -> str:
+	"""Format expiration time nicely. Accepts datetime objects or ISO strings."""
 	if not expires_at:
 		return "Open-ended"
 	try:
 		from datetime import datetime, timezone
-		exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-		now = datetime.now(timezone.utc)
-		diff = (exp_dt - now).total_seconds()
-		if diff < 0:
-			return "Expired"
-		hours = int(diff // 3600)
-		minutes = int((diff % 3600) // 60)
-		if hours > 0:
-			return f"{hours}h {minutes}m remaining"
-		else:
-			return f"{minutes}m remaining"
+		# Handle datetime objects directly (most common case from engine)
+		if isinstance(expires_at, datetime):
+			if expires_at.tzinfo is None:
+				now = datetime.utcnow()
+			else:
+				now = datetime.now(timezone.utc)
+			diff = (expires_at - now).total_seconds()
+			if diff < 0:
+				return "Expired"
+			hours = int(diff // 3600)
+			minutes = int((diff % 3600) // 60)
+			if hours > 0:
+				return f"{hours}h {minutes}m remaining"
+			else:
+				return f"{minutes}m remaining"
+		# Handle ISO string
+		if isinstance(expires_at, str):
+			exp_dt = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+			now = datetime.now(timezone.utc)
+			diff = (exp_dt - now).total_seconds()
+			if diff < 0:
+				return "Expired"
+			hours = int(diff // 3600)
+			minutes = int((diff % 3600) // 60)
+			if hours > 0:
+				return f"{hours}h {minutes}m remaining"
+			else:
+				return f"{minutes}m remaining"
+		return str(expires_at)
 	except Exception:
-		return expires_at[:10] if isinstance(expires_at, str) else "N/A"
+		return str(expires_at)[:16] if expires_at else "N/A"
 
 def _risk_guidance(tier: str, score: float | int | None) -> str:
 	"""Return risk management guidance based on tier and score."""
