@@ -515,6 +515,9 @@ class ManagedAsset(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     added_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # telegram_user_id of admin
     note: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)
+    # Anti-stagnation queue: engine updates this after each analysis cycle so
+    # assets with the oldest timestamp are processed first next cycle.
+    last_analyzed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 

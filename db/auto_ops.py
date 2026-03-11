@@ -168,6 +168,40 @@ def run_startup_ops(run_mode: str) -> None:
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_asset ON ml_rejected_signals(asset)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_timeframe ON ml_rejected_signals(timeframe)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_actual_outcome ON ml_rejected_signals(actual_outcome)")
+
+                # managed_assets — failsafe for asset-universe pinning (migration 0015/0016)
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS managed_assets (
+                        id              SERIAL PRIMARY KEY,
+                        symbol          VARCHAR(32)  NOT NULL,
+                        asset_type      VARCHAR(16)  NOT NULL DEFAULT 'crypto',
+                        is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
+                        added_by        BIGINT,
+                        note            VARCHAR(256),
+                        last_analyzed_at TIMESTAMP,
+                        created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
+                        updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+                    )
+                    """
+                )
+                cur.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_managed_assets_symbol ON managed_assets (symbol)"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_managed_assets_is_active ON managed_assets (is_active)"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_managed_assets_last_analyzed "
+                    "ON managed_assets (last_analyzed_at ASC NULLS FIRST)"
+                )
+                # Ensure last_analyzed_at column exists if table was created before 0016
+                cur.execute(
+                    """
+                    ALTER TABLE managed_assets
+                    ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP
+                    """
+                )
                 conn.commit()
         except Exception:
             pass

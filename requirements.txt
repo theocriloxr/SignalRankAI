@@ -24,3 +24,7 @@ tradingview-ta>=3.3.0
 yfinance>=0.2.31
 oandapyV20>=0.7.2
 newsapi-python>=0.2.7
+# Universal Market Engine additions
+pytz>=2024.1
+pandas_market_calendars>=4.3.1
+yahoo_fin>=0.8.9

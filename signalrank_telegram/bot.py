@@ -729,6 +729,38 @@ def _format_free_preview(signal):
         "• Full performance tracking"
     )
 
+def _format_free_delayed_digest(items: list) -> str:
+    """Format a list of free-tier delayed signal queue items into a Telegram message.
+
+    Each item is a dict with keys: id, signal_id, asset, timeframe, direction, score.
+    """
+    if not items:
+        return "📊 No signals available right now."
+
+    lines = [
+        f"📊 *SignalRankAI — Daily Signal Digest*",
+        f"_{len(items)} signal(s) selected for you today_\n",
+    ]
+    for i, item in enumerate(items, 1):
+        asset     = str(item.get("asset") or "")
+        tf        = str(item.get("timeframe") or "")
+        direction = str(item.get("direction") or "").upper()
+        score     = int(item.get("score") or 0)
+        sig_ref   = str(item.get("signal_id") or "")[:8]
+        arrow     = "📈" if direction == "LONG" else "📉"
+        lines.append(
+            f"{i}. {arrow} *{asset}* · `{tf}`\n"
+            f"   Direction: {direction}\n"
+            f"   Ref: `{sig_ref}` · Score: {score}/100"
+        )
+
+    lines.append(
+        "\n🔒 _Upgrade to Premium for exact entry, stop-loss & take-profit levels._\n"
+        "Use /upgrade to subscribe."
+    )
+    return "\n\n".join(lines)
+
+
 def dispatch_signals(strategy_signals, user_id, regime=None):
     """Dispatch signals to user based on their tier.
     
@@ -1450,7 +1482,15 @@ def run_bot() -> None:
         logger.debug(f"[bot] Failed to set telegram logging level: {e}")
         pass
 
-    application = Application.builder().token(_require_telegram_token()).build()
+    application = (
+        Application.builder()
+        .token(_require_telegram_token())
+        .pool_timeout(TELEGRAM_POOL_TIMEOUT)
+        .connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
+        .read_timeout(TELEGRAM_READ_TIMEOUT)
+        .write_timeout(TELEGRAM_WRITE_TIMEOUT)
+        .build()
+    )
 
     # Ensure required schema exists (hotfix for missing premium_until).
     try:

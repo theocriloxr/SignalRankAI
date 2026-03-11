@@ -666,7 +666,7 @@ from datetime import datetime, timezone
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from core.redis_state import KillSwitchState, KillSwitchState, state
+from core.redis_state import KillSwitchState, state
 from .access import resolve_user_tier
 
 

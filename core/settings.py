@@ -62,12 +62,22 @@ def get_settings() -> Settings:
 
 
 def validate_required_settings() -> None:
+    import logging as _logging
     s = get_settings()
-    missing = []
+    _log = _logging.getLogger(__name__)
+    fatal: list[str] = []
+    warnings: list[str] = []
+    # DATABASE_URL is always required
     if not s.DATABASE_URL:
-        missing.append("DATABASE_URL")
-    # Tele bot token is optional in DRY_RUN but warn if RUN_MODE requires it
-    if s.RUN_MODE in ("bot", "all") and not s.TELEGRAM_BOT_TOKEN:
-        missing.append("TELEGRAM_BOT_TOKEN")
-    if missing:
-        raise RuntimeError(f"Missing required settings: {', '.join(missing)}")
+        fatal.append("DATABASE_URL")
+    # TELEGRAM_BOT_TOKEN: fatal only for pure bot service, warning for everything else
+    if not s.TELEGRAM_BOT_TOKEN:
+        if s.RUN_MODE == "bot":
+            fatal.append("TELEGRAM_BOT_TOKEN")
+        elif s.RUN_MODE == "all":
+            warnings.append("TELEGRAM_BOT_TOKEN (bot will be disabled in RUN_MODE=all)")
+    if warnings:
+        _log.warning("[settings] Optional settings missing: %s", ", ".join(warnings))
+    if fatal:
+        raise RuntimeError(f"Missing required settings: {', '.join(fatal)}")
+

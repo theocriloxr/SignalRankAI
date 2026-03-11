@@ -17,22 +17,35 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "managed_assets",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("symbol", sa.String(length=32), nullable=False),
-        sa.Column("asset_type", sa.String(length=16), nullable=False, server_default="crypto"),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("TRUE")),
-        sa.Column("added_by", sa.BigInteger(), nullable=True),
-        sa.Column("note", sa.String(length=256), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("NOW()")),
+    # Use raw SQL with IF NOT EXISTS so this migration is safe to re-run even if
+    # the table was already created by a previous partial deployment.  Alembic's
+    # op.create_table() has no IF NOT EXISTS support and would crash on replay,
+    # causing an infinite Railway restart loop.
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS managed_assets (
+            id          SERIAL PRIMARY KEY,
+            symbol      VARCHAR(32)  NOT NULL,
+            asset_type  VARCHAR(16)  NOT NULL DEFAULT 'crypto',
+            is_active   BOOLEAN      NOT NULL DEFAULT TRUE,
+            added_by    BIGINT,
+            note        VARCHAR(256),
+            created_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
+            updated_at  TIMESTAMP    NOT NULL DEFAULT NOW()
+        )
+        """
     )
-    op.create_index("ix_managed_assets_symbol", "managed_assets", ["symbol"], unique=True)
-    op.create_index("ix_managed_assets_is_active", "managed_assets", ["is_active"])
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_managed_assets_symbol "
+        "ON managed_assets (symbol)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_managed_assets_is_active "
+        "ON managed_assets (is_active)"
+    )
 
 
 def downgrade() -> None:
-    op.drop_index("ix_managed_assets_is_active", table_name="managed_assets")
-    op.drop_index("ix_managed_assets_symbol", table_name="managed_assets")
-    op.drop_table("managed_assets")
+    op.execute("DROP INDEX IF EXISTS ix_managed_assets_is_active")
+    op.execute("DROP INDEX IF EXISTS ix_managed_assets_symbol")
+    op.execute("DROP TABLE IF EXISTS managed_assets")
