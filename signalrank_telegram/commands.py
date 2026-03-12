@@ -59,6 +59,217 @@ def require_tier(min_tier):
 			return result
 		return inner
 	return wrapper
+
+
+def _chart_symbol_for_broker(signal: dict | None = None) -> tuple[str, str]:
+	"""Return (broker_prefix, symbol) for TradingView based on broker hints."""
+	import os as _os
+	asset = str((signal or {}).get("asset") or "").upper().strip()
+	broker = str((signal or {}).get("broker") or (signal or {}).get("exchange") or "").upper().strip()
+	default_broker = str(_os.getenv("TRADINGVIEW_BROKER", "BINANCE")).upper().strip()
+	# Simple heuristic for FX pairs
+	if len(asset) == 6 and asset.isalpha():
+		broker = broker or "OANDA"
+	# Crypto vs FX fallback
+	if asset.endswith("USDT") or asset.endswith("USDC"):
+		broker = broker or "BINANCE"
+	# Map known broker aliases
+	broker_map = {
+		"BINANCE": "BINANCE",
+		"BYBIT": "BYBIT",
+		"COINBASE": "COINBASE",
+		"KRAKEN": "KRAKEN",
+		"BITSTAMP": "BITSTAMP",
+		"OANDA": "OANDA",
+		"FXCM": "FXCM",
+		"FOREXCOM": "FOREXCOM",
+	}
+	broker_prefix = broker_map.get(broker, broker_map.get(default_broker, "BINANCE"))
+	return broker_prefix, asset
+
+
+def _build_dynamic_menu(user_id: int, tier: str):
+	"""Build tier-aware inline menu for /start and /account."""
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		rows = []
+		rows.append([
+			InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
+			InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
+		])
+		if tier_rank(tier) < tier_rank("PREMIUM"):
+			rows.append([InlineKeyboardButton("💳 Upgrade to VIP/Premium", callback_data="nav_upgrade")])
+			rows.append([InlineKeyboardButton("🔒 MT5 Auto‑Trading (VIP)", callback_data="locked_mt5")])
+		else:
+			rows.append([
+				InlineKeyboardButton("⚙️ MT5 Settings", callback_data="mt5_settings"),
+				InlineKeyboardButton("📊 Advanced Portfolio", callback_data="advanced_portfolio"),
+			])
+		rows.append([
+			InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+			InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+		])
+		# Admin shortcut
+		try:
+			if int(user_id) in ADMIN_IDS:
+				rows.append([InlineKeyboardButton("🛡️ Admin Dashboard", callback_data="admin_dashboard")])
+		except Exception:
+			pass
+		return InlineKeyboardMarkup(rows)
+	except Exception:
+		return None
+
+
+def _build_signal_action_keyboard(signal: dict | None = None):
+	"""Build inline buttons for /signals output (chart + trade)."""
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		broker_prefix, asset = _chart_symbol_for_broker(signal)
+		_chart_symbol = asset.replace("/", "").replace(" ", "")
+		chart_url = "https://www.tradingview.com/chart/"
+		if _chart_symbol:
+			chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{_chart_symbol}"
+		signal_id = str((signal or {}).get("signal_id") or "")[:36]
+		trade_cb = f"trade_now_{signal_id}" if signal_id else "trade_now"
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📈 View Chart", url=chart_url),
+				InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
+			],
+		])
+		return keyboard
+	except Exception:
+		return None
+
+
+async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Handle inline button callbacks from /help and /signals."""
+	query = update.callback_query
+	if query is None:
+		return
+	try:
+		await query.answer()
+	except Exception:
+		pass
+	data = str(query.data or "")
+	# Help navigation
+	if data == "nav_signals":
+		return await signals_command(update, context)
+	if data == "nav_account":
+		return await status_command(update, context)
+	if data == "nav_performance":
+		return await performance_command(update, context)
+	if data == "nav_upgrade":
+		return await upgrade_command(update, context)
+	if data == "nav_support":
+		return await support_command(update, context)
+	# Admin dashboard shortcut
+	if data == "admin_dashboard":
+		return await admin_dashboard(update, context)
+	# Locked feature upsell
+	if data.startswith("locked_"):
+		try:
+			await query.answer(
+				"⭐ This feature requires VIP. Type /upgrade to unlock!",
+				show_alert=True,
+			)
+		except Exception:
+			pass
+		return
+	# Protect VIP callbacks
+	if data in {"mt5_settings", "advanced_portfolio"}:
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			tier = _effective_tier(int(uid))
+			if tier_rank(tier) < tier_rank("PREMIUM"):
+				await query.answer(
+					"⭐ This feature requires VIP. Type /upgrade to unlock!",
+					show_alert=True,
+				)
+				return
+			await query.message.reply_text("✅ MT5 settings are available via /mt5_status and /setlot.")
+			return
+		except Exception:
+			return
+	# Admin callbacks
+	if data.startswith("admin_"):
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None or int(uid) not in ADMIN_IDS:
+				await query.answer("⛔ Access Denied", show_alert=True)
+				return
+			if data == "admin_broadcast":
+				await query.message.reply_text("📢 Broadcast mode: use /admin_broadcast <message>.")
+				return
+			if data == "admin_user_stats":
+				await query.message.reply_text("👥 User stats: use /admin or /admin_user_engagement.")
+				return
+			if data == "admin_revenue":
+				await query.message.reply_text("💸 Revenue analytics: use /owner_revenue.")
+				return
+			if data == "admin_force_signal":
+				await query.message.reply_text("⚡ Force signal: use /dev_force_signal.")
+				return
+			if data == "admin_toggle_engine":
+				await query.message.reply_text("🛑 Engine: use /dev_pause or /dev_resume.")
+				return
+		except Exception:
+			return
+	# Trade button
+	if data.startswith("trade_now"):
+		try:
+			from signalrank_telegram.access import resolve_user_tier
+			from signalrank_telegram.commands import tier_rank as _tr
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			tier = str(resolve_user_tier(int(uid)) or "FREE").upper()
+			if _tr(tier) < _tr("PREMIUM"):
+				await query.message.reply_text(
+					"🔒 Auto-trading is Premium+. Use /upgrade to unlock Trade Now."
+				)
+				return
+			await query.message.reply_text(
+				"⚡ Trade Now is available from the signal message (Take Trade button)."
+			)
+			return
+		except Exception:
+			return
+
+
+async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Admin dashboard with secure button menu (ADMIN_IDS only)."""
+	if update.effective_user is None:
+		return
+	if int(update.effective_user.id) not in ADMIN_IDS:
+		return
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📢 Broadcast to All", callback_data="admin_broadcast"),
+				InlineKeyboardButton("👥 User Stats", callback_data="admin_user_stats"),
+			],
+			[
+				InlineKeyboardButton("💸 Revenue Analytics", callback_data="admin_revenue"),
+				InlineKeyboardButton("⚡ Force Signal", callback_data="admin_force_signal"),
+			],
+			[
+				InlineKeyboardButton("🛑 Pause/Resume Engine", callback_data="admin_toggle_engine"),
+			],
+		])
+	except Exception:
+		keyboard = None
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
+		return
+	await update.message.reply_text("🛡️ Admin Dashboard", reply_markup=keyboard)
 # --- USER COMMAND: /support ---
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
@@ -138,21 +349,13 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if tier == "free":
 		msg += "\n/upgrade to unlock more signals"
 	
-	try:
-		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-		keyboard = InlineKeyboardMarkup([
-			[
-				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
-			],
-			[
-				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
-				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
-			],
-		])
-	except Exception:
-		keyboard = None
+	keyboard = _build_dynamic_menu(user_id=int(user_id), tier=tier)
 	await update.message.reply_text(msg, reply_markup=keyboard)
+
+
+async def account_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Alias for /status with dynamic tier menu."""
+	return await status_command(update, context)
 
 import os
 import sys
@@ -784,67 +987,29 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	if update.effective_user is None or update.message is None:
 		return
 	user_id: int = update.effective_user.id
-	tier: str = _effective_tier(user_id)
-	from .command_access import get_help_message
-	# get_help_message() returns HTML-formatted text
-	msg: str = f"<b>{_t(user_id, 'help_title')}</b>\n\n" + get_help_message(tier)
-
-	# Append tier-specific command hints
-	tier_upper = tier.strip().upper()
-	if tier_upper == "FREE":
-		msg += (
-			"\n\n💡 <b>Upgrade to unlock more:</b>\n"
-			"  /tiers — Compare plans\n"
-			"  /upgrade — Subscribe now\n"
-			"  /referral — Earn free days"
-		)
-	elif tier_upper == "PREMIUM":
-		msg += (
-			"\n\n⚙️ <b>Your PREMIUM commands:</b>\n"
-			"  /setlot — Set lot size for MT5 auto-exec\n"
-			"  /connect_broker — Link your MT5 account\n"
-			"  /mt5_status — Check linked account\n"
-			"  /mystats — Personal P&amp;L stats\n"
-			"  /referral — Earn +7 days per referral"
-		)
-	elif tier_upper in ("VIP", "OWNER", "ADMIN"):
-		msg += (
-			"\n\n👑 <b>Your VIP commands:</b>\n"
-			"  /setrisk — Set risk % per trade\n"
-			"  /setlot — Override lot size\n"
-			"  /connect_broker — Link/update MT5\n"
-			"  /mt5_status — Account details\n"
-			"  /mystats — Personal P&amp;L stats\n"
-			"  /referral — Earn +7 days per referral"
-		)
-
-	# Add dashboard link for eligible users
-	if tier_upper in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
-		base_url = os.getenv("DASHBOARD_URL")
-		if base_url:
-			sep = "&amp;" if "?" in base_url else "?"
-			dashboard_url: str = f"{base_url}{sep}uid={user_id}"
-			dashboard_text: str = _t(user_id, 'dashboard')
-			msg += f"\n\n🌐 <a href=\"{dashboard_url}\">{dashboard_text}</a>"
-	# Inline navigation for key command groups
+	# Short greeting + inline categories
+	msg = (
+		"👋 Welcome to SignalRankAI.\n"
+		"Pick a category below to continue."
+	)
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		keyboard = InlineKeyboardMarkup([
 			[
-				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+				InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
 			],
 			[
-				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
-				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
+				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
 			],
 			[
-				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
 			],
 		])
 	except Exception:
 		keyboard = None
-	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="HTML", reply_markup=keyboard)
+	await update.message.reply_text(msg, reply_markup=keyboard)
 
 
 async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -989,13 +1154,14 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						formatted = format_signal(s, user_tier=tier)
 						if not formatted:
 							continue
-						msg_lines.append(formatted)
+						await update.message.reply_text(
+							formatted,
+							parse_mode="Markdown",
+							reply_markup=_build_signal_action_keyboard(s),
+						)
 						shown += 1
 						if shown >= (3 if tier.lower() in {"free"} else 5):
-							break
-					if msg_lines:
-						await update.message.reply_text("\n\n".join(msg_lines), reply_markup=_nav_kbd)
-						return
+							return
 	except Exception:
 		pass
 
@@ -1936,6 +2102,9 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = update.effective_user.id
 	msg = (
 		"💰 SignalRankAI Plans\n\n"
 		"🆓 Free Plan\n"
@@ -1958,8 +2127,25 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		"📱 Weekly Plan — ₦4,000/week (full access)\n\n"
 		"Use /upgrade to subscribe."
 	)
-	if update.message is not None:
-		await update.message.reply_text(msg)
+	# Build pricing buttons (Paystack links)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		from paystack.paystack import generate_paystack_link
+		rows = []
+		vip_link = generate_paystack_link(user_id=user_id, price=40000, tier="VIP", duration="MONTHLY", duration_days=30)
+		prem_link = generate_paystack_link(user_id=user_id, price=24000, tier="PREMIUM", duration="MONTHLY", duration_days=30)
+		week_link = generate_paystack_link(user_id=user_id, price=4000, tier="WEEKLY_PLAN", duration="WEEKLY", duration_days=7)
+		if vip_link:
+			rows.append([InlineKeyboardButton("💎 VIP Monthly — ₦40,000", url=vip_link)])
+		if prem_link:
+			rows.append([InlineKeyboardButton("⭐ Premium Monthly — ₦24,000", url=prem_link)])
+		if week_link:
+			rows.append([InlineKeyboardButton("📅 Weekly Plan — ₦4,000", url=week_link)])
+		rows.append([InlineKeyboardButton("🎧 Support", callback_data="nav_support")])
+		keyboard = InlineKeyboardMarkup(rows)
+	except Exception:
+		keyboard = None
+	await update.message.reply_text(msg, reply_markup=keyboard)
 
 
 @require_tier("PREMIUM")
@@ -2820,20 +3006,8 @@ async def start_command(update, context):
 		return  # Hold back welcome message until terms are accepted
 
 	# Terms already accepted — send normal welcome
-	try:
-		from telegram import InlineKeyboardMarkup as _IKM_start, InlineKeyboardButton as _IKB_start
-		_kbd_start = _IKM_start([
-			[
-				_IKB_start("📈 Signals", callback_data="nav_signals"),
-				_IKB_start("✅ Status", callback_data="nav_account"),
-			],
-			[
-				_IKB_start("🚀 Upgrade", callback_data="nav_upgrade"),
-				_IKB_start("🆘 Support", callback_data="nav_support"),
-			],
-		])
-	except Exception:
-		_kbd_start = None
+	_tier = _effective_tier(int(user_id))
+	_kbd_start = _build_dynamic_menu(user_id=int(user_id), tier=_tier)
 	await update.message.reply_text(msg, reply_markup=_kbd_start)
 
 # /about message
@@ -3962,9 +4136,10 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	try:
 		bot_username = (await context.bot.get_me()).username or ""
 	except Exception:
-		bot_username = os.getenv("BOT_USERNAME", "SignalRankBot")
+		bot_username = os.getenv("BOT_USERNAME", "")
+	bot_username = (bot_username or "").strip().lstrip("@")
 
-	referral_url = f"https://t.me/{bot_username}?start=ref_{user_id}"
+	referral_url = f"https://t.me/{bot_username}?start=ref_{user_id}" if bot_username else ""
 	bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "7"))
 
 	# Count how many users were referred by this user
@@ -3993,13 +4168,26 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 	msg = (
 		f"🔗 <b>Your Referral Link</b>\n\n"
-		f"<code>{referral_url}</code>\n\n"
+		f"<code>{referral_url or 'Bot username not set'}</code>\n\n"
 		f"📊 Referrals: <b>{referred_count}</b>\n"
 		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n\n"
 		f"💡 Earn <b>+{bonus_days} free days</b> every time someone you refer upgrades to PREMIUM or VIP.\n"
 		f"Share your link and grow your streak!"
 	)
-	await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		share_url = f"https://t.me/share/url?url={referral_url}" if referral_url else ""
+		rows = []
+		if share_url:
+			rows.append([InlineKeyboardButton("📣 Share", url=share_url)])
+		rows.append([
+			InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+			InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+		])
+		keyboard = InlineKeyboardMarkup(rows)
+	except Exception:
+		keyboard = None
+	await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1927,13 +1927,14 @@ def run_bot() -> None:
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
     # ── Help/Navigation buttons ─────────────────────────────────────────────
-    from .commands import nav_callback
+    from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
-    application.add_handler(_CQH_nav(nav_callback, pattern="^nav_"))
+    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_|trade_now)"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
-    from .commands import admin_command, admin_broadcast_command, blast_terms_command
+    from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
+    application.add_handler(CommandHandler("admin_dashboard", _audit_handler("admin_dashboard", admin_dashboard)))
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
     application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
 
@@ -1948,6 +1949,7 @@ def run_bot() -> None:
         admin_top_assets_command, admin_top_strategies_command,
         admin_user_engagement_command, assets_command,
         reports_command, filter_command, apikey_command, language_command,
+        account_command,
     )
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
@@ -1965,6 +1967,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
+    application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
