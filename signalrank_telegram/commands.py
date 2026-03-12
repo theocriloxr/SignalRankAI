@@ -1962,6 +1962,229 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
 
 
+# ── Inline-button callbacks for /upgrade VIP waitlist ─────────────────────
+async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Handle 'Join Waitlist' button pressed from /upgrade when VIP is full."""
+	query = update.callback_query
+	await query.answer()
+	user_id = update.effective_user.id if update.effective_user else None
+	if not user_id:
+		return
+	try:
+		from db.session import get_engine_for_event_loop, get_session as _gs_wl
+		from db.models import VIPWaitlist, User
+		from sqlalchemy import select as _sel
+		engine = get_engine_for_event_loop()
+		if engine is not None:
+			async with _gs_wl() as session:
+				u_res = await session.execute(_sel(User).where(User.telegram_user_id == int(user_id)))
+				u = u_res.scalar_one_or_none()
+				if u is not None:
+					exists = (await session.execute(
+						_sel(VIPWaitlist).where(VIPWaitlist.user_id == u.id)
+					)).scalar_one_or_none()
+					if exists is None:
+						from datetime import datetime as _dt
+						session.add(VIPWaitlist(user_id=u.id, joined_at=_dt.utcnow()))
+						await session.commit()
+						await query.edit_message_text(
+							"✅ You've been added to the VIP waitlist!\n\n"
+							"We'll DM you within 24 hours when a seat opens. "
+							"You'll get a personal payment link to complete your upgrade.",
+						)
+						return
+					else:
+						await query.answer("You're already on the waitlist. We'll notify you when a seat opens! 🕐", show_alert=True)
+						return
+	except Exception:
+		pass
+	await query.answer("Could not add to waitlist. Please contact @theocrilox.", show_alert=True)
+
+
+# ── Terms gate callbacks (/start disclaimer) ───────────────────────────────
+async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""User clicked [✅ I Agree] on the financial disclaimer."""
+	query = update.callback_query
+	await query.answer("Terms accepted ✅")
+	user_id = update.effective_user.id if update.effective_user else None
+	if not user_id:
+		return
+	try:
+		from db.session import get_session as _gs_terms
+		from db.models import User
+		from sqlalchemy import update as _sa_upd
+		async with _gs_terms() as session:
+			await session.execute(
+				_sa_upd(User)
+				.where(User.telegram_user_id == int(user_id))
+				.values(accepted_terms=True)
+			)
+			await session.commit()
+	except Exception:
+		pass
+	welcome = (
+		"✅ *Welcome to SignalRankAI!*\n\n"
+		"You're all set. Here's what you get:\n"
+		"• Risk-managed signals filtered for high-probability setups\n"
+		"• Outcome tracking — no hype, no guarantees\n"
+		"• Real-time market coverage: Crypto, Forex, Stocks, Commodities\n\n"
+		"Use /pricing to see plans, or /upgrade to subscribe.\n"
+		"Use /signals to see the latest setups."
+	)
+	try:
+		await query.edit_message_text(welcome, parse_mode="Markdown")
+	except Exception:
+		try:
+			if update.effective_chat:
+				await context.bot.send_message(
+					chat_id=update.effective_chat.id, text=welcome, parse_mode="Markdown"
+				)
+		except Exception:
+			pass
+
+
+async def decline_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""User clicked [❌ Decline] on the financial disclaimer."""
+	query = update.callback_query
+	await query.answer()
+	try:
+		await query.edit_message_text(
+			"No problem. You can return anytime by sending /start.\n\n"
+			"Remember: SignalRankAI provides educational trade ideas only — "
+			"never financial advice."
+		)
+	except Exception:
+		pass
+
+
+# ── Admin dashboard ────────────────────────────────────────────────────────
+async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""OWNER/ADMIN only — show real-time platform dashboard."""
+	if update.effective_user is None or update.message is None:
+		return
+	tier = _effective_tier(update.effective_user.id)
+	if tier_rank(tier) < tier_rank("ADMIN"):
+		return  # silent for non-admins
+
+	import os as _os_adm
+	from datetime import datetime as _dt_adm
+
+	try:
+		from db.session import get_engine_for_event_loop, get_session as _gs_adm
+		from sqlalchemy import select as _sel_adm, func as _func_adm
+		from db.models import User as _User_adm, Signal as _Sig_adm, Subscription as _Sub_adm
+
+		engine = get_engine_for_event_loop()
+		if engine is None:
+			await update.message.reply_text("Database not available.")
+			return
+
+		now = _dt_adm.utcnow()
+		today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+		async with _gs_adm() as session:
+			total_users = (await session.execute(
+				_sel_adm(_func_adm.count(_User_adm.id))
+			)).scalar() or 0
+
+			from db.repository import count_active_vip_users as _cvip
+			vip_active = await _cvip(session)
+
+			premium_active = (await session.execute(
+				_sel_adm(_func_adm.count(_Sub_adm.id)).where(
+					_Sub_adm.tier == "premium",
+					_Sub_adm.status == "active",
+				)
+			)).scalar() or 0
+
+			signals_today = (await session.execute(
+				_sel_adm(_func_adm.count(_Sig_adm.signal_id)).where(
+					_Sig_adm.created_at >= today_start
+				)
+			)).scalar() or 0
+
+			total_signals = (await session.execute(
+				_sel_adm(_func_adm.count(_Sig_adm.signal_id))
+			)).scalar() or 0
+
+			# Free-tier users = total minus any active subscription
+			free_users = total_users - premium_active - vip_active
+
+		vip_limit = int(_os_adm.getenv("VIP_SEAT_LIMIT", "15"))
+		msg = (
+			"🛡️ *Admin Dashboard*\n\n"
+			f"👥 Total Users: `{total_users:,}`\n"
+			f"💎 VIP Active: `{vip_active}` / `{vip_limit}`\n"
+			f"⭐ Premium Active: `{premium_active}`\n"
+			f"🆓 Free Tier: `{max(0, free_users):,}`\n\n"
+			f"📡 Signals Today: `{signals_today}`\n"
+			f"📊 Total Signals (all-time): `{total_signals:,}`\n\n"
+			f"🕐 UTC: `{now.strftime('%Y-%m-%d %H:%M')}`"
+		)
+		await update.message.reply_text(msg, parse_mode="Markdown")
+
+	except Exception as e:
+		logger.error(f"[admin] admin_command failed: {e}")
+		await update.message.reply_text(f"Admin query failed: {e}")
+
+
+# ── Admin broadcast ────────────────────────────────────────────────────────
+async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""OWNER/ADMIN only — DM all registered users with a message.
+
+	Usage: /admin_broadcast <message text>
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+	tier = _effective_tier(update.effective_user.id)
+	if tier_rank(tier) < tier_rank("ADMIN"):
+		return  # silent for non-admins
+
+	msg_text = " ".join(context.args or []).strip()
+	if not msg_text:
+		await update.message.reply_text(
+			"Usage: /admin_broadcast <message>\n\n"
+			"Example:\n/admin_broadcast New premium signals just dropped! 🔥"
+		)
+		return
+
+	try:
+		from db.session import get_engine_for_event_loop, get_session as _gs_bc
+		from sqlalchemy import select as _sel_bc
+		from db.models import User as _User_bc
+
+		engine = get_engine_for_event_loop()
+		if engine is None:
+			await update.message.reply_text("Database not available.")
+			return
+
+		async with _gs_bc() as session:
+			result = await session.execute(_sel_bc(_User_bc.telegram_user_id))
+			user_ids = [row[0] for row in result.fetchall()]
+
+		broadcast_text = f"📢 *SignalRankAI*\n\n{msg_text}"
+		sent = 0
+		failed = 0
+		for uid in user_ids:
+			try:
+				await context.bot.send_message(
+					chat_id=int(uid),
+					text=broadcast_text,
+					parse_mode="Markdown",
+				)
+				sent += 1
+			except Exception:
+				failed += 1
+
+		await update.message.reply_text(
+			f"✅ Broadcast complete.\n\nSent: {sent} | Failed: {failed}"
+		)
+
+	except Exception as e:
+		logger.error(f"[admin] admin_broadcast_command failed: {e}")
+		await update.message.reply_text(f"Broadcast failed: {e}")
+
+
 # /policy or /refunds command
 async def policy_command(update, context) -> None:
 	if await _public_guard(update):
@@ -2152,6 +2375,9 @@ async def start_command(update, context):
 				except Exception:
 					pass
 
+				# Read accepted_terms before session closes (object becomes detached after commit)
+				terms_accepted: bool = bool(getattr(user_row, "accepted_terms", False))
+
 				await session.commit()
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
@@ -2226,6 +2452,27 @@ async def start_command(update, context):
 	except Exception:
 		pass
 
+	# ── Terms gate: new / unaccepted users must agree to disclaimer first ─────
+	if not terms_accepted:
+		from telegram import InlineKeyboardMarkup as _IKM, InlineKeyboardButton as _IKB
+		disclaimer = (
+			"⚠️ *Financial Disclaimer*\n\n"
+			"Before you continue, please read and accept:\n\n"
+			"• All signals are for *educational purposes only*\n"
+			"• Nothing here constitutes financial advice or a trade recommendation\n"
+			"• Trading involves significant risk — losses can exceed your deposit\n"
+			"• Past performance does not guarantee future results\n"
+			"• You are solely responsible for your trading decisions\n\n"
+			"Tap *✅ I Agree* to acknowledge these terms and continue."
+		)
+		_kbd = _IKM([[
+			_IKB("✅ I Agree", callback_data="agree_terms"),
+			_IKB("❌ Decline", callback_data="decline_terms"),
+		]])
+		await update.message.reply_text(disclaimer, parse_mode="Markdown", reply_markup=_kbd)
+		return  # Hold back welcome message until terms are accepted
+
+	# Terms already accepted — send normal welcome
 	await update.message.reply_text(msg)
 
 # /about message
@@ -2408,20 +2655,62 @@ async def stats_command(update, context) -> None:
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
+			from sqlalchemy import select as _sel_s, func as _func_s
+			from db.models import Outcome as _Out, Signal as _Sig_s, SignalDelivery as _Deliv, User as _U_s
 			async with get_session() as session:
 				week = await get_weekly_recap_stats(session, int(user_id))
-				today_rows: list[Signal] = await list_signals_sent_today(session, int(user_id))
+				today_rows: list = await list_signals_sent_today(session, int(user_id))
+				# Fetch outcomes for signals delivered to this user (via SignalDelivery join)
+				try:
+					_u_res = await session.execute(
+						_sel_s(_U_s).where(_U_s.telegram_user_id == int(user_id))
+					)
+					_u = _u_res.scalar_one_or_none()
+					if _u is not None:
+						_outcome_rows = (
+							await session.execute(
+								_sel_s(_Out)
+								.join(_Deliv, _Deliv.signal_id == _Out.signal_id)
+								.where(_Deliv.user_id == _u.id)
+								.order_by(_Out.closed_at.desc())
+								.limit(100)
+							)
+						).scalars().all()
+					else:
+						_outcome_rows = []
+				except Exception:
+					_outcome_rows = []
 				await session.commit()
+			# Compute stats from outcome rows
+			_wins = sum(1 for o in _outcome_rows if str(o.status).startswith("tp"))
+			_losses = sum(1 for o in _outcome_rows if o.status == "sl")
+			_tracked = len(_outcome_rows)
+			_win_rate = (_wins / _tracked * 100) if _tracked > 0 else None
+			_r_values = [o.r_multiple for o in _outcome_rows if o.r_multiple is not None]
+			_net_r = sum(_r_values) if _r_values else None
+			_avg_r = (sum(_r_values) / len(_r_values)) if _r_values else None
 			total_week = int((week or {}).get("total") or 0)
 			today: int = len(today_rows or [])
-			msg: str = (
-				"📈 Stats (Premium)\n\n"
-				f"Signals delivered today: {today}\n"
-				f"Signals delivered (last 7 days): {total_week}\n\n"
-				"Use /history to view recent signals."
-			)
+			lines = [
+				"📈 *My Stats*",
+				"",
+				f"📡 Signals today: `{today}`",
+				f"📊 Signals this week: `{total_week}`",
+			]
+			if _tracked > 0:
+				lines += [
+					"",
+					f"✅ Wins: `{_wins}` | ❌ Losses: `{_losses}` | Total: `{_tracked}`",
+					f"🎯 Win Rate: `{_win_rate:.1f}%`" if _win_rate is not None else "",
+					f"📐 Net R: `{_net_r:+.2f}R`" if _net_r is not None else "",
+					f"📏 Avg R/trade: `{_avg_r:+.2f}R`" if _avg_r is not None else "",
+				]
+			else:
+				lines.append("\n_No tracked outcomes yet. Outcomes appear when TP/SL levels are hit._")
+			lines.append("\nUse /history to view recent signals.")
+			msg: str = "\n".join(l for l in lines if l is not None)
 			if update.message is not None:
-				await update.message.reply_text(msg)
+				await update.message.reply_text(msg, parse_mode="Markdown")
 			return
 	except Exception:
 		pass

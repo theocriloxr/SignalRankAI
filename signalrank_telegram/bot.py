@@ -274,6 +274,11 @@ from .commands import (
     liveprice_command,
     portfolio_command,
     market_command,
+    admin_command,
+    admin_broadcast_command,
+    agree_terms_callback,
+    decline_terms_callback,
+    vip_waitlist_join_callback,
 )
 
 # Register new commands
@@ -1790,6 +1795,22 @@ def run_bot() -> None:
     from telegram.ext import CallbackQueryHandler as _CQH_cancel
     application.add_handler(_CQH_cancel(cancel_confirm_callback, pattern="^cancel_confirm$"))
     application.add_handler(_CQH_cancel(cancel_nevermind_callback, pattern="^cancel_nevermind$"))
+
+    # ── Terms gate callbacks (/start disclaimer) ─────────────────────────────
+    from .commands import agree_terms_callback, decline_terms_callback
+    from telegram.ext import CallbackQueryHandler as _CQH_terms
+    application.add_handler(_CQH_terms(agree_terms_callback, pattern="^agree_terms$"))
+    application.add_handler(_CQH_terms(decline_terms_callback, pattern="^decline_terms$"))
+
+    # ── VIP waitlist join callback (/upgrade when full) ──────────────────────
+    from .commands import vip_waitlist_join_callback
+    from telegram.ext import CallbackQueryHandler as _CQH_vip
+    application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
+
+    # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
+    from .commands import admin_command, admin_broadcast_command
+    application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
+    application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
