@@ -265,6 +265,158 @@ async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	return msg, keyboard
 
 
+def _build_main_menu_keyboard(user_id: int):
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		rows = [
+			[
+				InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
+			],
+			[
+				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+			],
+			[
+				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+			],
+		]
+		try:
+			if int(user_id) in ADMIN_IDS:
+				rows.append([InlineKeyboardButton("🛡️ Admin Dashboard", callback_data="admin_dashboard")])
+		except Exception:
+			pass
+		return InlineKeyboardMarkup(rows)
+	except Exception:
+		return None
+
+
+async def _compose_main_menu_message(user_id: int) -> tuple[str, object | None]:
+	msg = (
+		"👋 Welcome to SignalRankAI.\n"
+		"Pick a category below to continue."
+	)
+	return msg, _build_main_menu_keyboard(int(user_id))
+
+
+def _build_section_back_keyboard(*, include_upgrade: bool = True):
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		rows = [
+			[
+				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+			],
+		]
+		if include_upgrade:
+			rows.insert(0, [
+				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+			])
+		else:
+			rows.insert(0, [InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home")])
+		return InlineKeyboardMarkup(rows)
+	except Exception:
+		return None
+
+
+async def _compose_signals_menu_message(user_id: int) -> tuple[str, object | None]:
+	tier = _effective_tier(int(user_id))
+	msg = (
+		"📊 Signals Menu\n\n"
+		"• Use /signals to view the latest active trade setups\n"
+		"• Track live opportunities across crypto, forex, stocks, and commodities\n"
+		"• Premium and VIP users receive deeper signal detail and broader coverage\n\n"
+		f"Your current tier: {tier}\n"
+		"Tip: send /signals anytime to pull the latest signal feed."
+	)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
+				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+			],
+			[
+				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+			],
+			[
+				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+			],
+		])
+	except Exception:
+		keyboard = None
+	return msg, keyboard
+
+
+async def _compose_performance_menu_message(user_id: int) -> tuple[str, object | None]:
+	tier = _effective_tier(int(user_id))
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		msg = (
+			"🏆 Performance Menu\n\n"
+			"Detailed performance analytics are available on Premium and VIP plans.\n"
+			"Upgrade to unlock 30-day stats, tracked outcomes, and win-rate reporting.\n\n"
+			"You can still use /upgrade to unlock analytics instantly."
+		)
+	else:
+		msg = (
+			"🏆 Performance Menu\n\n"
+			"• Use /performance for your 30-day delivery and outcome summary\n"
+			"• Review tracked wins, losses, win rate, and net R performance\n"
+			"• Pair this with /portfolio and /dashboard for a broader view\n\n"
+			f"Your current tier: {tier}"
+		)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+			],
+			[
+				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
+			],
+			[
+				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+			],
+		])
+	except Exception:
+		keyboard = None
+	return msg, keyboard
+
+
+async def _compose_support_menu_message(user_id: int) -> tuple[str, object | None]:
+	_ = user_id
+	msg = (
+		"🎧 Support Menu\n\n"
+		"Need help with billing, subscriptions, bot access, or trade delivery?\n\n"
+		"Support contact: @theocrilox\n"
+		"Helpful commands:\n"
+		"• /faq\n"
+		"• /policy\n"
+		"• /refunds"
+	)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("💬 Contact Support", url="https://t.me/theocrilox"),
+			],
+			[
+				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+			],
+			[
+				InlineKeyboardButton("🏠 Back to Main Menu", callback_data="nav_home"),
+			],
+		])
+	except Exception:
+		keyboard = None
+	return msg, keyboard
+
+
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Handle inline button callbacks from /help and /signals."""
 	query = update.callback_query
@@ -281,8 +433,26 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		pass
 	data = str(query.data or "")
 	# Help navigation
+	if data == "nav_home":
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_main_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_signals":
-		return await signals_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_signals_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_account":
 		try:
 			uid = update.effective_user.id if update.effective_user else None
@@ -294,7 +464,15 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception:
 			return
 	if data == "nav_performance":
-		return await performance_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_performance_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_upgrade":
 		try:
 			uid = update.effective_user.id if update.effective_user else None
@@ -306,7 +484,15 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception:
 			return
 	if data == "nav_support":
-		return await support_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_support_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "vip_sold_out":
 		try:
 			await query.answer("VIP is currently sold out. Join the waitlist to be notified.", show_alert=True)
@@ -1307,10 +1493,36 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 		pass
 	data = str(query.data or "")
 	# Allow callback-driven command execution by reusing handlers.
+	if data == "nav_home":
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_main_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_signals":
-		return await signals_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_signals_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_performance":
-		return await performance_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_performance_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_account":
 		try:
 			uid = update.effective_user.id if update.effective_user else None
@@ -1332,7 +1544,15 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 		except Exception:
 			return
 	if data == "nav_support":
-		return await support_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_support_menu_message(int(uid))
+			await query.edit_message_text(text=msg, reply_markup=keyboard)
+			return
+		except Exception:
+			return
 
 # --------- MYID COMMAND ---------
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
