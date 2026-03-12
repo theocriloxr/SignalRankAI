@@ -13,14 +13,22 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("Usage: /broadcast <message>")
         return
     msg = " ".join(context.args)
+    import asyncio
+    from telegram.error import RetryAfter
     from db.pg_compat import get_all_user_ids_compat
-    user_ids = await get_all_user_ids_compat()
+    user_ids = get_all_user_ids_compat()
     from signalrank_telegram.bot import application
     bot = application.bot
     sent = 0
     for uid in user_ids:
         try:
-            await bot.send_message(chat_id=uid, text=msg)
+            while True:
+                try:
+                    await bot.send_message(chat_id=uid, text=msg)
+                    break
+                except RetryAfter as e:
+                    await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+            await asyncio.sleep(0.5)
             sent += 1
         except Exception:
             continue

@@ -34,6 +34,8 @@ async def _resend_unsent_signals_async():
         from core.redis_state import was_signal_delivered_sync
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
+        import asyncio
+        from telegram.error import RetryAfter
 
         delivery_mgr = TierDeliveryManager()
 
@@ -64,6 +66,15 @@ async def _resend_unsent_signals_async():
 
         # Single Bot instance, properly initialised — avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
+        async def _send_with_retry(chat_id: int, text: str) -> None:
+            while True:
+                try:
+                    await bot.send_message(chat_id=int(chat_id), text=text)
+                    return
+                except RetryAfter as e:
+                    await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+                except Exception:
+                    raise
         async with bot:
             for sig in signals:
                 signal_id = str(getattr(sig, 'signal_id', '') or '')
@@ -128,7 +139,11 @@ async def _resend_unsent_signals_async():
                         # Format and send
                         display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
                         text = format_signal(sig_dict, display_tier=display_tier)
-                        await bot.send_message(chat_id=int(user_id), text=text)
+                        try:
+                            await _send_with_retry(int(user_id), text)
+                        except Exception as send_err:
+                            raise send_err
+                        await asyncio.sleep(0.5)
                         logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
 
                         # Record delivery in DB (sequential — no races)

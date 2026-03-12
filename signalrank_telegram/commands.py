@@ -2597,16 +2597,24 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 			result = await session.execute(_sel_bc(_User_bc.telegram_user_id))
 			user_ids = [row[0] for row in result.fetchall()]
 
+		import asyncio
+		from telegram.error import RetryAfter
 		broadcast_text = f"📢 *SignalRankAI*\n\n{msg_text}"
 		sent = 0
 		failed = 0
 		for uid in user_ids:
 			try:
-				await context.bot.send_message(
-					chat_id=int(uid),
-					text=broadcast_text,
-					parse_mode="Markdown",
-				)
+				while True:
+					try:
+						await context.bot.send_message(
+							chat_id=int(uid),
+							text=broadcast_text,
+							parse_mode="Markdown",
+						)
+						break
+					except RetryAfter as e:
+						await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+				await asyncio.sleep(0.5)
 				sent += 1
 			except Exception:
 				failed += 1
@@ -2676,12 +2684,20 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 		failed = 0
 		for uid in pending_ids:
 			try:
-				await context.bot.send_message(
-					chat_id=int(uid),
-					text=disclaimer,
-					parse_mode="Markdown",
-					reply_markup=_kbd_bt,
-				)
+				import asyncio
+				from telegram.error import RetryAfter
+				while True:
+					try:
+						await context.bot.send_message(
+							chat_id=int(uid),
+							text=disclaimer,
+							parse_mode="Markdown",
+							reply_markup=_kbd_bt,
+						)
+						break
+					except RetryAfter as e:
+						await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+				await asyncio.sleep(0.5)
 				sent += 1
 			except Exception:
 				failed += 1
@@ -2738,12 +2754,20 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 		failed = 0
 		for uid in pending_ids:
 			try:
-				await context.bot.send_message(
-					chat_id=int(uid),
-					text=disclaimer,
-					parse_mode="Markdown",
-					reply_markup=_kbd_bt,
-				)
+				import asyncio
+				from telegram.error import RetryAfter
+				while True:
+					try:
+						await context.bot.send_message(
+							chat_id=int(uid),
+							text=disclaimer,
+							parse_mode="Markdown",
+							reply_markup=_kbd_bt,
+						)
+						break
+					except RetryAfter as e:
+						await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+				await asyncio.sleep(0.5)
 				sent += 1
 			except Exception:
 				failed += 1
