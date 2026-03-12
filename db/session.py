@@ -52,32 +52,47 @@ def _prefer_ipv4_url(url: str) -> str:
 
 
 def get_database_url() -> Optional[str]:
-    # Priority:
-    #  1. DATABASE_PUBLIC_URL  – Railway's external IPv4 proxy (avoids IPv6 issues)
-    #  2. DATABASE_URL         – read directly from env (not config snapshot)
-    #  3. config.DATABASE_URL  – import-time fallback
-    # Reading os.getenv() directly ensures we always use the live env var value,
-    # not a stale Config() snapshot from module import time.
-    url = (
+    """Return the async-compatible database URL.
+
+    Priority (evaluated fresh on every call so late-set env vars are always picked up):
+      1. DATABASE_PUBLIC_URL  — Railway external IPv4 proxy (avoids IPv6 ECONNREFUSED)
+      2. DATABASE_URL         — standard env var (read directly, NOT from Config snapshot)
+      3. config.DATABASE_URL  — import-time fallback
+
+    Raises ValueError if NO url is configured so callers get a clear error message
+    instead of asyncpg silently falling back to the local 'postgres' user.
+    """
+    raw = (
         os.getenv("DATABASE_PUBLIC_URL")
         or os.getenv("DATABASE_URL")
         or config.DATABASE_URL
         or ""
     ).strip()
-    if not url:
-        return None
+    if not raw:
+        raise ValueError(
+            "DATABASE_URL is not set. "
+            "Set DATABASE_URL (or DATABASE_PUBLIC_URL) as an environment variable."
+        )
     # Normalise to asyncpg dialect
-    if url.startswith("postgresql+asyncpg://"):
-        return _prefer_ipv4_url(url)
-    if url.startswith("postgres://"):
-        return _prefer_ipv4_url(url.replace("postgres://", "postgresql+asyncpg://", 1))
-    if url.startswith("postgresql://"):
-        return _prefer_ipv4_url(url.replace("postgresql://", "postgresql+asyncpg://", 1))
-    return url
+    if raw.startswith("postgresql+asyncpg://"):
+        return _prefer_ipv4_url(raw)
+    if raw.startswith("postgres://"):
+        return _prefer_ipv4_url(raw.replace("postgres://", "postgresql+asyncpg://", 1))
+    if raw.startswith("postgresql://"):
+        return _prefer_ipv4_url(raw.replace("postgresql://", "postgresql+asyncpg://", 1))
+    return _prefer_ipv4_url(raw)
+
+
+def get_database_url_or_none() -> Optional[str]:
+    """Like get_database_url() but returns None instead of raising, for optional checks."""
+    try:
+        return get_database_url()
+    except ValueError:
+        return None
 
 
 def create_engine() -> Optional[AsyncEngine]:
-    url = get_database_url()
+    url = get_database_url_or_none()
     if not url:
         return None
     # In single-service mode (RUN_MODE=all) we run multiple threads/loops (web, bot,
@@ -127,8 +142,13 @@ def _get_global_engine() -> Optional[AsyncEngine]:
     with _global_engine_lock:
         if _global_engine is not None:          # re-check after acquiring lock
             return _global_engine
-        url = get_database_url()
-        if not url:
+        try:
+            url = get_database_url()  # raises ValueError if not set
+        except ValueError as _ve:
+            logger.critical(
+                "[db] DATABASE_URL is not configured — cannot create async engine. "
+                "Set DATABASE_URL or DATABASE_PUBLIC_URL in your environment. (%s)", _ve
+            )
             return None
         # Always NullPool: avoids "Future attached to a different loop" errors
         # when the same engine object is used from multiple asyncio event loops

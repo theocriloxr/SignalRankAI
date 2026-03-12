@@ -1531,6 +1531,34 @@ def run_bot() -> None:
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
+    # ── Bulletproof DATABASE_URL validation ─────────────────────────────────
+    # Validate DATABASE_URL BEFORE any scheduler job or async session is
+    # created.  If it is missing, raise immediately so Railway shows a clear
+    # crash message rather than hundreds of "password authentication failed
+    # for user 'postgres'" errors from asyncpg falling back to local auth.
+    _db_raw = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or "").strip()
+    if not _db_raw:
+        raise ValueError(
+            "[FATAL] DATABASE_URL is not set. "
+            "Add it as an environment variable on Railway before deploying."
+        )
+    # Safe log: print only the host portion, never the password.
+    try:
+        _db_host_part = _db_raw.split("@")[-1]  # e.g. 'monorail.proxy.rlwy.net:54321/railway'
+        print(f"[boot] Connecting to DB at: {_db_host_part}", flush=True)
+    except Exception:
+        print("[boot] DATABASE_URL is set (host masked)", flush=True)
+    # Force the global async engine to re-initialise using the fresh env value.
+    # This is needed if session.py was imported before the env var was set
+    # (e.g. in a hot-reload scenario) and the cached engine is None.
+    try:
+        from db.session import _get_global_engine, _global_engine
+        if _global_engine is None:
+            _get_global_engine()  # triggers engine creation with correct URL
+    except Exception as _eng_err:
+        print(f"[boot] DB engine init: {_eng_err}", flush=True)
+    # ───────────────────────────────────────────────────────────────────────
+
     # Avoid leaking bot token in logs: httpx logs full request URLs at INFO.
     # We keep errors, but silence INFO/DEBUG.
     try:

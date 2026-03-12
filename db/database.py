@@ -14,6 +14,7 @@ from __future__ import annotations
 from db.session import (
     get_session,
     get_database_url,
+    get_database_url_or_none,
     create_engine,
     is_db_configured,
     get_engine_for_event_loop,
@@ -22,6 +23,7 @@ from db.session import (
 __all__ = [
     "get_session",
     "get_database_url",
+    "get_database_url_or_none",
     "create_engine",
     "is_db_configured",
     "get_engine_for_event_loop",
