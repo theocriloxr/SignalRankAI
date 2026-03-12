@@ -67,7 +67,14 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	await update.message.reply_text(f"For help or questions, contact support: {support_contact}")
 # --- USER COMMAND: /status ---
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	if update.effective_user is None or update.message is None:
+	if update.effective_user is None:
+		return
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
 		return
 	user_id = update.effective_user.id
 	
@@ -131,7 +138,21 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	if tier == "free":
 		msg += "\n/upgrade to unlock more signals"
 	
-	await update.message.reply_text(msg)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+			],
+			[
+				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+			],
+		])
+	except Exception:
+		keyboard = None
+	await update.message.reply_text(msg, reply_markup=keyboard)
 
 import os
 import sys
@@ -805,7 +826,48 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 			dashboard_url: str = f"{base_url}{sep}uid={user_id}"
 			dashboard_text: str = _t(user_id, 'dashboard')
 			msg += f"\n\n🌐 <a href=\"{dashboard_url}\">{dashboard_text}</a>"
-	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="HTML")
+	# Inline navigation for key command groups
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		keyboard = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+			],
+			[
+				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+			],
+			[
+				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+			],
+		])
+	except Exception:
+		keyboard = None
+	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="HTML", reply_markup=keyboard)
+
+
+async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Handle inline navigation buttons used in /help and major command UIs."""
+	query = update.callback_query
+	if query is None:
+		return
+	try:
+		await query.answer()
+	except Exception:
+		pass
+	data = str(query.data or "")
+	# Allow callback-driven command execution by reusing handlers.
+	if data == "nav_signals":
+		return await signals_command(update, context)
+	if data == "nav_performance":
+		return await performance_command(update, context)
+	if data == "nav_account":
+		return await status_command(update, context)
+	if data == "nav_upgrade":
+		return await upgrade_command(update, context)
+	if data == "nav_support":
+		return await support_command(update, context)
 
 # --------- MYID COMMAND ---------
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -843,8 +905,29 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	"""
 	if await _public_guard(update):
 		return
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
+		return
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		_nav_kbd = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+			],
+			[
+				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+			],
+		])
+	except Exception:
+		_nav_kbd = None
 	
 	# Import freshness validation at function level
 	from engine.price_validator import enrich_signal_with_live_price
@@ -911,7 +994,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						if shown >= (3 if tier.lower() in {"free"} else 5):
 							break
 					if msg_lines:
-						await update.message.reply_text("\n\n".join(msg_lines))
+						await update.message.reply_text("\n\n".join(msg_lines), reply_markup=_nav_kbd)
 						return
 	except Exception:
 		pass
@@ -1578,13 +1661,25 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	# Simplified, robust implementation to avoid indentation/syntax errors
 	if await _public_guard(update):
 		return
-	if update.effective_user is None or update.message is None:
+	if update.effective_user is None:
+		return
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
 		return
 
 	user_id: int = update.effective_user.id
 	arg: str = (context.args[0] if context.args else "").strip()
+	action: str | None = None
+	if len(context.args or []) > 1:
+		action = str(context.args[1] or "").strip().upper()
 	if not arg:
-		await update.message.reply_text("Usage: /outcome <reference>")
+		await update.message.reply_text(
+			"Usage: /outcome <reference> [WIN|LOSS|CANCEL|TP1|TP2|TP3]"
+		)
 		return
 
 	try:
@@ -1592,7 +1687,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			raise RuntimeError("Postgres not configured")
-		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal, get_or_create_user
+		from db.pg_features import get_delivered_signal_by_ref, get_outcome_for_signal, get_or_create_user, upsert_outcome
 		from db.models import Signal, User, Outcome
 		from sqlalchemy import select
 		import json
@@ -1617,11 +1712,45 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				res = await session.execute(query)
 				undelivered_sig: Signal | None = res.scalars().first()
 				if undelivered_sig is not None:
-					await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
-					return
+					# Only admin/owner can view or manually resolve undelivered signals
+					if not _is_admin(user_id):
+						await update.message.reply_text("⚠️ This is not your signal. You were not sent this trade.")
+						return
+					sig = undelivered_sig
 				else:
 					await update.message.reply_text("Signal not found.")
 					return
+
+			# Manual resolution (ADMIN/OWNER only)
+			if action:
+				if not _is_admin(user_id):
+					await update.message.reply_text("⛔ Access Denied.")
+					return
+				_map = {
+					"WIN": "tp",
+					"LOSS": "sl",
+					"CANCEL": "invalid",
+					"TP1": "tp1",
+					"TP2": "tp2",
+					"TP3": "tp3",
+				}
+				status = _map.get(action)
+				if status is None:
+					await update.message.reply_text(
+						"Invalid resolution. Use WIN, LOSS, CANCEL, TP1, TP2, or TP3."
+					)
+					return
+				await upsert_outcome(
+					session,
+					str(sig.signal_id),
+					status,
+					meta={"manual": True, "by": int(user_id), "action": action},
+				)
+				await session.commit()
+				await update.message.reply_text(
+					f"✅ Outcome updated: {str(sig.signal_id)[:8]} → {status.upper()}"
+				)
+				# Continue to display current status below
 
 			# Check outcome
 			oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
@@ -1632,6 +1761,11 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			r = getattr(oc, "r_multiple", None)
 			pct = getattr(oc, "percent", None)
 			label = "PROFIT ✅" if status.startswith("tp") else ("LOSS ❌" if status == "sl" else status.upper())
+			progress = ""
+			if status in {"tp1", "tp2", "tp3"}:
+				progress = f"TP Progress: {status.upper()}"
+			elif status == "tp":
+				progress = "TP Progress: FULL TP"
 			lines = [
 				"📣 Outcome",
 				"",
@@ -1640,6 +1774,8 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				f"Entry: {sig.entry}",
 				f"Result: {label} ({status})",
 			]
+			if progress:
+				lines.append(progress)
 			ml_prob = getattr(sig, "ml_probability", None)
 			if ml_prob is not None:
 				try:
@@ -1658,7 +1794,21 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				except Exception:
 					pass
 
-			await update.message.reply_text("\n".join(lines))
+			try:
+				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+				keyboard = InlineKeyboardMarkup([
+					[
+						InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+						InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+					],
+					[
+						InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+						InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+					],
+				])
+			except Exception:
+				keyboard = None
+			await update.message.reply_text("\n".join(lines), reply_markup=keyboard)
 			return
 
 		# No outcome yet — show basic in-progress details
@@ -1689,7 +1839,21 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		except Exception:
 			pass
 
-		await update.message.reply_text("\n".join(lines))
+		try:
+			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+			keyboard = InlineKeyboardMarkup([
+				[
+					InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+					InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
+				],
+				[
+					InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+					InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+				],
+			])
+		except Exception:
+			keyboard = None
+		await update.message.reply_text("\n".join(lines), reply_markup=keyboard)
 		return
 	except Exception as e:
 		import logging

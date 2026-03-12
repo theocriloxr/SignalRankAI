@@ -634,43 +634,37 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	timeframe = signal.get('timeframe', 'N/A')
 	entry = signal.get('entry', 'N/A')
 	confidence = int(signal.get('score', 0))
+	remaining = max(0, int(daily_limit) - int(signals_sent_today))
 	
 	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
 	
 	# Signal age indicator
 	age_indicator = _get_signal_age_indicator(signal)
 	
-	msg = f"""📊 Signal Alert (Free)
-
-Asset: {asset}
-Direction: {direction} {direction_emoji}
-Timeframe: {timeframe}
-Entry: {_format_price(entry, asset)}
-Confidence: {confidence}/100"""
-	
-	# Add age indicator if available
+	lines = [
+		"┏━━━━━━━━━━ SIGNAL ALERT ━━━━━━━━━━┓",
+		"┃ TIER: FREE",
+	]
 	if age_indicator:
-		msg = f"""📊 Signal Alert (Free)
-{age_indicator}
-
-Asset: {asset}
-Direction: {direction} {direction_emoji}
-Timeframe: {timeframe}
-Entry: {_format_price(entry, asset)}
-Confidence: {confidence}/100"""
-	
-	msg += f"""
-
-🔒 Stop Loss: Upgrade to Premium
-🔒 Take Profit: Upgrade to Premium
-🔒 Risk/Reward: Upgrade to Premium
-🔒 Analysis: Upgrade to Premium
-
-📈 Signals remaining today: {max(0, daily_limit - signals_sent_today)}/{daily_limit}
-
-/upgrade to unlock full signals"""
-	
-	return msg
+		lines.append(f"┃ {age_indicator}")
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Asset: {asset}",
+		f"┃ Direction: {direction} {direction_emoji}",
+		f"┃ Timeframe: {timeframe}",
+		f"┃ Entry: {_format_price(entry, asset)}",
+		f"┃ Confidence: {confidence}/100",
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		"┃ Target: 🔒 Premium",
+		"┃ Stop Loss: 🔒 Premium",
+		"┃ R/R: 🔒 Premium",
+		"┃ Risk: 🔒 Premium",
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Signals left today: {remaining}/{daily_limit}",
+		"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
+		"/upgrade to unlock full details",
+	]
+	return "\n".join(lines)
 
 def format_signal_premium_new(signal: dict) -> str:
 	"""Format signal for PREMIUM tier with full details and enhanced data."""
@@ -682,7 +676,13 @@ def format_signal_premium_new(signal: dict) -> str:
 	entry = signal.get('entry', 'N/A')
 	stop_loss = signal.get('stop_loss', 'N/A')
 	take_profit = signal.get('take_profit', 'N/A')
-	rr_ratio = signal.get('rr_ratio', 0) or signal.get('rr_estimate', 0)
+	rr_ratio = signal.get('rr_ratio')
+	if rr_ratio in (0, 0.0, "0", "0.0"):
+		rr_ratio = None
+	if rr_ratio is None:
+		rr_ratio = signal.get('rr_estimate')
+		if rr_ratio in (0, 0.0, "0", "0.0"):
+			rr_ratio = None
 	confidence = int(signal.get('score', 0))
 	strategy = signal.get('strategy_name') or signal.get('strategy', 'Multi-Strategy')
 	regime = signal.get('regime', 'N/A')
@@ -716,95 +716,92 @@ def format_signal_premium_new(signal: dict) -> str:
 	price_context = _get_price_context(signal)
 	
 	# Build message with enhanced data
-	msg = f"""📊 Signal Alert ⭐
-
-Asset: {asset}
-Direction: {direction} {direction_emoji}
-Timeframe: {timeframe}
-Entry: {_format_price(entry, asset)}"""
-	
-	# Add age indicator if available
+	lines = [
+		"┏━━━━━━━━━━ SIGNAL ALERT ━━━━━━━━━━┓",
+		"┃ TIER: PREMIUM",
+	]
 	if age_indicator:
-		msg = f"""📊 Signal Alert ⭐
-{age_indicator}
-
-Asset: {asset}
-Direction: {direction} {direction_emoji}
-Timeframe: {timeframe}
-Entry: {_format_price(entry, asset)}"""
-	
-	# Add price context if available
+		lines.append(f"┃ {age_indicator}")
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Asset: {asset}",
+		f"┃ Direction: {direction} {direction_emoji}",
+		f"┃ Timeframe: {timeframe}",
+		f"┃ Entry: {_format_price(entry, asset)}",
+	]
 	if price_context:
-		msg += f"""
-{price_context}"""
+		lines.append(f"┃ {price_context}")
 	elif current_price:
-		# Fallback to simple current price
-		msg += f"""
-Current Price: {_format_price(current_price, asset)} {price_indicator}"""
+		lines.append(f"┃ Current: {_format_price(current_price, asset)} {price_indicator}")
 	
 	_prem_tp = _parse_tp_list(take_profit)
-	msg += f"""
-
-🛡️ Stop Loss: {_format_price(stop_loss, asset)}"""
+	lines.append("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫")
+	lines.append(f"┃ Stop Loss: {_format_price(stop_loss, asset)}")
 	if len(_prem_tp) >= 2:
-		msg += f"""
-🎯 TP1: {_format_price(_prem_tp[0], asset)}
-🎯 TP2: {_format_price(_prem_tp[1], asset)}"""
+		lines.append(f"┃ Target 1: {_format_price(_prem_tp[0], asset)}")
+		lines.append(f"┃ Target 2: {_format_price(_prem_tp[1], asset)}")
 	elif len(_prem_tp) == 1:
-		msg += f"""
-🎯 Take Profit: {_format_price(_prem_tp[0], asset)}"""
+		lines.append(f"┃ Target: {_format_price(_prem_tp[0], asset)}")
 	else:
-		msg += """
-🎯 Take Profit: N/A"""
+		lines.append("┃ Target: N/A")
 
 	# Add profit/loss expectations
 	if expected_profit is not None:
-		msg += f"""
-📈 Expected Profit: +{expected_profit:.2f}%"""
+		lines.append(f"┃ Expected Profit: +{expected_profit:.2f}%")
 	if expected_loss is not None:
-		# Display loss as negative value
 		loss_display = expected_loss if expected_loss < 0 else -abs(expected_loss)
-		msg += f"""
-📉 Expected Loss: {loss_display:.2f}%"""
-	
-	msg += f"""
-📊 Risk/Reward: 1:{rr_ratio:.1f}
-🔥 Confidence: {confidence}/100"""
+		lines.append(f"┃ Expected Loss: {loss_display:.2f}%")
+
+	# Compute RR if still missing
+	if rr_ratio is None:
+		try:
+			_entry = float(entry)
+			_sl = float(stop_loss)
+			_tp0 = float(_prem_tp[0]) if _prem_tp else None
+			if _tp0 is not None and _entry and _sl:
+				_rr = abs(_tp0 - _entry) / max(1e-9, abs(_entry - _sl))
+				rr_ratio = _rr
+		except Exception:
+			rr_ratio = None
+	if rr_ratio is not None:
+		lines.append(f"┃ R/R: 1:{float(rr_ratio):.1f}")
+	else:
+		lines.append("┃ R/R: N/A")
+	lines.append(f"┃ Confidence: {confidence}/100")
 	
 	# Add pips for FX pairs
 	pips_to_tp = enhanced.get('pips_to_tp')
 	pips_to_sl = enhanced.get('pips_to_sl')
 	if pips_to_tp:
-		msg += f"""
-📍 Pips to TP: {pips_to_tp:.1f} | SL: {pips_to_sl:.1f}"""
+		lines.append(f"┃ Pips: TP {pips_to_tp:.1f} | SL {pips_to_sl:.1f}")
 	
-	msg += f"""
-📈 Strategy: {strategy}
-📉 Regime: {regime}
-⏰ Expires: {expiry_str}"""
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Strategy: {strategy}",
+		f"┃ Regime: {regime}",
+		f"┃ Expires: {expiry_str}",
+	]
 
 	# 🧠 AI Confluence block (injected when available from confluence engine)
 	_cv  = signal.get('confluence_vote_count')
 	_ct  = signal.get('confluence_total') or 15
 	_cdr = signal.get('confluence_drivers') or []
 	if _cv is not None:
-		msg += f"""
-
-🧠 AI Confluence: {int(_cv)}/{int(_ct)} Strategies Agree"""
+		lines.append(f"┃ AI Confluence: {int(_cv)}/{int(_ct)} agree")
 		if _cdr:
-			msg += f"""
-💡 Drivers: {', '.join(str(d) for d in _cdr[:3])}"""
+			lines.append(f"┃ Drivers: {', '.join(str(d) for d in _cdr[:3])}")
 
 	# Add signal age if available
 	if signal_age is not None:
-		msg += f"""
-🕐 Signal Age: {signal_age} min ago"""
+		lines.append(f"┃ Age: {signal_age} min ago")
 
-	msg += f"""
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Ref: SIG-{str(ref)[:8]}",
+		"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
+	]
 
-Ref: SIG-{str(ref)[:8]}"""
-
-	return msg
+	return "\n".join(lines)
 
 def format_signal_vip_new(signal: dict) -> str:
 	"""Format signal for VIP tier with everything + extras and enhanced data."""
@@ -820,7 +817,13 @@ def format_signal_vip_new(signal: dict) -> str:
 	_tp_raw = signal.get('tp_levels') or signal.get('take_profit')
 	tp_levels = _parse_tp_list(_tp_raw)
 
-	rr_ratio = signal.get('rr_ratio', 0) or signal.get('rr_estimate', 0)
+	rr_ratio = signal.get('rr_ratio')
+	if rr_ratio in (0, 0.0, "0", "0.0"):
+		rr_ratio = None
+	if rr_ratio is None:
+		rr_ratio = signal.get('rr_estimate')
+		if rr_ratio in (0, 0.0, "0", "0.0"):
+			rr_ratio = None
 	confidence = int(signal.get('score', 0))
 	ml_probability = signal.get('ml_probability', 0)
 	confluence = signal.get('confluence_count', 0) or signal.get('confluence', 0)
@@ -874,91 +877,89 @@ def format_signal_vip_new(signal: dict) -> str:
 	except Exception:
 		_entry_zone_str = ""
 
-	msg = f"""📊 Signal Alert 👑
-
-Asset: {asset}
-Direction: {direction} {direction_emoji}
-Timeframe: {timeframe}
-{_entry_zone_str}Entry: {_format_price(entry, asset)}"""
-
-	# Add age indicator if available
+	lines = [
+		"┏━━━━━━━━━━ SIGNAL ALERT ━━━━━━━━━━┓",
+		"┃ TIER: VIP",
+	]
 	if age_indicator:
-		msg = f"""📊 Signal Alert 👑
-{age_indicator}
-
-Asset: {asset}
-Direction: {direction} {direction_emoji}
-Timeframe: {timeframe}
-{_entry_zone_str}Entry: {_format_price(entry, asset)}"""
-	
-	# Add price context if available
+		lines.append(f"┃ {age_indicator}")
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Asset: {asset}",
+		f"┃ Direction: {direction} {direction_emoji}",
+		f"┃ Timeframe: {timeframe}",
+	]
+	if _entry_zone_str:
+		lines.append(f"┃ {_entry_zone_str.strip()}")
+	lines.append(f"┃ Entry: {_format_price(entry, asset)}")
 	if price_context:
-		msg += f"""
-{price_context}"""
+		lines.append(f"┃ {price_context}")
 	elif current_price:
-		# Fallback to simple current price
-		msg += f"""
-Current Price: {_format_price(current_price, asset)} {price_indicator}"""
-	
-	msg += f"""
-
-🛡️ Stop Loss: {_format_price(stop_loss, asset)}"""
+		lines.append(f"┃ Current: {_format_price(current_price, asset)} {price_indicator}")
+	lines.append("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫")
+	lines.append(f"┃ Stop Loss: {_format_price(stop_loss, asset)}")
 	
 	# Add multiple TPs
 	if len(tp_levels) >= 3:
-		msg += f"""
-🎯 TP1: {_format_price(tp_levels[0], asset)} (partial 33%)
-🎯 TP2: {_format_price(tp_levels[1], asset)} (partial 33%)
-🎯 TP3: {_format_price(tp_levels[2], asset)} (final 34%)"""
+		lines.append(f"┃ TP1: {_format_price(tp_levels[0], asset)} (33%)")
+		lines.append(f"┃ TP2: {_format_price(tp_levels[1], asset)} (33%)")
+		lines.append(f"┃ TP3: {_format_price(tp_levels[2], asset)} (34%)")
 	elif len(tp_levels) == 2:
-		msg += f"""
-🎯 TP1: {_format_price(tp_levels[0], asset)} (partial 50%)
-🎯 TP2: {_format_price(tp_levels[1], asset)} (final 50%)"""
+		lines.append(f"┃ TP1: {_format_price(tp_levels[0], asset)} (50%)")
+		lines.append(f"┃ TP2: {_format_price(tp_levels[1], asset)} (50%)")
 	elif len(tp_levels) == 1:
-		msg += f"""
-🎯 Take Profit: {_format_price(tp_levels[0], asset)}"""
+		lines.append(f"┃ Target: {_format_price(tp_levels[0], asset)}")
+	else:
+		lines.append("┃ Target: N/A")
 	
 	# Add profit/loss expectations
 	if expected_profit is not None:
-		msg += f"""
-📈 Expected Profit: +{expected_profit:.2f}%"""
+		lines.append(f"┃ Expected Profit: +{expected_profit:.2f}%")
 	if expected_loss is not None:
-		# Display loss as negative value
 		loss_display = expected_loss if expected_loss < 0 else -abs(expected_loss)
-		msg += f"""
-📉 Expected Loss: {loss_display:.2f}%"""
-	
-	msg += f"""
-📊 Risk/Reward: 1:{rr_ratio:.1f}
-🔥 Confidence: {confidence}/100"""
+		lines.append(f"┃ Expected Loss: {loss_display:.2f}%")
+
+	# Compute RR if still missing
+	if rr_ratio is None:
+		try:
+			_entry = float(entry)
+			_sl = float(stop_loss)
+			_tp0 = float(tp_levels[0]) if tp_levels else None
+			if _tp0 is not None and _entry and _sl:
+				_rr = abs(_tp0 - _entry) / max(1e-9, abs(_entry - _sl))
+				rr_ratio = _rr
+		except Exception:
+			rr_ratio = None
+	if rr_ratio is not None:
+		lines.append(f"┃ R/R: 1:{float(rr_ratio):.1f}")
+	else:
+		lines.append("┃ R/R: N/A")
+	lines.append(f"┃ Confidence: {confidence}/100")
 	
 	if ml_probability:
-		msg += f"""
-🤖 ML Probability: {int(ml_probability)}%"""
+		lines.append(f"┃ ML Probability: {int(ml_probability)}%")
 	
 	if confluence:
-		msg += f"""
-📐 Confluence: {int(confluence)}%"""
+		lines.append(f"┃ Confluence: {int(confluence)}%")
 	
 	# Add pips for FX pairs
 	pips_to_tp = enhanced.get('pips_to_tp')
 	pips_to_sl = enhanced.get('pips_to_sl')
 	if pips_to_tp:
-		msg += f"""
-📍 Pips to TP: {pips_to_tp:.1f} | SL: {pips_to_sl:.1f}"""
+		lines.append(f"┃ Pips: TP {pips_to_tp:.1f} | SL {pips_to_sl:.1f}")
 	
 	# Add suggested position size
 	if suggested_position:
-		msg += f"""
-💰 Suggested Size: {suggested_position:.2f} units (1% risk)"""
+		lines.append(f"┃ Suggested Size: {suggested_position:.2f} units (1% risk)")
 	
-	msg += f"""
-
-📈 Strategy: {strategy}
-📉 Regime: {regime}
-💡 Score: {score_explanation}
-{freshness}
-⏰ Expires: {expiry_str}"""
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Strategy: {strategy}",
+		f"┃ Regime: {regime}",
+		f"┃ Score: {score_explanation}",
+		f"┃ Freshness: {freshness}",
+		f"┃ Expires: {expiry_str}",
+	]
 
 	# 🧠 AI Confluence block (injected when available from confluence engine)
 	_cv  = signal.get('confluence_vote_count')
@@ -968,28 +969,25 @@ Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 		_cv_int = int(_cv)
 		_ct_int = int(_ct)
 		_strength = "Strong" if _cv_int >= 12 else ("Moderate" if _cv_int >= 10 else "Weak")
-		msg += f"""
-
-🧠 AI Confluence: {_cv_int}/{_ct_int} Strategies Agree ({_strength})"""
+		lines.append(f"┃ AI Confluence: {_cv_int}/{_ct_int} ({_strength})")
 		if _cdr:
-			msg += f"""
-💡 Drivers: {', '.join(str(d) for d in _cdr[:3])}"""
+			lines.append(f"┃ Drivers: {', '.join(str(d) for d in _cdr[:3])}")
 		_lv = signal.get('long_votes', 0)
 		_sv = signal.get('short_votes', 0)
 		if _lv or _sv:
-			msg += f"""
-📊 Votes: ⬆️{_lv} LONG / ⬇️{_sv} SHORT"""
+			lines.append(f"┃ Votes: ⬆️{_lv} LONG / ⬇️{_sv} SHORT")
 
 	# Add signal age if available
 	if signal_age is not None:
-		msg += f"""
-🕐 Signal Age: {signal_age} min ago"""
+		lines.append(f"┃ Age: {signal_age} min ago")
 
-	msg += f"""
+	lines += [
+		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
+		f"┃ Ref: SIG-{str(ref)[:8]}",
+		"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
+	]
 
-Ref: SIG-{str(ref)[:8]}"""
-
-	return msg
+	return "\n".join(lines)
 
 def format_signal_legacy(signal, display_tier: str | None = None, limited: bool = False):
 	"""DEPRECATED: Legacy format_signal function. Use new tier-based formatters instead.

@@ -634,7 +634,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                         f"\n\nWe value your feedback!\nReply with /feedback {strategy.get('signal_id','')} <rating 1-5|issue> [comment]"
                     )
                     try:
-                        bot.send_message(chat_id=user_id, text=summary + feedback_msg)
+                        await bot.send_message(chat_id=user_id, text=summary + feedback_msg)
                     except Exception as e:
                         logger.warning(f"[notify] Failed to send feedback message to user {user_id}: {e}")
                         pass
@@ -675,7 +675,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                 profit_pct = float(strategy.get('percent', 0))
             msg = _tier_notifier.format_tp_hit_notification(strategy, user_tier, tp_level, profit_pct)
             # Send notification
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
             # Mark as notified (update DB or in-memory as needed)
             notified_tps.add(tp_level)
             # Optionally update Trade.partial_exits in DB here
@@ -686,7 +686,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
             if loss_pct > 0:
                 loss_pct = -loss_pct  # Make it negative
             msg = _tier_notifier.format_sl_hit_notification(strategy, user_tier, loss_pct)
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
 
         # Invalidation notification
         if result == 'invalid':
@@ -696,7 +696,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                 'invalidated',
                 {'reason': strategy.get('reason', 'Market conditions changed')}
             )
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
 
         # Free limited notification
         if result == 'free_limited' and user_tier == 'free':
@@ -709,15 +709,15 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                 "• Full performance stats\n"
                 "• Real-time alerts"
             )
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
         elif result == 'free_limited':
             msg = "📊 Trade update."
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
 
         if not tp_hit and result not in ('sl', 'invalid', 'free_limited'):
             # Fallback generic notification
             msg = "[Outcome] Trade update."
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
 
     except Exception as e:
         # Fallback to old format on error
@@ -731,7 +731,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                 f"\nResult: {fmt(strategy.get('r_multiple'))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\nConfidence Score: {fmt(strategy.get('confidence',0))}%\n"
                 "\nWell-managed trade ✔️"
             )
-            bot.send_message(chat_id=user_id, text=msg)
+            _send_message_sync(bot, chat_id=user_id, text=msg)
         elif result == 'partial_tp':
             msg = (
                 "🟢 PARTIAL TAKE PROFIT (TP1)\n"
@@ -760,7 +760,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
         else:
             msg = "[Outcome] Trade update."
     
-    bot.send_message(chat_id=user_id, text=msg)
+    _send_message_sync(bot, chat_id=user_id, text=msg)
 
 def notify_all_users_trade_outcome(strategy, result, ret, user_ids=None):
     bot = Bot(token=_require_telegram_token())
@@ -783,7 +783,7 @@ def send_performance_summary(user_id):
         "📊 DAILY PERFORMANCE SUMMARY (AUTO)\n\n"
         f"Total Signals: {total}\nWins: {wins}\nLosses: {losses}\nWin Rate: {win_rate:.1f}%\nNet Result: {net_r:.2f}R\n\nConsistency over frequency."
     )
-    bot.send_message(chat_id=user_id, text=msg)
+    _send_message_sync(bot, chat_id=user_id, text=msg)
 
 def _format_free_preview(signal):
     # Limited info to drive upgrades (no exact levels)
@@ -3120,25 +3120,121 @@ def run_bot() -> None:
 
     # ── Closure jobs (defined inside run_bot — cannot be pickled for SQLAlchemy)
     # These always land in the default MemoryJobStore.
-    scheduler.add_job(ml_market_analysis_job, 'interval', minutes=15, id='ml_market_analysis')
-    scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
-    scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
-    scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)
-    scheduler.add_job(vip_scarcity_broadcast_job, 'interval', hours=6)
-    scheduler.add_job(fomo_engine_job, 'cron', hour=17, minute=0)
-    scheduler.add_job(friday_leaderboard_job, 'cron', day_of_week='fri', hour=17, minute=0)
-    scheduler.add_job(expire_old_signals_job, 'interval', minutes=30)
-    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0)
-    scheduler.add_job(auto_retrain_ml_model_job, 'cron', day_of_week='sun', hour=2, minute=0)
+    scheduler.add_job(
+        ml_market_analysis_job,
+        'interval',
+        minutes=15,
+        id='ml_market_analysis',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        send_free_delayed_summaries,
+        'interval',
+        minutes=10,
+        id='send_free_delayed_summaries',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        compute_outcomes_best_effort,
+        'interval',
+        minutes=3,
+        id='compute_outcomes_best_effort',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        send_outcome_notifications,
+        'interval',
+        minutes=2,
+        id='send_outcome_notifications',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        vip_scarcity_broadcast_job,
+        'interval',
+        hours=6,
+        id='vip_scarcity_broadcast_job',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        fomo_engine_job,
+        'cron',
+        hour=17,
+        minute=0,
+        id='fomo_engine_job',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        friday_leaderboard_job,
+        'cron',
+        day_of_week='fri',
+        hour=17,
+        minute=0,
+        id='friday_leaderboard_job',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        expire_old_signals_job,
+        'interval',
+        minutes=30,
+        id='expire_old_signals_job',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        send_weekly_recap,
+        'cron',
+        day_of_week='sun',
+        hour=18,
+        minute=0,
+        id='send_weekly_recap',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        auto_retrain_ml_model_job,
+        'cron',
+        day_of_week='sun',
+        hour=2,
+        minute=0,
+        id='auto_retrain_ml_model_job',
+        replace_existing=True,
+        max_instances=1,
+    )
 
     # ── Module-level jobs (picklable) → SQLAlchemy persistent store when available
-    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1, jobstore=_sa)
-    scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15, jobstore=_sa)
+    scheduler.add_job(
+        resend_unsent_signals_job,
+        'interval',
+        minutes=1,
+        id='resend_unsent_signals_job',
+        replace_existing=True,
+        max_instances=1,
+        jobstore=_sa,
+    )
+    scheduler.add_job(
+        distribute_random_signals_to_free_users_job,
+        'interval',
+        minutes=15,
+        id='distribute_random_signals_to_free_users_job',
+        replace_existing=True,
+        max_instances=1,
+        jobstore=_sa,
+    )
     scheduler.add_job(
         downgrade_expired_subscriptions_job,
         'cron',
         hour=0,
         minute=0,
+        id='downgrade_expired_subscriptions_job',
+        replace_existing=True,
+        max_instances=1,
         jobstore=_sa,
     )
     scheduler.add_job(
@@ -3147,6 +3243,9 @@ def run_bot() -> None:
         day_of_week='sun',
         hour=1,
         minute=0,
+        id='auto_delete_old_signals_job',
+        replace_existing=True,
+        max_instances=1,
         jobstore=_sa,
     )
 
