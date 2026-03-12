@@ -3075,46 +3075,81 @@ def run_bot() -> None:
         except Exception as exc:
             logger.error("[ML] ml_market_analysis_job failed: %s", exc, exc_info=True)
 
-    scheduler = BackgroundScheduler()
+    # ── APScheduler setup ───────────────────────────────────────────────────
+    # APScheduler 3.x's SQLAlchemyJobStore uses *synchronous* SQLAlchemy.
+    # Passing an asyncpg:// URL causes the driver to be rejected and the store
+    # to silently fall back to  postgresql://postgres@localhost  — which Railway
+    # always rejects with "password authentication failed for user postgres".
+    # Strip the async driver prefix before creating the job store.
+    _sched_raw = (
+        os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or ""
+    ).strip()
+    _sched_sync_url: str | None = None
+    if _sched_raw:
+        _sched_sync_url = _sched_raw
+        for _pfx, _rep in (
+            ("postgresql+asyncpg://", "postgresql://"),
+            ("postgres://", "postgresql://"),
+        ):
+            if _sched_sync_url.startswith(_pfx):
+                _sched_sync_url = _sched_sync_url.replace(_pfx, _rep, 1)
+                break
+
+    # Register a 'persistent' jobstore for module-level (picklable) callables.
+    # Closure functions defined inside run_bot() cannot be pickled for
+    # SQLAlchemy — they are added to the implicit default MemoryJobStore.
+    _jobstores: dict = {}
+    if _sched_sync_url:
+        try:
+            from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore as _SAJobStore
+            _jobstores["persistent"] = _SAJobStore(url=_sched_sync_url)
+            logger.info(
+                "[sched] SQLAlchemyJobStore ready → %s",
+                _sched_sync_url.split("@")[-1],
+            )
+        except Exception as _sa_err:
+            logger.warning(
+                "[sched] SQLAlchemyJobStore unavailable (%s) — using MemoryJobStore",
+                _sa_err,
+            )
+
+    # _sa: alias for the store to use for picklable module-level jobs.
+    _sa = "persistent" if "persistent" in _jobstores else "default"
+
+    scheduler = BackgroundScheduler(jobstores=_jobstores or {}, timezone="UTC")
+
+    # ── Closure jobs (defined inside run_bot — cannot be pickled for SQLAlchemy)
+    # These always land in the default MemoryJobStore.
     scheduler.add_job(ml_market_analysis_job, 'interval', minutes=15, id='ml_market_analysis')
     scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
     scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
-    scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)  # Only sends unnotified outcomes (sends once per outcome)
-    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1)
-    # Distribute random signals to FREE users every 15 minutes
-    scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15)
-    # VIP scarcity nudge: every 6 hours, nudge PREMIUM users if VIP seats open
+    scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)
     scheduler.add_job(vip_scarcity_broadcast_job, 'interval', hours=6)
-    # FOMO engine: 5PM UTC daily — show FREE users what VIP earnt today
     scheduler.add_job(fomo_engine_job, 'cron', hour=17, minute=0)
-    # Friday leaderboard: Fridays at 5PM UTC
     scheduler.add_job(friday_leaderboard_job, 'cron', day_of_week='fri', hour=17, minute=0)
-    # Signal auto-expiry: mark signals older than 12h as expired
     scheduler.add_job(expire_old_signals_job, 'interval', minutes=30)
     scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0)
-    # Auto-downgrade expired subscriptions (daily at 00:00 UTC)
+    scheduler.add_job(auto_retrain_ml_model_job, 'cron', day_of_week='sun', hour=2, minute=0)
+
+    # ── Module-level jobs (picklable) → SQLAlchemy persistent store when available
+    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1, jobstore=_sa)
+    scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15, jobstore=_sa)
     scheduler.add_job(
         downgrade_expired_subscriptions_job,
         'cron',
         hour=0,
         minute=0,
+        jobstore=_sa,
     )
-    # Auto-delete old signals (weekly, Sunday at 01:00 UTC)
     scheduler.add_job(
         auto_delete_old_signals_job,
         'cron',
         day_of_week='sun',
         hour=1,
         minute=0,
+        jobstore=_sa,
     )
-    # Auto-retrain ML model (weekly, Sunday at 02:00 UTC)
-    scheduler.add_job(
-        auto_retrain_ml_model_job,
-        'cron',
-        day_of_week='sun',
-        hour=2,
-        minute=0,
-    )
+
     scheduler.start()
 
     # ── Webhook mode ──────────────────────────────────────────────────────────
