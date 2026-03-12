@@ -69,6 +69,7 @@ COMMAND_TIERS = {
     # ── ADMIN ─────────────────────────────────────────────────────────────────
     "admin":               "ADMIN",
     "admin_broadcast":     "ADMIN",
+    "force_market_scan":   "ADMIN",
 
     # ── OWNER only (hidden from regular help) ─────────────────────────────────
     "dev_pause":           "OWNER",
@@ -316,6 +317,7 @@ COMMAND_HELP = {
             # ─ ADMIN ─────────────────────────────────────────────────────────────
             ("admin",                  "Platform dashboard (users, VIP, signals)"),
             ("admin_broadcast",        "DM blast to all users"),
+            ("force_market_scan",      "Run ML market scan now"),
             # ─ OWNER-only ───────────────────────────────────────────────────────
             ("blast_terms",            "Send terms gate to all unconfirmed users"),
             ("dev_pause",              "Pause engine (kill-switch ON)"),

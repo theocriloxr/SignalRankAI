@@ -108,14 +108,12 @@ async def confirm_paystack_event(event: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": ok, "verified": ok, "paystack": payload}
 
 
-def _extract_subscription_fields(event: Dict[str, Any]) -> Tuple[int, str, int, Optional[str], Dict[str, Any]]:
+def _extract_subscription_fields(event: Dict[str, Any]) -> Tuple[int, Optional[str], Optional[int], Optional[str], Dict[str, Any]]:
     data = event.get("data") or {}
     meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
 
     # Prefer explicit metadata fields set when generating the payment link.
     telegram_user_id = meta.get("telegram_user_id") or meta.get("user_id")
-    tier = meta.get("tier") or meta.get("plan") or "free"
-    duration_days = meta.get("duration_days") or meta.get("days") or 30
     reference = data.get("reference") if isinstance(data, dict) else None
 
     try:
@@ -123,17 +121,22 @@ def _extract_subscription_fields(event: Dict[str, Any]) -> Tuple[int, str, int, 
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Missing telegram_user_id in metadata") from exc
 
-    try:
-        duration_days_int = int(duration_days)
-    except Exception:
-        duration_days_int = 30
-
     meta_out: Dict[str, Any] = {
         "raw_event": event.get("event"),
         "metadata": meta,
         "received_at": datetime.utcnow().isoformat() + "Z",
     }
-    return telegram_user_id_int, str(tier), duration_days_int, reference, meta_out
+    return telegram_user_id_int, None, None, reference, meta_out
+
+
+def _map_amount_to_tier(amount_ngn: int) -> tuple[str, int] | None:
+    mapping = {
+        40000: ("vip", 30),
+        8000: ("premium", 7),
+        24000: ("premium", 30),
+        56000: ("premium", 90),
+    }
+    return mapping.get(int(amount_ngn))
 
 
 async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -141,7 +144,7 @@ async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str
         return {"persisted": False, "reason": "DATABASE_URL not set"}
 
     try:
-        telegram_user_id, tier, duration_days, reference, meta = _extract_subscription_fields(event)
+        telegram_user_id, _, _, reference, meta = _extract_subscription_fields(event)
     except HTTPException as exc:
         # Not all Paystack webhook events contain our subscription metadata.
         # If the signature is valid, acknowledge receipt and simply skip persistence.
@@ -159,6 +162,11 @@ async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str
         currency = str(data.get("currency") or "").strip() or None
     except Exception:
         currency = None
+
+    mapped = _map_amount_to_tier(amount_ngn)
+    if not mapped:
+        return {"persisted": False, "reason": f"amount_mismatch ({amount_ngn})"}
+    tier, duration_days = mapped
 
     async with get_session() as session:
         # Record payment event (best-effort; idempotent).
@@ -545,6 +553,7 @@ async def _send_telegram_dm(telegram_user_id: int, text: str) -> None:
 
 
 @app.post("/webhooks/paystack")
+@app.post("/paystack/webhook")
 async def paystack_webhook(
     request: Request,
     x_paystack_signature: Optional[str] = Header(default=None, alias="x-paystack-signature"),

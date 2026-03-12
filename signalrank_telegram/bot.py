@@ -1993,10 +1993,11 @@ def run_bot() -> None:
     application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_|trade_now|mt5_link_guide|mt5_settings|advanced_portfolio|locked_|admin_)"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
-    from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard
+    from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard, force_market_scan_command
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
     application.add_handler(CommandHandler("admin_dashboard", _audit_handler("admin_dashboard", admin_dashboard)))
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
+    application.add_handler(CommandHandler("force_market_scan", _audit_handler("force_market_scan", force_market_scan_command)))
     application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
 
     # ── Commands previously only on the module-level application — now added here ──

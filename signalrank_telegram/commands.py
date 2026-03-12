@@ -201,7 +201,15 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if data == "nav_signals":
 		return await signals_command(update, context)
 	if data == "nav_account":
-		return await status_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_status_message(int(uid))
+			await _edit_message_or_reply(query, msg, keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_performance":
 		return await performance_command(update, context)
 	if data == "nav_upgrade":
@@ -234,7 +242,29 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 					show_alert=True,
 				)
 				return
-			await query.message.reply_text("✅ MT5 settings are available via /mt5_status and /setlot.")
+			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+			if data == "mt5_settings":
+				msg = (
+					"⚙️ MT5 Settings\n\n"
+					"Use these commands:\n"
+					"• /mt5_status — connection status\n"
+					"• /setlot — fixed lot size\n"
+					"• /setrisk — max risk %\n"
+					"• /mt5_link — link your MT5 account"
+				)
+			else:
+				msg = (
+					"📊 Advanced Portfolio\n\n"
+					"Use these commands:\n"
+					"• /portfolio — active signals P&L\n"
+					"• /risk — risk guidance\n"
+					"• /alerts — TP/SL alerts\n"
+					"• /performance — stats summary"
+				)
+			keyboard = InlineKeyboardMarkup([
+				[InlineKeyboardButton("⬅️ Back", callback_data="nav_account")]
+			])
+			await _edit_message_or_reply(query, msg, keyboard)
 			return
 		except Exception:
 			return
@@ -269,6 +299,9 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 				return
 			if data == "admin_toggle_engine":
 				await query.message.reply_text("🛑 Engine: use /dev_pause or /dev_resume.")
+				return
+			if data == "admin_force_market_scan":
+				await query.message.reply_text("🧠 Market scan: use /force_market_scan.")
 				return
 		except Exception:
 			return
@@ -313,6 +346,7 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			],
 			[
 				InlineKeyboardButton("🛑 Pause/Resume Engine", callback_data="admin_toggle_engine"),
+				InlineKeyboardButton("🧠 Force Market Scan", callback_data="admin_force_market_scan"),
 			],
 		])
 	except Exception:
@@ -325,6 +359,87 @@ async def admin_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if update.message is None:
 		return
 	await update.message.reply_text("🛡️ Admin Dashboard", reply_markup=keyboard)
+
+
+@require_tier("ADMIN")
+async def force_market_scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	if int(update.effective_user.id) not in ADMIN_IDS:
+		return
+
+	try:
+		from ml.inference import MLFilter
+		from ml.features import extract_features
+	except Exception:
+		await update.message.reply_text("⚠️ ML module not available. Scan skipped.")
+		return
+
+	ml_filter = MLFilter()
+	if not getattr(ml_filter, "active", False):
+		await update.message.reply_text("⚠️ ML model not loaded — train first.")
+		return
+
+	threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.65"))
+
+	try:
+		from db.session import get_session
+		from db.models import Signal, AdminEvent
+		from sqlalchemy import select
+		from datetime import datetime, timedelta
+		cutoff = datetime.utcnow() - timedelta(hours=4)
+		async with get_session() as session:
+			rows = await session.execute(
+				select(Signal)
+				.where(
+					Signal.created_at >= cutoff,
+					Signal.ml_probability.is_(None),
+					Signal.expired.is_(False),
+				)
+				.limit(50)
+			)
+			signals = rows.scalars().all()
+
+		approved = rejected = errors = 0
+		for sig_row in signals:
+			try:
+				sig_dict = {col.name: getattr(sig_row, col.name) for col in sig_row.__table__.columns}
+				features = extract_features(sig_dict, {})
+				ok, _prob = ml_filter.ml_filter(features, threshold=threshold)
+				if ok:
+					approved += 1
+				else:
+					rejected += 1
+			except Exception:
+				errors += 1
+
+		try:
+			session.add(
+				AdminEvent(
+					event_type="force_market_scan",
+					actor_telegram_user_id=int(update.effective_user.id),
+					details={
+						"total": len(signals),
+						"approved": approved,
+						"rejected": rejected,
+						"errors": errors,
+						"threshold": threshold,
+					},
+				)
+			)
+			await session.commit()
+		except Exception:
+			pass
+
+	except Exception:
+		await update.message.reply_text("⚠️ Scan failed. Check logs for details.")
+		return
+
+	await update.message.reply_text(
+		f"🤖 Market scan complete. Signals={len(signals)} | "
+		f"approved={approved} | rejected={rejected} | errors={errors} | "
+		f"threshold={threshold:.2f}"
+	)
 # --- USER COMMAND: /support ---
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if update.effective_user is None or update.message is None:
@@ -332,18 +447,7 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	support_contact = "@theocrilox"
 	await update.message.reply_text(f"For help or questions, contact support: {support_contact}")
 # --- USER COMMAND: /status ---
-async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	if update.effective_user is None:
-		return
-	if update.message is None and getattr(update, "callback_query", None) is not None:
-		try:
-			update.message = update.callback_query.message
-		except Exception:
-			pass
-	if update.message is None:
-		return
-	user_id = update.effective_user.id
-	
+async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	tier = "free"
 	expiry = None
 	try:
@@ -351,7 +455,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		tier = str(resolve_user_tier(int(user_id))).lower()
 	except Exception:
 		tier = "free"
-	
+
 	# Get subscription expiry from Postgres — check premium_until first, then active Subscription
 	try:
 		from db.session import get_session
@@ -380,7 +484,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 					expiry = sub.expires_at
 	except Exception:
 		pass
-	
+
 	# Get signals sent today
 	signals_today = 0
 	try:
@@ -390,21 +494,49 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		signals_today = int(state.get_sync(f"signals_sent:{user_id}:{date_str}") or 0)
 	except Exception:
 		pass
-	
+
 	limits = {"free": 2, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
 	limit = limits.get(tier, 2)
-	
+
 	tier_emoji = {"free": "🆓", "premium": "⭐", "vip": "👑", "owner": "🔧", "admin": "🔧"}.get(tier, "🆓")
-	
+
 	msg = f"{tier_emoji} Status: {tier.upper()}\n\n"
 	if expiry:
 		msg += f"📅 Expires: {expiry.strftime('%Y-%m-%d %H:%M UTC')}\n"
 	msg += f"📊 Signals today: {signals_today}/{limit}\n"
-	
+
 	if tier == "free":
 		msg += "\n/upgrade to unlock more signals"
-	
+
 	keyboard = _build_dynamic_menu(user_id=int(user_id), tier=tier)
+	return msg, keyboard
+
+
+async def _edit_message_or_reply(query, msg: str, keyboard=None) -> None:
+	try:
+		await query.edit_message_text(msg, reply_markup=keyboard)
+		return
+	except Exception:
+		pass
+	try:
+		if query and query.message is not None:
+			await query.message.reply_text(msg, reply_markup=keyboard)
+	except Exception:
+		pass
+
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None:
+		return
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
+		return
+	user_id = update.effective_user.id
+	msg, keyboard = await _compose_status_message(int(user_id))
 	await update.message.reply_text(msg, reply_markup=keyboard)
 
 
@@ -1083,7 +1215,15 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	if data == "nav_performance":
 		return await performance_command(update, context)
 	if data == "nav_account":
-		return await status_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_status_message(int(uid))
+			await _edit_message_or_reply(query, msg, keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_upgrade":
 		return await upgrade_command(update, context)
 	if data == "nav_support":
@@ -2161,26 +2301,9 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id = update.effective_user.id
 	msg = (
-		"💰 SignalRankAI Plans\n\n"
-		"🆓 Free Plan\n"
-		"• 2 signals per day\n"
-		"• Entry price shown\n"
-		"• SL/TP locked\n\n"
-		"⭐ Premium\n"
-		"• ₦8,000/week | ₦24,000/month | ₦56,000/quarter\n"
-		"• Up to 20 signals per day\n"
-		"• Full signals with Entry, SL, TP\n"
-		"• Performance analytics & history\n"
-		"• Custom filters & alerts\n\n"
-		"👑 VIP\n"
-		"• ₦16,000/week | ₦40,000/month\n"
-		"• Unlimited signals\n"
-		"• Everything in Premium\n"
-		"• ML probability scores\n"
-		"• Entry zones & partial TPs\n"
-		"• Elite signals (score 85+)\n\n"
-		"📱 Weekly Plan — ₦4,000/week (full access)\n\n"
-		"Use /upgrade to subscribe."
+		"🚀 SignalRankAI — Choose Your Plan\n\n"
+		"💎 VIP Monthly — ₦40,000 | 🟢 15 seats left\n"
+		"⭐ Premium — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr"
 	)
 	# Build pricing buttons (Paystack links)
 	try:
@@ -2188,14 +2311,17 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from paystack.paystack import generate_paystack_link
 		rows = []
 		vip_link = generate_paystack_link(user_id=user_id, price=40000, tier="VIP", duration="MONTHLY", duration_days=30)
+		prem_week = generate_paystack_link(user_id=user_id, price=8000, tier="PREMIUM", duration="WEEKLY", duration_days=7)
 		prem_link = generate_paystack_link(user_id=user_id, price=24000, tier="PREMIUM", duration="MONTHLY", duration_days=30)
-		week_link = generate_paystack_link(user_id=user_id, price=4000, tier="WEEKLY_PLAN", duration="WEEKLY", duration_days=7)
+		prem_qtr = generate_paystack_link(user_id=user_id, price=56000, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
 		if vip_link:
 			rows.append([InlineKeyboardButton("💎 VIP Monthly — ₦40,000", url=vip_link)])
+		if prem_week:
+			rows.append([InlineKeyboardButton("⭐ Premium Weekly — ₦8,000", url=prem_week)])
 		if prem_link:
 			rows.append([InlineKeyboardButton("⭐ Premium Monthly — ₦24,000", url=prem_link)])
-		if week_link:
-			rows.append([InlineKeyboardButton("📅 Weekly Plan — ₦4,000", url=week_link)])
+		if prem_qtr:
+			rows.append([InlineKeyboardButton("⭐ Premium Quarterly — ₦56,000", url=prem_qtr)])
 		rows.append([InlineKeyboardButton("🎧 Support", callback_data="nav_support")])
 		keyboard = InlineKeyboardMarkup(rows)
 	except Exception:
@@ -2366,18 +2492,16 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	msg = (
 		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
 		+ vip_line + "\n"
-		"⭐ *Premium* — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr\n"
-		"📅 *Weekly Plan* — ₦4,000/wk\n\n"
+		"⭐ *Premium* — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr\n\n"
 		"_Tap a plan below to subscribe instantly via Paystack:_"
 	)
 
 	# ── Build keyboard ────────────────────────────────────────────────────────
 	plans = [
 		("💎 VIP Monthly — ₦40,000", 40000, "VIP", "MONTHLY", 30),
+		("⭐ Premium Weekly — ₦8,000", 8000, "PREMIUM", "WEEKLY", 7),
 		("⭐ Premium Monthly — ₦24,000", 24000, "PREMIUM", "MONTHLY", 30),
 		("⭐ Premium Quarterly — ₦56,000", 56000, "PREMIUM", "QUARTERLY", 90),
-		("⭐ Premium Weekly — ₦8,000", 8000, "PREMIUM", "WEEKLY", 7),
-		("📅 Weekly Plan — ₦4,000", 4000, "WEEKLY_PLAN", "WEEKLY", 7),
 	]
 
 	keyboard_rows = []
