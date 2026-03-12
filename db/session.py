@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import logging
 import os
 import socket as _socket
+import threading
 from config import config
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 
 def _prefer_ipv4_url(url: str) -> str:
@@ -87,38 +92,88 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
+# ---------------------------------------------------------------------------
+# Thread-safe global engine singleton
+# ---------------------------------------------------------------------------
+# Python 3.12 raised the bar: asyncio.get_event_loop() raises RuntimeError
+# in any non-main thread that has no running event loop (e.g. APScheduler
+# BackgroundScheduler threads, ThreadPoolExecutor workers).  The old
+# per-event-loop cache relied on that call and would crash in those threads.
+#
+# Fix: one global engine + sessionmaker, always using NullPool so each
+# request creates its own asyncpg connection rather than sharing a pool
+# across event loops or threads.  NullPool is safe and correct for our
+# multi-event-loop Railway deployment.
+# ---------------------------------------------------------------------------
 
-# --- Per-event-loop engine/session cache ---
-import asyncio
-from sqlalchemy import text
-_engine_cache = {}
-_sessionmaker_cache = {}
+_global_engine: Optional[AsyncEngine] = None
+_global_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+_global_engine_lock = threading.Lock()
 _schema_checked = False
 
+
+def _get_global_engine() -> Optional[AsyncEngine]:
+    """Return (creating if necessary) the module-level async engine.
+
+    Thread-safe double-checked locking.  Never touches asyncio — safe to
+    call from any thread, with or without a running event loop.
+    """
+    global _global_engine, _global_sessionmaker
+    if _global_engine is not None:
+        return _global_engine
+    with _global_engine_lock:
+        if _global_engine is not None:          # re-check after acquiring lock
+            return _global_engine
+        url = get_database_url()
+        if not url:
+            return None
+        # Always NullPool: avoids "Future attached to a different loop" errors
+        # when the same engine object is used from multiple asyncio event loops
+        # (web server loop, asyncio.run() in scheduler threads, etc.).
+        engine = create_async_engine(url, pool_pre_ping=True, poolclass=NullPool)
+        _global_sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+        _global_engine = engine
+        # Log the masked URL so Railway logs confirm the right DB is in use
+        try:
+            from sqlalchemy.engine.url import make_url as _mku
+            _mu = _mku(url)
+            _masked = f"{_mu.drivername}://{_mu.username}:***@{_mu.host}:{_mu.port}/{_mu.database}"
+        except Exception:
+            _masked = "<url parse error>"
+        logger.info("[db] async engine initialised  url=%s  pool=NullPool", _masked)
+        return _global_engine
+
+
+def _get_global_sessionmaker() -> Optional[async_sessionmaker[AsyncSession]]:
+    _get_global_engine()          # ensure both are initialised
+    return _global_sessionmaker
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases (some modules import these by name)
+# ---------------------------------------------------------------------------
 def get_engine_for_event_loop() -> Optional[AsyncEngine]:
-    loop = asyncio.get_event_loop()
-    if loop in _engine_cache:
-        return _engine_cache[loop]
-    engine = create_engine()
-    if engine is not None:
-        _engine_cache[loop] = engine
-    return engine
+    """Deprecated alias for _get_global_engine().
+
+    Previously cached engines per-event-loop; now returns the global
+    NullPool singleton so callers keep working without changes.
+    """
+    return _get_global_engine()
+
 
 def get_sessionmaker_for_event_loop() -> Optional[async_sessionmaker[AsyncSession]]:
-    loop = asyncio.get_event_loop()
-    if loop in _sessionmaker_cache:
-        return _sessionmaker_cache[loop]
-    engine = get_engine_for_event_loop()
-    if engine is None:
-        return None
-    sm = create_sessionmaker(engine)
-    _sessionmaker_cache[loop] = sm
-    return sm
+    """Deprecated alias for _get_global_sessionmaker()."""
+    return _get_global_sessionmaker()
+
+
+def is_db_configured() -> bool:
+    """Return True if a database URL is configured (engine can be created)."""
+    return _get_global_engine() is not None
 
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
-    SessionLocal = get_sessionmaker_for_event_loop()
+    SessionLocal = _get_global_sessionmaker()
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL is not configured")
     async with SessionLocal() as session:
@@ -346,7 +401,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 # Backward-compatible alias used by repository and other modules.
 @asynccontextmanager
 async def async_session() -> AsyncIterator[AsyncSession]:
-    SessionLocal = get_sessionmaker_for_event_loop()
+    SessionLocal = _get_global_sessionmaker()
     if SessionLocal is None:
         raise RuntimeError("DATABASE_URL is not configured")
     async with SessionLocal() as session:

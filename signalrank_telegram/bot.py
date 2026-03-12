@@ -330,42 +330,41 @@ async def _send_signal_with_engagement_async(
         InlineKeyboardButton("🔥 Taking it", callback_data=f"signal_reaction_{signal_id}|taking_it"),
         InlineKeyboardButton("👀 Watching",  callback_data=f"signal_reaction_{signal_id}|watching"),
     ]]
-    # Row 2: ⚡ Take Trade button (PREMIUM+ only, when signal data is available)
+    # Row 2: ⚡ Take Trade button — shown to ALL tiers.
+    # FREE users see an upsell paywall when they tap it; PREMIUM/VIP execute.
     if signal:
         try:
-            from signalrank_telegram.access import resolve_user_tier
-            from signalrank_telegram.commands import tier_rank
-            _ut = (resolve_user_tier(int(telegram_user_id)) or "FREE").upper()
-            if tier_rank(_ut) >= tier_rank("PREMIUM"):
-                import json as _j
-                _asset = str(signal.get('asset') or '')
-                _dir   = str(signal.get('direction') or '').lower()
-                _entry = signal.get('entry') or 0
-                _sl    = signal.get('stop_loss') or 0
-                _tp_r  = signal.get('take_profit') or signal.get('tp_levels') or 0
-                # Reduce TP to first scalar value
-                if isinstance(_tp_r, list) and _tp_r:
-                    _tp = _tp_r[0]
-                elif isinstance(_tp_r, str):
+            import json as _j
+            _asset = str(signal.get('asset') or '')
+            _dir   = str(signal.get('direction') or '').lower()
+            _entry = signal.get('entry') or 0
+            _sl    = signal.get('stop_loss') or 0
+            _tp_r  = signal.get('take_profit') or signal.get('tp_levels') or 0
+            # Reduce TP to first scalar value
+            if isinstance(_tp_r, list) and _tp_r:
+                _tp = _tp_r[0]
+            elif isinstance(_tp_r, str):
+                try:
+                    _pd = _j.loads(_tp_r)
+                    _tp = _pd[0] if isinstance(_pd, list) else _pd
+                except Exception:
                     try:
-                        _pd = _j.loads(_tp_r)
-                        _tp = _pd[0] if isinstance(_pd, list) else _pd
+                        _tp = float(_tp_r.strip("[]'\" ").split(',')[0])
                     except Exception:
-                        try:
-                            _tp = float(_tp_r.strip("[]'\" ").split(',')[0])
-                        except Exception:
-                            _tp = 0
-                else:
-                    _tp = _tp_r or 0
-                _sid8 = str(signal_id)[:8]
-                if _asset and _dir and _entry and _sl and _tp:
-                    _cb = f"mt5_trade_{_sid8}|{_asset}|{_dir}|{_entry}|{_sl}|{_tp}"
-                    if len(_cb.encode()) <= 64:
-                        _kb_rows.append([
-                            InlineKeyboardButton("⚡ Take Trade", callback_data=_cb)
-                        ])
+                        _tp = 0
+            else:
+                _tp = _tp_r or 0
+            _sid8 = str(signal_id)[:8]
+            # Include button even when sl/tp are 0 — FREE users are gated in the
+            # callback before execution logic is reached.
+            if _asset and _dir:
+                _cb = f"mt5_trade_{_sid8}|{_asset}|{_dir}|{_entry}|{_sl}|{_tp}"
+                if len(_cb.encode()) <= 64:
+                    _kb_rows.append([
+                        InlineKeyboardButton("⚡ Take Trade", callback_data=_cb)
+                    ])
         except Exception as _me:
-            logger.debug(f"[send_signal] MT5 button error: {_me}")
+            logger.debug(f"[send_signal] Take Trade button error: {_me}")
     keyboard = InlineKeyboardMarkup(_kb_rows)
     try:
         msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
@@ -1504,10 +1503,10 @@ def run_bot() -> None:
     # Every statement uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so it is safe
     # to run against any DB state on every bot restart.
     try:
-        from db.session import get_engine_for_event_loop, get_session
+        from db.session import is_db_configured, get_session
         from sqlalchemy import text
 
-        if get_engine_for_event_loop() is not None:
+        if is_db_configured():
             async def _ensure_schema() -> None:
                 _stmts = [
                     # users — columns added after 0001_init / 0008_user_tier_column
@@ -1805,21 +1804,54 @@ def run_bot() -> None:
 
     application.add_handler(_CQH(_signal_reaction_callback, pattern=r"^signal_reaction_"))
 
-    # ⚡ One-click MT5 execution via inline keyboard
-    # Callback data format: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
+    # ⚡ Take Trade — one-click MT5 execution (PREMIUM/VIP) or upsell (FREE)
+    # Callback data: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
     from telegram.ext import CallbackQueryHandler
     async def _mt5_trade_callback(update, context):
         query = update.callback_query
-        await query.answer()
         user_id = update.effective_user.id if update.effective_user else None
         if user_id is None:
+            await query.answer()
             return
+
+        # ── Tier gate: FREE users see an upsell paywall ───────────────────────
+        try:
+            from signalrank_telegram.access import resolve_user_tier
+            from signalrank_telegram.commands import tier_rank
+            _ut = (resolve_user_tier(int(user_id)) or "FREE").upper()
+            if tier_rank(_ut) < tier_rank("PREMIUM"):
+                await query.answer("🔒 Premium feature", show_alert=False)
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=(
+                        "🔒 *Premium Feature Locked!*\n\n"
+                        "Auto-trading directly from Telegram is reserved for our paid members.\n\n"
+                        "⭐️ *Premium Benefits:* 1-click execution, faster signals, and full asset coverage.\n\n"
+                        "👑 *VIP Benefits:* Everything in Premium, plus custom risk management, "
+                        "dedicated support, and exclusive market insights.\n\n"
+                        "🚀 Type /upgrade right now to unlock these features and catch this trade!"
+                    ),
+                    parse_mode="Markdown",
+                )
+                return
+        except Exception as _te:
+            logger.debug("[mt5] tier check error: %s", _te)
+
+        await query.answer()
         try:
             parts = (query.data or "").replace("mt5_trade_", "", 1).split("|")
             signal_id, asset, direction, entry, sl, tp = parts[0], parts[1], parts[2], float(parts[3]), float(parts[4]), float(parts[5])
         except Exception:
             await query.edit_message_text("❌ Invalid trade button data.")
             return
+
+        # Validate that we actually have sl/tp (FREE signals have 0)
+        if not sl or not tp:
+            await query.edit_message_text(
+                "⚠️ Trade data incomplete — stop-loss or take-profit is missing on this signal."
+            )
+            return
+
         try:
             from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
             account_id = await get_user_mt5_account_id(user_id)
@@ -1853,10 +1885,11 @@ def run_bot() -> None:
                 account_id=account_id, symbol=asset, direction=direction,
                 volume=_exec_vol, stop_loss=sl, take_profit=tp, signal_entry=entry
             )
-            if result.get("ok"):
+            if result.get("success"):
                 oid = result.get("order_id", "")
+                lp = result.get("live_price") or entry
                 await query.edit_message_text(
-                    f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{live_px:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`",
+                    f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`",
                     parse_mode="Markdown"
                 )
             else:
@@ -1869,9 +1902,8 @@ def run_bot() -> None:
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
         # Prefer Postgres-backed recap when configured
-        from db.session import get_engine_for_event_loop, get_session
-        engine = get_engine_for_event_loop()
-        if engine is not None:
+        from db.session import is_db_configured, get_session
+        if is_db_configured():
             from db.pg_features import get_weekly_recap_stats
 
             async def _fetch(uid: int) -> dict:
@@ -1918,9 +1950,8 @@ def run_bot() -> None:
         # Fetches unnotified outcomes and sends them to all users who received the signal.
         # Once sent and marked as notified, the outcome will never be resent.
         try:
-            from db.session import get_engine_for_event_loop, get_session
-            engine = get_engine_for_event_loop()
-            if engine is None:
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
                 return
             from db.pg_features import (
                 list_unnotified_outcomes,
