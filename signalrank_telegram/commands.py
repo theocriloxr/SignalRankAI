@@ -1990,8 +1990,9 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Handle 'Join Waitlist' button pressed from /upgrade when VIP is full."""
 	query = update.callback_query
-	await query.answer()
 	user_id = update.effective_user.id if update.effective_user else None
+	logger.info("[callback] vip_waitlist_join user_id=%s", user_id)
+	await query.answer()
 	if not user_id:
 		return
 	try:
@@ -2029,8 +2030,9 @@ async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAU
 async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""User clicked [✅ I Agree] on the financial disclaimer."""
 	query = update.callback_query
-	await query.answer("Terms accepted ✅")
 	user_id = update.effective_user.id if update.effective_user else None
+	logger.info("[callback] agree_terms user_id=%s", user_id)
+	await query.answer("Terms accepted ✅")
 	if not user_id:
 		return
 	try:
@@ -2070,6 +2072,8 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 async def decline_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""User clicked [❌ Decline] on the financial disclaimer."""
 	query = update.callback_query
+	user_id = update.effective_user.id if update.effective_user else None
+	logger.info("[callback] decline_terms user_id=%s", user_id)
 	await query.answer()
 	try:
 		await query.edit_message_text(
@@ -4088,8 +4092,9 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 	Edits the original confirmation message with the result summary.
 	"""
 	query = update.callback_query
-	await query.answer("Processing cancellation...")
 	user_id = update.effective_user.id if update.effective_user else None
+	logger.info("[callback] cancel_confirm user_id=%s", user_id)
+	await query.answer("Processing cancellation...")
 	if not user_id:
 		return
 
@@ -4135,6 +4140,8 @@ async def cancel_nevermind_callback(update: Update, context: ContextTypes.DEFAUL
 	Edits the original message to confirm no action was taken.
 	"""
 	query = update.callback_query
+	user_id = update.effective_user.id if update.effective_user else None
+	logger.info("[callback] cancel_nevermind user_id=%s", user_id)
 	await query.answer("Good choice! \U0001f4aa")
 	try:
 		await query.edit_message_text(

@@ -157,7 +157,14 @@ def _get_global_engine() -> Optional[AsyncEngine]:
         # Always NullPool: avoids "Future attached to a different loop" errors
         # when the same engine object is used from multiple asyncio event loops
         # (web server loop, asyncio.run() in scheduler threads, etc.).
-        engine = create_async_engine(url, pool_pre_ping=True, poolclass=NullPool)
+        # timeout=10: prevents asyncpg from hanging indefinitely on
+        # connection establishment (e.g. Railway IPv4/IPv6 resolution delays).
+        engine = create_async_engine(
+            url,
+            pool_pre_ping=True,
+            poolclass=NullPool,
+            connect_args={"timeout": 10},
+        )
         _global_sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
         _global_engine = engine
         # Log the masked URL so Railway logs confirm the right DB is in use
@@ -206,6 +213,10 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     async with SessionLocal() as session:
         global _schema_checked
         if not _schema_checked:
+            # Mark as checked immediately (before any await) so that concurrent
+            # coroutines entering get_session() while DDL is in progress skip
+            # the DDL block rather than running it twice.
+            _schema_checked = True
             try:
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP"))
                 await session.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER"))
@@ -422,7 +433,6 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                     await session.rollback()
                 except Exception:
                     pass
-            _schema_checked = True
         yield session
 
 

@@ -1965,8 +1965,9 @@ def run_bot() -> None:
     from telegram.ext import CallbackQueryHandler as _CQH
     async def _signal_reaction_callback(update, context):
         query = update.callback_query
-        await query.answer()
         user_id = update.effective_user.id if update.effective_user else None
+        logger.info("[callback] signal_reaction user_id=%s data=%s", user_id, query.data)
+        await query.answer()
         if user_id is None:
             return
         try:
@@ -2009,8 +2010,9 @@ def run_bot() -> None:
     async def _mt5_trade_callback(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
+        logger.info("[callback] mt5_trade user_id=%s data=%s", user_id, query.data)
+        await query.answer()
         if user_id is None:
-            await query.answer()
             return
 
         # ── Tier gate: FREE users see an upsell paywall ───────────────────────
@@ -2019,7 +2021,6 @@ def run_bot() -> None:
             from signalrank_telegram.commands import tier_rank
             _ut = (resolve_user_tier(int(user_id)) or "FREE").upper()
             if tier_rank(_ut) < tier_rank("PREMIUM"):
-                await query.answer("🔒 Premium feature", show_alert=False)
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=(
@@ -2036,7 +2037,6 @@ def run_bot() -> None:
         except Exception as _te:
             logger.debug("[mt5] tier check error: %s", _te)
 
-        await query.answer()
         try:
             parts = (query.data or "").replace("mt5_trade_", "", 1).split("|")
             signal_id, asset, direction, entry, sl, tp = parts[0], parts[1], parts[2], float(parts[3]), float(parts[4]), float(parts[5])
@@ -2101,6 +2101,8 @@ def run_bot() -> None:
     # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
     async def _check_outcome_callback(update, context):
         query = update.callback_query
+        user_id = update.effective_user.id if update.effective_user else None
+        logger.info("[callback] check_outcome user_id=%s data=%s", user_id, query.data)
         await query.answer()  # acknowledge immediately; detailed answer sent below
         raw = (query.data or "").replace("check_outcome_", "", 1).strip()
         if not raw:
@@ -3115,6 +3117,31 @@ def run_bot() -> None:
 
     # _sa: alias for the store to use for picklable module-level jobs.
     _sa = "persistent" if "persistent" in _jobstores else "default"
+
+    # ── Purge stale jobs from the persistent store ────────────────────────────
+    # Deployments before explicit job IDs were added stored jobs with random
+    # UUID keys.  Those rows survive restarts and fire alongside the newly-
+    # named jobs — causing duplicate execution (e.g. resend running 4×/s).
+    # Wiping the store on every startup and re-adding with explicit IDs is
+    # safe: APScheduler recalculates next_run_time on add_job().
+    if "persistent" in _jobstores:
+        try:
+            _known_ids = {
+                'resend_unsent_signals', 'distribute_free_signals',
+                'downgrade_subs', 'delete_old_signals',
+            }
+            _stale_jobs = [
+                j for j in _jobstores["persistent"].get_all_jobs()
+                if j.id not in _known_ids
+            ]
+            for _j in _stale_jobs:
+                try:
+                    _jobstores["persistent"].remove_job(_j.id)
+                    logger.info("[sched] removed stale job id=%s", _j.id)
+                except Exception:
+                    pass
+        except Exception as _purge_err:
+            logger.warning("[sched] could not purge stale jobs: %s", _purge_err)
 
     scheduler = BackgroundScheduler(jobstores=_jobstores or {}, timezone="UTC")
 
