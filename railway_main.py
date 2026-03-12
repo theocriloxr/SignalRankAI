@@ -85,11 +85,25 @@ def _build_scheduler() -> AsyncIOScheduler:
 
     # VIP waitlist TTL — web layer only, not present in run_bot()
     try:
-        scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")
+        scheduler.add_job(
+            _check_waitlist_capacity_job,
+            "interval",
+            hours=1,
+            id="wl_capacity",
+            replace_existing=True,
+            max_instances=1,
+        )
     except Exception as exc:
         logger.warning(f"[sched] could not add wl_capacity job: {exc}")
     try:
-        scheduler.add_job(_monitor_expired_invites_job, "interval", minutes=15, id="wl_monitor")
+        scheduler.add_job(
+            _monitor_expired_invites_job,
+            "interval",
+            minutes=15,
+            id="wl_monitor",
+            replace_existing=True,
+            max_instances=1,
+        )
     except Exception as exc:
         logger.warning(f"[sched] could not add wl_monitor job: {exc}")
 

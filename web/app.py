@@ -377,8 +377,22 @@ async def _lifespan(app_: FastAPI):
     # Start AsyncIOScheduler for waitlist TTL background jobs
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     _scheduler = AsyncIOScheduler(timezone="UTC")
-    _scheduler.add_job(_check_waitlist_capacity_job, "interval", hours=1, id="wl_capacity")
-    _scheduler.add_job(_monitor_expired_invites_job, "interval", minutes=15, id="wl_monitor")
+    _scheduler.add_job(
+        _check_waitlist_capacity_job,
+        "interval",
+        hours=1,
+        id="wl_capacity",
+        replace_existing=True,
+        max_instances=1,
+    )
+    _scheduler.add_job(
+        _monitor_expired_invites_job,
+        "interval",
+        minutes=15,
+        id="wl_monitor",
+        replace_existing=True,
+        max_instances=1,
+    )
     _scheduler.start()
     logger.info("[lifespan] Waitlist scheduler started (capacity=1h, monitor=15min)")
 

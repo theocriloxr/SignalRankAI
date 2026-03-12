@@ -1824,10 +1824,12 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			lines.append(f"Stop Loss: {sig.stop_loss}")
 		try:
 			tp_raw = getattr(sig, "take_profit", None)
+			tp_list: list = []
 			if isinstance(tp_raw, str):
 				try:
 					tp_data = json.loads(tp_raw)
 					if isinstance(tp_data, list) and tp_data:
+						tp_list = list(tp_data)
 						for i, tp in enumerate(tp_data, 1):
 							lines.append(f"Take Profit {i}: {tp}")
 					else:
@@ -1835,7 +1837,13 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				except Exception:
 					lines.append(f"Take Profit: {tp_raw}")
 			elif tp_raw is not None:
+				try:
+					tp_list = list(tp_raw) if isinstance(tp_raw, (list, tuple)) else [tp_raw]
+				except Exception:
+					tp_list = []
 				lines.append(f"Take Profit: {tp_raw}")
+			if tp_list:
+				lines.append(f"TP Progress: 0/{len(tp_list)}")
 		except Exception:
 			pass
 
