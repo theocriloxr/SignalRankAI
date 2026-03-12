@@ -2075,7 +2075,14 @@ async def analyze_command(update, context) -> None:
 async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
-	if update.effective_user is None or update.message is None:
+	if update.effective_user is None:
+		return
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
 		return
 	user_id = update.effective_user.id
 
@@ -2145,6 +2152,11 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			pass
 
 	keyboard_rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
+	# Navigation shortcuts
+	keyboard_rows.append([
+		InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+		InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+	])
 	keyboard = InlineKeyboardMarkup(keyboard_rows)
 
 	await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
@@ -2800,7 +2812,21 @@ async def start_command(update, context):
 		return  # Hold back welcome message until terms are accepted
 
 	# Terms already accepted — send normal welcome
-	await update.message.reply_text(msg)
+	try:
+		from telegram import InlineKeyboardMarkup as _IKM_start, InlineKeyboardButton as _IKB_start
+		_kbd_start = _IKM_start([
+			[
+				_IKB_start("📈 Signals", callback_data="nav_signals"),
+				_IKB_start("✅ Status", callback_data="nav_account"),
+			],
+			[
+				_IKB_start("🚀 Upgrade", callback_data="nav_upgrade"),
+				_IKB_start("🆘 Support", callback_data="nav_support"),
+			],
+		])
+	except Exception:
+		_kbd_start = None
+	await update.message.reply_text(msg, reply_markup=_kbd_start)
 
 # /about message
 async def about_command(update, context) -> None:
@@ -2870,8 +2896,29 @@ async def performance_command(update, context):
 	if await _public_guard(update):
 		return
 	from datetime import datetime, timedelta
+	if update.message is None and getattr(update, "callback_query", None) is not None:
+		try:
+			update.message = update.callback_query.message
+		except Exception:
+			pass
+	if update.message is None:
+		return
 	user_id = update.effective_user.id
 	tier: str = _effective_tier(user_id)
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		_perf_kbd = InlineKeyboardMarkup([
+			[
+				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+			],
+			[
+				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
+			],
+		])
+	except Exception:
+		_perf_kbd = None
 
 	# Prefer Postgres (deliveries + outcomes)
 	try:
@@ -2932,7 +2979,7 @@ async def performance_command(update, context):
 					msg = "No signals in the last 30 days."
 				
 				if update.message is not None:
-					await update.message.reply_text(msg)
+					await update.message.reply_text(msg, reply_markup=_perf_kbd)
 				return
 
 			if tier_rank(tier) < tier_rank("PREMIUM"):
@@ -2943,7 +2990,7 @@ async def performance_command(update, context):
 					"Upgrade to Premium for full stats and history."
 				)
 				if update.message is not None:
-					await update.message.reply_text(msg)
+					await update.message.reply_text(msg, reply_markup=_perf_kbd)
 				return
 
 			avg_r_str: str = f"{float(avg_r):.2f}R" if avg_r is not None else "N/A"
@@ -2963,12 +3010,15 @@ async def performance_command(update, context):
 				"💡 Based on 1% risk per signal."
 			)
 			if update.message is not None:
-				await update.message.reply_text(msg)
+				await update.message.reply_text(msg, reply_markup=_perf_kbd)
 			return
 	except Exception as e:
 		_audit_logger.error(f"/performance failed for user={user_id}: {e}")
 		if update.message is not None:
-			await update.message.reply_text("No performance data available right now. Use /signals for recent activity.")
+			await update.message.reply_text(
+				"No performance data available right now. Use /signals for recent activity.",
+				reply_markup=_perf_kbd,
+			)
 		return
 
 

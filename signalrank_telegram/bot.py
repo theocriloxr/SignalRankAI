@@ -1926,6 +1926,11 @@ def run_bot() -> None:
     from telegram.ext import CallbackQueryHandler as _CQH_vip
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
+    # ── Help/Navigation buttons ─────────────────────────────────────────────
+    from .commands import nav_callback
+    from telegram.ext import CallbackQueryHandler as _CQH_nav
+    application.add_handler(_CQH_nav(nav_callback, pattern="^nav_"))
+
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
     from .commands import admin_command, admin_broadcast_command, blast_terms_command
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
