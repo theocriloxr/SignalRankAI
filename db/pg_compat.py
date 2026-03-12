@@ -4,7 +4,7 @@ import asyncio
 from typing import Any, Dict
 
 from db.session import get_session
-from db.session import get_database_url
+from db.session import get_database_url_or_none
 from utils.async_runner import run_sync
 
 
@@ -16,9 +16,10 @@ def _run(coro):
 
 
 def postgres_enabled() -> bool:
-    # Previously relied on a global ENGINE; use the session helper to
-    # determine whether a DATABASE_URL is configured instead.
-    return bool(get_database_url())
+    # Use get_database_url_or_none() so that a missing DATABASE_URL returns
+    # False (safe) instead of raising ValueError (which propagates through
+    # bool() and crashes the caller).
+    return bool(get_database_url_or_none())
 
 
 def get_all_user_ids_compat() -> list[int]:

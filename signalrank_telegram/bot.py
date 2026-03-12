@@ -4,15 +4,25 @@ from utils.async_runner import run_sync
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
 
-    Runs in a FRESH asyncio event loop (via asyncio.run) so a single Bot
-    connection pool is used for all deliveries — no 'Event loop is closed' errors.
     Signals are capped to the top-20 by score from the last 24 h to avoid flooding.
+    Uses run_sync() so the global async engine is re-used correctly whether or not
+    an event loop is already running in the calling thread.
     """
-    import asyncio
+    # Pre-flight: make sure the global async engine is initialised.  This is a
+    # no-op when run_bot() has already set it up, but guards against edge cases
+    # where the job fires before the main startup path completes.
     try:
-        asyncio.run(_resend_unsent_signals_async())
-    except Exception as e:
-        logger.warning(f"[resend] Failed to resend unsent signals: {e}")
+        from db.session import _get_global_engine
+        if _get_global_engine() is None:
+            logger.warning("[resend] DB engine not initialised — skipping job")
+            return
+    except Exception as _pre_err:
+        logger.warning("[resend] DB engine pre-flight failed: %s", _pre_err)
+        return
+    try:
+        run_sync(_resend_unsent_signals_async())
+    except Exception:
+        logger.exception("[resend] resend_unsent_signals_job failed")
 
 
 async def _resend_unsent_signals_async():
@@ -21,13 +31,18 @@ async def _resend_unsent_signals_async():
         from db.session import get_session
         from db.pg_features import list_active_signals, get_signal_outcome_status, record_signal_delivery
         from signalrank_telegram.tier_delivery import TierDeliveryManager
-        from db.pg_compat import get_all_user_ids_compat
         from core.redis_state import was_signal_delivered_sync
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
 
         delivery_mgr = TierDeliveryManager()
-        user_ids = get_all_user_ids_compat()
+
+        # Fetch user IDs with a direct async call — avoids calling
+        # get_all_user_ids_compat() (which uses run_sync() internally and would
+        # spawn a nested thread+event-loop inside the already-running loop).
+        from db.pg_features import list_all_user_telegram_ids
+        async with get_session() as _uid_session:
+            user_ids = await list_all_user_telegram_ids(_uid_session)
 
         # Fetch signals from the last 24 h, limit 100 rows, then rank by score
         async with get_session() as session:
@@ -2349,9 +2364,10 @@ def run_bot() -> None:
         and records TP/SL if hit. This enables follow-up messages end-to-end.
         """
         try:
-            from db.session import get_engine_for_event_loop, get_session
-            engine = get_engine_for_event_loop()
+            from db.session import _get_global_engine, get_engine_for_event_loop, get_session
+            engine = _get_global_engine()  # ensure engine is initialised in this thread
             if engine is None:
+                logger.warning("[outcome] DB engine not initialised — skipping job")
                 return
             from db.pg_features import list_signals_missing_outcomes, upsert_outcome
             from datetime import datetime
@@ -2607,7 +2623,7 @@ def run_bot() -> None:
                     continue
 
         except Exception:
-            return
+            logger.exception("[outcome] compute_outcomes_best_effort failed")
 
     def _in_quiet_hours(current_hour, start_hour, end_hour):
         """Check if current_hour is within quiet hours (respecting wrap-around)."""

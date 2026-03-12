@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import desc, select
 
 from db.models import Subscription, User
-from db.session import get_session
+from db.session import get_session, is_db_configured
 
 
 def owner_id() -> int:
@@ -39,7 +39,7 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
             pass
         return "owner"
 
-    if ENGINE is None:
+    if not is_db_configured():
         return "free"
 
     now = datetime.utcnow()
