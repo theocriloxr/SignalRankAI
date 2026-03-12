@@ -45,7 +45,11 @@ def _prefer_ipv4_url(url: str) -> str:
         if not infos:
             return url
         ipv4 = infos[0][4][0]
-        return str(sa_url.set(host=ipv4))
+        # IMPORTANT: use render_as_string(hide_password=False) — NOT str().
+        # SQLAlchemy 2.x's str(url) redacts the password as "***", which causes
+        # asyncpg to authenticate with the literal string "***" and get
+        # "password authentication failed for user postgres" from the server.
+        return sa_url.set(host=ipv4).render_as_string(hide_password=False)
     except Exception:
         # Never break the connection — fall back to original URL
         return url
