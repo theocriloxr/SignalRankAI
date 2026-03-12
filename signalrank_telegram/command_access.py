@@ -7,69 +7,86 @@ Handles tier changes (demotion) by checking live tier on each access.
 import os
 
 # Map of command -> minimum tier required
+# NOTE: "unlock" is intentionally NOT listed in any help menu but IS in COMMAND_TIERS
+# for access-control purposes (owners can bypass kill-switch).
 COMMAND_TIERS = {
-    # PUBLIC / FREE COMMANDS (accessible to everyone)
-    "start": "FREE",
-    "help": "FREE",
-    "about": "FREE",
-    "faq": "FREE",
-    "disclaimer": "FREE",
-    "pricing": "FREE",
-    "upgrade": "FREE",
-    "signals": "FREE",
-    "signal": "FREE",
-    "outcome": "FREE",
-    "invite": "FREE",
-    "policy": "FREE",
-    "refunds": "FREE",
-    "recap": "FREE",
-    "buy_extra_signals": "FREE",
-    "unlock": "FREE",  # Needed for admins to regain access via bypass key
-    "language": "FREE",
-    "referral_leaderboard": "FREE",
-    "referral_rewards": "FREE",
-    "support": "FREE",
-    "status": "FREE",
-    "liveprice": "FREE",  # NEW: Live price for any asset
-    "market": "FREE",  # NEW: Market overview
-    
-    # PREMIUM COMMANDS
-    "performance": "PREMIUM",
-    "stats": "PREMIUM",
-    "history": "PREMIUM",
-    "risk": "PREMIUM",
-    "alerts": "PREMIUM",
-    "analyze": "PREMIUM",
-    "dashboard": "PREMIUM",
-    "feedback": "PREMIUM",
-    "apikey": "PREMIUM",
-    "filter": "PREMIUM",
-    "reports": "PREMIUM",
-    "notify": "PREMIUM",
-    "portfolio": "PREMIUM",  # NEW: Show active signals with P&L
-    
-    # VIP COMMANDS
-    "elite": "VIP",
-    "early": "VIP",
-    "report": "VIP",
-    
-    # OWNER/ADMIN COMMANDS (for internal use)
-    "dev_pause": "OWNER",
-    "dev_resume": "OWNER",
-    "dev_force_signal": "OWNER",
-    "dev_invalidate": "OWNER",
-    "owner_users": "OWNER",
-    "owner_revenue": "OWNER",
-    "version": "OWNER",
-    "correct_signal": "OWNER",
-    "admin_top_assets": "OWNER",
-    "admin_top_strategies": "OWNER",
-    "admin_user_engagement": "OWNER",
-    "myid": "FREE",  # everyone can see their own ID
-    "selfcheck": "OWNER",
-    "provider_status": "OWNER",
-    "broadcast": "OWNER",
-    "assets": "OWNER",
+    # ── FREE (public) ─────────────────────────────────────────────────────────
+    "start":               "FREE",
+    "help":                "FREE",
+    "about":               "FREE",
+    "faq":                 "FREE",
+    "disclaimer":          "FREE",
+    "pricing":             "FREE",
+    "upgrade":             "FREE",
+    "signals":             "FREE",
+    "signal":              "FREE",
+    "outcome":             "FREE",
+    "invite":              "FREE",
+    "policy":              "FREE",
+    "refunds":             "FREE",
+    "recap":               "FREE",
+    "buy_extra_signals":   "FREE",
+    "language":            "FREE",
+    "referral_leaderboard":"FREE",
+    "referral_rewards":    "FREE",
+    "support":             "FREE",
+    "status":              "FREE",
+    "liveprice":           "FREE",
+    "market":              "FREE",
+    "myid":                "FREE",
+    "tiers":               "FREE",   # shows tier comparison — useful for all
+    # unlock is intentionally omitted from help menus — keep access for owners
+    "unlock":              "FREE",
+
+    # ── PREMIUM ───────────────────────────────────────────────────────────────
+    "performance":         "PREMIUM",
+    "stats":               "PREMIUM",
+    "history":             "PREMIUM",
+    "risk":                "PREMIUM",
+    "alerts":              "PREMIUM",
+    "analyze":             "PREMIUM",
+    "dashboard":           "PREMIUM",
+    "feedback":            "PREMIUM",
+    "apikey":              "PREMIUM",
+    "filter":              "PREMIUM",
+    "reports":             "PREMIUM",
+    "notify":              "PREMIUM",
+    "portfolio":           "PREMIUM",
+    "setlot":              "PREMIUM",
+    "setrisk":             "PREMIUM",
+    "mystats":             "PREMIUM",
+    "referral":            "PREMIUM",
+    "mt5_link":            "PREMIUM",
+    "mt5_status":          "PREMIUM",
+    "connect_broker":      "PREMIUM",
+    "cancel":              "PREMIUM",
+
+    # ── VIP ───────────────────────────────────────────────────────────────────
+    "elite":               "VIP",
+    "early":               "VIP",
+    "report":              "VIP",
+
+    # ── ADMIN ─────────────────────────────────────────────────────────────────
+    "admin":               "ADMIN",
+    "admin_broadcast":     "ADMIN",
+
+    # ── OWNER only (hidden from regular help) ─────────────────────────────────
+    "dev_pause":           "OWNER",
+    "dev_resume":          "OWNER",
+    "dev_force_signal":    "OWNER",
+    "dev_invalidate":      "OWNER",
+    "owner_users":         "OWNER",
+    "owner_revenue":       "OWNER",
+    "version":             "OWNER",
+    "correct_signal":      "OWNER",
+    "admin_top_assets":    "OWNER",
+    "admin_top_strategies":"OWNER",
+    "admin_user_engagement":"OWNER",
+    "selfcheck":           "OWNER",
+    "provider_status":     "OWNER",
+    "broadcast":           "OWNER",
+    "blast_terms":         "OWNER",
+    "assets":              "OWNER",
 }
 
 # Tier ranking (higher = more access)
@@ -86,184 +103,246 @@ COMMAND_HELP = {
     "FREE": {
         "title": "🆓 FREE Tier Commands",
         "commands": [
-            ("start", "Start the bot"),
-            ("help", "Show this help menu"),
-            ("about", "About SignalRankAI"),
-            ("faq", "Frequently asked questions"),
-            ("disclaimer", "Risk disclaimer"),
-            ("pricing", "View pricing plans"),
-            ("upgrade", "Subscribe to Premium/VIP"),
-            ("status", "Check subscription status"),
-            ("signals", "View signals sent to you"),
-            ("signal", "Lookup a specific signal (reference)"),
-            ("outcome", "Check outcome of a signal"),
-            ("invite", "Get your referral link (earn rewards)"),
-            ("policy", "Subscription & refund policy"),
-            ("recap", "Weekly performance recap"),
-            ("support", "Contact support"),
-            ("myid", "Show your Telegram user ID and tier"),
-            ("liveprice", "Get real-time price for any asset"),
-            ("market", "Market overview & major assets"),
-            # ("buy_extra_signals", "Buy 1-5 extra daily signals (₦300 each)"),
+            ("start",                "Start / re-register the bot"),
+            ("help",                 "Show this help menu"),
+            ("status",               "Check your subscription status & tier"),
+            ("upgrade",              "Subscribe to Premium or VIP"),
+            ("pricing",              "View all plan prices"),
+            ("tiers",                "Compare Free / Premium / VIP features"),
+            ("signals",              "View latest signals (limited on Free)"),
+            ("signal",               "Lookup a specific signal by reference"),
+            ("outcome",              "Check outcome of a signal"),
+            ("liveprice",            "Get real-time price for any asset"),
+            ("market",               "Market overview — major assets at a glance"),
+            ("invite",               "Get your referral link and earn rewards"),
+            ("referral_leaderboard", "Top referrers leaderboard"),
+            ("referral_rewards",     "View your referral rewards & history"),
+            ("recap",                "Weekly performance recap"),
+            ("about",                "About SignalRankAI"),
+            ("faq",                  "Frequently asked questions"),
+            ("disclaimer",           "Financial risk disclaimer"),
+            ("policy",               "Subscription & refund policy"),
+            ("support",              "Contact support: @theocrilox"),
+            ("myid",                 "Your Telegram user ID and current tier"),
+            ("language",             "Change notification language"),
         ],
         "footer": (
-            "📌 Free Features:\n"
-            "• 1–3 signals/day (delayed)\n"
-            "• Outcome notifications (basic)\n"
-            "• Daily summary\n"
-            "• Referral rewards\n"
+            "📌 Free Tier Limits:\n"
+            "• 1–3 signals/day (delayed delivery)\n"
+            "• Basic outcome notifications\n"
+            "• Referral rewards (earn free Premium days)\n"
             "• Live prices & market overview\n\n"
-            "Markets: Crypto (spot) + major FX pairs\n"
-            "Features: AI analysis, risk plans, TP/SL alerts\n\n"
-            "💡 Tip: Upgrade to PREMIUM for real-time signals and full details."
+            "💡 /upgrade to PREMIUM for real-time signals with full Entry, SL & TP."
         ),
     },
     "PREMIUM": {
-        "title": "🟡 PREMIUM Tier Commands",
+        "title": "⭐ PREMIUM Tier Commands",
         "commands": [
-            ("start", "Start the bot"),
-            ("help", "Show this help menu"),
-            ("about", "About SignalRankAI"),
-            ("faq", "Frequently asked questions"),
-            ("disclaimer", "Risk disclaimer"),
-            ("pricing", "View pricing plans"),
-            ("upgrade", "Upgrade to VIP"),
-            ("signals", "View all your active signals"),
-            ("signal", "Lookup a specific signal (full details)"),
-            ("outcome", "Check full outcome of a signal"),
-            ("invite", "Get your referral link (earn +7 days Premium)"),
-            ("policy", "Subscription & refund policy"),
-            ("recap", "Weekly performance recap"),
-            ("performance", "Full performance stats (30 days)"),
-            ("stats", "Quick stats summary"),
-            ("history", "Recent signal history"),
-            ("risk", "Risk management guidance"),
-            ("alerts", "TP/SL alerts + quiet hours settings"),
-            ("analyze", "AI analysis for a specific pair"),
-            ("reports", "Daily/weekly report opt-in"),
-            ("notify", "Notification preferences"),
-            ("apikey", "API key for signals"),
-            ("filter", "Custom signal filters"),
-            ("support", "Contact support"),
-            ("liveprice", "Get real-time price for any asset"),
-            ("portfolio", "View all active signals with P&L"),
-            ("market", "Market overview & major assets"),
-            # ("buy_extra_signals", "Buy extra daily signals (if available)"),
+            # ─ All Free commands ────────────────────────────────────────────
+            ("start",                "Start / re-register the bot"),
+            ("help",                 "Show this help menu"),
+            ("status",               "Subscription status & tier details"),
+            ("upgrade",              "Upgrade to VIP"),
+            ("pricing",              "View all plan prices"),
+            ("tiers",                "Compare tier features"),
+            ("signals",              "All active signals with full Entry/SL/TP"),
+            ("signal",               "Lookup a specific signal (full details)"),
+            ("outcome",              "Check full outcome with R-multiple"),
+            ("liveprice",            "Real-time price for any asset"),
+            ("market",               "Market overview — major assets"),
+            ("invite",               "Referral link (earn +7 days Premium per referral)"),
+            ("referral_leaderboard", "Top referrers leaderboard"),
+            ("referral_rewards",     "Your referral rewards history"),
+            ("recap",                "Weekly performance recap"),
+            ("about",                "About SignalRankAI"),
+            ("faq",                  "FAQ"),
+            ("disclaimer",           "Risk disclaimer"),
+            ("policy",               "Subscription & refund policy"),
+            ("support",              "Contact support"),
+            ("myid",                 "Your Telegram ID and tier"),
+            ("language",             "Change notification language"),
+            # ─ Premium-only ────────────────────────────────────────────
+            ("performance",          "Full 30-day performance analytics"),
+            ("stats",                "Win rate, net R, avg R/trade"),
+            ("history",              "Recent signal history (last 10)"),
+            ("risk",                 "Risk management guidance"),
+            ("alerts",               "TP/SL alert settings & quiet hours"),
+            ("analyze",              "AI analysis for any asset/timeframe"),
+            ("dashboard",            "Analytics dashboard"),
+            ("portfolio",            "Active signals with live P&L"),
+            ("reports",              "Daily/weekly report opt-in"),
+            ("notify",               "Notification preferences (assets/TFs)"),
+            ("filter",               "Custom signal filters (score/RR/regime)"),
+            ("feedback",             "Rate a signal or report an issue"),
+            ("apikey",               "API key for programmatic signal access"),
+            ("mystats",              "MT5 execution stats"),
+            ("setlot",               "Set fixed lot size for MT5 execution"),
+            ("setrisk",              "Set max risk % per trade (VIP auto-sizing)"),
+            ("mt5_link",             "Link your MT5/MetaApi account"),
+            ("mt5_status",           "Check MT5 connection status"),
+            ("connect_broker",       "Connect your broker account step-by-step"),
+            ("referral",             "Your referral code & stats"),
+            ("cancel",               "Cancel your subscription auto-renewal"),
         ],
         "footer": (
-            "🟡 Premium Features:\n"
-            "• Real-time signals (5m–24h)\n"
-            "• Exact Entry, SL, TP levels\n"
-            "• Confidence scores\n"
+            "⭐ Premium Features:\n"
+            "• Real-time signals (5m–24h timeframes)\n"
+            "• Full Entry, SL, and TP levels\n"
+            "• AI Confluence scores (15-strategy engine)\n"
             "• TP/SL hit notifications\n"
-            "• Daily & weekly stats\n"
-            "• Risk management guidance\n"
+            "• 30-day win rate & R-multiple tracking\n"
+            "• MT5 auto-execution (3 trades/day, fixed lot)\n"
             "• Portfolio tracking with live P&L\n\n"
-            "Markets: Crypto (spot) + major FX pairs\n"
-            "Features: AI analysis, risk plans, TP/SL alerts\n\n"
-            "💡 Tip: Upgrade to VIP for elite signals."
+            "💡 /upgrade to VIP for elite high-conviction signals."
         ),
     },
     "VIP": {
-        "title": "🔴 VIP Tier Commands",
+        "title": "� VIP Tier Commands",
         "commands": [
-            ("start", "Start the bot"),
-            ("help", "Show this help menu"),
-            ("about", "About SignalRankAI"),
-            ("faq", "Frequently asked questions"),
-            ("disclaimer", "Risk disclaimer"),
-            ("pricing", "View pricing plans"),
-            ("signals", "View your elite signals"),
-            ("signal", "Lookup a specific signal (full analysis)"),
-            ("outcome", "Check full outcome with R-multiples"),
-            ("invite", "Get your referral link (earn rewards)"),
-            ("policy", "Subscription & refund policy"),
-            ("recap", "Weekly performance recap"),
-            ("performance", "Full performance stats (unlimited)"),
-            ("stats", "Detailed stats summary"),
-            ("history", "Complete signal history"),
-            ("risk", "Advanced risk management"),
-            ("analyze", "AI analysis for a specific pair"),
-            ("alerts", "TP/SL alerts + granular settings"),
-            ("elite", "VIP-only high-conviction signals"),
-            ("early", "Early access to market moves"),
-            ("report", "Detailed monthly performance report"),
-            ("analyze", "AI analysis for a specific pair"),
-            ("support", "Contact support"),
+            # ─ All Free commands ────────────────────────────────────────────
+            ("start",                "Start / re-register"),
+            ("help",                 "This help menu"),
+            ("status",               "Subscription & tier details"),
+            ("upgrade",              "Plan details"),
+            ("pricing",              "View pricing"),
+            ("tiers",                "Tier comparison"),
+            ("signals",              "Your VIP-grade signals"),
+            ("signal",               "Lookup a signal (full analysis + ML score)"),
+            ("outcome",              "Full outcome with R-multiples"),
+            ("liveprice",            "Real-time price for any asset"),
+            ("market",               "Market overview"),
+            ("invite",               "Referral link & rewards"),
+            ("referral_leaderboard", "Leaderboard"),
+            ("referral_rewards",     "Referral rewards"),
+            ("recap",                "Weekly recap"),
+            ("about",                "About SignalRankAI"),
+            ("faq",                  "FAQ"),
+            ("disclaimer",           "Risk disclaimer"),
+            ("policy",               "Policy"),
+            ("support",              "Support"),
+            ("myid",                 "Your ID and tier"),
+            ("language",             "Language settings"),
+            # ─ Premium commands ────────────────────────────────────────
+            ("performance",          "Full performance analytics (unlimited history)"),
+            ("stats",                "Win rate, net R, avg R/trade"),
+            ("history",              "Complete signal history"),
+            ("risk",                 "Advanced risk management"),
+            ("alerts",               "Granular TP/SL alert settings"),
+            ("analyze",              "AI analysis for any asset/timeframe"),
+            ("dashboard",            "Analytics dashboard"),
+            ("portfolio",            "Active signals with live P&L"),
+            ("reports",              "Monthly performance reports"),
+            ("notify",               "Notification preferences"),
+            ("filter",               "Custom signal filters"),
+            ("feedback",             "Signal feedback"),
+            ("apikey",               "API key"),
+            ("mystats",              "MT5 execution stats"),
+            ("setlot",               "Fixed lot size for MT5"),
+            ("setrisk",              "Max risk % per trade"),
+            ("mt5_link",             "Link MT5 account"),
+            ("mt5_status",           "MT5 connection status"),
+            ("connect_broker",       "Connect broker account"),
+            ("referral",             "Referral code & stats"),
+            ("cancel",               "Cancel auto-renewal"),
+            # ─ VIP-exclusive ──────────────────────────────────────────
+            ("elite",                "VIP-only high-conviction signals"),
+            ("early",                "Early-access market move alerts"),
+            ("report",               "Detailed monthly performance report"),
         ],
         "footer": (
-            "🔴 VIP Features:\n"
-            "• Highest confidence signals only (≥85)\n"
-            "• Reduced frequency (quality > quantity)\n"
-            "• Early alerts\n"
-            "• Priority notifications\n"
+            "💎 VIP Features:\n"
+            "• Highest-confidence signals only (≥85 score)\n"
+            "• ML probability scores on every signal\n"
+            "• Early-access alerts before premium delivery\n"
+            "• MT5 auto-execution (unlimited, risk-based sizing)\n"
             "• Monthly performance reports\n"
-            "• Advanced risk tools\n"
-            "• NO-TRADE zone alerts\n\n"
+            "• Priority notification delivery\n"
+            "• NO-TRADE zone alerts (high-impact news)\n\n"
             "✨ Elite trading intelligence."
         ),
     },
     "OWNER": {
-        "title": "👑 OWNER/ADMIN Commands",
+        "title": "👑 OWNER / ADMIN Commands",
         "commands": [
-            ("help", "Show this help menu"),
-            # All public commands
-            ("start", "Start the bot"),
-            ("status", "Check your subscription & tier"),
-            ("about", "About SignalRankAI"),
-            ("faq", "Frequently asked questions"),
-            ("disclaimer", "Risk disclaimer"),
-            ("pricing", "View pricing"),
-            ("signals", "View all signals"),
-            ("signal", "Lookup signal (full debug info)"),
-            ("outcome", "Check outcome"),
-            ("invite", "Referral system"),
-            ("policy", "Policy info"),
-            ("recap", "Performance recap"),
-            ("liveprice", "Real-time price for any asset"),
-            ("market", "Market overview"),
-            # Premium commands
-            ("performance", "Full performance analytics"),
-            ("stats", "Stats summary"),
-            ("history", "Signal history"),
-            ("risk", "Risk guidance"),
-            ("alerts", "Alert management"),
-            ("dashboard", "Analytics dashboard"),
-            ("portfolio", "Active signals with P&L"),
-            ("apikey", "API key for programmatic access"),
-            ("filter", "Custom signal filters"),
-            ("reports", "Report opt-in/out"),
-            ("notify", "Notification preferences"),
-            # VIP commands
-            ("elite", "Elite signals"),
-            ("early", "Early alerts"),
-            ("report", "Performance reports"),
-            # Admin/Owner-only commands
-            ("myid", "Show your Telegram user ID and tier"),
-            ("dev_pause", "Pause engine (kill-switch on)"),
-            ("dev_resume", "Resume engine (kill-switch off)"),
-            ("dev_force_signal", "Force-send a signal to yourself"),
-            ("dev_invalidate", "Archive/invalidate a signal"),
-            ("owner_users", "User statistics"),
-            ("owner_revenue", "Revenue analytics"),
-            ("version", "System version/deployment info"),
-            ("correct_signal", "Correct/modify a signal outcome"),
-            ("admin_top_assets", "Top performing assets"),
-            ("admin_top_strategies", "Top performing strategies"),
-            ("admin_user_engagement", "User engagement analytics"),
-            ("broadcast", "Broadcast a message to all users"),
-            ("assets", "Manage pinned asset universe (add/remove/list)"),
-            ("analyze", "AI analysis for a specific pair"),
-            ("support", "Contact support"),
+            # ─ Free ───────────────────────────────────────────────────────────────
+            ("start",                  "Start / re-register"),
+            ("help",                   "This help menu"),
+            ("status",                 "Subscription status"),
+            ("upgrade",                "Plan details"),
+            ("pricing",                "Pricing"),
+            ("tiers",                  "Tier comparison"),
+            ("signals",                "All signals"),
+            ("signal",                 "Lookup signal (full debug)"),
+            ("outcome",                "Check outcome"),
+            ("liveprice",              "Live price"),
+            ("market",                 "Market overview"),
+            ("invite",                 "Referral system"),
+            ("referral_leaderboard",   "Leaderboard"),
+            ("referral_rewards",       "Rewards"),
+            ("recap",                  "Weekly recap"),
+            ("about",                  "About"),
+            ("faq",                    "FAQ"),
+            ("disclaimer",             "Disclaimer"),
+            ("policy",                 "Policy"),
+            ("support",                "Support"),
+            ("myid",                   "Your ID and tier"),
+            ("language",               "Language"),
+            # ─ Premium ───────────────────────────────────────────────────────────
+            ("performance",            "Performance analytics"),
+            ("stats",                  "Win rate, net R"),
+            ("history",                "Signal history"),
+            ("risk",                   "Risk guidance"),
+            ("alerts",                 "Alert settings"),
+            ("analyze",                "AI analysis"),
+            ("dashboard",              "Analytics dashboard"),
+            ("portfolio",              "Active signals with P&L"),
+            ("reports",                "Report opt-in"),
+            ("notify",                 "Notification preferences"),
+            ("filter",                 "Signal filters"),
+            ("feedback",               "Signal feedback"),
+            ("apikey",                 "API key"),
+            ("mystats",                "MT5 execution stats"),
+            ("setlot",                 "Fixed lot size"),
+            ("setrisk",                "Max risk %"),
+            ("mt5_link",               "Link MT5 account"),
+            ("mt5_status",             "MT5 status"),
+            ("connect_broker",         "Connect broker"),
+            ("referral",               "Referral code"),
+            ("cancel",                 "Cancel auto-renewal"),
+            # ─ VIP ─────────────────────────────────────────────────────────────────
+            ("elite",                  "Elite signals"),
+            ("early",                  "Early alerts"),
+            ("report",                 "Monthly report"),
+            # ─ ADMIN ─────────────────────────────────────────────────────────────
+            ("admin",                  "Platform dashboard (users, VIP, signals)"),
+            ("admin_broadcast",        "DM blast to all users"),
+            # ─ OWNER-only ───────────────────────────────────────────────────────
+            ("blast_terms",            "Send terms gate to all unconfirmed users"),
+            ("dev_pause",              "Pause engine (kill-switch ON)"),
+            ("dev_resume",             "Resume engine (kill-switch OFF)"),
+            ("dev_force_signal",       "Force-send a signal to yourself"),
+            ("dev_invalidate",         "Archive/invalidate a signal"),
+            ("owner_users",            "User statistics"),
+            ("owner_revenue",          "Revenue analytics"),
+            ("version",                "System version / deployment info"),
+            ("correct_signal",         "Correct/modify a signal outcome"),
+            ("admin_top_assets",       "Top performing assets"),
+            ("admin_top_strategies",   "Top performing strategies"),
+            ("admin_user_engagement",  "User engagement analytics"),
+            ("broadcast",              "Owner broadcast (via owner_commands)"),
+            ("assets",                 "Manage pinned asset universe"),
+            ("selfcheck",              "System self-check"),
+            ("provider_status",        "Data provider status"),
         ],
         "footer": (
             "👑 Full System Access:\n"
-            "• All commands available\n"
-            "• Debug & analytics\n"
-            "• System control (pause/resume)\n"
-            "• User & revenue management\n"
+            "• All user commands\n"
+            "• Real-time admin dashboard\n"
+            "• Broadcast & terms gate management\n"
+            "• Engine control (pause/resume/force)\n"
+            "• User & revenue analytics\n"
             "• Signal correction & validation\n\n"
-            "⚙️ Administrative mode."
+            "⚙️ /unlock is intentionally hidden — only you know it exists."
         ),
     },
 }

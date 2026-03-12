@@ -2185,6 +2185,78 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 		await update.message.reply_text(f"Broadcast failed: {e}")
 
 
+# ── Terms blast (send disclaimer to all users without accepted_terms) ──────
+async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""OWNER only — send the financial disclaimer gate to every user who hasn't
+	accepted terms yet.  Safe to run multiple times; idempotent per user."""
+	if update.effective_user is None or update.message is None:
+		return
+	if _effective_tier(update.effective_user.id) != "OWNER":
+		return  # silent
+
+	try:
+		from db.session import get_engine_for_event_loop, get_session as _gs_bt
+		from db.models import User as _User_bt
+		from sqlalchemy import select as _sel_bt
+
+		engine = get_engine_for_event_loop()
+		if engine is None:
+			await update.message.reply_text("Database not available.")
+			return
+
+		async with _gs_bt() as session:
+			result = await session.execute(
+				_sel_bt(_User_bt.telegram_user_id).where(_User_bt.accepted_terms == False)  # noqa: E712
+			)
+			pending_ids = [row[0] for row in result.fetchall()]
+
+		if not pending_ids:
+			await update.message.reply_text("✅ All users have already accepted the terms.")
+			return
+
+		await update.message.reply_text(
+			f"📢 Sending terms gate to {len(pending_ids)} user(s)…"
+		)
+
+		from telegram import InlineKeyboardMarkup as _IKM_bt, InlineKeyboardButton as _IKB_bt
+		disclaimer = (
+			"⚠️ *SignalRankAI — Financial Disclaimer*\n\n"
+			"We've updated our terms. Please read and confirm to continue:\n\n"
+			"• All signals are for *educational purposes only*\n"
+			"• Nothing here constitutes financial advice or a trade recommendation\n"
+			"• Trading involves significant risk — losses can exceed your deposit\n"
+			"• Past performance does not guarantee future results\n"
+			"• You are solely responsible for your trading decisions\n\n"
+			"Tap *✅ I Agree* to acknowledge and continue using the bot."
+		)
+		_kbd_bt = _IKM_bt([[
+			_IKB_bt("✅ I Agree", callback_data="agree_terms"),
+			_IKB_bt("❌ Decline", callback_data="decline_terms"),
+		]])
+
+		sent = 0
+		failed = 0
+		for uid in pending_ids:
+			try:
+				await context.bot.send_message(
+					chat_id=int(uid),
+					text=disclaimer,
+					parse_mode="Markdown",
+					reply_markup=_kbd_bt,
+				)
+				sent += 1
+			except Exception:
+				failed += 1
+
+		await update.message.reply_text(
+			f"✅ Terms blast complete.\n\nSent: {sent} | Failed: {failed}"
+		)
+
+	except Exception as e:
+		logger.error(f"[blast_terms] failed: {e}")
+		await update.message.reply_text(f"Blast failed: {e}")
+
+
 # /policy or /refunds command
 async def policy_command(update, context) -> None:
 	if await _public_guard(update):

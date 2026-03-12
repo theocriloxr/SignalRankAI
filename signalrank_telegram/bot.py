@@ -279,6 +279,7 @@ from .commands import (
     agree_terms_callback,
     decline_terms_callback,
     vip_waitlist_join_callback,
+    blast_terms_command,
 )
 
 # Register new commands
@@ -1711,6 +1712,60 @@ def run_bot() -> None:
         except Exception as _e:
             logger.warning(f"[bot] RealtimeOutcomeTracker failed to start: {_e}")
 
+        # ── Post-deploy terms blast ───────────────────────────────────────────
+        # Set env var TERMS_BLAST_ON_DEPLOY=1 on Railway to automatically send
+        # the financial disclaimer to every existing user on this deployment.
+        # After the blast runs once, remove the env var to prevent re-blasting.
+        if str(os.getenv("TERMS_BLAST_ON_DEPLOY", "0")).strip() in {"1", "true", "yes"}:
+            import asyncio as _aio
+            async def _auto_blast():
+                await _aio.sleep(30)  # Wait 30s for DB connections to settle
+                try:
+                    from db.session import get_session as _gs_ab
+                    from db.models import User as _User_ab
+                    from sqlalchemy import select as _sel_ab
+                    from telegram import InlineKeyboardMarkup as _IKM_ab, InlineKeyboardButton as _IKB_ab
+
+                    async with _gs_ab() as _session_ab:
+                        _result_ab = await _session_ab.execute(
+                            _sel_ab(_User_ab.telegram_user_id).where(_User_ab.accepted_terms == False)  # noqa: E712
+                        )
+                        _pending_ab = [row[0] for row in _result_ab.fetchall()]
+
+                    logger.info(f"[blast_terms] Auto-blast: {len(_pending_ab)} users to notify")
+                    _disclaimer_ab = (
+                        "⚠️ *SignalRankAI — Financial Disclaimer*\n\n"
+                        "We've updated our terms. Please confirm to continue using the bot:\n\n"
+                        "• All signals are for *educational purposes only*\n"
+                        "• Nothing here constitutes financial advice\n"
+                        "• Trading involves significant risk — losses can exceed your deposit\n"
+                        "• Past performance does not guarantee future results\n"
+                        "• You are solely responsible for your trading decisions\n\n"
+                        "Tap *✅ I Agree* to continue."
+                    )
+                    _kbd_ab = _IKM_ab([[
+                        _IKB_ab("✅ I Agree", callback_data="agree_terms"),
+                        _IKB_ab("❌ Decline", callback_data="decline_terms"),
+                    ]])
+                    _sent_ab = 0
+                    for _uid_ab in _pending_ab:
+                        try:
+                            await app.bot.send_message(
+                                chat_id=int(_uid_ab),
+                                text=_disclaimer_ab,
+                                parse_mode="Markdown",
+                                reply_markup=_kbd_ab,
+                            )
+                            _sent_ab += 1
+                        except Exception:
+                            pass
+                    logger.info(f"[blast_terms] Auto-blast complete: sent={_sent_ab}/{len(_pending_ab)}")
+                except Exception as _be:
+                    logger.warning(f"[blast_terms] Auto-blast failed: {_be}")
+
+            _aio.ensure_future(_auto_blast())
+            logger.info("[blast_terms] Auto-blast scheduled (30s delay)")
+
     async def _post_stop(app):
         """Gracefully stop background tasks when the bot shuts down."""
         try:
@@ -1808,9 +1863,10 @@ def run_bot() -> None:
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
-    from .commands import admin_command, admin_broadcast_command
+    from .commands import admin_command, admin_broadcast_command, blast_terms_command
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
+    application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH

@@ -378,6 +378,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)"))
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)"))
                 await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE"))
+                await session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms BOOLEAN NOT NULL DEFAULT FALSE"))
                 await session.execute(text("CREATE INDEX IF NOT EXISTS ix_users_paystack_subscription_code ON users(paystack_subscription_code)"))
 
                 # signals: auto-expiry + order-block enrichment

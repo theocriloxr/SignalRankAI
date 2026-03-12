@@ -16,7 +16,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _sync_database_url() -> Optional[str]:
-    url = (config.DATABASE_URL or "").strip()
+    # Read fresh from environment each call — never use a stale import-time value.
+    # Prefer DATABASE_PUBLIC_URL (Railway's external IPv4 proxy) to avoid IPv6 issues.
+    url = (
+        os.getenv("DATABASE_PUBLIC_URL")
+        or os.getenv("DATABASE_URL")
+        or (getattr(config, "DATABASE_URL", None) or "")
+    ).strip()
     if not url:
         return None
     if url.startswith("postgresql+asyncpg://"):
@@ -123,6 +129,7 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms BOOLEAN NOT NULL DEFAULT FALSE",
                     # subscriptions
                     "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
                     # signals
