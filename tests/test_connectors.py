@@ -17,7 +17,7 @@ class TestConnectorsAndValidators(unittest.TestCase):
         from data.connectors.yfinance_adapter import get_candles
 
         # Build a small DataFrame with expected columns
-        idx = pd.date_range("2023-01-01", periods=3, freq="H")
+        idx = pd.date_range("2023-01-01", periods=3, freq="h")
         df = pd.DataFrame(
             {
                 "Open": [100, 101, 102],

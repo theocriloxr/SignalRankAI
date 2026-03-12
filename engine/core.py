@@ -1059,12 +1059,9 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as e:
                                 logger.warning(f"Failed to send outcome notifications: {e}")
                         
-                        # Await the notification directly — we are already inside main_loop (async).
-                        # asyncio.create_task silently drops the coroutine when it raises;
-                        # using await with a timeout keeps the warning silent and doesn't block.
+                        # main_loop is sync; bridge into async via run_sync.
                         try:
-                            import asyncio
-                            await asyncio.wait_for(notify_users_about_outcomes(), timeout=30.0)
+                            run_sync(notify_users_about_outcomes())
                         except Exception:
                             pass
                             

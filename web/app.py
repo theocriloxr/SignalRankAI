@@ -672,8 +672,6 @@ async def _handle_charge_success_recurring(
 ) -> None:
     """On every charge.success, save subscription/customer codes and send a
     renewal DM when the charge is an automatic monthly renewal (not first-time)."""
-    if ENGINE is None:
-        return
     try:
         data = event.get("data") or {}
         meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
@@ -687,8 +685,10 @@ async def _handle_charge_success_recurring(
 
         from sqlalchemy import select, update as sa_update
         from db.models import User
+        # Late import through module so test patches of db.session.get_session are honoured
+        import db.session as _db_session
 
-        async with get_session() as session:
+        async with _db_session.get_session() as session:
             row = await session.execute(
                 select(User).where(User.telegram_user_id == telegram_user_id)
             )
@@ -722,12 +722,13 @@ async def _handle_charge_success_recurring(
 
 async def _handle_payment_failed(event: Dict[str, Any]) -> None:
     """Handle invoice.payment_failed: downgrade to FREE, clear auto_renew, send DM."""
-    if ENGINE is None:
-        return
     try:
         data = event.get("data") or {}
         meta = (data.get("metadata") or {}) if isinstance(data, dict) else {}
         telegram_user_id_raw = meta.get("telegram_user_id") or meta.get("user_id")
+
+        # Late import through module so test patches of db.session.get_session are honoured
+        import db.session as _db_session
 
         # Fallback: resolve via subscription_code if metadata is missing
         if not telegram_user_id_raw:
@@ -739,7 +740,7 @@ async def _handle_payment_failed(event: Dict[str, Any]) -> None:
             if sub_code:
                 from sqlalchemy import select
                 from db.models import User
-                async with get_session() as session:
+                async with _db_session.get_session() as session:
                     row = await session.execute(
                         select(User).where(User.paystack_subscription_code == sub_code)
                     )
@@ -757,7 +758,7 @@ async def _handle_payment_failed(event: Dict[str, Any]) -> None:
         from db.models import User
 
         was_vip = False
-        async with get_session() as session:
+        async with _db_session.get_session() as session:
             row = await session.execute(
                 select(User).where(User.telegram_user_id == telegram_user_id)
             )

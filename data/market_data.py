@@ -86,10 +86,12 @@ def format_ticker(symbol: str, provider: str = "yfinance") -> str:
             return _YFINANCE_OVERRIDES[s]
         if s.endswith("USDT") and len(s) > 4:
             return f"{s[:-4]}-USD"
-        if s.endswith("USD") and len(s) > 3 and s[:3].isalpha() and s[3:] == "USD":
-            return f"{s[:-3]}-USD"
+        # FX pairs (EURUSD, GBPUSD, USDJPY…) must be checked BEFORE the plain
+        # USD-suffix handler so "EURUSD" → "EURUSD=X" instead of "EUR-USD".
         if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
             return f"{s}=X"
+        if s.endswith("USD") and len(s) > 3:
+            return f"{s[:-3]}-USD"
         return s
 
     if p == "binance":

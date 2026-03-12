@@ -3118,27 +3118,27 @@ def run_bot() -> None:
 
     scheduler = BackgroundScheduler(jobstores=_jobstores or {}, timezone="UTC")
 
-    # ── Closure jobs (defined inside run_bot — cannot be pickled for SQLAlchemy)
-    # These always land in the default MemoryJobStore.
-    scheduler.add_job(ml_market_analysis_job, 'interval', minutes=15, id='ml_market_analysis')
-    scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10)
-    scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3)
-    scheduler.add_job(send_outcome_notifications, 'interval', minutes=2)
-    scheduler.add_job(vip_scarcity_broadcast_job, 'interval', hours=6)
-    scheduler.add_job(fomo_engine_job, 'cron', hour=17, minute=0)
-    scheduler.add_job(friday_leaderboard_job, 'cron', day_of_week='fri', hour=17, minute=0)
-    scheduler.add_job(expire_old_signals_job, 'interval', minutes=30)
-    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0)
-    scheduler.add_job(auto_retrain_ml_model_job, 'cron', day_of_week='sun', hour=2, minute=0)
+    scheduler.add_job(ml_market_analysis_job, 'interval', minutes=15, id='ml_market_analysis', replace_existing=True)
+    scheduler.add_job(send_free_delayed_summaries, 'interval', minutes=10, id='free_delayed_summaries', replace_existing=True, max_instances=1)
+    scheduler.add_job(compute_outcomes_best_effort, 'interval', minutes=3, id='compute_outcomes', replace_existing=True, max_instances=1)
+    scheduler.add_job(send_outcome_notifications, 'interval', minutes=2, id='outcome_notifications', replace_existing=True, max_instances=1)
+    scheduler.add_job(vip_scarcity_broadcast_job, 'interval', hours=6, id='vip_scarcity', replace_existing=True)
+    scheduler.add_job(fomo_engine_job, 'cron', hour=17, minute=0, id='fomo_engine', replace_existing=True)
+    scheduler.add_job(friday_leaderboard_job, 'cron', day_of_week='fri', hour=17, minute=0, id='friday_leaderboard', replace_existing=True)
+    scheduler.add_job(expire_old_signals_job, 'interval', minutes=30, id='expire_old_signals', replace_existing=True)
+    scheduler.add_job(send_weekly_recap, 'cron', day_of_week='sun', hour=18, minute=0, id='weekly_recap', replace_existing=True)
+    scheduler.add_job(auto_retrain_ml_model_job, 'cron', day_of_week='sun', hour=2, minute=0, id='auto_retrain_ml', replace_existing=True)
 
     # ── Module-level jobs (picklable) → SQLAlchemy persistent store when available
-    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1, jobstore=_sa)
-    scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15, jobstore=_sa)
+    scheduler.add_job(resend_unsent_signals_job, 'interval', minutes=1, id='resend_unsent_signals', replace_existing=True, max_instances=1, jobstore=_sa)
+    scheduler.add_job(distribute_random_signals_to_free_users_job, 'interval', minutes=15, id='distribute_free_signals', replace_existing=True, max_instances=1, jobstore=_sa)
     scheduler.add_job(
         downgrade_expired_subscriptions_job,
         'cron',
         hour=0,
         minute=0,
+        id='downgrade_subs',
+        replace_existing=True,
         jobstore=_sa,
     )
     scheduler.add_job(
@@ -3147,6 +3147,8 @@ def run_bot() -> None:
         day_of_week='sun',
         hour=1,
         minute=0,
+        id='delete_old_signals',
+        replace_existing=True,
         jobstore=_sa,
     )
 

@@ -23,10 +23,10 @@ TIER_SCORE_THRESHOLDS = {
 # (validate_signal_freshness_sync / STALE_PRICE_THRESHOLD_PCT) is the
 # primary gate; these age limits only catch genuinely ancient signals.
 MAX_SIGNAL_AGE_SECONDS = {
-    "crypto":    1800,   # 30 min  — crypto is 24/7, signals stay valid longer
-    "fx":        3600,   # 60 min  — FX candles close on the hour
-    "stock":     3600,   # 60 min  — intraday signals stay useful within session
-    "commodity": 3600,   # 60 min  — same as FX
+    "crypto":    300,    # 5 min  — real-time delivery window for crypto
+    "fx":        600,    # 10 min — FX signals valid within one candle
+    "stock":     600,    # 10 min — intraday signals stay useful within session
+    "commodity": 600,    # 10 min — same as FX
 }
 
 # Price drift tolerance: max % deviation from entry price

@@ -287,7 +287,7 @@ class TestPremiumExecutionLimit:
         """FREE users must be blocked from automated execution."""
         u = MagicMock()
         u.tier = "FREE"
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             __import__("engine.tiered_executor", fromlist=["can_execute"]).can_execute(u)
         )
         allowed, reason = result
@@ -548,7 +548,7 @@ class TestCancellationConfirmationFlow:
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         update.message.reply_text.assert_called_once()
         args, _ = update.message.reply_text.call_args
         assert "don't have an active paid subscription" in args[0].lower() or \
@@ -577,7 +577,7 @@ class TestCancellationConfirmationFlow:
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         update.message.reply_text.assert_called_once()
         _, kwargs = update.message.reply_text.call_args
         assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
@@ -609,7 +609,7 @@ class TestCancellationConfirmationFlow:
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         args, _ = update.message.reply_text.call_args
         assert "NO REFUND" in args[0] or "STRICT" in args[0]
 
@@ -635,7 +635,7 @@ class TestCancellationConfirmationFlow:
                 result = await _cancel_and_disable_paystack(99)
                 executed_values.update(result)
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         assert executed_values["success"] is True
         assert executed_values["tier"] == "premium"
 
@@ -650,7 +650,7 @@ class TestCancellationConfirmationFlow:
         update.callback_query = query
         update.effective_user.id = 99
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             cancel_nevermind_callback(update, MagicMock())
         )
         query.edit_message_text.assert_called_once()
@@ -714,7 +714,7 @@ class TestRecurringWebhookEvents:
                 await _handle_charge_success_recurring(event, persisted)
                 return mock_dm.called
 
-        dm_called = asyncio.get_event_loop().run_until_complete(_run())
+        dm_called = asyncio.run(_run())
         assert dm_called, "Renewal DM should be sent for repeat charge.success"
 
     def test_invoice_payment_failed_downgrades_user(self):
@@ -750,7 +750,7 @@ class TestRecurringWebhookEvents:
 
                 await _handle_payment_failed(event)
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         # The handler should have attempted a DB update (we captured the flag)
         assert downgraded.get("updated"), "payment_failed should execute a DB update"
 
@@ -803,7 +803,7 @@ class TestWaitlistTTL:
                 # execute should NOT be called with a VIPWaitlist select
                 invited["calls"] = mock_session.execute.call_count
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
         # When at capacity, we return early — no DB select for waitlist entries
         assert invited.get("calls", 0) == 0
@@ -854,7 +854,7 @@ class TestWaitlistTTL:
                 with patch.dict(os.environ, {"VIP_SEAT_LIMIT": "15", "VIP_PRICE_NGN": "30000"}):
                     await _check_waitlist_capacity_job()
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
 
     def test_monitor_expired_invites_resets_columns_and_sends_dm(self):
@@ -890,7 +890,7 @@ class TestWaitlistTTL:
                 with patch("web.app._check_waitlist_capacity_job", new_callable=AsyncMock):
                     await _monitor_expired_invites_job()
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
         assert 555 in dms_sent, "DM should be sent to the user whose invite expired"
 
@@ -927,7 +927,7 @@ class TestWaitlistTTL:
                 with patch("web.app._check_waitlist_capacity_job", new_callable=AsyncMock):
                     await _monitor_expired_invites_job()
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
         assert len(dms_sent) == 0, "No DM should be sent to a user who already upgraded to VIP"
 
@@ -973,7 +973,7 @@ class TestPlanCodeInjection:
                     _, kwargs = mock_client.post.call_args
                     payload_sent.update(kwargs.get("json", {}))
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         assert "plan" in payload_sent, "Recurring checkout must include 'plan' key"
         assert "amount" not in payload_sent, "'amount' key must be absent when plan code is set"
 
@@ -1013,5 +1013,5 @@ class TestPlanCodeInjection:
                     _, kwargs = mock_client.post.call_args
                     payload_sent.update(kwargs.get("json", {}))
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         assert "amount" in payload_sent, "One-off checkout must include 'amount' key"

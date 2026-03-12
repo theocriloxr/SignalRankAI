@@ -27,12 +27,13 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     tf_map = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"}
     interval = tf_map.get(timeframe, "1h")
     params = {"symbol": symbol, "interval": interval, "outputsize": 200, "apikey": api_key}
-    client = get_client()
-    if client is None:
-        logger.debug("twelvedata_adapter: httpx client unavailable")
-        return []
-
     async def _do():
+        # Import the module at call time so test patches are respected.
+        import utils.httpx_client as _hc
+        client = _hc.get_client()
+        if client is None:
+            logger.debug("twelvedata_adapter: httpx client unavailable")
+            return []
         resp = await client.get(url, params=params)
         if resp.status_code != 200:
             return []
@@ -60,7 +61,8 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return candles
 
     try:
-        return await retry_async(_do, retries=2, backoff=0.5)
+        import utils.httpx_client as _hc
+        return await _hc.retry_async(_do, retries=2, backoff=0.5)
     except Exception as e:
         logger.debug("twelvedata_adapter error: %s", e)
         return []

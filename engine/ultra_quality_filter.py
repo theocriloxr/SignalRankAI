@@ -68,11 +68,10 @@ class UltraQualityFilter:
         passed_checks = 0
         failed_checks = []
         
-        # 1. Score check
-        if score >= self.min_score:
-            passed_checks += 1
-        else:
-            failed_checks.append(f"Score {score:.1f} < {self.min_score}")
+        # 1. Score check — hard gate: immediately reject below threshold
+        if score < self.min_score:
+            return False, f"Score {score:.1f} < {self.min_score} (hard gate)", score
+        passed_checks += 1
         
         # 2. Confluence check (5+ of 6 confirmations)
         confluence = self._calculate_strict_confluence(signal)
@@ -147,9 +146,9 @@ class UltraQualityFilter:
         else:
             failed_checks.append("HTF bias not aligned with entry direction")
         
-        # Require 8 out of 11 checks to pass
-        min_passed = 8
-        if passed_checks >= min_passed:
+        # Ultra-strict: ALL 11 checks must pass
+        required_checks = 11
+        if passed_checks >= required_checks:
             reason = f"APPROVED - {passed_checks}/11 checks passed"
             return True, reason, score
         else:

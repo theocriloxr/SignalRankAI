@@ -38,8 +38,9 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
 
     async def _do():
-        # Resolve client inside _do() so test patches to get_client are respected at call time
-        _client = get_client()
+        # Import the module at call time so test patches are respected.
+        import utils.httpx_client as _hc
+        _client = _hc.get_client()
         if _client is None:
             logger.debug("polygon_adapter: httpx client unavailable")
             return []
@@ -68,7 +69,8 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return candles
 
     try:
-        return await retry_async(_do, retries=2, backoff=1.0)
+        import utils.httpx_client as _hc
+        return await _hc.retry_async(_do, retries=2, backoff=1.0)
     except Exception as e:
         logger.debug("polygon_adapter error: %s", e)
         return []
