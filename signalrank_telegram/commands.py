@@ -1534,7 +1534,8 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 def _help_authorized_pages(user_id: int) -> list[int]:
 	pages = [1, 2, 3]
 	try:
-		if int(user_id) in ADMIN_IDS:
+		uid = int(user_id)
+		if uid in ADMIN_IDS or uid in OWNER_IDS:
 			pages.append(4)
 	except Exception:
 		pass
@@ -1547,7 +1548,11 @@ def _help_page_is_locked(user_id: int, page: int) -> bool:
 	page_info = page_defs.get(int(page), {})
 	required_tier = str(page_info.get("required_tier") or "FREE")
 	if int(page) == 4:
-		return int(user_id) not in ADMIN_IDS
+		try:
+			uid = int(user_id)
+			return uid not in ADMIN_IDS and uid not in OWNER_IDS
+		except Exception:
+			return True
 	return tier_rank(tier) < tier_rank(required_tier)
 
 
@@ -1559,6 +1564,12 @@ def _build_help_pagination_keyboard(user_id: int, page: int):
 			page = authorized_pages[0]
 		index = authorized_pages.index(page)
 		rows = []
+		jump_row = []
+		for allowed_page in authorized_pages:
+			label = f"• {allowed_page} •" if allowed_page == page else str(allowed_page)
+			jump_row.append(InlineKeyboardButton(label, callback_data=f"help_page_{allowed_page}"))
+		if jump_row:
+			rows.append(jump_row)
 		nav_row = []
 		if index > 0:
 			nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"help_page_{authorized_pages[index - 1]}"))
@@ -1614,7 +1625,8 @@ async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		page = 1
 	if page == 4:
 		try:
-			if int(update.effective_user.id) not in ADMIN_IDS:
+			uid = int(update.effective_user.id)
+			if uid not in ADMIN_IDS and uid not in OWNER_IDS:
 				await query.answer("Access denied.", show_alert=True)
 				return
 		except Exception:
