@@ -67,13 +67,20 @@ def _chart_symbol_for_broker(signal: dict | None = None) -> tuple[str, str]:
 	asset = str((signal or {}).get("asset") or "").upper().strip()
 	broker = str((signal or {}).get("broker") or (signal or {}).get("exchange") or "").upper().strip()
 	default_broker = str(_os.getenv("TRADINGVIEW_BROKER", "BINANCE")).upper().strip()
-	# Simple heuristic for FX pairs
-	if len(asset) == 6 and asset.isalpha():
-		broker = broker or "OANDA"
-	# Crypto vs FX fallback
-	if asset.endswith("USDT") or asset.endswith("USDC"):
-		broker = broker or "BINANCE"
-	# Map known broker aliases
+	fx_prefix = str(_os.getenv("TRADINGVIEW_FX_PREFIX", "OANDA")).upper().strip() or "OANDA"
+	indices_prefix = str(_os.getenv("TRADINGVIEW_INDEX_PREFIX", "TVC")).upper().strip() or "TVC"
+	stock_default = str(_os.getenv("TRADINGVIEW_STOCK_PREFIX", "NASDAQ")).upper().strip() or "NASDAQ"
+
+	# Normalize commodity aliases for TradingView symbols
+	commodity_map = {
+		"WTI": "USOIL",
+		"BRENT": "UKOIL",
+	}
+	index_symbols = {"DXY", "US30", "US500", "US100", "SPX", "NDX", "DJI", "VIX"}
+	stock_nasdaq = {"AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "TSLA", "AMD", "INTC", "NFLX", "ADBE", "CRM", "ORCL", "CSCO"}
+	stock_nyse = {"JPM", "BAC", "WFC", "GS", "MS", "C", "V", "MA", "JNJ", "UNH", "PFE", "ABBV", "TMO", "MRK", "ABT", "XOM", "CVX"}
+
+	# Explicit broker map for crypto or user-provided exchange hints
 	broker_map = {
 		"BINANCE": "BINANCE",
 		"BYBIT": "BYBIT",
@@ -83,9 +90,41 @@ def _chart_symbol_for_broker(signal: dict | None = None) -> tuple[str, str]:
 		"OANDA": "OANDA",
 		"FXCM": "FXCM",
 		"FOREXCOM": "FOREXCOM",
+		"TVC": "TVC",
+		"NASDAQ": "NASDAQ",
+		"NYSE": "NYSE",
 	}
-	broker_prefix = broker_map.get(broker, broker_map.get(default_broker, "BINANCE"))
-	return broker_prefix, asset
+
+	# Crypto (BINANCE default)
+	if asset.endswith("USDT") or asset.endswith("USDC"):
+		broker_prefix = broker_map.get(broker, broker_map.get(default_broker, "BINANCE"))
+		return broker_prefix, asset
+
+	# FX (OANDA or FX_IDC)
+	if len(asset) == 6 and asset.isalpha():
+		broker_prefix = broker_map.get(broker, broker_map.get(fx_prefix, "OANDA"))
+		return broker_prefix, asset
+
+	# Commodities (XAU/XAG/OIL)
+	if asset in {"XAUUSD", "XAGUSD"}:
+		return "OANDA", asset
+	if asset in {"WTI", "BRENT", "USOIL", "UKOIL"}:
+		return "TVC", commodity_map.get(asset, asset)
+
+	# Indices
+	if asset in index_symbols:
+		return indices_prefix, asset
+
+	# Stocks (default NASDAQ/NYSE)
+	if asset.isalpha() and 1 <= len(asset) <= 5:
+		if asset in stock_nyse:
+			return "NYSE", asset
+		if asset in stock_nasdaq:
+			return "NASDAQ", asset
+		return stock_default, asset
+
+	# Fallback
+	return broker_map.get(default_broker, "BINANCE"), asset
 
 
 def _build_dynamic_menu(user_id: int, tier: str):

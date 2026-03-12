@@ -377,8 +377,14 @@ def load_tradable_assets() -> List[str]:
     if not raw:
         # If get_all_tradable_assets exists, use it as default
         try:
-            all_assets = list(get_all_tradable_assets() or [])
-            return [a for a in all_assets]
+            all_assets = get_all_tradable_assets() or {}
+            if isinstance(all_assets, dict):
+                merged: list[str] = []
+                for _, items in all_assets.items():
+                    for a in (items or []):
+                        merged.append(str(a))
+                return [a for a in merged if a]
+            return [str(a) for a in list(all_assets) if a]
         except Exception:
             return []
     return [x.strip() for x in raw.split(",") if x.strip()]

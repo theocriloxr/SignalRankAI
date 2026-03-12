@@ -305,16 +305,18 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     Get all tradable assets (crypto + FX + stocks).
     
     Returns:
-        dict with keys: crypto, fx, stocks
+        dict with keys: crypto, fx, stocks, commodities
     """
     crypto = get_trending_crypto_pairs(crypto_limit)
     fx = get_trending_fx_pairs()
     stocks = get_trending_stock_tickers(stock_limit)
+    commodities = get_trending_commodity_tickers(10)
     
     return {
         "crypto": crypto,
         "fx": fx,
         "stocks": stocks,
+        "commodities": commodities,
     }
 
 # Example usage:
