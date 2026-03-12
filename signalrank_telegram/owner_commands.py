@@ -7,6 +7,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if update.effective_user is None or update.message is None:
         return
     if not await _is_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
     if not context.args:
         await update.message.reply_text("Usage: /broadcast <message>")
@@ -121,18 +122,18 @@ import logging
 _owner_logger = logging.getLogger("owner_debug")
 
 async def _is_owner(user_id: int) -> bool:
-    oid = _owner_id()
-    bypass = await state.has_temp_owner(user_id)
-    tier = None
-    try:
-        from signalrank_telegram.access import resolve_user_tier
-        tier = resolve_user_tier(user_id)
-    except Exception:
-        tier = None
-    _owner_logger.info(f"[OWNER DEBUG] user_id={user_id} oid={oid} tier={tier} bypass={bypass}")
-    if oid and user_id == oid:
+    uid = int(user_id)
+    # Check all configured owner IDs (OWNER_TELEGRAM_ID + OWNER_IDS + OWNER_TELEGRAM_IDS)
+    if uid in _strict_owner_ids():
         return True
-    return bypass
+    oid = _owner_id()
+    if oid and uid == oid:
+        return True
+    # Temporary bypass (granted by /unlock key)
+    bypass = await state.has_temp_owner(uid)
+    if bypass:
+        return True
+    return False
 
 
 
@@ -304,6 +305,7 @@ async def dev_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
         return
     if not await _is_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
     await state.set_killswitch(True, reason="paused via /dev_pause")
     await update.message.reply_text("Kill-switch enabled.")
@@ -313,6 +315,7 @@ async def dev_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if update.effective_user is None or update.message is None:
         return
     if not await _is_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
     await state.set_killswitch(False, reason="")
     await update.message.reply_text("Kill-switch disabled.")
@@ -322,6 +325,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if update.effective_user is None or update.message is None:
         return
     if not await _is_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
 
     arg = context.args[0].strip() if context.args else ""
@@ -399,8 +403,10 @@ async def dev_invalidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if update.effective_user is None or update.message is None:
         return
     if not await _is_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
     if not context.args or len(context.args) != 1:
+        await update.message.reply_text("Usage: /dev_invalidate <signal_id>")
         return
     signal_id = context.args[0].strip()
 
@@ -443,6 +449,7 @@ async def owner_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if update.effective_user is None or update.message is None:
         return
     if not await _is_strict_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
 
     try:
@@ -486,6 +493,7 @@ async def owner_revenue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if update.effective_user is None or update.message is None:
         return
     if not await _is_strict_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
         return
 
     try:

@@ -524,7 +524,28 @@ def _audit_handler(command_name: str, handler):
                 "bot_event_audit_outer_failed",
                 f"[bot] bot_events audit init failed: {type(e).__name__}: {e}",
             )
-        return await handler(update, context)
+        try:
+            return await handler(update, context)
+        except Exception as _cmd_err:
+            # Detect DB/connection errors and give the user actionable feedback
+            # instead of silent failure.
+            _err_lower = str(_cmd_err).lower()
+            _is_db_err = any(kw in _err_lower for kw in (
+                "connection refused", "could not connect", "no route to host",
+                "password authentication failed", "database error",
+                "asyncpg", "operational error", "connection pool",
+                "ssl", "timeout expired", "could not translate host",
+            ))
+            if _is_db_err:
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(
+                            "⚠️ Database connection error. Please try again later."
+                        )
+                except Exception:
+                    pass
+            else:
+                raise  # Let the on_error handler log unexpected errors
 
     return _inner
 
@@ -1867,6 +1888,35 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
     application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
+
+    # ── Commands previously only on the module-level application — now added here ──
+    # These were mistakenly registered on the boot-time application object, which is
+    # NOT the one that serves polling/webhook requests. run_bot() creates its own
+    # Application instance and ALL handlers must be added to it.
+    from .commands import (
+        myid_command, dashboard_command, selfcheck_command,
+        notify_command, feedback_command, analyze_command,
+        referral_leaderboard_command, referral_rewards_command,
+        admin_top_assets_command, admin_top_strategies_command,
+        admin_user_engagement_command, assets_command,
+        reports_command, filter_command, apikey_command, language_command,
+    )
+    application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
+    application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
+    application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
+    application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
+    application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
+    application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
+    application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
+    application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
+    application.add_handler(CommandHandler("admin_top_assets", _audit_handler("admin_top_assets", admin_top_assets_command)))
+    application.add_handler(CommandHandler("admin_top_strategies", _audit_handler("admin_top_strategies", admin_top_strategies_command)))
+    application.add_handler(CommandHandler("admin_user_engagement", _audit_handler("admin_user_engagement", admin_user_engagement_command)))
+    application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
+    application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
+    application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
+    application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
+    application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH

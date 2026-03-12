@@ -52,15 +52,18 @@ def _prefer_ipv4_url(url: str) -> str:
 
 
 def get_database_url() -> Optional[str]:
-    # Railway's internal DATABASE_URL hostname resolves to IPv6 only
-    # (e.g. *.railway.internal → fd12:...).  asyncpg picks the first DNS
-    # result (IPv6), attempts to connect, and gets ECONNREFUSED because
-    # Railway's Postgres only listens on IPv4.
-    # DATABASE_PUBLIC_URL is Railway's external IPv4 proxy — prefer it so
-    # asyncpg background jobs can reach the database.
-    url = (os.getenv("DATABASE_PUBLIC_URL") or "").strip()
-    if not url:
-        url = (config.DATABASE_URL or "").strip()
+    # Priority:
+    #  1. DATABASE_PUBLIC_URL  – Railway's external IPv4 proxy (avoids IPv6 issues)
+    #  2. DATABASE_URL         – read directly from env (not config snapshot)
+    #  3. config.DATABASE_URL  – import-time fallback
+    # Reading os.getenv() directly ensures we always use the live env var value,
+    # not a stale Config() snapshot from module import time.
+    url = (
+        os.getenv("DATABASE_PUBLIC_URL")
+        or os.getenv("DATABASE_URL")
+        or config.DATABASE_URL
+        or ""
+    ).strip()
     if not url:
         return None
     # Normalise to asyncpg dialect

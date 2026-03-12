@@ -36,6 +36,13 @@ class Config:
 		self.owner_ids |= self.OWNER_TELEGRAM_IDS
 		self.owner_ids |= self.OWNER_IDS
 
+		# Admin IDs — separate from owner; set via ADMIN_IDS (CSV) or ADMIN_ID (single)
+		# These users get admin-tier access without being full owners.
+		self.ADMIN_IDS: set[int] = self._env_int_set("ADMIN_IDS")
+		_single_admin = self._env_int("ADMIN_ID", 0)
+		if _single_admin:
+			self.ADMIN_IDS.add(_single_admin)
+
 		# Payments and API keys
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
@@ -116,6 +123,7 @@ from typing import Set
 OWNER_IDS: Set[int] = config.owner_ids
 OWNER_TELEGRAM_ID = config.OWNER_TELEGRAM_ID
 OWNER_TELEGRAM_IDS = config.OWNER_TELEGRAM_IDS
+ADMIN_IDS: Set[int] = config.ADMIN_IDS
 TELEGRAM_BOT_TOKEN = config.TELEGRAM_BOT_TOKEN
 DATABASE_URL = config.DATABASE_URL
 REDIS_URL = config.REDIS_URL

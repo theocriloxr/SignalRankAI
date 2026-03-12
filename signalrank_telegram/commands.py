@@ -342,16 +342,39 @@ async def referral_rewards_command(update, context) -> None:
 		await update.message.reply_text(msg)
 from engine.signal_analytics import signal_analytics
 # --------- ADMIN ANALYTICS COMMANDS ---------
-from config import OWNER_IDS
+from config import OWNER_IDS, ADMIN_IDS
 def _is_admin(user_id) -> bool:
-	"""Return True if user has admin or owner privileges (config or DB tier)."""
+	"""Return True if user has admin or owner privileges.
+
+	Checks (in order):
+	  1. OWNER_IDS config set (from OWNER_IDS / OWNER_TELEGRAM_ID / OWNER_TELEGRAM_IDS env vars)
+	  2. ADMIN_IDS config set (from ADMIN_IDS or ADMIN_ID env var, cast to int)
+	  3. ADMIN_ID env var read directly (belt-and-suspenders for fresh reads)
+	  4. DB tier == ADMIN or OWNER
+	"""
 	try:
-		if int(user_id) in OWNER_IDS:
+		uid = int(user_id)
+	except Exception:
+		return False
+	try:
+		if uid in OWNER_IDS:
 			return True
 	except Exception:
 		pass
 	try:
-		tier = _effective_tier(int(user_id)).upper()
+		if uid in ADMIN_IDS:
+			return True
+	except Exception:
+		pass
+	# Belt-and-suspenders: read ADMIN_ID env var directly each call
+	try:
+		_aid = (os.getenv("ADMIN_ID") or "").strip()
+		if _aid and uid == int(_aid):
+			return True
+	except Exception:
+		pass
+	try:
+		tier = _effective_tier(uid).upper()
 		return tier in ("ADMIN", "OWNER")
 	except Exception:
 		return False
@@ -369,7 +392,8 @@ async def assets_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
 		return
 	if not _is_admin(update.effective_user.id):
-		return  # silent for non-admins
+		await update.message.reply_text("⛔ Access Denied.")
+		return
 
 	from db.session import get_session
 	from db.pg_features import (
@@ -2064,7 +2088,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		return
 	tier = _effective_tier(update.effective_user.id)
 	if tier_rank(tier) < tier_rank("ADMIN"):
-		return  # silent for non-admins
+		await update.message.reply_text("⛔ Access Denied.")
+		return
 
 	import os as _os_adm
 	from datetime import datetime as _dt_adm
@@ -2138,7 +2163,8 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 		return
 	tier = _effective_tier(update.effective_user.id)
 	if tier_rank(tier) < tier_rank("ADMIN"):
-		return  # silent for non-admins
+		await update.message.reply_text("⛔ Access Denied.")
+		return
 
 	msg_text = " ".join(context.args or []).strip()
 	if not msg_text:
