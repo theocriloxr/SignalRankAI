@@ -38,6 +38,12 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
 
     htf_bias = get_htf_bias(market_data)
 
+    # Normalize htf_bias to the direction labels used across the codebase
+    # (strategies now emit 'LONG'/'SHORT'; htf_bias came from old 'BUY'/'SELL' EMA check)
+    if htf_bias == 'BUY':
+        htf_bias = 'LONG'
+    elif htf_bias == 'SELL':
+        htf_bias = 'SHORT'
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
     from .stock import stock_strategies
@@ -68,55 +74,44 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     groups = ["volatility", "structure", "tradingview"]
                 else:
                     groups = ["structure", "tradingview"]
-        if "trend" in groups:
-            for sig in trend_strategies(asset, timeframe, data):
-                if allowed_direction and sig.get('direction') != allowed_direction:
-                    continue
-                if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                    sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-                    signals.append(sig)
-        if "stock" in groups:
-            for sig in stock_strategies(asset, timeframe, data):
-                if allowed_direction and sig.get('direction') != allowed_direction:
-                    continue
-                if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                    sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-                    signals.append(sig)
-        if "momentum" in groups:
-            for sig in momentum_strategies(asset, timeframe, data):
-                if allowed_direction and sig.get('direction') != allowed_direction:
-                    continue
-                if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                    sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-                    signals.append(sig)
-        if "volatility" in groups:
-            for sig in volatility_strategies(asset, timeframe, data):
-                if allowed_direction and sig.get('direction') != allowed_direction:
-                    continue
-                if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                    sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-                    signals.append(sig)
-        if "structure" in groups:
-            for sig in structure_strategy(asset, timeframe, data):
-                if allowed_direction and sig.get('direction') != allowed_direction:
-                    continue
-                if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                    sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-                    signals.append(sig)
-        if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
+    # Round-robin across all strategy groups; collect into `signals`
+    # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or 'LONG'/'SHORT' (new).
+    # Normalise to 'LONG'/'SHORT' so the engine pipeline is consistent.
+    _DIR_MAP = {'BUY': 'LONG', 'SELL': 'SHORT', 'LONG': 'LONG', 'SHORT': 'SHORT'}
+
+    def _add(sig):
+        """Normalize direction, apply HTF filter and weight, then append."""
+        sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
+        if allowed_direction and sig.get('direction') != allowed_direction:
+            return
+        if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
+            sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
+            signals.append(sig)
+
+    if "trend" in groups:
+        for sig in trend_strategies(asset, timeframe, data):
+            _add(sig)
+    if "stock" in groups:
+        for sig in stock_strategies(asset, timeframe, data):
+            _add(sig)
+    if "momentum" in groups:
+        for sig in momentum_strategies(asset, timeframe, data):
+            _add(sig)
+    if "volatility" in groups:
+        for sig in volatility_strategies(asset, timeframe, data):
+            _add(sig)
+    if "structure" in groups:
+        for sig in structure_strategy(asset, timeframe, data):
+            _add(sig)
+    if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
+        try:
+            for sig in tradingview_strategies(asset, timeframe, data):
+                _add(sig)
+        except Exception as e:
             try:
-                for sig in tradingview_strategies(asset, timeframe, data):
-                    if allowed_direction and sig.get('direction') != allowed_direction:
-                        continue
-                    if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-                        sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-                        signals.append(sig)
-            except Exception as e:
-                # Log error but don't crash the entire strategy run
-                try:
-                    import logging
-                    logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
-                except Exception:
-                    pass
+                import logging
+                logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
+            except Exception:
+                pass
     
     return signals

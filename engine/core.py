@@ -557,6 +557,8 @@ def main_loop(DRY_RUN: bool = False):
 
         scored_signals_all: List[Dict] = []
         max_candidate_score = None
+        # Fix 2: cycle-level set prevents duplicate asset+timeframe signals in the same batch
+        _cycle_cooldown: set = set()
         pipeline_stats = {
             "strategy_signals": 0,
             "normalized": 0,
@@ -913,15 +915,78 @@ def main_loop(DRY_RUN: bool = False):
 
                 pipeline_stats["final_signals"] += len(final_signals)
                 # store final_signals
+                from datetime import timedelta as _timedelta  # ensure available in this scope
                 for sig in final_signals:
                     try:
+                        _asset_tf_key = f"{sig.get('asset')}_{sig.get('timeframe')}"
+
+                        # Fix 2: cycle-level dedup (same asset+TF already queued this batch)
+                        if _asset_tf_key in _cycle_cooldown:
+                            logger.info(f"[engine] cooldown(cycle): skipping duplicate {_asset_tf_key}")
+                            continue
+
+                        # Fix 2: DB cooldown — skip if a non-expired signal for this asset+TF
+                        # was created within the last SIGNAL_COOLDOWN_MINUTES (default 60)
+                        try:
+                            from db.session import get_session as _get_s_cd
+                            from db.models import Signal as _SigModel
+                            from sqlalchemy import select as _sel_cd
+                            _cd_mins = _env_int("SIGNAL_COOLDOWN_MINUTES", 60)
+                            _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
+                            async def _check_cooldown():
+                                async with _get_s_cd() as _cs:
+                                    return (await _cs.execute(
+                                        _sel_cd(_SigModel).where(
+                                            _SigModel.asset    == str(sig.get('asset', '')),
+                                            _SigModel.timeframe == str(sig.get('timeframe', '')),
+                                            _SigModel.created_at >= _cd_cutoff,
+                                            _SigModel.expired.is_(False),
+                                            _SigModel.archived.is_(False),
+                                        ).limit(1)
+                                    )).scalar_one_or_none()
+                            _dup_sig = run_sync(_check_cooldown())
+                            if _dup_sig is not None:
+                                logger.info(f"[engine] cooldown(db): active signal exists for {_asset_tf_key}, skipping")
+                                continue
+                        except Exception as _cd_err:
+                            logger.debug(f"[engine] cooldown DB check error: {_cd_err}")
+
+                        # ── Confluence Engine enrichment ───────────────────────────────────
+                        try:
+                            from engine.confluence_engine import run_confluence_engine
+                            _tf_key  = sig.get('timeframe') or (list(market_data.keys())[0] if market_data else None)
+                            _tf_data = market_data.get(_tf_key, {}) if _tf_key else {}
+                            _candles = _tf_data.get('candles', []) if isinstance(_tf_data, dict) else []
+                            if _candles:
+                                _conf_result = run_confluence_engine(_candles)
+                                sig['confluence_vote_count'] = _conf_result['score']
+                                sig['confluence_total']      = _conf_result['total']
+                                sig['confluence_direction']  = _conf_result['direction']
+                                sig['confluence_drivers']    = _conf_result['drivers']
+                                sig['long_votes']            = _conf_result['long_votes']
+                                sig['short_votes']           = _conf_result['short_votes']
+                                # Gate: skip if confluence direction contradicts the signal
+                                _conf_dir  = _conf_result['direction']
+                                _sig_dir   = str(sig.get('direction') or 'LONG').upper()
+                                _norm_sdir = 'LONG' if _sig_dir in ('LONG', 'BUY') else 'SHORT'
+                                if _conf_dir != 'NEUTRAL' and _conf_dir != _norm_sdir:
+                                    logger.info(
+                                        f"[engine] confluence mismatch: signal={_norm_sdir} "
+                                        f"confluence={_conf_dir} ({_conf_result['score']}/{_conf_result['total']}) "
+                                        f"— skipping {sig.get('asset')}"
+                                    )
+                                    continue
+                        except Exception as _ce:
+                            logger.debug(f"[engine] confluence engine error: {_ce}")
+
                         # Stamp created_at so freshness checks in the delivery loop have a timestamp.
                         # store_signal_compat sets it on the DB row but doesn't write it back
                         # to the dict; without this every is_signal_fresh() call returns False.
                         sig.setdefault('created_at', datetime.utcnow())
-                        logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')}")
+                        logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
                         store_signal_compat(sig)
                         scored_signals_all.append(sig)
+                        _cycle_cooldown.add(_asset_tf_key)
                         pipeline_stats["stored"] += 1
                     except Exception as e:
                         logger.exception("store_signal failed")

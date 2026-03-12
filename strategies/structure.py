@@ -7,40 +7,74 @@ def structure_strategy(asset, timeframe, market_data):
 from .base import BaseStrategy
 
 # --- Structure Strategies ---
-class StructureBullStrategy(BaseStrategy):
-    name = "Structure Bull"
+class StructureBiasStrategy(BaseStrategy):
+    """Renamed from StructureBullStrategy — now handles both LONG and SHORT bias."""
+    name = "Structure Bias"
     def evaluate(self, market_data):
         ind = market_data['indicators']
         candles = market_data['candles']
-        if ind['ema_trend'] and candles:
-            price = candles[-1]['close']
-            if price > ind['ema_trend']:
-                return {
-                    'direction': 'BUY',
-                    'entry': price,
-                    'stop': candles[-1]['low'],
-                    'targets': price + (price - candles[-1]['low']) * 2,
-                    'confidence': 0.6,
-                    'reasoning': f"Price above EMA trend. Structure bull for BUY."
-                }
+        if not candles or not ind.get('ema_trend'):
+            return None
+        price = candles[-1]['close']
+        ema_trend = ind['ema_trend']
+        # LONG: price above EMA trend = bullish market structure
+        if price > ema_trend:
+            stop = candles[-1]['low']
+            return {
+                'direction': 'LONG',
+                'entry': price,
+                'stop': stop,
+                'targets': price + (price - stop) * 2,
+                'confidence': 0.6,
+                'reasoning': "Price above EMA trend — bullish market structure LONG."
+            }
+        # SHORT: price below EMA trend = bearish market structure
+        if price < ema_trend:
+            stop = candles[-1]['high']
+            return {
+                'direction': 'SHORT',
+                'entry': price,
+                'stop': stop,
+                'targets': price - (stop - price) * 2,
+                'confidence': 0.6,
+                'reasoning': "Price below EMA trend — bearish market structure SHORT."
+            }
         return None
+
+# Keep old name as alias for backward compatibility
+StructureBullStrategy = StructureBiasStrategy
 
 class SRBreakRetestStrategy(BaseStrategy):
     name = "S/R Break + Retest"
     def evaluate(self, market_data):
         ind = market_data['indicators']
         candles = market_data['candles']
-        if ind.get('sr_breakout', False) and candles:
-            entry = candles[-1]['close']
+        if not candles:
+            return None
+        entry = candles[-1]['close']
+        # LONG: bullish S/R breakout
+        if ind.get('sr_breakout', False):
             stop = candles[-1]['low']
             target = entry + (entry - stop) * 2
             return {
-                'direction': 'BUY',
+                'direction': 'LONG',
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
                 'confidence': 0.65,
-                'reasoning': "S/R breakout and retest confirmed."
+                'reasoning': "Bullish S/R breakout and retest confirmed — LONG."
+            }
+        # SHORT: bearish S/R breakdown
+        if ind.get('sr_breakdown', False):
+            stop = candles[-1]['high']
+            target = entry - (stop - entry) * 2
+            return {
+                'direction': 'SHORT',
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
+                'confidence': 0.65,
+                'reasoning': "Bearish S/R breakdown and retest confirmed — SHORT."
             }
         return None
 
@@ -49,22 +83,37 @@ class LiquiditySweepStrategy(BaseStrategy):
     def evaluate(self, market_data):
         ind = market_data['indicators']
         candles = market_data['candles']
-        if ind.get('liquidity_sweep', False) and candles:
-            entry = candles[-1]['close']
-            stop = candles[-1]['low']
-            target = entry + (entry - stop) * 2
+        if not candles or not ind.get('liquidity_sweep', False):
+            return None
+        entry = candles[-1]['close']
+        # Direction from sweep type: sweep of lows = bullish reversal (LONG)
+        # sweep of highs = bearish reversal (SHORT)
+        sweep_dir = str(ind.get('liquidity_sweep_direction', '')).upper()
+        if sweep_dir == 'BEARISH' or sweep_dir == 'SELL':
+            stop = candles[-1]['high']
+            target = entry - (stop - entry) * 2
             return {
-                'direction': 'BUY',
+                'direction': 'SHORT',
                 'entry': entry,
                 'stop': stop,
                 'targets': target,
                 'confidence': 0.6,
-                'reasoning': "Liquidity sweep detected."
+                'reasoning': "Bearish liquidity sweep (sweep of highs) — SHORT."
             }
-        return None
+        # Default: sweep of lows = bullish bounce LONG
+        stop = candles[-1]['low']
+        target = entry + (entry - stop) * 2
+        return {
+            'direction': 'LONG',
+            'entry': entry,
+            'stop': stop,
+            'targets': target,
+            'confidence': 0.6,
+            'reasoning': "Bullish liquidity sweep (sweep of lows) — LONG."
+        }
 
 def structure_strategy(asset, timeframe, market_data):
-    strategies = [StructureBullStrategy(), SRBreakRetestStrategy(), LiquiditySweepStrategy()]
+    strategies = [StructureBiasStrategy(), SRBreakRetestStrategy(), LiquiditySweepStrategy()]
     signals = []
     for strat in strategies:
         sig = strat.evaluate(market_data)

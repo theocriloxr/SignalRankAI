@@ -51,15 +51,21 @@ def calculate_indicators(candles):
     indicators['di_minus'] = di_minus
     indicators['adx_trend'] = get_adx_trend(df, 14)
     
-    # Supertrend signal (simplified - using ATR-based trend detection)
+    # Supertrend signal (ATR-based trend detection — both BUY and SELL)
     try:
         atr = indicators['atr']
         close = df['close'].iloc[-1]
         prev_close = df['close'].iloc[-2] if len(df) > 1 else close
-        hl2 = (df['high'].iloc[-1] + df['low'].iloc[-1]) / 2
-        supertrend_level = hl2 - (2.0 * atr)  # Buy level
-        if close > supertrend_level and prev_close <= (df['high'].iloc[-2] + df['low'].iloc[-2])/2 - (2.0 * atr):
+        hl2      = (df['high'].iloc[-1]  + df['low'].iloc[-1])  / 2
+        hl2_prev = (df['high'].iloc[-2]  + df['low'].iloc[-2])  / 2 if len(df) > 1 else hl2
+        lower_band = hl2 - (2.0 * atr)   # bullish support band
+        upper_band = hl2 + (2.0 * atr)   # bearish resistance band
+        prev_lower = hl2_prev - (2.0 * atr)
+        prev_upper = hl2_prev + (2.0 * atr)
+        if close > lower_band and prev_close <= prev_lower:
             indicators['supertrend_signal'] = 'BUY'
+        elif close < upper_band and prev_close >= prev_upper:
+            indicators['supertrend_signal'] = 'SELL'
         else:
             indicators['supertrend_signal'] = None
     except Exception:
@@ -86,6 +92,10 @@ def calculate_indicators(candles):
     # Breakout Detection
     indicators['breakout'] = detect_breakout(df)
     indicators['retest'] = detect_retest(df)
+    # Flat convenience keys used by structure strategies
+    _bo = indicators['breakout']
+    indicators['sr_breakout']  = bool(_bo.get('breakout') and _bo.get('direction') == 'up')
+    indicators['sr_breakdown'] = bool(_bo.get('breakout') and _bo.get('direction') == 'down')
     
     # Regime Detection
     indicators['regime'] = detect_market_regime(df)

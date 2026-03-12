@@ -55,6 +55,28 @@ async def _resend_unsent_signals_async():
                 if not signal_id:
                     continue
 
+                # ── Fix 1: 50-minute cutoff — skip stale signals ──────────────────
+                try:
+                    from datetime import datetime, timezone, timedelta as _td
+                    _created = getattr(sig, 'created_at', None)
+                    if _created is not None:
+                        if hasattr(_created, 'tzinfo') and _created.tzinfo is None:
+                            _created = _created.replace(tzinfo=timezone.utc)
+                        _age_min = (datetime.now(timezone.utc) - _created).total_seconds() / 60
+                        if _age_min > 50:
+                            # Mark as expired so this signal never re-enters the queue
+                            try:
+                                async with get_session() as _exp_s:
+                                    from db.pg_features import expire_signal as _expire
+                                    await _expire(_exp_s, signal_id)
+                                    await _exp_s.commit()
+                            except Exception:
+                                pass
+                            logger.info(f"[resend] Signal {signal_id} is {_age_min:.0f}m old — expired, skipped.")
+                            continue
+                except Exception as _age_err:
+                    logger.debug(f"[resend] age-check failed for {signal_id}: {_age_err}")
+
                 # Skip signals whose outcome (TP / SL) has already been reached
                 try:
                     outcome_status = get_signal_outcome_status(signal_id)
@@ -365,6 +387,13 @@ async def _send_signal_with_engagement_async(
                     ])
         except Exception as _me:
             logger.debug(f"[send_signal] Take Trade button error: {_me}")
+    # Row 3: 🔍 Check Outcome — always present so users can query signal status
+    if signal_id:
+        _co_cb = f"check_outcome_{str(signal_id)[:36]}"
+        if len(_co_cb.encode()) <= 64:
+            _kb_rows.append([
+                InlineKeyboardButton("🔍 Check Outcome", callback_data=_co_cb)
+            ])
     keyboard = InlineKeyboardMarkup(_kb_rows)
     try:
         msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
@@ -1898,6 +1927,57 @@ def run_bot() -> None:
             await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="Markdown")
 
     application.add_handler(CallbackQueryHandler(_mt5_trade_callback, pattern=r"^mt5_trade_"))
+
+    # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
+    async def _check_outcome_callback(update, context):
+        query = update.callback_query
+        await query.answer()  # acknowledge immediately; detailed answer sent below
+        raw = (query.data or "").replace("check_outcome_", "", 1).strip()
+        if not raw:
+            await query.answer("No signal ID found.", show_alert=True)
+            return
+        try:
+            from db.session import get_session as _gs_oc
+            from db.models import Signal as _Sig, Outcome as _Out
+            from sqlalchemy import select as _sel_oc
+            async with _gs_oc() as _s:
+                sig_row = (await _s.execute(
+                    _sel_oc(_Sig).where(_Sig.signal_id == raw).limit(1)
+                )).scalar_one_or_none()
+                out_row = (await _s.execute(
+                    _sel_oc(_Out).where(_Out.signal_id == raw).limit(1)
+                )).scalar_one_or_none() if sig_row else None
+            if sig_row is None:
+                await query.answer("❌ Signal not found in database.", show_alert=True)
+                return
+            asset     = getattr(sig_row, 'asset', '?')
+            direction = str(getattr(sig_row, 'direction', '?')).upper()
+            score     = getattr(sig_row, 'score', 0)
+            expired   = getattr(sig_row, 'expired', False)
+            created   = getattr(sig_row, 'created_at', None)
+            age_str   = ""
+            if created:
+                try:
+                    from datetime import datetime, timezone
+                    _c = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+                    _mins = int((datetime.now(timezone.utc) - _c).total_seconds() / 60)
+                    age_str = f" | Age: {_mins}m"
+                except Exception:
+                    pass
+            if out_row:
+                outcome = str(getattr(out_row, 'status', 'unknown')).upper()
+                emoji = "✅" if outcome.startswith("TP") else ("🛑" if outcome == "SL" else "ℹ️")
+                msg = f"{emoji} {asset} {direction}\nOutcome: {outcome}\nScore: {score:.0f}{age_str}"
+            elif expired:
+                msg = f"⏰ {asset} {direction}\nStatus: Expired{age_str}"
+            else:
+                msg = f"🟢 {asset} {direction}\nStatus: Active (no outcome yet)\nScore: {score:.0f}{age_str}"
+            await query.answer(msg, show_alert=True)
+        except Exception as _oc_err:
+            logger.debug("[check_outcome] error: %s", _oc_err)
+            await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
+
+    application.add_handler(CallbackQueryHandler(_check_outcome_callback, pattern=r"^check_outcome_"))
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()

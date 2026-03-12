@@ -779,20 +779,31 @@ Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 📍 Pips to TP: {pips_to_tp:.1f} | SL: {pips_to_sl:.1f}"""
 	
 	msg += f"""
-
 📈 Strategy: {strategy}
 📉 Regime: {regime}
 ⏰ Expires: {expiry_str}"""
-	
+
+	# 🧠 AI Confluence block (injected when available from confluence engine)
+	_cv  = signal.get('confluence_vote_count')
+	_ct  = signal.get('confluence_total') or 15
+	_cdr = signal.get('confluence_drivers') or []
+	if _cv is not None:
+		msg += f"""
+
+🧠 AI Confluence: {int(_cv)}/{int(_ct)} Strategies Agree"""
+		if _cdr:
+			msg += f"""
+💡 Drivers: {', '.join(str(d) for d in _cdr[:3])}"""
+
 	# Add signal age if available
 	if signal_age is not None:
 		msg += f"""
 🕐 Signal Age: {signal_age} min ago"""
-	
+
 	msg += f"""
 
 Ref: SIG-{str(ref)[:8]}"""
-	
+
 	return msg
 
 def format_signal_vip_new(signal: dict) -> str:
@@ -948,16 +959,36 @@ Current Price: {_format_price(current_price, asset)} {price_indicator}"""
 💡 Score: {score_explanation}
 {freshness}
 ⏰ Expires: {expiry_str}"""
-	
+
+	# 🧠 AI Confluence block (injected when available from confluence engine)
+	_cv  = signal.get('confluence_vote_count')
+	_ct  = signal.get('confluence_total') or 15
+	_cdr = signal.get('confluence_drivers') or []
+	if _cv is not None:
+		_cv_int = int(_cv)
+		_ct_int = int(_ct)
+		_strength = "Strong" if _cv_int >= 12 else ("Moderate" if _cv_int >= 10 else "Weak")
+		msg += f"""
+
+🧠 AI Confluence: {_cv_int}/{_ct_int} Strategies Agree ({_strength})"""
+		if _cdr:
+			msg += f"""
+💡 Drivers: {', '.join(str(d) for d in _cdr[:3])}"""
+		_lv = signal.get('long_votes', 0)
+		_sv = signal.get('short_votes', 0)
+		if _lv or _sv:
+			msg += f"""
+📊 Votes: ⬆️{_lv} LONG / ⬇️{_sv} SHORT"""
+
 	# Add signal age if available
 	if signal_age is not None:
 		msg += f"""
 🕐 Signal Age: {signal_age} min ago"""
-	
+
 	msg += f"""
 
 Ref: SIG-{str(ref)[:8]}"""
-	
+
 	return msg
 
 def format_signal_legacy(signal, display_tier: str | None = None, limited: bool = False):
