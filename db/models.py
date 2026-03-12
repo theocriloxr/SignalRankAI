@@ -51,7 +51,10 @@ class User(Base):
     paystack_customer_code: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     # False after /cancel or invoice.payment_failed — prevents re-renewal messaging
     auto_renew: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
+    # ── Legal / onboarding gate ─────────────────────────────────────────────
+    # True once the user has clicked [I Agree] on the financial disclaimer.
+    # The bot withholds signal delivery until this is set.
+    accepted_terms: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     subscriptions: Mapped[list[Subscription]] = relationship(back_populates="user")  # type: ignore[name-defined]
 
 

@@ -1890,20 +1890,59 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
-	
+
+	import os as _os
 	from paystack.paystack import generate_paystack_link
-	
+	from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+	# ── VIP seat capacity check ───────────────────────────────────────────────
+	vip_seats_total = int(_os.getenv("VIP_SEAT_LIMIT", "15"))
+	vip_used = 0
+	vip_full = False
+	try:
+		from db.session import get_engine_for_event_loop, get_session as _gs_upg
+		if get_engine_for_event_loop() is not None:
+			from db.repository import count_active_vip_users
+			async with _gs_upg() as _s:
+				vip_used = await count_active_vip_users(_s)
+			vip_full = vip_used >= vip_seats_total
+	except Exception:
+		pass
+	vip_seats_left = max(0, vip_seats_total - vip_used)
+
+	# ── Build message ─────────────────────────────────────────────────────────
+	if vip_full:
+		vip_line = f"💎 *VIP Monthly* — ₦40,000 | 🔴 FULL ({vip_seats_total}/{vip_seats_total} seats)"
+	else:
+		vip_line = (
+			f"💎 *VIP Monthly* — ₦40,000 | 🟢 {vip_seats_left} seat"
+			+ ("s" if vip_seats_left != 1 else "") + " left"
+		)
+
+	msg = (
+		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
+		+ vip_line + "\n"
+		"⭐ *Premium* — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr\n"
+		"📅 *Weekly Plan* — ₦4,000/wk\n\n"
+		"_Tap a plan below to subscribe instantly via Paystack:_"
+	)
+
+	# ── Build keyboard ────────────────────────────────────────────────────────
 	plans = [
-		("Premium Weekly", 8000, "PREMIUM", "WEEKLY", 7),
-		("Premium Monthly", 24000, "PREMIUM", "MONTHLY", 30),
-		("Premium Quarterly", 56000, "PREMIUM", "QUARTERLY", 90),
-		("VIP Weekly", 16000, "VIP", "WEEKLY", 7),
-		("VIP Monthly", 40000, "VIP", "MONTHLY", 30),
-		("Weekly Plan", 4000, "WEEKLY_PLAN", "WEEKLY", 7),
+		("💎 VIP Monthly — ₦40,000", 40000, "VIP", "MONTHLY", 30),
+		("⭐ Premium Monthly — ₦24,000", 24000, "PREMIUM", "MONTHLY", 30),
+		("⭐ Premium Quarterly — ₦56,000", 56000, "PREMIUM", "QUARTERLY", 90),
+		("⭐ Premium Weekly — ₦8,000", 8000, "PREMIUM", "WEEKLY", 7),
+		("📅 Weekly Plan — ₦4,000", 4000, "WEEKLY_PLAN", "WEEKLY", 7),
 	]
-	
-	lines = ["📋 Choose a plan:\n"]
+
+	keyboard_rows = []
 	for name, price, tier, duration, days in plans:
+		if tier == "VIP" and vip_full:
+			keyboard_rows.append([
+				InlineKeyboardButton("💎 VIP — FULL  |  📋 Join Waitlist", callback_data="vip_waitlist_join")
+			])
+			continue
 		try:
 			link = generate_paystack_link(
 				user_id=user_id,
@@ -1913,14 +1952,14 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				duration_days=days,
 			)
 			if link and link.startswith("http"):
-				lines.append(f"• {name} (₦{price:,}) → {link}")
-			else:
-				lines.append(f"• {name} (₦{price:,}) — Payment link unavailable")
+				keyboard_rows.append([InlineKeyboardButton(name, url=link)])
 		except Exception:
-			lines.append(f"• {name} (₦{price:,}) — Payment link unavailable")
-	
-	lines.append("\nOr contact support: @theocrilox")
-	await update.message.reply_text("\n".join(lines))
+			pass
+
+	keyboard_rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
+	keyboard = InlineKeyboardMarkup(keyboard_rows)
+
+	await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
 
 
 # /policy or /refunds command
