@@ -182,6 +182,89 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		return None
 
 
+MAX_VIP_SEATS = 15
+
+
+async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
+	vip_used = 0
+	try:
+		from db.session import get_engine_for_event_loop, get_session
+		if get_engine_for_event_loop() is not None:
+			from db.repository import count_active_vip_users
+			async with get_session() as session:
+				vip_used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
+	except Exception:
+		pass
+	vip_seats_left = max(0, int(MAX_VIP_SEATS) - int(vip_used))
+	return vip_used, vip_seats_left, vip_seats_left <= 0
+
+
+def _vip_plan_line(*, markdown: bool, seats_left: int, sold_out: bool) -> str:
+	if sold_out:
+		return "💎 VIP Monthly — ₦40,000 | 🔴 VIP Sold Out"
+	if markdown:
+		return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
+	return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
+
+
+async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> object | None:
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		from paystack.paystack import generate_paystack_link
+		_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
+		rows = []
+		if vip_sold_out:
+			rows.append([InlineKeyboardButton("💎 VIP Sold Out", callback_data="vip_sold_out")])
+			rows.append([InlineKeyboardButton("📋 Join VIP Waitlist", callback_data="vip_waitlist_join")])
+		else:
+			vip_link = generate_paystack_link(user_id=user_id, price=40000, tier="VIP", duration="MONTHLY", duration_days=30)
+			if vip_link:
+				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦40,000 ({vip_seats_left} left)", url=vip_link)])
+		prem_week = generate_paystack_link(user_id=user_id, price=8000, tier="PREMIUM", duration="WEEKLY", duration_days=7)
+		prem_month = generate_paystack_link(user_id=user_id, price=24000, tier="PREMIUM", duration="MONTHLY", duration_days=30)
+		prem_qtr = generate_paystack_link(user_id=user_id, price=56000, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
+		if prem_week:
+			rows.append([InlineKeyboardButton("⭐ Premium Weekly — ₦8,000", url=prem_week)])
+		if prem_month:
+			rows.append([InlineKeyboardButton("⭐ Premium Monthly — ₦24,000", url=prem_month)])
+		if prem_qtr:
+			rows.append([InlineKeyboardButton("⭐ Premium Quarterly — ₦56,000", url=prem_qtr)])
+		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
+		if include_navigation:
+			rows.append([
+				InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
+				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
+			])
+		return InlineKeyboardMarkup(rows)
+	except Exception:
+		return None
+
+
+async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
+	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
+	vip_line = _vip_plan_line(markdown=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	msg = (
+		"🚀 SignalRankAI — Choose Your Plan\n\n"
+		f"{vip_line}\n"
+		"⭐ Premium — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr"
+	)
+	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=False)
+	return msg, keyboard
+
+
+async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
+	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
+	vip_line = _vip_plan_line(markdown=True, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	msg = (
+		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
+		f"{vip_line}\n"
+		"⭐ Premium — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr\n\n"
+		"_Tap a plan below to subscribe instantly via Paystack:_"
+	)
+	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=True)
+	return msg, keyboard
+
+
 async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Handle inline button callbacks from /help and /signals."""
 	query = update.callback_query
@@ -213,9 +296,23 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if data == "nav_performance":
 		return await performance_command(update, context)
 	if data == "nav_upgrade":
-		return await upgrade_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_upgrade_message(int(uid))
+			await _edit_message_or_reply(query, msg, keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_support":
 		return await support_command(update, context)
+	if data == "vip_sold_out":
+		try:
+			await query.answer("VIP is currently sold out. Join the waitlist to be notified.", show_alert=True)
+		except Exception:
+			pass
+		return
 	# Admin dashboard shortcut
 	if data == "admin_dashboard":
 		return await admin_dashboard(update, context)
@@ -1225,7 +1322,15 @@ async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 		except Exception:
 			return
 	if data == "nav_upgrade":
-		return await upgrade_command(update, context)
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			msg, keyboard = await _compose_upgrade_message(int(uid))
+			await _edit_message_or_reply(query, msg, keyboard)
+			return
+		except Exception:
+			return
 	if data == "nav_support":
 		return await support_command(update, context)
 
@@ -2300,32 +2405,7 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
-	msg = (
-		"🚀 SignalRankAI — Choose Your Plan\n\n"
-		"💎 VIP Monthly — ₦40,000 | 🟢 15 seats left\n"
-		"⭐ Premium — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr"
-	)
-	# Build pricing buttons (Paystack links)
-	try:
-		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-		from paystack.paystack import generate_paystack_link
-		rows = []
-		vip_link = generate_paystack_link(user_id=user_id, price=40000, tier="VIP", duration="MONTHLY", duration_days=30)
-		prem_week = generate_paystack_link(user_id=user_id, price=8000, tier="PREMIUM", duration="WEEKLY", duration_days=7)
-		prem_link = generate_paystack_link(user_id=user_id, price=24000, tier="PREMIUM", duration="MONTHLY", duration_days=30)
-		prem_qtr = generate_paystack_link(user_id=user_id, price=56000, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
-		if vip_link:
-			rows.append([InlineKeyboardButton("💎 VIP Monthly — ₦40,000", url=vip_link)])
-		if prem_week:
-			rows.append([InlineKeyboardButton("⭐ Premium Weekly — ₦8,000", url=prem_week)])
-		if prem_link:
-			rows.append([InlineKeyboardButton("⭐ Premium Monthly — ₦24,000", url=prem_link)])
-		if prem_qtr:
-			rows.append([InlineKeyboardButton("⭐ Premium Quarterly — ₦56,000", url=prem_qtr)])
-		rows.append([InlineKeyboardButton("🎧 Support", callback_data="nav_support")])
-		keyboard = InlineKeyboardMarkup(rows)
-	except Exception:
-		keyboard = None
+	msg, keyboard = await _compose_pricing_message(int(user_id))
 	await update.message.reply_text(msg, reply_markup=keyboard)
 
 
@@ -2460,78 +2540,7 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if update.message is None:
 		return
 	user_id = update.effective_user.id
-
-	import os as _os
-	from paystack.paystack import generate_paystack_link
-	from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-
-	# ── VIP seat capacity check ───────────────────────────────────────────────
-	vip_seats_total = int(_os.getenv("VIP_SEAT_LIMIT", "15"))
-	vip_used = 0
-	vip_full = False
-	try:
-		from db.session import get_engine_for_event_loop, get_session as _gs_upg
-		if get_engine_for_event_loop() is not None:
-			from db.repository import count_active_vip_users
-			async with _gs_upg() as _s:
-				vip_used = await count_active_vip_users(_s)
-			vip_full = vip_used >= vip_seats_total
-	except Exception:
-		pass
-	vip_seats_left = max(0, vip_seats_total - vip_used)
-
-	# ── Build message ─────────────────────────────────────────────────────────
-	if vip_full:
-		vip_line = f"💎 *VIP Monthly* — ₦40,000 | 🔴 FULL ({vip_seats_total}/{vip_seats_total} seats)"
-	else:
-		vip_line = (
-			f"💎 *VIP Monthly* — ₦40,000 | 🟢 {vip_seats_left} seat"
-			+ ("s" if vip_seats_left != 1 else "") + " left"
-		)
-
-	msg = (
-		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
-		+ vip_line + "\n"
-		"⭐ *Premium* — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr\n\n"
-		"_Tap a plan below to subscribe instantly via Paystack:_"
-	)
-
-	# ── Build keyboard ────────────────────────────────────────────────────────
-	plans = [
-		("💎 VIP Monthly — ₦40,000", 40000, "VIP", "MONTHLY", 30),
-		("⭐ Premium Weekly — ₦8,000", 8000, "PREMIUM", "WEEKLY", 7),
-		("⭐ Premium Monthly — ₦24,000", 24000, "PREMIUM", "MONTHLY", 30),
-		("⭐ Premium Quarterly — ₦56,000", 56000, "PREMIUM", "QUARTERLY", 90),
-	]
-
-	keyboard_rows = []
-	for name, price, tier, duration, days in plans:
-		if tier == "VIP" and vip_full:
-			keyboard_rows.append([
-				InlineKeyboardButton("💎 VIP — FULL  |  📋 Join Waitlist", callback_data="vip_waitlist_join")
-			])
-			continue
-		try:
-			link = generate_paystack_link(
-				user_id=user_id,
-				price=price,
-				tier=tier,
-				duration=duration,
-				duration_days=days,
-			)
-			if link and link.startswith("http"):
-				keyboard_rows.append([InlineKeyboardButton(name, url=link)])
-		except Exception:
-			pass
-
-	keyboard_rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
-	# Navigation shortcuts
-	keyboard_rows.append([
-		InlineKeyboardButton("📈 Signals", callback_data="nav_signals"),
-		InlineKeyboardButton("👤 Account", callback_data="nav_account"),
-	])
-	keyboard = InlineKeyboardMarkup(keyboard_rows)
-
+	msg, keyboard = await _compose_upgrade_message(int(user_id))
 	await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
 
 

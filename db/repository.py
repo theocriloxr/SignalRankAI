@@ -45,7 +45,7 @@ async def get_active_subscription(
 
 async def count_active_vip_users(
     session: AsyncSession,
-    exclude_telegram_user_ids: set[int],
+    exclude_telegram_user_ids: set[int] | None = None,
 ) -> int:
     now = datetime.utcnow()
     q = (
