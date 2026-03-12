@@ -1451,35 +1451,188 @@ async def _public_guard(update: Update) -> bool:
 
 
 
+def _help_page_definitions() -> dict[int, dict[str, object]]:
+	return {
+		1: {
+			"title": "🟢 Basics & Free",
+			"required_tier": "FREE",
+			"commands": [
+				("/start", "Start or re-register the bot"),
+				("/help", "Open the paginated help menu"),
+				("/status", "Check your current tier and subscription"),
+				("/signals", "View the latest signal feed"),
+				("/signal", "Look up a specific signal by reference"),
+				("/outcome", "Check the result of a delivered signal"),
+				("/liveprice", "Fetch the real-time price of any asset"),
+				("/market", "View a quick market overview"),
+				("/pricing", "See current plan pricing"),
+				("/upgrade", "Open the upgrade menu"),
+				("/invite", "Get your referral link and rewards status"),
+				("/support", "Contact support"),
+				("/faq", "Common questions and answers"),
+				("/policy", "Subscription and refund policy"),
+			],
+			"footer": "Tip: start with /signals, /status, and /upgrade if you want more access.",
+		},
+		2: {
+			"title": "⭐️ Premium Analytics",
+			"required_tier": "PREMIUM",
+			"commands": [
+				("/performance", "30-day performance summary"),
+				("/stats", "Win rate, avg R, and net R"),
+				("/history", "Recent signal history"),
+				("/alerts", "Custom TP/SL alerts and quiet hours"),
+				("/analyze", "AI market analysis for any asset"),
+				("/filter", "Custom score, RR, and regime filters"),
+				("/notify", "Signal notification preferences"),
+				("/reports", "Opt into scheduled summaries"),
+				("/feedback", "Rate a signal or report an issue"),
+			],
+			"footer": "⭐️ Upgrade to unlock these features.",
+		},
+		3: {
+			"title": "💎 VIP Execution",
+			"required_tier": "VIP",
+			"commands": [
+				("/mt5_link", "Link your MT5 account"),
+				("/mt5_status", "Check MT5 connection status"),
+				("/connect_broker", "Broker connection walkthrough"),
+				("/setlot", "Set fixed lot size"),
+				("/setrisk", "Set risk limits per trade"),
+				("/mystats", "Review MT5 execution stats"),
+				("/apikey", "Get your API key"),
+				("/dashboard", "Open your analytics dashboard"),
+				("/portfolio", "Track active positions and P&L"),
+				("/elite", "High-conviction elite signals"),
+				("/early", "Early-access VIP flow"),
+				("/report", "VIP monthly performance report"),
+			],
+			"footer": "⭐️ Upgrade to unlock these features.",
+		},
+		4: {
+			"title": "👑 Admin & God Mode",
+			"required_tier": "ADMIN",
+			"commands": [
+				("/admin", "Open the admin dashboard"),
+				("/admin_broadcast", "Broadcast a message to users"),
+				("/force_market_scan", "Run the ML market scan now"),
+				("/dev_pause", "Pause the engine"),
+				("/dev_resume", "Resume the engine"),
+				("/dev_force_signal", "Force-send a signal"),
+				("/owner_users", "Inspect user metrics"),
+				("/owner_revenue", "Review revenue analytics"),
+				("/correct_signal", "Correct a signal outcome"),
+				("/blast_terms", "Send terms gate prompts"),
+				("/provider_status", "Inspect provider health"),
+				("/selfcheck", "Run a system health check"),
+			],
+			"footer": "Restricted admin surface.",
+		},
+	}
+
+
+def _help_authorized_pages(user_id: int) -> list[int]:
+	pages = [1, 2, 3]
+	try:
+		if int(user_id) in ADMIN_IDS:
+			pages.append(4)
+	except Exception:
+		pass
+	return pages
+
+
+def _help_page_is_locked(user_id: int, page: int) -> bool:
+	tier = _effective_tier(int(user_id))
+	page_defs = _help_page_definitions()
+	page_info = page_defs.get(int(page), {})
+	required_tier = str(page_info.get("required_tier") or "FREE")
+	if int(page) == 4:
+		return int(user_id) not in ADMIN_IDS
+	return tier_rank(tier) < tier_rank(required_tier)
+
+
+def _build_help_pagination_keyboard(user_id: int, page: int):
+	try:
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+		authorized_pages = _help_authorized_pages(int(user_id))
+		if page not in authorized_pages:
+			page = authorized_pages[0]
+		index = authorized_pages.index(page)
+		rows = []
+		nav_row = []
+		if index > 0:
+			nav_row.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"help_page_{authorized_pages[index - 1]}"))
+		if index < len(authorized_pages) - 1:
+			nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"help_page_{authorized_pages[index + 1]}"))
+		if nav_row:
+			rows.append(nav_row)
+		rows.append([
+			InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
+			InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
+		])
+		return InlineKeyboardMarkup(rows)
+	except Exception:
+		return None
+
+
+async def _compose_help_page(user_id: int, page: int) -> tuple[str, object | None]:
+	page_defs = _help_page_definitions()
+	authorized_pages = _help_authorized_pages(int(user_id))
+	if int(page) not in authorized_pages:
+		page = authorized_pages[0]
+	page_info = page_defs[int(page)]
+	locked = _help_page_is_locked(int(user_id), int(page))
+	commands = page_info.get("commands") or []
+	lines = [
+		f"{page_info['title']} — Page {page}/{authorized_pages[-1]}",
+		"",
+	]
+	for cmd_name, desc in commands:
+		prefix = "🔒 " if locked and int(page) in {2, 3} else "• "
+		lines.append(f"{prefix}{cmd_name} — {desc}")
+	footer = str(page_info.get("footer") or "")
+	if locked and int(page) == 3 and tier_rank(_effective_tier(int(user_id))) >= tier_rank("PREMIUM"):
+		footer = "💎 Upgrade to VIP to unlock these features."
+	if footer:
+		lines.extend(["", footer])
+	keyboard = _build_help_pagination_keyboard(int(user_id), int(page))
+	return "\n".join(lines), keyboard
+
+
+async def help_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	query = update.callback_query
+	if query is None or update.effective_user is None:
+		return
+	try:
+		await query.answer()
+	except Exception:
+		pass
+	data = str(query.data or "")
+	try:
+		page = int(data.rsplit("_", 1)[-1])
+	except Exception:
+		page = 1
+	if page == 4:
+		try:
+			if int(update.effective_user.id) not in ADMIN_IDS:
+				await query.answer("Access denied.", show_alert=True)
+				return
+		except Exception:
+			return
+	text, keyboard = await _compose_help_page(int(update.effective_user.id), int(page))
+	try:
+		await query.edit_message_text(text=text, reply_markup=keyboard)
+	except Exception:
+		pass
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	user_id: int = update.effective_user.id
-	# Short greeting + inline categories
-	msg = (
-		"👋 Welcome to SignalRankAI.\n"
-		"Pick a category below to continue."
-	)
-	try:
-		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-		keyboard = InlineKeyboardMarkup([
-			[
-				InlineKeyboardButton("📊 Signals", callback_data="nav_signals"),
-				InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
-			],
-			[
-				InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
-				InlineKeyboardButton("💳 Upgrade", callback_data="nav_upgrade"),
-			],
-			[
-				InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
-			],
-		])
-	except Exception:
-		keyboard = None
-	await update.message.reply_text(msg, reply_markup=keyboard)
+	text, keyboard = await _compose_help_page(int(update.effective_user.id), 1)
+	await update.message.reply_text(text, reply_markup=keyboard)
 
 
 async def nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

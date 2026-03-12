@@ -1987,6 +1987,11 @@ def run_bot() -> None:
     from telegram.ext import CallbackQueryHandler as _CQH_vip
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
+    # ── Help pagination callbacks (/help) ────────────────────────────────────
+    from .commands import help_page_callback
+    from telegram.ext import CallbackQueryHandler as _CQH_help
+    application.add_handler(_CQH_help(help_page_callback, pattern=r"^help_page_[1-4]$"))
+
     # ── Help/Navigation buttons ─────────────────────────────────────────────
     from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
