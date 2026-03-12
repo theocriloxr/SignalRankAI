@@ -504,6 +504,47 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None
         pass
 
 
+async def _send_message_with_retry(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+    reply_markup=None,
+) -> None:
+    """Async send with Telegram flood-control retry and pacing."""
+    import asyncio
+    from telegram.error import RetryAfter
+
+    while True:
+        try:
+            await bot.send_message(
+                chat_id=int(chat_id),
+                text=str(text),
+                parse_mode=parse_mode,
+                reply_markup=reply_markup,
+            )
+            return
+        except RetryAfter as e:
+            await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+
+
+def _send_message_with_retry_sync(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+    reply_markup=None,
+) -> None:
+    """Sync wrapper for _send_message_with_retry, safe in background threads."""
+    run_sync(_send_message_with_retry(
+        bot,
+        int(chat_id),
+        str(text),
+        parse_mode=parse_mode,
+        reply_markup=reply_markup,
+    ))
+
+
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
         # IMPORTANT: Skip pre-audit for /start.
@@ -784,6 +825,11 @@ def notify_all_users_trade_outcome(strategy, result, ret, user_ids=None):
     # Use the same message format as notify_trade_outcome, but for all users
     for uid in user_ids:
         notify_trade_outcome(uid, strategy, result, ret)
+        try:
+            import asyncio
+            run_sync(asyncio.sleep(0.5))
+        except Exception:
+            pass
 
 def send_performance_summary(user_id):
     bot = Bot(token=_require_telegram_token())
@@ -1944,7 +1990,7 @@ def run_bot() -> None:
     # ── Help/Navigation buttons ─────────────────────────────────────────────
     from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
-    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_|trade_now)"))
+    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_|trade_now|mt5_link_guide|mt5_settings|advanced_portfolio|locked_|admin_)"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
     from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard
@@ -2211,7 +2257,12 @@ def run_bot() -> None:
                         "Thank you for trading responsibly."
                     )
                 try:
-                    _send_message_sync(application.bot, chat_id=int(user_id), text=recap_msg)
+                    _send_message_with_retry_sync(application.bot, chat_id=int(user_id), text=recap_msg)
+                    try:
+                        import asyncio
+                        run_sync(asyncio.sleep(0.5))
+                    except Exception:
+                        pass
                 except Exception as e:
                     logger.warning(f"[recap] Failed to send weekly recap to user {user_id}: {e}")
                     pass
@@ -2358,7 +2409,12 @@ def run_bot() -> None:
 
                     if notify and msg:
                         try:
-                            _send_message_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
+                            _send_message_with_retry_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
+                            try:
+                                import asyncio
+                                run_sync(asyncio.sleep(0.5))
+                            except Exception:
+                                pass
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
                             pass
@@ -2745,7 +2801,12 @@ def run_bot() -> None:
                     if items_to_send:
                         msg = _format_free_delayed_digest(items_to_send)
                         try:
-                            _send_message_sync(application.bot, chat_id=int(uid), text=msg)
+                            _send_message_with_retry_sync(application.bot, chat_id=int(uid), text=msg)
+                            try:
+                                import asyncio
+                                run_sync(asyncio.sleep(0.5))
+                            except Exception:
+                                pass
                             logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
                         except Exception as e:
                             logger.error(f"❌ Failed to send to user {uid}: {e}")
@@ -2870,7 +2931,12 @@ def run_bot() -> None:
                 try:
                     _t = (resolve_user_tier(int(_uid)) or "free").lower()
                     if _t == "premium":
-                        _send_message_sync(application.bot, chat_id=int(_uid), text=msg)
+                        _send_message_with_retry_sync(application.bot, chat_id=int(_uid), text=msg)
+                        try:
+                            import asyncio
+                            run_sync(asyncio.sleep(0.5))
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception as e:
@@ -2926,7 +2992,12 @@ def run_bot() -> None:
                 try:
                     _t = (resolve_user_tier(int(_uid)) or "free").lower()
                     if _t == "free":
-                        _send_message_sync(application.bot, chat_id=int(_uid), text=msg)
+                        _send_message_with_retry_sync(application.bot, chat_id=int(_uid), text=msg)
+                        try:
+                            import asyncio
+                            run_sync(asyncio.sleep(0.5))
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception as exc:
@@ -2991,7 +3062,12 @@ def run_bot() -> None:
             from db.pg_compat import get_all_user_ids_compat
             for _uid in (get_all_user_ids_compat() or []):
                 try:
-                    _send_message_sync(application.bot, chat_id=int(_uid), text=msg)
+                    _send_message_with_retry_sync(application.bot, chat_id=int(_uid), text=msg)
+                    try:
+                        import asyncio
+                        run_sync(asyncio.sleep(0.5))
+                    except Exception:
+                        pass
                 except Exception:
                     pass
         except Exception as exc:
@@ -3140,6 +3216,14 @@ def run_bot() -> None:
     _sa = "persistent" if "persistent" in _jobstores else "default"
 
     scheduler = BackgroundScheduler(jobstores=_jobstores or {}, timezone="UTC")
+
+    # Clear stale jobs in the persistent store to prevent duplicates on restart.
+    try:
+        if _sa != "default":
+            scheduler.remove_all_jobs(jobstore=_sa)
+            logger.info("[sched] cleared stale jobs from jobstore=%s", _sa)
+    except Exception as _clr_err:
+        logger.warning("[sched] failed to clear jobstore=%s: %s", _sa, _clr_err)
 
     # ── Closure jobs (defined inside run_bot — cannot be pickled for SQLAlchemy)
     # These always land in the default MemoryJobStore.

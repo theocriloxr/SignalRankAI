@@ -141,6 +141,7 @@ def _build_dynamic_menu(user_id: int, tier: str):
 			rows.append([InlineKeyboardButton("🔒 MT5 Auto‑Trading (VIP)", callback_data="locked_mt5")])
 		else:
 			rows.append([
+				InlineKeyboardButton("🔗 Link MT5", callback_data="mt5_link_guide"),
 				InlineKeyboardButton("⚙️ MT5 Settings", callback_data="mt5_settings"),
 				InlineKeyboardButton("📊 Advanced Portfolio", callback_data="advanced_portfolio"),
 			])
@@ -187,6 +188,11 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if query is None:
 		return
 	try:
+		logger.info("[button_click] data=%s user_id=%s", query.data, getattr(update.effective_user, "id", None))
+		print(f"[button_click] data={query.data} user_id={getattr(update.effective_user, 'id', None)}", flush=True)
+	except Exception:
+		pass
+	try:
 		await query.answer()
 	except Exception:
 		pass
@@ -229,6 +235,16 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 				)
 				return
 			await query.message.reply_text("✅ MT5 settings are available via /mt5_status and /setlot.")
+			return
+		except Exception:
+			return
+	if data == "mt5_link_guide":
+		try:
+			await query.message.reply_text(
+				"To connect your MT5 account for auto-trading, please reply with your details in this exact format:\n"
+				"/mt5_connect [Account Number] [Password] [Server Name]\n"
+				"Example: /mt5_connect 12345678 MyPass123 Exness-MT5-Real"
+			)
 			return
 		except Exception:
 			return
@@ -2910,14 +2926,30 @@ async def start_command(update, context):
 			from db.repository import get_or_create_user
 			from db.pg_features import record_bot_event
 			from db.pg_features import ensure_alert_prefs
-			from signalrank_telegram.access import resolve_user_tier
+			import asyncio
+			timeout_s = float((os.getenv("DB_START_TIMEOUT") or "10").strip())
 			async with get_session() as session:
 				logger.info("[/start] user_id=%s — DB session open, querying user row", user_id)
-				res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+				res: Result[Tuple[User]] = await asyncio.wait_for(
+					session.execute(select(User).where(User.telegram_user_id == int(user_id))),
+					timeout=timeout_s,
+				)
 				existing: User | None = res.scalar_one_or_none()
 				is_new: bool = existing is None
-				user_row = await get_or_create_user(session, telegram_user_id=user_id, username=username)
-				effective_tier = str(resolve_user_tier(int(user_id))).upper()
+				user_row = await asyncio.wait_for(
+					get_or_create_user(session, telegram_user_id=user_id, username=username),
+					timeout=timeout_s,
+				)
+				# Avoid nested DB resolution inside /start; use env-configured tiers only.
+				try:
+					if int(user_id) in OWNER_IDS:
+						effective_tier = "OWNER"
+					elif int(user_id) in ADMIN_IDS:
+						effective_tier = "ADMIN"
+					else:
+						effective_tier = "FREE"
+				except Exception:
+					effective_tier = "FREE"
 				if effective_tier in {"OWNER", "ADMIN"}:
 					current = str(getattr(user_row, "tier", "") or "").lower()
 					if current not in {"owner", "admin"}:
@@ -2932,7 +2964,7 @@ async def start_command(update, context):
 							pass
 				# Ensure alert preferences row exists for all users.
 				try:
-					await ensure_alert_prefs(session, int(user_id))
+					await asyncio.wait_for(ensure_alert_prefs(session, int(user_id)), timeout=timeout_s)
 				except Exception:
 					pass
 
@@ -2957,7 +2989,7 @@ async def start_command(update, context):
 
 				# Audit: always record the start event when Postgres is available
 				try:
-					await record_bot_event(
+					await asyncio.wait_for(record_bot_event(
 						session,
 						telegram_user_id=int(user_id),
 						username=username,
@@ -2967,17 +2999,24 @@ async def start_command(update, context):
 							"ref_token": str(ref_token) if ref_token else None,
 							"referral": referral_outcome,
 						},
-					)
+					), timeout=timeout_s)
 				except Exception:
 					pass
 
 				# Read accepted_terms before session closes (object becomes detached after commit)
 				terms_accepted: bool = bool(getattr(user_row, "accepted_terms", False))
 
-				await session.commit()
+				await asyncio.wait_for(session.commit(), timeout=timeout_s)
+				logger.info("[/start] user_id=%s — DB session commit complete", user_id)
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 	except Exception as e:
+		try:
+			from db.session import get_session as _gs_start
+			async with _gs_start() as _s:
+				await _s.rollback()
+		except Exception:
+			pass
 		# Postgres is required; no fallback. Keep bot alive and emit actionable logs.
 		try:
 			print(f"[ERROR] /start failed to access Postgres: {type(e).__name__}: {e}", flush=True)
