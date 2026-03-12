@@ -741,35 +741,35 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
 	from .command_access import get_help_message
-	lang = _get_user_language(user_id)
-	msg: str = f"*{_t(user_id, 'help_title')}*\n\n" + get_help_message(tier)
+	# get_help_message() returns HTML-formatted text
+	msg: str = f"<b>{_t(user_id, 'help_title')}</b>\n\n" + get_help_message(tier)
 
 	# Append tier-specific command hints
 	tier_upper = tier.strip().upper()
 	if tier_upper == "FREE":
 		msg += (
-			"\n\n💡 *Upgrade to unlock more:*\n"
+			"\n\n💡 <b>Upgrade to unlock more:</b>\n"
 			"  /tiers — Compare plans\n"
 			"  /upgrade — Subscribe now\n"
 			"  /referral — Earn free days"
 		)
 	elif tier_upper == "PREMIUM":
 		msg += (
-			"\n\n⚙️ *Your PREMIUM commands:*\n"
+			"\n\n⚙️ <b>Your PREMIUM commands:</b>\n"
 			"  /setlot — Set lot size for MT5 auto-exec\n"
 			"  /connect_broker — Link your MT5 account\n"
 			"  /mt5_status — Check linked account\n"
-			"  /mystats — Personal P&L stats\n"
+			"  /mystats — Personal P&amp;L stats\n"
 			"  /referral — Earn +7 days per referral"
 		)
 	elif tier_upper in ("VIP", "OWNER", "ADMIN"):
 		msg += (
-			"\n\n👑 *Your VIP commands:*\n"
+			"\n\n👑 <b>Your VIP commands:</b>\n"
 			"  /setrisk — Set risk % per trade\n"
 			"  /setlot — Override lot size\n"
 			"  /connect_broker — Link/update MT5\n"
 			"  /mt5_status — Account details\n"
-			"  /mystats — Personal P&L stats\n"
+			"  /mystats — Personal P&amp;L stats\n"
 			"  /referral — Earn +7 days per referral"
 		)
 
@@ -777,13 +777,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	if tier_upper in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
 		base_url = os.getenv("DASHBOARD_URL")
 		if base_url:
-			sep = "&" if "?" in base_url else "?"
+			sep = "&amp;" if "?" in base_url else "?"
 			dashboard_url: str = f"{base_url}{sep}uid={user_id}"
-			# Escape brackets and parentheses in dashboard link for Markdown V2
-			safe_dashboard_url: str = dashboard_url.replace('(', '\\(').replace(')', '\\)').replace('[', '\\[').replace(']', '\\]')
-			safe_dashboard_text: str = _t(user_id, 'dashboard').replace('[', '\\[').replace(']', '\\]')
-			msg += f"\n\n🌐 [{safe_dashboard_text}]({safe_dashboard_url})"
-	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="MarkdownV2")
+			dashboard_text: str = _t(user_id, 'dashboard')
+			msg += f"\n\n🌐 <a href=\"{dashboard_url}\">{dashboard_text}</a>"
+	await update.message.reply_text(msg, disable_web_page_preview=True, parse_mode="HTML")
 
 # --------- MYID COMMAND ---------
 async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -285,7 +285,7 @@ def get_accessible_commands(tier: str) -> list[tuple[str, str]]:
 
 
 def get_help_message(tier: str) -> str:
-    """Build dynamic help message based on user's current tier."""
+    """Build dynamic help message based on user's current tier. Returns HTML-formatted text."""
     tier = str(tier or "FREE").strip().upper()
     
     # Admin and Owner get OWNER help
@@ -300,18 +300,15 @@ def get_help_message(tier: str) -> str:
     title = help_data.get("title", "🤖 SignalRankAI Commands")
     commands = help_data.get("commands", [])
     footer = help_data.get("footer", "")
-    
-    def escape_md(text):
-        # Telegram Markdown V2 escaping
-        chars = r'_[]()~`>#+-=|{}.!'
-        for c in chars:
-            text = text.replace(c, f'\\{c}')
-        return text
+
+    def _he(text: str) -> str:
+        """HTML-safe escape: only & < > need replacing in Telegram HTML mode."""
+        return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
     # Build message
-    lines = [escape_md(title), ""]
+    lines = [f"<b>{_he(title)}</b>", ""]
     for cmd, desc in commands:
-        lines.append(f"/{escape_md(cmd)} – {escape_md(desc)}")
+        lines.append(f"/{_he(cmd)} – {_he(desc)}")
 
     # --- Advanced Features Section ---
     adv_cmds = [
@@ -337,7 +334,7 @@ def get_help_message(tier: str) -> str:
         ("notify", "- /notify strategies momentum,trend – Set strategies"),
         ("notify", "- /notify clear – Reset notification preferences"),
         ("language", "- /language en|es|fr – Set your language"),
-        ("feedback", "- /feedback <signal_ref> <rating|issue> [comment] – Submit feedback"),
+        ("feedback", "- /feedback &lt;signal_ref&gt; &lt;rating|issue&gt; [comment] – Submit feedback"),
         ("analyze", "- /analyze BTCUSDT 1h – Run AI analysis"),
     ]
 
@@ -347,16 +344,17 @@ def get_help_message(tier: str) -> str:
 
     if visible_adv:
         lines.append("")
-        lines.append(escape_md("*Advanced Features & Usage*"))
+        lines.append("<b>Advanced Features &amp; Usage</b>")
         lines.append("")
-        lines.extend([escape_md(line) for line in visible_adv])
+        lines.extend([_he(line) for line in visible_adv])
         if visible_usage:
             lines.append("")
-            lines.append(escape_md("*How to use advanced features:*"))
-            lines.extend([escape_md(line) for line in visible_usage])
+            lines.append("<b>How to use advanced features:</b>")
+            # usage lines already have HTML entities hand-coded above; append as-is
+            lines.extend(visible_usage)
 
     if footer:
-        lines.extend(["", escape_md(footer)])
+        lines.extend(["", _he(footer)])
 
     # Add disclaimers
     disclaimers = [
@@ -370,7 +368,7 @@ def get_help_message(tier: str) -> str:
         "",
         "⚠️ Educational only. Not financial advice. Trading involves risk.",
     ]
-    lines.extend([escape_md(line) if line else "" for line in disclaimers])
+    lines.extend([_he(line) if line else "" for line in disclaimers])
 
     return "\n".join(lines)
 
