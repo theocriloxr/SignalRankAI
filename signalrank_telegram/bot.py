@@ -2279,7 +2279,7 @@ def run_bot() -> None:
     # retrieve it even if later optional setup steps fail (scheduler/jobstore,
     # ancillary jobs, etc.). Handlers are registered on the same object below.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        global _webhook_application
+        global _webhook_application, _bot_scheduler
         _webhook_application = application
 
     # Ensure required schema exists — belt-and-suspenders patch for any live DB
@@ -3783,7 +3783,13 @@ def run_bot() -> None:
 
     # ── Friday leaderboard ──────────────────────────────────────────────────
     def friday_leaderboard_job():
-        """Every Friday at 5PM UTC — broadcast the week's top signals and traders."""
+        """Every Friday at 5PM UTC — 3-block leaderboard broadcast.
+
+        Blocks:
+        1) Top 3 Signals
+        2) Top 3 VIP MT5 Traders (actual realised PnL)
+        3) Top 3 Fantasy Scorers (🔥 votes mapped to outcome pips/points)
+        """
         try:
             if state.get_killswitch_sync().enabled:
                 return
@@ -3791,46 +3797,236 @@ def run_bot() -> None:
             pass
         try:
             from db.session import get_session as _gs
-            from db.models import MT5Execution
+            from db.models import MT5Execution, Outcome, Signal, SignalEngagement, User
             from sqlalchemy import select, func
             from datetime import datetime, timedelta
+            import json
 
             week_start = datetime.utcnow() - timedelta(days=7)
 
+            def _parse_tp_list(raw_tp) -> list[float]:
+                if raw_tp is None:
+                    return []
+                if isinstance(raw_tp, (list, tuple)):
+                    out = []
+                    for item in raw_tp:
+                        try:
+                            if isinstance(item, dict):
+                                candidate = item.get("price") or item.get("tp") or item.get("target")
+                            else:
+                                candidate = item
+                            out.append(float(candidate))
+                        except Exception:
+                            continue
+                    return [x for x in out if x > 0]
+                if isinstance(raw_tp, str):
+                    s = raw_tp.strip()
+                    if not s:
+                        return []
+                    try:
+                        parsed = json.loads(s)
+                        return _parse_tp_list(parsed)
+                    except Exception:
+                        try:
+                            return [float(s)]
+                        except Exception:
+                            return []
+                try:
+                    return [float(raw_tp)]
+                except Exception:
+                    return []
+
+            def _pip_size(asset: str) -> float:
+                a = str(asset or "").upper()
+                is_fx = len(a) == 6 and a.isalpha()
+                if is_fx:
+                    return 0.01 if "JPY" in a else 0.0001
+                if a.startswith("XAU") or a.startswith("XAG"):
+                    return 0.1
+                return 1.0  # point-based fallback for non-FX assets
+
+            def _signal_pips(sig: Signal, out: Outcome) -> float | None:
+                try:
+                    entry = float(getattr(sig, "entry", 0) or 0)
+                    sl = float(getattr(sig, "stop_loss", 0) or 0)
+                    if entry <= 0:
+                        return None
+                    direction = str(getattr(sig, "direction", "long") or "long").lower()
+                    status = str(getattr(out, "status", "") or "").lower()
+                    tps = _parse_tp_list(getattr(sig, "take_profit", None))
+
+                    exit_price = None
+                    if status in ("tp", "tp3"):
+                        exit_price = tps[-1] if tps else None
+                    elif status == "tp2":
+                        exit_price = tps[1] if len(tps) > 1 else (tps[-1] if tps else None)
+                    elif status == "tp1":
+                        exit_price = tps[0] if tps else None
+                    elif status == "sl":
+                        exit_price = sl if sl > 0 else None
+                    else:
+                        return None
+
+                    if exit_price is None or exit_price <= 0:
+                        return None
+
+                    raw_move = (exit_price - entry) if direction in ("long", "buy") else (entry - exit_price)
+                    size = _pip_size(getattr(sig, "asset", ""))
+                    if size <= 0:
+                        return None
+                    pips = raw_move / size
+
+                    if status == "sl" and pips > 0:
+                        pips = -abs(pips)
+                    if status.startswith("tp") and pips < 0:
+                        pips = abs(pips)
+                    return float(pips)
+                except Exception:
+                    return None
+
             async def _fetch_leaderboard():
                 async with _gs() as session:
-                    rows = await session.execute(
+                    # Block 1: Top 3 signals by realised % this week
+                    sig_rows = await session.execute(
+                        select(Signal, Outcome)
+                        .join(Outcome, Outcome.signal_id == Signal.signal_id)
+                        .where(
+                            Outcome.closed_at >= week_start,
+                            Outcome.status.in_(["tp", "tp1", "tp2", "tp3", "sl"]),
+                        )
+                    )
+                    raw_signals = sig_rows.all()
+
+                    ranked_signals: list[tuple[Signal, Outcome, float]] = []
+                    for sig, out in raw_signals:
+                        pct = getattr(out, "percent", None)
+                        if pct is None:
+                            r_mult = getattr(out, "r_multiple", None)
+                            if r_mult is not None:
+                                pct = float(r_mult) * 100.0
+                        try:
+                            pct_val = float(pct) if pct is not None else 0.0
+                        except Exception:
+                            pct_val = 0.0
+                        ranked_signals.append((sig, out, pct_val))
+
+                    ranked_signals.sort(key=lambda x: x[2], reverse=True)
+                    top_signals = ranked_signals[:3]
+
+                    # Block 2: Top 3 VIP MT5 traders
+                    vip_rows = await session.execute(
                         select(
                             MT5Execution.user_id,
                             func.sum(MT5Execution.realized_pnl).label("pnl"),
                             func.count().label("trades"),
-                        ).where(
+                            User.telegram_user_id,
+                            User.username,
+                        )
+                        .join(User, User.id == MT5Execution.user_id)
+                        .where(
                             MT5Execution.executed_at >= week_start,
                             MT5Execution.realized_pnl.isnot(None),
                             MT5Execution.tier_at_execution == "VIP",
-                        ).group_by(
-                            MT5Execution.user_id
-                        ).order_by(
+                        )
+                        .group_by(MT5Execution.user_id, User.telegram_user_id, User.username)
+                        .order_by(
                             func.sum(MT5Execution.realized_pnl).desc()
-                        ).limit(3)
+                        )
+                        .limit(3)
                     )
-                    return rows.all()
+                    top_vip = vip_rows.all()
 
-            top_traders = run_sync(_fetch_leaderboard())
-            if not top_traders:
+                    # Block 3: Top 3 fantasy scorers (🔥 votes weighted by realised pips)
+                    fantasy_rows = await session.execute(
+                        select(User.telegram_user_id, User.username, Signal, Outcome)
+                        .join(SignalEngagement, SignalEngagement.user_id == User.id)
+                        .join(Signal, Signal.signal_id == SignalEngagement.signal_id)
+                        .join(Outcome, Outcome.signal_id == Signal.signal_id)
+                        .where(
+                            SignalEngagement.reaction == "taking_it",
+                            SignalEngagement.created_at >= week_start,
+                            Outcome.closed_at >= week_start,
+                            Outcome.status.in_(["tp", "tp1", "tp2", "tp3", "sl"]),
+                        )
+                    )
+
+                    fantasy_map: dict[int, dict] = {}
+                    for tg_id, uname, sig, out in fantasy_rows.all():
+                        try:
+                            tg_uid = int(tg_id)
+                        except Exception:
+                            continue
+                        pips = _signal_pips(sig, out)
+                        if pips is None:
+                            continue
+                        slot = fantasy_map.setdefault(
+                            tg_uid,
+                            {"username": uname, "score": 0.0, "count": 0},
+                        )
+                        slot["score"] = float(slot["score"] or 0.0) + float(pips)
+                        slot["count"] = int(slot["count"] or 0) + 1
+
+                    top_fantasy = sorted(
+                        fantasy_map.items(),
+                        key=lambda kv: float(kv[1].get("score") or 0.0),
+                        reverse=True,
+                    )[:3]
+
+                    return top_signals, top_vip, top_fantasy
+
+            top_signals, top_traders, top_fantasy = run_sync(_fetch_leaderboard())
+            if not top_signals and not top_traders and not top_fantasy:
                 return
 
-            lines = ["🏆 <b>This Week's VIP Leaderboard</b>\n"]
+            lines = ["🏆 <b>Friday Leaderboard</b>", ""]
             medals = ["🥇", "🥈", "🥉"]
+
+            # Block 1: Top 3 Signals
+            lines.append("<b>Top 3 Signals</b>")
+            if top_signals:
+                for i, (sig, out, pct_val) in enumerate(top_signals):
+                    asset = str(getattr(sig, "asset", "?") or "?")
+                    tf = str(getattr(sig, "timeframe", "?") or "?")
+                    direction = str(getattr(sig, "direction", "?") or "?").upper()
+                    status = str(getattr(out, "status", "?") or "?").upper()
+                    sign = "+" if pct_val >= 0 else ""
+                    lines.append(
+                        f"{medals[i]} <b>{asset}</b> {direction} ({tf})  {status}  {sign}{pct_val:.2f}%"
+                    )
+            else:
+                lines.append("• No closed signal outcomes this week")
+
+            lines.append("")
+            lines.append("<b>Top 3 VIP MT5 Traders</b>")
             for i, row in enumerate(top_traders):
                 uid = row.user_id
                 pnl = float(row.pnl or 0)
                 trades = int(row.trades or 0)
                 sign = "+" if pnl >= 0 else ""
+                tg_uid = getattr(row, "telegram_user_id", None)
+                uname = (getattr(row, "username", None) or "").strip()
+                trader_label = f"@{uname}" if uname else f"Trader #{tg_uid or uid}"
                 lines.append(
-                    f"{medals[i]} <b>Trader #{uid}</b>  "
+                    f"{medals[i]} <b>{trader_label}</b>  "
                     f"{sign}${pnl:.2f}  ({trades} trades)"
                 )
+            if not top_traders:
+                lines.append("• No VIP MT5 realised trades this week")
+
+            lines.append("")
+            lines.append("<b>Top 3 Fantasy Scorers</b>")
+            if top_fantasy:
+                for i, (tg_uid, data) in enumerate(top_fantasy):
+                    uname = str(data.get("username") or "").strip()
+                    label = f"@{uname}" if uname else f"User {tg_uid}"
+                    score = float(data.get("score") or 0.0)
+                    picks = int(data.get("count") or 0)
+                    sign = "+" if score >= 0 else ""
+                    lines.append(
+                        f"{medals[i]} <b>{label}</b>  {sign}{score:.1f} pips  ({picks} voted signals)"
+                    )
+            else:
+                lines.append("• No fantasy score data this week")
 
             lines.append(
                 "\n💡 Join VIP for automated execution and leaderboard inclusion.\n"
@@ -4197,7 +4393,6 @@ def run_bot() -> None:
     # route.  Store the configured application and scheduler so they survive
     # this function's scope, then return without starting long-polling.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        global _webhook_application, _bot_scheduler
         _webhook_application = application
         _bot_scheduler = scheduler  # prevent GC; daemon threads keep running
         print("[bot] webhook mode: application ready, scheduler running, not polling", flush=True)
