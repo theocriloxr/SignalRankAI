@@ -287,11 +287,24 @@ async def lifespan(_: FastAPI):
         scheduler = None
 
     # ── 4) Telegram webhook ───────────────────────────────────────────────────
+    # IMPORTANT: start bot setup in the background so FastAPI startup can
+    # complete quickly and Railway healthchecks can pass.
     application, bot_started = None, False
+    bot_start_task: asyncio.Task | None = None
+
+    async def _start_bot_bg() -> None:
+        nonlocal application, bot_started
+        try:
+            application, bot_started = await _start_telegram_bot()
+            logger.info("[startup] Telegram webhook setup completed")
+        except Exception as exc:
+            logger.warning(f"[startup] Telegram webhook setup error (background): {exc}")
+
     try:
-        application, bot_started = await _start_telegram_bot()
+        bot_start_task = asyncio.create_task(_start_bot_bg())
+        logger.info("[startup] Telegram webhook setup scheduled in background")
     except Exception as exc:
-        logger.warning(f"[startup] Telegram webhook setup error (caught at lifespan level): {exc}")
+        logger.warning(f"[startup] Could not schedule Telegram webhook setup: {exc}")
 
     logger.info(
         f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
@@ -303,6 +316,12 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         # ── Shutdown order: bot → scheduler → engine task ─────────────────────
+        if bot_start_task is not None and not bot_start_task.done():
+            try:
+                bot_start_task.cancel()
+            except Exception:
+                pass
+
         if bot_started and application is not None:
             try:
                 await _stop_telegram_bot(application)
