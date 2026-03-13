@@ -21,6 +21,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 logger = logging.getLogger(__name__)
 
+# Ensure INFO-level logs are visible in Railway regardless of uvicorn's logging config.
+try:
+    from utils.logging_config import setup_logging as _setup_logging
+    _setup_logging()
+except Exception:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
+
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
 _bot_application: object = None
@@ -237,10 +244,12 @@ def _start_engine_loop_in_background() -> asyncio.Task:
 
     async def _runner() -> None:
         loop = asyncio.get_running_loop()
+        print("[engine] background loop starting", flush=True)
         logger.info("[engine] background loop starting")
         try:
             await loop.run_in_executor(None, lambda: main_loop(dry_run))
         except Exception as exc:
+            print(f"[engine] background loop crashed: {exc}", flush=True)
             logger.exception(f"[engine] background loop crashed: {exc}")
             raise
 
@@ -261,8 +270,10 @@ async def lifespan(_: FastAPI):
     engine_task = None
     try:
         engine_task = _start_engine_loop_in_background()
+        print("[startup] Engine loop task created", flush=True)
         logger.info("[startup] Engine loop task created")
     except Exception as exc:
+        print(f"[startup] Could not start engine loop: {exc}", flush=True)
         logger.warning(f"[startup] Could not start engine loop: {exc}")
 
     # ── 3) APScheduler jobs ───────────────────────────────────────────────────

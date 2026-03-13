@@ -226,7 +226,7 @@ async def _resend_unsent_signals_async():
 
                         # Format and send
                         display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
-                        text = format_signal(sig_dict, display_tier=display_tier)
+                        text = format_signal(sig_dict, user_tier=user_tier, display_tier=display_tier)
                         if not text or not str(text).strip():
                             logger.info(
                                 f"[resend] Skipped signal {signal_id} for user {user_id} "

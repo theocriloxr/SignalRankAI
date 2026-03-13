@@ -1905,35 +1905,31 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				await update.message.reply_text("✅ No signals delivered today.")
 			return
 
-		# Filter by score in 45–75 and sample any 2 at random
+		# FREE view: only include signals that meet FREE tier threshold (80+)
 		eligible = []
 		for s in signals_list:
 			try:
 				score_val = float(s.get('score') or 0)
 			except Exception:
 				score_val = 0.0
-			if 45.0 <= score_val <= 75.0:
+			if score_val >= 80.0:
 				eligible.append(s)
 
 		if not eligible:
 			if update.message is not None:
-				await update.message.reply_text("⚠️ No signals above 55 score today. Upgrade for full access or check back later.")
+				await update.message.reply_text("⚠️ No FREE-eligible signals (80+) delivered today. Upgrade for full access or check back later.")
 			return
 		picked = eligible if len(eligible) <= 2 else random.sample(eligible, 2)
-		total_signals: int = len(eligible)
-		lines: list[str] = [f"🆓 Today's Signals (showing {len(picked)} of {total_signals})", ""]
-		for i, s in enumerate(picked, 1):
-			entry = float(s.get('entry') or 0)
-			sig_id = s.get('signal_id', 'N/A')
-			sig_id_short = sig_id[:8]
-			lines.append(
-				f"{i}. {s.get('asset')} {s.get('timeframe')} {s.get('direction').upper()}\n"
-				f"   Reference: `{sig_id_short}...` | Entry: {entry:.4f}\n"
-				f"   /outcome {sig_id_short}"
-			)
-		lines += ["", "💡 Use /outcome <reference> to check if you hit TP/SL", "👆 Upgrade to PREMIUM for more signals and details."]
+		from .formatter import format_signal_free_new
+		for s in picked:
+			try:
+				formatted = format_signal_free_new(s, signals_sent_today=len(signals_list), daily_limit=3)
+				if formatted and update.message is not None:
+					await update.message.reply_text(formatted, reply_markup=_build_signal_action_keyboard(s))
+			except Exception as e:
+				_audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
 		if update.message is not None:
-			await update.message.reply_text("\n".join(lines))
+			await update.message.reply_text("👆 Upgrade to PREMIUM for full details and more signals.")
 		return
 	
 	# PREMIUM/VIP: show unresolved signals (ongoing trades)
@@ -2017,26 +2013,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			delivered_today = []
 
 		if delivered_today:
-			lines: list[str] = ["📬 Delivered today (latest signals):", ""]
-			for i, s in enumerate(delivered_today[:10], 1):
-				ref = str(s.get("signal_id") or "N/A")
-				ref_short: str = ref[:8]
+			from .formatter import format_signal
+			for s in delivered_today[:10]:
 				try:
-					score_val = float(s.get("score") or 0)
-				except Exception:
-					score_val = 0.0
-				entry_val = 0.0
-				try:
-					entry_val = float(s.get("entry") or 0)
-				except Exception:
-					entry_val = 0.0
-				lines.append(
-					f"{i}. {s.get('asset')} {s.get('timeframe')} {str(s.get('direction') or '').upper()} | Score {score_val:.2f}\n"
-					f"   Ref: {ref_short} | Entry: {entry_val:.4f}"
-				)
-			lines += ["", "Use /outcome <ref> to check if you hit TP/SL."]
+					formatted = format_signal(s, user_tier=tier)
+					if not formatted:
+						continue
+					if update.message is not None:
+						await update.message.reply_text(
+							formatted,
+							parse_mode="Markdown",
+							reply_markup=_build_signal_action_keyboard(s),
+						)
+				except Exception as e:
+					_audit_logger.error(f"Error formatting delivered signal for {user_id}: {e}")
 			if update.message is not None:
-				await update.message.reply_text("\n".join(lines))
+				await update.message.reply_text("Use /outcome <ref> to check if you hit TP/SL.")
 			return
 
 		if update.message is not None:
@@ -2045,105 +2037,27 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			)
 		return
 
-	# PREMIUM/VIP: detailed formatting per tier with new ranges
+	# PREMIUM/VIP: use consistent box-style template
 	from .formatter import format_signal
-	import json
-	
+
 	total_active: int = len(filtered_signals)
 	if update.message is not None and total_active > 0:
 		if is_vip:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} with score ≥ 55):\n\n")
+			await update.message.reply_text(f"📊 Your Active Signals ({total_active} with score ≥ 55):")
 		else:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} between 55–75 score):\n\n")
-	
+			await update.message.reply_text(f"📊 Your Active Signals ({total_active} between 55–75 score):")
+
 	for idx, s in enumerate(filtered_signals, 1):
 		try:
-			# Ensure numeric fields are floats
-			score = float(s.get('score') or 0)
-			confidence = float(s.get('confidence') or 0.5)
-			rr = float(s.get('rr_ratio') or 1.5)
-			entry = float(s.get('entry') or 0)
-			stop_loss = float(s.get('stop_loss') or 0)
-			sig_id = s.get('signal_id', 'N/A')
-			# Parse take_profit (JSON array) and get first value
-			tp_raw = s.get('take_profit')
-			try:
-				if isinstance(tp_raw, str):
-					tp_list = json.loads(tp_raw)
-					take_profit: float = float(tp_list[0]) if tp_list else 0.0
-				elif isinstance(tp_raw, list):
-					take_profit: float = float(tp_raw[0]) if tp_raw else 0.0
-				else:
-					take_profit = float(tp_raw or 0)
-			except Exception:
-				take_profit = 0.0
-			
-			regime = s.get('regime', 'NEUTRAL')
-			ml_prob = float(s.get('ml_probability') or 0.5)
-
-			merits = []
-			demerits = []
-			if confidence >= 0.7:
-				merits.append("Strong confidence")
-			elif confidence < 0.55:
-				demerits.append("Low confidence")
-			if rr >= 2.0:
-				merits.append("Excellent R/R (≥2.0)")
-			elif rr < 1.5:
-				demerits.append("Weak R/R (<1.5)")
-			if ml_prob >= 0.65:
-				merits.append("ML model agrees")
-			elif ml_prob < 0.4:
-				demerits.append("ML model cautious")
-			if regime and str(regime).upper() != "NEUTRAL":
-				merits.append(f"Regime: {regime}")
-			merits_text: str = ", ".join(merits) if merits else "Balanced setup"
-			demerits_text: str = ", ".join(demerits) if demerits else "No major drawbacks"
-			
-			# Calculate entry/exit advice
-			if s.get('direction', '').upper() == 'LONG':
-				entry_advice: str = f"Buy on dip to {entry:.4f}"
-				exit_advice: str = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
-			else:
-				entry_advice: str = f"Sell on rally to {entry:.4f}"
-				exit_advice: str = f"Take partial profit at {take_profit:.4f}, trail SL to {stop_loss:.4f}"
-			
-			if is_vip:
-				# Full advice for VIP
-				msg: str = (
-					f"🟢 VIP Signal: {s.get('asset')} ({s.get('timeframe')})\n"
-					f"ID: `{sig_id}`\n\n"
-					f"Setup: {s.get('direction').upper()} {s.get('strategy_name')}\n"
-					f"Regime: {regime} | **Score**: {score:.1f}/100\n\n"
-					f"Entry: {entry:.4f}\n"
-					f"SL: {stop_loss:.4f}\n"
-					f"TP: {take_profit:.4f}\n"
-					f"R/R: {rr:.2f}:1\n\n"
-					f"Confidence: {confidence*100:.0f}% | ML: {ml_prob*100:.0f}%\n\n"
-					f"✅ Merits: {merits_text}\n"
-					f"⚠️ Demerits: {demerits_text}\n\n"
-					f"📌 Entry Strategy: {entry_advice}\n"
-					f"📌 Exit Strategy: {exit_advice}\n"
-					f"📌 Risk: {stop_loss:.4f} - {entry:.4f} = {abs(entry - stop_loss):.4f} pips\n\n"
-					f"📍 /outcome {sig_id[:8]} for current position"
-				)
-			else:
-				# Limited advice for PREMIUM
-				msg: str = (
-					f"PREMIUM Signal: {s.get('asset')} ({s.get('timeframe')})\n"
-					f"ID: `{sig_id}`\n\n"
-					f"Setup: {s.get('direction').upper()}\n"
-					f"Entry: {entry:.4f}\n"
-					f"SL: {stop_loss:.4f}\n"
-					f"TP: {take_profit:.4f}\n"
-					f"Score: {score:.1f} | **R/R**: {rr:.2f}:1\n\n"
-					f"📌 {entry_advice}\n"
-					f"📌 {exit_advice}\n\n"
-					f"📍 /outcome {sig_id[:8]} for current position"
-				)
-			
+			formatted = format_signal(s, user_tier=tier)
+			if not formatted:
+				continue
 			if update.message is not None:
-				await update.message.reply_text(msg)
+				await update.message.reply_text(
+					formatted,
+					parse_mode="Markdown",
+					reply_markup=_build_signal_action_keyboard(s),
+				)
 		except Exception as e:
 			_audit_logger.error(f"Error formatting signal for {user_id}: {e}")
 			continue
