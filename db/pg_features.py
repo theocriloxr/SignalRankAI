@@ -351,6 +351,72 @@ async def record_signal_delivery(
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
+                try:
+                    asset_cooldown_hours = float((os.getenv("DELIVERY_SAME_ASSET_COOLDOWN_HOURS") or "12").strip())
+                except Exception:
+                    asset_cooldown_hours = 12.0
+
+                def _tier_rank(_t: str | None) -> int:
+                    _base = str(_t or "free").split("_", 1)[0].strip().lower()
+                    ranks = {
+                        "free": 0,
+                        "premium": 1,
+                        "vip": 2,
+                        "admin": 3,
+                        "owner": 4,
+                    }
+                    return int(ranks.get(_base, 0))
+
+                # Same-asset gate:
+                # Block new delivery for this user+asset if previous asset delivery is
+                #   (a) younger than cooldown OR
+                #   (b) still has no resolved outcome.
+                # Exception: allow first post-upgrade send when tier rank increased.
+                latest_asset_row = (
+                    await session.execute(
+                        select(
+                            SignalDelivery.signal_id,
+                            SignalDelivery.delivered_at,
+                            SignalDelivery.tier_at_send,
+                            Outcome.status,
+                        )
+                        .select_from(SignalDelivery)
+                        .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                        .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
+                        .where(
+                            SignalDelivery.user_id == user.id,
+                            Signal.asset == sig.asset,
+                        )
+                        .order_by(SignalDelivery.delivered_at.desc())
+                        .limit(1)
+                    )
+                ).first()
+
+                if latest_asset_row is not None:
+                    prev_signal_id, prev_delivered_at, prev_tier_at_send, prev_status = latest_asset_row
+                    now_dt = _utcnow()
+                    age_hours = 9999.0
+                    try:
+                        age_hours = max(0.0, (now_dt - prev_delivered_at).total_seconds() / 3600.0)
+                    except Exception:
+                        pass
+
+                    resolved_statuses = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "cancel", "cancelled", "breakeven", "be"}
+                    is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
+
+                    is_upgrade_delivery = _tier_rank(tier_s) > _tier_rank(str(prev_tier_at_send or "free"))
+                    should_block_asset = (age_hours < float(asset_cooldown_hours)) or (not is_resolved)
+                    if should_block_asset and not is_upgrade_delivery:
+                        try:
+                            import logging
+                            logging.getLogger(__name__).info(
+                                f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
+                                f"age_h={age_hours:.2f} resolved={is_resolved}"
+                            )
+                        except Exception:
+                            pass
+                        return False
+
                 if market_cutoff is not None:
                     res_market: Result[Tuple[int]] = await session.execute(
                         select(func.count(SignalDelivery.id))

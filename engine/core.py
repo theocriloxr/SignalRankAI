@@ -1198,10 +1198,38 @@ def main_loop(DRY_RUN: bool = False):
                                 from db.session import get_session
                                 from db.models import SignalDelivery, User
                                 from sqlalchemy import select
+                                from db.pg_features import upsert_outcome
                                 
                                 async with get_session() as session:
                                     for trade in closed_trades:
                                         try:
+                                            # Persist outcome so Telegram outcome jobs can track + notify reliably.
+                                            try:
+                                                _sig_id = str(getattr(trade, "signal_id", "") or "")
+                                                if _sig_id:
+                                                    _raw_outcome = str(getattr(trade, "outcome", "") or "").lower()
+                                                    _status = "tp" if _raw_outcome.startswith("tp") else ("sl" if _raw_outcome == "sl" else _raw_outcome or "invalid")
+                                                    _entry_t = getattr(trade, "entry_time", None)
+                                                    _exit_t = getattr(trade, "exit_time", None)
+                                                    _r = getattr(trade, "r_multiple", None)
+                                                    _pct = getattr(trade, "pnl_pct", None)
+                                                    _close_px = getattr(trade, "exit_price", None)
+                                                    if _close_px is None:
+                                                        _close_px = getattr(trade, "close_price", None)
+                                                    await upsert_outcome(
+                                                        session,
+                                                        signal_id=_sig_id,
+                                                        status=_status,
+                                                        r_multiple=float(_r) if _r is not None else None,
+                                                        percent=float(_pct) if _pct is not None else None,
+                                                        opened_at=_entry_t,
+                                                        closed_at=_exit_t,
+                                                        meta={"close_price": _close_px} if _close_px is not None else None,
+                                                    )
+                                                    await session.commit()
+                                            except Exception as _oc_persist_err:
+                                                logger.debug(f"Failed to persist outcome for signal {getattr(trade, 'signal_id', None)}: {_oc_persist_err}")
+
                                             # Find users who received this signal
                                             result = await session.execute(
                                                 select(SignalDelivery.user_id).where(
@@ -1222,14 +1250,20 @@ def main_loop(DRY_RUN: bool = False):
                                                         # Format outcome message
                                                         emoji = "✅" if trade.outcome in ("TP", "tp") else "🛑" if trade.outcome in ("SL", "sl") else "⚠️"
                                                         r_str = f"{trade.r_multiple:.2f}R" if hasattr(trade, 'r_multiple') and trade.r_multiple else ""
+                                                        entry_val = getattr(trade, 'entry_price', None)
+                                                        if entry_val is None:
+                                                            entry_val = getattr(trade, 'entry', None)
+                                                        close_val = getattr(trade, 'exit_price', None)
+                                                        if close_val is None:
+                                                            close_val = getattr(trade, 'close_price', None)
                                                         msg = (
                                                             f"{emoji} Signal Outcome\n\n"
                                                             f"Asset: {trade.symbol}\n"
                                                             f"Direction: {trade.direction.upper()}\n"
                                                             f"Outcome: {trade.outcome}\n"
                                                             f"R-Multiple: {r_str}\n"
-                                                            f"Entry: {trade.entry}\n"
-                                                            f"Close: {getattr(trade, 'close_price', 'N/A')}\n\n"
+                                                            f"Entry: {entry_val if entry_val is not None else 'N/A'}\n"
+                                                            f"Close: {close_val if close_val is not None else 'N/A'}\n\n"
                                                             f"Ref: {trade.signal_id}"
                                                         )
                                                         try:

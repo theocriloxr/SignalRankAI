@@ -272,29 +272,9 @@ async def _resend_unsent_signals_async():
                         else:
                             logger.error(f"[resend] Failed to deliver signal {signal_id} to user {user_id}: {send_err}")
 
-                # If a signal has no pending eligible recipients in the current audience,
-                # expire it to prevent endless re-check noise in subsequent runs.
-                try:
-                    _score = float(getattr(sig, 'score', 0) or 0)
-                    _pending_eligible_any = False
-                    for _uid in user_ids:
-                        if int(_uid) in delivered_user_ids:
-                            continue
-                        _tier = str(user_tier_map.get(int(_uid), "free") or "free").lower()
-                        if delivery_mgr.should_send_signal(_tier, _score, user_id=int(_uid)):
-                            _pending_eligible_any = True
-                            break
-                    if not _pending_eligible_any:
-                        async with get_session() as _exp_s:
-                            from db.pg_features import expire_signal as _expire
-                            await _expire(_exp_s, signal_id)
-                            await _exp_s.commit()
-                        logger.info(
-                            f"[resend] Expired signal {signal_id}: no pending eligible recipients for score={_score:.1f} "
-                            f"under current tier mix {tier_counts}"
-                        )
-                except Exception as _exp_err:
-                    logger.debug(f"[resend] eligibility-expire check failed for {signal_id}: {_exp_err}")
+                # Do NOT expire signals based only on current recipient eligibility.
+                # Eligibility can change (new users, upgrades, daily-limit reset), and
+                # unresolved signals should remain active until real expiry/outcome rules do it.
 
     except Exception as e:
         logger.warning(f"[resend] Job inner error: {e}")
@@ -843,9 +823,8 @@ async def _deliver_or_update_signal_async(
                     signal_id,
                 )
 
-                link = _build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"]))
                 jump_keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Go to signal", url=link)]]
+                    [[InlineKeyboardButton("Go to signal", callback_data=f"open_signal_{signal_id[:36]}")]]
                 )
                 await bot.send_message(
                     chat_id=int(telegram_user_id),
@@ -3245,6 +3224,58 @@ def run_bot() -> None:
             await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="Markdown")
 
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
+
+    # 🔗 Open latest active signal message for this signal
+    async def _open_signal_callback(update, context):
+        query = update.callback_query
+        raw = (query.data or "").replace("open_signal_", "", 1).strip()
+        if not raw:
+            await query.answer("Signal reference missing.", show_alert=True)
+            return
+
+        try:
+            from sqlalchemy import select as _sel_os
+            from db.session import get_session as _gs_os
+            from db.models import ActiveSignalMessage as _ASM
+            from db.pg_features import get_or_create_user as _gocu_os
+
+            uid = int(getattr(update.effective_user, "id", 0) or 0)
+            if uid <= 0:
+                await query.answer("Unable to resolve your account.", show_alert=True)
+                return
+
+            await query.answer("Opening signal…")
+
+            async with _gs_os() as _s:
+                _u = await _gocu_os(_s, telegram_user_id=uid)
+                _row = (
+                    await _s.execute(
+                        _sel_os(_ASM)
+                        .where(
+                            _ASM.user_id == int(_u.id),
+                            _ASM.signal_id == str(raw),
+                            _ASM.is_active.is_(True),
+                        )
+                        .order_by(_ASM.id.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                await _s.commit()
+
+            if _row is None:
+                await query.answer("Signal message not found. Use /signals for latest.", show_alert=True)
+                return
+
+            await context.bot.copy_message(
+                chat_id=int(uid),
+                from_chat_id=int(_row.chat_id),
+                message_id=int(_row.message_id),
+            )
+        except Exception as _open_err:
+            logger.debug("[open_signal] error: %s", _open_err)
+            await query.answer("Could not open signal right now.", show_alert=True)
+
+    application.add_handler(_CQH(_open_signal_callback, pattern=r"^open_signal_"))
 
     # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
     async def _check_outcome_callback(update, context):

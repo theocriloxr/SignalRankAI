@@ -145,6 +145,78 @@ def _parse_tp_levels(tp_raw: Any) -> List[float]:
     return []
 
 
+def _build_tp_fallbacks(
+    signal: DictType[str, Any],
+    tp_levels: List[float],
+    min_levels: int,
+) -> List[float]:
+    """Guarantee a minimum number of TP levels for tier presentation.
+
+    Fallback policy:
+    - If TP1 exists, extrapolate additional levels from entry using TP1 distance.
+    - If TP1 missing but entry/SL exist, synthesize TP ladder from risk distance.
+    - Keep direction-consistent ordering (BUY ascending, SELL descending).
+    """
+    if min_levels <= 0:
+        return tp_levels
+
+    # Start from valid positive values only.
+    out: List[float] = []
+    for v in tp_levels:
+        try:
+            fv = float(v)
+            if fv > 0:
+                out.append(fv)
+        except Exception:
+            continue
+
+    if len(out) >= min_levels:
+        return out
+
+    entry = _safe_float(signal.get("entry"))
+    stop_loss = _safe_float(signal.get("stop_loss"))
+    direction = str(signal.get("direction") or "long").strip().lower()
+    is_long = direction in ("long", "buy")
+    sign = 1.0 if is_long else -1.0
+
+    if entry is None:
+        return out
+
+    base_step: Optional[float] = None
+
+    # If we already have TP1, use its distance from entry as the base step.
+    if out:
+        try:
+            base_step = abs(float(out[0]) - float(entry))
+        except Exception:
+            base_step = None
+
+    # Otherwise use risk distance as a proxy and start from 2R (common TP1 convention).
+    if (base_step is None or base_step <= 0) and stop_loss is not None:
+        risk = abs(float(entry) - float(stop_loss))
+        if risk > 0:
+            base_step = risk * 2.0
+
+    if base_step is None or base_step <= 0:
+        return out
+
+    while len(out) < min_levels:
+        n = len(out) + 1
+        if n == 1:
+            candidate = entry + (sign * base_step)
+        else:
+            # TP2, TP3... extend further from entry in equal base steps.
+            candidate = entry + (sign * base_step * n)
+        try:
+            out.append(float(candidate))
+        except Exception:
+            break
+
+    # Direction-consistent ordering for clean display.
+    out = sorted(out, reverse=not is_long)
+    return out
+
+
 def _safe_float(value: Any) -> Optional[float]:
     try:
         return float(value)
@@ -305,6 +377,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     entry = signal.get("entry")
     sl = signal.get("stop_loss")
     tp_levels = _parse_tp_levels(signal.get("take_profit") or signal.get("tp_levels"))
+    tp_levels = _build_tp_fallbacks(signal, tp_levels, min_levels=2)
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
@@ -455,6 +528,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     entry = signal.get("entry")
     sl = signal.get("stop_loss")
     tp_levels = _parse_tp_levels(signal.get("tp_levels") or signal.get("take_profit"))
+    tp_levels = _build_tp_fallbacks(signal, tp_levels, min_levels=3)
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
