@@ -230,7 +230,23 @@ async def _resend_unsent_signals_async():
                             logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {db_err}")
 
                     except Exception as send_err:
-                        logger.error(f"[resend] Failed to deliver signal {signal_id} to user {user_id}: {send_err}")
+                        _err_text = str(send_err or "")
+                        if "bot was blocked by the user" in _err_text.lower():
+                            logger.info(f"[resend] User {user_id} blocked bot; suppressing retries for signal {signal_id}")
+                            try:
+                                async with get_session() as db_session:
+                                    await record_signal_delivery(
+                                        db_session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal_id),
+                                        tier_at_send=f"{str(user_tier)[:8]}_blk",
+                                    )
+                                    await db_session.commit()
+                                delivered_user_ids.add(int(user_id))
+                            except Exception:
+                                pass
+                        else:
+                            logger.error(f"[resend] Failed to deliver signal {signal_id} to user {user_id}: {send_err}")
 
     except Exception as e:
         logger.warning(f"[resend] Job inner error: {e}")

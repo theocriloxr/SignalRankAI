@@ -1,6 +1,7 @@
 from engine.tier_notifications import TierNotificationManager
 from datetime import datetime, timezone
 import os
+from core.tier_constants import TIER_SCORE_THRESHOLDS
 
 # Initialize tier notification manager
 _tier_notifier = TierNotificationManager()
@@ -28,20 +29,11 @@ def _get_user_tier(user_tier: str | None) -> str:
 def _should_send_signal_for_tier(user_tier: str, score: float) -> bool:
 	"""Check if signal should be sent to this tier based on quality."""
 	tier = _get_user_tier(user_tier)
-	
-	# FREE: only 80%+ quality signals
-	if tier == TIER_FREE:
-		return score >= 80.0
-	
-	# PREMIUM: 65%+ signals (high & medium confidence)
-	if tier == TIER_PREMIUM:
-		return score >= 65.0
-	
-	# VIP/ADMIN/OWNER: all signals, but filtered quality-first
-	if tier == TIER_VIP:
-		return score >= 55.0  # Accept lower scores, but will show differently
-	
-	return True
+	try:
+		min_score = float(TIER_SCORE_THRESHOLDS.get(tier, 70) or 70)
+	except Exception:
+		min_score = 70.0
+	return float(score or 0) >= min_score
 
 def _risk_suggestion(score: float | int | None) -> str:
 	try:
