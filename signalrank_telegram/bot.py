@@ -31,7 +31,7 @@ async def _resend_unsent_signals_async():
         from db.session import get_session
         from db.pg_features import list_active_signals, get_signal_outcome_status, record_signal_delivery
         from signalrank_telegram.tier_delivery import TierDeliveryManager
-        from core.redis_state import was_signal_delivered_sync
+        from core.redis_state import was_signal_delivered_sync, mark_signal_delivered_sync
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
         import asyncio
@@ -45,6 +45,11 @@ async def _resend_unsent_signals_async():
         from db.pg_features import list_all_user_telegram_ids
         async with get_session() as _uid_session:
             user_ids = await list_all_user_telegram_ids(_uid_session)
+        # Defensive dedupe: malformed joins or legacy rows can surface duplicates.
+        try:
+            user_ids = sorted({int(uid) for uid in (user_ids or [])})
+        except Exception:
+            user_ids = list(user_ids or [])
 
         # Fetch signals from the last 24 h, limit 100 rows, then rank by score
         async with get_session() as session:
@@ -80,6 +85,26 @@ async def _resend_unsent_signals_async():
                 signal_id = str(getattr(sig, 'signal_id', '') or '')
                 if not signal_id:
                     continue
+
+                # DB-backed dedupe for this signal (survives process restarts).
+                delivered_user_ids: set[int] = set()
+                try:
+                    from sqlalchemy import select
+                    from db.models import SignalDelivery, User
+                    async with get_session() as _deliv_s:
+                        _q = (
+                            select(User.telegram_user_id)
+                            .join(SignalDelivery, SignalDelivery.user_id == User.id)
+                            .where(SignalDelivery.signal_id == signal_id)
+                        )
+                        _rows = await _deliv_s.execute(_q)
+                        delivered_user_ids = {
+                            int(v)
+                            for v in (_rows.scalars().all() or [])
+                            if v is not None
+                        }
+                except Exception as _deliv_err:
+                    logger.debug(f"[resend] delivery prefetch failed for {signal_id}: {_deliv_err}")
 
                 # ── Fix 1: 50-minute cutoff — skip stale signals ──────────────────
                 try:
@@ -122,6 +147,10 @@ async def _resend_unsent_signals_async():
 
                 for user_id in user_ids:
                     try:
+                        if int(user_id) in delivered_user_ids:
+                            mark_signal_delivered_sync(int(user_id), signal_id)
+                            continue
+
                         # Fast Redis / in-memory dedup first
                         if was_signal_delivered_sync(user_id, signal_id):
                             continue
@@ -139,6 +168,12 @@ async def _resend_unsent_signals_async():
                         # Format and send
                         display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
                         text = format_signal(sig_dict, display_tier=display_tier)
+                        if not text or not str(text).strip():
+                            logger.info(
+                                f"[resend] Skipped signal {signal_id} for user {user_id} "
+                                f"(tier={user_tier}): formatter returned empty text"
+                            )
+                            continue
                         try:
                             await _send_with_retry(int(user_id), text)
                         except Exception as send_err:
@@ -160,6 +195,8 @@ async def _resend_unsent_signals_async():
                                 logger.info(f"[resend] DB tracked delivery: signal {signal_id} to user {user_id} (tier={user_tier})")
                             else:
                                 logger.info(f"[resend] DB deduped: signal {signal_id} to user {user_id} (tier={user_tier})")
+                            mark_signal_delivered_sync(int(user_id), signal_id)
+                            delivered_user_ids.add(int(user_id))
                         except Exception as db_err:
                             logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {db_err}")
 

@@ -1,21 +1,23 @@
 """Shared tier constants and limits for signal delivery."""
 
+from typing import Final
+
 # Tier daily signal limits
-TIER_DAILY_LIMITS = {
-    "free": 2,
-    "premium": 20,
+TIER_DAILY_LIMITS: Final[dict[str, float]] = {
+    "free": 3,
+    "premium": float('inf'),
     "vip": float('inf'),
     "owner": float('inf'),
     "admin": float('inf'),
 }
 
 # Tier quality score thresholds
-TIER_SCORE_THRESHOLDS = {
-    "free": 70,
-    "premium": 55,
-    "vip": 45,
-    "owner": 45,
-    "admin": 45,
+TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
+    "free": 55,
+    "premium": 65,
+    "vip": 65,
+    "owner": 65,
+    "admin": 65,
 }
 
 # Signal freshness: max age in seconds before signal is considered stale

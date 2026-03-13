@@ -367,7 +367,6 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     from db.session import get_engine_for_event_loop, get_session
     from db.models import Signal, AdminEvent
-    from signalrank_telegram.formatter import format_signal
     from engine.market_state import get_market_state_async
     from engine.strategies.signal_generator import SignalGenerator
 
@@ -487,6 +486,8 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     strategy_group=str(best_signal.strategy_group),
                     strength=float(best_signal.confidence or 0.0),
                     fingerprint=f"{best_asset}_{best_tf}_{best_signal.direction}_{int(float(best_signal.entry) or 0)}",
+                    archived=True,
+                    expired=True,
                     expires_at=expires_at,
                 )
             )
