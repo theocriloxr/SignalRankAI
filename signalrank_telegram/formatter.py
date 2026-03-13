@@ -733,7 +733,7 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 		"VIP and Premium users are entering this trade right now.",
 		"Don't miss the move.",
 		"",
-		f"[ 🔓 Unlock Signal Now ({price_k}/mo) — /upgrade ]",
+		f"[ 🔓 Unlock Signal Now /upgrade ]",
 	]
 
 	return "\n".join(lines)

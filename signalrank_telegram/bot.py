@@ -674,30 +674,12 @@ def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: d
         InlineKeyboardButton(f"👀 Watching ({watching})", callback_data=f"signal_reaction_{signal_id}|watching"),
     ]]
 
-    if signal:
-        try:
-            import json as _j
-            asset = str(signal.get("asset") or "")
-            direction = str(signal.get("direction") or "").lower()
-            entry = signal.get("entry") or 0
-            stop_loss = signal.get("stop_loss") or 0
-            tp_raw = signal.get("take_profit") or signal.get("tp_levels") or 0
-            if isinstance(tp_raw, list) and tp_raw:
-                take_profit = tp_raw[0]
-            elif isinstance(tp_raw, str):
-                try:
-                    parsed = _j.loads(tp_raw)
-                    take_profit = parsed[0] if isinstance(parsed, list) and parsed else parsed
-                except Exception:
-                    take_profit = tp_raw
-            else:
-                take_profit = tp_raw or 0
-            sid8 = str(signal_id)[:8]
-            callback = f"mt5_trade_{sid8}|{asset}|{direction}|{entry}|{stop_loss}|{take_profit}"
-            if asset and direction and len(callback.encode()) <= 64:
-                rows.append([InlineKeyboardButton("⚡ Take Trade", callback_data=callback)])
-        except Exception as exc:
-            logger.debug(f"[keyboard] take trade button build failed: {exc}")
+    # Always include compact callback payload so button remains available
+    # even when detailed numeric payload would exceed Telegram's 64-byte limit.
+    if str(signal_id or "").strip():
+        rows.append([
+            InlineKeyboardButton("⚡ Take Trade", callback_data=f"mt5_trade_{str(signal_id)[:36]}")
+        ])
 
     rows.append([
         InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
@@ -1000,6 +982,157 @@ async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | N
         f"• Updated: <b>{datetime.utcnow().strftime('%H:%M UTC')}</b>",
     ]
     return "\n".join(lines), is_active, payload.get("expires_at")
+
+
+def _parse_tp_levels_for_outcome(tp_raw) -> list[float]:
+    import json
+    if tp_raw is None:
+        return []
+    if isinstance(tp_raw, (int, float)):
+        return [float(tp_raw)]
+    if isinstance(tp_raw, (list, tuple)):
+        out = []
+        for item in tp_raw:
+            try:
+                if isinstance(item, dict):
+                    candidate = item.get("price") or item.get("tp") or item.get("target")
+                else:
+                    candidate = item
+                out.append(float(candidate))
+            except Exception:
+                continue
+        return [x for x in out if x > 0]
+    s = str(tp_raw).strip()
+    if not s:
+        return []
+    try:
+        data = json.loads(s)
+        return _parse_tp_levels_for_outcome(data)
+    except Exception:
+        pass
+    try:
+        return [float(s)]
+    except Exception:
+        return []
+
+
+def evaluate_signal_outcome_from_candles(
+    *,
+    entry: float,
+    stop_loss: float,
+    tp_levels: list[float],
+    direction: str,
+    candles: list[dict[str, object]],
+) -> dict[str, object]:
+    """Pure evaluator used by outcome tracker and integration tests.
+
+    Returns dict with status in {tp1,tp2,tp3,sl,invalidated,missed,None}.
+    """
+    try:
+        d = str(direction or "long").lower().strip()
+        if d not in {"long", "short"}:
+            return {"status": None, "entry_filled": False, "entry_filled_at": None, "max_tp_hit": 0}
+
+        levels = [float(x) for x in (tp_levels or []) if x is not None]
+        if not levels:
+            return {"status": None, "entry_filled": False, "entry_filled_at": None, "max_tp_hit": 0}
+        levels = sorted(levels) if d == "long" else sorted(levels, reverse=True)
+
+        entry_filled = False
+        entry_filled_at = None
+        max_tp_hit = 0
+        invalidated = False
+        status = None
+
+        for c in candles or []:
+            try:
+                hi = float(c.get("high"))
+                lo = float(c.get("low"))
+            except Exception:
+                continue
+
+            if not entry_filled:
+                if (d == "long" and lo <= float(stop_loss)) or (d == "short" and hi >= float(stop_loss)):
+                    invalidated = True
+                    break
+                if lo <= float(entry) <= hi:
+                    entry_filled = True
+                    entry_filled_at = c.get("timestamp")
+                continue
+
+            if d == "long":
+                hit_sl = lo <= float(stop_loss)
+                tp_hit_now = 0
+                for idx, tp_price in enumerate(levels, start=1):
+                    if hi >= float(tp_price):
+                        tp_hit_now = idx
+            else:
+                hit_sl = hi >= float(stop_loss)
+                tp_hit_now = 0
+                for idx, tp_price in enumerate(levels, start=1):
+                    if lo <= float(tp_price):
+                        tp_hit_now = idx
+
+            if hit_sl:
+                status = "sl"
+                break
+            if tp_hit_now > max_tp_hit:
+                max_tp_hit = tp_hit_now
+
+        if status is None and max_tp_hit > 0:
+            status = "tp3" if max_tp_hit >= 3 else ("tp2" if max_tp_hit == 2 else "tp1")
+
+        if invalidated:
+            status = "invalidated"
+        elif (not entry_filled) and status is None:
+            status = "missed"
+
+        return {
+            "status": status,
+            "entry_filled": entry_filled,
+            "entry_filled_at": entry_filled_at,
+            "max_tp_hit": int(max_tp_hit),
+            "tp_levels": levels,
+        }
+    except Exception:
+        return {"status": None, "entry_filled": False, "entry_filled_at": None, "max_tp_hit": 0}
+
+
+async def _refresh_signal_keyboards_for_all_recipients(signal_id: str, bot_obj) -> None:
+    """Update vote counters across all active messages for the signal."""
+    try:
+        from sqlalchemy import select
+        from db.session import get_session
+        from db.models import ActiveSignalMessage
+
+        payload = await _load_signal_payload(signal_id)
+        counts = await _load_signal_engagement_counts(signal_id)
+        keyboard = _build_signal_keyboard(signal_id, signal=payload, counts=counts)
+
+        async with get_session() as session:
+            rows = (
+                await session.execute(
+                    select(ActiveSignalMessage).where(
+                        ActiveSignalMessage.signal_id == str(signal_id),
+                        ActiveSignalMessage.is_active.is_(True),
+                    )
+                )
+            ).scalars().all()
+
+            for row in rows:
+                try:
+                    await bot_obj.edit_message_reply_markup(
+                        chat_id=int(row.chat_id),
+                        message_id=int(row.message_id),
+                        reply_markup=keyboard,
+                    )
+                except Exception as exc:
+                    if "message is not modified" not in str(exc).lower():
+                        logger.debug(f"[engagement] global keyboard refresh failed: {exc}")
+
+            await session.commit()
+    except Exception as exc:
+        logger.debug(f"[engagement] failed to refresh keyboards: {exc}")
 
 
 async def _send_signal_with_engagement_async(
@@ -2714,6 +2847,10 @@ def run_bot() -> None:
             except Exception as markup_exc:
                 if "message is not modified" not in str(markup_exc).lower():
                     logger.debug(f"[engagement] reply markup refresh failed: {markup_exc}")
+            try:
+                await _refresh_signal_keyboards_for_all_recipients(signal_id, context.bot)
+            except Exception as refresh_exc:
+                logger.debug(f"[engagement] global keyboard refresh failed: {refresh_exc}")
             emoji = "🔥" if reaction == "taking_it" else "👀"
             await query.answer(f"{emoji} Noted!", show_alert=False)
         except Exception as exc:
@@ -2800,11 +2937,10 @@ def run_bot() -> None:
             logger.debug(f"[monitor] callback failed: {exc}")
             await query.answer("⚠️ Could not open monitor right now.", show_alert=True)
 
-    application.add_handler(CallbackQueryHandler(_signal_monitor_callback, pattern=r"^monitor_signal_"))
+    application.add_handler(_CQH(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
     # ⚡ Take Trade — one-click MT5 execution (PREMIUM/VIP) or upsell (FREE)
     # Callback data: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
-    from telegram.ext import CallbackQueryHandler
     async def _mt5_trade_callback(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
@@ -2838,8 +2974,32 @@ def run_bot() -> None:
 
         await query.answer()
         try:
-            parts = (query.data or "").replace("mt5_trade_", "", 1).split("|")
-            signal_id, asset, direction, entry, sl, tp = parts[0], parts[1], parts[2], float(parts[3]), float(parts[4]), float(parts[5])
+            raw = (query.data or "").replace("mt5_trade_", "", 1).strip()
+            signal_id = ""
+            asset = ""
+            direction = ""
+            entry = 0.0
+            sl = 0.0
+            tp = 0.0
+
+            # Backward-compatible parser (legacy payload with all fields)
+            if "|" in raw:
+                parts = raw.split("|")
+                signal_id, asset, direction = parts[0], parts[1], parts[2]
+                entry, sl, tp = float(parts[3]), float(parts[4]), float(parts[5])
+            else:
+                # Compact payload: mt5_trade_<signal_id>
+                signal_id = raw
+                payload = await _load_signal_payload(signal_id)
+                if not payload:
+                    await query.edit_message_text("❌ Signal data unavailable for this trade.")
+                    return
+                asset = str(payload.get("asset") or "").upper().strip()
+                direction = str(payload.get("direction") or "").lower().strip()
+                entry = float(payload.get("entry") or 0)
+                sl = float(payload.get("stop_loss") or 0)
+                tp = float(_first_take_profit(payload) or 0)
+
         except Exception:
             await query.edit_message_text("❌ Invalid trade button data.")
             return
@@ -2943,7 +3103,7 @@ def run_bot() -> None:
         except Exception as exc:
             await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="Markdown")
 
-    application.add_handler(CallbackQueryHandler(_mt5_trade_callback, pattern=r"^mt5_trade_"))
+    application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 
     # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
     async def _check_outcome_callback(update, context):
@@ -2994,7 +3154,7 @@ def run_bot() -> None:
             logger.debug("[check_outcome] error: %s", _oc_err)
             await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
 
-    application.add_handler(CallbackQueryHandler(_check_outcome_callback, pattern=r"^check_outcome_"))
+    application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
@@ -3156,9 +3316,15 @@ def run_bot() -> None:
                     current_market_price = None
                     try:
                         from data.market_data import fetch_market_data_cached
-                        mkt = fetch_market_data_cached(asset, timeframe)
-                        if mkt and 'candles' in mkt and mkt['candles']:
-                            current_market_price = mkt['candles'][-1].get('close')
+                        async def _fetch_market_price():
+                            tf = timeframe or "1h"
+                            data = await fetch_market_data_cached(asset, [tf])
+                            payload = data.get(tf) or {}
+                            candles = payload.get("candles") or []
+                            if candles:
+                                return candles[-1].get("close")
+                            return None
+                        current_market_price = run_sync(_fetch_market_price())
                     except Exception as e:
                         logger.debug(f"[outcome] Failed to fetch current market price for {asset}: {e}")
                         pass
@@ -3228,7 +3394,6 @@ def run_bot() -> None:
                 return
             from db.pg_features import list_signals_missing_outcomes, upsert_outcome
             from datetime import datetime
-            import json
             from data.fetcher import get_candles
 
             async def _fetch_candidates():
@@ -3246,28 +3411,6 @@ def run_bot() -> None:
 
             now = datetime.utcnow()
 
-            def _parse_tp(tp_raw):
-                if tp_raw is None:
-                    return None
-                if isinstance(tp_raw, (int, float)):
-                    return float(tp_raw)
-                s = str(tp_raw).strip()
-                if not s:
-                    return None
-                try:
-                    data = json.loads(s)
-                    if isinstance(data, list) and data:
-                        return float(data[0])
-                    if isinstance(data, (int, float)):
-                        return float(data)
-                except Exception as e:
-                    logger.debug(f"[outcome] Failed to parse price from data: {e}")
-                    pass
-                try:
-                    return float(s)
-                except Exception:
-                    return None
-
             def _ms(dt):
                 try:
                     return int(dt.timestamp() * 1000)
@@ -3282,12 +3425,18 @@ def run_bot() -> None:
                     direction = str(getattr(sig, "direction", "") or "").lower().strip()
                     entry = float(getattr(sig, "entry"))
                     sl = float(getattr(sig, "stop_loss"))
-                    tp = _parse_tp(getattr(sig, "take_profit", None))
+                    tp_levels = _parse_tp_levels_for_outcome(getattr(sig, "take_profit", None))
                     created_at = getattr(sig, "created_at", None)
                     if not asset or not tf or direction not in {"long", "short"}:
                         continue
-                    if tp is None or created_at is None:
+                    if not tp_levels or created_at is None:
                         continue
+
+                    # Normalize TP ordering in favorable direction
+                    if direction == "long":
+                        tp_levels = sorted(tp_levels)
+                    else:
+                        tp_levels = sorted(tp_levels, reverse=True)
 
                     print(f"[DEBUG][outcome] Evaluating signal {sig.signal_id} {asset} {tf} {direction}", flush=True)
 
@@ -3338,60 +3487,24 @@ def run_bot() -> None:
                         prev_status = None
 
 
-                    status = None
-                    entry_filled = False
-                    entry_filled_at = None
-                    tp_hits = 0
-                    missed = False
-                    invalidated = False
-                    for c in filtered:
-                        try:
-                            hi = float(c.get("high"))
-                            lo = float(c.get("low"))
-                        except Exception:
-                            continue
-                        ts_val = c.get("timestamp")
-                        # Entry must be filled before tracking SL/TP
-                        if not entry_filled:
-                            # If SL is hit before entry, mark as invalidated
-                            if (direction == "long" and lo <= sl) or (direction == "short" and hi >= sl):
-                                invalidated = True
-                                break
-                            # If price never touches entry, keep waiting
-                            if lo <= entry <= hi:
-                                entry_filled = True
-                                entry_filled_at = ts_val
-                                # Notify entry filled
-                                print(f"[DEBUG][outcome] Entry filled for {sig.signal_id} at {entry_filled_at}", flush=True)
-                            continue
-                        # After entry is filled, track SL/TP
-                        if direction == "long":
-                            hit_sl = lo <= sl
-                            hit_tp = hi >= tp
-                        else:
-                            hit_sl = hi >= sl
-                            hit_tp = lo <= tp
-                        if hit_sl and hit_tp:
-                            status = "sl"
-                            break
-                        if hit_sl:
-                            status = "sl"
-                            break
-                        if hit_tp:
-                            tp_hits += 1
-                            status = f"tp{tp_hits}" if tp_hits <= 3 else "tp"
-                            if tp_hits >= 3:
-                                break
+                    eval_result = evaluate_signal_outcome_from_candles(
+                        entry=entry,
+                        stop_loss=sl,
+                        tp_levels=tp_levels,
+                        direction=direction,
+                        candles=filtered,
+                    )
+                    status = eval_result.get("status")
+                    entry_filled = bool(eval_result.get("entry_filled"))
+                    entry_filled_at = eval_result.get("entry_filled_at")
+                    max_tp_hit = int(eval_result.get("max_tp_hit") or 0)
 
-                    # If entry never filled and candles are exhausted, mark as missed
-                    if not entry_filled and not invalidated:
-                        missed = True
+                    if entry_filled and entry_filled_at is not None:
+                        print(f"[DEBUG][outcome] Entry filled for {sig.signal_id} at {entry_filled_at}", flush=True)
 
-                    if invalidated:
-                        status = "invalidated"
+                    if status == "invalidated":
                         print(f"[DEBUG][outcome] Signal {sig.signal_id} invalidated: SL hit before entry", flush=True)
-                    elif missed:
-                        status = "missed"
+                    elif status == "missed":
                         print(f"[DEBUG][outcome] Signal {sig.signal_id} missed: entry never touched", flush=True)
                     elif status is None:
                         continue
@@ -3410,7 +3523,8 @@ def run_bot() -> None:
                             pass
 
                     risk = abs(entry - sl)
-                    reward = abs(tp - entry)
+                    tp_exit = tp_levels[min(max(max_tp_hit, 1), len(tp_levels)) - 1] if tp_levels else entry
+                    reward = abs(float(tp_exit) - entry)
                     r_mult = None
                     pct = None
                     try:
@@ -3421,9 +3535,9 @@ def run_bot() -> None:
                                 r_mult = -1.0
                         if status.startswith("tp"):
                             if direction == "long":
-                                pct = ((tp - entry) / entry) * 100.0
+                                pct = ((float(tp_exit) - entry) / entry) * 100.0
                             else:
-                                pct = ((entry - tp) / entry) * 100.0
+                                pct = ((entry - float(tp_exit)) / entry) * 100.0
                         else:
                             if direction == "long":
                                 pct = -((entry - sl) / entry) * 100.0
@@ -3436,7 +3550,9 @@ def run_bot() -> None:
                     meta = {
                         "source": "candle_scan",
                         "evaluated_at": now.isoformat(),
-                        "tp": tp,
+                        "tp_levels": tp_levels,
+                        "tp_hit_index": max_tp_hit if max_tp_hit > 0 else None,
+                        "tp_exit": float(tp_exit) if status and status.startswith("tp") else None,
                         "sl": sl,
                     }
                     entry_filled_dt = None
