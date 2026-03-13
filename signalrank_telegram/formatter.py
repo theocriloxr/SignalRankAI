@@ -484,6 +484,24 @@ def _get_signal_age_indicator(signal: dict) -> str:
 		days = int(age_hours / 24)
 		return f"📆 {days}d ago"
 
+def _normalize_ml_probability_pct(value) -> float | None:
+	"""Normalize ML probability to percentage.
+
+	Accepts either a fraction (0..1) or a percent-style value (0..100).
+	Returns None when unavailable/invalid.
+	"""
+	try:
+		v = float(value)
+	except Exception:
+		return None
+	if v < 0:
+		return None
+	if v <= 1.0:
+		v *= 100.0
+	if v > 100.0:
+		v = 100.0
+	return v
+
 def _get_price_context(signal: dict) -> str:
 	"""Get price context string showing current price vs entry."""
 	current_price = signal.get('current_price')
@@ -817,7 +835,7 @@ def format_signal_vip_new(signal: dict) -> str:
 		if rr_ratio in (0, 0.0, "0", "0.0"):
 			rr_ratio = None
 	confidence = int(signal.get('score', 0))
-	ml_probability = signal.get('ml_probability', 0)
+	ml_probability = signal.get('ml_probability', None)
 	confluence = signal.get('confluence_count', 0) or signal.get('confluence', 0)
 	strategy = signal.get('strategy_name') or signal.get('strategy', 'Multi-Strategy')
 	regime = signal.get('regime', 'N/A')
@@ -928,8 +946,9 @@ def format_signal_vip_new(signal: dict) -> str:
 		lines.append("┃ R/R: N/A")
 	lines.append(f"┃ Confidence: {confidence}/100")
 	
-	if ml_probability:
-		lines.append(f"┃ ML Probability: {int(ml_probability)}%")
+	_ml_pct = _normalize_ml_probability_pct(ml_probability)
+	if _ml_pct is not None:
+		lines.append(f"┃ ML Probability: {int(round(_ml_pct))}%")
 	
 	if confluence:
 		lines.append(f"┃ Confluence: {int(confluence)}%")
