@@ -277,23 +277,25 @@ async def _resend_unsent_signals_async():
                         else:
                             logger.error(f"[resend] Failed to deliver signal {signal_id} to user {user_id}: {send_err}")
 
-                # If a signal has no eligible recipients in the current audience,
+                # If a signal has no pending eligible recipients in the current audience,
                 # expire it to prevent endless re-check noise in subsequent runs.
                 try:
                     _score = float(getattr(sig, 'score', 0) or 0)
-                    _eligible_any = False
+                    _pending_eligible_any = False
                     for _uid in user_ids:
+                        if int(_uid) in delivered_user_ids:
+                            continue
                         _tier = str(user_tier_map.get(int(_uid), "free") or "free").lower()
                         if delivery_mgr.should_send_signal(_tier, _score, user_id=int(_uid)):
-                            _eligible_any = True
+                            _pending_eligible_any = True
                             break
-                    if not _eligible_any:
+                    if not _pending_eligible_any:
                         async with get_session() as _exp_s:
                             from db.pg_features import expire_signal as _expire
                             await _expire(_exp_s, signal_id)
                             await _exp_s.commit()
                         logger.info(
-                            f"[resend] Expired signal {signal_id}: no eligible recipients for score={_score:.1f} "
+                            f"[resend] Expired signal {signal_id}: no pending eligible recipients for score={_score:.1f} "
                             f"under current tier mix {tier_counts}"
                         )
                 except Exception as _exp_err:

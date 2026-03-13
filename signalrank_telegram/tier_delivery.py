@@ -45,7 +45,7 @@ class TierDeliveryManager:
     def __init__(self):
         """Initialize delivery manager."""
         self.delivery_log = []
-    def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
+    def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str | int] = None, session=None) -> bool:
         """Check if signal should be sent to this user based on tier and quality, using Redis for daily limit."""
         import logging
         from utils.async_runner import run_sync
@@ -73,12 +73,13 @@ class TierDeliveryManager:
         # Quality gates (MUST pass)
         min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
         if score < min_score:
-            logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
+            if user_id is not None:
+                logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
 
-    async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str] = None, session=None) -> bool:
+    async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str | int] = None, session=None) -> bool:
         """Async variant of should_send_signal for async contexts."""
         import logging
         from core.tier_constants import TIER_DAILY_LIMITS, TIER_SCORE_THRESHOLDS
@@ -105,7 +106,8 @@ class TierDeliveryManager:
         # Quality gates (MUST pass)
         min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
         if score < min_score:
-            logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
+            if user_id is not None:
+                logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
