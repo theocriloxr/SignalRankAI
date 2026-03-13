@@ -47,16 +47,23 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
     from .stock import stock_strategies
+
+    # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or
+    # 'LONG'/'SHORT' (new). Normalize to 'LONG'/'SHORT'.
+    _DIR_MAP = {'BUY': 'LONG', 'SELL': 'SHORT', 'LONG': 'LONG', 'SHORT': 'SHORT'}
+
     for timeframe, data in market_data.items():
         if not isinstance(data, dict):
             continue
         if 'indicators' not in data or 'candles' not in data:
             continue
+
         # Only allow lower timeframe trades in direction of HTF bias
         if timeframe in ["5m", "15m", "1h"] and htf_bias:
             allowed_direction = htf_bias
         else:
             allowed_direction = None
+
         # Determine which groups to run.
         # Default: run ALL strategy groups, then let consensus + scoring pick the winner.
         if run_all:
@@ -74,44 +81,40 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     groups = ["volatility", "structure", "tradingview"]
                 else:
                     groups = ["structure", "tradingview"]
-    # Round-robin across all strategy groups; collect into `signals`
-    # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or 'LONG'/'SHORT' (new).
-    # Normalise to 'LONG'/'SHORT' so the engine pipeline is consistent.
-    _DIR_MAP = {'BUY': 'LONG', 'SELL': 'SHORT', 'LONG': 'LONG', 'SHORT': 'SHORT'}
 
-    def _add(sig):
-        """Normalize direction, apply HTF filter and weight, then append."""
-        sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
-        if allowed_direction and sig.get('direction') != allowed_direction:
-            return
-        if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
-            sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
-            signals.append(sig)
+        def _add(sig):
+            """Normalize direction, apply HTF filter and weight, then append."""
+            sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
+            if allowed_direction and sig.get('direction') != allowed_direction:
+                return
+            if not strategy_weights or strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) > 0:
+                sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
+                signals.append(sig)
 
-    if "trend" in groups:
-        for sig in trend_strategies(asset, timeframe, data):
-            _add(sig)
-    if "stock" in groups:
-        for sig in stock_strategies(asset, timeframe, data):
-            _add(sig)
-    if "momentum" in groups:
-        for sig in momentum_strategies(asset, timeframe, data):
-            _add(sig)
-    if "volatility" in groups:
-        for sig in volatility_strategies(asset, timeframe, data):
-            _add(sig)
-    if "structure" in groups:
-        for sig in structure_strategy(asset, timeframe, data):
-            _add(sig)
-    if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
-        try:
-            for sig in tradingview_strategies(asset, timeframe, data):
+        if "trend" in groups:
+            for sig in trend_strategies(asset, timeframe, data):
                 _add(sig)
-        except Exception as e:
+        if "stock" in groups:
+            for sig in stock_strategies(asset, timeframe, data):
+                _add(sig)
+        if "momentum" in groups:
+            for sig in momentum_strategies(asset, timeframe, data):
+                _add(sig)
+        if "volatility" in groups:
+            for sig in volatility_strategies(asset, timeframe, data):
+                _add(sig)
+        if "structure" in groups:
+            for sig in structure_strategy(asset, timeframe, data):
+                _add(sig)
+        if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
             try:
-                import logging
-                logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
-            except Exception:
-                pass
+                for sig in tradingview_strategies(asset, timeframe, data):
+                    _add(sig)
+            except Exception as e:
+                try:
+                    import logging
+                    logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
+                except Exception:
+                    pass
     
     return signals

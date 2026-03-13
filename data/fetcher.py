@@ -265,17 +265,6 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     - Binance/Bybit → Yahoo Finance (free, works worldwide) → CryptoCompare
     - Yahoo requires symbol conversion: BTCUSDT → BTC-USD
     """
-    from .providers import fetch_yahoo_candles
-    
-    # Convert BTCUSDT → BTC-USD for Yahoo Finance
-    yahoo_symbol = asset.upper()
-    if yahoo_symbol.endswith("USDT"):
-        base = yahoo_symbol[:-4]  # Remove USDT
-        yahoo_symbol = f"{base}-USD"
-    elif yahoo_symbol.endswith("USD") and not yahoo_symbol.endswith("-USD"):
-        base = yahoo_symbol[:-3]  # Remove USD
-        yahoo_symbol = f"{base}-USD"
-    
     # Build provider list from connector registry (prefer connectors)
     from data.connector_registry import get_providers_for_asset
 
@@ -283,7 +272,7 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     providers = []
     # Wrap provider callables to accept timeout kw param used by retry_with_backoff
     for name, fn in provs:
-        providers.append((name, lambda timeout=10, _fn=fn: _fn(yahoo_symbol, timeframe, timeout=timeout)))
+        providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
@@ -1156,17 +1145,7 @@ async def async_get_candles(asset, timeframe):
         healthy = [p for p in provs if provider_is_healthy(p[0])]
         unhealthy = [p for p in provs if not provider_is_healthy(p[0])]
 
-        # For crypto we may need a Yahoo-style symbol for certain legacy providers
         symbol_for_providers = asset
-        if asset_type == "crypto":
-            yahoo_symbol = (asset or "").upper()
-            if yahoo_symbol.endswith("USDT"):
-                base = yahoo_symbol[:-4]
-                yahoo_symbol = f"{base}-USD"
-            elif yahoo_symbol.endswith("USD") and not yahoo_symbol.endswith("-USD"):
-                base = yahoo_symbol[:-3]
-                yahoo_symbol = f"{base}-USD"
-            symbol_for_providers = yahoo_symbol
 
         # Try healthy first, then unhealthy
         for provider_name, fetch_fn in healthy + unhealthy:

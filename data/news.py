@@ -68,7 +68,10 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
                 for art in articles[:10]:
                     title = art.get("title", "")
                     pub = datetime.fromtimestamp(art.get("published_on", 0), tz=timezone.utc).isoformat()
-                    score = simple_sentiment_score(title + " " + (art.get("body", "")[:200]))
+                    body = art.get("body", "")
+                    if not isinstance(body, str):
+                        body = str(body or "")
+                    score = simple_sentiment_score(title + " " + body[:200])
                     headlines.append((title, pub, score))
         except Exception as e:
             logger.warning(f"CryptoCompare news failed: {e}")

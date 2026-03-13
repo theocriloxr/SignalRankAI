@@ -236,10 +236,21 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     if _is_cooldown_active("yahoo"):
         return []
 
-    # Normalize FX symbols for Yahoo (EURUSD, EUR-USD -> EURUSD=X)
+    # Normalize symbols for Yahoo
+    # - FX: EURUSD / EUR-USD -> EURUSD=X
+    # - Crypto: BTCUSDT -> BTC-USD
+    # - Commodities: XAUUSD -> GC=F, XAGUSD -> SI=F, WTI/WTIUSD -> CL=F
     try:
         s = str(symbol or "").upper().strip().replace("/", "").replace("_", "").replace("-", "")
-        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+        if s in {"XAUUSD", "GOLD"}:
+            symbol = "GC=F"
+        elif s in {"XAGUSD", "SILVER"}:
+            symbol = "SI=F"
+        elif s in {"WTI", "WTIUSD", "CRUDEOIL", "USOIL"}:
+            symbol = "CL=F"
+        elif s.endswith("USDT") and len(s) > 4:
+            symbol = f"{s[:-4]}-USD"
+        elif len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
             # EURUSD, GBPUSD etc
             symbol = f"{s}=X"
     except Exception:

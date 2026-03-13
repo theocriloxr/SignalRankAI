@@ -12,13 +12,35 @@ from utils.async_runner import run_sync
 
 
 def _normalize_symbol(symbol: str) -> str:
-    # Common mapping: BTCUSDT -> BTC-USD, ETHUSDT -> ETH-USD
-    s = symbol.strip()
-    if s.upper().endswith("USDT"):
-        base = s[:-4]
-        return f"{base}-USD"
-    if len(s) >= 4 and s[-3:] == "USD" and "-" not in s:
-        return s[:-3] + "-USD"
+    # Unified mapping to Yahoo-compatible symbols.
+    s = (symbol or "").upper().strip().replace("/", "").replace("_", "")
+    if not s:
+        return s
+
+    overrides = {
+        "XAUUSD": "GC=F",
+        "XAGUSD": "SI=F",
+        "WTI": "CL=F",
+        "WTIUSD": "CL=F",
+        "CRUDEOIL": "CL=F",
+        "NATGAS": "NG=F",
+    }
+    if s in overrides:
+        return overrides[s]
+
+    # FX majors/crosses: EURUSD -> EURUSD=X
+    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+        return f"{s}=X"
+
+    # Crypto pairs: BTCUSDT -> BTC-USD, BTCUSD -> BTC-USD
+    if s.endswith("USDT") and len(s) > 4:
+        return f"{s[:-4]}-USD"
+    if s.endswith("USD") and len(s) > 3:
+        base = s[:-3]
+        crypto_bases = {"BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK", "MATIC"}
+        if base in crypto_bases:
+            return f"{base}-USD"
+
     return s
 
 
