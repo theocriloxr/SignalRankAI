@@ -5,6 +5,7 @@ VIP      : 🚨 VIP SIGNAL DETECTED
 """
 
 import json
+from datetime import datetime, timezone
 from typing import Any, Dict as DictType, List, Optional
 
 
@@ -144,6 +145,124 @@ def _parse_tp_levels(tp_raw: Any) -> List[float]:
     return []
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _compute_rr(entry: Any, stop_loss: Any, take_profit: Any) -> Optional[float]:
+    entry_f = _safe_float(entry)
+    stop_f = _safe_float(stop_loss)
+    tp_f = _safe_float(take_profit)
+    if entry_f is None or stop_f is None or tp_f is None:
+        return None
+    risk = abs(entry_f - stop_f)
+    if risk <= 0:
+        return None
+    return abs(tp_f - entry_f) / risk
+
+
+def _expected_move_pct(entry: Any, target: Any, direction: str) -> Optional[float]:
+    entry_f = _safe_float(entry)
+    target_f = _safe_float(target)
+    if entry_f is None or target_f is None or entry_f == 0:
+        return None
+    if str(direction).lower() in ("short", "sell"):
+        return ((entry_f - target_f) / entry_f) * 100.0
+    return ((target_f - entry_f) / entry_f) * 100.0
+
+
+def _signal_age_text(signal: DictType[str, Any]) -> Optional[str]:
+    created_at = signal.get("created_at")
+    if not created_at:
+        return None
+    try:
+        if isinstance(created_at, str):
+            created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        else:
+            created = created_at
+        if getattr(created, "tzinfo", None) is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_minutes = int((datetime.now(timezone.utc) - created).total_seconds() / 60)
+        return f"{age_minutes}m"
+    except Exception:
+        return None
+
+
+def _expiry_text(signal: DictType[str, Any]) -> Optional[str]:
+    expires_at = signal.get("expires_at")
+    if not expires_at:
+        return None
+    try:
+        if isinstance(expires_at, str):
+            expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        else:
+            expiry = expires_at
+        if getattr(expiry, "tzinfo", None) is None:
+            expiry = expiry.replace(tzinfo=timezone.utc)
+        remaining = int((expiry - datetime.now(timezone.utc)).total_seconds() / 60)
+        if remaining <= 0:
+            return "expired"
+        if remaining >= 60:
+            return f"{remaining // 60}h {remaining % 60}m"
+        return f"{remaining}m"
+    except Exception:
+        return None
+
+
+def _freshness_text(signal: DictType[str, Any]) -> str:
+    age_seconds = _safe_float(signal.get("data_age_seconds"))
+    if age_seconds is None:
+        age_text = _signal_age_text(signal)
+        return age_text or "Live"
+    if age_seconds <= 60:
+        return "Live"
+    if age_seconds <= 300:
+        return "Fresh"
+    if age_seconds <= 900:
+        return "Warm"
+    return "Aging"
+
+
+def _score_blurb(signal: DictType[str, Any]) -> str:
+    score = _safe_float(signal.get("score") or signal.get("confidence")) or 0.0
+    ml_prob = _safe_float(signal.get("ml_probability"))
+    confluence = _safe_float(signal.get("confluence") or signal.get("confluence_count"))
+    parts: List[str] = []
+    if score >= 85:
+        parts.append("high-conviction")
+    elif score >= 70:
+        parts.append("strong setup")
+    else:
+        parts.append("qualified setup")
+    if ml_prob is not None:
+        if ml_prob <= 1.0:
+            ml_prob *= 100.0
+        parts.append(f"ML {ml_prob:.0f}%")
+    if confluence:
+        parts.append(f"confluence {int(confluence)}")
+    return " • ".join(parts)
+
+
+def _suggested_size_text(signal: DictType[str, Any]) -> Optional[str]:
+    suggested = _safe_float(signal.get("suggested_position_size") or signal.get("position_size") or signal.get("lot_size"))
+    if suggested is not None and suggested > 0:
+        return f"{suggested:.2f} units"
+    entry = _safe_float(signal.get("entry"))
+    stop_loss = _safe_float(signal.get("stop_loss"))
+    if entry is None or stop_loss is None:
+        return None
+    risk_distance = abs(entry - stop_loss)
+    if risk_distance <= 0:
+        return None
+    size = 100.0 / risk_distance
+    if size <= 0:
+        return None
+    return f"{size:.2f} units (1% risk proxy)"
+
+
 # ---------------------------------------------------------------------------
 # PREMIUM signal formatter
 # ---------------------------------------------------------------------------
@@ -186,6 +305,13 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     entry = signal.get("entry")
     sl = signal.get("stop_loss")
     tp_levels = _parse_tp_levels(signal.get("take_profit") or signal.get("tp_levels"))
+    rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
+    expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
+    expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
+    freshness = _freshness_text(signal)
+    age_text = _signal_age_text(signal)
+    expiry_text = _expiry_text(signal)
+    suggested_size = _suggested_size_text(signal)
 
     lines = [
         "🚨 <b>PREMIUM SIGNAL DETECTED</b> 🚨",
@@ -239,6 +365,29 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
                 lines.append(f"⚖️ Risk/Reward: 1:{rr_val:.1f}")
         except Exception:
             pass
+    elif rr_calc is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{rr_calc:.1f}")
+
+    if expected_profit is not None:
+        lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
+    if expected_loss is not None:
+        loss_display = -abs(expected_loss)
+        lines.append(f"🛡️ Expected Loss: {loss_display:.2f}%")
+
+    strategy = signal.get("strategy_name") or signal.get("strategy")
+    regime = signal.get("regime") or signal.get("market_regime")
+    if strategy:
+        lines.append(f"🧭 Strategy: {_h(str(strategy))}")
+    if regime:
+        lines.append(f"🌍 Regime: {_h(str(regime))}")
+    if suggested_size:
+        lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
+    lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
+    lines.append(f"🕒 Freshness: {_h(freshness)}")
+    if age_text:
+        lines.append(f"⏳ Age: {_h(age_text)}")
+    if expiry_text:
+        lines.append(f"⌛ Expires: {_h(expiry_text)}")
 
     # Session / timeframe / signal ref
     session = signal.get("session") or signal.get("market_session", "")
@@ -306,6 +455,13 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     entry = signal.get("entry")
     sl = signal.get("stop_loss")
     tp_levels = _parse_tp_levels(signal.get("tp_levels") or signal.get("take_profit"))
+    rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
+    expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
+    expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
+    freshness = _freshness_text(signal)
+    age_text = _signal_age_text(signal)
+    expiry_text = _expiry_text(signal)
+    suggested_size = _suggested_size_text(signal)
 
     # R/R — use last TP for best-case calculation
     rr = signal.get("risk_reward") or signal.get("rr_ratio") or signal.get("rr_estimate")
@@ -404,6 +560,14 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
                 lines.append(f"⚖️ Risk/Reward: 1:{rr_val:.1f}")
         except Exception:
             pass
+    elif rr_calc is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{rr_calc:.1f}")
+
+    if expected_profit is not None:
+        lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
+    if expected_loss is not None:
+        loss_display = -abs(expected_loss)
+        lines.append(f"🛡️ Expected Loss: {loss_display:.2f}%")
 
     # Invalidation level
     invalidation = signal.get("invalidation") or signal.get("invalidation_level")
@@ -418,6 +582,17 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     session = signal.get("session") or signal.get("market_session", "")
     if session:
         lines.append(f"⏱️ Session: {_h(str(session))}")
+    strategy = signal.get("strategy_name") or signal.get("strategy")
+    if strategy:
+        lines.append(f"🧭 Strategy: {_h(str(strategy))}")
+    if suggested_size:
+        lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
+    lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
+    lines.append(f"🕒 Freshness: {_h(freshness)}")
+    if age_text:
+        lines.append(f"⏳ Age: {_h(age_text)}")
+    if expiry_text:
+        lines.append(f"⌛ Expires: {_h(expiry_text)}")
     tf = signal.get("timeframe")
     if tf:
         lines.append(f"📐 Timeframe: {_h(str(tf))}")

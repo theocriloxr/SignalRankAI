@@ -123,8 +123,7 @@ async def _resend_unsent_signals_async():
         async def _send_with_retry(chat_id: int, text: str) -> None:
             while True:
                 try:
-                    await bot.send_message(chat_id=int(chat_id), text=text)
-                        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
+                    await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
                     return
                 except RetryAfter as e:
                     await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
