@@ -19,10 +19,45 @@ def resend_unsent_signals_job():
     except Exception as _pre_err:
         logger.warning("[resend] DB engine pre-flight failed: %s", _pre_err)
         return
+    _lock_conn = None
+    try:
+        # Cluster-safe lock (Postgres advisory lock): prevents duplicate resend
+        # runs across multiple Railway instances when Redis is unavailable.
+        import os
+        import psycopg2
+        _dsn = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or "").strip()
+        if _dsn.startswith("postgresql+asyncpg://"):
+            _dsn = _dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif _dsn.startswith("postgres://"):
+            _dsn = _dsn.replace("postgres://", "postgresql://", 1)
+
+        if _dsn:
+            _lock_id = int(os.getenv("RESEND_JOB_LOCK_ID", "739206"))
+            _lock_conn = psycopg2.connect(_dsn, connect_timeout=5)
+            _lock_conn.autocommit = True
+            with _lock_conn.cursor() as _cur:
+                _cur.execute("SELECT pg_try_advisory_lock(%s)", (_lock_id,))
+                _locked = bool((_cur.fetchone() or [False])[0])
+            if not _locked:
+                logger.info("[resend] skipped: another instance holds advisory lock")
+                try:
+                    _lock_conn.close()
+                except Exception:
+                    pass
+                return
+    except Exception as _lock_err:
+        logger.debug(f"[resend] advisory lock unavailable, continuing without lock: {_lock_err}")
+
     try:
         run_sync(_resend_unsent_signals_async())
     except Exception:
         logger.exception("[resend] resend_unsent_signals_job failed")
+    finally:
+        if _lock_conn is not None:
+            try:
+                _lock_conn.close()
+            except Exception:
+                pass
 
 
 async def _resend_unsent_signals_async():
@@ -31,7 +66,6 @@ async def _resend_unsent_signals_async():
         from db.session import get_session
         from db.pg_features import list_active_signals, get_signal_outcome_status, record_signal_delivery
         from signalrank_telegram.tier_delivery import TierDeliveryManager
-        from core.redis_state import was_signal_delivered_sync, mark_signal_delivered_sync
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
         import asyncio
@@ -148,17 +182,13 @@ async def _resend_unsent_signals_async():
                 for user_id in user_ids:
                     try:
                         if int(user_id) in delivered_user_ids:
-                            mark_signal_delivered_sync(int(user_id), signal_id)
-                            continue
-
-                        # Fast Redis / in-memory dedup first
-                        if was_signal_delivered_sync(user_id, signal_id):
                             continue
 
                         # Tier, score, and daily-limit gate
                         user_tier = resolve_user_tier(user_id).lower()
                         score = float(getattr(sig, 'score', 0) or 0)
-                        if not delivery_mgr.should_send_signal(user_tier, score, user_id=user_id):
+                        # No Redis dependency in resend flow; DB delivery table is the source of truth.
+                        if not delivery_mgr.should_send_signal(user_tier, score, user_id=None):
                             logger.info(
                                 f"[resend] User {user_id} not eligible for signal {signal_id} "
                                 f"(tier/score/limit), skipping."
@@ -195,7 +225,6 @@ async def _resend_unsent_signals_async():
                                 logger.info(f"[resend] DB tracked delivery: signal {signal_id} to user {user_id} (tier={user_tier})")
                             else:
                                 logger.info(f"[resend] DB deduped: signal {signal_id} to user {user_id} (tier={user_tier})")
-                            mark_signal_delivered_sync(int(user_id), signal_id)
                             delivered_user_ids.add(int(user_id))
                         except Exception as db_err:
                             logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {db_err}")
