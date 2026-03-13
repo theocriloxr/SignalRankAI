@@ -237,7 +237,12 @@ def _start_engine_loop_in_background() -> asyncio.Task:
 
     async def _runner() -> None:
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: main_loop(dry_run))
+        logger.info("[engine] background loop starting")
+        try:
+            await loop.run_in_executor(None, lambda: main_loop(dry_run))
+        except Exception as exc:
+            logger.exception(f"[engine] background loop crashed: {exc}")
+            raise
 
     return asyncio.create_task(_runner())
 

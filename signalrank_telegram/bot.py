@@ -85,6 +85,21 @@ async def _resend_unsent_signals_async():
         except Exception:
             user_ids = list(user_ids or [])
 
+        # Cache user tiers once per run for consistent routing and diagnostics.
+        user_tier_map: dict[int, str] = {}
+        tier_counts: dict[str, int] = {}
+        for _uid in user_ids:
+            try:
+                _tier = str(resolve_user_tier(int(_uid)) or "free").lower()
+            except Exception:
+                _tier = "free"
+            user_tier_map[int(_uid)] = _tier
+            tier_counts[_tier] = int(tier_counts.get(_tier, 0) or 0) + 1
+        try:
+            logger.info(f"[resend] audience users={len(user_ids)} tiers={tier_counts}")
+        except Exception:
+            pass
+
         # Fetch signals from the last 24 h, limit 100 rows, then rank by score
         async with get_session() as session:
             try:
@@ -180,12 +195,12 @@ async def _resend_unsent_signals_async():
                     sig_dict = {}
 
                 for user_id in user_ids:
+                    user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
                     try:
                         if int(user_id) in delivered_user_ids:
                             continue
 
                         # Tier, score, and daily-limit gate
-                        user_tier = resolve_user_tier(user_id).lower()
                         score = float(getattr(sig, 'score', 0) or 0)
                         # No Redis dependency in resend flow; DB delivery table is the source of truth.
                         if not delivery_mgr.should_send_signal(user_tier, score, user_id=None):
@@ -247,6 +262,28 @@ async def _resend_unsent_signals_async():
                                 pass
                         else:
                             logger.error(f"[resend] Failed to deliver signal {signal_id} to user {user_id}: {send_err}")
+
+                # If a signal has no eligible recipients in the current audience,
+                # expire it to prevent endless re-check noise in subsequent runs.
+                try:
+                    _score = float(getattr(sig, 'score', 0) or 0)
+                    _eligible_any = False
+                    for _uid in user_ids:
+                        _tier = str(user_tier_map.get(int(_uid), "free") or "free").lower()
+                        if delivery_mgr.should_send_signal(_tier, _score, user_id=None):
+                            _eligible_any = True
+                            break
+                    if not _eligible_any:
+                        async with get_session() as _exp_s:
+                            from db.pg_features import expire_signal as _expire
+                            await _expire(_exp_s, signal_id)
+                            await _exp_s.commit()
+                        logger.info(
+                            f"[resend] Expired signal {signal_id}: no eligible recipients for score={_score:.1f} "
+                            f"under current tier mix {tier_counts}"
+                        )
+                except Exception as _exp_err:
+                    logger.debug(f"[resend] eligibility-expire check failed for {signal_id}: {_exp_err}")
 
     except Exception as e:
         logger.warning(f"[resend] Job inner error: {e}")
