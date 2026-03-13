@@ -715,6 +715,204 @@ def _build_monitor_keyboard(signal_id: str):
     ]])
 
 
+def _build_signal_message_link(chat_id: int, message_id: int) -> str:
+    chat_str = str(int(chat_id))
+    if chat_str.startswith("-100"):
+        return f"https://t.me/c/{chat_str[4:]}/{int(message_id)}"
+    return f"tg://openmessage?chat_id={int(chat_id)}&message_id={int(message_id)}"
+
+
+async def _find_editable_signal_message(telegram_user_id: int, incoming_signal: dict) -> dict | None:
+    """Find latest active same-asset/same-direction message eligible for in-place update.
+
+    Do not update if previous signal is stale and has more than 5 newer signals after it.
+    """
+    try:
+        from sqlalchemy import and_, desc, func, select
+        from db.session import get_session
+        from db.models import ActiveSignalMessage, Signal, SignalDelivery
+        from db.pg_features import get_or_create_user
+        from engine.price_validator import is_signal_stale
+
+        asset = str(incoming_signal.get("asset") or "").upper().strip()
+        direction = str(incoming_signal.get("direction") or "").lower().strip()
+        if not asset or not direction:
+            return None
+
+        async with get_session() as session:
+            user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+
+            base = (
+                await session.execute(
+                    select(ActiveSignalMessage, Signal, SignalDelivery.delivered_at)
+                    .join(Signal, Signal.signal_id == ActiveSignalMessage.signal_id)
+                    .outerjoin(
+                        SignalDelivery,
+                        and_(
+                            SignalDelivery.user_id == ActiveSignalMessage.user_id,
+                            SignalDelivery.signal_id == ActiveSignalMessage.signal_id,
+                        ),
+                    )
+                    .where(
+                        ActiveSignalMessage.user_id == user.id,
+                        ActiveSignalMessage.is_active.is_(True),
+                        Signal.asset == asset,
+                        Signal.direction == direction,
+                    )
+                    .order_by(desc(Signal.created_at))
+                    .limit(1)
+                )
+            ).first()
+
+            if not base:
+                await session.commit()
+                return None
+
+            active_msg, signal_row, delivered_at = base
+            signal_snapshot = {
+                "asset": signal_row.asset,
+                "direction": signal_row.direction,
+                "entry": signal_row.entry,
+                "stop_loss": signal_row.stop_loss,
+                "take_profit": signal_row.take_profit,
+                "created_at": signal_row.created_at,
+                "expires_at": signal_row.expires_at,
+                "expired": bool(signal_row.expired),
+            }
+            stale = bool(signal_row.expired) or bool(is_signal_stale(signal_snapshot))
+
+            newer_count = (
+                await session.execute(
+                    select(func.count(SignalDelivery.id))
+                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                    .where(
+                        SignalDelivery.user_id == user.id,
+                        Signal.created_at > signal_row.created_at,
+                    )
+                )
+            ).scalar_one()
+
+            await session.commit()
+
+            if stale and int(newer_count or 0) > 5:
+                return None
+
+            return {
+                "user_id": int(user.id),
+                "old_signal_id": str(signal_row.signal_id),
+                "chat_id": int(active_msg.chat_id),
+                "message_id": int(active_msg.message_id),
+                "stale": stale,
+                "newer_count": int(newer_count or 0),
+                "delivered_at": delivered_at,
+            }
+    except Exception as exc:
+        logger.debug(f"[signal_update] find editable failed: {exc}")
+        return None
+
+
+async def _mark_signal_message_updated(user_id: int, old_signal_id: str, new_signal_id: str) -> None:
+    """Repoint active message row to the latest signal id after an in-place edit."""
+    try:
+        from sqlalchemy import update
+        from db.session import get_session
+        from db.models import ActiveSignalMessage
+
+        async with get_session() as session:
+            await session.execute(
+                update(ActiveSignalMessage)
+                .where(
+                    ActiveSignalMessage.user_id == int(user_id),
+                    ActiveSignalMessage.signal_id == str(old_signal_id),
+                )
+                .values(signal_id=str(new_signal_id), is_active=True)
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.debug(f"[signal_update] map update failed: {exc}")
+
+
+async def _deliver_or_update_signal_async(
+    bot: Bot,
+    telegram_user_id: int,
+    signal: dict,
+    display_tier: str,
+) -> bool:
+    """Prefer editing existing active message over sending a near-duplicate new one."""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    signal_id = str(signal.get("signal_id") or "").strip()
+    text = format_signal(signal, display_tier=display_tier)
+    if not text or not str(text).strip():
+        return False
+
+    if signal_id:
+        editable = await _find_editable_signal_message(int(telegram_user_id), signal)
+        if editable is not None:
+            try:
+                counts = await _load_signal_engagement_counts(signal_id)
+                keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
+                await bot.edit_message_text(
+                    chat_id=int(editable["chat_id"]),
+                    message_id=int(editable["message_id"]),
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard,
+                )
+
+                await _mark_signal_message_updated(
+                    int(editable["user_id"]),
+                    str(editable["old_signal_id"]),
+                    signal_id,
+                )
+
+                link = _build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"]))
+                jump_keyboard = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("Go to signal", url=link)]]
+                )
+                await bot.send_message(
+                    chat_id=int(telegram_user_id),
+                    text="♻️ <b>Signal updated</b> — levels refreshed on your active signal message.",
+                    parse_mode="HTML",
+                    reply_markup=jump_keyboard,
+                )
+                return True
+            except Exception as exc:
+                logger.debug(f"[signal_update] edit path failed; fallback to fresh send: {exc}")
+
+    await _send_signal_with_engagement_async(
+        bot,
+        chat_id=int(telegram_user_id),
+        text=str(text),
+        signal_id=signal_id or str(signal.get("id") or ""),
+        telegram_user_id=int(telegram_user_id),
+        signal=signal,
+    )
+    return True
+
+
+def _deliver_or_update_signal_sync(
+    bot: Bot,
+    telegram_user_id: int,
+    signal: dict,
+    display_tier: str,
+) -> bool:
+    try:
+        return bool(
+            run_sync(
+                _deliver_or_update_signal_async(
+                    bot=bot,
+                    telegram_user_id=int(telegram_user_id),
+                    signal=dict(signal or {}),
+                    display_tier=str(display_tier),
+                )
+            )
+        )
+    except Exception as exc:
+        logger.debug(f"[dispatch] deliver_or_update failed: {exc}")
+        return False
+
+
 async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | None]:
     import json
     from datetime import datetime, timezone
@@ -1569,11 +1767,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                             break
                         try:
                             print(f"[DEBUG][dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
-                            _text = format_signal(signal, display_tier=display_tier)
-                            if not _text or not str(_text).strip():
-                                continue
-                            _send_message_sync(bot, chat_id=user_id, text=_text)
-                            sent += 1
+                            if _deliver_or_update_signal_sync(
+                                bot,
+                                telegram_user_id=int(user_id),
+                                signal=signal,
+                                display_tier=display_tier,
+                            ):
+                                sent += 1
                             if tier == 'free' and extra_left > 0:
                                 try:
                                     state.consume_extra_signals_sync(int(user_id), 1)
@@ -1588,16 +1788,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         print(f"[DEBUG][dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
-                        _text = format_signal(signal, display_tier=display_tier)
-                        if not _text or not str(_text).strip():
-                            continue
-                        _send_signal_with_engagement_sync(
+                        _deliver_or_update_signal_sync(
                             bot,
-                            chat_id=user_id,
-                            text=_text,
-                            signal_id=str(signal.get('signal_id', '')),
                             telegram_user_id=int(user_id),
                             signal=signal,
+                            display_tier=display_tier,
                         )
                         if tier == 'free' and extra_left > 0:
                             try:
@@ -1670,12 +1865,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     from signalrank_telegram.access import resolve_user_tier
                                     user_tier = resolve_user_tier(user_id).lower()
                                     signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'premium'
-                                    _text = format_signal(sig_dict, display_tier=signal_display_tier)
-                                    if not _text or not str(_text).strip():
-                                        continue
-                                    _send_message_sync(bot, chat_id=user_id, text=_text)
-                                    sent_count += 1
-                                    state.consume_extra_signals_sync(int(user_id), 1)
+                                    if _deliver_or_update_signal_sync(
+                                        bot,
+                                        telegram_user_id=int(user_id),
+                                        signal=sig_dict,
+                                        display_tier=signal_display_tier,
+                                    ):
+                                        sent_count += 1
+                                        state.consume_extra_signals_sync(int(user_id), 1)
                                 except Exception as e:
                                     logger.warning(f"[dispatch] Failed to send extra signal to user {user_id}: {e}")
                                     pass
@@ -1808,10 +2005,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 from signalrank_telegram.access import resolve_user_tier
                                 user_tier = resolve_user_tier(user_id).lower()
                                 signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'free'
-                                _text = format_signal(sig_dict, display_tier=signal_display_tier)
-                                if not _text or not str(_text).strip():
+                                if not _deliver_or_update_signal_sync(
+                                    bot,
+                                    telegram_user_id=int(user_id),
+                                    signal=sig_dict,
+                                    display_tier=signal_display_tier,
+                                ):
                                     continue
-                                _send_message_sync(bot, chat_id=user_id, text=_text)
                                 # Mark as delivered in Redis
                                 try:
                                     mark_signal_delivered_sync(user_id, str(sig_dict.get('signal_id')))
@@ -1877,10 +2077,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             if sent >= limit:
                 break
             try:
-                _text = format_signal(signal, display_tier=display_tier)
-                if not _text or not str(_text).strip():
+                if not _deliver_or_update_signal_sync(
+                    bot,
+                    telegram_user_id=int(user_id),
+                    signal=signal,
+                    display_tier=display_tier,
+                ):
                     continue
-                _send_message_sync(bot, chat_id=user_id, text=_text)
                 # Mark as delivered in Redis
                 try:
                     mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))
