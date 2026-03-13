@@ -18,6 +18,14 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Reduce noisy provider-internal logs (we already emit our own structured logs).
+try:
+    _yf_logger = logging.getLogger("yfinance")
+    _yf_logger.setLevel(logging.CRITICAL)
+    _yf_logger.propagate = False
+except Exception:
+    pass
+
 # Rate limiting state
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
@@ -227,6 +235,15 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     
     if _is_cooldown_active("yahoo"):
         return []
+
+    # Normalize FX symbols for Yahoo (EURUSD, EUR-USD -> EURUSD=X)
+    try:
+        s = str(symbol or "").upper().strip().replace("/", "").replace("_", "").replace("-", "")
+        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+            # EURUSD, GBPUSD etc
+            symbol = f"{s}=X"
+    except Exception:
+        pass
     
     # Map timeframe to yfinance intervals
     tf_map = {

@@ -17,6 +17,12 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# yfinance can emit noisy symbol-level errors during fallback; keep app logs readable.
+try:
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+except Exception:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Unified ticker formatter — maps canonical SignalRankAI symbols to each
@@ -84,12 +90,13 @@ def format_ticker(symbol: str, provider: str = "yfinance") -> str:
     if p == "yfinance":
         if s in _YFINANCE_OVERRIDES:
             return _YFINANCE_OVERRIDES[s]
+        # FX pairs like EURUSD must map to EURUSD=X (not EUR-USD).
+        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+            return f"{s}=X"
         if s.endswith("USDT") and len(s) > 4:
             return f"{s[:-4]}-USD"
         if s.endswith("USD") and len(s) > 3 and s[:3].isalpha() and s[3:] == "USD":
             return f"{s[:-3]}-USD"
-        if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
-            return f"{s}=X"
         return s
 
     if p == "binance":
@@ -372,6 +379,9 @@ def _validate_ohlcv(candles: list) -> bool:
     if not candles:
         return True
     
+    # Allow tiny floating-point tolerance to avoid false negatives from providers.
+    eps = 1e-6
+
     for i, c in enumerate(candles):
         try:
             o = float(c.get("open", 0))
@@ -380,17 +390,17 @@ def _validate_ohlcv(candles: list) -> bool:
             close = float(c.get("close", 0))
             
             # Validate high >= low (fundamental relationship)
-            if h < l:
+            if h + eps < l:
                 logger.warning(f"OHLCV validation failed at candle {i}: high={h} < low={l}")
                 return False
             
             # Validate high >= max(open, close)
-            if h < max(o, close):
+            if h + eps < max(o, close):
                 logger.warning(f"OHLCV validation failed at candle {i}: high={h} < max(open={o}, close={close})")
                 return False
             
             # Validate low <= min(open, close)
-            if l > min(o, close):
+            if l - eps > min(o, close):
                 logger.warning(f"OHLCV validation failed at candle {i}: low={l} > min(open={o}, close={close})")
                 return False
         except (ValueError, TypeError) as e:
@@ -413,6 +423,37 @@ def _validate_ohlcv(candles: list) -> bool:
         return False
     
     return True
+
+
+def _sanitize_ohlcv(candles: list) -> list:
+    """Normalize candle OHLC values to prevent minor provider inconsistencies.
+
+    Ensures: high >= max(open, close) and low <= min(open, close).
+    Rows that cannot be parsed are dropped.
+    """
+    if not candles:
+        return candles
+
+    out: list = []
+    for c in candles:
+        try:
+            o = float(c.get("open", 0))
+            h = float(c.get("high", 0))
+            l = float(c.get("low", 0))
+            close = float(c.get("close", 0))
+
+            h = max(h, o, close)
+            l = min(l, o, close)
+
+            nc = dict(c)
+            nc["open"] = o
+            nc["high"] = h
+            nc["low"] = l
+            nc["close"] = close
+            out.append(nc)
+        except Exception:
+            continue
+    return out
 
 
 def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
@@ -485,6 +526,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             try:
                 yf_candles = await asyncio.to_thread(_fetch_via_yfinance, asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
+                    yf_candles = _sanitize_ohlcv(yf_candles)
                     # Add data age calculation
                     if yf_candles:
                         latest_ts = yf_candles[-1].get("timestamp", 0)
@@ -514,6 +556,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                         logger.info(f"[market_data] asset={asset} tf={tf} candles_fetched={len(candles)}")
                     
                     if candles and len(candles) >= want:
+                        candles = _sanitize_ohlcv(candles)
                         # Validate OHLCV
                         if not _validate_ohlcv(candles):
                             logger.warning(f"Cached candles for {asset} {tf} failed OHLCV validation, skipping cache")
@@ -550,6 +593,9 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
         # Validate and add data_age_seconds for REST data
         for tf, payload in (rest or {}).items():
             candles = (payload or {}).get("candles") or []
+            if candles:
+                candles = _sanitize_ohlcv(candles)
+                payload["candles"] = candles
             
             # Validate OHLCV for REST candles
             if candles and not _validate_ohlcv(candles):

@@ -133,19 +133,23 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     Never raises — failures are logged so the web server keeps running.
     """
     global _bot_application
+    print("[bot] webhook setup starting", flush=True)
 
     if _env_bool("DRY_RUN", False):
+        print("[bot] webhook setup skipped: DRY_RUN enabled", flush=True)
         logger.warning("[bot] DRY_RUN enabled; skipping webhook setup")
         return None, False
 
     bot_token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
     if not bot_token:
+        print("[bot] webhook setup skipped: TELEGRAM_BOT_TOKEN missing", flush=True)
         logger.warning("[bot] TELEGRAM_BOT_TOKEN not set; skipping webhook setup")
         return None, False
 
     try:
         from signalrank_telegram.bot import run_bot
     except Exception as exc:
+        print(f"[bot] webhook setup import error: {exc}", flush=True)
         logger.warning(f"[bot] Could not import run_bot: {exc}; skipping webhook setup")
         return None, False
 
@@ -163,6 +167,7 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _run_bot_safe)
     except Exception as exc:
+        print(f"[bot] run_bot setup executor failed: {exc}", flush=True)
         logger.warning(f"[bot] run_bot() executor failed: {exc}; skipping webhook setup")
         return None, False
 
@@ -175,6 +180,7 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         return None, False
 
     if app_obj is None:
+        print("[bot] webhook setup failed: _webhook_application is None", flush=True)
         logger.warning("[bot] _webhook_application is None after run_bot(); skipping webhook setup")
         return None, False
 
@@ -183,6 +189,7 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         await app_obj.initialize()
         await app_obj.start()
     except Exception as exc:
+        print(f"[bot] application initialize/start failed: {exc}", flush=True)
         logger.warning(f"[bot] application initialize/start failed: {exc}; skipping webhook setup")
         return None, False
 
@@ -195,17 +202,21 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         try:
             await app_obj.bot.delete_webhook(drop_pending_updates=True)
             await app_obj.bot.set_webhook(webhook_endpoint)
+            print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
             logger.info("[bot] webhook registered: %s", webhook_endpoint)
         except Exception as exc:
+            print(f"[bot] set_webhook failed: {exc}", flush=True)
             logger.warning(
                 f"[bot] set_webhook failed: {exc} — bot initialized but Telegram may not route updates here"
             )
     else:
+        print("[bot] webhook NOT registered: RAILWAY_PUBLIC_DOMAIN/WEBHOOK_URL missing", flush=True)
         logger.warning(
             "[bot] RAILWAY_PUBLIC_DOMAIN / WEBHOOK_URL not set — webhook NOT registered with Telegram. "
             "Set RAILWAY_PUBLIC_DOMAIN env var to enable inbound commands."
         )
 
+    print("[bot] webhook mode active", flush=True)
     logger.info("[bot] webhook mode active — all handlers registered, awaiting updates via POST /telegram/webhook")
     return _bot_application, True
 
@@ -295,15 +306,20 @@ async def lifespan(_: FastAPI):
     async def _start_bot_bg() -> None:
         nonlocal application, bot_started
         try:
+            print("[startup] Telegram webhook background setup launched", flush=True)
             application, bot_started = await _start_telegram_bot()
+            print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
             logger.info("[startup] Telegram webhook setup completed")
         except Exception as exc:
+            print(f"[startup] Telegram webhook setup error (background): {exc}", flush=True)
             logger.warning(f"[startup] Telegram webhook setup error (background): {exc}")
 
     try:
         bot_start_task = asyncio.create_task(_start_bot_bg())
+        print("[startup] Telegram webhook setup scheduled in background", flush=True)
         logger.info("[startup] Telegram webhook setup scheduled in background")
     except Exception as exc:
+        print(f"[startup] Could not schedule Telegram webhook setup: {exc}", flush=True)
         logger.warning(f"[startup] Could not schedule Telegram webhook setup: {exc}")
 
     logger.info(
@@ -361,6 +377,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
         req.headers.get("content-type", ""),
     )
     if _bot_application is None:
+        print("[webhook] bot_not_initialized — update dropped", flush=True)
         logger.warning("[webhook] _bot_application not initialized — dropping update")
         return {"ok": False, "reason": "bot_not_initialized"}
     try:
