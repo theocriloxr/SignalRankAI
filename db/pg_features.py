@@ -333,12 +333,50 @@ async def record_signal_delivery(
 
     tier_s: str = str(tier_at_send or "free").strip().lower()[:16]
 
+    try:
+        market_cooldown_minutes = int((os.getenv("DELIVERY_MARKET_COOLDOWN_MINUTES") or "180").strip())
+    except Exception:
+        market_cooldown_minutes = 180
+    market_cutoff: Optional[datetime] = (
+        _utcnow() - timedelta(minutes=max(0, int(market_cooldown_minutes)))
+        if market_cooldown_minutes > 0
+        else None
+    )
+    if dedupe_reset_at:
+        market_cutoff = max(market_cutoff, dedupe_reset_at) if market_cutoff else dedupe_reset_at
+
 
     if cutoff is not None:
         try:
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
+                if market_cutoff is not None:
+                    res_market: Result[Tuple[int]] = await session.execute(
+                        select(func.count(SignalDelivery.id))
+                        .select_from(SignalDelivery)
+                        .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                        .where(
+                            SignalDelivery.user_id == user.id,
+                            Signal.asset == sig.asset,
+                            Signal.timeframe == sig.timeframe,
+                            Signal.direction == sig.direction,
+                            Signal.strategy_group == sig.strategy_group,
+                            Signal.strategy_name == sig.strategy_name,
+                            SignalDelivery.delivered_at >= market_cutoff,
+                        )
+                    )
+                    if int(res_market.scalar() or 0) > 0:
+                        try:
+                            import logging
+                            logging.getLogger(__name__).info(
+                                f"[dedup] Market cooldown hit: user={user.id} asset={sig.asset} tf={sig.timeframe} "
+                                f"dir={sig.direction} strat={sig.strategy_group}/{sig.strategy_name}"
+                            )
+                        except Exception:
+                            pass
+                        return False
+
                 # Strict deduplication: match by user, asset, entry, stop_loss, take_profit, timeframe, direction, strategy_group, strategy_name
                 res_u: Result[Tuple[int]] = await session.execute(
                     select(func.count(SignalDelivery.id))

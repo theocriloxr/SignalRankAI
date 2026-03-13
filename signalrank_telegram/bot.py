@@ -208,7 +208,7 @@ async def _resend_unsent_signals_async():
                         score = float(getattr(sig, 'score', 0) or 0)
                         # No Redis dependency in resend flow; DB delivery table is the source of truth.
                         if not delivery_mgr.should_send_signal(user_tier, score, user_id=int(user_id)):
-                            logger.info(
+                            logger.debug(
                                 f"[resend] User {user_id} not eligible for signal {signal_id} "
                                 f"(tier/score/limit), skipping."
                             )
@@ -1931,13 +1931,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if not signals_list:
         return
 
-    # DEBUG: Removing deduplication - send all signals to all users
+    # Dispatch diagnostics (debug-level only)
     try:
-        print(f"[DEBUG][dispatch] User {user_id} tier={tier} signals_list={len(signals_list)}", flush=True)
+        logger.debug(f"[dispatch] User {user_id} tier={tier} signals_list={len(signals_list)}")
         for sig in signals_list:
-            print(f"[DEBUG][dispatch] Preparing to send signal: {sig.get('asset')} {sig.get('timeframe')} score={sig.get('score')} id={sig.get('signal_id', 'n/a')}", flush=True)
+            logger.debug(f"[dispatch] Preparing to send signal: {sig.get('asset')} {sig.get('timeframe')} score={sig.get('score')} id={sig.get('signal_id', 'n/a')}")
     except Exception as e:
-        print(f"[DEBUG][dispatch] Error in debug logging: {e}", flush=True)
+        logger.debug(f"[dispatch] Error in debug logging: {e}")
 
     # Postgres-backed delivery dedup + history (preferred)
     try:
@@ -1970,14 +1970,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     async with get_session() as session:
                         for signal in signals_list[: max(0, int(limit))]:
                             s = await get_or_create_signal(session, signal)
-                            print(f"[DEBUG][db] Attempting to record delivery: user={user_id} signal_id={s.signal_id} tier={effective_tier}", flush=True)
+                            logger.debug(f"[db] Attempting to record delivery: user={user_id} signal_id={s.signal_id} tier={effective_tier}")
                             ok = await record_signal_delivery(
                                 session,
                                 telegram_user_id=int(user_id),
                                 signal_id=str(s.signal_id),
                                 tier_at_send=str(effective_tier),
                             )
-                            print(f"[DEBUG][db] record_signal_delivery result: {ok}", flush=True)
+                            logger.debug(f"[db] record_signal_delivery result: {ok}")
+                            if not ok:
+                                continue
                             payload = dict(signal)
                             payload["signal_id"] = str(s.signal_id)
                             payload.setdefault("asset", s.asset)
@@ -1999,9 +2001,9 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 except Exception as e:
                     reserved = []
                     reserve_failed = True
-                    print(f"[DEBUG][db] dispatch reserve failed (falling back to direct send): {type(e).__name__}: {e}", flush=True)
+                    logger.debug(f"[db] dispatch reserve failed (falling back to direct send): {type(e).__name__}: {e}")
 
-                print(f"[DEBUG][dispatch] user={user_id} tier={tier} effective_tier={effective_tier} signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}", flush=True)
+                logger.debug(f"[dispatch] user={user_id} tier={tier} effective_tier={effective_tier} signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}")
 
                 if reserve_failed:
                     sent = 0
@@ -2009,7 +2011,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         if sent >= int(limit):
                             break
                         try:
-                            print(f"[DEBUG][dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
+                            logger.debug(f"[dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
                             if _deliver_or_update_signal_sync(
                                 bot,
                                 telegram_user_id=int(user_id),
@@ -2024,13 +2026,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                     pass
                         except Exception as e:
-                            print(f"[DEBUG][dispatch] Exception in fallback send: {e}", flush=True)
+                            logger.debug(f"[dispatch] Exception in fallback send: {e}")
                             continue
                     return
 
                 for signal in reserved:
                     try:
-                        print(f"[DEBUG][dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
+                        logger.debug(f"[dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
                         _deliver_or_update_signal_sync(
                             bot,
                             telegram_user_id=int(user_id),
@@ -2044,7 +2046,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                 pass
                     except Exception as e:
-                        print(f"[DEBUG][dispatch] Exception in reserved send: {e}", flush=True)
+                        logger.debug(f"[dispatch] Exception in reserved send: {e}")
                         continue
                 return
 
@@ -3247,7 +3249,6 @@ def run_bot() -> None:
     # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
     async def _check_outcome_callback(update, context):
         query = update.callback_query
-        await query.answer()  # acknowledge immediately; detailed answer sent below
         raw = (query.data or "").replace("check_outcome_", "", 1).strip()
         if not raw:
             await query.answer("No signal ID found.", show_alert=True)
@@ -3798,79 +3799,76 @@ def run_bot() -> None:
                     logger.info("✅ No free signals due for delivery")
                     return
 
-                now_hour = datetime.now().hour
-                per_user_limit = int(getattr(config, 'FREE_DAILY_LIMIT', 3))
+                async def _deliver_due(_due: dict[int, dict]) -> int:
+                    import asyncio
 
-                actions: list[tuple[int, list[int], list[str], str]] = []
+                    now_hour = datetime.now().hour
+                    per_user_limit = int(getattr(config, 'FREE_DAILY_LIMIT', 3))
+                    actions: list[tuple[int, list[int], list[str], str]] = []
+                    bot = Bot(token=_require_telegram_token())
 
-                for uid, data in due.items():
-                    items = list(data.get("items") or [])
-                    prefs = dict(data.get("prefs") or {})
+                    async with bot:
+                        for uid, data in _due.items():
+                            items = list(data.get("items") or [])
+                            prefs = dict(data.get("prefs") or {})
 
-                    logger.info(f"📨 User {uid}: {len(items)} queued signal(s)")
+                            logger.info(f"📨 User {uid}: {len(items)} queued signal(s)")
 
-                    if not prefs.get("tp_sl_enabled", True):
-                        logger.info(f"⏸️ User {uid} has alerts disabled, marking as suppressed")
-                        actions.append(
-                            (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed')
-                        )
-                        continue
-
-                    qs = prefs.get("quiet_start_hour")
-                    qe = prefs.get("quiet_end_hour")
-                    if qs is not None and qe is not None:
-                        try:
-                            if _in_quiet_hours(now_hour, int(qs), int(qe)):
-                                logger.info(f"🔇 User {uid} in quiet hours ({qs}-{qe}), skipping")
+                            if not prefs.get("tp_sl_enabled", True):
+                                logger.info(f"⏸️ User {uid} has alerts disabled, marking as suppressed")
+                                actions.append(
+                                    (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed')
+                                )
                                 continue
-                        except Exception as e:
-                            logger.debug(f"[free_summary] Failed to check quiet hours for user {uid}: {e}")
-                            pass
 
-                    items_to_send = items[:per_user_limit]
-                    items_to_skip = items[per_user_limit:]
+                            qs = prefs.get("quiet_start_hour")
+                            qe = prefs.get("quiet_end_hour")
+                            if qs is not None and qe is not None:
+                                try:
+                                    if _in_quiet_hours(now_hour, int(qs), int(qe)):
+                                        logger.info(f"🔇 User {uid} in quiet hours ({qs}-{qe}), skipping")
+                                        continue
+                                except Exception as e:
+                                    logger.debug(f"[free_summary] Failed to check quiet hours for user {uid}: {e}")
 
-                    status = 'sent'
-                    if items_to_send:
-                        msg = _format_free_delayed_digest(items_to_send)
-                        try:
-                            _send_message_with_retry_sync(application.bot, chat_id=int(uid), text=msg)
-                            try:
-                                import asyncio
-                                run_sync(asyncio.sleep(0.5))
-                            except Exception:
-                                pass
-                            logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
-                        except Exception as e:
-                            logger.error(f"❌ Failed to send to user {uid}: {e}")
-                            status = 'failed'
+                            items_to_send = items[:per_user_limit]
+                            items_to_skip = items[per_user_limit:]
 
-                        actions.append(
-                            (
-                                int(uid),
-                                [it["id"] for it in items_to_send],
-                                [it["signal_id"] for it in items_to_send],
-                                status,
-                            )
-                        )
+                            status = 'sent'
+                            if items_to_send:
+                                msg = _format_free_delayed_digest(items_to_send)
+                                try:
+                                    await _send_message_with_retry(bot, chat_id=int(uid), text=msg)
+                                    await asyncio.sleep(0.5)
+                                    logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
+                                except Exception as e:
+                                    logger.error(f"❌ Failed to send to user {uid}: {e}")
+                                    status = 'failed'
 
-                    # Clear out any extra due items so they don't remain queued forever.
-                    if items_to_skip:
-                        logger.info(f"⏱️ User {uid}: {len(items_to_skip)} signal(s) overflow, marking as expired")
-                        actions.append(
-                            (
-                                int(uid),
-                                [it["id"] for it in items_to_skip],
-                                [it["signal_id"] for it in items_to_skip],
-                                'expired',
-                            )
-                        )
+                                actions.append(
+                                    (
+                                        int(uid),
+                                        [it["id"] for it in items_to_send],
+                                        [it["signal_id"] for it in items_to_send],
+                                        status,
+                                    )
+                                )
 
-                if not actions:
-                    logger.info("✅ No actions to apply")
-                    return
+                            if items_to_skip:
+                                logger.info(f"⏱️ User {uid}: {len(items_to_skip)} signal(s) overflow, marking as expired")
+                                actions.append(
+                                    (
+                                        int(uid),
+                                        [it["id"] for it in items_to_skip],
+                                        [it["signal_id"] for it in items_to_skip],
+                                        'expired',
+                                    )
+                                )
 
-                async def _apply_actions() -> None:
+                    if not actions:
+                        logger.info("✅ No actions to apply")
+                        return 0
+
                     async with get_session() as session:
                         for uid, ids, signal_ids, status in actions:
                             await mark_free_signal_summaries_sent_pg(session, ids, status=status)
@@ -3883,12 +3881,13 @@ def run_bot() -> None:
                                         tier_at_send='free',
                                     )
                         await session.commit()
+                    return len(actions)
 
                 try:
-                    run_sync(_apply_actions())
-                    logger.info(f"💾 Applied {len(actions)} queue action(s)")
+                    action_count = int(run_sync(_deliver_due(due)) or 0)
+                    logger.info(f"💾 Applied {action_count} queue action(s)")
                 except Exception as e:
-                    logger.error(f"Error applying actions: {e}", exc_info=True)
+                    logger.error(f"Error delivering/applying free summary actions: {e}", exc_info=True)
                 return
         except Exception as e:
             logger.debug(f"[free_summary] Failed to send free summaries: {e}")

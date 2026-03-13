@@ -64,7 +64,7 @@ class TierDeliveryManager:
                 
                 limit = TIER_DAILY_LIMITS.get(tier, 2)
                 if sent_today >= limit:
-                    logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
+                    logging.debug(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
                     return False
             except Exception as e:
                 logging.warning(f"[delivery] Failed to check Redis daily limit for user {user_id}: {e}")
@@ -74,7 +74,7 @@ class TierDeliveryManager:
         min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
         if score < min_score:
             if user_id is not None:
-                logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
+                logging.debug(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
@@ -97,7 +97,7 @@ class TierDeliveryManager:
                 
                 limit = TIER_DAILY_LIMITS.get(tier, 2)
                 if sent_today >= limit:
-                    logging.info(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
+                    logging.debug(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
                     return False
             except Exception as e:
                 logging.warning(f"[delivery] Failed to check Redis daily limit for user {user_id} (async): {e}")
@@ -107,7 +107,7 @@ class TierDeliveryManager:
         min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
         if score < min_score:
             if user_id is not None:
-                logging.info(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
+                logging.debug(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
