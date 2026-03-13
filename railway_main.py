@@ -156,20 +156,26 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     # Signal webhook mode before calling run_bot()
     os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
 
-    def _run_bot_safe() -> None:
+    def _run_bot_safe() -> str | None:
         try:
             run_bot()
+            return None
         except Exception as exc:
+            print(f"[bot] run_bot() setup error: {exc}", flush=True)
             logger.error(f"[bot] run_bot() setup error: {exc}")
+            return str(exc)
 
     # Await the executor so all handlers are registered before we call initialize()
     try:
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, _run_bot_safe)
+        setup_error = await loop.run_in_executor(None, _run_bot_safe)
     except Exception as exc:
         print(f"[bot] run_bot setup executor failed: {exc}", flush=True)
         logger.warning(f"[bot] run_bot() executor failed: {exc}; skipping webhook setup")
         return None, False
+
+    if setup_error:
+        logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
 
     # Retrieve the fully-configured Application stored by run_bot()
     try:
@@ -178,6 +184,15 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     except Exception as exc:
         logger.warning(f"[bot] Could not access _webhook_application: {exc}; skipping webhook setup")
         return None, False
+
+    if app_obj is None:
+        try:
+            # Best-effort second read in case another import path set it.
+            import importlib
+            _bot_module = importlib.import_module("signalrank_telegram.bot")
+            app_obj = getattr(_bot_module, "_webhook_application", None)
+        except Exception:
+            app_obj = None
 
     if app_obj is None:
         print("[bot] webhook setup failed: _webhook_application is None", flush=True)

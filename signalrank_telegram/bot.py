@@ -2275,6 +2275,13 @@ def run_bot() -> None:
         .build()
     )
 
+    # In webhook mode, expose the Application immediately so railway_main can
+    # retrieve it even if later optional setup steps fail (scheduler/jobstore,
+    # ancillary jobs, etc.). Handlers are registered on the same object below.
+    if os.getenv("TELEGRAM_USE_WEBHOOK"):
+        global _webhook_application
+        _webhook_application = application
+
     # Ensure required schema exists — belt-and-suspenders patch for any live DB
     # that was bootstrapped before Alembic migration 0010_consolidate_full_schema ran.
     # Every statement uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so it is safe
