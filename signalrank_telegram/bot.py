@@ -1252,7 +1252,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                             break
                         try:
                             print(f"[DEBUG][dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
-                            _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                            _text = format_signal(signal, display_tier=display_tier)
+                            if not _text or not str(_text).strip():
+                                continue
+                            _send_message_sync(bot, chat_id=user_id, text=_text)
                             sent += 1
                             if tier == 'free' and extra_left > 0:
                                 try:
@@ -1268,10 +1271,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         print(f"[DEBUG][dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}", flush=True)
+                        _text = format_signal(signal, display_tier=display_tier)
+                        if not _text or not str(_text).strip():
+                            continue
                         _send_signal_with_engagement_sync(
                             bot,
                             chat_id=user_id,
-                            text=format_signal(signal, display_tier=display_tier),
+                            text=_text,
                             signal_id=str(signal.get('signal_id', '')),
                             telegram_user_id=int(user_id),
                             signal=signal,
@@ -1347,7 +1353,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     from signalrank_telegram.access import resolve_user_tier
                                     user_tier = resolve_user_tier(user_id).lower()
                                     signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'premium'
-                                    _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=signal_display_tier))
+                                    _text = format_signal(sig_dict, display_tier=signal_display_tier)
+                                    if not _text or not str(_text).strip():
+                                        continue
+                                    _send_message_sync(bot, chat_id=user_id, text=_text)
                                     sent_count += 1
                                     state.consume_extra_signals_sync(int(user_id), 1)
                                 except Exception as e:
@@ -1482,7 +1491,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 from signalrank_telegram.access import resolve_user_tier
                                 user_tier = resolve_user_tier(user_id).lower()
                                 signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'free'
-                                _send_message_sync(bot, chat_id=user_id, text=format_signal(sig_dict, display_tier=signal_display_tier))
+                                _text = format_signal(sig_dict, display_tier=signal_display_tier)
+                                if not _text or not str(_text).strip():
+                                    continue
+                                _send_message_sync(bot, chat_id=user_id, text=_text)
                                 # Mark as delivered in Redis
                                 try:
                                     mark_signal_delivered_sync(user_id, str(sig_dict.get('signal_id')))
@@ -1548,7 +1560,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             if sent >= limit:
                 break
             try:
-                _send_message_sync(bot, chat_id=user_id, text=format_signal(signal, display_tier=display_tier))
+                _text = format_signal(signal, display_tier=display_tier)
+                if not _text or not str(_text).strip():
+                    continue
+                _send_message_sync(bot, chat_id=user_id, text=_text)
                 # Mark as delivered in Redis
                 try:
                     mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))

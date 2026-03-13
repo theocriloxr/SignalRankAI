@@ -2500,7 +2500,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			await update.message.reply_text(base)
 			return
 
-		base: None | str = format_signal(sig_dict)
+		base: None | str = format_signal(sig_dict, user_tier=tier)
 		if base is None:
 			base = format_signal_free_limited(sig_dict)
 		if staleness_warning:
