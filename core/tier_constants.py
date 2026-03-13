@@ -15,9 +15,9 @@ TIER_DAILY_LIMITS: Final[dict[str, float]] = {
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
     "free": 80,
     "premium": 70,
-    "vip": 70,
-    "owner": 55,
-    "admin": 55,
+    "vip": 75,
+    "owner": 75,
+    "admin": 75,
 }
 
 # Signal freshness: max age in seconds before signal is considered stale

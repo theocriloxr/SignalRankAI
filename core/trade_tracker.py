@@ -44,12 +44,15 @@ def open_trades():
 
 def _convert_symbol_for_yfinance(symbol):
     """Convert crypto symbols from Binance format to yfinance format."""
-    # BTCUSDT -> BTC-USD
-    if symbol.endswith("USDT"):
-        return f"{symbol[:-4]}-USD"
-    elif symbol.endswith("USD"):
-        return f"{symbol[:-3]}-USD"
-    return symbol
+    try:
+        from data.market_data import format_ticker
+        return format_ticker(symbol, "yfinance")
+    except Exception:
+        if symbol.endswith("USDT"):
+            return f"{symbol[:-4]}-USD"
+        if symbol.endswith("USD"):
+            return f"{symbol[:-3]}-USD"
+        return symbol
 
 def _get_current_price(symbol):
     """
@@ -61,10 +64,17 @@ def _get_current_price(symbol):
     try:
         yf_symbol = _convert_symbol_for_yfinance(symbol)
         ticker = yf.Ticker(yf_symbol)
-        price = ticker.fast_info.get('lastPrice')
+        fast_info = getattr(ticker, "fast_info", {}) or {}
+        price = fast_info.get('lastPrice') or fast_info.get('last_price') or fast_info.get('regularMarketPrice')
         if price and price > 0:
             logger.debug(f"Got price for {symbol} ({yf_symbol}) from yfinance: {price}")
             return float(price)
+        history = ticker.history(period="2d", interval="1m", auto_adjust=False)
+        if history is not None and not history.empty:
+            last_close = float(history["Close"].dropna().iloc[-1])
+            if last_close > 0:
+                logger.debug(f"Got price for {symbol} ({yf_symbol}) from yfinance history: {last_close}")
+                return last_close
     except Exception as e:
         logger.debug(f"yfinance failed for {symbol}: {e}")
     

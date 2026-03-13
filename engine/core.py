@@ -167,6 +167,91 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _primary_take_profit(signal: Dict[str, Any]) -> float | None:
+    raw_tp = signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
+    if isinstance(raw_tp, (list, tuple)):
+        for item in raw_tp:
+            try:
+                if isinstance(item, dict):
+                    candidate = item.get("price") or item.get("tp") or item.get("target")
+                else:
+                    candidate = item
+                value = float(candidate)
+                if value > 0:
+                    return value
+            except Exception:
+                continue
+        return None
+    try:
+        value = float(raw_tp)
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
+def _signal_roi_score(signal: Dict[str, Any]) -> float:
+    rr = _safe_float(
+        signal.get("roi")
+        or signal.get("expected_roi")
+        or signal.get("rr_ratio")
+        or signal.get("rr_estimate")
+        or signal.get("risk_reward"),
+        default=0.0,
+    )
+    if rr > 0:
+        return rr
+
+    entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+    target = _primary_take_profit(signal)
+    if entry <= 0 or stop <= 0 or target is None:
+        return 0.0
+    risk = abs(entry - stop)
+    reward = abs(target - entry)
+    if risk <= 0:
+        return 0.0
+    return reward / risk
+
+
+def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
+    return asset, direction
+
+
+def _collapse_signal_variants(signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep only the strongest variant per asset+direction to avoid spammy micro-updates."""
+    best_by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
+    for signal in signals or []:
+        key = _signal_variant_key(signal)
+        incumbent = best_by_key.get(key)
+        if incumbent is None:
+            best_by_key[key] = signal
+            continue
+
+        candidate_rank = (
+            _signal_roi_score(signal),
+            _safe_float(signal.get("score")),
+            _safe_float(signal.get("ml_probability")),
+        )
+        incumbent_rank = (
+            _signal_roi_score(incumbent),
+            _safe_float(incumbent.get("score")),
+            _safe_float(incumbent.get("ml_probability")),
+        )
+        if candidate_rank > incumbent_rank:
+            best_by_key[key] = signal
+
+    return list(best_by_key.values())
+
+
 # Background outage alert job
 def start_outage_alert_job():
     def _job():
@@ -1006,6 +1091,12 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         logger.exception("scoring/filtering failed for signal")
 
+                collapsed_signals = _collapse_signal_variants(final_signals)
+                dropped_variants = max(0, len(final_signals) - len(collapsed_signals))
+                if dropped_variants:
+                    logger.info(f"[engine] collapsed {dropped_variants} lower-ROI signal variants before storage")
+                final_signals = collapsed_signals
+
                 pipeline_stats["final_signals"] += len(final_signals)
                 # store final_signals
                 from datetime import timedelta as _timedelta  # ensure available in this scope
@@ -1077,7 +1168,9 @@ def main_loop(DRY_RUN: bool = False):
                         # to the dict; without this every is_signal_fresh() call returns False.
                         sig.setdefault('created_at', datetime.utcnow())
                         logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
-                        store_signal_compat(sig)
+                        stored_signal_id = store_signal_compat(sig)
+                        if stored_signal_id:
+                            sig["signal_id"] = str(stored_signal_id)
                         scored_signals_all.append(sig)
                         _cycle_cooldown.add(_asset_tf_key)
                         pipeline_stats["stored"] += 1

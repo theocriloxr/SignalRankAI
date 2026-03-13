@@ -465,6 +465,26 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
     if not candles:
         return False, 0.0
     
+    def _to_epoch_seconds(value) -> int | None:
+        if value is None:
+            return None
+        try:
+            if isinstance(value, (int, float)):
+                ts_val = int(float(value))
+                return ts_val // 1000 if ts_val > 10**12 else ts_val
+            raw = str(value).strip()
+            if not raw:
+                return None
+            if raw.replace(".", "", 1).isdigit():
+                ts_val = int(float(raw))
+                return ts_val // 1000 if ts_val > 10**12 else ts_val
+            dt = pd.to_datetime(raw, utc=True, errors="coerce")
+            if pd.isna(dt):
+                return None
+            return int(dt.timestamp())
+        except Exception:
+            return None
+
     # Get the latest candle's timestamp
     latest_candle = candles[-1]
     ts = latest_candle.get("timestamp")
@@ -475,9 +495,9 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
     
     # Convert timestamp to seconds
     try:
-        ts_val = int(ts) if isinstance(ts, (int, float)) else 0
-        if ts_val > 10**12:  # milliseconds
-            ts_val = ts_val // 1000
+        ts_val = _to_epoch_seconds(ts)
+        if ts_val is None or ts_val <= 0:
+            raise ValueError(f"invalid timestamp: {ts!r}")
         
         current_time = time.time()
         data_age = current_time - ts_val
@@ -529,8 +549,8 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     yf_candles = _sanitize_ohlcv(yf_candles)
                     # Add data age calculation
                     if yf_candles:
-                        latest_ts = yf_candles[-1].get("timestamp", 0)
-                        data_age = int(_time.time() - latest_ts) if latest_ts > 0 else None
+                        latest_ts = _check_staleness(yf_candles, tf)[1]
+                        data_age = int(latest_ts) if latest_ts and latest_ts > 0 else None
                     else:
                         data_age = None
                     

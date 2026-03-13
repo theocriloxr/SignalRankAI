@@ -10,6 +10,21 @@ logger = logging.getLogger(__name__)
 _NEWS_CACHE = {}
 _NEWS_CACHE_TTL = 300  # 5 minutes
 
+
+def _safe_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        return " ".join(_safe_text(item) for item in value[:5])
+    if isinstance(value, dict):
+        for key in ("title", "body", "description", "value", "text", "name"):
+            if key in value:
+                return _safe_text(value.get(key))
+        return str(value)
+    return str(value)
+
 def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[str, str, int]]:
     """
     Fetch news headlines from multiple sources.
@@ -64,13 +79,16 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
                 timeout=8,
             )
             if resp.ok:
-                articles = resp.json().get("Data", [])
+                payload = resp.json()
+                articles = payload.get("Data", []) if isinstance(payload, dict) else []
+                if not isinstance(articles, list):
+                    articles = []
                 for art in articles[:10]:
-                    title = art.get("title", "")
-                    pub = datetime.fromtimestamp(art.get("published_on", 0), tz=timezone.utc).isoformat()
-                    body = art.get("body", "")
-                    if not isinstance(body, str):
-                        body = str(body or "")
+                    if not isinstance(art, dict):
+                        continue
+                    title = _safe_text(art.get("title", ""))
+                    pub = datetime.fromtimestamp(int(art.get("published_on", 0) or 0), tz=timezone.utc).isoformat()
+                    body = _safe_text(art.get("body", ""))
                     score = simple_sentiment_score(title + " " + body[:200])
                     headlines.append((title, pub, score))
         except Exception as e:

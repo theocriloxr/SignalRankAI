@@ -33,8 +33,8 @@ class TierDeliveryManager:
     """
     # Signal thresholds per tier (QUALITY GATES)
     MIN_SCORE_FREE = 80.0      # Only prove best signals
-    MIN_SCORE_PREMIUM = 65.0   # More opportunity
-    MIN_SCORE_VIP = 55.0       # Accept all, but show quality-first
+    MIN_SCORE_PREMIUM = 75.0   # More opportunity
+    MIN_SCORE_VIP = 75.0       # Accept all, but show quality-first
     # Daily signal limits (soft limits, quality-based)
     MAX_SIGNALS_PER_DAY = {
         'free': 3,        # 1-3 signals/day

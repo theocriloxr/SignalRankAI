@@ -325,13 +325,15 @@ def _fetch_fx_multi_provider(asset, timeframe):
     if "/" not in yahoo_format and len(yahoo_format) == 6:
         yahoo_format = f"{yahoo_format[:3]}{yahoo_format[3:]}=X"  # Yahoo FX format: EURUSD=X
     
+    alpha_enabled = os.getenv("ALPHAVANTAGE_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
     providers = [
         ("oanda", lambda timeout=10: fetch_oanda_candles(oanda_format, timeframe)),
-        ("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)),
         ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_format, timeframe)),
         ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
         ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "forex")),
     ]
+    if alpha_enabled:
+        providers.append(("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
