@@ -282,6 +282,24 @@ def _start_engine_loop_in_background() -> asyncio.Task:
     return asyncio.create_task(_runner())
 
 
+def _start_worker_loop_in_background() -> asyncio.Task:
+    """Start the worker.main loop in a thread executor."""
+    from worker.worker import main as worker_main
+
+    async def _runner() -> None:
+        loop = asyncio.get_running_loop()
+        print("[worker] background loop starting", flush=True)
+        logger.info("[worker] background loop starting")
+        try:
+            await loop.run_in_executor(None, worker_main)
+        except Exception as exc:
+            print(f"[worker] background loop crashed: {exc}", flush=True)
+            logger.exception(f"[worker] background loop crashed: {exc}")
+            raise
+
+    return asyncio.create_task(_runner())
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # ── 1) DB auto-migration / startup ops ────────────────────────────────────
@@ -301,6 +319,16 @@ async def lifespan(_: FastAPI):
     except Exception as exc:
         print(f"[startup] Could not start engine loop: {exc}", flush=True)
         logger.warning(f"[startup] Could not start engine loop: {exc}")
+
+    # ── 2b) Worker loop (long-running background task) ───────────────────────
+    worker_task = None
+    try:
+        worker_task = _start_worker_loop_in_background()
+        print("[startup] Worker loop task created", flush=True)
+        logger.info("[startup] Worker loop task created")
+    except Exception as exc:
+        print(f"[startup] Could not start worker loop: {exc}", flush=True)
+        logger.warning(f"[startup] Could not start worker loop: {exc}")
 
     # ── 3) APScheduler jobs ───────────────────────────────────────────────────
     scheduler = None
@@ -339,6 +367,7 @@ async def lifespan(_: FastAPI):
 
     logger.info(
         f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
+        f"worker={'ok' if worker_task else 'skipped'} "
         f"scheduler={'ok' if scheduler else 'skipped'} "
         f"bot={'webhook' if bot_started else 'skipped'}"
     )
@@ -346,7 +375,7 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        # ── Shutdown order: bot → scheduler → engine task ─────────────────────
+        # ── Shutdown order: bot → scheduler → worker task → engine task ───────
         if bot_start_task is not None and not bot_start_task.done():
             try:
                 bot_start_task.cancel()
@@ -366,6 +395,12 @@ async def lifespan(_: FastAPI):
                 logger.info("[sched] shutdown")
             except Exception as exc:
                 logger.warning(f"[shutdown] scheduler shutdown error: {exc}")
+
+        if worker_task is not None:
+            try:
+                worker_task.cancel()
+            except Exception:
+                pass
 
         if engine_task is not None:
             try:

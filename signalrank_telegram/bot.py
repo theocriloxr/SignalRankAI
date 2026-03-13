@@ -2537,7 +2537,6 @@ def run_bot() -> None:
     # retrieve it even if later optional setup steps fail (scheduler/jobstore,
     # ancillary jobs, etc.). Handlers are registered on the same object below.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        global _webhook_application, _bot_scheduler
         _webhook_application = application
 
     # Ensure required schema exists — belt-and-suspenders patch for any live DB
