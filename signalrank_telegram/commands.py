@@ -578,7 +578,19 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 				await query.message.reply_text("💸 Revenue analytics: use /owner_revenue.")
 				return
 			if data == "admin_force_signal":
-				await query.message.reply_text("⚡ Force signal: use /dev_force_signal.")
+				try:
+					from signalrank_telegram.owner_commands import dev_force_signal, _is_admin_or_owner
+					
+					uid = update.effective_user.id if update.effective_user else None
+					if uid is None or not await _is_admin_or_owner(uid):
+						await query.answer("⛔ Access Denied.", show_alert=True)
+						return
+					
+					# Call the signal generation function directly
+					context.args = []
+					await dev_force_signal(update, context)
+				except Exception:
+					await query.answer("Failed to generate signal. Try /force_signal instead.", show_alert=True)
 				return
 			if data == "admin_toggle_engine":
 				await query.message.reply_text("🛑 Engine: use /dev_pause or /dev_resume.")
@@ -1518,7 +1530,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/force_market_scan", "Run the ML market scan now"),
 				("/dev_pause", "Pause the engine"),
 				("/dev_resume", "Resume the engine"),
-				("/dev_force_signal", "Force-send a signal"),
+				("/force_signal", "Generate and send a fresh signal"),
 				("/owner_users", "Inspect user metrics"),
 				("/owner_revenue", "Review revenue analytics"),
 				("/correct_signal", "Correct a signal outcome"),

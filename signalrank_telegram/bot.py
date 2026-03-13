@@ -1944,6 +1944,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("dev_pause", _audit_handler("dev_pause", dev_pause)))
     application.add_handler(CommandHandler("dev_resume", _audit_handler("dev_resume", dev_resume)))
     application.add_handler(CommandHandler("dev_force_signal", _audit_handler("dev_force_signal", dev_force_signal)))
+    application.add_handler(CommandHandler("force_signal", _audit_handler("force_signal", dev_force_signal)))
     application.add_handler(CommandHandler("dev_invalidate", _audit_handler("dev_invalidate", dev_invalidate)))
     application.add_handler(CommandHandler("owner_users", _audit_handler("owner_users", owner_users)))
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))

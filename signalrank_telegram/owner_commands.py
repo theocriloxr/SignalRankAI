@@ -80,7 +80,10 @@ async def pause_signals_command(update: Update, context: ContextTypes.DEFAULT_TY
         return
     await state.set_killswitch(True, reason="Paused by admin via /pause_signals")
     await update.message.reply_text("All signals paused (kill-switch enabled).")
-from config import config
+from config import config, ADMIN_IDS
+import json
+from uuid import uuid4
+from datetime import datetime, timedelta
 from typing import Optional
 
 from telegram import Update
@@ -141,6 +144,21 @@ async def _is_owner(user_id: int) -> bool:
     bypass = await state.has_temp_owner(uid)
     if bypass:
         return True
+    return False
+
+
+async def _is_admin_or_owner(user_id: int) -> bool:
+    try:
+        uid = int(user_id)
+    except Exception:
+        return False
+    if await _is_owner(uid):
+        return True
+    try:
+        if uid in ADMIN_IDS:
+            return True
+    except Exception:
+        pass
     return False
 
 
@@ -332,77 +350,172 @@ async def dev_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
         return
-    if not await _is_owner(update.effective_user.id):
+    if not await _is_admin_or_owner(update.effective_user.id):
         await update.message.reply_text("⛔ Access Denied.")
         return
 
-    arg = context.args[0].strip() if context.args else ""
+    args = list(context.args or [])
+    requested_asset = str(args[0]).upper().replace("/", "").strip() if len(args) >= 1 else ""
+    requested_tf = str(args[1]).strip().lower() if len(args) >= 2 else ""
+
+    candidate_assets = [requested_asset] if requested_asset else [
+        x.strip().upper().replace("/", "")
+        for x in (config.__dict__.get("FORCE_SIGNAL_ASSETS") or "BTCUSDT,ETHUSDT,XAUUSD,EURUSD").split(",")
+        if x.strip()
+    ]
+    candidate_timeframes = [requested_tf] if requested_tf else ["15m", "1h", "4h"]
+
     from db.session import get_engine_for_event_loop, get_session
     from db.models import Signal, AdminEvent
-    from sqlalchemy import select, desc, or_
     from signalrank_telegram.formatter import format_signal
+    from engine.market_state import get_market_state_async
+    from engine.strategies.signal_generator import SignalGenerator
 
     engine = get_engine_for_event_loop()
     if engine is None:
         await update.message.reply_text("Database unavailable.")
         return
 
+    generator = SignalGenerator()
+    best_signal = None
+    best_asset = None
+    best_tf = None
+    best_ml_prob = None
+    best_regime = "NEUTRAL"
+
+    for asset in candidate_assets:
+        for timeframe in candidate_timeframes:
+            try:
+                market_state = await get_market_state_async(asset, [timeframe], include_ml=True)
+                tf_data = (market_state.get("timeframes") or {}).get(timeframe) or {}
+                candles = tf_data.get("candles") or []
+                indicators = tf_data.get("indicators") or {}
+                ml_prob = tf_data.get("ml_score")
+                if len(candles) < 50:
+                    continue
+                generated = generator.generate_signals(
+                    asset,
+                    timeframe,
+                    {
+                        "candles": candles,
+                        "indicators": indicators,
+                        "ml_probability": ml_prob,
+                    },
+                )
+                if not generated:
+                    continue
+                current_best = max(generated, key=lambda item: float(getattr(item, "score", 0) or 0))
+                if best_signal is None or float(current_best.score or 0) > float(best_signal.score or 0):
+                    best_signal = current_best
+                    best_asset = asset
+                    best_tf = timeframe
+                    best_ml_prob = ml_prob
+                    best_regime = str(indicators.get("regime") or "NEUTRAL")
+            except Exception:
+                continue
+
+    if best_signal is None or best_asset is None or best_tf is None:
+        attempted_assets = ", ".join(candidate_assets)
+        attempted_tfs = ", ".join(candidate_timeframes)
+        await update.message.reply_text(
+            "No fresh signal could be generated right now.\n\n"
+            f"Assets checked: {attempted_assets}\n"
+            f"Timeframes checked: {attempted_tfs}\n\n"
+            "Try again with /force_signal <ASSET> <TIMEFRAME>, for example: /force_signal BTCUSDT 1h"
+        )
+        return
+
+    tp_levels = []
+    try:
+        tp_levels = [float(tp.get("price")) for tp in (best_signal.take_profit or []) if isinstance(tp, dict) and tp.get("price") is not None]
+    except Exception:
+        tp_levels = []
+
+    rr_ratio = None
+    try:
+        if tp_levels:
+            risk = abs(float(best_signal.entry) - float(best_signal.stop_loss))
+            reward = abs(float(tp_levels[0]) - float(best_signal.entry))
+            if risk > 0:
+                rr_ratio = reward / risk
+    except Exception:
+        rr_ratio = None
+
+    signal_id = str(uuid4())
+    expires_at = datetime.utcnow() + timedelta(hours=12)
+    signal_payload = {
+        "signal_id": signal_id,
+        "asset": best_asset,
+        "timeframe": best_tf,
+        "direction": best_signal.direction,
+        "entry": best_signal.entry,
+        "stop_loss": best_signal.stop_loss,
+        "take_profit": best_signal.take_profit,
+        "tp_levels": tp_levels,
+        "rr_ratio": rr_ratio,
+        "score": best_signal.score,
+        "regime": best_regime,
+        "ml_probability": best_ml_prob,
+        "strategy_name": best_signal.strategy_name,
+        "strategy_group": best_signal.strategy_group,
+        "strength": best_signal.confidence,
+        "confidence": best_signal.confidence,
+        "created_at": datetime.utcnow(),
+        "expires_at": expires_at,
+    }
+
     async with get_session() as session:
-        stmt = select(Signal).where(Signal.archived.is_(False))
-        if arg:
-            asset = arg.upper()
-            stmt = stmt.where(or_(Signal.signal_id.ilike(f"{arg}%"), Signal.asset == asset))
-        stmt = stmt.order_by(desc(Signal.created_at)).limit(1)
-        res = await session.execute(stmt)
-        sig: Signal | None = res.scalar_one_or_none()
-
-        if sig is None:
-            await update.message.reply_text("No signal found to send.")
-            return
-
-        signal_payload = {
-            "signal_id": sig.signal_id,
-            "asset": sig.asset,
-            "timeframe": sig.timeframe,
-            "direction": sig.direction,
-            "entry": sig.entry,
-            "stop_loss": sig.stop_loss,
-            "take_profit": sig.take_profit,
-            "rr_ratio": sig.rr_estimate,
-            "score": sig.score,
-            "regime": sig.regime or "NEUTRAL",
-            "ml_probability": sig.ml_probability or 0.5,
-            "strategy_name": sig.strategy_name,
-            "strategy_group": sig.strategy_group,
-            "strength": sig.strength,
-            "created_at": sig.created_at,
-        }
-
-        msg = format_signal(signal_payload, user_tier="OWNER")
-        if not msg:
-            msg = (
-                "Forced Signal (raw)\n"
-                f"Asset: {sig.asset}\n"
-                f"TF: {sig.timeframe}\n"
-                f"Dir: {sig.direction}\n"
-                f"Entry: {sig.entry}\n"
-                f"SL: {sig.stop_loss}\n"
-                f"TP: {sig.take_profit}\n"
-                f"Score: {sig.score}\n"
-                f"Ref: {sig.signal_id[:8]}"
-            )
-
         try:
+            session.add(
+                Signal(
+                    signal_id=signal_id,
+                    asset=best_asset,
+                    timeframe=best_tf,
+                    direction=best_signal.direction,
+                    entry=float(best_signal.entry),
+                    stop_loss=float(best_signal.stop_loss),
+                    take_profit=json.dumps(best_signal.take_profit or []),
+                    rr_estimate=rr_ratio,
+                    score=float(best_signal.score),
+                    regime=best_regime,
+                    ml_probability=float(best_ml_prob) if best_ml_prob is not None else None,
+                    strategy_name=str(best_signal.strategy_name),
+                    strategy_group=str(best_signal.strategy_group),
+                    strength=float(best_signal.confidence or 0.0),
+                    fingerprint=f"{best_asset}_{best_tf}_{best_signal.direction}_{int(float(best_signal.entry) or 0)}",
+                    expires_at=expires_at,
+                )
+            )
             session.add(
                 AdminEvent(
                     event_type="dev_force_signal",
                     actor_telegram_user_id=int(update.effective_user.id),
-                    details={"signal_id": sig.signal_id, "arg": arg},
+                    details={
+                        "signal_id": signal_id,
+                        "asset": best_asset,
+                        "timeframe": best_tf,
+                        "generated": True,
+                    },
                 )
             )
             await session.commit()
         except Exception:
-            pass
+            await session.rollback()
+
+    caller_tier = "OWNER" if await _is_owner(update.effective_user.id) else "ADMIN"
+    msg = format_signal(signal_payload, user_tier=caller_tier)
+    if not msg:
+        msg = (
+            "Forced Signal (generated)\n"
+            f"Asset: {best_asset}\n"
+            f"TF: {best_tf}\n"
+            f"Dir: {best_signal.direction}\n"
+            f"Entry: {best_signal.entry}\n"
+            f"SL: {best_signal.stop_loss}\n"
+            f"TP1: {tp_levels[0] if tp_levels else 'N/A'}\n"
+            f"Score: {best_signal.score}\n"
+            f"Ref: {signal_id[:8]}"
+        )
 
     await update.message.reply_text(msg)
 

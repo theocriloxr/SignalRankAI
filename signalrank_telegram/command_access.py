@@ -70,6 +70,7 @@ COMMAND_TIERS = {
     "admin":               "ADMIN",
     "admin_broadcast":     "ADMIN",
     "force_market_scan":   "ADMIN",
+    "force_signal":        "ADMIN",
 
     # ── OWNER only (hidden from regular help) ─────────────────────────────────
     "dev_pause":           "OWNER",
@@ -317,12 +318,13 @@ COMMAND_HELP = {
             # ─ ADMIN ─────────────────────────────────────────────────────────────
             ("admin",                  "Platform dashboard (users, VIP, signals)"),
             ("admin_broadcast",        "DM blast to all users"),
+            ("force_signal",           "Generate and send a fresh signal now"),
             ("force_market_scan",      "Run ML market scan now"),
             # ─ OWNER-only ───────────────────────────────────────────────────────
             ("blast_terms",            "Send terms gate to all unconfirmed users"),
             ("dev_pause",              "Pause engine (kill-switch ON)"),
             ("dev_resume",             "Resume engine (kill-switch OFF)"),
-            ("dev_force_signal",       "Force-send a signal to yourself"),
+            ("dev_force_signal",       "Generate and send a fresh signal now"),
             ("dev_invalidate",         "Archive/invalidate a signal"),
             ("owner_users",            "User statistics"),
             ("owner_revenue",          "Revenue analytics"),
