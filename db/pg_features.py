@@ -624,6 +624,15 @@ async def upsert_outcome(
 ) -> Outcome:
     res: Result[Tuple[Outcome]] = await session.execute(select(Outcome).where(Outcome.signal_id == str(signal_id)))
     oc: Outcome | None = res.scalars().first()
+    prev_status = None
+    prev_tp_idx = 0
+    try:
+        if oc is not None:
+            prev_status = str(getattr(oc, "status", "") or "").lower()
+            prev_tp_idx = int((getattr(oc, "meta", {}) or {}).get("tp_hit_index") or 0)
+    except Exception:
+        prev_status = None
+        prev_tp_idx = 0
     if oc is None:
         oc = Outcome(signal_id=str(signal_id), status=str(status).lower()[:16])
         session.add(oc)
@@ -652,6 +661,19 @@ async def upsert_outcome(
             oc.meta = merged
         except Exception:
             oc.meta = dict(meta)
+
+    # Re-enable notification when outcome progresses (TP1→TP2→TP3, etc.).
+    try:
+        new_status = str(getattr(oc, "status", "") or "").lower()
+        new_tp_idx = int((getattr(oc, "meta", {}) or {}).get("tp_hit_index") or 0)
+        progressed = (prev_status is None) or (new_status != prev_status) or (new_tp_idx > int(prev_tp_idx or 0))
+        if progressed:
+            _meta = dict(getattr(oc, "meta", {}) or {})
+            _meta.pop("notified", None)
+            _meta.pop("notified_at", None)
+            oc.meta = _meta
+    except Exception:
+        pass
     await session.flush()
     return oc
 
@@ -678,7 +700,18 @@ async def list_signals_missing_outcomes(
         .where(
             Signal.signal_id.in_(select(delivered_ids.c.signal_id)),
             Signal.created_at >= start,
-            ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
+            (
+                ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists()
+            )
+            |
+            (
+                select(Outcome.id)
+                .where(
+                    Outcome.signal_id == Signal.signal_id,
+                    Outcome.status.in_(["tp1", "tp2"]),
+                )
+                .exists()
+            ),
         )
         .order_by(Signal.created_at.asc())
         .limit(max(1, int(limit)))
@@ -1403,6 +1436,7 @@ async def get_random_available_signals_for_free_user(
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
     now: datetime = _utcnow()
     cutoff: datetime = now - timedelta(hours=24)
+    min_score = _env_int("FREE_RANDOM_MIN_SCORE", 80)
     
     # Get signals this user already received
     res_delivered: Result[Tuple[str]] = await session.execute(
@@ -1430,7 +1464,11 @@ async def get_random_available_signals_for_free_user(
     # Filter out already received and resolved trades
     available: list[Signal] = [
         s for s in all_recent
-        if s.signal_id not in already_received and s.signal_id not in resolved_signals
+        if (
+            s.signal_id not in already_received
+            and s.signal_id not in resolved_signals
+            and float(getattr(s, "score", 0) or 0) >= float(min_score)
+        )
     ]
     
     # Truly random selection - bot picks any signals it wants

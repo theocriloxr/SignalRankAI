@@ -81,6 +81,21 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
         asset = str(signal.get("asset") or "unknown").upper()
         timeframe = str(signal.get("timeframe") or "1d").lower()
         strength = float(signal.get("strength") or 0.0)
+        partial_tp_progress = float(signal.get("partial_tp_progress") or 0.0)
+        price_velocity_3 = float(signal.get("price_velocity_3") or 0.0)
+        price_velocity_5 = float(signal.get("price_velocity_5") or 0.0)
+        price_velocity_10 = float(signal.get("price_velocity_10") or 0.0)
+        price_acceleration_3_10 = float(signal.get("price_acceleration_3_10") or (price_velocity_3 - price_velocity_10))
+        atr_rel = float(signal.get("atr_rel") or 0.0)
+        atr_regime = float(signal.get("atr_regime") or 0.0)
+        relative_volume = float(signal.get("relative_volume") or 0.0)
+        mtf_4h_trend = float(signal.get("mtf_4h_trend") or 0.0)
+        mtf_1d_trend = float(signal.get("mtf_1d_trend") or 0.0)
+        funding_rate = float(signal.get("funding_rate") or 0.0)
+        open_interest_change = float(signal.get("open_interest_change") or 0.0)
+        dxy_trend = float(signal.get("dxy_trend") or 0.0)
+        spx_trend = float(signal.get("spx_trend") or 0.0)
+        btc_corr = float(signal.get("btc_corr") or 0.0)
 
         price_range = abs(tp - entry) / (entry + 1e-6)
         risk_amount = abs(entry - sl) / (entry + 1e-6)
@@ -109,6 +124,23 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             "high_score": high_score,
             "medium_score": medium_score,
             "is_long": is_long,
+            "partial_tp_progress_norm": max(0.0, min(1.0, partial_tp_progress / 3.0)),
+            "price_velocity_3": price_velocity_3,
+            "price_velocity_5": price_velocity_5,
+            "price_velocity_10": price_velocity_10,
+            "price_acceleration_3_10": price_acceleration_3_10,
+            "velocity_abs_3": abs(price_velocity_3),
+            "velocity_abs_10": abs(price_velocity_10),
+            "atr_rel": atr_rel,
+            "atr_regime_clamped": max(0.0, min(5.0, atr_regime)),
+            "relative_volume_clamped": max(0.0, min(10.0, relative_volume)),
+            "mtf_4h_trend": mtf_4h_trend,
+            "mtf_1d_trend": mtf_1d_trend,
+            "funding_rate": funding_rate,
+            "open_interest_change": open_interest_change,
+            "dxy_trend": dxy_trend,
+            "spx_trend": spx_trend,
+            "btc_corr": btc_corr,
         }
 
         vec = [float(values.get(col, 0.0)) for col in feature_cols]

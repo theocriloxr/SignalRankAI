@@ -110,12 +110,34 @@ async def _resend_unsent_signals_async():
         if not raw_signals:
             return
 
-        # Keep top-20 highest-score signals to avoid flooding users
-        signals = sorted(
+        resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
+        resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "8") or 8)
+
+        # Keep highest-quality signals only to avoid flooding users.
+        ranked = sorted(
             raw_signals,
             key=lambda s: float(getattr(s, 'score', 0) or 0),
             reverse=True,
-        )[:20]
+        )
+
+        # De-duplicate by asset+timeframe and enforce quality floor.
+        best_by_bucket = {}
+        for s in ranked:
+            try:
+                if float(getattr(s, 'score', 0) or 0) < resend_min_score:
+                    continue
+                bucket = f"{str(getattr(s, 'asset', '')).upper()}_{str(getattr(s, 'timeframe', '')).lower()}"
+                if not bucket.strip("_"):
+                    continue
+                if bucket not in best_by_bucket:
+                    best_by_bucket[bucket] = s
+            except Exception:
+                continue
+
+        signals = list(best_by_bucket.values())[:max(1, resend_max_signals)]
+
+        if not signals:
+            return
 
         # Single Bot instance, properly initialised — avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
@@ -200,6 +222,7 @@ async def _resend_unsent_signals_async():
 
                 for user_id in user_ids:
                     user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
+                    gate_tier = _normalized_delivery_tier(user_tier)
                     try:
                         if int(user_id) in delivered_user_ids:
                             continue
@@ -207,16 +230,21 @@ async def _resend_unsent_signals_async():
                         # Tier, score, and daily-limit gate
                         score = float(getattr(sig, 'score', 0) or 0)
                         # No Redis dependency in resend flow; DB delivery table is the source of truth.
-                        if not delivery_mgr.should_send_signal(user_tier, score, user_id=int(user_id)):
+                        if not delivery_mgr.should_send_signal(gate_tier, score, user_id=int(user_id)):
                             logger.debug(
                                 f"[resend] User {user_id} not eligible for signal {signal_id} "
-                                f"(tier/score/limit), skipping."
+                                f"(tier={gate_tier}/score/limit), skipping."
                             )
                             continue
 
+                        _asset = str(getattr(sig, 'asset', '') or '').upper().strip()
+                        if _asset and await _is_asset_delivery_locked(int(user_id), _asset):
+                            logger.debug(f"[resend] asset lock user={user_id} asset={_asset} signal={signal_id}")
+                            continue
+
                         # Format and send
-                        display_tier = 'vip' if user_tier in ('owner', 'admin') else user_tier
-                        text = format_signal(sig_dict, user_tier=user_tier, display_tier=display_tier)
+                        display_tier = gate_tier
+                        text = format_signal(sig_dict, user_tier=gate_tier, display_tier=display_tier)
                         if not text or not str(text).strip():
                             logger.info(
                                 f"[resend] Skipped signal {signal_id} for user {user_id} "
@@ -242,13 +270,13 @@ async def _resend_unsent_signals_async():
                                     db_session,
                                     telegram_user_id=int(user_id),
                                     signal_id=str(signal_id),
-                                    tier_at_send=str(user_tier),
+                                    tier_at_send=str(gate_tier),
                                 )
                                 await db_session.commit()
                             if ok:
-                                logger.info(f"[resend] DB tracked delivery: signal {signal_id} to user {user_id} (tier={user_tier})")
+                                logger.info(f"[resend] DB tracked delivery: signal {signal_id} to user {user_id} (tier={gate_tier})")
                             else:
-                                logger.info(f"[resend] DB deduped: signal {signal_id} to user {user_id} (tier={user_tier})")
+                                logger.info(f"[resend] DB deduped: signal {signal_id} to user {user_id} (tier={gate_tier})")
                             delivered_user_ids.add(int(user_id))
                         except Exception as db_err:
                             logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {db_err}")
@@ -263,7 +291,7 @@ async def _resend_unsent_signals_async():
                                         db_session,
                                         telegram_user_id=int(user_id),
                                         signal_id=str(signal_id),
-                                        tier_at_send=f"{str(user_tier)[:8]}_blk",
+                                        tier_at_send=f"{str(gate_tier)[:8]}_blk",
                                     )
                                     await db_session.commit()
                                 delivered_user_ids.add(int(user_id))
@@ -455,10 +483,10 @@ logger = logging.getLogger(__name__)
 
 TIER_LIMITS = {
     'free': 3,
-    'premium': 10,
-    'vip': 30,
-    'admin': 9999,
-    'owner': 9999,
+    'premium': 20,
+    'vip': 50,
+    'admin': 100,
+    'owner': 100,
 }
 
 
@@ -474,6 +502,13 @@ def _log_once(key: str, message: str) -> None:
     except Exception as e:
         logger.debug(f"[log_once] Failed to print log message: {e}")
         pass
+
+
+def _normalized_delivery_tier(tier: str | None) -> str:
+    t = str(tier or "free").strip().lower()
+    if t in ("owner", "admin"):
+        return "vip"
+    return t
 
 
 
@@ -568,6 +603,125 @@ def _collapse_signal_variants(signals_list: list[dict]) -> list[dict]:
         reverse=True,
     )
     return collapsed
+
+
+def _signal_news_score(signal: dict | None) -> float:
+    if not isinstance(signal, dict):
+        return 0.0
+    candidates = (
+        signal.get("news_score"),
+        signal.get("news_sentiment"),
+        signal.get("sentiment_score"),
+        signal.get("news_bias"),
+    )
+    for value in candidates:
+        try:
+            score = float(value)
+            if abs(score) <= 1.0:
+                score *= 100.0
+            return score
+        except Exception:
+            continue
+    return 0.0
+
+
+def _build_update_reason(old_signal: dict | None, new_signal: dict | None) -> str | None:
+    if not isinstance(old_signal, dict) or not isinstance(new_signal, dict):
+        return None
+
+    min_roi_delta = float(os.getenv("SIGNAL_UPDATE_MIN_ROI_DELTA", "0.10") or 0.10)
+    min_rr_delta = float(os.getenv("SIGNAL_UPDATE_MIN_RR_DELTA", "0.10") or 0.10)
+    min_ml_delta = float(os.getenv("SIGNAL_UPDATE_MIN_ML_DELTA", "0.02") or 0.02)
+    min_news_delta = float(os.getenv("SIGNAL_UPDATE_MIN_NEWS_DELTA", "5") or 5.0)
+
+    old_roi = _signal_roi_score(old_signal)
+    new_roi = _signal_roi_score(new_signal)
+    old_rr = _safe_float(old_signal.get("rr_ratio") or old_signal.get("rr_estimate") or old_signal.get("risk_reward"))
+    new_rr = _safe_float(new_signal.get("rr_ratio") or new_signal.get("rr_estimate") or new_signal.get("risk_reward"))
+    if old_rr <= 0:
+        old_rr = old_roi
+    if new_rr <= 0:
+        new_rr = new_roi
+
+    old_ml = _safe_float(old_signal.get("ml_probability"))
+    new_ml = _safe_float(new_signal.get("ml_probability"))
+    old_news = _signal_news_score(old_signal)
+    new_news = _signal_news_score(new_signal)
+
+    reasons: list[str] = []
+    if (new_roi - old_roi) >= min_roi_delta:
+        reasons.append(f"ROI improved {old_roi:.2f}→{new_roi:.2f}")
+    if (new_rr - old_rr) >= min_rr_delta:
+        reasons.append(f"R:R improved {old_rr:.2f}→{new_rr:.2f}")
+    if (new_ml - old_ml) >= min_ml_delta:
+        reasons.append(f"ML confidence improved {old_ml * 100:.0f}%→{new_ml * 100:.0f}%")
+    if (new_news - old_news) >= min_news_delta and new_news >= old_news:
+        reasons.append("news backdrop is more favorable")
+
+    if not reasons:
+        return None
+
+    if (new_roi + 1e-9) < old_roi:
+        return None
+    if (new_rr + 1e-9) < old_rr:
+        return None
+    if new_news < old_news:
+        return None
+
+    return "; ".join(reasons[:3])
+
+
+async def _is_asset_delivery_locked(
+    telegram_user_id: int,
+    asset: str,
+    lock_hours: int | None = None,
+) -> bool:
+    try:
+        from datetime import datetime, timedelta
+        from sqlalchemy import and_, func, select
+        from db.session import get_session
+        from db.models import Outcome, Signal, SignalDelivery, User
+
+        symbol = str(asset or "").upper().strip()
+        if not symbol:
+            return False
+
+        hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+        if hours <= 0:
+            return False
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        async with get_session() as session:
+            user = (
+                await session.execute(
+                    select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+                )
+            ).scalar_one_or_none()
+            if user is None:
+                await session.commit()
+                return False
+
+            locked_count = (
+                await session.execute(
+                    select(func.count(SignalDelivery.id))
+                    .select_from(SignalDelivery)
+                    .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+                    .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+                    .where(
+                        SignalDelivery.user_id == user.id,
+                        SignalDelivery.delivered_at >= cutoff,
+                        func.upper(Signal.asset) == symbol,
+                        Signal.archived == False,
+                        Signal.expired == False,
+                        Outcome.id.is_(None),
+                    )
+                )
+            ).scalar_one()
+            await session.commit()
+            return int(locked_count or 0) > 0
+    except Exception as exc:
+        logger.debug(f"[asset_lock] check failed for user={telegram_user_id} asset={asset}: {exc}")
+        return False
 
 
 async def _load_signal_payload(signal_id: str) -> dict | None:
@@ -807,6 +961,15 @@ async def _deliver_or_update_signal_async(
         editable = await _find_editable_signal_message(int(telegram_user_id), signal)
         if editable is not None:
             try:
+                old_payload = await _load_signal_payload(str(editable.get("old_signal_id") or ""))
+                update_reason = _build_update_reason(old_payload or {}, signal)
+                if not update_reason:
+                    logger.debug(
+                        f"[signal_update] skipped non-material update user={telegram_user_id} "
+                        f"old={editable.get('old_signal_id')} new={signal_id}"
+                    )
+                    return True
+
                 counts = await _load_signal_engagement_counts(signal_id)
                 keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
                 await bot.edit_message_text(
@@ -828,13 +991,24 @@ async def _deliver_or_update_signal_async(
                 )
                 await bot.send_message(
                     chat_id=int(telegram_user_id),
-                    text="♻️ <b>Signal updated</b> — levels refreshed on your active signal message.",
+                    text=f"♻️ <b>Signal updated</b> — {update_reason}.",
                     parse_mode="HTML",
                     reply_markup=jump_keyboard,
                 )
                 return True
             except Exception as exc:
                 logger.debug(f"[signal_update] edit path failed; fallback to fresh send: {exc}")
+
+    try:
+        signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        if signal_asset and await _is_asset_delivery_locked(int(telegram_user_id), signal_asset):
+            logger.info(
+                f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
+                f"asset={signal_asset} signal={signal_id or signal.get('id')}"
+            )
+            return True
+    except Exception as exc:
+        logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
 
     await _send_signal_with_engagement_async(
         bot,
@@ -1706,8 +1880,8 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     """Dispatch signals to user based on their tier.
     
     Tier-based Limits & Score Filtering:
-    - OWNER: 9999 signals/day (all signals, real-time, no score filter)
-    - ADMIN: 9999 signals/day (all signals, real-time, no score filter)
+    - OWNER: VIP-equivalent stream (30/day, same selection as VIP)
+    - ADMIN: VIP-equivalent stream (30/day, same selection as VIP)
     - VIP: 30 signals/day (score >= 72 only, real-time)
     - PREMIUM: 10 signals/day (score 55-80, real-time)
     - FREE: 2 random signals/day (delayed queue, bot picks any from global pool)
@@ -1724,6 +1898,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
+    routing_tier = _normalized_delivery_tier(tier)
 
     # Free users with paid extra-signal quota receive highest scoring signal
     extra_left = 0
@@ -1747,11 +1922,9 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
         # Tier-based signal selection with score thresholds
-        if tier in ('owner', 'admin'):
-            signals_list = vip_list + prem_list
-        elif tier in ('vip',):
+        if routing_tier in ('vip',):
             signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
-        elif tier in ('premium',):
+        elif routing_tier in ('premium',):
             signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
         else:  # FREE
             signals_list = (vip_list + prem_list)
@@ -1924,21 +2097,18 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         engine = get_engine_for_event_loop()
 
         if engine is not None:
-            effective_tier = tier
-            display_tier = tier
+            effective_tier = routing_tier
+            display_tier = routing_tier
             
             # OWNER and ADMIN always get VIP format for ALL notifications
-            if tier in ('owner', 'admin'):
-                display_tier = 'vip'
-                effective_tier = tier  # Keep actual tier for delivery tracking
-            elif tier == 'free' and extra_left > 0:
+            if tier == 'free' and extra_left > 0:
                 effective_tier = 'premium'
                 display_tier = 'premium'
 
 
-            if effective_tier in ('premium', 'vip', 'owner', 'admin'):
+            if effective_tier in ('premium', 'vip'):
                 bot = Bot(token=_require_telegram_token())
-                limit = TIER_LIMITS.get(tier, 0)
+                limit = TIER_LIMITS.get(routing_tier, 0)
                 if tier == 'free' and extra_left > 0:
                     limit = min(int(max(1, extra_left)), len(signals_list))
 
@@ -1948,6 +2118,15 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     to_send: list[dict] = []
                     async with get_session() as session:
                         for signal in signals_list[: max(0, int(limit))]:
+                            if await _is_asset_delivery_locked(
+                                int(user_id),
+                                str(signal.get('asset') or signal.get('symbol') or ''),
+                            ):
+                                logger.debug(
+                                    f"[dispatch] asset lock skip user={user_id} "
+                                    f"asset={signal.get('asset') or signal.get('symbol')}"
+                                )
+                                continue
                             s = await get_or_create_signal(session, signal)
                             logger.debug(f"[db] Attempting to record delivery: user={user_id} signal_id={s.signal_id} tier={effective_tier}")
                             ok = await record_signal_delivery(
@@ -2273,7 +2452,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             f"[bot] dispatch postgres path failed: {type(e).__name__}: {e}",
         )
 
-    if tier in ('premium', 'vip', 'owner', 'admin'):
+    if routing_tier in ('premium', 'vip'):
         from core.redis_state import state
         from core.tier_constants import TIER_DAILY_LIMITS
         from datetime import datetime
@@ -2287,17 +2466,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         except Exception:
             signals_sent_today = 0
         
-        daily_limit = TIER_DAILY_LIMITS.get(tier, 2)
+        daily_limit = TIER_DAILY_LIMITS.get(routing_tier, 2)
         
         if signals_sent_today >= daily_limit:
             logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")
             return
         
         bot = Bot(token=_require_telegram_token())
-        limit = TIER_LIMITS.get(tier, 0)
+        limit = TIER_LIMITS.get(routing_tier, 0)
         sent = 0
-        # OWNER and ADMIN always get VIP format
-        display_tier = 'vip' if tier in ('owner', 'admin') else tier
+        display_tier = routing_tier
         for signal in signals_list:
             # Check if we've hit the daily limit
             if signals_sent_today + sent >= daily_limit:
@@ -2432,6 +2610,70 @@ def distribute_random_signals_to_free_users_job():
         run_sync(_do_distribute())
     except Exception as e:
         logger.error(f"❌ Error distributing signals to FREE users: {e}")
+
+
+def refresh_active_signal_keyboards_once() -> None:
+    """One-shot migration: refresh keyboards for active unresolved signals.
+
+    - Adds current callback schema to older messages
+    - Deactivates rows for resolved/expired/old signals
+    """
+    try:
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select
+        from db.session import get_session
+        from db.models import ActiveSignalMessage, Signal, Outcome
+
+        async def _run() -> None:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=1)
+            bot = Bot(token=_require_telegram_token())
+            async with bot:
+                async with get_session() as session:
+                    rows = (
+                        await session.execute(
+                            select(ActiveSignalMessage, Signal)
+                            .join(Signal, Signal.signal_id == ActiveSignalMessage.signal_id)
+                            .where(ActiveSignalMessage.is_active.is_(True))
+                            .limit(500)
+                        )
+                    ).all()
+
+                    for active_row, sig in rows:
+                        try:
+                            created = getattr(sig, "created_at", None)
+                            if created is None:
+                                active_row.is_active = False
+                                continue
+                            if getattr(created, "tzinfo", None) is None:
+                                created = created.replace(tzinfo=timezone.utc)
+
+                            outcome = (
+                                await session.execute(
+                                    select(Outcome).where(Outcome.signal_id == str(sig.signal_id)).limit(1)
+                                )
+                            ).scalar_one_or_none()
+
+                            if bool(getattr(sig, "expired", False)) or created < cutoff or outcome is not None:
+                                active_row.is_active = False
+                                continue
+
+                            signal_payload = await _load_signal_payload(str(sig.signal_id))
+                            counts = await _load_signal_engagement_counts(str(sig.signal_id))
+                            keyboard = _build_signal_keyboard(str(sig.signal_id), signal=signal_payload, counts=counts)
+                            await bot.edit_message_reply_markup(
+                                chat_id=int(active_row.chat_id),
+                                message_id=int(active_row.message_id),
+                                reply_markup=keyboard,
+                            )
+                        except Exception as exc:
+                            if "message is not modified" not in str(exc).lower():
+                                logger.debug(f"[backfill] keyboard refresh skipped: {exc}")
+
+                    await session.commit()
+
+        run_sync(_run())
+    except Exception as exc:
+        logger.debug(f"[backfill] active keyboard backfill failed: {exc}")
 
 
 _bot_lock_conn = None
@@ -4637,6 +4879,8 @@ def run_bot() -> None:
         id='resend_unsent_signals_job',
         replace_existing=True,
         max_instances=1,
+        coalesce=True,
+        misfire_grace_time=20,
         jobstore=_sa,
     )
     scheduler.add_job(
@@ -4646,6 +4890,8 @@ def run_bot() -> None:
         id='distribute_random_signals_to_free_users_job',
         replace_existing=True,
         max_instances=1,
+        coalesce=True,
+        misfire_grace_time=120,
         jobstore=_sa,
     )
     scheduler.add_job(
@@ -4671,6 +4917,12 @@ def run_bot() -> None:
     )
 
     scheduler.start()
+
+    # One-shot startup migration: refresh keyboards on previously sent active messages.
+    try:
+        refresh_active_signal_keyboards_once()
+    except Exception as _kbd_backfill_err:
+        logger.debug(f"[backfill] startup keyboard refresh failed: {_kbd_backfill_err}")
 
     # ── Webhook mode ──────────────────────────────────────────────────────────
     # When TELEGRAM_USE_WEBHOOK is set, railway_main.py owns the event loop and

@@ -963,6 +963,14 @@ def main_loop(DRY_RUN: bool = False):
                             logger.debug(f"[engine] Failed to record ML rejection: {e}")
                             pass
                         continue
+                    try:
+                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.45") or 0.45)
+                    except Exception:
+                        ml_hard_min = 0.45
+                    if prob is not None and float(prob) < ml_hard_min:
+                        sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
+                        _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
+                        continue
                     sig['ml_probability'] = prob
                     risk_passed.append(sig)
 
@@ -980,6 +988,72 @@ def main_loop(DRY_RUN: bool = False):
                         ind = tf_data.get('indicators', {})
                         candles = tf_data.get('candles', [])
                         last_close = candles[-1]['close'] if candles else None
+
+                        # Candle-derived context features for ML/meta-modeling.
+                        try:
+                            _closes = [float(c.get('close')) for c in candles if isinstance(c, dict) and c.get('close') is not None]
+                            _highs = [float(c.get('high')) for c in candles if isinstance(c, dict) and c.get('high') is not None]
+                            _lows = [float(c.get('low')) for c in candles if isinstance(c, dict) and c.get('low') is not None]
+                            _vols = [float(c.get('volume') or 0.0) for c in candles if isinstance(c, dict)]
+
+                            def _pct(n: int) -> float:
+                                if len(_closes) <= n:
+                                    return 0.0
+                                _p = float(_closes[-(n + 1)])
+                                _c = float(_closes[-1])
+                                return ((_c - _p) / _p) if _p > 0 else 0.0
+
+                            def _atr(period: int) -> float:
+                                if len(_closes) < period + 1 or len(_highs) < period + 1 or len(_lows) < period + 1:
+                                    return 0.0
+                                _trs = []
+                                for i in range(1, len(_closes)):
+                                    h = float(_highs[i])
+                                    l = float(_lows[i])
+                                    pc = float(_closes[i - 1])
+                                    _trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+                                _tail = _trs[-period:] if len(_trs) >= period else _trs
+                                return (sum(_tail) / len(_tail)) if _tail else 0.0
+
+                            _v3 = _pct(3)
+                            _v5 = _pct(5)
+                            _v10 = _pct(10)
+                            _atr14 = _atr(14)
+                            _atr50 = _atr(50)
+
+                            sig['price_velocity_3'] = _v3
+                            sig['price_velocity_5'] = _v5
+                            sig['price_velocity_10'] = _v10
+                            sig['price_acceleration_3_10'] = _v3 - _v10
+                            sig['atr_rel'] = (_atr14 / float(_closes[-1])) if _closes and float(_closes[-1]) > 0 else 0.0
+                            sig['atr_regime'] = (_atr14 / _atr50) if _atr50 > 0 else 0.0
+
+                            if len(_vols) >= 21:
+                                _ma20v = sum(_vols[-21:-1]) / 20.0
+                                sig['relative_volume'] = (float(_vols[-1]) / _ma20v) if _ma20v > 0 else 0.0
+                            else:
+                                sig['relative_volume'] = 0.0
+
+                            def _mtf_trend(_tf: str) -> float:
+                                try:
+                                    _tf_c = (market_data.get(_tf, {}) or {}).get('candles', [])
+                                    _tf_close = [float(c.get('close')) for c in _tf_c if isinstance(c, dict) and c.get('close') is not None]
+                                    if len(_tf_close) < 50:
+                                        return 0.0
+                                    _s20 = sum(_tf_close[-20:]) / 20.0
+                                    _s50 = sum(_tf_close[-50:]) / 50.0
+                                    if _s20 > _s50:
+                                        return 1.0
+                                    if _s20 < _s50:
+                                        return -1.0
+                                    return 0.0
+                                except Exception:
+                                    return 0.0
+
+                            sig['mtf_4h_trend'] = _mtf_trend('4h')
+                            sig['mtf_1d_trend'] = _mtf_trend('1d')
+                        except Exception:
+                            pass
 
                         # Order-block proximity enrichment (best-effort)
                         if 'is_near_order_block' not in sig:
@@ -1058,6 +1132,43 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as e:
                                 logger.debug(f"[engine] Failed to compute take profit level: {e}")
                                 pass
+
+                        # Dynamic stop/target widening in high-volatility regimes.
+                        try:
+                            _atr_regime = float(sig.get('atr_regime') or 0.0)
+                            _vol_widen_thr = float(os.getenv('VOLATILITY_WIDEN_ATR_MULT', '3.0') or 3.0)
+                            if _atr_regime >= _vol_widen_thr and entry_f > 0 and sl:
+                                _sl_mult = float(os.getenv('VOLATILITY_WIDEN_SL_MULT', '1.25') or 1.25)
+                                _tp_mult = float(os.getenv('VOLATILITY_WIDEN_TP_MULT', '1.15') or 1.15)
+                                _dir = str(sig.get('direction') or 'long').lower()
+                                _slf = float(sl)
+                                _risk = abs(entry_f - _slf)
+                                if _risk > 0:
+                                    if _dir == 'long':
+                                        sl = entry_f - (_risk * _sl_mult)
+                                    else:
+                                        sl = entry_f + (_risk * _sl_mult)
+
+                                if isinstance(tp, (list, tuple)):
+                                    _tp_new = []
+                                    for _tpv in tp:
+                                        try:
+                                            _tpf = float(_tpv)
+                                            _dist = abs(_tpf - entry_f)
+                                            if _dir == 'long':
+                                                _tp_new.append(entry_f + (_dist * _tp_mult))
+                                            else:
+                                                _tp_new.append(entry_f - (_dist * _tp_mult))
+                                        except Exception:
+                                            continue
+                                    if _tp_new:
+                                        tp = _tp_new
+                                elif tp is not None:
+                                    _tpf = float(tp)
+                                    _dist = abs(_tpf - entry_f)
+                                    tp = (entry_f + (_dist * _tp_mult)) if _dir == 'long' else (entry_f - (_dist * _tp_mult))
+                        except Exception:
+                            pass
                         # Normalize take_profit: list-of-dicts (StrategySignal) → list of price floats
                         if isinstance(tp, (list, tuple)):
                             _tp_normalized = []
@@ -1073,8 +1184,62 @@ def main_loop(DRY_RUN: bool = False):
                                     pass
                             if _tp_normalized:
                                 tp = [p for p in _tp_normalized if p > 0]
+
+                        # Sanity-check TP ordering vs entry/SL/direction.
+                        # Long:  SL < entry < TP1 <= TP2 <= TP3
+                        # Short: SL > entry > TP1 >= TP2 >= TP3
+                        try:
+                            _dir = str(sig.get('direction') or 'long').lower().strip()
+                            _entry = float(entry_f)
+                            _sl = float(sl) if sl is not None else 0.0
+                            _tp_list: list[float] = []
+                            if isinstance(tp, (list, tuple)):
+                                _tp_list = [float(x) for x in tp if x is not None]
+                            elif tp is not None:
+                                _tp_list = [float(tp)]
+
+                            if _tp_list and _entry > 0 and _sl > 0:
+                                if _dir == 'long':
+                                    _tp_list = sorted([x for x in _tp_list if x > _entry])
+                                    if not (_sl < _entry):
+                                        _tp_list = []
+                                else:
+                                    _tp_list = sorted([x for x in _tp_list if x < _entry], reverse=True)
+                                    if not (_sl > _entry):
+                                        _tp_list = []
+
+                            tp = _tp_list if len(_tp_list) > 1 else (_tp_list[0] if _tp_list else None)
+                        except Exception:
+                            pass
+
+                        if not tp:
+                            sig['rejection_reason'] = 'invalid_tp_structure'
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                            continue
+
                         sig['stop_loss'] = sl
                         sig['take_profit'] = tp
+
+                        # ML-driven dynamic risk sizing hint (for formatters/executors).
+                        try:
+                            _mlp = float(sig.get('ml_probability') or 0.0)
+                            if _mlp >= float(os.getenv('ML_HIGH_CONFIDENCE', '0.75') or 0.75):
+                                _risk_pct = float(os.getenv('ML_RISK_HIGH_PCT', '2.0') or 2.0)
+                            elif _mlp >= float(os.getenv('ML_MEDIUM_CONFIDENCE', '0.50') or 0.50):
+                                _risk_pct = float(os.getenv('ML_RISK_MEDIUM_PCT', '1.0') or 1.0)
+                            else:
+                                _risk_pct = float(os.getenv('ML_RISK_LOW_PCT', '0.5') or 0.5)
+                            sig['risk_pct'] = max(0.1, min(_risk_pct, 5.0))
+
+                            try:
+                                from engine.signal_calculations import calculate_position_size
+                                _pos = calculate_position_size(sig, account_balance=float(os.getenv('DEFAULT_ACCOUNT_BALANCE', '10000') or 10000), risk_pct=float(sig['risk_pct']))
+                                if _pos is not None:
+                                    sig['position_size'] = float(_pos)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
 
                         # final gating by score threshold
                         if sig.get('score', 0) < MIN_SCORE_THRESHOLD:

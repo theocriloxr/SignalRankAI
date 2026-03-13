@@ -170,7 +170,7 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		if _chart_symbol:
 			chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{_chart_symbol}"
 		signal_id = str((signal or {}).get("signal_id") or "")[:36]
-		trade_cb = f"mt5_trade_{signal_id}" if signal_id else "trade_now"
+		trade_cb = f"mt5_trade_{signal_id}" if signal_id else "mt5_trade"
 		rows = [[
 			InlineKeyboardButton("📈 View Chart", url=chart_url),
 			InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
@@ -440,6 +440,28 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	except Exception:
 		pass
 	data = str(query.data or "")
+	if data.startswith("trade_now_"):
+		try:
+			signal_id = str(data.replace("trade_now_", "", 1) or "").strip()[:36]
+			if signal_id:
+				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+				new_kbd = InlineKeyboardMarkup([
+					[InlineKeyboardButton("⚡ Trade Now", callback_data=f"mt5_trade_{signal_id}")],
+					[
+						InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
+						InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{signal_id}"),
+					],
+				])
+				await query.edit_message_reply_markup(reply_markup=new_kbd)
+				await query.answer("Buttons updated. Tap ⚡ Trade Now again.", show_alert=False)
+				return
+		except Exception:
+			pass
+		try:
+			await query.answer("This button is outdated. Send /signals to refresh.", show_alert=True)
+		except Exception:
+			pass
+		return
 	# Help navigation
 	if data == "nav_home":
 		try:
@@ -562,9 +584,10 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if data == "mt5_link_guide":
 		try:
 			await query.message.reply_text(
-				"To connect your MT5 account for auto-trading, please reply with your details in this exact format:\n"
-				"/mt5_connect [Account Number] [Password] [Server Name]\n"
-				"Example: /mt5_connect 12345678 MyPass123 Exness-MT5-Real"
+				"To connect your MT5 account for auto-trading, use one of these:\n\n"
+				"1) Guided setup: /connect_broker\n"
+				"2) Direct command: /mt5_link <Account Number> <Password> <Server Name>\n\n"
+				"Example: /mt5_link 12345678 MyPass123 Exness-MT5-Real"
 			)
 			return
 		except Exception:
@@ -2637,6 +2660,12 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	try:
 		from db.session import get_engine_for_event_loop, get_session
 		engine = get_engine_for_event_loop()
+		if engine is None:
+			try:
+				from db.session import _get_global_engine
+				engine = _get_global_engine()
+			except Exception:
+				engine = None
 		if engine is not None:
 			from db.pg_features import get_or_create_referral_code, get_referral_progress
 			async with get_session() as session:
@@ -4315,7 +4344,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			mt5_password=mt5_password,
 			mt5_server=mt5_server,
 		)
-		if result.get("ok"):
+		if result.get("success"):
 			meta_id = result.get("metaapi_account_id") or ""
 			reply = (
 				"✅ *MT5 Account Linked Successfully!*\n\n"
@@ -4366,11 +4395,17 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 	try:
 		from services.mt5_client import get_user_mt5_account_id
 		from db.session import get_session
-		from db.models import MT5Credentials
+		from db.models import MT5Credentials, User
 		from sqlalchemy import select
 		async with get_session() as session:
+			user_row = (await session.execute(
+				select(User).where(User.telegram_user_id == int(user_id))
+			)).scalar_one_or_none()
+			if user_row is None:
+				await update.message.reply_text("No account profile found. Send /start then try again.")
+				return
 			row = (await session.execute(
-				select(MT5Credentials).where(MT5Credentials.user_id == user_id)
+				select(MT5Credentials).where(MT5Credentials.user_id == int(user_row.id))
 			)).scalar_one_or_none()
 		if row is None:
 			await update.message.reply_text(

@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import logging
+import math
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -15,7 +16,6 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
 # Add parent dir to path
@@ -57,8 +57,85 @@ async def load_training_data():
     try:
         from db.session import get_session
 
-        from db.models import Signal, Outcome, SignalDelivery
-        from sqlalchemy import select, func
+        from db.models import Signal, Outcome, MarketCandle
+        from sqlalchemy import select, desc
+
+        def _parse_tp(raw_tp):
+            if raw_tp is None:
+                return 0.0
+            if isinstance(raw_tp, (int, float)):
+                return float(raw_tp)
+            if isinstance(raw_tp, (list, tuple)):
+                vals = []
+                for item in raw_tp:
+                    try:
+                        if isinstance(item, dict):
+                            vals.append(float(item.get("price") or item.get("tp") or item.get("target")))
+                        else:
+                            vals.append(float(item))
+                    except Exception:
+                        continue
+                return float(vals[0]) if vals else 0.0
+            try:
+                txt = str(raw_tp)
+                parsed = json.loads(txt)
+                return _parse_tp(parsed)
+            except Exception:
+                try:
+                    return float(raw_tp)
+                except Exception:
+                    return 0.0
+
+        async def _load_candles(session, symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
+            if not symbol or not timeframe or not created_at:
+                return []
+            cutoff_ms = int(created_at.timestamp() * 1000)
+            q = (
+                select(MarketCandle)
+                .where(
+                    MarketCandle.symbol == str(symbol),
+                    MarketCandle.timeframe == str(timeframe),
+                    MarketCandle.open_time_ms <= cutoff_ms,
+                )
+                .order_by(desc(MarketCandle.open_time_ms))
+                .limit(limit)
+            )
+            res = await session.execute(q)
+            rows = list(res.scalars().all())
+            rows.reverse()
+            return rows
+
+        def _atr(highs, lows, closes, period=14):
+            if len(closes) < period + 1:
+                return 0.0
+            trs = []
+            for i in range(1, len(closes)):
+                h = float(highs[i])
+                l = float(lows[i])
+                pc = float(closes[i - 1])
+                trs.append(max(h - l, abs(h - pc), abs(l - pc)))
+            tail = trs[-period:] if len(trs) >= period else trs
+            return (sum(tail) / len(tail)) if tail else 0.0
+
+        def _pct(closes, n):
+            if len(closes) <= n:
+                return 0.0
+            prev = float(closes[-(n + 1)])
+            cur = float(closes[-1])
+            if prev <= 0:
+                return 0.0
+            return (cur - prev) / prev
+
+        def _trend_from_closes(closes):
+            if len(closes) < 50:
+                return 0.0
+            sma20 = sum(closes[-20:]) / 20.0
+            sma50 = sum(closes[-50:]) / 50.0
+            if sma20 > sma50:
+                return 1.0
+            if sma20 < sma50:
+                return -1.0
+            return 0.0
 
         async with get_session() as session:
             # Get signals delivered in last 90 days with outcomes
@@ -80,8 +157,93 @@ async def load_training_data():
         data = []
         for sig, outcome in rows:
             status = str(getattr(outcome, 'status', '') or '').lower()
-            # Target: 1 if TP, 0 if SL
-            target = 1 if status in ("tp", "tp1", "tp2", "partial_tp") else 0
+            meta = getattr(outcome, 'meta', None) or {}
+            if not isinstance(meta, dict):
+                meta = {}
+
+            created_at = getattr(sig, 'created_at', None) or datetime.utcnow()
+            candles = await _load_candles(
+                session,
+                str(getattr(sig, 'asset', '') or ''),
+                str(getattr(sig, 'timeframe', '') or ''),
+                created_at,
+                limit=120,
+            )
+            closes = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles]
+            highs = [float(getattr(c, 'high', 0.0) or 0.0) for c in candles]
+            lows = [float(getattr(c, 'low', 0.0) or 0.0) for c in candles]
+            vols = [float(getattr(c, 'volume', 0.0) or 0.0) for c in candles]
+
+            vel3 = _pct(closes, 3)
+            vel5 = _pct(closes, 5)
+            vel10 = _pct(closes, 10)
+            atr14 = _atr(highs, lows, closes, period=14)
+            atr50 = _atr(highs, lows, closes, period=50)
+            atr_rel = (atr14 / closes[-1]) if closes and closes[-1] > 0 else 0.0
+            atr_regime = (atr14 / atr50) if atr50 > 0 else 0.0
+            rel_vol = 0.0
+            if len(vols) >= 21:
+                ma20v = sum(vols[-21:-1]) / 20.0
+                rel_vol = (vols[-1] / ma20v) if ma20v > 0 else 0.0
+
+            candles_4h = await _load_candles(session, str(getattr(sig, 'asset', '') or ''), '4h', created_at, limit=60)
+            closes_4h = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_4h]
+            candles_1d = await _load_candles(session, str(getattr(sig, 'asset', '') or ''), '1d', created_at, limit=60)
+            closes_1d = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_1d]
+            mtf_4h_trend = _trend_from_closes(closes_4h)
+            mtf_1d_trend = _trend_from_closes(closes_1d)
+
+            # Capture partial TP progression even when final status is SL.
+            tp_progress = 0
+            for key in ("tp_progress", "max_tp_hit", "tp_hit_count", "highest_tp_reached"):
+                try:
+                    tp_progress = max(tp_progress, int(meta.get(key) or 0))
+                except Exception:
+                    continue
+
+            false_breakout = 0
+            for k in ("false_breakout", "volatility_stopout", "sl_then_tp1", "post_sl_reversal_to_tp1"):
+                try:
+                    if bool(meta.get(k)):
+                        false_breakout = 1
+                        break
+                except Exception:
+                    continue
+
+            if status in ("tp", "tp1", "tp2", "tp3", "partial_tp"):
+                barrier = "upper"
+            elif status in ("expired", "timeout", "time", "time_expired"):
+                barrier = "time"
+            else:
+                barrier = "lower"
+
+            # Binary target + sample-weight shaping.
+            target = 1 if barrier == "upper" else 0
+            sample_weight = 1.0
+            if status in ("tp", "tp3"):
+                sample_weight = 1.30
+                tp_progress = max(tp_progress, 3)
+            elif status == "tp2":
+                sample_weight = 1.15
+                tp_progress = max(tp_progress, 2)
+            elif status in ("tp1", "partial_tp"):
+                sample_weight = 1.05
+                tp_progress = max(tp_progress, 1)
+            elif barrier == "time":
+                sample_weight = 0.85
+            elif status == "sl":
+                if tp_progress >= 2:
+                    sample_weight = 0.55
+                elif tp_progress >= 1:
+                    sample_weight = 0.70
+
+            if false_breakout:
+                # Keep the sample, but reduce SL penalty so model learns stop-hunt contexts.
+                sample_weight *= 0.65
+
+            rr_raw = _safe_float(getattr(sig, 'rr_estimate', 0))
+            rr_eff = min(4.0, max(0.5, rr_raw))
+            sample_weight *= (0.75 + (rr_eff / 4.0))
 
             row = {
                 'signal_id': sig.signal_id,
@@ -91,12 +253,31 @@ async def load_training_data():
                 'score': _safe_float(getattr(sig, 'score', 0)),
                 'entry': _safe_float(getattr(sig, 'entry', 0)),
                 'stop_loss': _safe_float(getattr(sig, 'stop_loss', 0)),
-                'take_profit': _safe_float(getattr(sig, 'take_profit', 0)),
+                'take_profit': _parse_tp(getattr(sig, 'take_profit', 0)),
                 'rr_ratio': _safe_float(getattr(sig, 'rr_estimate', 0)),
                 'strategy_name': sig.strategy_name or 'unknown',
                 'regime': sig.regime or 'unknown',
                 'strength': _safe_float(getattr(sig, 'strength', 0)),
                 'ml_probability': _safe_float(getattr(sig, 'ml_probability', 0)),
+                'price_velocity_3': float(vel3),
+                'price_velocity_5': float(vel5),
+                'price_velocity_10': float(vel10),
+                'price_acceleration_3_10': float(vel3 - vel10),
+                'atr_rel': float(atr_rel),
+                'atr_regime': float(atr_regime),
+                'relative_volume': float(rel_vol),
+                'mtf_4h_trend': float(mtf_4h_trend),
+                'mtf_1d_trend': float(mtf_1d_trend),
+                'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
+                'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
+                'dxy_trend': _safe_float(meta.get('dxy_trend', 0.0)),
+                'spx_trend': _safe_float(meta.get('spx_trend', 0.0)),
+                'btc_corr': _safe_float(meta.get('btc_corr', 0.0)),
+                'partial_tp_progress': float(tp_progress),
+                'false_breakout': int(false_breakout),
+                'barrier_type': barrier,
+                'sample_weight': float(sample_weight),
+                'created_at': created_at,
                 'target': target,
             }
             data.append(row)
@@ -135,6 +316,11 @@ def engineer_features(df):
     X['risk_amount'] = (X['entry'] - X['stop_loss']).abs() / (X['entry'] + 1e-6)
     X['spread_ratio'] = X['risk_amount'] / (X['price_range'] + 1e-6)
     X['strength_normalized'] = X['strength'] / 100.0 if X['strength'].max() > 1 else X['strength']
+    X['partial_tp_progress_norm'] = X['partial_tp_progress'].fillna(0.0) / 3.0
+    X['velocity_abs_3'] = X['price_velocity_3'].abs()
+    X['velocity_abs_10'] = X['price_velocity_10'].abs()
+    X['atr_regime_clamped'] = X['atr_regime'].clip(lower=0.0, upper=5.0)
+    X['relative_volume_clamped'] = X['relative_volume'].clip(lower=0.0, upper=10.0)
 
     # Score bins
     X['high_score'] = (X['score'] >= 75).astype(int)
@@ -147,23 +333,60 @@ def engineer_features(df):
     feature_cols = [
         'score_normalized', 'risk_reward_ratio', 'price_range', 'risk_amount',
         'spread_ratio', 'strength_normalized', 'direction_enc', 'regime_enc',
-        'strategy_enc', 'high_score', 'medium_score', 'is_long'
+        'strategy_enc', 'high_score', 'medium_score', 'is_long',
+        'partial_tp_progress_norm',
+        'price_velocity_3', 'price_velocity_5', 'price_velocity_10',
+        'price_acceleration_3_10', 'velocity_abs_3', 'velocity_abs_10',
+        'atr_rel', 'atr_regime_clamped', 'relative_volume_clamped',
+        'mtf_4h_trend', 'mtf_1d_trend',
+        'funding_rate', 'open_interest_change', 'dxy_trend', 'spx_trend', 'btc_corr',
     ]
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
     y_train = X['target'].astype(np.int32)
+    sample_weights = X['sample_weight'].fillna(1.0).astype(np.float32)
 
-    return X_train, y_train, feature_cols
+    # Recency bias: exponentially emphasize recent outcomes (rolling market adaptation).
+    try:
+        ts = pd.to_datetime(X['created_at'], errors='coerce')
+        newest = ts.max()
+        if pd.notna(newest):
+            age_days = (newest - ts).dt.total_seconds().fillna(0.0) / 86400.0
+            half_life_days = float(os.getenv('ML_RECENCY_HALF_LIFE_DAYS', '90') or 90)
+            decay = np.exp(-np.log(2.0) * (age_days / max(1.0, half_life_days)))
+            recency_multiplier = 0.6 + (0.9 * decay)
+            sample_weights = (sample_weights * recency_multiplier.astype(np.float32)).astype(np.float32)
+    except Exception:
+        pass
+
+    timestamps = pd.to_datetime(X['created_at'], errors='coerce')
+
+    return X_train, y_train, feature_cols, sample_weights, timestamps
 
 
-def train_model(X_train, y_train, feature_cols):
+def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
     """Train XGBoost classifier and check for drift."""
     logger.info("Training XGBoost model...")
 
-    # Split data
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
-    )
+    # Time-series split: train on past, validate on immediate future.
+    n = len(X_train)
+    if n < 20:
+        raise ValueError("Insufficient rows for time-series training")
+    idx = np.arange(n)
+    if timestamps is not None:
+        ts = pd.to_datetime(timestamps, errors='coerce')
+        ts_filled = ts.fillna(pd.Timestamp(datetime.utcnow()))
+        idx = np.argsort(ts_filled.values)
+
+    split = max(1, int(n * 0.8))
+    idx_tr = idx[:split]
+    idx_te = idx[split:] if split < n else idx[max(0, n - 1):]
+
+    X_tr, X_te = X_train.iloc[idx_tr], X_train.iloc[idx_te]
+    y_tr, y_te = y_train.iloc[idx_tr], y_train.iloc[idx_te]
+    w_tr = None
+    if sample_weights is not None:
+        w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
     # Train model
     model = xgb.XGBClassifier(
@@ -176,14 +399,17 @@ def train_model(X_train, y_train, feature_cols):
         random_state=42,
         verbosity=1,
     )
-    model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)], verbose=False)
+    model.fit(X_tr, y_tr, sample_weight=w_tr, eval_set=[(X_te, y_te)], verbose=False)
 
     # Evaluate
     y_pred = model.predict(X_te)
     y_proba = model.predict_proba(X_te)[:, 1]
 
     acc = accuracy_score(y_te, y_pred)
-    auc = roc_auc_score(y_te, y_proba)
+    try:
+        auc = roc_auc_score(y_te, y_proba)
+    except Exception:
+        auc = 0.5
 
     logger.info(f"Test Accuracy: {acc:.4f}")
     logger.info(f"Test AUC: {auc:.4f}")
@@ -261,12 +487,18 @@ async def main():
         return False
 
     # Engineer features
-    X_train, y_train, feature_cols = engineer_features(df)
+    X_train, y_train, feature_cols, sample_weights, timestamps = engineer_features(df)
     logger.info(f"Features engineered: {feature_cols}")
     logger.info(f"Training set shape: {X_train.shape}")
 
     # Train model
-    model, feature_cols = train_model(X_train, y_train, feature_cols)
+    model, feature_cols = train_model(
+        X_train,
+        y_train,
+        feature_cols,
+        sample_weights=sample_weights,
+        timestamps=timestamps,
+    )
 
     # Save model
     save_model(model, feature_cols)

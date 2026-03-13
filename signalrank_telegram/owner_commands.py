@@ -330,7 +330,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def dev_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
         return
-    if not await _is_owner(update.effective_user.id):
+    if not await _is_admin_or_owner(update.effective_user.id):
         await update.message.reply_text("⛔ Access Denied.")
         return
     await state.set_killswitch(True, reason="paused via /dev_pause")
@@ -340,7 +340,7 @@ async def dev_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def dev_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
         return
-    if not await _is_owner(update.effective_user.id):
+    if not await _is_admin_or_owner(update.effective_user.id):
         await update.message.reply_text("⛔ Access Denied.")
         return
     await state.set_killswitch(False, reason="")
