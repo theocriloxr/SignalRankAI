@@ -443,6 +443,10 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     signal_id = str(uuid4())
     expires_at = datetime.utcnow() + timedelta(hours=12)
+    
+    # Ensure score is high enough to bypass quality gates in resend job
+    score_for_storage = max(float(best_signal.score or 0), 80.0)
+    
     signal_payload = {
         "signal_id": signal_id,
         "asset": best_asset,
@@ -453,7 +457,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "take_profit": best_signal.take_profit,
         "tp_levels": tp_levels,
         "rr_ratio": rr_ratio,
-        "score": best_signal.score,
+        "score": score_for_storage,
         "regime": best_regime,
         "ml_probability": best_ml_prob,
         "strategy_name": best_signal.strategy_name,
@@ -476,7 +480,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     stop_loss=float(best_signal.stop_loss),
                     take_profit=json.dumps(best_signal.take_profit or []),
                     rr_estimate=rr_ratio,
-                    score=float(best_signal.score),
+                    score=score_for_storage,
                     regime=best_regime,
                     ml_probability=float(best_ml_prob) if best_ml_prob is not None else None,
                     strategy_name=str(best_signal.strategy_name),
@@ -495,6 +499,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                         "asset": best_asset,
                         "timeframe": best_tf,
                         "generated": True,
+                        "score": float(best_signal.score or 0),
                     },
                 )
             )
@@ -502,8 +507,11 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         except Exception:
             await session.rollback()
 
-    caller_tier = "OWNER" if await _is_owner(update.effective_user.id) else "ADMIN"
-    msg = format_signal(signal_payload, user_tier=caller_tier)
+    from signalrank_telegram.formatter import format_signal_vip_new
+    
+    # For forced signals, always use VIP template (bypasses quality gates for admin/owner)
+    msg = format_signal_vip_new(signal_payload)
+    
     if not msg:
         msg = (
             "Forced Signal (generated)\n"
