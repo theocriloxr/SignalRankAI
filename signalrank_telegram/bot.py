@@ -2112,6 +2112,9 @@ def run_bot() -> None:
         cancel_command,
     )
     application.add_handler(CommandHandler("mt5_link", _audit_handler("mt5_link", mt5_link_command)))
+    # Aliases for users who type "/mt5link" or "/mt5 ..." by habit
+    application.add_handler(CommandHandler("mt5link", _audit_handler("mt5link", mt5_link_command)))
+    application.add_handler(CommandHandler("mt5", _audit_handler("mt5", mt5_link_command)))
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
     application.add_handler(CommandHandler("setlot", _audit_handler("setlot", setlot_command)))
     application.add_handler(CommandHandler("setrisk", _audit_handler("setrisk", setrisk_command)))
@@ -2240,6 +2243,7 @@ def run_bot() -> None:
             return
 
         # ── Tier gate: FREE users see an upsell paywall ───────────────────────
+        _ut = "FREE"
         try:
             from signalrank_telegram.access import resolve_user_tier
             from signalrank_telegram.commands import tier_rank
@@ -2279,6 +2283,39 @@ def run_bot() -> None:
 
         try:
             from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
+            from db.session import get_session as _gs_mt5
+            from db.models import User as _UserMT5
+            from sqlalchemy import select as _sel_mt5
+            from datetime import datetime, timezone
+
+            # PREMIUM daily execution cap (default 3/day, configurable)
+            _premium_daily_limit = int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3"))
+            _user_row = None
+            _premium_count_today = 0
+            if _ut == "PREMIUM":
+                async with _gs_mt5() as _slim:
+                    _user_row = (await _slim.execute(
+                        _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
+                    )).scalar_one_or_none()
+                    if _user_row is None:
+                        await query.edit_message_text("❌ User profile not found. Please send /start and try again.")
+                        return
+
+                    _now = datetime.now(timezone.utc)
+                    _reset_at = getattr(_user_row, "daily_executions_reset_at", None)
+                    if _reset_at is None or (_reset_at.date() < _now.date()):
+                        _user_row.daily_executions_today = 0
+                        _user_row.daily_executions_reset_at = _now
+                        await _slim.commit()
+
+                    _premium_count_today = int(getattr(_user_row, "daily_executions_today", 0) or 0)
+                    if _premium_count_today >= _premium_daily_limit:
+                        await query.edit_message_text(
+                            f"⚠️ PREMIUM daily auto-trade limit reached ({_premium_daily_limit}/{_premium_daily_limit}).\n"
+                            "It resets at 00:00 UTC, or upgrade to VIP for unlimited executions."
+                        )
+                        return
+
             account_id = await get_user_mt5_account_id(user_id)
             if not account_id:
                 await query.edit_message_text(
@@ -2295,15 +2332,13 @@ def run_bot() -> None:
             # Use user's configured lot size (/setlot) or default 0.01
             _exec_vol = 0.01
             try:
-                from db.session import get_session as _gs_mt5
-                from db.models import User as _UserMT5
-                from sqlalchemy import select as _sel_mt5
-                async with _gs_mt5() as _sm5:
-                    _ur = (await _sm5.execute(
-                        _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
-                    )).scalar_one_or_none()
-                    if _ur and getattr(_ur, 'fixed_lot_size', None):
-                        _exec_vol = float(_ur.fixed_lot_size)
+                if _user_row is None:
+                    async with _gs_mt5() as _sm5:
+                        _user_row = (await _sm5.execute(
+                            _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
+                        )).scalar_one_or_none()
+                if _user_row and getattr(_user_row, 'fixed_lot_size', None):
+                    _exec_vol = float(_user_row.fixed_lot_size)
             except Exception:
                 pass
             result = await execute_trade(
@@ -2311,10 +2346,26 @@ def run_bot() -> None:
                 volume=_exec_vol, stop_loss=sl, take_profit=tp, signal_entry=entry
             )
             if result.get("success"):
+                _remaining_text = ""
+                if _ut == "PREMIUM":
+                    try:
+                        async with _gs_mt5() as _sinc:
+                            _u2 = (await _sinc.execute(
+                                _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
+                            )).scalar_one_or_none()
+                            if _u2 is not None:
+                                _now = datetime.now(timezone.utc)
+                                _u2.daily_executions_today = int(getattr(_u2, "daily_executions_today", 0) or 0) + 1
+                                _u2.daily_executions_reset_at = _now
+                                await _sinc.commit()
+                                _remaining = max(0, _premium_daily_limit - int(_u2.daily_executions_today or 0))
+                                _remaining_text = f"\n📊 Remaining today: {_remaining}/{_premium_daily_limit}"
+                    except Exception:
+                        pass
                 oid = result.get("order_id", "")
                 lp = result.get("live_price") or entry
                 await query.edit_message_text(
-                    f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`",
+                    f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`{_remaining_text}",
                     parse_mode="Markdown"
                 )
             else:
