@@ -7,6 +7,12 @@ _PROVIDER_HEALTH_LOCK = threading.Lock()
 _PROVIDER_FAIL_WINDOW = 600  # seconds to deprioritize after repeated failures
 _PROVIDER_FAIL_THRESHOLD = 3
 
+# Short-lived candle memoization to prevent N+1 duplicate provider calls when
+# multiple strategies ask for the same symbol/timeframe in the same second.
+_CANDLE_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
+_CANDLE_CACHE_LOCK = threading.Lock()
+_CANDLE_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+
 # Outage tracking for automated alerts
 _PROVIDER_OUTAGE_ALERTED = {}
 _PROVIDER_OUTAGE_MINUTES = 10  # Alert if down for more than X minutes
@@ -36,6 +42,34 @@ def provider_is_healthy(provider_name):
             if now - entry["failures"][-1] < _PROVIDER_FAIL_WINDOW and (now - entry["last_success"] > _PROVIDER_FAIL_WINDOW):
                 return False
         return True
+
+
+def _get_candle_key_lock(key: tuple[str, str]) -> threading.Lock:
+    with _CANDLE_CACHE_LOCK:
+        lock = _CANDLE_KEY_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _CANDLE_KEY_LOCKS[key] = lock
+        return lock
+
+
+def _read_cached_candles(key: tuple[str, str], ttl_seconds: float) -> list | None:
+    now = time.time()
+    with _CANDLE_CACHE_LOCK:
+        entry = _CANDLE_CACHE.get(key)
+        if not entry:
+            return None
+        ts, candles = entry
+        if (now - ts) > max(0.0, float(ttl_seconds)):
+            _CANDLE_CACHE.pop(key, None)
+            return None
+        # Return a shallow structural copy to avoid accidental mutation by callers.
+        return [dict(c) if isinstance(c, dict) else c for c in (candles or [])]
+
+
+def _write_cached_candles(key: tuple[str, str], candles: list) -> None:
+    with _CANDLE_CACHE_LOCK:
+        _CANDLE_CACHE[key] = (time.time(), list(candles or []))
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
@@ -255,27 +289,50 @@ def get_candles(asset, timeframe):
     - Stocks: Yahoo → Polygon → Twelve Data
     """
     try:
-        asset_type = get_asset_type(asset)
+        _asset_norm = str(asset or "").upper().strip()
+        _tf_norm = str(timeframe or "").lower().strip()
+        _cache_key = (_asset_norm, _tf_norm)
+        _cache_ttl = float((os.getenv("CANDLE_REQUEST_CACHE_TTL_SECONDS") or "1.5").strip())
 
-        # Enable multi-provider via env var
-        use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+        # Fast path: short-lived cache hit.
+        _cached = _read_cached_candles(_cache_key, _cache_ttl)
+        if _cached is not None:
+            return _cached
 
-        if not use_multi_provider:
-            # Legacy single-provider mode
+        # Coalesce concurrent callers for the same key.
+        _key_lock = _get_candle_key_lock(_cache_key)
+        with _key_lock:
+            # Re-check after acquiring key lock.
+            _cached = _read_cached_candles(_cache_key, _cache_ttl)
+            if _cached is not None:
+                return _cached
+
+            asset_type = get_asset_type(asset)
+
+            # Enable multi-provider via env var
+            use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+
+            if not use_multi_provider:
+                # Legacy single-provider mode
+                if asset_type == "crypto":
+                    candles = get_crypto_candles(asset, timeframe)
+                elif asset_type == "fx":
+                    candles = get_fx_candles(asset, timeframe)
+                else:
+                    candles = get_stock_candles(asset, timeframe)
+                _write_cached_candles(_cache_key, candles or [])
+                return candles or []
+
+            # Multi-provider mode with fallbacks
             if asset_type == "crypto":
-                return get_crypto_candles(asset, timeframe)
+                candles = _fetch_crypto_multi_provider(asset, timeframe)
             elif asset_type == "fx":
-                return get_fx_candles(asset, timeframe)
-            else:
-                return get_stock_candles(asset, timeframe)
+                candles = _fetch_fx_multi_provider(asset, timeframe)
+            else:  # stock
+                candles = _fetch_stock_multi_provider(asset, timeframe)
 
-        # Multi-provider mode with fallbacks
-        if asset_type == "crypto":
-            return _fetch_crypto_multi_provider(asset, timeframe)
-        elif asset_type == "fx":
-            return _fetch_fx_multi_provider(asset, timeframe)
-        else:  # stock
-            return _fetch_stock_multi_provider(asset, timeframe)
+            _write_cached_candles(_cache_key, candles or [])
+            return candles or []
     except Exception:
         logger.exception("get_candles failed for %s %s", asset, timeframe)
         return []

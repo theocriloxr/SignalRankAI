@@ -99,11 +99,25 @@ def _load_crypto_blacklist() -> set[str]:
 _CRYPTO_BLACKLIST = _load_crypto_blacklist()
 
 
+def _normalize_legacy_symbol(symbol: str) -> str:
+    s = str(symbol or "").upper().strip()
+    # Binance migrated Polygon from MATIC to POL.
+    if s == "MATICUSDT":
+        return "POLUSDT"
+    return s
+
+
 def _filter_blacklisted(pairs: list[str]) -> list[str]:
     if not pairs:
         return []
-    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT", "MATICUSDT"}
-    return [p for p in pairs if p.upper() not in _CRYPTO_BLACKLIST and p.upper() not in EXCLUDE_ALWAYS]
+    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
+    out: list[str] = []
+    for p in pairs:
+        sym = _normalize_legacy_symbol(p)
+        if sym in _CRYPTO_BLACKLIST or sym in EXCLUDE_ALWAYS:
+            continue
+        out.append(sym)
+    return out
 
 
 def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
@@ -156,9 +170,15 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
-    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT", "MATICUSDT"}
+    EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
     def exclude_pairs(pairs):
-        return [p for p in pairs if p.upper() not in EXCLUDE_ALWAYS]
+        out = []
+        for p in pairs:
+            sym = _normalize_legacy_symbol(p)
+            if sym in EXCLUDE_ALWAYS:
+                continue
+            out.append(sym)
+        return out
     if provider == "cryptocompare":
         return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
     if _BINANCE_DISABLED_REASON is not None:

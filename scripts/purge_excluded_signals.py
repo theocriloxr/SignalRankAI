@@ -1,11 +1,11 @@
-# Script to purge all signals for UNIUSDT, APTUSDT, MATICUSDT from the database
+# Script to purge all signals for UNIUSDT, APTUSDT, POLUSDT from the database
 import asyncio
 from utils.async_runner import run_sync
 from db.session import async_session
 from db.models import Signal
 from sqlalchemy import delete
 
-EXCLUDED_ASSETS = ["UNIUSDT", "APTUSDT", "MATICUSDT"]
+EXCLUDED_ASSETS = ["UNIUSDT", "APTUSDT", "POLUSDT"]
 
 async def purge_signals():
     async with async_session() as session:

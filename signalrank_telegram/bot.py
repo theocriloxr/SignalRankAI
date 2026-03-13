@@ -1,4 +1,5 @@
 from utils.async_runner import run_sync
+import threading
 
 
 def resend_unsent_signals_job():
@@ -2677,6 +2678,9 @@ def refresh_active_signal_keyboards_once() -> None:
 
 
 _bot_lock_conn = None
+_bot_sched_lock_conn = None
+_bot_init_lock = threading.Lock()
+_bot_init_started = False
 
 # ── Webhook mode module-level state ──────────────────────────────────────────
 # When TELEGRAM_USE_WEBHOOK=1, run_bot() stores the fully-configured Application
@@ -2696,10 +2700,19 @@ def run_bot() -> None:
 
     # Idempotency guard for webhook deployments: if setup already completed in
     # this process, do not create a second scheduler/app instance.
-    global _webhook_application, _bot_scheduler
+    global _webhook_application, _bot_scheduler, _bot_init_started
+
+    # Hard process-local guard (covers races during startup where run_bot() can
+    # be invoked twice before _bot_scheduler is assigned).
+    with _bot_init_lock:
+        if _bot_init_started:
+            logger.info("[bot] run_bot init already started; skipping duplicate init")
+            return
+        _bot_init_started = True
+
     try:
-        if os.getenv("TELEGRAM_USE_WEBHOOK") and _webhook_application is not None and _bot_scheduler is not None:
-            if bool(getattr(_bot_scheduler, "running", False)):
+        if os.getenv("TELEGRAM_USE_WEBHOOK") and _webhook_application is not None:
+            if _bot_scheduler is not None and bool(getattr(_bot_scheduler, "running", False)):
                 logger.info("[bot] run_bot already initialized in webhook mode; skipping duplicate init")
                 return
     except Exception:
@@ -4763,160 +4776,197 @@ def run_bot() -> None:
     # _sa: alias for the store to use for picklable module-level jobs.
     _sa = "persistent" if "persistent" in _jobstores else "default"
 
-    scheduler = BackgroundScheduler(jobstores=_jobstores or {}, timezone="UTC")
+    # Cross-process scheduler ownership lock (important when multiple workers/
+    # replicas are alive). Only the lock holder starts APScheduler jobs.
+    _scheduler_enabled = True
+    if os.getenv("TELEGRAM_USE_WEBHOOK"):
+        try:
+            import psycopg2 as _psycopg2
+            _dsn = _sched_sync_url or ""
+            if _dsn:
+                _sched_lock_id = int(os.getenv("TELEGRAM_SCHEDULER_LOCK_ID", "739305"))
+                _conn = _psycopg2.connect(_dsn, connect_timeout=5)
+                _conn.autocommit = True
+                with _conn.cursor() as _cur:
+                    _cur.execute("SELECT pg_try_advisory_lock(%s)", (_sched_lock_id,))
+                    _owned = bool((_cur.fetchone() or [False])[0])
+                if _owned:
+                    global _bot_sched_lock_conn
+                    _bot_sched_lock_conn = _conn
+                else:
+                    try:
+                        _conn.close()
+                    except Exception:
+                        pass
+                    _scheduler_enabled = False
+                    logger.info("[sched] webhook instance not lock-owner; scheduler bootstrap skipped")
+        except Exception as _sched_lock_err:
+            logger.warning("[sched] scheduler lock unavailable (%s); continuing with scheduler", _sched_lock_err)
+
+    scheduler = None
+    if _scheduler_enabled:
+        from apscheduler.executors.pool import ThreadPoolExecutor as _APThreadPoolExecutor
+        _sched_workers = max(4, _env_int("BOT_SCHEDULER_MAX_WORKERS", 12))
+        _executors = {
+            "default": _APThreadPoolExecutor(max_workers=_sched_workers),
+        }
+        scheduler = BackgroundScheduler(jobstores=_jobstores or {}, executors=_executors, timezone="UTC")
 
     # Clear stale jobs in the persistent store to prevent duplicates on restart.
-    try:
-        if _sa != "default":
-            scheduler.remove_all_jobs(jobstore=_sa)
-            logger.info("[sched] cleared stale jobs from jobstore=%s", _sa)
-    except Exception as _clr_err:
-        logger.warning("[sched] failed to clear jobstore=%s: %s", _sa, _clr_err)
+    if scheduler is not None:
+        try:
+            if _sa != "default":
+                scheduler.remove_all_jobs(jobstore=_sa)
+                logger.info("[sched] cleared stale jobs from jobstore=%s", _sa)
+        except Exception as _clr_err:
+            logger.warning("[sched] failed to clear jobstore=%s: %s", _sa, _clr_err)
 
     # ── Closure jobs (defined inside run_bot — cannot be pickled for SQLAlchemy)
     # These always land in the default MemoryJobStore.
-    scheduler.add_job(
-        ml_market_analysis_job,
-        'interval',
-        minutes=15,
-        id='ml_market_analysis',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        send_free_delayed_summaries,
-        'interval',
-        minutes=10,
-        id='send_free_delayed_summaries',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        compute_outcomes_best_effort,
-        'interval',
-        minutes=3,
-        id='compute_outcomes_best_effort',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        refresh_monitor_snapshots_job,
-        'interval',
-        minutes=5,
-        id='refresh_monitor_snapshots_job',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        send_outcome_notifications,
-        'interval',
-        minutes=2,
-        id='send_outcome_notifications',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        vip_scarcity_broadcast_job,
-        'interval',
-        hours=6,
-        id='vip_scarcity_broadcast_job',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        fomo_engine_job,
-        'cron',
-        hour=17,
-        minute=0,
-        id='fomo_engine_job',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        friday_leaderboard_job,
-        'cron',
-        day_of_week='fri',
-        hour=17,
-        minute=0,
-        id='friday_leaderboard_job',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        expire_old_signals_job,
-        'interval',
-        minutes=30,
-        id='expire_old_signals_job',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        send_weekly_recap,
-        'cron',
-        day_of_week='sun',
-        hour=18,
-        minute=0,
-        id='send_weekly_recap',
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
-        auto_retrain_ml_model_job,
-        'cron',
-        day_of_week='sun',
-        hour=2,
-        minute=0,
-        id='auto_retrain_ml_model_job',
-        replace_existing=True,
-        max_instances=1,
-    )
+    if scheduler is not None:
+        scheduler.add_job(
+            ml_market_analysis_job,
+            'interval',
+            minutes=15,
+            id='ml_market_analysis',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            send_free_delayed_summaries,
+            'interval',
+            minutes=10,
+            id='send_free_delayed_summaries',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            compute_outcomes_best_effort,
+            'interval',
+            minutes=3,
+            id='compute_outcomes_best_effort',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            refresh_monitor_snapshots_job,
+            'interval',
+            minutes=5,
+            id='refresh_monitor_snapshots_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            send_outcome_notifications,
+            'interval',
+            minutes=2,
+            id='send_outcome_notifications',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            vip_scarcity_broadcast_job,
+            'interval',
+            hours=6,
+            id='vip_scarcity_broadcast_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            fomo_engine_job,
+            'cron',
+            hour=17,
+            minute=0,
+            id='fomo_engine_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            friday_leaderboard_job,
+            'cron',
+            day_of_week='fri',
+            hour=17,
+            minute=0,
+            id='friday_leaderboard_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            expire_old_signals_job,
+            'interval',
+            minutes=30,
+            id='expire_old_signals_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            send_weekly_recap,
+            'cron',
+            day_of_week='sun',
+            hour=18,
+            minute=0,
+            id='send_weekly_recap',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            auto_retrain_ml_model_job,
+            'cron',
+            day_of_week='sun',
+            hour=2,
+            minute=0,
+            id='auto_retrain_ml_model_job',
+            replace_existing=True,
+            max_instances=1,
+        )
 
     # ── Module-level jobs (picklable) → SQLAlchemy persistent store when available
-    scheduler.add_job(
-        resend_unsent_signals_job,
-        'interval',
-        minutes=1,
-        id='resend_unsent_signals_job',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=20,
-        jobstore=_sa,
-    )
-    scheduler.add_job(
-        distribute_random_signals_to_free_users_job,
-        'interval',
-        minutes=15,
-        id='distribute_random_signals_to_free_users_job',
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=120,
-        jobstore=_sa,
-    )
-    scheduler.add_job(
-        downgrade_expired_subscriptions_job,
-        'cron',
-        hour=0,
-        minute=0,
-        id='downgrade_expired_subscriptions_job',
-        replace_existing=True,
-        max_instances=1,
-        jobstore=_sa,
-    )
-    scheduler.add_job(
-        auto_delete_old_signals_job,
-        'cron',
-        day_of_week='sun',
-        hour=1,
-        minute=0,
-        id='auto_delete_old_signals_job',
-        replace_existing=True,
-        max_instances=1,
-        jobstore=_sa,
-    )
+    if scheduler is not None:
+        scheduler.add_job(
+            resend_unsent_signals_job,
+            'interval',
+            minutes=1,
+            id='resend_unsent_signals_job',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=20,
+            jobstore=_sa,
+        )
+        scheduler.add_job(
+            distribute_random_signals_to_free_users_job,
+            'interval',
+            minutes=15,
+            id='distribute_random_signals_to_free_users_job',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=120,
+            jobstore=_sa,
+        )
+        scheduler.add_job(
+            downgrade_expired_subscriptions_job,
+            'cron',
+            hour=0,
+            minute=0,
+            id='downgrade_expired_subscriptions_job',
+            replace_existing=True,
+            max_instances=1,
+            jobstore=_sa,
+        )
+        scheduler.add_job(
+            auto_delete_old_signals_job,
+            'cron',
+            day_of_week='sun',
+            hour=1,
+            minute=0,
+            id='auto_delete_old_signals_job',
+            replace_existing=True,
+            max_instances=1,
+            jobstore=_sa,
+        )
 
-    scheduler.start()
+        scheduler.start()
 
     # One-shot startup migration: refresh keyboards on previously sent active messages.
     try:
@@ -4932,7 +4982,10 @@ def run_bot() -> None:
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
         _webhook_application = application
         _bot_scheduler = scheduler  # prevent GC; daemon threads keep running
-        print("[bot] webhook mode: application ready, scheduler running, not polling", flush=True)
+        if scheduler is None:
+            print("[bot] webhook mode: application ready, scheduler disabled on this instance", flush=True)
+        else:
+            print("[bot] webhook mode: application ready, scheduler running, not polling", flush=True)
         return
 
     # ── Polling mode ──────────────────────────────────────────────────────────

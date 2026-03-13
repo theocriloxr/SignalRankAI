@@ -230,3 +230,9 @@ If you prefer a simpler setup (one container, one deploy), you can run everythin
 
 For more, see the full documentation and deployment checklist.
 For more details, see `deploy_checklist.txt` and `.env.example`.
+
+## Documentation
+
+- Comprehensive technical documentation: [docs/PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md)
+- Functional specification: [docs/FUNCTIONAL_SPEC.md](docs/FUNCTIONAL_SPEC.md)
+- Implementation status matrix: [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md)

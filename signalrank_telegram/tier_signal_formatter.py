@@ -35,7 +35,7 @@ _ASSET_NAMES: DictType[str, str] = {
     "BTCUSDT": "Bitcoin", "ETHUSDT": "Ethereum", "SOLUSDT": "Solana",
     "BNBUSDT": "BNB", "ADAUSDT": "Cardano", "XRPUSDT": "XRP",
     "DOGEUSDT": "Dogecoin", "DOTUSDT": "Polkadot",
-    "MATICUSDT": "Polygon", "LTCUSDT": "Litecoin",
+    "POLUSDT": "Polygon", "MATICUSDT": "Polygon", "LTCUSDT": "Litecoin",
     "LINKUSDT": "Chainlink", "AVAXUSDT": "Avalanche",
     "BTCUSD": "Bitcoin", "ETHUSD": "Ethereum",
     # FX

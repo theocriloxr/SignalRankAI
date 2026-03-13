@@ -395,6 +395,13 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
     return out
 
 
+def _normalize_asset_symbol(symbol: str) -> str:
+    s = str(symbol or "").upper().strip()
+    if s == "MATICUSDT":
+        return "POLUSDT"
+    return s
+
+
 def _rotate_slice(items: List[str], start: int, size: int) -> List[str]:
     if size <= 0:
         return []
@@ -524,7 +531,9 @@ def main_loop(DRY_RUN: bool = False):
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets
         # with DB-managed assets and discovered trending pairs so nothing pinned is missed.
         _saved_assets = [
-            x.strip() for x in (os.getenv("TRADABLE_ASSETS") or "").split(",") if x.strip()
+            _normalize_asset_symbol(x.strip())
+            for x in (os.getenv("TRADABLE_ASSETS") or "").split(",")
+            if x.strip()
         ]
         _managed_assets: List[str] = []
         try:
@@ -534,12 +543,16 @@ def main_loop(DRY_RUN: bool = False):
             async def _fetch_managed():
                 async with get_session() as _session:
                     return await get_active_managed_assets(_session)
-            _managed_assets = list(_run_sync(_fetch_managed()) or [])
+            _managed_assets = [
+                _normalize_asset_symbol(s) for s in (list(_run_sync(_fetch_managed()) or []))
+            ]
         except Exception:
             pass
         _discovered_assets: List[str] = []
         try:
-            _discovered_assets = list(get_all_trending_pairs() or [])
+            _discovered_assets = [
+                _normalize_asset_symbol(s) for s in (list(get_all_trending_pairs() or []))
+            ]
         except Exception:
             pass
         assets = _dedupe_preserve_order(_managed_assets + _saved_assets + _discovered_assets)
@@ -1709,6 +1722,57 @@ def main_loop(DRY_RUN: bool = False):
                 _rs(_do_stamp())
             except Exception:
                 pass
+
+        # ── Auto-discovery persistence: promote high-ROI / high-score assets ───
+        # Keeps strong discovered symbols in managed_assets so they continue to be
+        # analyzed in future cycles even when short-term trending APIs fluctuate.
+        if _env_bool("AUTO_PROMOTE_HIGH_ROI_ASSETS", True):
+            try:
+                _min_score = _env_float("AUTO_MANAGED_ASSET_MIN_SCORE", 88.0)
+                _min_rr = _env_float("AUTO_MANAGED_ASSET_MIN_RR", 1.8)
+                _max_add_per_cycle = max(1, _env_int("AUTO_MANAGED_ASSET_MAX_PER_CYCLE", 3))
+
+                _candidates: list[str] = []
+                for _sig in scored_signals_all:
+                    try:
+                        _score = _safe_float(_sig.get("score"), 0.0)
+                        _rr = _signal_roi_score(_sig)
+                        _asset = _normalize_asset_symbol(str(_sig.get("asset") or "").upper())
+                        if not _asset:
+                            continue
+                        if _score < _min_score or _rr < _min_rr:
+                            continue
+                        _candidates.append(_asset)
+                    except Exception:
+                        continue
+
+                _candidates = _dedupe_preserve_order(_candidates)[:_max_add_per_cycle]
+                if _candidates:
+                    from db.session import get_session as _get_session
+                    from db.pg_features import add_managed_asset as _add_managed_asset
+                    from utils.async_runner import run_sync as _rs
+
+                    async def _promote() -> int:
+                        added = 0
+                        async with _get_session() as _s:
+                            for _sym in _candidates:
+                                _atype = "crypto" if is_crypto(_sym) else ("fx" if is_fx(_sym) else ("commodity" if is_commodity(_sym) else "stock"))
+                                await _add_managed_asset(
+                                    _s,
+                                    symbol=_sym,
+                                    asset_type=_atype,
+                                    added_by=None,
+                                    note="auto-promoted by engine (high score/ROI)",
+                                )
+                                added += 1
+                            await _s.commit()
+                        return added
+
+                    _added = int(_rs(_promote()) or 0)
+                    if _added:
+                        logger.info("[engine] auto-promoted managed assets: %s", ",".join(_candidates[:_added]))
+            except Exception as _promote_err:
+                logger.debug("[engine] auto-promotion skipped: %s", _promote_err)
 
         time.sleep(max(5, cycle_sleep_seconds))
 

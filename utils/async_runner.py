@@ -5,6 +5,48 @@ import threading
 from typing import Any
 
 
+_bg_loop: asyncio.AbstractEventLoop | None = None
+_bg_thread: threading.Thread | None = None
+_bg_ready = threading.Event()
+_bg_lock = threading.Lock()
+
+
+def _ensure_background_loop() -> asyncio.AbstractEventLoop:
+    """Create (once) and return a dedicated background event loop.
+
+    This avoids creating many short-lived loops/threads when `run_sync()` is
+    called from code that already has a running event loop (common in scheduler
+    callbacks). Reusing one loop significantly reduces cross-loop resource
+    finalization issues with async DB drivers.
+    """
+    global _bg_loop, _bg_thread
+    with _bg_lock:
+        if _bg_loop is not None and _bg_thread is not None and _bg_thread.is_alive():
+            return _bg_loop
+
+        _bg_ready.clear()
+
+        def _loop_thread_target() -> None:
+            global _bg_loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            _bg_loop = loop
+            _bg_ready.set()
+            loop.run_forever()
+
+        _bg_thread = threading.Thread(
+            target=_loop_thread_target,
+            name="signalrank-run-sync-loop",
+            daemon=True,
+        )
+        _bg_thread.start()
+
+    if not _bg_ready.wait(timeout=5.0) or _bg_loop is None:
+        raise RuntimeError("run_sync: failed to initialize background event loop")
+
+    return _bg_loop
+
+
 def run_sync(coro, timeout: float = 30.0) -> Any:
     """Run an async coroutine from sync code safely.
 
@@ -23,29 +65,16 @@ def run_sync(coro, timeout: float = 30.0) -> Any:
         # No running loop in this thread — safe to use asyncio.run
         return asyncio.run(coro)
 
-    # Event loop is running in this thread; run the coroutine in a
-    # dedicated thread with its own loop to avoid interfering with the
-    # active loop.
-    result: dict = {}
-
-    def _thread_target():
+    # Event loop is already running in this thread. Execute on a dedicated,
+    # long-lived background loop and block for the result.
+    bg_loop = _ensure_background_loop()
+    fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
+    try:
+        return fut.result(timeout=timeout)
+    except Exception:
+        # Best effort cancellation on timeout/error.
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result["value"] = loop.run_until_complete(coro)
-        except Exception as e:  # store exception to re-raise in caller
-            result["exc"] = e
-        finally:
-            try:
-                loop.close()
-            except Exception:
-                pass
-
-    t = threading.Thread(target=_thread_target, daemon=True)
-    t.start()
-    t.join(timeout)
-    if t.is_alive():
-        raise TimeoutError("run_sync: coroutine did not finish within timeout")
-    if "exc" in result:
-        raise result["exc"]
-    return result.get("value")
+            fut.cancel()
+        except Exception:
+            pass
+        raise
