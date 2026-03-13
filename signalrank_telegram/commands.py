@@ -170,13 +170,21 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		if _chart_symbol:
 			chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{_chart_symbol}"
 		signal_id = str((signal or {}).get("signal_id") or "")[:36]
-		trade_cb = f"trade_now_{signal_id}" if signal_id else "trade_now"
-		keyboard = InlineKeyboardMarkup([
-			[
-				InlineKeyboardButton("📈 View Chart", url=chart_url),
-				InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
-			],
-		])
+		trade_cb = f"mt5_trade_{signal_id}" if signal_id else "trade_now"
+		rows = [[
+			InlineKeyboardButton("📈 View Chart", url=chart_url),
+			InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
+		]]
+		if signal_id:
+			rows.append([
+				InlineKeyboardButton("🔥 Taking It", callback_data=f"signal_reaction_{signal_id}|taking_it"),
+				InlineKeyboardButton("👀 Watching", callback_data=f"signal_reaction_{signal_id}|watching"),
+			])
+			rows.append([
+				InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
+				InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{signal_id}"),
+			])
+		keyboard = InlineKeyboardMarkup(rows)
 		return keyboard
 	except Exception:
 		return None
@@ -603,20 +611,20 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	# Trade button
 	if data.startswith("trade_now"):
 		try:
-			from signalrank_telegram.access import resolve_user_tier
-			from signalrank_telegram.commands import tier_rank as _tr
-			uid = update.effective_user.id if update.effective_user else None
-			if uid is None:
-				return
-			tier = str(resolve_user_tier(int(uid)) or "FREE").upper()
-			if _tr(tier) < _tr("PREMIUM"):
+			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+			raw = str(data or "")
+			signal_id = ""
+			if raw.startswith("trade_now_"):
+				signal_id = raw.replace("trade_now_", "", 1)[:36]
+			if signal_id:
 				await query.message.reply_text(
-					"🔒 Auto-trading is Premium+. Use /upgrade to unlock Trade Now."
+					"⚡ Updated action button:",
+					reply_markup=InlineKeyboardMarkup([
+						[InlineKeyboardButton("⚡ Take Trade", callback_data=f"mt5_trade_{signal_id}")]
+					]),
 				)
 				return
-			await query.message.reply_text(
-				"⚡ Trade Now is available from the signal message (Take Trade button)."
-			)
+			await query.message.reply_text("⚡ Please open /signals and use the latest Trade button.")
 			return
 		except Exception:
 			return
@@ -1787,6 +1795,12 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
+	show_unvoted_only: bool = False
+	try:
+		arg0 = str((context.args or [""])[0] or "").strip().lower()
+		show_unvoted_only = arg0 in {"unvoted", "pending", "notvoted"}
+	except Exception:
+		show_unvoted_only = False
 	try:
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 		_nav_kbd = InlineKeyboardMarkup([
@@ -1809,71 +1823,36 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if tier.lower() in {"owner", "admin"}:
 		tier = "VIP"
 
-	# Prefer high-quality fresh signals if any exist (even if not delivered yet).
-	try:
-		engine = get_engine_for_event_loop()
-		if engine is not None:
-			from datetime import datetime, timedelta, timezone
-			from sqlalchemy import select, desc
-			from db.models import Signal as SignalModel
-			async with get_session() as session:
-				cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-				res = await session.execute(
-					select(SignalModel)
-					.where(SignalModel.created_at >= cutoff)
-					.order_by(desc(SignalModel.created_at))
-					.limit(50)
-				)
-				recent_rows = list(res.scalars().all())
-				recent_signals = []
-				for r in recent_rows:
-					sig_dict = {
-						"signal_id": r.signal_id,
-						"asset": r.asset,
-						"timeframe": r.timeframe,
-						"direction": r.direction,
-						"entry": r.entry,
-						"stop_loss": r.stop_loss,
-						"take_profit": r.take_profit,
-						"rr_ratio": r.rr_estimate,
-						"score": r.score,
-						"confidence": getattr(r, "confidence", 0.5),
-						"regime": getattr(r, "regime", "NEUTRAL"),
-						"strength": getattr(r, "strength", 0.5),
-						"ml_probability": getattr(r, "ml_probability", 0.5),
-						"strategy_name": r.strategy_name,
-						"strategy_group": r.strategy_group,
-						"created_at": r.created_at,
-					}
-					
-					# Enrich with live price and freshness info
-					try:
-						sig_dict = enrich_signal_with_live_price(sig_dict)
-					except Exception:
-						pass
-					
-					recent_signals.append(sig_dict)
-
-				if recent_signals:
-					from .formatter import format_signal
-					msg_lines: list[str] = []
-					shown = 0
-					for s in recent_signals:
-						formatted = format_signal(s, user_tier=tier)
-						if not formatted:
-							continue
-						await update.message.reply_text(
-							formatted,
-							parse_mode="Markdown",
-							reply_markup=_build_signal_action_keyboard(s),
-						)
-						shown += 1
-						if shown >= (3 if tier.lower() in {"free"} else 5):
-							return
-	except Exception:
-		pass
-
 	signals_list: list[dict] = []
+
+	async def _filter_unvoted(signals_in: list[dict]) -> list[dict]:
+		if not show_unvoted_only or not signals_in:
+			return signals_in
+		try:
+			from sqlalchemy import select
+			from db.models import SignalEngagement, User
+			from db.session import get_session
+			signal_ids = [str(s.get("signal_id") or "") for s in signals_in if s.get("signal_id")]
+			if not signal_ids:
+				return []
+			async with get_session() as session:
+				user_row = (await session.execute(
+					select(User).where(User.telegram_user_id == int(user_id)).limit(1)
+				)).scalar_one_or_none()
+				if user_row is None:
+					return signals_in
+				engaged_rows = await session.execute(
+					select(SignalEngagement.signal_id)
+					.where(
+						SignalEngagement.user_id == int(user_row.id),
+						SignalEngagement.signal_id.in_(signal_ids),
+					)
+				)
+				engaged_set = {str(x) for x in (engaged_rows.scalars().all() or [])}
+				await session.commit()
+			return [s for s in signals_in if str(s.get("signal_id") or "") not in engaged_set]
+		except Exception:
+			return signals_in
 	
 	# FREE tier: show delivered signals only - now sample 2 random signals with score >= 55
 	if tier_rank(tier) < tier_rank("PREMIUM"):
@@ -1881,10 +1860,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from db.session import get_session
 			engine = get_engine_for_event_loop()
 			if engine is not None:
-				from db.pg_features import list_signals_sent_today
+				from db.pg_features import list_unresolved_signals_for_user
 				async with get_session() as session:
-					# Fetch ALL signals delivered to user today (no limit)
-					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+					rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
 					signals_list = []
 					for r in rows:
 						sig_dict = {
@@ -1913,8 +1891,10 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		
 		if not signals_list:
 			if update.message is not None:
-				await update.message.reply_text("✅ No signals delivered today.")
+				await update.message.reply_text("✅ No active signals right now.")
 			return
+
+		signals_list = await _filter_unvoted(signals_list)
 
 		# FREE view: only include signals that meet FREE tier threshold (80+)
 		eligible = []
@@ -1928,15 +1908,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 		if not eligible:
 			if update.message is not None:
-				await update.message.reply_text("⚠️ No FREE-eligible signals (80+) delivered today. Upgrade for full access or check back later.")
+				if show_unvoted_only:
+					await update.message.reply_text("✅ No unvoted FREE-eligible active signals right now.")
+				else:
+					await update.message.reply_text("⚠️ No FREE-eligible active signals (80+) right now. Upgrade for full access or check back later.")
 			return
-		picked = eligible if len(eligible) <= 2 else random.sample(eligible, 2)
+		picked = eligible[:3]
 		from .formatter import format_signal_free_new
 		for s in picked:
 			try:
 				formatted = format_signal_free_new(s, signals_sent_today=len(signals_list), daily_limit=3)
 				if formatted and update.message is not None:
-					await update.message.reply_text(formatted, reply_markup=_build_signal_action_keyboard(s))
+					await update.message.reply_text(
+						formatted,
+						parse_mode="HTML",
+						reply_markup=_build_signal_action_keyboard(s),
+					)
 			except Exception as e:
 				_audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
 		if update.message is not None:
@@ -1980,12 +1967,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	# Tier-based filtering
 	tier_norm: str = str(tier or "").strip().lower()
 	is_vip: bool = tier_norm in {"vip", "owner", "admin"}
+	unresolved_signals = await _filter_unvoted(unresolved_signals)
 	filtered_signals = []
 	for s in unresolved_signals:
 		try:
 			score_val = float(s.get('score') or 0)
 		except Exception:
 			score_val = 0.0
+		created_at = s.get("created_at")
+		if created_at is not None:
+			try:
+				from datetime import datetime, timedelta, timezone
+				_created = created_at if getattr(created_at, "tzinfo", None) is not None else created_at.replace(tzinfo=timezone.utc)
+				if _created < datetime.now(timezone.utc) - timedelta(days=1):
+					continue
+			except Exception:
+				pass
 		if is_vip:
 			# VIP/Owner/Admin: show all signals with score >= 55
 			if score_val >= 55.0:
@@ -1996,56 +1993,13 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				filtered_signals.append(s)
 
 	if not filtered_signals:
-		# Fallback: show any signals delivered today (even if already resolved/archived)
-		delivered_today: list[dict] = []
-		try:
-			from db.session import get_session
-			engine = get_engine_for_event_loop()
-			if engine is not None:
-				from db.pg_features import list_signals_sent_today
-				async with get_session() as session:
-					# type: AsyncSession
-					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
-					delivered_today = [
-						{
-							"signal_id": r.signal_id,
-							"asset": r.asset,
-							"timeframe": r.timeframe,
-							"direction": r.direction,
-							"entry": r.entry,
-							"stop_loss": r.stop_loss,
-							"take_profit": r.take_profit,
-							"rr_ratio": r.rr_estimate,
-							"score": r.score,
-						}
-						for r in rows
-					]
-		except Exception:
-			delivered_today = []
-
-		if delivered_today:
-			from .formatter import format_signal
-			for s in delivered_today[:10]:
-				try:
-					formatted = format_signal(s, user_tier=tier)
-					if not formatted:
-						continue
-					if update.message is not None:
-						await update.message.reply_text(
-							formatted,
-							parse_mode="Markdown",
-							reply_markup=_build_signal_action_keyboard(s),
-						)
-				except Exception as e:
-					_audit_logger.error(f"Error formatting delivered signal for {user_id}: {e}")
-			if update.message is not None:
-				await update.message.reply_text("Use /outcome <ref> to check if you hit TP/SL.")
-			return
-
 		if update.message is not None:
-			await update.message.reply_text(
-				"✅ No unresolved signals in your range. Premium shows score 55–75. VIP/Owner/Admin shows all signals."
-			)
+			if show_unvoted_only:
+				await update.message.reply_text("✅ No unvoted active unresolved signals right now.")
+			else:
+				await update.message.reply_text(
+					"✅ No active unresolved signals in your range right now."
+				)
 		return
 
 	# PREMIUM/VIP: use consistent box-style template
@@ -2066,7 +2020,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			if update.message is not None:
 				await update.message.reply_text(
 					formatted,
-					parse_mode="Markdown",
+					parse_mode="HTML",
 					reply_markup=_build_signal_action_keyboard(s),
 				)
 		except Exception as e:
@@ -2257,17 +2211,17 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		engine = get_engine_for_event_loop()
 		if engine is None:
 			raise RuntimeError("Postgres not configured")
-		from db.pg_features import list_signals_sent_today, get_delivered_signal_by_ref
+		from db.pg_features import list_unresolved_signals_for_user, get_delivered_signal_by_ref
 		from .formatter import format_signal, format_signal_free_limited
 
 		if arg.lower() == "all":
 			async with get_session() as session:
-				rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
 				await session.commit()
 			if not rows:
-				await update.message.reply_text("No signals delivered to you today.")
+				await update.message.reply_text("No active unresolved signals in the last 24h.")
 				return
-			lines: list[str] = ["📌 Today’s signals:", ""]
+			lines: list[str] = ["📌 Active signals (last 24h):", ""]
 			for s in rows[:20]:
 				ref = str(getattr(s, "signal_id", "") or "")
 				lines.append(f"• {ref} — {s.asset} {s.timeframe} {s.direction}")
@@ -2286,6 +2240,20 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			await session.commit()
 		if sig is None:
 			await update.message.reply_text("Signal not found (or not delivered to you).")
+			return
+
+		try:
+			from datetime import datetime, timedelta, timezone
+			_created = getattr(sig, "created_at", None)
+			if _created is not None:
+				_created_utc = _created if getattr(_created, "tzinfo", None) is not None else _created.replace(tzinfo=timezone.utc)
+				if _created_utc < datetime.now(timezone.utc) - timedelta(days=1):
+					await update.message.reply_text("⏰ This signal is older than 24h and is no longer active.")
+					return
+		except Exception:
+			pass
+		if oc is not None:
+			await update.message.reply_text("✅ This signal already has an outcome. Use /outcome <ref> for details.")
 			return
 
 		sig_dict = {
@@ -2422,7 +2390,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 				if advice_line:
 					base += "\n\n🧠 Suggestion\n" + str(advice_line)
-			await update.message.reply_text(base)
+			await update.message.reply_text(base, reply_markup=_build_signal_action_keyboard(sig_dict))
 			return
 
 		base: None | str = format_signal(sig_dict, user_tier=tier)
@@ -2434,7 +2402,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			base += "\n\n📍 Position (best-effort)\n" + "\n".join(position_lines)
 			if advice_line:
 				base += "\n\n🧠 Suggestion\n" + str(advice_line)
-		await update.message.reply_text(base)
+		await update.message.reply_text(base, parse_mode="HTML", reply_markup=_build_signal_action_keyboard(sig_dict))
 		return
 	except Exception as e:
 		import logging

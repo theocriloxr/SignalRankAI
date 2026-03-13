@@ -69,7 +69,6 @@ async def _resend_unsent_signals_async():
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
         import asyncio
-        from telegram.error import RetryAfter
 
         delivery_mgr = TierDeliveryManager()
 
@@ -120,15 +119,6 @@ async def _resend_unsent_signals_async():
 
         # Single Bot instance, properly initialised — avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
-        async def _send_with_retry(chat_id: int, text: str) -> None:
-            while True:
-                try:
-                    await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
-                    return
-                except RetryAfter as e:
-                    await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
-                except Exception:
-                    raise
         async with bot:
             for sig in signals:
                 signal_id = str(getattr(sig, 'signal_id', '') or '')
@@ -169,7 +159,7 @@ async def _resend_unsent_signals_async():
                 except Exception as _deliv_err:
                     logger.debug(f"[resend] delivery prefetch failed for {signal_id}: {_deliv_err}")
 
-                # ── Fix 1: 50-minute cutoff — skip stale signals ──────────────────
+                # Expire only signals older than 24 hours
                 try:
                     from datetime import datetime, timezone, timedelta as _td
                     _created = getattr(sig, 'created_at', None)
@@ -177,7 +167,7 @@ async def _resend_unsent_signals_async():
                         if hasattr(_created, 'tzinfo') and _created.tzinfo is None:
                             _created = _created.replace(tzinfo=timezone.utc)
                         _age_min = (datetime.now(timezone.utc) - _created).total_seconds() / 60
-                        if _age_min > 50:
+                        if _age_min > (24 * 60):
                             # Mark as expired so this signal never re-enters the queue
                             try:
                                 async with get_session() as _exp_s:
@@ -234,7 +224,12 @@ async def _resend_unsent_signals_async():
                             )
                             continue
                         try:
-                            await _send_with_retry(int(user_id), text)
+                            await _deliver_or_update_signal_async(
+                                bot=bot,
+                                telegram_user_id=int(user_id),
+                                signal=dict(sig_dict or {}),
+                                display_tier=str(display_tier),
+                            )
                         except Exception as send_err:
                             raise send_err
                         await asyncio.sleep(0.5)
@@ -1133,6 +1128,121 @@ async def _refresh_signal_keyboards_for_all_recipients(signal_id: str, bot_obj) 
             await session.commit()
     except Exception as exc:
         logger.debug(f"[engagement] failed to refresh keyboards: {exc}")
+
+
+async def _refresh_active_signal_messages_on_startup(bot_obj, limit: int = 500) -> None:
+    """Best-effort migration: refresh active signal message templates + buttons.
+
+    - Keeps only unresolved signals from last 24h active.
+    - Re-renders active messages with current tier template and full keyboard.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        from sqlalchemy import select
+        from db.session import get_session
+        from db.models import ActiveSignalMessage, Signal, User, Outcome
+        from signalrank_telegram.access import resolve_user_tier
+
+        now_utc = datetime.now(timezone.utc)
+        cutoff = now_utc - timedelta(days=1)
+        refreshed = 0
+        deactivated = 0
+
+        async with get_session() as session:
+            rows = (
+                await session.execute(
+                    select(ActiveSignalMessage, Signal, User.telegram_user_id)
+                    .join(Signal, Signal.signal_id == ActiveSignalMessage.signal_id)
+                    .join(User, User.id == ActiveSignalMessage.user_id)
+                    .where(ActiveSignalMessage.is_active.is_(True))
+                    .order_by(ActiveSignalMessage.created_at.desc())
+                    .limit(max(1, int(limit)))
+                )
+            ).all()
+
+            for msg_row, sig_row, telegram_uid in rows:
+                try:
+                    sid = str(getattr(sig_row, "signal_id", "") or "")
+                    if not sid:
+                        msg_row.is_active = False
+                        deactivated += 1
+                        continue
+
+                    created_at = getattr(sig_row, "created_at", None)
+                    if created_at is not None and getattr(created_at, "tzinfo", None) is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+
+                    has_outcome = (
+                        await session.execute(
+                            select(Outcome.id).where(Outcome.signal_id == sid).limit(1)
+                        )
+                    ).scalar_one_or_none() is not None
+
+                    if has_outcome or bool(getattr(sig_row, "expired", False)) or (created_at is not None and created_at < cutoff):
+                        try:
+                            await bot_obj.edit_message_reply_markup(
+                                chat_id=int(msg_row.chat_id),
+                                message_id=int(msg_row.message_id),
+                                reply_markup=None,
+                            )
+                        except Exception:
+                            pass
+                        msg_row.is_active = False
+                        deactivated += 1
+                        continue
+
+                    payload = await _load_signal_payload(sid)
+                    if not payload:
+                        payload = {
+                            "signal_id": sid,
+                            "asset": getattr(sig_row, "asset", ""),
+                            "timeframe": getattr(sig_row, "timeframe", ""),
+                            "direction": getattr(sig_row, "direction", ""),
+                            "entry": getattr(sig_row, "entry", None),
+                            "stop_loss": getattr(sig_row, "stop_loss", None),
+                            "take_profit": getattr(sig_row, "take_profit", None),
+                            "score": getattr(sig_row, "score", 0),
+                            "rr_ratio": getattr(sig_row, "rr_estimate", None),
+                            "regime": getattr(sig_row, "regime", None),
+                            "strategy": getattr(sig_row, "strategy_name", None),
+                            "created_at": created_at,
+                        }
+
+                    user_tier = str(resolve_user_tier(int(telegram_uid)) or "free").lower()
+                    display_tier = "vip" if user_tier in ("owner", "admin") else user_tier
+                    text = format_signal(payload, user_tier=user_tier, display_tier=display_tier)
+                    if not text:
+                        continue
+
+                    counts = await _load_signal_engagement_counts(sid)
+                    keyboard = _build_signal_keyboard(sid, signal=payload, counts=counts)
+
+                    await bot_obj.edit_message_text(
+                        chat_id=int(msg_row.chat_id),
+                        message_id=int(msg_row.message_id),
+                        text=str(text),
+                        parse_mode="HTML",
+                        reply_markup=keyboard,
+                    )
+                    refreshed += 1
+                except Exception as exc:
+                    if any(
+                        token in str(exc).lower()
+                        for token in ("message to edit not found", "chat not found", "bot was blocked")
+                    ):
+                        try:
+                            msg_row.is_active = False
+                            deactivated += 1
+                        except Exception:
+                            pass
+                    else:
+                        logger.debug(f"[refresh_messages] skipped row: {exc}")
+
+            await session.commit()
+
+        logger.info(f"[refresh_messages] startup refresh complete: refreshed={refreshed} deactivated={deactivated}")
+    except Exception as exc:
+        logger.warning(f"[refresh_messages] startup refresh failed: {exc}")
 
 
 async def _send_signal_with_engagement_async(
@@ -2081,10 +2191,9 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         logger.info(f"[bot] daily limit reached for user={user_id} tier={user_tier_actual} sent={signals_sent_today}")
                         return  # Already hit daily limit
                     
-                    # Get completely random available signals (bot's choice - no quality filter)
-                    # Different users get different random signals from the same pool
+                    # Get one random available signal at a time to avoid burst delivery.
                     available_signals = await get_random_available_signals_for_free_user(
-                        session, int(user_id), limit=remaining
+                        session, int(user_id), limit=1
                     )
                     
                     if not available_signals:
@@ -2164,14 +2273,19 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     
                     await session.commit()
 
-            try:
-                run_sync(_send_random_signals_immediately())
-                return
-            except Exception as e:
-                _log_once(
-                    "free_random_send_failed",
-                    f"[bot] free random signal delivery failed: {type(e).__name__}: {e}",
-                )
+            # In production, FREE delivery should be driven by queued scheduler jobs
+            # (distribute_random_signals_to_free_users_job + resend job) to keep timing
+            # randomized and prevent burst/spam behavior from engine dispatch loops.
+            if str(os.getenv("FREE_DIRECT_DISPATCH", "0")).strip().lower() in {"1", "true", "yes"}:
+                try:
+                    run_sync(_send_random_signals_immediately())
+                    return
+                except Exception as e:
+                    _log_once(
+                        "free_random_send_failed",
+                        f"[bot] free random signal delivery failed: {type(e).__name__}: {e}",
+                    )
+            return
     except Exception as e:
         _log_once(
             "dispatch_pg_path_failed",
@@ -2356,6 +2470,17 @@ def run_bot() -> None:
     """
 
     from apscheduler.schedulers.background import BackgroundScheduler
+
+    # Idempotency guard for webhook deployments: if setup already completed in
+    # this process, do not create a second scheduler/app instance.
+    global _webhook_application, _bot_scheduler
+    try:
+        if os.getenv("TELEGRAM_USE_WEBHOOK") and _webhook_application is not None and _bot_scheduler is not None:
+            if bool(getattr(_bot_scheduler, "running", False)):
+                logger.info("[bot] run_bot already initialized in webhook mode; skipping duplicate init")
+                return
+    except Exception:
+        pass
 
     # ── Bulletproof DATABASE_URL validation ─────────────────────────────────
     # Validate DATABASE_URL BEFORE any scheduler job or async session is
@@ -2649,6 +2774,21 @@ def run_bot() -> None:
 
             _aio.ensure_future(_auto_blast())
             logger.info("[blast_terms] Auto-blast scheduled (30s delay)")
+
+        # ── Post-deploy active-message refresh ───────────────────────────────
+        # Re-render old active signal messages with latest template + buttons.
+        try:
+            import asyncio as _aio_refresh
+
+            async def _refresh_after_boot():
+                await _aio_refresh.sleep(20)
+                _limit = int(os.getenv("REFRESH_ACTIVE_SIGNAL_LIMIT", "800") or 800)
+                await _refresh_active_signal_messages_on_startup(app.bot, limit=_limit)
+
+            _aio_refresh.ensure_future(_refresh_after_boot())
+            logger.info("[refresh_messages] startup refresh scheduled")
+        except Exception as _r_err:
+            logger.warning(f"[refresh_messages] failed to schedule startup refresh: {_r_err}")
 
     async def _post_stop(app):
         """Gracefully stop background tasks when the bot shuts down."""

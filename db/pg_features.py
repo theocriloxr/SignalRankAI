@@ -1161,11 +1161,13 @@ async def list_unresolved_signals_for_user(
     session: AsyncSession,
     telegram_user_id: int,
 ) -> list[Signal]:
-    """Return unresolved signals (no outcome yet) delivered to this user, excluding archived."""
+    """Return unresolved signals from the last 24h delivered to this user, excluding archived/expired."""
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return []
+
+    cutoff: datetime = _utcnow() - timedelta(days=1)
 
     q: Select[Tuple[Signal]] = (
         select(Signal)
@@ -1173,6 +1175,8 @@ async def list_unresolved_signals_for_user(
         .where(
             SignalDelivery.user_id == user.id,
             Signal.archived == False,
+            Signal.expired == False,
+            Signal.created_at >= cutoff,
             ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
         )
         .order_by(SignalDelivery.delivered_at.desc())
@@ -1381,7 +1385,7 @@ async def queue_random_free_signals_for_all_users(
     Returns count of users who received new signals.
     """
     now: datetime = _utcnow()
-    daily_limit = 2
+    daily_limit = 3
     count = 0
     
     # Get all FREE tier users
@@ -1427,9 +1431,16 @@ async def queue_random_free_signals_for_all_users(
         )
         
         # Queue them
-        delay_minutes: int = _env_int("FREE_DELAY_MINUTES", 30)
+        min_delay_minutes: int = max(5, _env_int("FREE_MIN_DELAY_MINUTES", 20))
+        max_delay_minutes: int = max(min_delay_minutes, _env_int("FREE_MAX_DELAY_MINUTES", 480))
+        max_window_delay = max(
+            min_delay_minutes,
+            int(max(0, (window_end - now).total_seconds()) // 60) - 5,
+        )
+        effective_max_delay = max(min_delay_minutes, min(max_delay_minutes, max_window_delay))
         for sig in random_signals:
-            deliver_after: datetime = to_naive_utc(now + timedelta(minutes=delay_minutes))
+            randomized_delay = random.randint(min_delay_minutes, effective_max_delay)
+            deliver_after: datetime = to_naive_utc(now + timedelta(minutes=randomized_delay))
             q = FreeSignalQueue(
                 user_id=user.id,
                 date=window_start,

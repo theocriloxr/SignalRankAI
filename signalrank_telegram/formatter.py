@@ -407,7 +407,7 @@ Capital Gained: {stats.get('profit_pct', 0):.2f}%
 """
 	return msg
 
-def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None, signals_sent_today: int = 0, daily_limit: int = 2):
+def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None, signals_sent_today: int = 0, daily_limit: int = 3):
 	"""
 	Format a signal for Telegram with tier-appropriate detail.
 
@@ -650,7 +650,7 @@ def _parse_tp_list(tp_raw) -> list:
 	except Exception:
 		return []
 
-def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:
+def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 3) -> str:
 	"""Format signal for FREE tier with locked fields."""
 	asset = signal.get('asset', 'UNKNOWN')
 	direction = signal.get('direction', 'LONG').upper()
@@ -688,7 +688,7 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 		"/upgrade to unlock full details",
 	]
 	return "\n".join(lines)
-def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:
+def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 3) -> str:
 	"""Format signal for FREE tier with locked fields — HTML parse_mode."""
 	from signalrank_telegram.tier_signal_formatter import (
 		_asset_display, _direction_display, _h, _fmt_price_clean
