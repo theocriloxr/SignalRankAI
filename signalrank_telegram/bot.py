@@ -124,6 +124,7 @@ async def _resend_unsent_signals_async():
             while True:
                 try:
                     await bot.send_message(chat_id=int(chat_id), text=text)
+                        await bot.send_message(chat_id=int(chat_id), text=text, parse_mode="HTML")
                     return
                 except RetryAfter as e:
                     await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
@@ -568,6 +569,7 @@ async def _send_signal_with_engagement_async(
     keyboard = InlineKeyboardMarkup(_kb_rows)
     try:
         msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
+            msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="HTML")
         # Persist message location so tiered_executor can live-edit it later
         try:
             from db.session import get_session
@@ -593,6 +595,7 @@ async def _send_signal_with_engagement_async(
     except Exception:
         # Fallback: send without buttons so the signal still reaches the user
         await bot.send_message(chat_id=chat_id, text=text)
+            await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
 
 def _send_signal_with_engagement_sync(

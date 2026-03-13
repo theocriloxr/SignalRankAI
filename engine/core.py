@@ -422,6 +422,15 @@ def main_loop(DRY_RUN: bool = False):
     from engine.cycle_queue import AssetCycleQueue
     _cycle_queue = AssetCycleQueue()
 
+    # Per-class rotating cursor used to guarantee at least one analyzed asset
+    # from each open class on every cycle.
+    _class_cursor = {
+        "crypto": 0,
+        "fx": 0,
+        "stock": 0,
+        "commodity": 0,
+    }
+
     # Keep the main loop simple and robust
     while True:
         cycle_no += 1
@@ -509,6 +518,84 @@ def main_loop(DRY_RUN: bool = False):
         # Pop this batch from the queue.
         CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", 10)
         assets = _cycle_queue.pop_batch(CYCLE_BATCH_SIZE)
+
+        # Guarantee class coverage: at least one asset per OPEN class each cycle.
+        # If a class market is closed (no open assets in that class), it is skipped.
+        def _asset_class(_a: str) -> str:
+            if is_crypto(_a):
+                return "crypto"
+            if is_fx(_a):
+                return "fx"
+            if is_commodity(_a):
+                return "commodity"
+            return "stock"
+
+        _open_by_class = {
+            "crypto": list(crypto_assets),
+            "fx": list(fx_assets),
+            "stock": list(stock_assets),
+            "commodity": list(commodity_assets),
+        }
+        _required_classes = [k for k, v in _open_by_class.items() if v]
+
+        if _required_classes and CYCLE_BATCH_SIZE < len(_required_classes):
+            logger.warning(
+                "[engine] CYCLE_BATCH_SIZE=%d smaller than open classes=%d; cannot guarantee full class coverage",
+                CYCLE_BATCH_SIZE,
+                len(_required_classes),
+            )
+
+        # Count selected assets by class.
+        _selected_counts: dict[str, int] = {k: 0 for k in _open_by_class.keys()}
+        for _a in assets:
+            _selected_counts[_asset_class(_a)] = _selected_counts.get(_asset_class(_a), 0) + 1
+
+        # Inject one rotating anchor per missing open class.
+        _injected: list[str] = []
+        for _cls in _required_classes:
+            if _selected_counts.get(_cls, 0) > 0:
+                continue
+
+            _pool = _open_by_class.get(_cls) or []
+            _cand = None
+            for _ in range(len(_pool)):
+                _idx = _class_cursor.get(_cls, 0) % len(_pool)
+                _class_cursor[_cls] = _class_cursor.get(_cls, 0) + 1
+                _try = _pool[_idx]
+                if _try not in assets:
+                    _cand = _try
+                    break
+
+            if _cand is None:
+                continue
+
+            if len(assets) < CYCLE_BATCH_SIZE:
+                assets.append(_cand)
+            else:
+                # Replace from an overrepresented class first.
+                _replace_idx = None
+                for i in range(len(assets) - 1, -1, -1):
+                    _existing_cls = _asset_class(assets[i])
+                    if _selected_counts.get(_existing_cls, 0) > 1:
+                        _replace_idx = i
+                        _selected_counts[_existing_cls] -= 1
+                        break
+                if _replace_idx is not None:
+                    assets[_replace_idx] = _cand
+                else:
+                    # No safe replacement available this cycle.
+                    continue
+
+            _selected_counts[_cls] = _selected_counts.get(_cls, 0) + 1
+            _injected.append(_cand)
+
+        # Prevent injected anchors from reappearing later this round.
+        if _injected:
+            try:
+                _cycle_queue.remove_from_queue(_injected)
+            except Exception:
+                pass
+
         cycle_assets = len(assets)
 
         if not assets:
@@ -519,7 +606,7 @@ def main_loop(DRY_RUN: bool = False):
         if _env_bool("ENGINE_CYCLE_LOG", True):
             logger.info(
                 f"[engine] {_cycle_queue.round_progress} "
-                f"batch={cycle_assets} wakeup={cycle_no}"
+                f"batch={cycle_assets} wakeup={cycle_no} classes={_selected_counts}"
             )
 
         # Build timeframes map

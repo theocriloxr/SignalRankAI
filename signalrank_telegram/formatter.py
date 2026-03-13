@@ -440,18 +440,31 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	if not _should_send_signal_for_tier(tier, score):
 		return None  # Signal filtered out for this tier
 	
-	# Route to tier-specific formatter with new parameters
+	# Route to tier-specific formatter.
+	# FREE keeps locked template; PREMIUM/VIP use the agreed plain-text style.
 	if tier == TIER_FREE:
 		return format_signal_free_new(signal, signals_sent_today, daily_limit)
-	elif tier == TIER_PREMIUM:
+
+	try:
+		from signalrank_telegram.tier_signal_formatter import format_premium_signal, format_vip_signal
+		_sig = dict(signal or {})
+		_dir = str(_sig.get('direction', '') or '').strip().upper()
+		if _dir in {'BUY', 'LONG'}:
+			_sig['direction'] = 'long'
+		elif _dir in {'SELL', 'SHORT'}:
+			_sig['direction'] = 'short'
+
+		if tier == TIER_PREMIUM:
+			return format_premium_signal(_sig)
+		if tier in {TIER_VIP, TIER_ADMIN, TIER_OWNER}:
+			return format_vip_signal(_sig)
+	except Exception:
+		pass
+
+	# Fallback to enhanced templates
+	if tier == TIER_PREMIUM:
 		return format_signal_premium_new(signal)
-	elif tier == TIER_VIP:
-		return format_signal_vip_new(signal)
-	elif tier in {TIER_ADMIN, TIER_OWNER}:
-		return format_signal_vip_new(signal)  # VIP format for admin/owner
-	
-	# Fallback to PREMIUM format
-	return format_signal_premium_new(signal)
+	return format_signal_vip_new(signal)
 
 def _get_freshness_badge(signal: dict) -> str:
 	"""Get data freshness badge based on data_age_seconds."""
@@ -674,6 +687,55 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 		"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
 		"/upgrade to unlock full details",
 	]
+	return "\n".join(lines)
+def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 2) -> str:
+	"""Format signal for FREE tier with locked fields — HTML parse_mode."""
+	from signalrank_telegram.tier_signal_formatter import (
+		_asset_display, _direction_display, _h, _fmt_price_clean
+	)
+
+	asset = signal.get('asset', 'UNKNOWN')
+	score = float(signal.get('score', 0) or 0)
+	entry = signal.get('entry')
+	is_order_block = bool(signal.get('is_near_order_block', False))
+
+	asset_disp = _h(_asset_display(asset))
+	direction_text = _h(_direction_display(signal.get('direction', '')))
+
+	# Teaser description
+	if is_order_block:
+		desc = f"The BOT just spotted a massive Order Block bounce with a {score:.1f}% Conviction Score."
+	else:
+		desc = f"The BOT just detected a high-probability setup with a {score:.1f}% Conviction Score."
+
+	premium_price_ngn = int(os.getenv("PREMIUM_PRICE_NGN", "15000"))
+	price_k = f"₦{premium_price_ngn // 1000}k"
+
+	lines = [
+		"🔒 <b>TRADE SETUP DETECTED</b> 🔒",
+		f"Asset: <b>{asset_disp}</b>",
+		f"Direction: <b>{direction_text}</b>",
+		"",
+		_h(desc),
+		"",
+	]
+
+	if entry is not None:
+		lines.append(f"Entry: {_h(_fmt_price_clean(entry, asset))}")
+	else:
+		lines.append("Entry: —")
+
+	lines += [
+		"Stop Loss: [ ██████ ]",
+		"Take Profit: [ ██████ ]",
+		"",
+		"Upgrade to see more details.",
+		"VIP and Premium users are entering this trade right now.",
+		"Don't miss the move.",
+		"",
+		f"[ 🔓 Unlock Signal Now ({price_k}/mo) — /upgrade ]",
+	]
+
 	return "\n".join(lines)
 
 def format_signal_premium_new(signal: dict) -> str:

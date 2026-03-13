@@ -164,17 +164,40 @@ def fetch_market_data(asset, timeframes):
             # Check candle freshness - most recent candle should not be too old
             latest_candle = candles[-1]
             latest_timestamp = latest_candle.get('timestamp', 0)
-            
+
+            # Normalize timestamp to epoch seconds (accepts ms, s, or ISO string)
+            def _to_epoch_seconds(ts_val):
+                try:
+                    if isinstance(ts_val, str):
+                        _s = ts_val.strip()
+                        if _s.isdigit():
+                            ts_num = int(_s)
+                            return ts_num / 1000.0 if ts_num > 1_000_000_000_000 else float(ts_num)
+                        try:
+                            from datetime import datetime
+                            dt = datetime.fromisoformat(_s.replace('Z', '+00:00'))
+                            return dt.timestamp()
+                        except Exception:
+                            return 0.0
+                    if isinstance(ts_val, (int, float)):
+                        ts_num = float(ts_val)
+                        return ts_num / 1000.0 if ts_num > 1_000_000_000_000 else ts_num
+                except Exception:
+                    return 0.0
+                return 0.0
+
+            latest_ts_sec = _to_epoch_seconds(latest_timestamp)
+
             # Convert timeframe to seconds
             tf_seconds = _timeframe_to_seconds(tf)
             current_time = time.time()
-            
+
             # Import candle staleness multiplier
             from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
-            
+
             # Candles should be at most N times the timeframe interval old
             max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
-            candle_age = current_time - latest_timestamp
+            candle_age = (current_time - latest_ts_sec) if latest_ts_sec else float('inf')
             
             if candle_age > max_age:
                 logger.warning(f"[fetcher] Candle data for {asset} {tf} is stale: {candle_age:.0f}s old (max: {max_age:.0f}s)")
@@ -189,7 +212,7 @@ def fetch_market_data(asset, timeframes):
                 'candles': candles,
                 'indicators': indicators,
                 'fetched_at': current_time,
-                'latest_candle_timestamp': latest_timestamp,
+                'latest_candle_timestamp': latest_ts_sec,
                 'candle_age_seconds': candle_age
             }
         except Exception as e:

@@ -130,6 +130,21 @@ class AssetCycleQueue:
             self._round_assets_done += len(assets)
             self._round_signals += max(0, int(signals_generated))
 
+    def remove_from_queue(self, assets: List[str]) -> int:
+        """Remove specific assets from the pending queue tail/head.
+
+        Returns number of removed assets.
+        Useful when caller force-injects class coverage assets into the
+        current cycle batch and wants to avoid duplicates later in round.
+        """
+        with self._lock:
+            targets = {str(a or "").strip() for a in (assets or []) if str(a or "").strip()}
+            if not targets:
+                return 0
+            before = len(self._queue)
+            self._queue = deque([a for a in self._queue if a not in targets])
+            return max(0, before - len(self._queue))
+
     # ─────────────────────────── properties ───────────────────────────
 
     @property
