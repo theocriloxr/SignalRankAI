@@ -508,6 +508,303 @@ async def _send_message_async(bot: Bot, chat_id: int, text: str, parse_mode: str
     await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _first_take_profit(signal: dict | None) -> float | None:
+    if not isinstance(signal, dict):
+        return None
+    raw_tp = signal.get("take_profit") or signal.get("tp_levels") or signal.get("targets")
+    if isinstance(raw_tp, (list, tuple)):
+        for item in raw_tp:
+            try:
+                candidate = item.get("price") if isinstance(item, dict) else item
+                value = float(candidate)
+                if value > 0:
+                    return value
+            except Exception:
+                continue
+        return None
+    try:
+        value = float(raw_tp)
+        return value if value > 0 else None
+    except Exception:
+        return None
+
+
+def _signal_roi_score(signal: dict) -> float:
+    rr = _safe_float(
+        signal.get("roi")
+        or signal.get("expected_roi")
+        or signal.get("rr_ratio")
+        or signal.get("rr_estimate")
+        or signal.get("risk_reward"),
+        default=0.0,
+    )
+    if rr > 0:
+        return rr
+    entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+    target = _first_take_profit(signal)
+    if entry <= 0 or stop <= 0 or target is None:
+        return 0.0
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return 0.0
+    return abs(target - entry) / risk
+
+
+def _signal_variant_key(signal: dict) -> tuple[str, str]:
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
+    return asset, direction
+
+
+def _collapse_signal_variants(signals_list: list[dict]) -> list[dict]:
+    best_by_key: dict[tuple[str, str], dict] = {}
+    for signal in signals_list or []:
+        key = _signal_variant_key(signal)
+        incumbent = best_by_key.get(key)
+        if incumbent is None:
+            best_by_key[key] = signal
+            continue
+        candidate_rank = (
+            _signal_roi_score(signal),
+            _safe_float(signal.get("score")),
+            _safe_float(signal.get("ml_probability")),
+        )
+        incumbent_rank = (
+            _signal_roi_score(incumbent),
+            _safe_float(incumbent.get("score")),
+            _safe_float(incumbent.get("ml_probability")),
+        )
+        if candidate_rank > incumbent_rank:
+            best_by_key[key] = signal
+    collapsed = list(best_by_key.values())
+    collapsed.sort(
+        key=lambda signal: (
+            _signal_roi_score(signal),
+            _safe_float(signal.get("score")),
+            _safe_float(signal.get("ml_probability")),
+        ),
+        reverse=True,
+    )
+    return collapsed
+
+
+async def _load_signal_payload(signal_id: str) -> dict | None:
+    try:
+        import json
+        from db.session import get_session
+        from db.models import Signal
+        from sqlalchemy import select
+
+        async with get_session() as session:
+            signal_row = (
+                await session.execute(
+                    select(Signal).where(Signal.signal_id == str(signal_id)).limit(1)
+                )
+            ).scalar_one_or_none()
+            await session.commit()
+
+        if signal_row is None:
+            return None
+
+        take_profit = getattr(signal_row, "take_profit", None)
+        if isinstance(take_profit, str):
+            try:
+                take_profit = json.loads(take_profit)
+            except Exception:
+                pass
+
+        return {
+            "signal_id": str(getattr(signal_row, "signal_id", signal_id)),
+            "asset": getattr(signal_row, "asset", ""),
+            "timeframe": getattr(signal_row, "timeframe", ""),
+            "direction": getattr(signal_row, "direction", ""),
+            "entry": getattr(signal_row, "entry", None),
+            "stop_loss": getattr(signal_row, "stop_loss", None),
+            "take_profit": take_profit,
+            "score": getattr(signal_row, "score", None),
+            "rr_ratio": getattr(signal_row, "rr_estimate", None),
+            "regime": getattr(signal_row, "regime", None),
+            "ml_probability": getattr(signal_row, "ml_probability", None),
+            "strategy": getattr(signal_row, "strategy_name", None),
+            "expires_at": getattr(signal_row, "expires_at", None),
+            "created_at": getattr(signal_row, "created_at", None),
+            "expired": getattr(signal_row, "expired", False),
+        }
+    except Exception as exc:
+        logger.debug(f"[signal_payload] failed to load {signal_id}: {exc}")
+        return None
+
+
+async def _load_signal_engagement_counts(signal_id: str) -> dict[str, int]:
+    counts = {"taking_it": 0, "watching": 0}
+    try:
+        from db.session import get_session
+        from db.models import SignalEngagement
+        from sqlalchemy import func, select
+
+        async with get_session() as session:
+            rows = await session.execute(
+                select(SignalEngagement.reaction, func.count(SignalEngagement.id))
+                .where(SignalEngagement.signal_id == str(signal_id))
+                .group_by(SignalEngagement.reaction)
+            )
+            await session.commit()
+        for reaction, count in rows.all():
+            counts[str(reaction)] = int(count or 0)
+    except Exception as exc:
+        logger.debug(f"[engagement] count load failed for {signal_id}: {exc}")
+    return counts
+
+
+def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: dict[str, int] | None = None):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    counts = counts or {}
+    taking_it = int(counts.get("taking_it", 0) or 0)
+    watching = int(counts.get("watching", 0) or 0)
+    rows = [[
+        InlineKeyboardButton(f"🔥 Taking It ({taking_it})", callback_data=f"signal_reaction_{signal_id}|taking_it"),
+        InlineKeyboardButton(f"👀 Watching ({watching})", callback_data=f"signal_reaction_{signal_id}|watching"),
+    ]]
+
+    if signal:
+        try:
+            import json as _j
+            asset = str(signal.get("asset") or "")
+            direction = str(signal.get("direction") or "").lower()
+            entry = signal.get("entry") or 0
+            stop_loss = signal.get("stop_loss") or 0
+            tp_raw = signal.get("take_profit") or signal.get("tp_levels") or 0
+            if isinstance(tp_raw, list) and tp_raw:
+                take_profit = tp_raw[0]
+            elif isinstance(tp_raw, str):
+                try:
+                    parsed = _j.loads(tp_raw)
+                    take_profit = parsed[0] if isinstance(parsed, list) and parsed else parsed
+                except Exception:
+                    take_profit = tp_raw
+            else:
+                take_profit = tp_raw or 0
+            sid8 = str(signal_id)[:8]
+            callback = f"mt5_trade_{sid8}|{asset}|{direction}|{entry}|{stop_loss}|{take_profit}"
+            if asset and direction and len(callback.encode()) <= 64:
+                rows.append([InlineKeyboardButton("⚡ Take Trade", callback_data=callback)])
+        except Exception as exc:
+            logger.debug(f"[keyboard] take trade button build failed: {exc}")
+
+    rows.append([
+        InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
+        InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{str(signal_id)[:36]}"),
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def _build_monitor_keyboard(signal_id: str):
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+    return InlineKeyboardMarkup([[ 
+        InlineKeyboardButton("🔄 Refresh", callback_data=f"monitor_signal_{signal_id}"),
+        InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{str(signal_id)[:36]}"),
+    ]])
+
+
+async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | None]:
+    import json
+    from datetime import datetime, timezone
+
+    payload = await _load_signal_payload(signal_id)
+    if not payload:
+        return "❌ <b>Monitor unavailable</b>\nSignal not found.", False, None
+
+    outcome_row = None
+    try:
+        from db.session import get_session
+        from db.models import Outcome
+        from sqlalchemy import select
+
+        async with get_session() as session:
+            outcome_row = (
+                await session.execute(
+                    select(Outcome).where(Outcome.signal_id == str(signal_id)).limit(1)
+                )
+            ).scalar_one_or_none()
+            await session.commit()
+    except Exception as exc:
+        logger.debug(f"[monitor] outcome load failed for {signal_id}: {exc}")
+
+    asset = str(payload.get("asset") or "?")
+    direction = str(payload.get("direction") or "long").lower()
+    entry = _safe_float(payload.get("entry"))
+    stop_loss = _safe_float(payload.get("stop_loss"))
+    take_profit = payload.get("take_profit")
+    if isinstance(take_profit, str):
+        try:
+            take_profit = json.loads(take_profit)
+        except Exception:
+            pass
+    tp1 = _first_take_profit({"take_profit": take_profit})
+
+    current_price = None
+    try:
+        from core.trade_tracker import _get_current_price
+        current_price = await asyncio.to_thread(_get_current_price, asset)
+    except Exception as exc:
+        logger.debug(f"[monitor] live price fetch failed for {signal_id}: {exc}")
+
+    pnl_pct = None
+    if current_price and entry > 0:
+        try:
+            if direction == "short":
+                pnl_pct = ((entry - float(current_price)) / entry) * 100.0
+            else:
+                pnl_pct = ((float(current_price) - entry) / entry) * 100.0
+        except Exception:
+            pnl_pct = None
+
+    if outcome_row is not None:
+        status = str(getattr(outcome_row, "status", "unknown")).upper()
+        status_line = f"✅ <b>Outcome:</b> {status}" if status.startswith("TP") else f"🛑 <b>Outcome:</b> {status}"
+        is_active = False
+    elif payload.get("expired"):
+        status_line = "⏰ <b>Status:</b> Expired"
+        is_active = False
+    else:
+        status_line = "🟢 <b>Status:</b> Active"
+        is_active = True
+
+    created_at = payload.get("created_at")
+    age_text = "N/A"
+    if created_at:
+        try:
+            created = created_at.replace(tzinfo=timezone.utc) if getattr(created_at, "tzinfo", None) is None else created_at
+            age_minutes = int((datetime.now(timezone.utc) - created).total_seconds() / 60)
+            age_text = f"{age_minutes}m"
+        except Exception:
+            pass
+
+    lines = [
+        f"📈 <b>Trade Monitor — {asset}</b>",
+        status_line,
+        f"• Direction: <b>{direction.upper()}</b>",
+        f"• Entry: <b>{entry:.5f}</b>" if entry > 0 else "• Entry: <b>N/A</b>",
+        f"• Current: <b>{float(current_price):.5f}</b>" if current_price else "• Current: <b>Unavailable</b>",
+        f"• Live P/L: <b>{pnl_pct:+.2f}%</b>" if pnl_pct is not None else "• Live P/L: <b>N/A</b>",
+        f"• Stop Loss: <b>{stop_loss:.5f}</b>" if stop_loss > 0 else "• Stop Loss: <b>N/A</b>",
+        f"• Next Target: <b>{float(tp1):.5f}</b>" if tp1 else "• Next Target: <b>N/A</b>",
+        f"• Age: <b>{age_text}</b>",
+        f"• Updated: <b>{datetime.utcnow().strftime('%H:%M UTC')}</b>",
+    ]
+    return "\n".join(lines), is_active, payload.get("expires_at")
+
+
 async def _send_signal_with_engagement_async(
     bot: Bot,
     chat_id: int,
@@ -518,58 +815,15 @@ async def _send_signal_with_engagement_async(
 ) -> None:
     """Send a signal message with engagement buttons (+ ⚡ MT5 button for PREMIUM+)
     and save message_id to ActiveSignalMessage for live-edit support."""
-    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-    # Row 1: engagement reactions (always present)
-    _kb_rows = [[
-        InlineKeyboardButton("🔥 Taking it", callback_data=f"signal_reaction_{signal_id}|taking_it"),
-        InlineKeyboardButton("👀 Watching",  callback_data=f"signal_reaction_{signal_id}|watching"),
-    ]]
-    # Row 2: ⚡ Take Trade button — shown to ALL tiers.
-    # FREE users see an upsell paywall when they tap it; PREMIUM/VIP execute.
-    if signal:
-        try:
-            import json as _j
-            _asset = str(signal.get('asset') or '')
-            _dir   = str(signal.get('direction') or '').lower()
-            _entry = signal.get('entry') or 0
-            _sl    = signal.get('stop_loss') or 0
-            _tp_r  = signal.get('take_profit') or signal.get('tp_levels') or 0
-            # Reduce TP to first scalar value
-            if isinstance(_tp_r, list) and _tp_r:
-                _tp = _tp_r[0]
-            elif isinstance(_tp_r, str):
-                try:
-                    _pd = _j.loads(_tp_r)
-                    _tp = _pd[0] if isinstance(_pd, list) else _pd
-                except Exception:
-                    try:
-                        _tp = float(_tp_r.strip("[]'\" ").split(',')[0])
-                    except Exception:
-                        _tp = 0
-            else:
-                _tp = _tp_r or 0
-            _sid8 = str(signal_id)[:8]
-            # Include button even when sl/tp are 0 — FREE users are gated in the
-            # callback before execution logic is reached.
-            if _asset and _dir:
-                _cb = f"mt5_trade_{_sid8}|{_asset}|{_dir}|{_entry}|{_sl}|{_tp}"
-                if len(_cb.encode()) <= 64:
-                    _kb_rows.append([
-                        InlineKeyboardButton("⚡ Take Trade", callback_data=_cb)
-                    ])
-        except Exception as _me:
-            logger.debug(f"[send_signal] Take Trade button error: {_me}")
-    # Row 3: 🔍 Check Outcome — always present so users can query signal status
-    if signal_id:
-        _co_cb = f"check_outcome_{str(signal_id)[:36]}"
-        if len(_co_cb.encode()) <= 64:
-            _kb_rows.append([
-                InlineKeyboardButton("🔍 Check Outcome", callback_data=_co_cb)
-            ])
-    keyboard = InlineKeyboardMarkup(_kb_rows)
+    counts = await _load_signal_engagement_counts(str(signal_id))
+    keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
     try:
-        msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard)
-            msg = await bot.send_message(chat_id=chat_id, text=text, reply_markup=keyboard, parse_mode="HTML")
+        msg = await bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
         # Persist message location so tiered_executor can live-edit it later
         try:
             from db.session import get_session
@@ -594,8 +848,7 @@ async def _send_signal_with_engagement_async(
             logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
     except Exception:
         # Fallback: send without buttons so the signal still reaches the user
-        await bot.send_message(chat_id=chat_id, text=text)
-            await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
 
 def _send_signal_with_engagement_sync(
