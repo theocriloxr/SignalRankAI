@@ -135,6 +135,20 @@ async def _resend_unsent_signals_async():
                 if not signal_id:
                     continue
 
+                # Do not resend signals for markets currently closed.
+                # Keep the signal active so it can be reconsidered when market re-opens.
+                try:
+                    from data.fetcher import market_closed_reason
+                    _asset = str(getattr(sig, 'asset', '') or '')
+                    _closed_reason = market_closed_reason(_asset) if _asset else None
+                    if _closed_reason:
+                        logger.info(
+                            f"[resend] Skipped signal {signal_id} for asset={_asset}: market closed ({_closed_reason})"
+                        )
+                        continue
+                except Exception:
+                    pass
+
                 # DB-backed dedupe for this signal (survives process restarts).
                 delivered_user_ids: set[int] = set()
                 try:
@@ -203,7 +217,7 @@ async def _resend_unsent_signals_async():
                         # Tier, score, and daily-limit gate
                         score = float(getattr(sig, 'score', 0) or 0)
                         # No Redis dependency in resend flow; DB delivery table is the source of truth.
-                        if not delivery_mgr.should_send_signal(user_tier, score, user_id=None):
+                        if not delivery_mgr.should_send_signal(user_tier, score, user_id=int(user_id)):
                             logger.info(
                                 f"[resend] User {user_id} not eligible for signal {signal_id} "
                                 f"(tier/score/limit), skipping."
@@ -270,7 +284,7 @@ async def _resend_unsent_signals_async():
                     _eligible_any = False
                     for _uid in user_ids:
                         _tier = str(user_tier_map.get(int(_uid), "free") or "free").lower()
-                        if delivery_mgr.should_send_signal(_tier, _score, user_id=None):
+                        if delivery_mgr.should_send_signal(_tier, _score, user_id=int(_uid)):
                             _eligible_any = True
                             break
                     if not _eligible_any:

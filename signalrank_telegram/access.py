@@ -1,7 +1,7 @@
 import asyncio
 from utils.async_runner import run_sync
 
-from config import OWNER_IDS
+from config import OWNER_IDS, ADMIN_IDS
 from core.redis_state import state
 
 try:
@@ -11,7 +11,7 @@ except Exception:  # pragma: no cover
     _resolve_user_tier_pg = None
 
 def resolve_user_tier(user_id):
-    """Resolve user tier with priority: OWNER > ADMIN (temp) > DB tier > FREE.
+    """Resolve user tier with priority: OWNER > ADMIN(config) > ADMIN(temp) > DB tier > FREE.
     
     Tier Resolution Order:
     1. Check OWNER_IDS config (highest priority - env variables)
@@ -34,7 +34,11 @@ def resolve_user_tier(user_id):
     if user_id_int in OWNER_IDS:
         return "OWNER"
 
-    # PRIORITY 2: Check temporary ADMIN access via /unlock command
+    # PRIORITY 2: Check configured ADMIN_IDS from environment
+    if user_id_int in ADMIN_IDS:
+        return "ADMIN"
+
+    # PRIORITY 3: Check temporary ADMIN access via /unlock command
     # (This is invalidated automatically when BYPASS_KEY rotates)
     try:
         if state.has_temp_owner_sync(user_id_int):
@@ -42,7 +46,7 @@ def resolve_user_tier(user_id):
     except Exception:
         pass
 
-    # PRIORITY 3: Query Postgres for user's tier (fallback)
+    # PRIORITY 4: Query Postgres for user's tier (fallback)
     if _resolve_user_tier_pg is None:
         # If Postgres not available, return FREE
         return "FREE"
