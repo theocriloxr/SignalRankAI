@@ -1401,6 +1401,15 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         logger.warning(f"[dispatch] Freshness filtering failed for user {user_id}: {e}")
         # Continue with unfiltered signals on error
 
+    try:
+        original_count = len(signals_list)
+        signals_list = _collapse_signal_variants(signals_list)
+        dropped_count = max(0, original_count - len(signals_list))
+        if dropped_count:
+            logger.info(f"[dispatch] user={user_id} dropped {dropped_count} lower-ROI duplicate signal variants")
+    except Exception as e:
+        logger.debug(f"[dispatch] signal collapse failed for user {user_id}: {e}")
+
     # Entry validation: check that current price is within entry zone (±3%)
     # Add entry_status flag to track if entry has been hit or is pending
     def _check_entry_status(signal: dict) -> tuple[bool, str]:
@@ -2452,7 +2461,6 @@ def run_bot() -> None:
     from telegram.ext import CallbackQueryHandler as _CQH
     async def _signal_reaction_callback(update, context):
         query = update.callback_query
-        await query.answer()
         user_id = update.effective_user.id if update.effective_user else None
         if user_id is None:
             return
@@ -2460,17 +2468,22 @@ def run_bot() -> None:
             # Callback data: signal_reaction_<signal_id>|<reaction>
             data = (query.data or "").replace("signal_reaction_", "", 1)
             signal_id_str, reaction = data.split("|", 1)
-            signal_id = int(signal_id_str)
+            signal_id = str(signal_id_str).strip()
+            if reaction not in ("taking_it", "watching"):
+                await query.answer("Invalid reaction.", show_alert=False)
+                return
         except Exception:
             return
         try:
             from db.session import get_session as _gs
             from db.models import SignalEngagement
+            from db.pg_features import get_or_create_user
             from sqlalchemy import select
             async with _gs() as session:
+                user = await get_or_create_user(session, telegram_user_id=int(user_id))
                 existing = (await session.execute(
                     select(SignalEngagement).where(
-                        SignalEngagement.user_id == user_id,
+                        SignalEngagement.user_id == user.id,
                         SignalEngagement.signal_id == signal_id,
                     )
                 )).scalar_one_or_none()
@@ -2478,17 +2491,107 @@ def run_bot() -> None:
                     existing.reaction = reaction
                 else:
                     session.add(SignalEngagement(
-                        user_id=user_id,
+                        user_id=user.id,
                         signal_id=signal_id,
                         reaction=reaction,
                     ))
                 await session.commit()
+            signal_payload = await _load_signal_payload(signal_id)
+            counts = await _load_signal_engagement_counts(signal_id)
+            try:
+                await query.edit_message_reply_markup(
+                    reply_markup=_build_signal_keyboard(signal_id, signal=signal_payload, counts=counts)
+                )
+            except Exception as markup_exc:
+                if "message is not modified" not in str(markup_exc).lower():
+                    logger.debug(f"[engagement] reply markup refresh failed: {markup_exc}")
             emoji = "🔥" if reaction == "taking_it" else "👀"
             await query.answer(f"{emoji} Noted!", show_alert=False)
         except Exception as exc:
             logger.debug(f"[engagement] reaction save failed: {exc}")
 
     application.add_handler(_CQH(_signal_reaction_callback, pattern=r"^signal_reaction_"))
+
+    async def _signal_monitor_callback(update, context):
+        query = update.callback_query
+        user_id = update.effective_user.id if update.effective_user else None
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if user_id is None or chat_id is None:
+            await query.answer()
+            return
+        signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
+        if not signal_id:
+            await query.answer("No signal selected.", show_alert=True)
+            return
+        await query.answer("Refreshing monitor…", show_alert=False)
+        try:
+            text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
+            from db.session import get_session as _gs_mon
+            from db.models import RuntimeState
+            from sqlalchemy import select
+
+            runtime_key = f"monitor:{int(user_id)}:{signal_id}"
+            message_id = None
+            async with _gs_mon() as session:
+                state_row = (
+                    await session.execute(
+                        select(RuntimeState).where(RuntimeState.key == runtime_key).limit(1)
+                    )
+                ).scalar_one_or_none()
+                if state_row is not None:
+                    try:
+                        message_id = int((state_row.value or {}).get("message_id") or 0)
+                    except Exception:
+                        message_id = None
+                await session.commit()
+
+            if message_id:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=int(chat_id),
+                        message_id=int(message_id),
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=_build_monitor_keyboard(signal_id),
+                    )
+                except Exception:
+                    message_id = None
+
+            if not message_id:
+                monitor_msg = await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=_build_monitor_keyboard(signal_id),
+                )
+                message_id = int(monitor_msg.message_id)
+
+            async with _gs_mon() as session:
+                state_row = (
+                    await session.execute(
+                        select(RuntimeState).where(RuntimeState.key == runtime_key).limit(1)
+                    )
+                ).scalar_one_or_none()
+                if state_row is None:
+                    state_row = RuntimeState(key=runtime_key, value={})
+                    session.add(state_row)
+                state_row.value = {
+                    "telegram_user_id": int(user_id),
+                    "chat_id": int(chat_id),
+                    "message_id": int(message_id),
+                    "signal_id": str(signal_id),
+                }
+                state_row.expires_at = expires_at
+                state_row.updated_at = datetime.utcnow()
+                await session.commit()
+
+            if not is_active:
+                await query.answer("Monitor captured final status.", show_alert=False)
+        except Exception as exc:
+            logger.debug(f"[monitor] callback failed: {exc}")
+            await query.answer("⚠️ Could not open monitor right now.", show_alert=True)
+
+    application.add_handler(CallbackQueryHandler(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
     # ⚡ Take Trade — one-click MT5 execution (PREMIUM/VIP) or upsell (FREE)
     # Callback data: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
@@ -3565,6 +3668,53 @@ def run_bot() -> None:
         except Exception as exc:
             logger.debug(f"[expiry] expire_old_signals_job failed: {exc}")
 
+    def refresh_monitor_snapshots_job():
+        """Refresh open monitor sub-pages every 5 minutes."""
+        try:
+            async def _refresh() -> None:
+                from db.session import get_session as _gs_mon
+                from db.models import RuntimeState
+                from sqlalchemy import select
+
+                bot = Bot(token=_require_telegram_token())
+                async with _gs_mon() as session:
+                    rows = (
+                        await session.execute(
+                            select(RuntimeState).where(RuntimeState.key.like("monitor:%"))
+                        )
+                    ).scalars().all()
+
+                    async with bot:
+                        for row in rows:
+                            payload = dict(row.value or {})
+                            signal_id = str(payload.get("signal_id") or "")
+                            chat_id = payload.get("chat_id")
+                            message_id = payload.get("message_id")
+                            if not signal_id or not chat_id or not message_id:
+                                await session.delete(row)
+                                continue
+                            text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
+                            try:
+                                await bot.edit_message_text(
+                                    chat_id=int(chat_id),
+                                    message_id=int(message_id),
+                                    text=text,
+                                    parse_mode="HTML",
+                                    reply_markup=_build_monitor_keyboard(signal_id),
+                                )
+                            except Exception as exc:
+                                if "message is not modified" not in str(exc).lower():
+                                    logger.debug(f"[monitor] refresh edit failed for {signal_id}: {exc}")
+                            row.updated_at = datetime.utcnow()
+                            row.expires_at = expires_at
+                            if not is_active:
+                                await session.delete(row)
+                    await session.commit()
+
+            run_sync(_refresh())
+        except Exception as exc:
+            logger.debug(f"[monitor] refresh job failed: {exc}")
+
     # ── ML market analysis scan ────────────────────────────────────────────
     def ml_market_analysis_job():
         """Every 15 min: run the ML filter over recent unscored signals.
@@ -3714,6 +3864,14 @@ def run_bot() -> None:
         'interval',
         minutes=3,
         id='compute_outcomes_best_effort',
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
+        refresh_monitor_snapshots_job,
+        'interval',
+        minutes=5,
+        id='refresh_monitor_snapshots_job',
         replace_existing=True,
         max_instances=1,
     )
