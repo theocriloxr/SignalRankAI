@@ -489,14 +489,23 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # ── 1) DB auto-migration / startup ops ────────────────────────────────────
-    # Keep startup healthcheck-friendly. If startup ops are slow, continue them
-    # in background instead of blocking app readiness.
+    # ── 1) DB startup/background maintenance ───────────────────────────────────
+    # Keep startup healthcheck-friendly: schedule DB-heavy work in background,
+    # and only wait for bounded time when explicitly configured.
     startup_ops_task: asyncio.Task | None = None
-    startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", "35") or 35)
+    startup_maintenance_tasks: list[asyncio.Task] = []
+
+    # On Railway, default to non-blocking startup unless user explicitly sets a value.
+    _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"
+    startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", _default_ops_timeout) or 0)
+
     try:
         startup_ops_task = asyncio.create_task(_run_startup_ops())
-        await asyncio.wait_for(asyncio.shield(startup_ops_task), timeout=startup_ops_timeout_s)
+        startup_maintenance_tasks.append(startup_ops_task)
+        if startup_ops_timeout_s > 0:
+            await asyncio.wait_for(asyncio.shield(startup_ops_task), timeout=startup_ops_timeout_s)
+        else:
+            logger.info("[startup] DB startup ops scheduled in background (non-blocking)")
     except asyncio.TimeoutError:
         logger.warning(
             "[startup] DB startup ops exceeded %ss; continuing boot while ops finish in background",
@@ -505,15 +514,39 @@ async def lifespan(_: FastAPI):
     except Exception as exc:
         logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
 
-    # Initial one-shot backfill so ml_past_training_data is populated immediately.
+    # Initial ML archive backfill: keep non-blocking by default on Railway.
+    _default_archive_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "8"
+    archive_timeout_s = int(os.getenv("STARTUP_ARCHIVE_TIMEOUT_SECONDS", _default_archive_timeout) or 0)
     try:
-        await _archive_ml_history_job()
+        archive_task = asyncio.create_task(_archive_ml_history_job())
+        startup_maintenance_tasks.append(archive_task)
+        if archive_timeout_s > 0:
+            await asyncio.wait_for(asyncio.shield(archive_task), timeout=archive_timeout_s)
+        else:
+            logger.info("[startup] ml archive backfill scheduled in background (non-blocking)")
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[startup] ml archive initial backfill exceeded %ss; continuing in background",
+            archive_timeout_s,
+        )
     except Exception as exc:
         logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
 
-    # Optional one-time fresh reset (users preserved) runs before engine/worker/bot.
+    # Optional one-time fresh reset (users preserved): also bounded/non-blocking.
+    _default_fresh_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "8"
+    fresh_timeout_s = int(os.getenv("STARTUP_FRESH_RESET_TIMEOUT_SECONDS", _default_fresh_timeout) or 0)
     try:
-        await _maybe_run_start_fresh_keep_users()
+        fresh_task = asyncio.create_task(_maybe_run_start_fresh_keep_users())
+        startup_maintenance_tasks.append(fresh_task)
+        if fresh_timeout_s > 0:
+            await asyncio.wait_for(asyncio.shield(fresh_task), timeout=fresh_timeout_s)
+        else:
+            logger.info("[startup] fresh-reset step scheduled in background (non-blocking)")
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[startup] fresh reset step exceeded %ss; continuing in background",
+            fresh_timeout_s,
+        )
     except Exception as exc:
         logger.warning(f"[startup] fresh reset step failed: {exc}")
 
@@ -591,11 +624,17 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
-        if startup_ops_task is not None and startup_ops_task.done():
-            try:
-                _ = startup_ops_task.result()
-            except Exception:
-                pass
+        for _t in startup_maintenance_tasks:
+            if _t.done():
+                try:
+                    _ = _t.result()
+                except Exception:
+                    pass
+            else:
+                try:
+                    _t.cancel()
+                except Exception:
+                    pass
 
         # ── Shutdown order: bot → scheduler → worker task → engine task ───────
         try:
