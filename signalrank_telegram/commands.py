@@ -1530,6 +1530,8 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/stats", "Win rate, avg R, and net R"),
 				("/history", "Recent signal history"),
 				("/mystats", "Personal trading and signal stats"),
+				("/execution", "Set execution mode (none/manual; auto on VIP)"),
+				("/drawdown", "Set daily drawdown auto-pause threshold"),
 				("/alerts", "Custom TP/SL alerts and quiet hours"),
 				("/analyze", "AI market analysis for any asset"),
 				("/filter", "Custom score, RR, and regime filters"),
@@ -1548,8 +1550,10 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/mt5_link", "Link your MT5 account"),
 				("/mt5_status", "Check MT5 connection status"),
 				("/connect_broker", "Broker connection walkthrough"),
+				("/execution", "Set broker mode: none/manual/auto"),
 				("/setlot", "Set fixed lot size"),
 				("/setrisk", "Set risk limits per trade"),
+				("/drawdown", "Set daily drawdown auto-pause threshold"),
 				("/dashboard", "Open your analytics dashboard"),
 				("/apikey", "Get your API key"),
 				("/portfolio", "Track active positions and P&L"),
@@ -4652,6 +4656,84 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		)
 	except Exception as exc:
 		await update.message.reply_text(f"❌ Could not update execution mode: {exc}")
+
+
+async def drawdown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Set daily drawdown circuit-breaker threshold.
+
+	Usage:
+	  /drawdown           -> show current threshold
+	  /drawdown 4         -> pause AUTO at -4% (rolling 24h)
+	  /drawdown off       -> disable circuit breaker
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+
+	user_id: int = int(update.effective_user.id)
+	tier: str = _effective_tier(user_id)
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 /drawdown is available on <b>PREMIUM</b> and above.",
+			parse_mode="HTML",
+		)
+		return
+
+	args = [str(a).strip().lower() for a in (context.args or []) if str(a).strip()]
+
+	try:
+		from db.session import get_session as _gs
+		from db.models import User
+		from sqlalchemy import select
+
+		async with _gs() as session:
+			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
+			if row is None:
+				await update.message.reply_text("❌ User profile not found. Send /start and try again.")
+				return
+
+			if not args:
+				cap = float(getattr(row, "max_daily_drawdown_pct", 8.0) or 0.0)
+				cap_txt = "OFF" if cap <= 0 else f"{cap:.2f}%"
+				await update.message.reply_text(
+					"🛡️ <b>Daily Drawdown Guard</b>\n\n"
+					f"Current threshold: <b>{cap_txt}</b>\n"
+					"Window: rolling 24h realized P&L\n\n"
+					"Use: <code>/drawdown 4</code> or <code>/drawdown off</code>",
+					parse_mode="HTML",
+				)
+				return
+
+			arg0 = args[0]
+			if arg0 in {"off", "none", "disable", "0"}:
+				row.max_daily_drawdown_pct = 0.0
+				await session.commit()
+				await update.message.reply_text(
+					"✅ Daily drawdown circuit breaker is now <b>OFF</b>.",
+					parse_mode="HTML",
+				)
+				return
+
+			try:
+				cap = float(arg0)
+			except Exception:
+				await update.message.reply_text("❌ Invalid value. Use a number like 4 or 'off'.")
+				return
+
+			if cap < 0.5 or cap > 25:
+				await update.message.reply_text("❌ Allowed range is 0.5 to 25 (%).")
+				return
+
+			row.max_daily_drawdown_pct = float(round(cap, 2))
+			await session.commit()
+
+		await update.message.reply_text(
+			"✅ <b>Daily drawdown guard updated</b>\n\n"
+			f"Threshold: <b>{float(round(cap, 2)):.2f}%</b>\n"
+			"If rolling 24h realized P&L reaches this loss, AUTO switches to MANUAL.",
+			parse_mode="HTML",
+		)
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not update drawdown setting: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

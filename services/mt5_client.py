@@ -222,7 +222,20 @@ async def execute_trade(
         "live_price": None,
         "slippage": None,
         "error": None,
+        "hard_stop_attached": False,
     }
+
+    # Phase 1 hard-stop protection: never place an order without broker-side SL.
+    try:
+        if float(stop_loss or 0) <= 0:
+            result["error"] = "Hard stop-loss is required for broker-side protection"
+            return result
+        if float(take_profit or 0) <= 0:
+            result["error"] = "Take-profit is required for managed execution"
+            return result
+    except Exception:
+        result["error"] = "Invalid stop-loss/take-profit values"
+        return result
 
     # 1. Slippage guard
     ok, slippage, live_price = await validate_slippage(account_id, symbol, signal_entry)
@@ -253,6 +266,7 @@ async def execute_trade(
         "takeProfit": take_profit,
         "comment": comment[:31],
     }
+    result["hard_stop_attached"] = True
     data = await _http_post(url, payload)
     if data is None:
         result["error"] = "MetaApi trade request failed (see logs)"
@@ -266,6 +280,54 @@ async def execute_trade(
         "[mt5_client] Order placed: symbol=%s dir=%s vol=%.2f order_id=%s",
         symbol, direction, volume, result["order_id"],
     )
+    return result
+
+
+async def close_position(
+    account_id: str,
+    position_id: str,
+    volume: float | None = None,
+    comment: str = "SignalRankAI-SmartExit",
+) -> Dict[str, Any]:
+    """Attempt to close an MT5 position using MetaApi REST.
+
+    Uses multiple API payload variants for compatibility across bridge versions.
+    """
+    result: Dict[str, Any] = {
+        "success": False,
+        "position_id": str(position_id or ""),
+        "error": None,
+    }
+    if not str(account_id or "").strip() or not str(position_id or "").strip():
+        result["error"] = "account_id and position_id are required"
+        return result
+
+    await _deploy_account(account_id)
+
+    # Variant A: dedicated close endpoint.
+    try:
+        close_url = f"{_client_base(account_id)}/positions/{position_id}/close"
+        data = await _http_post(close_url, {"comment": comment[:31]})
+        if data is not None:
+            result["success"] = True
+            return result
+    except Exception as exc:
+        logger.debug("[mt5_client] close endpoint failed position=%s: %s", position_id, exc)
+
+    # Variant B: trade action payload.
+    payload = {
+        "actionType": "POSITION_CLOSE_ID",
+        "positionId": str(position_id),
+        "comment": comment[:31],
+    }
+    if volume is not None and float(volume) > 0:
+        payload["volume"] = float(volume)
+    data = await _http_post(f"{_client_base(account_id)}/trade", payload)
+    if data is not None:
+        result["success"] = True
+        return result
+
+    result["error"] = "MetaApi position close failed"
     return result
 
 

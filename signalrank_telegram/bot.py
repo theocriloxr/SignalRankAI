@@ -1044,6 +1044,77 @@ def _deliver_or_update_signal_sync(
         return False
 
 
+def _record_mt5_execution_sync(
+    telegram_user_id: int,
+    signal: dict,
+    *,
+    account_id: str,
+    order_id: str | None,
+    lot_size: float,
+    entry_price: float,
+    stop_loss: float,
+    take_profit: float,
+    tier_at_execution: str,
+    status: str = "open",
+    extra_meta: dict | None = None,
+) -> None:
+    """Best-effort persistence for broker executions used by risk controls/jobs."""
+    try:
+        from db.session import get_session
+        from db.models import MT5Execution, User
+        from sqlalchemy import select
+        import json
+        from datetime import datetime, timezone
+
+        sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip() or None
+        symbol = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        direction = str(signal.get("direction") or "long").lower().strip()
+        if direction in {"buy"}:
+            direction = "long"
+        elif direction in {"sell"}:
+            direction = "short"
+
+        meta = {
+            "hard_stop_attached": True,
+            "source": "telegram_bot",
+        }
+        if isinstance(extra_meta, dict):
+            meta.update(extra_meta)
+
+        async def _write() -> None:
+            async with get_session() as session:
+                user = (
+                    await session.execute(
+                        select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is None:
+                    return
+
+                row = MT5Execution(
+                    user_id=int(telegram_user_id),
+                    signal_id=sig_id,
+                    metaapi_account_id=str(account_id),
+                    order_id=(str(order_id) if order_id else None),
+                    symbol=symbol,
+                    direction=("long" if direction == "long" else "short"),
+                    lot_size=float(lot_size),
+                    entry_price=float(entry_price),
+                    stop_loss=float(stop_loss),
+                    take_profit=json.dumps([float(take_profit)]),
+                    status=str(status or "open")[:16],
+                    tier_at_execution=str(tier_at_execution or "premium").upper(),
+                    executed_at=datetime.now(timezone.utc),
+                    meta=meta,
+                )
+                session.add(row)
+                await session.commit()
+
+        run_sync(_write())
+    except Exception as exc:
+        logger.debug(f"[mt5_exec] persist failed user={telegram_user_id}: {exc}")
+
+
 def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing_tier: str) -> None:
     """Best-effort AUTO execution path for users in execution_mode=auto.
 
@@ -1172,6 +1243,27 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                     now = datetime.now(timezone.utc)
                     user.daily_executions_today = int(getattr(user, "daily_executions_today", 0) or 0) + 1
                     user.daily_executions_reset_at = now
+
+                if bool(result.get("success")):
+                    try:
+                        _record_mt5_execution_sync(
+                            int(telegram_user_id),
+                            dict(signal or {}),
+                            account_id=str(acct_id),
+                            order_id=str(result.get("order_id") or ""),
+                            lot_size=float(lot),
+                            entry_price=float(live_px or entry),
+                            stop_loss=float(sl),
+                            take_profit=float(tp),
+                            tier_at_execution=str(tier_up),
+                            status="open",
+                            extra_meta={
+                                "auto_execution": True,
+                                "hard_stop_attached": bool(result.get("hard_stop_attached", True)),
+                            },
+                        )
+                    except Exception:
+                        pass
 
                 await session.commit()
                 return (bool(result.get("success")), str(result.get("order_id") or result.get("error") or "unknown"))
@@ -3547,7 +3639,7 @@ def run_bot() -> None:
     # MT5 commands (Premium+)
     from .commands import (
         mt5_link_command, mt5_status_command,
-        setlot_command, setrisk_command, tiers_command,
+        setlot_command, setrisk_command, drawdown_command, tiers_command,
         mystats_command, referral_command, execution_command, build_connect_broker_conversation,
         cancel_command,
     )
@@ -3558,6 +3650,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
     application.add_handler(CommandHandler("setlot", _audit_handler("setlot", setlot_command)))
     application.add_handler(CommandHandler("setrisk", _audit_handler("setrisk", setrisk_command)))
+    application.add_handler(CommandHandler("drawdown", _audit_handler("drawdown", drawdown_command)))
     application.add_handler(CommandHandler("execution", _audit_handler("execution", execution_command)))
     application.add_handler(CommandHandler("tiers", _audit_handler("tiers", tiers_command)))
     application.add_handler(CommandHandler("mystats", _audit_handler("mystats", mystats_command)))
@@ -3954,6 +4047,29 @@ def run_bot() -> None:
                 volume=_exec_vol, stop_loss=sl, take_profit=tp, signal_entry=entry
             )
             if result.get("success"):
+                try:
+                    _record_mt5_execution_sync(
+                        int(user_id),
+                        {
+                            "signal_id": str(signal_id),
+                            "asset": str(asset),
+                            "direction": str(direction),
+                        },
+                        account_id=str(account_id),
+                        order_id=str(result.get("order_id") or ""),
+                        lot_size=float(_exec_vol),
+                        entry_price=float(result.get("live_price") or entry),
+                        stop_loss=float(sl),
+                        take_profit=float(tp),
+                        tier_at_execution=str(_ut),
+                        status="open",
+                        extra_meta={
+                            "auto_execution": False,
+                            "hard_stop_attached": bool(result.get("hard_stop_attached", True)),
+                        },
+                    )
+                except Exception:
+                    pass
                 _remaining_text = ""
                 if _ut == "PREMIUM":
                     try:
@@ -4186,6 +4302,57 @@ def run_bot() -> None:
                 timeframe = str(getattr(sig, 'timeframe', '') or '')
                 direction = str(getattr(sig, 'direction', '') or '')
 
+                # Keep MT5 execution rows in sync with signal outcomes.
+                # This powers drawdown guard and reconciliation logic.
+                try:
+                    from db.models import MT5Execution as _MT5Exec
+                    from sqlalchemy import select as _sel, and_ as _and
+                    from datetime import datetime, timezone
+
+                    async def _sync_exec_rows() -> None:
+                        async with get_session() as _sx:
+                            _rows = (
+                                await _sx.execute(
+                                    _sel(_MT5Exec).where(
+                                        _and(
+                                            _MT5Exec.signal_id == str(ref),
+                                            _MT5Exec.closed_at.is_(None),
+                                        )
+                                    )
+                                )
+                            ).scalars().all()
+                            if not _rows:
+                                await _sx.commit()
+                                return
+
+                            for _ex in _rows:
+                                _entry = float(getattr(_ex, "entry_price", 0) or 0)
+                                _sl = float(getattr(_ex, "stop_loss", 0) or 0)
+
+                                if status == "sl":
+                                    _risk = 0.0
+                                    try:
+                                        _risk = abs(((_entry - _sl) / _entry) * 100.0) if _entry else 0.0
+                                    except Exception:
+                                        _risk = abs(float(getattr(oc, "percent", 0) or 0))
+                                    _ex.status = "sl"
+                                    _ex.realized_pnl_pct = -abs(float(_risk or 0.0))
+                                    _ex.closed_at = datetime.now(timezone.utc)
+                                elif status in {"tp3", "tp"}:
+                                    _ex.status = "tp3"
+                                    _ex.realized_pnl_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                                    _ex.closed_at = datetime.now(timezone.utc)
+                                elif status == "tp2":
+                                    _ex.status = "tp2"
+                                elif status in {"tp1", "partial_tp"}:
+                                    _ex.status = "tp1"
+
+                            await _sx.commit()
+
+                    run_sync(_sync_exec_rows())
+                except Exception as _mx:
+                    logger.debug(f"[outcome] mt5 execution reconcile failed ref={ref[:8]} err={_mx}")
+
                 # FOMO trigger: VIP TP1 unlocks an immediate FREE dispatch.
                 try:
                     if status in {"tp1", "partial_tp"} and _is_free_fomo_dispatch_only_enabled():
@@ -4300,21 +4467,51 @@ def run_bot() -> None:
                             msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
                         elif status == "sl":
                             notify = True
-                            msg = _tier_notifier.format_sl_hit_notification(signal_data, user_tier, float(getattr(oc, "percent", 0) or 0))
+                            _entry_v = float(signal_data.get("entry") or 0)
+                            _sl_v = float(signal_data.get("stop_loss") or 0)
+                            _risk_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                            if _risk_pct <= 0 and _entry_v and _sl_v:
+                                _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
+                            msg = (
+                                "❌ <b>Trade Closed</b>\n"
+                                f"<b>{asset}</b> hit Stop Loss.\n"
+                                f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
+                                "Status: Awaiting next high-probability setup."
+                            )
                     elif user_tier == "premium":
                         if tp_level_num in (1, 2):
                             notify = True
                             msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
                         elif status == "sl":
                             notify = True
-                            msg = _tier_notifier.format_sl_hit_notification(signal_data, user_tier, float(getattr(oc, "percent", 0) or 0))
+                            _entry_v = float(signal_data.get("entry") or 0)
+                            _sl_v = float(signal_data.get("stop_loss") or 0)
+                            _risk_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                            if _risk_pct <= 0 and _entry_v and _sl_v:
+                                _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
+                            msg = (
+                                "❌ <b>Trade Closed</b>\n"
+                                f"<b>{asset}</b> hit Stop Loss.\n"
+                                f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
+                                "Status: Awaiting next high-probability setup."
+                            )
                     elif str(tier_at_send).lower() == "free":
                         if tp_level_num > 0 or status == "tp":
                             notify = True
                             msg = _tier_notifier.format_tp_hit_notification(signal_data, "free", tp_level_num or 1, float(getattr(oc, "percent", 0) or 0), current_market_price)
                         elif status == "sl":
                             notify = True
-                            msg = _tier_notifier.format_sl_hit_notification(signal_data, "free", float(getattr(oc, "percent", 0) or 0))
+                            _entry_v = float(signal_data.get("entry") or 0)
+                            _sl_v = float(signal_data.get("stop_loss") or 0)
+                            _risk_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                            if _risk_pct <= 0 and _entry_v and _sl_v:
+                                _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
+                            msg = (
+                                "❌ <b>Trade Closed</b>\n"
+                                f"<b>{asset}</b> hit Stop Loss.\n"
+                                f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
+                                "Status: Awaiting next high-probability setup."
+                            )
 
                     if notify and msg:
                         try:
@@ -4343,6 +4540,214 @@ def run_bot() -> None:
         except Exception as e:
             logger.warning(f"[outcome] Failed to process outcomes: {e}")
             return
+
+
+    def smart_exit_guard_job():
+        """Phase 2: close weak AUTO positions early on structural deterioration."""
+        try:
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
+                return
+
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import select, and_
+            from db.models import MT5Execution, User
+            from services.mt5_client import get_live_price as _mt5_live_price, close_position as _mt5_close_position
+            from data.fetcher import async_get_candles
+            from engine.confluence_engine import run_confluence_engine
+
+            min_loss_pct = float(os.getenv("SMART_EXIT_MIN_LOSS_PCT", "0.25") or 0.25)
+            max_sl_share = float(os.getenv("SMART_EXIT_MAX_SL_SHARE", "0.90") or 0.90)
+            weak_votes = int(os.getenv("SMART_EXIT_MIN_CONFLUENCE_VOTES", "4") or 4)
+            btc_crash_pct = float(os.getenv("SMART_EXIT_BTC_CRASH_PCT", "-1.20") or -1.20)
+
+            async def _run() -> None:
+                now = datetime.now(timezone.utc)
+                cutoff = now - timedelta(days=3)
+                async with get_session() as session:
+                    rows = (
+                        await session.execute(
+                            select(MT5Execution, User)
+                            .join(User, User.telegram_user_id == MT5Execution.user_id)
+                            .where(
+                                and_(
+                                    User.execution_mode == "auto",
+                                    MT5Execution.closed_at.is_(None),
+                                    MT5Execution.executed_at >= cutoff,
+                                    MT5Execution.status.in_(["pending", "open", "tp1", "tp2"]),
+                                )
+                            )
+                            .limit(100)
+                        )
+                    ).all()
+
+                    if not rows:
+                        await session.commit()
+                        return
+
+                    btc_1h_drop = 0.0
+                    try:
+                        _btc = await async_get_candles("BTCUSDT", "1h")
+                        if _btc and len(_btc) >= 2:
+                            _a = float((_btc[-2] or {}).get("close") or 0.0)
+                            _b = float((_btc[-1] or {}).get("close") or 0.0)
+                            if _a > 0:
+                                btc_1h_drop = ((_b - _a) / _a) * 100.0
+                    except Exception:
+                        btc_1h_drop = 0.0
+
+                    for exec_row, user in rows:
+                        try:
+                            account_id = str(getattr(exec_row, "metaapi_account_id", "") or "").strip()
+                            if not account_id:
+                                continue
+
+                            symbol = str(getattr(exec_row, "symbol", "") or "").upper().strip()
+                            direction = str(getattr(exec_row, "direction", "long") or "long").lower()
+                            position_id = str(getattr(exec_row, "order_id", "") or "").strip()
+                            entry = float(getattr(exec_row, "entry_price", 0.0) or 0.0)
+                            sl = float(getattr(exec_row, "stop_loss", 0.0) or 0.0)
+
+                            if not symbol or not position_id or entry <= 0 or sl <= 0:
+                                continue
+
+                            live = await _mt5_live_price(account_id, symbol)
+                            if live is None:
+                                continue
+
+                            hard_sl_pct = abs(((entry - sl) / entry) * 100.0)
+                            if hard_sl_pct <= 0:
+                                continue
+
+                            if direction == "short":
+                                cur_loss_pct = max(0.0, ((float(live) - entry) / entry) * 100.0)
+                                expected_dir = "SHORT"
+                            else:
+                                cur_loss_pct = max(0.0, ((entry - float(live)) / entry) * 100.0)
+                                expected_dir = "LONG"
+
+                            if cur_loss_pct < min_loss_pct:
+                                continue
+                            if cur_loss_pct >= hard_sl_pct * max_sl_share:
+                                # Too close to hard SL — let broker stop handle it.
+                                continue
+
+                            candles = await async_get_candles(symbol, "1h")
+                            if not candles:
+                                continue
+                            conf = run_confluence_engine(candles)
+                            conf_score = int(conf.get("score", 0) or 0)
+                            conf_total = int(conf.get("total", 15) or 15)
+                            conf_dir = str(conf.get("direction", "NEUTRAL") or "NEUTRAL").upper()
+
+                            structural_shift = (conf_score <= weak_votes) or (conf_dir != expected_dir)
+                            market_shock = float(btc_1h_drop) <= float(btc_crash_pct)
+                            if not structural_shift and not market_shock:
+                                continue
+
+                            closed = await _mt5_close_position(account_id, position_id, comment="SignalRankAI-SmartExit")
+                            if not bool(closed.get("success")):
+                                continue
+
+                            exec_row.status = "smart_exit"
+                            exec_row.realized_pnl_pct = -abs(float(cur_loss_pct))
+                            exec_row.closed_at = now
+                            _meta = dict(getattr(exec_row, "meta", {}) or {})
+                            _meta.update({
+                                "smart_exit": True,
+                                "smart_exit_at": now.isoformat(),
+                                "smart_exit_confluence": f"{conf_score}/{conf_total}",
+                                "smart_exit_confluence_dir": conf_dir,
+                                "smart_exit_expected_dir": expected_dir,
+                                "smart_exit_btc_1h_pct": round(float(btc_1h_drop), 3),
+                            })
+                            exec_row.meta = _meta
+
+                            try:
+                                await application.bot.send_message(
+                                    chat_id=int(user.telegram_user_id),
+                                    text=(
+                                        "⚠️ <b>Smart Exit</b>\n"
+                                        f"Structural shift detected on <b>{symbol}</b>.\n"
+                                        f"Closed early at <b>-{float(cur_loss_pct):.2f}%</b> "
+                                        f"(vs hard SL ~-{float(hard_sl_pct):.2f}%)."
+                                    ),
+                                    parse_mode="HTML",
+                                )
+                            except Exception:
+                                pass
+                        except Exception as _one_err:
+                            logger.debug(f"[smart_exit] row error: {_one_err}")
+
+                    await session.commit()
+
+            run_sync(_run())
+        except Exception as _se:
+            logger.warning(f"[smart_exit] job failed: {_se}")
+
+
+    def drawdown_circuit_breaker_job():
+        """Phase 3: pause AUTO mode when rolling 24h drawdown reaches user cap."""
+        try:
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
+                return
+
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import select, func
+            from db.models import User, MT5Execution
+
+            async def _run() -> None:
+                now = datetime.now(timezone.utc)
+                window_start = now - timedelta(hours=24)
+                async with get_session() as session:
+                    users = (
+                        await session.execute(
+                            select(User).where(User.execution_mode == "auto", User.max_daily_drawdown_pct > 0)
+                        )
+                    ).scalars().all()
+                    if not users:
+                        await session.commit()
+                        return
+
+                    for user in users:
+                        uid = int(getattr(user, "telegram_user_id", 0) or 0)
+                        if uid <= 0:
+                            continue
+
+                        pnl_row = await session.execute(
+                            select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0)).where(
+                                MT5Execution.user_id == uid,
+                                MT5Execution.executed_at >= window_start,
+                                MT5Execution.realized_pnl_pct.is_not(None),
+                            )
+                        )
+                        pnl_24h = float(pnl_row.scalar_one_or_none() or 0.0)
+                        cap = float(getattr(user, "max_daily_drawdown_pct", 0.0) or 0.0)
+                        if cap <= 0 or pnl_24h > -abs(cap):
+                            continue
+
+                        user.execution_mode = "manual"
+
+                        try:
+                            await application.bot.send_message(
+                                chat_id=uid,
+                                text=(
+                                    "🛑 <b>Capital Protection Activated</b>\n"
+                                    f"Daily drawdown limit ({abs(cap):.2f}%) reached: <b>{pnl_24h:.2f}%</b>.\n"
+                                    "Auto-trading is paused for now. You will still receive manual signals.\n"
+                                    "Use /execution auto when you are ready to resume."
+                                ),
+                                parse_mode="HTML",
+                            )
+                        except Exception:
+                            pass
+
+                    await session.commit()
+
+            run_sync(_run())
+        except Exception as _dd:
+            logger.warning(f"[drawdown_guard] job failed: {_dd}")
 
 
     def compute_outcomes_best_effort():
@@ -5404,6 +5809,22 @@ def run_bot() -> None:
             'interval',
             minutes=2,
             id='send_outcome_notifications',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            smart_exit_guard_job,
+            'interval',
+            minutes=5,
+            id='smart_exit_guard_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            drawdown_circuit_breaker_job,
+            'interval',
+            minutes=5,
+            id='drawdown_circuit_breaker_job',
             replace_existing=True,
             max_instances=1,
         )
