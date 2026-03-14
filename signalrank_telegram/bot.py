@@ -2919,6 +2919,8 @@ def run_bot() -> None:
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_today INTEGER NOT NULL DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'manual'",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_signals_daily_limit INTEGER NOT NULL DEFAULT 3",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE",
@@ -3161,6 +3163,7 @@ def run_bot() -> None:
             ("mystats", "My P&L stats"),
             ("referral", "Referral link"),
             ("setlot", "Set lot size"),
+            ("execution", "Execution mode"),
             ("connect_broker", "Connect MT5 broker"),
             ("mt5_link", "Link MT5 account"),
             ("mt5_status", "MT5 account status"),
@@ -3352,7 +3355,7 @@ def run_bot() -> None:
     from .commands import (
         mt5_link_command, mt5_status_command,
         setlot_command, setrisk_command, tiers_command,
-        mystats_command, referral_command, build_connect_broker_conversation,
+        mystats_command, referral_command, execution_command, build_connect_broker_conversation,
         cancel_command,
     )
     application.add_handler(CommandHandler("mt5_link", _audit_handler("mt5_link", mt5_link_command)))
@@ -3362,6 +3365,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
     application.add_handler(CommandHandler("setlot", _audit_handler("setlot", setlot_command)))
     application.add_handler(CommandHandler("setrisk", _audit_handler("setrisk", setrisk_command)))
+    application.add_handler(CommandHandler("execution", _audit_handler("execution", execution_command)))
     application.add_handler(CommandHandler("tiers", _audit_handler("tiers", tiers_command)))
     application.add_handler(CommandHandler("mystats", _audit_handler("mystats", mystats_command)))
     application.add_handler(CommandHandler("referral", _audit_handler("referral", referral_command)))

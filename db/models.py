@@ -44,6 +44,10 @@ class User(Base):
     # ── VIP tier: risk-based auto-sizing ───────────────────────────────────────
     # Editable via /setrisk. Engine calculates lot from account balance + SL distance.
     max_risk_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    # Broker execution routing mode: none | manual | auto
+    execution_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="manual", index=True)
+    # Daily auto-execution cap for AUTO mode (0 means disabled, -1 means unlimited)
+    auto_signals_daily_limit: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
 
     # ── Paystack recurring subscription tracking ────────────────────────────────
     # Set when Paystack creates a recurring subscription (charge.success event).

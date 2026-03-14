@@ -4553,6 +4553,98 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	)
 
 
+async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Configure broker execution mode: none | manual | auto.
+
+	Usage:
+	  /execution                      -> show current mode
+	  /execution manual               -> one-click only
+	  /execution none                 -> disable broker execution
+	  /execution auto 5               -> auto execute up to 5/day
+	  /execution auto all             -> unlimited auto executions
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+
+	user_id: int = int(update.effective_user.id)
+	tier: str = _effective_tier(user_id)
+
+	if tier_rank(tier) < tier_rank("PREMIUM"):
+		await update.message.reply_text(
+			"🔒 /execution is available on <b>PREMIUM</b> and above.",
+			parse_mode="HTML",
+		)
+		return
+
+	try:
+		from db.session import get_session as _gs
+		from db.models import User
+		from sqlalchemy import select
+
+		args = [str(a).strip().lower() for a in (context.args or []) if str(a).strip()]
+
+		async with _gs() as session:
+			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
+			if row is None:
+				await update.message.reply_text("❌ User profile not found. Send /start and try again.")
+				return
+
+			if not args:
+				mode = str(getattr(row, "execution_mode", "manual") or "manual").lower()
+				cap = int(getattr(row, "auto_signals_daily_limit", 3) or 0)
+				cap_txt = "all" if cap < 0 else str(cap)
+				await update.message.reply_text(
+					"⚙️ <b>Execution Settings</b>\n\n"
+					f"Mode: <b>{mode.upper()}</b>\n"
+					f"AUTO daily cap: <b>{cap_txt}</b>\n\n"
+					"Use: <code>/execution none|manual|auto [count|all]</code>",
+					parse_mode="HTML",
+				)
+				return
+
+			mode = args[0]
+			if mode not in {"none", "manual", "auto"}:
+				await update.message.reply_text(
+					"❌ Invalid mode. Use <code>none</code>, <code>manual</code> or <code>auto</code>.",
+					parse_mode="HTML",
+				)
+				return
+
+			if mode == "auto" and tier_rank(tier) < tier_rank("VIP"):
+				await update.message.reply_text(
+					"🔒 AUTO mode requires <b>VIP</b>. PREMIUM supports NONE/MANUAL.",
+					parse_mode="HTML",
+				)
+				return
+
+			cap = int(getattr(row, "auto_signals_daily_limit", 3) or 3)
+			if mode == "auto":
+				if len(args) >= 2:
+					arg2 = args[1]
+					if arg2 == "all":
+						cap = -1
+					else:
+						try:
+							cap = max(1, min(int(arg2), 100))
+						except Exception:
+							await update.message.reply_text("❌ Invalid AUTO cap. Use number or 'all'.")
+							return
+
+			row.execution_mode = mode
+			row.auto_signals_daily_limit = int(cap)
+			await session.commit()
+
+		cap_txt = "all" if int(cap) < 0 else str(int(cap))
+		await update.message.reply_text(
+			"✅ <b>Execution mode updated</b>\n\n"
+			f"Mode: <b>{mode.upper()}</b>\n"
+			f"AUTO daily cap: <b>{cap_txt}</b>",
+			parse_mode="HTML",
+		)
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not update execution mode: {exc}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # /tiers  — Subscription comparison table
 # ─────────────────────────────────────────────────────────────────────────────
