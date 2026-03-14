@@ -376,6 +376,41 @@ class MLRejectedSignal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
+class MLPastTrainingData(Base):
+    """Persistent archive of historical labeled samples for ML retraining.
+
+    This table is intentionally preserved during fresh-reset test boots so the
+    model can train on both legacy and post-reset outcomes.
+    """
+    __tablename__ = "ml_past_training_data"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[str] = mapped_column(String(36), unique=True, index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+
+    entry: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
+    take_profit: Mapped[str] = mapped_column(Text, nullable=False)
+
+    rr_estimate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    strength: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    regime: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    strategy_name: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    ml_probability: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    outcome_status: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    outcome_r_multiple: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    outcome_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    outcome_meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+    signal_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    outcome_closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    archived_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class DecisionLog(Base):
     __tablename__ = "decision_log"
 
