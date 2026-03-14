@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import asyncio
 import logging
+from collections import deque
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, HTTPException
@@ -31,6 +32,29 @@ except Exception:
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
 _bot_application: object = None
+_bot_ready: bool = False
+_pending_webhook_updates = deque(maxlen=500)
+
+
+async def _drain_pending_webhook_updates(max_items: int = 200) -> int:
+    """Drain queued webhook updates once bot is ready."""
+    global _pending_webhook_updates
+    if (not _bot_ready) or (_bot_application is None):
+        return 0
+
+    drained = 0
+    while _pending_webhook_updates and drained < max_items:
+        payload = _pending_webhook_updates.popleft()
+        try:
+            from telegram import Update
+            update = Update.de_json(payload, _bot_application.bot)
+            await _bot_application.process_update(update)
+            drained += 1
+        except Exception as exc:
+            logger.warning("[webhook] queued update replay failed: %s", exc)
+    if drained > 0:
+        logger.info("[webhook] replayed queued updates=%d", drained)
+    return drained
 
 
 def _get_webhook_url() -> str:
@@ -150,148 +174,9 @@ async def _archive_ml_history_job() -> None:
 
 
 async def _maybe_run_start_fresh_keep_users() -> None:
-    """Optional one-time DB refresh: keep users, wipe runtime tables.
-
-    Controlled by env vars:
-      START_FRESH_KEEP_USERS_ON_BOOT=1
-      START_FRESH_FORCE=1 (optional)
-      START_FRESH_RESET_VERSION=v2 (optional marker namespace)
-    """
-    enabled = str(os.getenv("START_FRESH_KEEP_USERS_ON_BOOT", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
-    if not enabled:
-        logger.info("[startup] fresh reset disabled (START_FRESH_KEEP_USERS_ON_BOOT not enabled)")
-        return
-
-    from db.session import get_session, is_db_configured
-    from sqlalchemy import text
-
-    if not is_db_configured():
-        logger.warning("[startup] fresh reset requested but DB not configured")
-        return
-
-    reset_version = str(os.getenv("START_FRESH_RESET_VERSION", "v1") or "v1").strip()
-    force_reset = str(os.getenv("START_FRESH_FORCE", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
-    marker_key = f"startup_reset_done_{reset_version}"
-
-    async with get_session() as session:
-        # Ensure control/archive tables exist even if migration order is delayed.
-        await session.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS runtime_state (
-                    key VARCHAR(255) PRIMARY KEY,
-                    value JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    expires_at TIMESTAMP NULL,
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-        )
-        await session.execute(
-            text(
-                """
-                CREATE TABLE IF NOT EXISTS ml_past_training_data (
-                    id SERIAL PRIMARY KEY,
-                    signal_id VARCHAR(36) UNIQUE NOT NULL,
-                    asset VARCHAR(32) NOT NULL,
-                    timeframe VARCHAR(8) NOT NULL,
-                    direction VARCHAR(8) NOT NULL,
-                    entry DOUBLE PRECISION NOT NULL,
-                    stop_loss DOUBLE PRECISION NOT NULL,
-                    take_profit TEXT NOT NULL,
-                    rr_estimate DOUBLE PRECISION NULL,
-                    score DOUBLE PRECISION NULL,
-                    strength DOUBLE PRECISION NULL,
-                    regime VARCHAR(32) NULL,
-                    strategy_name VARCHAR(64) NULL,
-                    ml_probability DOUBLE PRECISION NULL,
-                    outcome_status VARCHAR(16) NOT NULL,
-                    outcome_r_multiple DOUBLE PRECISION NULL,
-                    outcome_percent DOUBLE PRECISION NULL,
-                    outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
-                    signal_created_at TIMESTAMP NULL,
-                    outcome_closed_at TIMESTAMP NULL,
-                    archived_at TIMESTAMP NOT NULL DEFAULT NOW()
-                )
-                """
-            )
-        )
-
-        if not force_reset:
-            marker = await session.execute(
-                text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
-                {"k": marker_key},
-            )
-            if marker.scalar_one_or_none() is not None:
-                logger.info("[startup] fresh reset skipped (marker exists): %s", marker_key)
-                await session.commit()
-                return
-
-        # Cross-replica advisory lock
-        lock_ok = True
-        try:
-            lock_row = await session.execute(text("SELECT pg_try_advisory_lock(739909)"))
-            lock_ok = bool((lock_row.scalar_one_or_none() or False))
-        except Exception:
-            lock_ok = True
-        if not lock_ok:
-            logger.info("[startup] fresh reset skipped (another instance owns lock)")
-            await session.commit()
-            return
-
-        # Archive known labeled outcomes before truncate
-        await session.execute(
-            text(
-                """
-                INSERT INTO ml_past_training_data (
-                    signal_id, asset, timeframe, direction,
-                    entry, stop_loss, take_profit,
-                    rr_estimate, score, strength, regime, strategy_name, ml_probability,
-                    outcome_status, outcome_r_multiple, outcome_percent, outcome_meta,
-                    signal_created_at, outcome_closed_at, archived_at
-                )
-                SELECT
-                    s.signal_id, s.asset, s.timeframe, s.direction,
-                    s.entry, s.stop_loss, s.take_profit,
-                    s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
-                    o.status, o.r_multiple, o.percent, COALESCE(o.meta::jsonb, '{}'::jsonb),
-                    s.created_at, o.closed_at, NOW()
-                FROM signals s
-                JOIN outcomes o ON o.signal_id = s.signal_id
-                ON CONFLICT (signal_id) DO NOTHING
-                """
-            )
-        )
-
-        rows = await session.execute(
-            text(
-                """
-                SELECT tablename
-                FROM pg_tables
-                WHERE schemaname = 'public'
-                  AND tablename NOT IN ('users', 'alembic_version', 'ml_past_training_data', 'runtime_state')
-                """
-            )
-        )
-        tables = [str(r[0]) for r in rows.all() if r and r[0]]
-        if tables:
-            quoted = ", ".join('"' + t.replace('"', '""') + '"' for t in tables)
-            await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
-
-        await session.execute(text("DELETE FROM runtime_state"))
-        await session.execute(
-            text(
-                """
-                INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                VALUES (:k, :v::jsonb, NULL, NOW())
-                ON CONFLICT (key) DO UPDATE
-                SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
-                """
-            ),
-            {"k": marker_key, "v": '{"done": true}'},
-        )
-        await session.commit()
-        logger.warning("[startup] START_FRESH_KEEP_USERS_ON_BOOT applied: wiped_tables=%d marker=%s", len(tables), marker_key)
+    """Startup reset is disabled to preserve existing data."""
+    logger.info("[startup] fresh reset disabled; preserving existing data")
+    return
 
 
 def _build_scheduler() -> AsyncIOScheduler:
@@ -353,20 +238,21 @@ def _build_scheduler() -> AsyncIOScheduler:
 async def _start_telegram_bot() -> "tuple[object, bool]":
     """Configure the Telegram bot for webhook mode and register the webhook URL.
 
-    Process:
-      1. Set TELEGRAM_USE_WEBHOOK so run_bot() registers all handlers, stores
-         the Application in bot._webhook_application, and returns immediately
-         instead of blocking in run_polling().
-      2. Await run_bot() in a thread executor so we know all handlers are
-         registered before proceeding.
-      3. Initialize + start the Application on uvicorn's event loop.
-      4. Delete any stale webhook, then register the new one with Telegram.
+     Process:
+        1. Set TELEGRAM_USE_WEBHOOK.
+        2. Start run_bot() in a background executor thread.
+        3. Poll for bot._webhook_application exposure.
+        4. Initialize + start the Application on uvicorn's event loop.
+        5. Delete any stale webhook, then register the new one with Telegram.
 
     Returns (application, True) on success, (None, False) on any failure.
     Never raises — failures are logged so the web server keeps running.
     """
-    global _bot_application
+    global _bot_application, _bot_ready
     print("[bot] webhook setup starting", flush=True)
+
+    if _bot_ready and _bot_application is not None:
+        return _bot_application, True
 
     if _env_bool("DRY_RUN", False):
         print("[bot] webhook setup skipped: DRY_RUN enabled", flush=True)
@@ -398,34 +284,38 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
             logger.error(f"[bot] run_bot() setup error: {exc}")
             return str(exc)
 
-    # Await the executor so all handlers are registered before we call initialize()
+    # Start run_bot() in executor but do not block on full completion. In webhook
+    # mode run_bot can spend significant time in optional setup paths.
     try:
         loop = asyncio.get_running_loop()
-        setup_error = await loop.run_in_executor(None, _run_bot_safe)
+        setup_future = loop.run_in_executor(None, _run_bot_safe)
     except Exception as exc:
         print(f"[bot] run_bot setup executor failed: {exc}", flush=True)
         logger.warning(f"[bot] run_bot() executor failed: {exc}; skipping webhook setup")
         return None, False
 
-    if setup_error:
-        logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
-
-    # Retrieve the fully-configured Application stored by run_bot()
-    try:
-        from signalrank_telegram import bot as _bot_module
-        app_obj = getattr(_bot_module, "_webhook_application", None)
-    except Exception as exc:
-        logger.warning(f"[bot] Could not access _webhook_application: {exc}; skipping webhook setup")
-        return None, False
-
-    if app_obj is None:
+    # Retrieve the application as soon as run_bot exposes it.
+    app_obj = None
+    discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "30") or 30)
+    deadline = asyncio.get_running_loop().time() + max(1, discover_timeout_s)
+    while app_obj is None and asyncio.get_running_loop().time() < deadline:
         try:
-            # Best-effort second read in case another import path set it.
-            import importlib
-            _bot_module = importlib.import_module("signalrank_telegram.bot")
+            from signalrank_telegram import bot as _bot_module
             app_obj = getattr(_bot_module, "_webhook_application", None)
         except Exception:
             app_obj = None
+        if app_obj is not None:
+            break
+        await asyncio.sleep(0.25)
+
+    # If still none, check whether run_bot finished with a setup error.
+    if app_obj is None and setup_future.done():
+        try:
+            setup_error = setup_future.result()
+        except Exception as exc:
+            setup_error = str(exc)
+        if setup_error:
+            logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
 
     if app_obj is None:
         print("[bot] webhook setup failed: _webhook_application is None", flush=True)
@@ -442,6 +332,13 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         return None, False
 
     _bot_application = app_obj
+    _bot_ready = True
+
+    # Replay any updates received before bot became ready.
+    try:
+        await _drain_pending_webhook_updates(max_items=300)
+    except Exception as exc:
+        logger.warning("[webhook] queued replay after startup failed: %s", exc)
 
     # Register webhook with Telegram
     webhook_url = _get_webhook_url()
@@ -473,6 +370,8 @@ async def _stop_telegram_bot(application: object) -> None:
     """Stop the Telegram bot gracefully (webhook or polling mode)."""
     if application is None:
         return
+    global _bot_ready
+    _bot_ready = False
     # Delete webhook first so Telegram stops queuing updates during shutdown
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
         try:
@@ -592,7 +491,7 @@ async def lifespan(_: FastAPI):
         # Fresh reset first so clearing happens before additional archive pass.
         try:
             await _maybe_run_start_fresh_keep_users()
-            logger.info("[startup] post-maintenance: fresh reset step complete")
+            logger.info("[startup] post-maintenance: fresh reset skipped (disabled)")
         except Exception as exc:
             logger.warning(f"[startup] fresh reset step failed: {exc}")
 
@@ -777,11 +676,18 @@ async def _telegram_webhook_route(req: Request) -> dict:
         "[webhook] incoming update — content_type=%s",
         req.headers.get("content-type", ""),
     )
-    if _bot_application is None:
-        print("[webhook] bot_not_initialized — update dropped", flush=True)
-        logger.warning("[webhook] _bot_application not initialized — dropping update")
-        # Return 503 so Telegram retries instead of losing updates.
-        raise HTTPException(status_code=503, detail="bot_initializing")
+    if (not _bot_ready) or (_bot_application is None):
+        try:
+            payload = await req.json()
+            _pending_webhook_updates.append(payload)
+            logger.warning(
+                "[webhook] bot_not_ready — update queued size=%d",
+                len(_pending_webhook_updates),
+            )
+            return {"ok": True, "queued": True, "bot_ready": False}
+        except Exception:
+            # Return 503 only if payload could not be parsed/queued.
+            raise HTTPException(status_code=503, detail="bot_initializing")
     try:
         from telegram import Update
         data = await req.json()
