@@ -74,6 +74,79 @@ async def _run_startup_ops() -> None:
     await loop.run_in_executor(None, lambda: run_startup_ops("all"))
 
 
+async def _archive_ml_history_job() -> None:
+    """Backfill ml_past_training_data from finalized outcomes (idempotent)."""
+    try:
+        from db.session import get_session, is_db_configured
+        from sqlalchemy import text
+        if not is_db_configured():
+            return
+
+        async with get_session() as session:
+            # Ensure table exists even if migration order had race conditions.
+            await session.execute(text(
+                """
+                CREATE TABLE IF NOT EXISTS ml_past_training_data (
+                    id SERIAL PRIMARY KEY,
+                    signal_id VARCHAR(36) UNIQUE NOT NULL,
+                    asset VARCHAR(32) NOT NULL,
+                    timeframe VARCHAR(8) NOT NULL,
+                    direction VARCHAR(8) NOT NULL,
+                    entry DOUBLE PRECISION NOT NULL,
+                    stop_loss DOUBLE PRECISION NOT NULL,
+                    take_profit TEXT NOT NULL,
+                    rr_estimate DOUBLE PRECISION NULL,
+                    score DOUBLE PRECISION NULL,
+                    strength DOUBLE PRECISION NULL,
+                    regime VARCHAR(32) NULL,
+                    strategy_name VARCHAR(64) NULL,
+                    ml_probability DOUBLE PRECISION NULL,
+                    outcome_status VARCHAR(16) NOT NULL,
+                    outcome_r_multiple DOUBLE PRECISION NULL,
+                    outcome_percent DOUBLE PRECISION NULL,
+                    outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    signal_created_at TIMESTAMP NULL,
+                    outcome_closed_at TIMESTAMP NULL,
+                    archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """
+            ))
+
+            # Insert only unseen rows by unique signal_id.
+            result = await session.execute(
+                text(
+                    """
+                    INSERT INTO ml_past_training_data (
+                        signal_id, asset, timeframe, direction,
+                        entry, stop_loss, take_profit,
+                        rr_estimate, score, strength, regime, strategy_name, ml_probability,
+                        outcome_status, outcome_r_multiple, outcome_percent, outcome_meta,
+                        signal_created_at, outcome_closed_at, archived_at
+                    )
+                    SELECT
+                        s.signal_id, s.asset, s.timeframe, s.direction,
+                        s.entry, s.stop_loss, s.take_profit,
+                        s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
+                        o.status, o.r_multiple, o.percent, COALESCE(o.meta::jsonb, '{}'::jsonb),
+                        s.created_at, o.closed_at, NOW()
+                    FROM signals s
+                    JOIN outcomes o ON o.signal_id = s.signal_id
+                    WHERE o.status IN ('tp', 'tp1', 'tp2', 'tp3', 'partial_tp', 'sl', 'expired', 'timeout', 'invalidated')
+                    ON CONFLICT (signal_id) DO NOTHING
+                    """
+                )
+            )
+            await session.commit()
+            try:
+                inserted = int(getattr(result, "rowcount", 0) or 0)
+            except Exception:
+                inserted = 0
+            if inserted > 0:
+                logger.info("[ml_archive] backfilled rows=%d", inserted)
+    except Exception as exc:
+        logger.warning(f"[ml_archive] backfill failed: {exc}")
+
+
 async def _maybe_run_start_fresh_keep_users() -> None:
     """Optional one-time DB refresh: keep users, wipe runtime tables.
 
@@ -214,6 +287,19 @@ def _build_scheduler() -> AsyncIOScheduler:
         )
     except Exception as exc:
         logger.warning(f"[sched] could not add wl_monitor job: {exc}")
+
+    # ML archive backfill (idempotent): keep historical training table populated.
+    try:
+        scheduler.add_job(
+            _archive_ml_history_job,
+            "interval",
+            minutes=10,
+            id="ml_archive_backfill",
+            replace_existing=True,
+            max_instances=1,
+        )
+    except Exception as exc:
+        logger.warning(f"[sched] could not add ml_archive_backfill job: {exc}")
 
     return scheduler
 
@@ -410,6 +496,12 @@ async def lifespan(_: FastAPI):
         await _run_startup_ops()
     except Exception as exc:
         logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
+
+    # Initial one-shot backfill so ml_past_training_data is populated immediately.
+    try:
+        await _archive_ml_history_job()
+    except Exception as exc:
+        logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
 
     # Optional one-time fresh reset (users preserved) runs before engine/worker/bot.
     try:
