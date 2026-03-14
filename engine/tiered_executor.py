@@ -44,6 +44,7 @@ MAX_LOT_PREMIUM: float = float(os.getenv("PREMIUM_MAX_LOT", "1.0"))
 DEFAULT_FIXED_LOT: float = float(os.getenv("DEFAULT_FIXED_LOT", "0.01"))
 DEFAULT_RISK_PCT: float = float(os.getenv("DEFAULT_RISK_PCT", "1.0"))
 MAX_RISK_PCT: float = float(os.getenv("MAX_RISK_PCT", "5.0"))
+HARD_MAX_RISK_CAP_PCT: float = float(os.getenv("AUTO_MAX_RISK_CAP_PCT", "3.0"))
 MIN_LOT: float = 0.001
 MAX_LOT_VIP: float = float(os.getenv("VIP_MAX_LOT", "10.0"))
 
@@ -99,7 +100,8 @@ def calculate_lot_size_vip(
     Result is clamped to ``[MIN_LOT, MAX_LOT_VIP]``.
     """
     risk_pct = getattr(user, "max_risk_percentage", None) or DEFAULT_RISK_PCT
-    risk_pct = max(0.1, min(float(risk_pct), MAX_RISK_PCT))
+    effective_max = min(float(MAX_RISK_PCT), float(HARD_MAX_RISK_CAP_PCT))
+    risk_pct = max(0.1, min(float(risk_pct), effective_max))
 
     if account_balance <= 0 or entry_price <= 0 or stop_loss <= 0:
         return DEFAULT_FIXED_LOT

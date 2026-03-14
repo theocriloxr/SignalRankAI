@@ -4355,7 +4355,11 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 				reply += f"☁️ MetaApi Account ID: `{meta_id}`\n"
 			reply += (
 				"\nYou can now use the ⚡ *Trade on MT5* button "
-				"on any signal to execute instantly."
+				"on any signal to execute instantly.\n\n"
+				"⚙️ Configure execution routing with /execution\n"
+				"• /execution manual (default)\n"
+				"• /execution none\n"
+				"• /execution auto 5 (VIP)"
 			)
 		else:
 			err = result.get("error", "Unknown error")
@@ -4526,8 +4530,13 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		await update.message.reply_text("❌ Invalid value. Example: <code>/setrisk 1.5</code>", parse_mode="HTML")
 		return
 
-	if not (0.1 <= pct <= 5.0):
-		await update.message.reply_text("❌ Risk must be between 0.1% and 5.0%.", parse_mode="HTML")
+	global_cap = float(os.getenv("AUTO_MAX_RISK_CAP_PCT", "3.0") or 3.0)
+	allowed_max = max(0.1, min(5.0, float(global_cap)))
+	if not (0.1 <= pct <= allowed_max):
+		await update.message.reply_text(
+			f"❌ Risk must be between 0.1% and {allowed_max:.1f}% (global cap).",
+			parse_mode="HTML",
+		)
 		return
 
 	pct = round(pct, 2)
@@ -4995,7 +5004,8 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 			f"✅ <b>MT5 account linked!</b>\n\n"
 			f"☁️ MetaApi ID: <code>{account_id}</code>\n\n"
 			"You can now use ⚡ buttons on signals to execute trades instantly.\n"
-			"Use /setlot to configure your lot size.",
+			"Use /setlot to configure your lot size.\n"
+			"Use /execution manual|none|auto [count|all] to choose execution mode.",
 			parse_mode="HTML",
 		)
 	except Exception as exc:

@@ -697,6 +697,8 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	asset = signal.get('asset', 'UNKNOWN')
 	score = float(signal.get('score', 0) or 0)
 	entry = signal.get('entry')
+	stop_loss = signal.get('stop_loss')
+	tp_levels = _parse_tp_list(signal.get('tp_levels') or signal.get('take_profit'))
 	is_order_block = bool(signal.get('is_near_order_block', False))
 
 	asset_disp = _h(_asset_display(asset))
@@ -725,11 +727,21 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	else:
 		lines.append("Entry: —")
 
+	if stop_loss is not None:
+		lines.append(f"Stop Loss: {_h(_fmt_price_clean(stop_loss, asset))}")
+	else:
+		lines.append("Stop Loss: —")
+
+	if tp_levels:
+		lines.append(f"Take Profit 1: {_h(_fmt_price_clean(tp_levels[0], asset))}")
+	else:
+		lines.append("Take Profit 1: —")
+
 	lines += [
-		"Stop Loss: [ ██████ ]",
-		"Take Profit: [ ██████ ]",
+		"Take Profit 2: [ 🔒 PREMIUM ]",
+		"Take Profit 3: [ 🔒 VIP ]",
 		"",
-		"Upgrade to see more details.",
+		"Upgrade to unlock full TP ladder, smart scaling and advanced execution.",
 		"VIP and Premium users are entering this trade right now.",
 		"Don't miss the move.",
 		"",

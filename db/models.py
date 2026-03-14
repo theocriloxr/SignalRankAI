@@ -44,6 +44,9 @@ class User(Base):
     # ── VIP tier: risk-based auto-sizing ───────────────────────────────────────
     # Editable via /setrisk. Engine calculates lot from account balance + SL distance.
     max_risk_percentage: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    # Auto-trade safety guard: if today's realized drawdown hits this threshold,
+    # auto-execution is paused for the rest of the day.
+    max_daily_drawdown_pct: Mapped[float] = mapped_column(Float, nullable=False, default=8.0)
     # Broker execution routing mode: none | manual | auto
     execution_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="manual", index=True)
     # Daily auto-execution cap for AUTO mode (0 means disabled, -1 means unlimited)

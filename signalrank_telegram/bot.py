@@ -1044,6 +1044,173 @@ def _deliver_or_update_signal_sync(
         return False
 
 
+def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing_tier: str) -> None:
+    """Best-effort AUTO execution path for users in execution_mode=auto.
+
+    - no-op for mode!=auto
+    - dedupes per user/signal
+    - respects PREMIUM daily limit
+    - sends success/failure DM
+    """
+    try:
+        def _drawdown_guard_block_reason(user, realized_pnl_pct_today: float) -> str | None:
+            try:
+                cap = float(getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0)
+                if cap <= 0:
+                    return None
+                if float(realized_pnl_pct_today) <= -abs(cap):
+                    return (
+                        f"Daily drawdown guard hit ({realized_pnl_pct_today:.2f}% <= -{abs(cap):.2f}%). "
+                        "Auto-trading paused for today."
+                    )
+            except Exception:
+                return None
+            return None
+
+        sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
+        if not sig_id:
+            return
+
+        # AUTO mode is paid-only and intended for premium/vip routing.
+        rt = str(routing_tier or "").lower()
+        if rt not in {"premium", "vip"}:
+            return
+
+        auto_key = f"autoexec:{int(telegram_user_id)}:{sig_id}"
+        try:
+            if state.get_sync(auto_key):
+                return
+        except Exception:
+            pass
+
+        from db.session import get_session
+        from db.models import User, MT5Execution
+        from sqlalchemy import select, func
+        from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
+
+        async def _run_auto():
+            async with get_session() as session:
+                user = (
+                    await session.execute(
+                        select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is None:
+                    return (False, "User profile missing")
+
+                mode = str(getattr(user, "execution_mode", "manual") or "manual").lower()
+                if mode != "auto":
+                    return (False, "Execution mode is not AUTO")
+
+                # Daily drawdown guard based on realized PnL%.
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                pnl_row = await session.execute(
+                    select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0)).where(
+                        MT5Execution.user_id == int(telegram_user_id),
+                        MT5Execution.executed_at >= day_start,
+                    )
+                )
+                pnl_today = float(pnl_row.scalar_one_or_none() or 0.0)
+                blocked_reason = _drawdown_guard_block_reason(user, pnl_today)
+                if blocked_reason:
+                    await session.commit()
+                    return (False, blocked_reason)
+
+                entry = float(signal.get("entry") or 0)
+                sl = float(signal.get("stop_loss") or 0)
+                tp = float(_first_take_profit(signal) or 0)
+                symbol = str(signal.get("asset") or "").upper().strip()
+                direction = str(signal.get("direction") or "").lower().strip()
+
+                if not symbol or direction not in {"long", "short", "buy", "sell"}:
+                    return (False, "Invalid symbol/direction")
+                if not entry or not sl or not tp:
+                    return (False, "Signal missing entry/SL/TP")
+
+                acct_id = await get_user_mt5_account_id(int(telegram_user_id))
+                if not acct_id:
+                    return (False, "No linked MT5 account")
+
+                # PREMIUM daily cap for AUTO mode.
+                tier_up = str(getattr(user, "tier", "FREE") or "FREE").upper()
+                if tier_up == "PREMIUM":
+                    limit = int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3)
+                    now = datetime.now(timezone.utc)
+                    reset_at = getattr(user, "daily_executions_reset_at", None)
+                    if reset_at is None or reset_at.date() < now.date():
+                        user.daily_executions_today = 0
+                        user.daily_executions_reset_at = now
+                    if int(getattr(user, "daily_executions_today", 0) or 0) >= int(limit):
+                        await session.commit()
+                        return (False, f"PREMIUM daily limit reached ({limit})")
+
+                # Optional per-user AUTO cap.
+                auto_cap = int(getattr(user, "auto_signals_daily_limit", 3) or 0)
+                if auto_cap == 0:
+                    await session.commit()
+                    return (False, "AUTO cap is 0")
+
+                ok, slip, live_px = await validate_slippage(acct_id, symbol, entry)
+                if not ok:
+                    await session.commit()
+                    return (False, f"Slippage too high ({float(slip):.1f} pts)")
+
+                lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
+                result = await execute_trade(
+                    account_id=acct_id,
+                    symbol=symbol,
+                    direction=("long" if direction in {"long", "buy"} else "short"),
+                    volume=lot,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    signal_entry=entry,
+                )
+
+                if bool(result.get("success")) and tier_up == "PREMIUM":
+                    now = datetime.now(timezone.utc)
+                    user.daily_executions_today = int(getattr(user, "daily_executions_today", 0) or 0) + 1
+                    user.daily_executions_reset_at = now
+
+                await session.commit()
+                return (bool(result.get("success")), str(result.get("order_id") or result.get("error") or "unknown"))
+
+        ok, detail = run_sync(_run_auto())
+
+        try:
+            state.set_sync(auto_key, "1", ex=86400)
+        except Exception:
+            pass
+
+        bot = Bot(token=_require_telegram_token())
+        asset = str(signal.get("asset") or "")
+        if ok:
+            _send_message_with_retry_sync(
+                bot,
+                chat_id=int(telegram_user_id),
+                text=(
+                    "🤖 <b>AUTO execution placed</b>\n\n"
+                    f"Asset: <b>{asset}</b>\n"
+                    f"Order: <code>{detail}</code>"
+                ),
+                parse_mode="HTML",
+            )
+        else:
+            _send_message_with_retry_sync(
+                bot,
+                chat_id=int(telegram_user_id),
+                text=(
+                    "⚠️ <b>AUTO execution skipped</b>\n\n"
+                    f"Asset: <b>{asset}</b>\n"
+                    f"Reason: {detail}"
+                ),
+                parse_mode="HTML",
+            )
+    except Exception as exc:
+        logger.debug(f"[autoexec] failed user={telegram_user_id}: {exc}")
+
+
 async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | None]:
     import json
     from datetime import datetime, timezone
@@ -2295,6 +2462,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 display_tier=display_tier,
                             ):
                                 sent += 1
+                                try:
+                                    _auto_execute_signal_if_enabled(
+                                        telegram_user_id=int(user_id),
+                                        signal=dict(signal or {}),
+                                        routing_tier=str(effective_tier),
+                                    )
+                                except Exception:
+                                    pass
                             if tier == 'free' and extra_left > 0:
                                 try:
                                     state.consume_extra_signals_sync(int(user_id), 1)
@@ -2309,12 +2484,21 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         logger.debug(f"[dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                        _deliver_or_update_signal_sync(
+                        _ok_send = _deliver_or_update_signal_sync(
                             bot,
                             telegram_user_id=int(user_id),
                             signal=signal,
                             display_tier=display_tier,
                         )
+                        if _ok_send:
+                            try:
+                                _auto_execute_signal_if_enabled(
+                                    telegram_user_id=int(user_id),
+                                    signal=dict(signal or {}),
+                                    routing_tier=str(effective_tier),
+                                )
+                            except Exception:
+                                pass
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
@@ -2608,6 +2792,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     display_tier=display_tier,
                 ):
                     continue
+                try:
+                    _auto_execute_signal_if_enabled(
+                        telegram_user_id=int(user_id),
+                        signal=dict(signal or {}),
+                        routing_tier=str(routing_tier),
+                    )
+                except Exception:
+                    pass
                 # Mark as delivered in Redis
                 try:
                     mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))
@@ -2919,6 +3111,7 @@ def run_bot() -> None:
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_today INTEGER NOT NULL DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_daily_drawdown_pct FLOAT NOT NULL DEFAULT 8.0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'manual'",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_signals_daily_limit INTEGER NOT NULL DEFAULT 3",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)",
@@ -3661,6 +3854,22 @@ def run_bot() -> None:
             _premium_daily_limit = int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3"))
             _user_row = None
             _premium_count_today = 0
+            async with _gs_mt5() as _ucheck:
+                _user_row = (await _ucheck.execute(
+                    _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
+                )).scalar_one_or_none()
+            if _user_row is None:
+                await query.edit_message_text("❌ User profile not found. Please send /start and try again.")
+                return
+
+            _exec_mode = str(getattr(_user_row, "execution_mode", "manual") or "manual").lower()
+            if _exec_mode == "none":
+                await query.edit_message_text(
+                    "⛔ Broker execution is disabled for your account (mode: NONE).\n"
+                    "Use /execution manual to re-enable one-click trading."
+                )
+                return
+
             if _ut == "PREMIUM":
                 async with _gs_mt5() as _slim:
                     _user_row = (await _slim.execute(
@@ -3684,6 +3893,36 @@ def run_bot() -> None:
                             "It resets at 00:00 UTC, or upgrade to VIP for unlimited executions."
                         )
                         return
+
+            # Daily drawdown guard for paid execution.
+            try:
+                from db.models import MT5Execution as _MT5Exec
+                from sqlalchemy import func as _func
+                from datetime import datetime, timezone
+                async with _gs_mt5() as _sdd:
+                    _u_dd = (await _sdd.execute(
+                        _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
+                    )).scalar_one_or_none()
+                    if _u_dd is not None:
+                        _now_dd = datetime.now(timezone.utc)
+                        _day_start = _now_dd.replace(hour=0, minute=0, second=0, microsecond=0)
+                        _sum_row = await _sdd.execute(
+                            _sel_mt5(_func.coalesce(_func.sum(_MT5Exec.realized_pnl_pct), 0.0)).where(
+                                _MT5Exec.user_id == int(user_id),
+                                _MT5Exec.executed_at >= _day_start,
+                            )
+                        )
+                        _pnl_today = float(_sum_row.scalar_one_or_none() or 0.0)
+                        _cap = float(getattr(_u_dd, "max_daily_drawdown_pct", 8.0) or 8.0)
+                        if _cap > 0 and _pnl_today <= -abs(_cap):
+                            await query.edit_message_text(
+                                "⛔ Daily drawdown guard is active.\n"
+                                f"Today: {_pnl_today:.2f}% (limit: -{abs(_cap):.2f}%).\n"
+                                "Execution paused for today."
+                            )
+                            return
+            except Exception:
+                pass
 
             account_id = await get_user_mt5_account_id(user_id)
             if not account_id:
