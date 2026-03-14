@@ -29,8 +29,21 @@ fi
 #   and background services start in lifespan.
 
 if [ -n "${RUN_MODE:-}" ]; then
-	python main.py
-	exit $?
+	case "${RUN_MODE}" in
+		web|worker|engine|bot)
+			python main.py
+			exit $?
+			;;
+		all)
+			# Legacy env often left behind on Railway. For this service we want
+			# railway_main webhook stack (with /telegram/webhook route).
+			exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
+			;;
+		*)
+			# Unknown RUN_MODE => safe default to web monolith
+			exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
+			;;
+	esac
 fi
 
 # Optional legacy mode: run separate processes in one container.

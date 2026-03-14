@@ -525,6 +525,13 @@ def _safe_float(value, default: float = 0.0) -> float:
         return default
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)) or default)
+    except Exception:
+        return int(default)
+
+
 def _first_take_profit(signal: dict | None) -> float | None:
     if not isinstance(signal, dict):
         return None
@@ -3322,7 +3329,7 @@ def run_bot() -> None:
                                 s.signal_id, s.asset, s.timeframe, s.direction,
                                 s.entry, s.stop_loss, s.take_profit,
                                 s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
-                                o.status, o.r_multiple, o.percent, COALESCE(o.meta, '{}'::jsonb),
+                                o.status, o.r_multiple, o.percent, COALESCE(o.meta::jsonb, '{}'::jsonb),
                                 s.created_at, o.closed_at, NOW()
                             FROM signals s
                             JOIN outcomes o ON o.signal_id = s.signal_id
