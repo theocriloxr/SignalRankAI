@@ -180,18 +180,66 @@ def check_sl_tp_hit(signal: Dict, current_price: float) -> Tuple[bool, Optional[
 def get_current_price(asset: str) -> Optional[float]:
     """
     Fetch current market price for an asset.
-    Uses existing multi-provider fallback from data/fetcher.py.
+    Avoids 1m candle pulls for simple spot checks.
     """
     try:
+        import requests
+
+        symbol = str(asset or "").upper().replace("/", "").strip()
+        if not symbol:
+            return None
+
+        # Crypto fast path: direct ticker endpoint (no candle fetch).
+        if symbol.endswith(("USDT", "USDC", "BUSD")):
+            try:
+                resp = requests.get(
+                    "https://api.binance.com/api/v3/ticker/price",
+                    params={"symbol": symbol},
+                    timeout=4,
+                )
+                if resp.ok:
+                    px = float((resp.json() or {}).get("price") or 0)
+                    if px > 0:
+                        return px
+            except Exception:
+                pass
+
+            # CryptoCompare fallback
+            try:
+                base = symbol.replace("USDT", "").replace("USDC", "").replace("BUSD", "")
+                resp = requests.get(
+                    "https://min-api.cryptocompare.com/data/price",
+                    params={"fsym": base, "tsyms": "USD,USDT"},
+                    timeout=4,
+                )
+                if resp.ok:
+                    data = resp.json() or {}
+                    px = float(data.get("USDT") or data.get("USD") or 0)
+                    if px > 0:
+                        return px
+            except Exception:
+                pass
+
+        # Non-crypto fallback: yfinance fast quote (no 1m history).
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            fast = getattr(ticker, "fast_info", None) or {}
+            px = float(fast.get("lastPrice") or fast.get("regularMarketPrice") or 0)
+            if px > 0:
+                return px
+            info = getattr(ticker, "info", None) or {}
+            px = float(info.get("regularMarketPrice") or 0)
+            if px > 0:
+                return px
+        except Exception:
+            pass
+
+        # Last-resort fallback keeps backward compatibility.
         from data.fetcher import get_candles
-        
-        # Fetch 1-minute candles (most recent)
-        candles = get_candles(asset, '1m')
-        
-        if candles and len(candles) > 0:
-            # Return close price of most recent candle
-            latest = candles[-1]
-            return float(latest.get('close', 0))
+        candles = get_candles(symbol, '5m')
+        if candles:
+            return float((candles[-1] or {}).get('close') or 0)
     except Exception as e:
         logger.error(f"Failed to fetch current price for {asset}: {e}")
     

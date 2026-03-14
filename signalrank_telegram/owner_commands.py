@@ -355,6 +355,8 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     args = list(context.args or [])
+    override_requested = any(str(a).strip().lower() in {"--override", "override", "--force"} for a in args)
+    args = [a for a in args if str(a).strip().lower() not in {"--override", "override", "--force"}]
     requested_asset = str(args[0]).upper().replace("/", "").strip() if len(args) >= 1 else ""
     requested_tf = str(args[1]).strip().lower() if len(args) >= 2 else ""
 
@@ -424,6 +426,32 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return
 
+    # Strict by default: bypass schedule timing only; keep core quality gates.
+    # Admin/owner may explicitly override via /force_signal ... --override.
+    try:
+        strict_mode = str(getattr(config, "FORCE_SIGNAL_STRICT_MODE", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
+    except Exception:
+        strict_mode = True
+
+    score_val = float(getattr(best_signal, "score", 0) or 0)
+    try:
+        ml_val = None if best_ml_prob is None else float(best_ml_prob)
+    except Exception:
+        ml_val = None
+    min_score = float(getattr(config, "FORCE_SIGNAL_MIN_SCORE", 55.0) or 55.0)
+    min_ml = float(getattr(config, "FORCE_SIGNAL_MIN_ML_PROB", 0.0) or 0.0)
+
+    if strict_mode and not override_requested:
+        quality_ok = score_val >= min_score and (ml_val is None or ml_val >= min_ml)
+        if not quality_ok:
+            await update.message.reply_text(
+                "⚠️ Force-signal blocked by strict quality gates.\n"
+                f"Score={score_val:.1f} (min {min_score:.1f})\n"
+                f"ML={ml_val if ml_val is not None else 'N/A'} (min {min_ml:.2f})\n\n"
+                "Use /force_signal <ASSET> <TF> --override to bypass for emergency use."
+            )
+            return
+
     tp_levels = []
     try:
         tp_levels = [float(tp.get("price")) for tp in (best_signal.take_profit or []) if isinstance(tp, dict) and tp.get("price") is not None]
@@ -443,8 +471,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     signal_id = str(uuid4())
     expires_at = datetime.utcnow() + timedelta(hours=12)
     
-    # Ensure score is high enough to bypass quality gates in resend job
-    score_for_storage = max(float(best_signal.score or 0), 80.0)
+    score_for_storage = float(best_signal.score or 0)
     
     signal_payload = {
         "signal_id": signal_id,
@@ -486,8 +513,8 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     strategy_group=str(best_signal.strategy_group),
                     strength=float(best_signal.confidence or 0.0),
                     fingerprint=f"{best_asset}_{best_tf}_{best_signal.direction}_{int(float(best_signal.entry) or 0)}",
-                    archived=True,
-                    expired=True,
+                    archived=False,
+                    expired=False,
                     expires_at=expires_at,
                 )
             )

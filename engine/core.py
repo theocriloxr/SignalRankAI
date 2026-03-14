@@ -1774,6 +1774,14 @@ def main_loop(DRY_RUN: bool = False):
             except Exception as _promote_err:
                 logger.debug("[engine] auto-promotion skipped: %s", _promote_err)
 
+        # Explicit per-cycle garbage collection to keep memory stable on long
+        # running Railway workers.
+        try:
+            import gc as _gc
+            _gc.collect()
+        except Exception:
+            pass
+
         time.sleep(max(5, cycle_sleep_seconds))
 
 
