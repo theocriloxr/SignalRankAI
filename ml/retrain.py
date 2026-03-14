@@ -36,11 +36,46 @@ async def collect_training_data() -> list:
         
         async with get_session() as session:
             result = await session.execute(text("""
-                SELECT s.*, o.status as outcome_status, o.r_multiple
+                SELECT
+                    s.rr_estimate,
+                    s.score,
+                    s.strength,
+                    0.0::double precision AS regime_score,
+                    0.0::double precision AS trend_ema,
+                    0.0::double precision AS rsi,
+                    0.0::double precision AS volume_ratio,
+                    0.0::double precision AS macd_trend,
+                    0.0::double precision AS adx_value,
+                    0.0::double precision AS news_sentiment,
+                    0.0::double precision AS nearest_support_dist,
+                    0.0::double precision AS nearest_resistance_dist,
+                    o.status as outcome_status,
+                    o.r_multiple
                 FROM signals s
                 JOIN outcomes o ON o.signal_id = s.signal_id
                 WHERE s.created_at >= :cutoff
-                AND o.status IN ('tp', 'sl', 'partial_tp', 'tp1', 'tp2')
+                  AND o.status IN ('tp', 'sl', 'partial_tp', 'tp1', 'tp2')
+
+                UNION ALL
+
+                SELECT
+                    a.rr_estimate,
+                    a.score,
+                    a.strength,
+                    COALESCE((a.outcome_meta->>'regime_score')::double precision, 0.0) AS regime_score,
+                    COALESCE((a.outcome_meta->>'trend_ema')::double precision, 0.0) AS trend_ema,
+                    COALESCE((a.outcome_meta->>'rsi')::double precision, 0.0) AS rsi,
+                    COALESCE((a.outcome_meta->>'volume_ratio')::double precision, 0.0) AS volume_ratio,
+                    COALESCE((a.outcome_meta->>'macd_trend')::double precision, 0.0) AS macd_trend,
+                    COALESCE((a.outcome_meta->>'adx_value')::double precision, 0.0) AS adx_value,
+                    COALESCE((a.outcome_meta->>'news_sentiment')::double precision, 0.0) AS news_sentiment,
+                    COALESCE((a.outcome_meta->>'nearest_support_dist')::double precision, 0.0) AS nearest_support_dist,
+                    COALESCE((a.outcome_meta->>'nearest_resistance_dist')::double precision, 0.0) AS nearest_resistance_dist,
+                    a.outcome_status,
+                    a.outcome_r_multiple AS r_multiple
+                FROM ml_past_training_data a
+                WHERE a.signal_created_at >= :cutoff
+                  AND a.outcome_status IN ('tp', 'sl', 'partial_tp', 'tp1', 'tp2')
             """), {"cutoff": cutoff})
             
             rows = result.fetchall()

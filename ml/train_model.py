@@ -282,6 +282,116 @@ async def load_training_data():
             }
             data.append(row)
 
+        # Also include persisted historical archive samples so training can
+        # blend legacy and fresh post-reset outcomes.
+        try:
+            from db.models import MLPastTrainingData
+
+            async with get_session() as session:
+                archive_rows = (
+                    await session.execute(
+                        select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
+                    )
+                ).scalars().all()
+                await session.commit()
+
+            for a in archive_rows:
+                status = str(getattr(a, 'outcome_status', '') or '').lower()
+                meta = getattr(a, 'outcome_meta', None) or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+
+                tp_progress = 0
+                for key in ("tp_progress", "max_tp_hit", "tp_hit_count", "highest_tp_reached"):
+                    try:
+                        tp_progress = max(tp_progress, int(meta.get(key) or 0))
+                    except Exception:
+                        continue
+
+                false_breakout = 0
+                for k in ("false_breakout", "volatility_stopout", "sl_then_tp1", "post_sl_reversal_to_tp1"):
+                    try:
+                        if bool(meta.get(k)):
+                            false_breakout = 1
+                            break
+                    except Exception:
+                        continue
+
+                if status in ("tp", "tp1", "tp2", "tp3", "partial_tp"):
+                    barrier = "upper"
+                elif status in ("expired", "timeout", "time", "time_expired"):
+                    barrier = "time"
+                else:
+                    barrier = "lower"
+
+                target = 1 if barrier == "upper" else 0
+                sample_weight = 1.0
+                if status in ("tp", "tp3"):
+                    sample_weight = 1.30
+                    tp_progress = max(tp_progress, 3)
+                elif status == "tp2":
+                    sample_weight = 1.15
+                    tp_progress = max(tp_progress, 2)
+                elif status in ("tp1", "partial_tp"):
+                    sample_weight = 1.05
+                    tp_progress = max(tp_progress, 1)
+                elif barrier == "time":
+                    sample_weight = 0.85
+                elif status == "sl":
+                    if tp_progress >= 2:
+                        sample_weight = 0.55
+                    elif tp_progress >= 1:
+                        sample_weight = 0.70
+
+                if false_breakout:
+                    sample_weight *= 0.65
+
+                rr_raw = _safe_float(getattr(a, 'rr_estimate', 0))
+                rr_eff = min(4.0, max(0.5, rr_raw))
+                sample_weight *= (0.75 + (rr_eff / 4.0))
+
+                a_take_profit = _parse_tp(getattr(a, 'take_profit', 0))
+                a_entry = _safe_float(getattr(a, 'entry', 0))
+                a_sl = _safe_float(getattr(a, 'stop_loss', 0))
+
+                data.append({
+                    'signal_id': getattr(a, 'signal_id', None),
+                    'asset': getattr(a, 'asset', 'UNKNOWN') or 'UNKNOWN',
+                    'timeframe': getattr(a, 'timeframe', '1h') or '1h',
+                    'direction': getattr(a, 'direction', 'long') or 'long',
+                    'score': _safe_float(getattr(a, 'score', 0)),
+                    'entry': a_entry,
+                    'stop_loss': a_sl,
+                    'take_profit': a_take_profit,
+                    'rr_ratio': _safe_float(getattr(a, 'rr_estimate', 0)),
+                    'strategy_name': getattr(a, 'strategy_name', 'unknown') or 'unknown',
+                    'regime': getattr(a, 'regime', 'unknown') or 'unknown',
+                    'strength': _safe_float(getattr(a, 'strength', 0)),
+                    'ml_probability': _safe_float(getattr(a, 'ml_probability', 0)),
+                    'price_velocity_3': _safe_float(meta.get('price_velocity_3', 0.0)),
+                    'price_velocity_5': _safe_float(meta.get('price_velocity_5', 0.0)),
+                    'price_velocity_10': _safe_float(meta.get('price_velocity_10', 0.0)),
+                    'price_acceleration_3_10': _safe_float(meta.get('price_acceleration_3_10', 0.0)),
+                    'atr_rel': _safe_float(meta.get('atr_rel', 0.0)),
+                    'atr_regime': _safe_float(meta.get('atr_regime', 0.0)),
+                    'relative_volume': _safe_float(meta.get('relative_volume', 0.0)),
+                    'mtf_4h_trend': _safe_float(meta.get('mtf_4h_trend', 0.0)),
+                    'mtf_1d_trend': _safe_float(meta.get('mtf_1d_trend', 0.0)),
+                    'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
+                    'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
+                    'dxy_trend': _safe_float(meta.get('dxy_trend', 0.0)),
+                    'spx_trend': _safe_float(meta.get('spx_trend', 0.0)),
+                    'btc_corr': _safe_float(meta.get('btc_corr', 0.0)),
+                    'partial_tp_progress': float(tp_progress),
+                    'false_breakout': int(false_breakout),
+                    'barrier_type': barrier,
+                    'sample_weight': float(sample_weight),
+                    'created_at': getattr(a, 'signal_created_at', None) or datetime.utcnow(),
+                    'target': target,
+                })
+        except Exception as _archive_err:
+            logger.warning(f"Failed to load archive training rows: {_archive_err}")
+
         df = pd.DataFrame(data)
         logger.info(f"Loaded {len(df)} signals with outcomes")
         logger.info(f"Class distribution: {df['target'].value_counts().to_dict()}")

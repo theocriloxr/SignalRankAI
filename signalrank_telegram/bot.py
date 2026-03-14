@@ -2937,6 +2937,36 @@ def run_bot() -> None:
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
                     # managed_assets
                     "ALTER TABLE managed_assets ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP",
+                    # persistent ML training archive (kept across test resets)
+                    """
+                    CREATE TABLE IF NOT EXISTS ml_past_training_data (
+                        id SERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36) UNIQUE NOT NULL,
+                        asset VARCHAR(32) NOT NULL,
+                        timeframe VARCHAR(8) NOT NULL,
+                        direction VARCHAR(8) NOT NULL,
+                        entry DOUBLE PRECISION NOT NULL,
+                        stop_loss DOUBLE PRECISION NOT NULL,
+                        take_profit TEXT NOT NULL,
+                        rr_estimate DOUBLE PRECISION NULL,
+                        score DOUBLE PRECISION NULL,
+                        strength DOUBLE PRECISION NULL,
+                        regime VARCHAR(32) NULL,
+                        strategy_name VARCHAR(64) NULL,
+                        ml_probability DOUBLE PRECISION NULL,
+                        outcome_status VARCHAR(16) NOT NULL,
+                        outcome_r_multiple DOUBLE PRECISION NULL,
+                        outcome_percent DOUBLE PRECISION NULL,
+                        outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        signal_created_at TIMESTAMP NULL,
+                        outcome_closed_at TIMESTAMP NULL,
+                        archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """,
+                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_signal_id ON ml_past_training_data(signal_id)",
+                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_asset ON ml_past_training_data(asset)",
+                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_timeframe ON ml_past_training_data(timeframe)",
+                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_outcome_status ON ml_past_training_data(outcome_status)",
                 ]
                 async with get_session() as session:
                     for stmt in _stmts:
@@ -2953,8 +2983,9 @@ def run_bot() -> None:
         _log_once("ensure_schema_failed", f"[bot] schema ensure failed: {type(e).__name__}: {e}")
 
     # Optional destructive test mode:
-    # Wipes all tables except users (and alembic_version) so end-to-end testing
-    # starts from a clean state while keeping stored users.
+    # Wipes all tables except users + ml_past_training_data + alembic_version.
+    # Before wipe, snapshots current signal/outcome history into
+    # ml_past_training_data. Also runs only once per DB (marker key).
     try:
         _fresh_raw = str(os.getenv("START_FRESH_KEEP_USERS_ON_BOOT", "0") or "0").strip().lower()
         _fresh_enabled = _fresh_raw in {"1", "true", "yes", "on"}
@@ -2964,6 +2995,17 @@ def run_bot() -> None:
                 from sqlalchemy import text
 
                 async with get_session() as session:
+                    marker_key = "startup_reset_done_v1"
+
+                    # One-time marker guard.
+                    marker = await session.execute(
+                        text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
+                        {"k": marker_key},
+                    )
+                    marker_row = marker.scalar_one_or_none()
+                    if marker_row is not None:
+                        return (0, False)
+
                     try:
                         # Prevent duplicate wipe in multi-instance boot.
                         lock_row = await session.execute(
@@ -2976,13 +3018,37 @@ def run_bot() -> None:
                     if not lock_ok:
                         return (0, False)
 
+                    # Snapshot current labeled samples into persistent ML archive.
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO ml_past_training_data (
+                                signal_id, asset, timeframe, direction,
+                                entry, stop_loss, take_profit,
+                                rr_estimate, score, strength, regime, strategy_name, ml_probability,
+                                outcome_status, outcome_r_multiple, outcome_percent, outcome_meta,
+                                signal_created_at, outcome_closed_at, archived_at
+                            )
+                            SELECT
+                                s.signal_id, s.asset, s.timeframe, s.direction,
+                                s.entry, s.stop_loss, s.take_profit,
+                                s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
+                                o.status, o.r_multiple, o.percent, COALESCE(o.meta, '{}'::jsonb),
+                                s.created_at, o.closed_at, NOW()
+                            FROM signals s
+                            JOIN outcomes o ON o.signal_id = s.signal_id
+                            ON CONFLICT (signal_id) DO NOTHING
+                            """
+                        )
+                    )
+
                     rows = await session.execute(
                         text(
                             """
                             SELECT tablename
                             FROM pg_tables
                             WHERE schemaname = 'public'
-                              AND tablename NOT IN ('users', 'alembic_version')
+                              AND tablename NOT IN ('users', 'alembic_version', 'ml_past_training_data', 'runtime_state')
                             """
                         )
                     )
@@ -2993,17 +3059,30 @@ def run_bot() -> None:
                             f'"{t.replace("\"", "\"\"")}"' for t in tables
                         )
                         await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+
+                    # Clear runtime state to start fresh, then store one-time marker.
+                    await session.execute(text("DELETE FROM runtime_state"))
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO runtime_state(key, value, expires_at, updated_at)
+                            VALUES (:k, :v::jsonb, NULL, NOW())
+                            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+                            """
+                        ),
+                        {"k": marker_key, "v": '{"done": true}'},
+                    )
                     await session.commit()
                     return (len(tables), True)
 
             _wiped_count, _ran = run_sync(_fresh_reset_keep_users())
             if _ran:
                 logger.warning(
-                    "[boot] START_FRESH_KEEP_USERS_ON_BOOT active: reset complete (wiped_tables=%d, kept=users)",
+                    "[boot] START_FRESH_KEEP_USERS_ON_BOOT active: reset complete (wiped_tables=%d, kept=users+ml_past_training_data)",
                     int(_wiped_count),
                 )
             else:
-                logger.info("[boot] startup reset skipped: lock held by another instance")
+                logger.info("[boot] startup reset skipped: already done or lock held by another instance")
     except Exception as _fresh_err:
         logger.warning(f"[boot] startup fresh reset failed: {_fresh_err}")
 
