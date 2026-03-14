@@ -1077,6 +1077,7 @@ def _record_mt5_execution_sync(
         meta = {
             "hard_stop_attached": True,
             "source": "telegram_bot",
+            "telegram_user_id": int(telegram_user_id),
         }
         if isinstance(extra_meta, dict):
             meta.update(extra_meta)
@@ -1092,7 +1093,7 @@ def _record_mt5_execution_sync(
                     return
 
                 row = MT5Execution(
-                    user_id=int(telegram_user_id),
+                    user_id=int(user.id),
                     signal_id=sig_id,
                     metaapi_account_id=str(account_id),
                     order_id=(str(order_id) if order_id else None),
@@ -1179,7 +1180,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 pnl_row = await session.execute(
                     select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0)).where(
-                        MT5Execution.user_id == int(telegram_user_id),
+                        MT5Execution.user_id.in_([int(getattr(user, "id", 0) or 0), int(telegram_user_id)]),
                         MT5Execution.executed_at >= day_start,
                     )
                 )
@@ -3997,7 +3998,7 @@ def run_bot() -> None:
                         _day_start = _now_dd.replace(hour=0, minute=0, second=0, microsecond=0)
                         _sum_row = await _sdd.execute(
                             _sel_mt5(_func.coalesce(_func.sum(_MT5Exec.realized_pnl_pct), 0.0)).where(
-                                _MT5Exec.user_id == int(user_id),
+                                _MT5Exec.user_id.in_([int(getattr(_u_dd, "id", 0) or 0), int(user_id)]),
                                 _MT5Exec.executed_at >= _day_start,
                             )
                         )
@@ -4564,7 +4565,7 @@ def run_bot() -> None:
                     rows = (
                         await session.execute(
                             select(MT5Execution, User)
-                            .join(User, User.telegram_user_id == MT5Execution.user_id)
+                            .join(User, User.id == MT5Execution.user_id)
                             .where(
                                 and_(
                                     User.execution_mode == "auto",
@@ -4708,12 +4709,13 @@ def run_bot() -> None:
 
                     for user in users:
                         uid = int(getattr(user, "telegram_user_id", 0) or 0)
-                        if uid <= 0:
+                        user_pk = int(getattr(user, "id", 0) or 0)
+                        if uid <= 0 or user_pk <= 0:
                             continue
 
                         pnl_row = await session.execute(
                             select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0)).where(
-                                MT5Execution.user_id == uid,
+                                MT5Execution.user_id.in_([user_pk, uid]),
                                 MT5Execution.executed_at >= window_start,
                                 MT5Execution.realized_pnl_pct.is_not(None),
                             )
@@ -4979,6 +4981,89 @@ def run_bot() -> None:
             run_sync(_run())
         except Exception as _oc:
             logger.warning(f"[orphan_cleanup] job failed: {_oc}")
+
+
+    def data_integrity_backfill_job():
+        """Backfill critical operational tables so required data is not left empty.
+
+        This is conservative/idempotent and only fills missing baseline rows.
+        """
+        try:
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
+                return
+            from sqlalchemy import text
+
+            async def _run() -> None:
+                async with get_session() as session:
+                    # 1) Ensure each user has alert preferences row.
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO alert_prefs (user_id, tp_sl_enabled, quiet_start_hour, quiet_end_hour, updated_at)
+                            SELECT u.id, TRUE, NULL, NULL, NOW()
+                            FROM users u
+                            LEFT JOIN alert_prefs a ON a.user_id = u.id
+                            WHERE a.user_id IS NULL
+                            """
+                        )
+                    )
+
+                    # 2) Ensure signals have expiry timestamp for lifecycle jobs.
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE signals
+                            SET expires_at = COALESCE(expires_at, created_at + INTERVAL '12 hours')
+                            WHERE expires_at IS NULL
+                            """
+                        )
+                    )
+
+                    # 3) Repair historical MT5 rows created with telegram_user_id
+                    # instead of users.id (legacy bug compatibility).
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE mt5_executions m
+                            SET user_id = u.id,
+                                meta = COALESCE(m.meta, '{}'::jsonb) || '{"user_id_repaired": true}'::jsonb
+                            FROM users u
+                            WHERE m.user_id = u.telegram_user_id
+                              AND m.user_id <> u.id
+                            """
+                        )
+                    )
+
+                    # 4) Ensure mt5 execution status has at least baseline value.
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE mt5_executions
+                            SET status = 'open'
+                            WHERE (status IS NULL OR status = '')
+                              AND closed_at IS NULL
+                            """
+                        )
+                    )
+
+                    # 5) Backfill missing closed_at on clearly terminal statuses.
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE mt5_executions
+                            SET closed_at = COALESCE(closed_at, NOW())
+                            WHERE closed_at IS NULL
+                              AND status IN ('sl','tp3','tp','smart_exit','orphaned','closed_unknown','closed_by_killsw','error')
+                            """
+                        )
+                    )
+
+                    await session.commit()
+
+            run_sync(_run())
+        except Exception as _ib:
+            logger.warning(f"[integrity_backfill] job failed: {_ib}")
 
 
     def compute_outcomes_best_effort():
@@ -6083,6 +6168,15 @@ def run_bot() -> None:
             id='orphan_execution_cleanup_job',
             replace_existing=True,
             max_instances=1,
+        )
+        scheduler.add_job(
+            data_integrity_backfill_job,
+            'interval',
+            minutes=10,
+            id='data_integrity_backfill_job',
+            replace_existing=True,
+            max_instances=1,
+            next_run_time=datetime.utcnow(),
         )
         scheduler.add_job(
             vip_scarcity_broadcast_job,
