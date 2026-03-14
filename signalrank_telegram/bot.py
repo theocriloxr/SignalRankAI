@@ -4750,6 +4750,241 @@ def run_bot() -> None:
             logger.warning(f"[drawdown_guard] job failed: {_dd}")
 
 
+    def killswitch_close_all_watchdog_job():
+        """When kill-switch turns ON, close all linked broker positions once."""
+        try:
+            ks = state.get_killswitch_sync()
+            if not bool(getattr(ks, "enabled", False)):
+                try:
+                    # expire quickly so next kill-switch ON can re-run close-all
+                    state.set_sync("killswitch:closeall:done", "0", ex=1)
+                except Exception:
+                    pass
+                return
+
+            marker = "killswitch:closeall:done"
+            try:
+                if state.get_sync(marker):
+                    return
+            except Exception:
+                pass
+
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
+                return
+
+            from sqlalchemy import text
+            from services.mt5_client import close_all_positions
+            from datetime import datetime, timezone
+
+            async def _run() -> tuple[int, int, int]:
+                accounts_total = 0
+                attempted = 0
+                closed = 0
+                async with get_session() as session:
+                    rows = (
+                        await session.execute(
+                            text(
+                                """
+                                SELECT u.telegram_user_id, c.metaapi_account_id
+                                FROM users u
+                                JOIN mt5_credentials c ON c.user_id = u.id
+                                WHERE c.metaapi_account_id IS NOT NULL
+                                """
+                            )
+                        )
+                    ).fetchall()
+
+                    # best-effort close all positions per linked account
+                    for telegram_user_id, account_id in rows:
+                        try:
+                            if not account_id:
+                                continue
+                            accounts_total += 1
+                            res = await close_all_positions(str(account_id), comment="SignalRankAI-KillSwitch")
+                            attempted += int(res.get("attempted", 0) or 0)
+                            closed += int(res.get("closed", 0) or 0)
+                            if int(res.get("attempted", 0) or 0) > 0:
+                                try:
+                                    await application.bot.send_message(
+                                        chat_id=int(telegram_user_id),
+                                        text=(
+                                            "🛑 <b>Emergency Capital Protection</b>\n"
+                                            "Kill-switch is ON. Open broker positions were force-closed."
+                                        ),
+                                        parse_mode="HTML",
+                                    )
+                                except Exception:
+                                    pass
+                        except Exception as _row_err:
+                            logger.debug(f"[killswitch_closeall] account close error: {_row_err}")
+
+                    # Mark DB executions as closed by kill-switch when still open.
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE mt5_executions
+                            SET status = 'closed_by_killsw',
+                                closed_at = COALESCE(closed_at, NOW()),
+                                meta = COALESCE(meta, '{}'::jsonb) || :meta::jsonb
+                            WHERE closed_at IS NULL
+                              AND status IN ('pending','open','tp1','tp2')
+                            """
+                        ),
+                        {
+                            "meta": '{"closed_by_killswitch": true}',
+                        },
+                    )
+                    await session.commit()
+
+                return accounts_total, attempted, closed
+
+            accounts_total, attempted, closed = run_sync(_run())
+            logger.warning(
+                "[killswitch_closeall] executed accounts=%d attempted=%d closed=%d",
+                int(accounts_total),
+                int(attempted),
+                int(closed),
+            )
+            try:
+                state.set_sync(marker, str(datetime.now(timezone.utc).isoformat()), ex=60 * 60 * 24)
+            except Exception:
+                pass
+        except Exception as _ke:
+            logger.warning(f"[killswitch_closeall] watchdog failed: {_ke}")
+
+
+    def broker_reconciliation_job():
+        """Reconcile local MT5 execution rows against broker positions to catch ghost/orphan fills."""
+        try:
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
+                return
+
+            from datetime import datetime, timedelta, timezone
+            from sqlalchemy import select, and_
+            from db.models import MT5Execution
+            from services.mt5_client import list_open_positions
+
+            grace_minutes = int(os.getenv("BROKER_RECONCILE_GRACE_MINUTES", "12") or 12)
+            stale_days = int(os.getenv("BROKER_RECONCILE_STALE_DAYS", "5") or 5)
+
+            async def _run() -> None:
+                now = datetime.now(timezone.utc)
+                cutoff = now - timedelta(days=stale_days)
+                grace_before = now - timedelta(minutes=grace_minutes)
+
+                async with get_session() as session:
+                    rows = (
+                        await session.execute(
+                            select(MT5Execution).where(
+                                and_(
+                                    MT5Execution.closed_at.is_(None),
+                                    MT5Execution.executed_at >= cutoff,
+                                    MT5Execution.status.in_(["pending", "open", "tp1", "tp2"]),
+                                )
+                            )
+                        )
+                    ).scalars().all()
+
+                    if not rows:
+                        await session.commit()
+                        return
+
+                    account_cache: dict[str, set[str]] = {}
+
+                    def _extract_pos_id(row: dict) -> str:
+                        for k in ("id", "positionId", "position_id", "orderId", "order_id"):
+                            v = row.get(k)
+                            if v is not None and str(v).strip():
+                                return str(v).strip()
+                        return ""
+
+                    for ex in rows:
+                        try:
+                            acct = str(getattr(ex, "metaapi_account_id", "") or "").strip()
+                            oid = str(getattr(ex, "order_id", "") or "").strip()
+                            if not acct or not oid:
+                                continue
+
+                            if acct not in account_cache:
+                                pos_rows = await list_open_positions(acct)
+                                account_cache[acct] = {
+                                    _extract_pos_id(r) for r in (pos_rows or []) if _extract_pos_id(r)
+                                }
+
+                            open_ids = account_cache.get(acct) or set()
+                            in_broker = oid in open_ids
+
+                            if in_broker and str(getattr(ex, "status", "")).lower() == "pending":
+                                ex.status = "open"
+
+                            if (not in_broker) and (getattr(ex, "executed_at", now) <= grace_before):
+                                # Position not visible at broker after grace period.
+                                # Mark closed_unknown to avoid lingering ghost rows.
+                                ex.status = "closed_unknown"
+                                ex.closed_at = now
+                                _meta = dict(getattr(ex, "meta", {}) or {})
+                                _meta["broker_reconciled"] = True
+                                _meta["broker_state"] = "not_found"
+                                ex.meta = _meta
+                        except Exception as _ex_err:
+                            logger.debug(f"[broker_reconcile] row error: {_ex_err}")
+
+                    await session.commit()
+
+            run_sync(_run())
+        except Exception as _br:
+            logger.warning(f"[broker_reconcile] job failed: {_br}")
+
+
+    def orphan_execution_cleanup_job():
+        """Cleanup stale/orphaned execution rows to keep ops tables healthy."""
+        try:
+            from db.session import is_db_configured, get_session
+            if not is_db_configured():
+                return
+            from sqlalchemy import text
+
+            retention_days = int(os.getenv("MT5_EXECUTION_RETENTION_DAYS", "45") or 45)
+
+            async def _run() -> None:
+                async with get_session() as session:
+                    # Step 1: close ancient still-open rows as orphaned.
+                    await session.execute(
+                        text(
+                            """
+                            UPDATE mt5_executions
+                            SET status = 'orphaned',
+                                closed_at = COALESCE(closed_at, NOW()),
+                                meta = COALESCE(meta, '{}'::jsonb) || '{"cleanup_orphaned": true}'::jsonb
+                            WHERE closed_at IS NULL
+                              AND executed_at < NOW() - (:days || ' days')::interval
+                              AND status IN ('pending','open','tp1','tp2','closed_unknown')
+                            """
+                        ),
+                        {"days": str(retention_days)},
+                    )
+
+                    # Step 2: delete very old terminal rows that are no longer useful.
+                    await session.execute(
+                        text(
+                            """
+                            DELETE FROM mt5_executions
+                            WHERE closed_at IS NOT NULL
+                              AND closed_at < NOW() - (:days || ' days')::interval
+                              AND status IN ('error','orphaned','closed_unknown','closed_by_killsw')
+                            """
+                        ),
+                        {"days": str(retention_days)},
+                    )
+                    await session.commit()
+
+            run_sync(_run())
+        except Exception as _oc:
+            logger.warning(f"[orphan_cleanup] job failed: {_oc}")
+
+
     def compute_outcomes_best_effort():
         """Best-effort outcome writer.
 
@@ -5825,6 +6060,31 @@ def run_bot() -> None:
             'interval',
             minutes=5,
             id='drawdown_circuit_breaker_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            killswitch_close_all_watchdog_job,
+            'interval',
+            minutes=1,
+            id='killswitch_close_all_watchdog_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            broker_reconciliation_job,
+            'interval',
+            minutes=6,
+            id='broker_reconciliation_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            orphan_execution_cleanup_job,
+            'cron',
+            hour=3,
+            minute=30,
+            id='orphan_execution_cleanup_job',
             replace_existing=True,
             max_instances=1,
         )

@@ -532,9 +532,57 @@ async def set_killswitch(
     payload = await request.json()
     enabled = bool(payload.get("enabled", False))
     reason = str(payload.get("reason", ""))
+    close_all_positions = bool(payload.get("close_all_positions", False))
     await state.set_killswitch(enabled=enabled, reason=reason)
+
+    closed_summary = None
+    if enabled and close_all_positions:
+        try:
+            from sqlalchemy import text
+            from services.mt5_client import close_all_positions as _close_all_positions
+
+            attempted_accounts = 0
+            attempted_positions = 0
+            closed_positions = 0
+            async with get_session() as session:
+                rows = (
+                    await session.execute(
+                        text(
+                            """
+                            SELECT c.metaapi_account_id
+                            FROM mt5_credentials c
+                            WHERE c.metaapi_account_id IS NOT NULL
+                            """
+                        )
+                    )
+                ).fetchall()
+                for (account_id,) in rows:
+                    try:
+                        if not account_id:
+                            continue
+                        attempted_accounts += 1
+                        res = await _close_all_positions(str(account_id), comment="SignalRankAI-KillSwitch")
+                        attempted_positions += int(res.get("attempted", 0) or 0)
+                        closed_positions += int(res.get("closed", 0) or 0)
+                    except Exception:
+                        continue
+                await session.commit()
+
+            closed_summary = {
+                "attempted_accounts": attempted_accounts,
+                "attempted_positions": attempted_positions,
+                "closed_positions": closed_positions,
+            }
+        except Exception as exc:
+            closed_summary = {"error": str(exc)}
+
     ks = await state.get_killswitch()
-    return {"enabled": ks.enabled, "reason": ks.reason, "updated_at": ks.updated_at}
+    return {
+        "enabled": ks.enabled,
+        "reason": ks.reason,
+        "updated_at": ks.updated_at,
+        "close_all_positions": closed_summary,
+    }
 
 
 async def _send_telegram_dm(telegram_user_id: int, text: str) -> None:

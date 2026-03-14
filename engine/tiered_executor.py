@@ -294,12 +294,12 @@ async def execute_premium_signal(
             account_id=account_id,
             symbol=symbol,
             direction=direction.upper(),
-            lot_size=lot,
-            entry_price=entry,
+            volume=lot,
             stop_loss=sl,
             take_profit=take_profit,
+            signal_entry=entry,
         )
-        order_id = str(result.get("orderId", "")) if isinstance(result, dict) else str(result)
+        order_id = str(result.get("order_id", "")) if isinstance(result, dict) else str(result)
         success = bool(order_id)
 
     except Exception as exc:
@@ -404,12 +404,12 @@ async def execute_vip_signal(
             account_id=account_id,
             symbol=symbol,
             direction=direction.upper(),
-            lot_size=lot,
-            entry_price=entry,
+            volume=lot,
             stop_loss=sl,
             take_profit=first_tp,
+            signal_entry=entry,
         )
-        order_id = str(result.get("orderId", "")) if isinstance(result, dict) else str(result)
+        order_id = str(result.get("order_id", "")) if isinstance(result, dict) else str(result)
         success = bool(order_id)
 
     except Exception as exc:

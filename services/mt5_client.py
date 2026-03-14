@@ -331,6 +331,76 @@ async def close_position(
     return result
 
 
+async def list_open_positions(account_id: str) -> list[dict[str, Any]]:
+    """Return current open positions for a MetaApi account.
+
+    Tries common REST routes used by MetaApi bridge deployments.
+    """
+    if not str(account_id or "").strip():
+        return []
+
+    await _deploy_account(account_id)
+
+    # Variant A: documented client route.
+    for _path in ("/positions", "/trading-positions"):
+        try:
+            data = await _http_get(f"{_client_base(account_id)}{_path}")
+            if isinstance(data, list):
+                return [dict(x) for x in data if isinstance(x, dict)]
+            if isinstance(data, dict):
+                arr = data.get("positions") or data.get("data") or data.get("items")
+                if isinstance(arr, list):
+                    return [dict(x) for x in arr if isinstance(x, dict)]
+        except Exception as exc:
+            logger.debug("[mt5_client] list_open_positions path=%s failed: %s", _path, exc)
+
+    return []
+
+
+def _position_id_from_row(row: dict[str, Any]) -> str:
+    for key in ("id", "positionId", "position_id", "orderId", "order_id"):
+        val = row.get(key)
+        if val is not None and str(val).strip():
+            return str(val).strip()
+    return ""
+
+
+async def close_all_positions(account_id: str, comment: str = "SignalRankAI-KillSwitch") -> Dict[str, Any]:
+    """Close all currently open positions for a MetaApi account."""
+    result: Dict[str, Any] = {
+        "success": True,
+        "attempted": 0,
+        "closed": 0,
+        "failed": 0,
+        "errors": [],
+    }
+    positions = await list_open_positions(account_id)
+    if not positions:
+        return result
+
+    result["attempted"] = len(positions)
+    for row in positions:
+        pid = _position_id_from_row(row)
+        if not pid:
+            result["failed"] += 1
+            result["errors"].append("missing_position_id")
+            continue
+        vol = row.get("volume")
+        try:
+            close_res = await close_position(account_id, pid, volume=float(vol) if vol is not None else None, comment=comment)
+            if close_res.get("success"):
+                result["closed"] += 1
+            else:
+                result["failed"] += 1
+                result["errors"].append(str(close_res.get("error") or f"close_failed:{pid}"))
+        except Exception as exc:
+            result["failed"] += 1
+            result["errors"].append(str(exc))
+
+    result["success"] = result["failed"] == 0
+    return result
+
+
 async def update_stop_loss(
     account_id: str,
     position_id: str,
