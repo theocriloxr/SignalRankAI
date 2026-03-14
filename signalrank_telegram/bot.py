@@ -2952,6 +2952,61 @@ def run_bot() -> None:
     except Exception as e:
         _log_once("ensure_schema_failed", f"[bot] schema ensure failed: {type(e).__name__}: {e}")
 
+    # Optional destructive test mode:
+    # Wipes all tables except users (and alembic_version) so end-to-end testing
+    # starts from a clean state while keeping stored users.
+    try:
+        _fresh_raw = str(os.getenv("START_FRESH_KEEP_USERS_ON_BOOT", "0") or "0").strip().lower()
+        _fresh_enabled = _fresh_raw in {"1", "true", "yes", "on"}
+        if _fresh_enabled and is_db_configured():
+            async def _fresh_reset_keep_users() -> tuple[int, bool]:
+                from db.session import get_session
+                from sqlalchemy import text
+
+                async with get_session() as session:
+                    try:
+                        # Prevent duplicate wipe in multi-instance boot.
+                        lock_row = await session.execute(
+                            text("SELECT pg_try_advisory_lock(739909)")
+                        )
+                        lock_ok = bool((lock_row.scalar_one_or_none() or False))
+                    except Exception:
+                        lock_ok = True
+
+                    if not lock_ok:
+                        return (0, False)
+
+                    rows = await session.execute(
+                        text(
+                            """
+                            SELECT tablename
+                            FROM pg_tables
+                            WHERE schemaname = 'public'
+                              AND tablename NOT IN ('users', 'alembic_version')
+                            """
+                        )
+                    )
+                    tables = [str(r[0]) for r in rows.all() if r and r[0]]
+
+                    if tables:
+                        quoted = ", ".join(
+                            f'"{t.replace("\"", "\"\"")}"' for t in tables
+                        )
+                        await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+                    await session.commit()
+                    return (len(tables), True)
+
+            _wiped_count, _ran = run_sync(_fresh_reset_keep_users())
+            if _ran:
+                logger.warning(
+                    "[boot] START_FRESH_KEEP_USERS_ON_BOOT active: reset complete (wiped_tables=%d, kept=users)",
+                    int(_wiped_count),
+                )
+            else:
+                logger.info("[boot] startup reset skipped: lock held by another instance")
+    except Exception as _fresh_err:
+        logger.warning(f"[boot] startup fresh reset failed: {_fresh_err}")
+
     # Advisory lock: only needed in polling mode to prevent duplicate pollers
     # across Railway replicas.  In webhook mode Telegram delivers each update
     # exactly once to the registered URL, so the lock is unnecessary.
