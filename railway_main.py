@@ -514,41 +514,50 @@ async def lifespan(_: FastAPI):
     except Exception as exc:
         logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
 
-    # Initial ML archive backfill: keep non-blocking by default on Railway.
-    _default_archive_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "8"
-    archive_timeout_s = int(os.getenv("STARTUP_ARCHIVE_TIMEOUT_SECONDS", _default_archive_timeout) or 0)
-    try:
-        archive_task = asyncio.create_task(_archive_ml_history_job())
-        startup_maintenance_tasks.append(archive_task)
-        if archive_timeout_s > 0:
-            await asyncio.wait_for(asyncio.shield(archive_task), timeout=archive_timeout_s)
-        else:
-            logger.info("[startup] ml archive backfill scheduled in background (non-blocking)")
-    except asyncio.TimeoutError:
-        logger.warning(
-            "[startup] ml archive initial backfill exceeded %ss; continuing in background",
-            archive_timeout_s,
-        )
-    except Exception as exc:
-        logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+    async def _run_post_startup_maintenance() -> None:
+        """Run maintenance in strict order once startup ops are done.
 
-    # Optional one-time fresh reset (users preserved): also bounded/non-blocking.
-    _default_fresh_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "8"
-    fresh_timeout_s = int(os.getenv("STARTUP_FRESH_RESET_TIMEOUT_SECONDS", _default_fresh_timeout) or 0)
+        Order is important:
+          1) optional fresh reset (archives + truncates runtime tables)
+          2) ML archive backfill safety pass
+        """
+        try:
+            if startup_ops_task is not None:
+                await asyncio.shield(startup_ops_task)
+        except Exception as exc:
+            logger.warning(f"[startup] post-startup maintenance proceeding after startup-ops error: {exc}")
+
+        # Fresh reset first so clearing happens before additional archive pass.
+        try:
+            await _maybe_run_start_fresh_keep_users()
+        except Exception as exc:
+            logger.warning(f"[startup] fresh reset step failed: {exc}")
+
+        # Always run archive pass afterwards to keep ml_past_training_data filled.
+        try:
+            await _archive_ml_history_job()
+        except Exception as exc:
+            logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+
+    # Keep maintenance non-blocking by default on Railway, with optional bounded wait.
+    _default_maintenance_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "15"
+    maintenance_timeout_s = int(
+        os.getenv("STARTUP_MAINTENANCE_TIMEOUT_SECONDS", _default_maintenance_timeout) or 0
+    )
     try:
-        fresh_task = asyncio.create_task(_maybe_run_start_fresh_keep_users())
-        startup_maintenance_tasks.append(fresh_task)
-        if fresh_timeout_s > 0:
-            await asyncio.wait_for(asyncio.shield(fresh_task), timeout=fresh_timeout_s)
+        maintenance_task = asyncio.create_task(_run_post_startup_maintenance())
+        startup_maintenance_tasks.append(maintenance_task)
+        if maintenance_timeout_s > 0:
+            await asyncio.wait_for(asyncio.shield(maintenance_task), timeout=maintenance_timeout_s)
         else:
-            logger.info("[startup] fresh-reset step scheduled in background (non-blocking)")
+            logger.info("[startup] post-startup maintenance scheduled in background (non-blocking)")
     except asyncio.TimeoutError:
         logger.warning(
-            "[startup] fresh reset step exceeded %ss; continuing in background",
-            fresh_timeout_s,
+            "[startup] post-startup maintenance exceeded %ss; continuing in background",
+            maintenance_timeout_s,
         )
     except Exception as exc:
-        logger.warning(f"[startup] fresh reset step failed: {exc}")
+        logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
     engine_task = None
