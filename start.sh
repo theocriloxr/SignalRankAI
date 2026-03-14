@@ -4,8 +4,9 @@
 # Activate virtual environment (if any)
 # source venv/bin/activate
 
-# Install dependencies (optional; Railway/Nixpacks usually handles this)
-if [ -f requirements.txt ]; then
+# Install dependencies at boot only when explicitly requested.
+# (Image build already installs requirements in Dockerfile.)
+if [ "${INSTALL_AT_BOOT:-false}" = "true" ] && [ -f requirements.txt ]; then
 	pip install -r requirements.txt
 fi
 
@@ -22,14 +23,23 @@ if [ -n "${DATABASE_URL}" ]; then
 	python -m alembic upgrade head || echo "[WARN] Migration failed, continuing anyway..."
 fi
 
-# Default: run a single mode via RUN_MODE (engine/web/worker/bot)
-# Optional: RUN_ALL=true to run web + engine + bot in one container.
+# Railway-safe default:
+# - If RUN_MODE is explicitly set, honor it via main.py
+# - Otherwise run the monolith web entrypoint (railway_main) so /healthz exists
+#   and background services start in lifespan.
 
+if [ -n "${RUN_MODE:-}" ]; then
+	python main.py
+	exit $?
+fi
+
+# Optional legacy mode: run separate processes in one container.
 if [ "${RUN_ALL:-false}" = "true" ]; then
 	RUN_MODE=web python main.py &
 	RUN_MODE=engine python main.py &
 	RUN_MODE=bot python main.py &
 	wait
-else
-	python main.py
+	exit $?
 fi
+
+exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
