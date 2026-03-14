@@ -35,6 +35,31 @@ async def collect_training_data() -> list:
         cutoff = datetime.now(timezone.utc) - timedelta(days=RETRAIN_LOOKBACK_DAYS)
         
         async with get_session() as session:
+            await session.execute(text("""
+                CREATE TABLE IF NOT EXISTS ml_past_training_data (
+                    id SERIAL PRIMARY KEY,
+                    signal_id VARCHAR(36) UNIQUE NOT NULL,
+                    asset VARCHAR(32) NOT NULL,
+                    timeframe VARCHAR(8) NOT NULL,
+                    direction VARCHAR(8) NOT NULL,
+                    entry DOUBLE PRECISION NOT NULL,
+                    stop_loss DOUBLE PRECISION NOT NULL,
+                    take_profit TEXT NOT NULL,
+                    rr_estimate DOUBLE PRECISION NULL,
+                    score DOUBLE PRECISION NULL,
+                    strength DOUBLE PRECISION NULL,
+                    regime VARCHAR(32) NULL,
+                    strategy_name VARCHAR(64) NULL,
+                    ml_probability DOUBLE PRECISION NULL,
+                    outcome_status VARCHAR(16) NOT NULL,
+                    outcome_r_multiple DOUBLE PRECISION NULL,
+                    outcome_percent DOUBLE PRECISION NULL,
+                    outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    signal_created_at TIMESTAMP NULL,
+                    outcome_closed_at TIMESTAMP NULL,
+                    archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+            """))
             result = await session.execute(text("""
                 SELECT
                     s.rr_estimate,

@@ -286,8 +286,38 @@ async def load_training_data():
         # blend legacy and fresh post-reset outcomes.
         try:
             from db.models import MLPastTrainingData
+            from sqlalchemy import text
 
             async with get_session() as session:
+                # Defensive bootstrap for environments where bot schema ensure
+                # has not run yet (e.g. webhook startup race).
+                await session.execute(text(
+                    """
+                    CREATE TABLE IF NOT EXISTS ml_past_training_data (
+                        id SERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36) UNIQUE NOT NULL,
+                        asset VARCHAR(32) NOT NULL,
+                        timeframe VARCHAR(8) NOT NULL,
+                        direction VARCHAR(8) NOT NULL,
+                        entry DOUBLE PRECISION NOT NULL,
+                        stop_loss DOUBLE PRECISION NOT NULL,
+                        take_profit TEXT NOT NULL,
+                        rr_estimate DOUBLE PRECISION NULL,
+                        score DOUBLE PRECISION NULL,
+                        strength DOUBLE PRECISION NULL,
+                        regime VARCHAR(32) NULL,
+                        strategy_name VARCHAR(64) NULL,
+                        ml_probability DOUBLE PRECISION NULL,
+                        outcome_status VARCHAR(16) NOT NULL,
+                        outcome_r_multiple DOUBLE PRECISION NULL,
+                        outcome_percent DOUBLE PRECISION NULL,
+                        outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                        signal_created_at TIMESTAMP NULL,
+                        outcome_closed_at TIMESTAMP NULL,
+                        archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )
+                    """
+                ))
                 archive_rows = (
                     await session.execute(
                         select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)

@@ -3193,7 +3193,7 @@ def run_bot() -> None:
         from db.session import is_db_configured, get_session
         from sqlalchemy import text
 
-        if is_db_configured() and not os.getenv("TELEGRAM_USE_WEBHOOK"):
+        if is_db_configured():
             async def _ensure_schema() -> None:
                 _stmts = [
                     # users — columns added after 0001_init / 0008_user_tier_column
@@ -3264,8 +3264,6 @@ def run_bot() -> None:
                     await session.commit()
 
             run_sync(_ensure_schema())
-        elif os.getenv("TELEGRAM_USE_WEBHOOK"):
-            print("[bot] schema ensure skipped in webhook mode", flush=True)
     except Exception as e:
         _log_once("ensure_schema_failed", f"[bot] schema ensure failed: {type(e).__name__}: {e}")
 
@@ -3342,9 +3340,7 @@ def run_bot() -> None:
                     tables = [str(r[0]) for r in rows.all() if r and r[0]]
 
                     if tables:
-                        quoted = ", ".join(
-                            f'"{t.replace("\"", "\"\"")}"' for t in tables
-                        )
+                        quoted = ", ".join('"' + str(t).replace('"', '""') + '"' for t in tables)
                         await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
 
                     # Clear runtime state to start fresh, then store one-time marker.
