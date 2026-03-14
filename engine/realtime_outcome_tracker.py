@@ -139,6 +139,36 @@ def _check_hit(
     return None
 
 
+def _halfway_to_tp1_reached(direction: str, entry: float, tp1: float, price: float) -> bool:
+    """True when price reaches 50% of path to TP1 but TP1 is not yet hit."""
+    try:
+        d = str(direction or "long").lower()
+        midpoint = float(entry) + ((float(tp1) - float(entry)) * 0.5)
+        if d == "short":
+            return float(price) <= midpoint and float(price) > float(tp1)
+        return float(price) >= midpoint and float(price) < float(tp1)
+    except Exception:
+        return False
+
+
+def _risk_free_cache_key(signal_id: str) -> str:
+    return f"risk_free_half_tp1:{str(signal_id)}"
+
+
+def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 3600) -> bool:
+    """Returns True only once per signal for the configured TTL window."""
+    try:
+        from core.redis_state import state
+        key = _risk_free_cache_key(signal_id)
+        if state.get_sync(key):
+            return False
+        state.set_sync(key, "1", ex=max(3600, int(ttl_seconds)))
+        return True
+    except Exception:
+        # If Redis is unavailable, allow trigger (idempotency is still mostly safe).
+        return True
+
+
 async def _persist_outcome(signal_id: str, status: str, entry: float, price: float) -> None:
     """Write outcome row and archive signal."""
     try:
@@ -258,6 +288,63 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
         logger.error("[outcome_tracker] _notify_outcome error: %s", exc)
 
 
+async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None:
+    """Broadcast one-time risk-free update when halfway to TP1 is reached."""
+    try:
+        from db.session import get_session
+        from db.models import SignalDelivery, User
+        from sqlalchemy import select
+        from signalrank_telegram.bot import _send_message_sync
+        from telegram import Bot
+        from config import config
+
+        signal_id = str(signal.get("signal_id") or "")
+        if not signal_id:
+            return
+
+        entry = float(signal.get("entry", 0) or 0)
+        asset = str(signal.get("asset", "") or "")
+        timeframe = str(signal.get("timeframe", "") or "")
+        direction = str(signal.get("direction", "long") or "long").upper()
+
+        if entry > 0:
+            if direction == "SHORT":
+                move_pct = ((entry - float(price)) / entry) * 100.0
+            else:
+                move_pct = ((float(price) - entry) / entry) * 100.0
+        else:
+            move_pct = 0.0
+
+        text = (
+            "🛡️ <b>Risk-Free Update</b>\n\n"
+            f"🪙 <b>{asset}</b> {direction} ({timeframe})\n"
+            f"📊 Ref: <code>{signal_id[:8]}</code>\n"
+            f"💹 Price moved <b>{move_pct:+.2f}%</b> toward TP1\n\n"
+            "✅ 50% to TP1 reached — stop-loss moved to breakeven (risk-free)."
+        )
+
+        bot_token = (config.TELEGRAM_BOT_TOKEN or "").strip()
+        if not bot_token:
+            return
+        bot = Bot(token=bot_token)
+
+        async with get_session() as session:
+            rows = (
+                await session.execute(
+                    select(SignalDelivery, User)
+                    .join(User, User.id == SignalDelivery.user_id)
+                    .where(SignalDelivery.signal_id == signal_id)
+                )
+            ).all()
+            for _delivery, user in rows:
+                try:
+                    _send_message_sync(bot, chat_id=int(user.telegram_user_id), text=text, parse_mode="HTML")
+                except Exception as exc:
+                    logger.debug("[outcome_tracker] risk-free notify user=%s error: %s", getattr(user, "id", "?"), exc)
+    except Exception as exc:
+        logger.debug("[outcome_tracker] risk-free notify failed: %s", exc)
+
+
 async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: float) -> None:
     """Move SL to break-even when TP1 is hit, via MT5 bridge and DB update."""
     signal_id = signal.get("signal_id", "")
@@ -365,6 +452,26 @@ class RealtimeOutcomeTracker:
         entry = float(signal["entry"])
         sl = float(signal["stop_loss"])
         direction = signal.get("direction", "long")
+
+        # Normalize TP ladder before any checks.
+        if str(direction).lower() == "short":
+            tp_levels = sorted(tp_levels, reverse=True)
+        else:
+            tp_levels = sorted(tp_levels)
+
+        # Explicit risk-free trigger at 50% to TP1 (one-time per signal).
+        try:
+            tp1 = float(tp_levels[0])
+            if _halfway_to_tp1_reached(direction, entry, tp1, float(price)):
+                if _mark_risk_free_triggered(signal_id):
+                    await _apply_trailing_sl_to_breakeven(signal, float(price))
+                    await _notify_risk_free_update(signal, float(price))
+                    logger.info(
+                        "[outcome_tracker] Risk-free trigger: %s halfway_to_tp1 price=%.5f entry=%.5f tp1=%.5f",
+                        signal_id[:8], float(price), float(entry), float(tp1),
+                    )
+        except Exception as exc:
+            logger.debug("[outcome_tracker] risk-free trigger check failed for %s: %s", signal_id[:8], exc)
 
         hit = _check_hit(direction, entry, sl, tp_levels, price)
         if hit:

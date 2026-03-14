@@ -1877,6 +1877,123 @@ def _format_free_delayed_digest(items: list) -> str:
     return "\n\n".join(lines)
 
 
+def _is_free_fomo_dispatch_only_enabled() -> bool:
+    """When enabled, FREE delivery is unlocked by VIP TP1 events (no random delay queue)."""
+    try:
+        raw = str(os.getenv("FREE_FOMO_DISPATCH_ONLY", "1") or "1").strip().lower()
+        return raw in {"1", "true", "yes", "on"}
+    except Exception:
+        return True
+
+
+def _format_free_fomo_unlock_message(signal: dict) -> str:
+    asset = str(signal.get("asset") or signal.get("symbol") or "MARKET").upper()
+    timeframe = str(signal.get("timeframe") or "").lower() or "signal"
+    direction = str(signal.get("direction") or "").upper() or "TRADE"
+    return (
+        "🔥 <b>VIP just hit TP1</b>\n\n"
+        f"📣 Momentum alert on <b>{asset}</b> ({timeframe}, {direction}).\n"
+        "🎁 We unlocked this setup for FREE users right now.\n\n"
+        "Tap below to monitor it live."
+    )
+
+
+def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
+    """Instant FREE dispatch trigger fired by VIP TP1 events."""
+    if not _is_free_fomo_dispatch_only_enabled():
+        return 0
+
+    signal_id = str(signal.get("signal_id") or "").strip()
+    if not signal_id:
+        return 0
+
+    try:
+        if state.get_killswitch_sync().enabled:
+            return 0
+    except Exception:
+        pass
+
+    try:
+        from db.pg_compat import get_all_user_ids_compat
+        from signalrank_telegram.access import resolve_user_tier
+        from core.redis_state import state as redis_state
+        from core.tier_constants import TIER_DAILY_LIMITS
+        from datetime import datetime
+
+        all_users = list(get_all_user_ids_compat() or [])
+        free_users: list[int] = []
+        date_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+        for uid in all_users:
+            try:
+                uid_i = int(uid)
+                if str(resolve_user_tier(uid_i) or "free").lower() != "free":
+                    continue
+                daily_limit = int(TIER_DAILY_LIMITS.get("free", 2) or 2)
+                sent_key = f"signals_sent:{uid_i}:{date_str}"
+                already_sent = int(redis_state.get_sync(sent_key) or 0)
+                if already_sent >= daily_limit:
+                    continue
+                free_users.append(uid_i)
+            except Exception:
+                continue
+
+        if not free_users:
+            return 0
+
+        from db.session import get_session
+
+        async def _reserve_recipients() -> list[int]:
+            from db.pg_features import record_signal_delivery
+            reserved: list[int] = []
+            async with get_session() as session:
+                for uid in free_users:
+                    ok = await record_signal_delivery(
+                        session,
+                        telegram_user_id=int(uid),
+                        signal_id=str(signal_id),
+                        tier_at_send="free_fomo",
+                    )
+                    if ok:
+                        reserved.append(int(uid))
+                await session.commit()
+            return reserved
+
+        recipients = run_sync(_reserve_recipients())
+        if not recipients:
+            return 0
+
+        bot = Bot(token=_require_telegram_token())
+        unlock_msg = _format_free_fomo_unlock_message(signal)
+        sent = 0
+
+        for uid in recipients:
+            try:
+                _send_message_with_retry_sync(bot, chat_id=int(uid), text=unlock_msg, parse_mode="HTML")
+                if _deliver_or_update_signal_sync(
+                    bot,
+                    telegram_user_id=int(uid),
+                    signal=dict(signal or {}),
+                    display_tier="free",
+                ):
+                    sent += 1
+                    try:
+                        from core.redis_state import state as _state
+                        _state.incr_sync(f"signals_sent:{uid}:{date_str}", ex=86400)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                logger.debug(f"[fomo_free] failed user={uid} signal={signal_id[:8]} err={exc}")
+                continue
+
+        if sent:
+            logger.info(f"[fomo_free] dispatched signal={signal_id[:8]} to free_users={sent}")
+        return int(sent)
+    except Exception as exc:
+        logger.debug(f"[fomo_free] dispatch failed signal={signal_id[:8]} err={exc}")
+        return 0
+
+
 def dispatch_signals(strategy_signals, user_id, regime=None):
     """Dispatch signals to user based on their tier.
     
@@ -2509,8 +2626,13 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 continue
         return
 
-    # FREE: queue delayed summary (max 3/day)
+    # FREE: queue delayed summary (legacy mode).
+    # Default is FOMO unlock dispatch on VIP TP1 events.
     try:
+        if _is_free_fomo_dispatch_only_enabled():
+            logger.debug(f"[dispatch] free queue skipped (FREE_FOMO_DISPATCH_ONLY=1) user={user_id}")
+            return
+
         from db.session import get_engine_for_event_loop, get_session
         engine = get_engine_for_event_loop()
         if engine is None:
@@ -2594,6 +2716,10 @@ def auto_delete_old_signals_job():
 
 def distribute_random_signals_to_free_users_job():
     """Periodic job: distribute random signals to FREE users from global pool."""
+    if _is_free_fomo_dispatch_only_enabled():
+        logger.debug("[free_random] skipped (FREE_FOMO_DISPATCH_ONLY=1)")
+        return
+
     logger.info("🎲 Distributing random signals to FREE users...")
     try:
         from db.session import get_session
@@ -3683,6 +3809,42 @@ def run_bot() -> None:
                 timeframe = str(getattr(sig, 'timeframe', '') or '')
                 direction = str(getattr(sig, 'direction', '') or '')
 
+                # FOMO trigger: VIP TP1 unlocks an immediate FREE dispatch.
+                try:
+                    if status in {"tp1", "partial_tp"} and _is_free_fomo_dispatch_only_enabled():
+                        from signalrank_telegram.access import resolve_user_tier
+                        is_vip_event = any(
+                            str(resolve_user_tier(int(uid)) or "free").lower() in {"vip", "admin", "owner"}
+                            for uid, _tier, _prefs in (recipients or [])
+                        )
+                        if is_vip_event:
+                            try:
+                                import json as _json
+                                _tp = getattr(sig, "take_profit", None)
+                                if isinstance(_tp, str):
+                                    try:
+                                        _tp = _json.loads(_tp)
+                                    except Exception:
+                                        pass
+                                fomo_signal = {
+                                    "signal_id": ref,
+                                    "asset": asset,
+                                    "timeframe": timeframe,
+                                    "direction": direction,
+                                    "entry": getattr(sig, "entry", None),
+                                    "stop_loss": getattr(sig, "stop_loss", None),
+                                    "take_profit": _tp,
+                                    "score": getattr(sig, "score", 0),
+                                    "rr_ratio": getattr(sig, "rr_estimate", None),
+                                    "regime": getattr(sig, "regime", None),
+                                    "strategy": getattr(sig, "strategy_name", None),
+                                }
+                                _dispatch_free_fomo_unlock_for_signal(fomo_signal)
+                            except Exception as _fomo_exc:
+                                logger.debug(f"[fomo_free] signal build failed ref={ref[:8]} err={_fomo_exc}")
+                except Exception as _fomo_outer_exc:
+                    logger.debug(f"[fomo_free] outcome hook failed ref={ref[:8]} err={_fomo_outer_exc}")
+
                 now_hour = int(datetime.now().hour)
 
                 for telegram_user_id, tier_at_send, prefs in recipients:
@@ -4035,6 +4197,10 @@ def run_bot() -> None:
             return current_hour >= start_hour or current_hour < end_hour
 
     def send_free_delayed_summaries():
+        if _is_free_fomo_dispatch_only_enabled():
+            logger.debug("[free_summary] skipped (FREE_FOMO_DISPATCH_ONLY=1)")
+            return
+
         # Respect kill-switch
         try:
             if state.get_killswitch_sync().enabled:
