@@ -15,7 +15,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
@@ -341,28 +341,61 @@ async def lifespan(_: FastAPI):
         scheduler = None
 
     # ── 4) Telegram webhook ───────────────────────────────────────────────────
-    # Initialize deterministically during startup so /telegram/webhook does not
-    # drop updates with bot_not_initialized.
+    # Keep startup fast for Railway healthchecks; initialize bot in background
+    # with retries until it is ready.
     application, bot_started = None, False
+    bot_start_task: asyncio.Task | None = None
+    bot_stop_event = asyncio.Event()
+
+    async def _start_bot_bg() -> None:
+        nonlocal application, bot_started
+        backoff_seconds = 5
+        while not bot_stop_event.is_set() and not bot_started:
+            try:
+                print("[startup] Telegram webhook setup attempt", flush=True)
+                application, bot_started = await _start_telegram_bot()
+                print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
+                if bot_started:
+                    return
+            except Exception as exc:
+                print(f"[startup] Telegram webhook setup error (background): {exc}", flush=True)
+                logger.warning(f"[startup] Telegram webhook setup error (background): {exc}")
+
+            try:
+                await asyncio.wait_for(bot_stop_event.wait(), timeout=backoff_seconds)
+            except asyncio.TimeoutError:
+                pass
+            backoff_seconds = min(backoff_seconds * 2, 60)
+
     try:
-        print("[startup] Telegram webhook setup starting", flush=True)
-        application, bot_started = await asyncio.wait_for(_start_telegram_bot(), timeout=180)
-        print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
+        bot_start_task = asyncio.create_task(_start_bot_bg())
+        print("[startup] Telegram webhook setup scheduled in background", flush=True)
     except Exception as exc:
-        print(f"[startup] Telegram webhook setup error: {exc}", flush=True)
-        logger.warning(f"[startup] Telegram webhook setup error: {exc}")
+        print(f"[startup] Could not schedule Telegram webhook setup: {exc}", flush=True)
+        logger.warning(f"[startup] Could not schedule Telegram webhook setup: {exc}")
 
     logger.info(
         f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
         f"worker={'ok' if worker_task else 'skipped'} "
         f"scheduler={'ok' if scheduler else 'skipped'} "
-        f"bot={'webhook' if bot_started else 'skipped'}"
+        f"bot={'webhook' if bot_started else 'initializing'}"
     )
 
     try:
         yield
     finally:
         # ── Shutdown order: bot → scheduler → worker task → engine task ───────
+        try:
+            bot_stop_event.set()
+        except Exception:
+            pass
+
+        if bot_start_task is not None and not bot_start_task.done():
+            try:
+                bot_start_task.cancel()
+            except Exception:
+                pass
+
         if bot_started and application is not None:
             try:
                 await _stop_telegram_bot(application)
@@ -410,7 +443,8 @@ async def _telegram_webhook_route(req: Request) -> dict:
     if _bot_application is None:
         print("[webhook] bot_not_initialized — update dropped", flush=True)
         logger.warning("[webhook] _bot_application not initialized — dropping update")
-        return {"ok": False, "reason": "bot_not_initialized"}
+        # Return 503 so Telegram retries instead of losing updates.
+        raise HTTPException(status_code=503, detail="bot_initializing")
     try:
         from telegram import Update
         data = await req.json()
