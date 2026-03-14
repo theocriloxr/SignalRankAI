@@ -74,6 +74,107 @@ async def _run_startup_ops() -> None:
     await loop.run_in_executor(None, lambda: run_startup_ops("all"))
 
 
+async def _maybe_run_start_fresh_keep_users() -> None:
+    """Optional one-time DB refresh: keep users, wipe runtime tables.
+
+    Controlled by env vars:
+      START_FRESH_KEEP_USERS_ON_BOOT=1
+      START_FRESH_FORCE=1 (optional)
+      START_FRESH_RESET_VERSION=v2 (optional marker namespace)
+    """
+    enabled = str(os.getenv("START_FRESH_KEEP_USERS_ON_BOOT", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    if not enabled:
+        return
+
+    from db.session import get_session, is_db_configured
+    from sqlalchemy import text
+
+    if not is_db_configured():
+        logger.warning("[startup] fresh reset requested but DB not configured")
+        return
+
+    reset_version = str(os.getenv("START_FRESH_RESET_VERSION", "v1") or "v1").strip()
+    force_reset = str(os.getenv("START_FRESH_FORCE", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+    marker_key = f"startup_reset_done_{reset_version}"
+
+    async with get_session() as session:
+        if not force_reset:
+            marker = await session.execute(
+                text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
+                {"k": marker_key},
+            )
+            if marker.scalar_one_or_none() is not None:
+                logger.info("[startup] fresh reset skipped (marker exists): %s", marker_key)
+                await session.commit()
+                return
+
+        # Cross-replica advisory lock
+        lock_ok = True
+        try:
+            lock_row = await session.execute(text("SELECT pg_try_advisory_lock(739909)"))
+            lock_ok = bool((lock_row.scalar_one_or_none() or False))
+        except Exception:
+            lock_ok = True
+        if not lock_ok:
+            logger.info("[startup] fresh reset skipped (another instance owns lock)")
+            await session.commit()
+            return
+
+        # Archive known labeled outcomes before truncate
+        await session.execute(
+            text(
+                """
+                INSERT INTO ml_past_training_data (
+                    signal_id, asset, timeframe, direction,
+                    entry, stop_loss, take_profit,
+                    rr_estimate, score, strength, regime, strategy_name, ml_probability,
+                    outcome_status, outcome_r_multiple, outcome_percent, outcome_meta,
+                    signal_created_at, outcome_closed_at, archived_at
+                )
+                SELECT
+                    s.signal_id, s.asset, s.timeframe, s.direction,
+                    s.entry, s.stop_loss, s.take_profit,
+                    s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
+                    o.status, o.r_multiple, o.percent, COALESCE(o.meta::jsonb, '{}'::jsonb),
+                    s.created_at, o.closed_at, NOW()
+                FROM signals s
+                JOIN outcomes o ON o.signal_id = s.signal_id
+                ON CONFLICT (signal_id) DO NOTHING
+                """
+            )
+        )
+
+        rows = await session.execute(
+            text(
+                """
+                SELECT tablename
+                FROM pg_tables
+                WHERE schemaname = 'public'
+                  AND tablename NOT IN ('users', 'alembic_version', 'ml_past_training_data', 'runtime_state')
+                """
+            )
+        )
+        tables = [str(r[0]) for r in rows.all() if r and r[0]]
+        if tables:
+            quoted = ", ".join('"' + t.replace('"', '""') + '"' for t in tables)
+            await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
+
+        await session.execute(text("DELETE FROM runtime_state"))
+        await session.execute(
+            text(
+                """
+                INSERT INTO runtime_state(key, value, expires_at, updated_at)
+                VALUES (:k, :v::jsonb, NULL, NOW())
+                ON CONFLICT (key) DO UPDATE
+                SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+                """
+            ),
+            {"k": marker_key, "v": '{"done": true}'},
+        )
+        await session.commit()
+        logger.warning("[startup] START_FRESH_KEEP_USERS_ON_BOOT applied: wiped_tables=%d marker=%s", len(tables), marker_key)
+
+
 def _build_scheduler() -> AsyncIOScheduler:
     """Create the AsyncIOScheduler for web-layer background jobs.
 
@@ -309,6 +410,12 @@ async def lifespan(_: FastAPI):
         await _run_startup_ops()
     except Exception as exc:
         logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
+
+    # Optional one-time fresh reset (users preserved) runs before engine/worker/bot.
+    try:
+        await _maybe_run_start_fresh_keep_users()
+    except Exception as exc:
+        logger.warning(f"[startup] fresh reset step failed: {exc}")
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
     engine_task = None
