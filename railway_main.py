@@ -490,10 +490,18 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # ── 1) DB auto-migration / startup ops ────────────────────────────────────
-    # Must succeed — if DB is truly unreachable after retries, let it propagate
-    # so Railway shows a clear failure reason rather than a silent crash loop.
+    # Keep startup healthcheck-friendly. If startup ops are slow, continue them
+    # in background instead of blocking app readiness.
+    startup_ops_task: asyncio.Task | None = None
+    startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", "35") or 35)
     try:
-        await _run_startup_ops()
+        startup_ops_task = asyncio.create_task(_run_startup_ops())
+        await asyncio.wait_for(asyncio.shield(startup_ops_task), timeout=startup_ops_timeout_s)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[startup] DB startup ops exceeded %ss; continuing boot while ops finish in background",
+            startup_ops_timeout_s,
+        )
     except Exception as exc:
         logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
 
@@ -583,6 +591,12 @@ async def lifespan(_: FastAPI):
     try:
         yield
     finally:
+        if startup_ops_task is not None and startup_ops_task.done():
+            try:
+                _ = startup_ops_task.result()
+            except Exception:
+                pass
+
         # ── Shutdown order: bot → scheduler → worker task → engine task ───────
         try:
             bot_stop_event.set()

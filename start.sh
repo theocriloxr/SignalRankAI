@@ -16,9 +16,10 @@ if [ "${ALLOW_DOTENV:-false}" = "true" ] && [ -f .env ]; then
 	export $(grep -v '^#' .env | xargs)
 fi
 
-# Run database migrations BEFORE starting services
-# This ensures schema is up-to-date before any code tries to query it
-if [ -n "${DATABASE_URL}" ]; then
+# Optional pre-boot migration step.
+# Default is OFF to keep Railway healthcheck startup fast.
+# The app also runs startup DB ops internally.
+if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL}" ]; then
 	echo "[boot] Running database migrations..."
 	python -m alembic upgrade head || echo "[WARN] Migration failed, continuing anyway..."
 fi
