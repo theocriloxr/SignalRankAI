@@ -70,8 +70,10 @@ async def _run_startup_ops() -> None:
     """
     from db.auto_ops import run_startup_ops
 
+    logger.info("[startup] DB startup ops begin")
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, lambda: run_startup_ops("all"))
+    logger.info("[startup] DB startup ops end")
 
 
 async def _archive_ml_history_job() -> None:
@@ -157,6 +159,7 @@ async def _maybe_run_start_fresh_keep_users() -> None:
     """
     enabled = str(os.getenv("START_FRESH_KEEP_USERS_ON_BOOT", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
     if not enabled:
+        logger.info("[startup] fresh reset disabled (START_FRESH_KEEP_USERS_ON_BOOT not enabled)")
         return
 
     from db.session import get_session, is_db_configured
@@ -171,6 +174,49 @@ async def _maybe_run_start_fresh_keep_users() -> None:
     marker_key = f"startup_reset_done_{reset_version}"
 
     async with get_session() as session:
+        # Ensure control/archive tables exist even if migration order is delayed.
+        await session.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS runtime_state (
+                    key VARCHAR(255) PRIMARY KEY,
+                    value JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    expires_at TIMESTAMP NULL,
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        )
+        await session.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS ml_past_training_data (
+                    id SERIAL PRIMARY KEY,
+                    signal_id VARCHAR(36) UNIQUE NOT NULL,
+                    asset VARCHAR(32) NOT NULL,
+                    timeframe VARCHAR(8) NOT NULL,
+                    direction VARCHAR(8) NOT NULL,
+                    entry DOUBLE PRECISION NOT NULL,
+                    stop_loss DOUBLE PRECISION NOT NULL,
+                    take_profit TEXT NOT NULL,
+                    rr_estimate DOUBLE PRECISION NULL,
+                    score DOUBLE PRECISION NULL,
+                    strength DOUBLE PRECISION NULL,
+                    regime VARCHAR(32) NULL,
+                    strategy_name VARCHAR(64) NULL,
+                    ml_probability DOUBLE PRECISION NULL,
+                    outcome_status VARCHAR(16) NOT NULL,
+                    outcome_r_multiple DOUBLE PRECISION NULL,
+                    outcome_percent DOUBLE PRECISION NULL,
+                    outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    signal_created_at TIMESTAMP NULL,
+                    outcome_closed_at TIMESTAMP NULL,
+                    archived_at TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+        )
+
         if not force_reset:
             marker = await session.execute(
                 text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
@@ -521,23 +567,43 @@ async def lifespan(_: FastAPI):
           1) optional fresh reset (archives + truncates runtime tables)
           2) ML archive backfill safety pass
         """
+        logger.info("[startup] post-maintenance begin")
+        startup_wait_for_maintenance_s = int(
+            os.getenv("STARTUP_OPS_WAIT_FOR_MAINTENANCE_SECONDS", "90") or 90
+        )
         try:
             if startup_ops_task is not None:
-                await asyncio.shield(startup_ops_task)
+                if startup_wait_for_maintenance_s > 0:
+                    await asyncio.wait_for(
+                        asyncio.shield(startup_ops_task),
+                        timeout=startup_wait_for_maintenance_s,
+                    )
+                else:
+                    await asyncio.shield(startup_ops_task)
+                logger.info("[startup] post-maintenance: startup-ops wait complete")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[startup] post-maintenance: startup-ops wait exceeded %ss; proceeding anyway",
+                startup_wait_for_maintenance_s,
+            )
         except Exception as exc:
             logger.warning(f"[startup] post-startup maintenance proceeding after startup-ops error: {exc}")
 
         # Fresh reset first so clearing happens before additional archive pass.
         try:
             await _maybe_run_start_fresh_keep_users()
+            logger.info("[startup] post-maintenance: fresh reset step complete")
         except Exception as exc:
             logger.warning(f"[startup] fresh reset step failed: {exc}")
 
         # Always run archive pass afterwards to keep ml_past_training_data filled.
         try:
             await _archive_ml_history_job()
+            logger.info("[startup] post-maintenance: ml archive backfill step complete")
         except Exception as exc:
             logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+
+        logger.info("[startup] post-maintenance end")
 
     # Keep maintenance non-blocking by default on Railway, with optional bounded wait.
     _default_maintenance_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "15"
@@ -599,13 +665,23 @@ async def lifespan(_: FastAPI):
     async def _start_bot_bg() -> None:
         nonlocal application, bot_started
         backoff_seconds = 5
+        attempt_timeout_s = int(os.getenv("BOT_START_ATTEMPT_TIMEOUT_SECONDS", "45") or 45)
         while not bot_stop_event.is_set() and not bot_started:
             try:
                 print("[startup] Telegram webhook setup attempt", flush=True)
-                application, bot_started = await _start_telegram_bot()
+                application, bot_started = await asyncio.wait_for(
+                    _start_telegram_bot(),
+                    timeout=attempt_timeout_s,
+                )
                 print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
                 if bot_started:
                     return
+            except asyncio.TimeoutError:
+                print("[startup] Telegram webhook setup attempt timed out", flush=True)
+                logger.warning(
+                    "[startup] Telegram webhook setup attempt timed out after %ss",
+                    attempt_timeout_s,
+                )
             except Exception as exc:
                 print(f"[startup] Telegram webhook setup error (background): {exc}", flush=True)
                 logger.warning(f"[startup] Telegram webhook setup error (background): {exc}")
