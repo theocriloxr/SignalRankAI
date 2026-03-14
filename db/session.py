@@ -115,37 +115,40 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
 
 
 # ---------------------------------------------------------------------------
-# Thread-safe global engine singleton
+# Thread-safe engine cache (per thread)
 # ---------------------------------------------------------------------------
-# Python 3.12 raised the bar: asyncio.get_event_loop() raises RuntimeError
-# in any non-main thread that has no running event loop (e.g. APScheduler
-# BackgroundScheduler threads, ThreadPoolExecutor workers).  The old
-# per-event-loop cache relied on that call and would crash in those threads.
+# A single AsyncEngine object can still carry loop-bound async internals
+# (notably first-connect / event execution mutexes). Sharing one engine across
+# multiple event loops/threads can trigger:
+#   RuntimeError: <asyncio.locks.Lock ...> is bound to a different event loop
 #
-# Fix: one global engine + sessionmaker, always using NullPool so each
-# request creates its own asyncpg connection rather than sharing a pool
-# across event loops or threads.  NullPool is safe and correct for our
-# multi-event-loop Railway deployment.
+# To avoid cross-loop contamination we keep one engine/sessionmaker per thread.
+# Each thread may run its own event loop safely with its own engine object.
 # ---------------------------------------------------------------------------
 
-_global_engine: Optional[AsyncEngine] = None
+_global_engine: Optional[AsyncEngine] = None  # Backward-compat reference only
 _global_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
+_engines_by_thread: dict[int, AsyncEngine] = {}
+_sessionmakers_by_thread: dict[int, async_sessionmaker[AsyncSession]] = {}
 _global_engine_lock = threading.Lock()
 _schema_checked = False
 
 
 def _get_global_engine() -> Optional[AsyncEngine]:
-    """Return (creating if necessary) the module-level async engine.
+    """Return (creating if necessary) the async engine for current thread.
 
-    Thread-safe double-checked locking.  Never touches asyncio — safe to
-    call from any thread, with or without a running event loop.
+    Thread-safe cache by thread id. Never touches asyncio — safe to call from
+    any thread, with or without a running event loop.
     """
     global _global_engine, _global_sessionmaker
-    if _global_engine is not None:
-        return _global_engine
+    tid = int(threading.get_ident())
+    existing = _engines_by_thread.get(tid)
+    if existing is not None:
+        return existing
     with _global_engine_lock:
-        if _global_engine is not None:          # re-check after acquiring lock
-            return _global_engine
+        existing = _engines_by_thread.get(tid)
+        if existing is not None:  # re-check after lock
+            return existing
         try:
             url = get_database_url()  # raises ValueError if not set
         except ValueError as _ve:
@@ -154,12 +157,15 @@ def _get_global_engine() -> Optional[AsyncEngine]:
                 "Set DATABASE_URL or DATABASE_PUBLIC_URL in your environment. (%s)", _ve
             )
             return None
-        # Always NullPool: avoids "Future attached to a different loop" errors
-        # when the same engine object is used from multiple asyncio event loops
-        # (web server loop, asyncio.run() in scheduler threads, etc.).
+        # Always NullPool + per-thread engine object to avoid cross-event-loop
+        # lock binding errors in multi-thread runtime.
         engine = create_async_engine(url, pool_pre_ping=True, poolclass=NullPool)
-        _global_sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+        sm = async_sessionmaker(engine, expire_on_commit=False)
+        _engines_by_thread[tid] = engine
+        _sessionmakers_by_thread[tid] = sm
+        # Backward compatibility for modules peeking at globals.
         _global_engine = engine
+        _global_sessionmaker = sm
         # Log the masked URL so Railway logs confirm the right DB is in use
         try:
             from sqlalchemy.engine.url import make_url as _mku
@@ -168,11 +174,15 @@ def _get_global_engine() -> Optional[AsyncEngine]:
         except Exception:
             _masked = "<url parse error>"
         logger.info("[db] async engine initialised  url=%s  pool=NullPool", _masked)
-        return _global_engine
+        return engine
 
 
 def _get_global_sessionmaker() -> Optional[async_sessionmaker[AsyncSession]]:
-    _get_global_engine()          # ensure both are initialised
+    _get_global_engine()  # ensure current-thread engine/sessionmaker exists
+    tid = int(threading.get_ident())
+    sm = _sessionmakers_by_thread.get(tid)
+    if sm is not None:
+        return sm
     return _global_sessionmaker
 
 

@@ -341,29 +341,16 @@ async def lifespan(_: FastAPI):
         scheduler = None
 
     # ── 4) Telegram webhook ───────────────────────────────────────────────────
-    # IMPORTANT: start bot setup in the background so FastAPI startup can
-    # complete quickly and Railway healthchecks can pass.
+    # Initialize deterministically during startup so /telegram/webhook does not
+    # drop updates with bot_not_initialized.
     application, bot_started = None, False
-    bot_start_task: asyncio.Task | None = None
-
-    async def _start_bot_bg() -> None:
-        nonlocal application, bot_started
-        try:
-            print("[startup] Telegram webhook background setup launched", flush=True)
-            application, bot_started = await _start_telegram_bot()
-            print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
-            logger.info("[startup] Telegram webhook setup completed")
-        except Exception as exc:
-            print(f"[startup] Telegram webhook setup error (background): {exc}", flush=True)
-            logger.warning(f"[startup] Telegram webhook setup error (background): {exc}")
-
     try:
-        bot_start_task = asyncio.create_task(_start_bot_bg())
-        print("[startup] Telegram webhook setup scheduled in background", flush=True)
-        logger.info("[startup] Telegram webhook setup scheduled in background")
+        print("[startup] Telegram webhook setup starting", flush=True)
+        application, bot_started = await asyncio.wait_for(_start_telegram_bot(), timeout=180)
+        print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
     except Exception as exc:
-        print(f"[startup] Could not schedule Telegram webhook setup: {exc}", flush=True)
-        logger.warning(f"[startup] Could not schedule Telegram webhook setup: {exc}")
+        print(f"[startup] Telegram webhook setup error: {exc}", flush=True)
+        logger.warning(f"[startup] Telegram webhook setup error: {exc}")
 
     logger.info(
         f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
@@ -376,12 +363,6 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         # ── Shutdown order: bot → scheduler → worker task → engine task ───────
-        if bot_start_task is not None and not bot_start_task.done():
-            try:
-                bot_start_task.cancel()
-            except Exception:
-                pass
-
         if bot_started and application is not None:
             try:
                 await _stop_telegram_bot(application)

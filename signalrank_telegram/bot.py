@@ -3281,16 +3281,19 @@ def run_bot() -> None:
                 from sqlalchemy import text
 
                 async with get_session() as session:
-                    marker_key = "startup_reset_done_v1"
+                    _reset_version = str(os.getenv("START_FRESH_RESET_VERSION", "v1") or "v1").strip()
+                    _force_reset = str(os.getenv("START_FRESH_FORCE", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+                    marker_key = f"startup_reset_done_{_reset_version}"
 
                     # One-time marker guard.
-                    marker = await session.execute(
-                        text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
-                        {"k": marker_key},
-                    )
-                    marker_row = marker.scalar_one_or_none()
-                    if marker_row is not None:
-                        return (0, False)
+                    if not _force_reset:
+                        marker = await session.execute(
+                            text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
+                            {"k": marker_key},
+                        )
+                        marker_row = marker.scalar_one_or_none()
+                        if marker_row is not None:
+                            return (0, False)
 
                     try:
                         # Prevent duplicate wipe in multi-instance boot.
