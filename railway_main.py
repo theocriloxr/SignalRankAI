@@ -299,6 +299,15 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
             run_bot()
             return None
         except Exception as exc:
+            # Recovery path: allow later attempts to re-enter run_bot() if this
+            # initialization path failed before exposing the webhook app.
+            try:
+                from signalrank_telegram import bot as _bot_module
+                with getattr(_bot_module, "_bot_init_lock"):
+                    setattr(_bot_module, "_bot_init_started", False)
+                    setattr(_bot_module, "_bot_init_started_at", 0.0)
+            except Exception:
+                pass
             print(f"[bot] run_bot() setup error: {exc}", flush=True)
             logger.error(f"[bot] run_bot() setup error: {exc}")
             return str(exc)

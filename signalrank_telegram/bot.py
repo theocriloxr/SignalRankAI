@@ -401,6 +401,7 @@ import os
 import asyncio
 import socket
 import logging
+import time
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 from datetime import datetime
@@ -3150,6 +3151,7 @@ _bot_lock_conn = None
 _bot_sched_lock_conn = None
 _bot_init_lock = threading.Lock()
 _bot_init_started = False
+_bot_init_started_at = 0.0
 
 # ── Webhook mode module-level state ──────────────────────────────────────────
 # When TELEGRAM_USE_WEBHOOK=1, run_bot() stores the fully-configured Application
@@ -3170,15 +3172,30 @@ def run_bot() -> None:
 
     # Idempotency guard for webhook deployments: if setup already completed in
     # this process, do not create a second scheduler/app instance.
-    global _webhook_application, _webhook_handlers_ready, _bot_scheduler, _bot_init_started
+    global _webhook_application, _webhook_handlers_ready, _bot_scheduler, _bot_init_started, _bot_init_started_at
 
     # Hard process-local guard (covers races during startup where run_bot() can
     # be invoked twice before _bot_scheduler is assigned).
     with _bot_init_lock:
+        _now = time.monotonic()
+        _stale_after = max(10, int(os.getenv("BOT_INIT_STALE_SECONDS", "120") or 120))
+        if _bot_init_started:
+            _age = float(_now - float(_bot_init_started_at or 0.0))
+            # If init is stale and webhook app was never exposed, permit a retry.
+            if os.getenv("TELEGRAM_USE_WEBHOOK") and _webhook_application is None and _age >= _stale_after:
+                logger.warning(
+                    "[bot] init guard stale (age=%.1fs, no webhook app); resetting for retry",
+                    _age,
+                )
+                _bot_init_started = False
+            else:
+                logger.info("[bot] run_bot init already started; skipping duplicate init")
+                return
         if _bot_init_started:
             logger.info("[bot] run_bot init already started; skipping duplicate init")
             return
         _bot_init_started = True
+        _bot_init_started_at = _now
 
     try:
         if os.getenv("TELEGRAM_USE_WEBHOOK") and _webhook_application is not None:
