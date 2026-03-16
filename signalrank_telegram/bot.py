@@ -4277,6 +4277,12 @@ def run_bot() -> None:
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
 
+    # In webhook mode, handlers are now fully registered. Mark readiness here so
+    # railway_main can begin processing updates while non-critical jobs continue
+    # bootstrapping in this thread.
+    if os.getenv("TELEGRAM_USE_WEBHOOK"):
+        _webhook_handlers_ready = True
+
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
         # Prefer Postgres-backed recap when configured

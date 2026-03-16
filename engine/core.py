@@ -461,7 +461,7 @@ async def _maybe_await(func, *a, **k):
         return func(*a, **k)
 
 
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 55)
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 65)
 
 
 def load_tradable_assets() -> List[str]:
@@ -952,7 +952,7 @@ def main_loop(DRY_RUN: bool = False):
                     if ml_filter and getattr(ml_filter, 'active', False):
                         try:
                             features = extract_features(sig, market_data)
-                            approved, prob = ml_filter.ml_filter(features, threshold=float(os.getenv('ML_PROB_THRESHOLD', '0.65')))
+                            approved, prob = ml_filter.ml_filter(features, threshold=float(os.getenv('ML_PROB_THRESHOLD', '0.72')))
                         except Exception:
                             approved, prob = True, None
                     if not approved:
@@ -977,9 +977,9 @@ def main_loop(DRY_RUN: bool = False):
                             pass
                         continue
                     try:
-                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.45") or 0.45)
+                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.55") or 0.55)
                     except Exception:
-                        ml_hard_min = 0.45
+                        ml_hard_min = 0.55
                     if prob is not None and float(prob) < ml_hard_min:
                         sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
                         _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
