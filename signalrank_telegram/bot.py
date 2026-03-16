@@ -419,6 +419,7 @@ from .commands import (
     status_command,
     support_command,
     performance_command,
+    quality_command,
     pricing_command,
     upgrade_command,
     policy_command,
@@ -1164,7 +1165,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
 
         from db.session import get_session
         from db.models import User, MT5Execution
-        from sqlalchemy import select, func
+        from sqlalchemy import select, func, text
         from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
 
         async def _run_auto():
@@ -1180,6 +1181,20 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 mode = str(getattr(user, "execution_mode", "manual") or "manual").lower()
                 if mode != "auto":
                     return (False, "Execution mode is not AUTO", "not_auto")
+
+                # Explicit user opt-in guard: AUTO must be intentionally selected
+                # via /execution auto on current deployments.
+                optin_key = f"autoexec_user_optin:{int(telegram_user_id)}"
+                optin = await session.execute(
+                    text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
+                    {"k": optin_key},
+                )
+                if optin.scalar_one_or_none() is None:
+                    return (
+                        False,
+                        "AUTO not armed. Use /execution auto [count|all] to enable.",
+                        "setup_missing",
+                    )
 
                 # Daily drawdown guard based on realized PnL%.
                 from datetime import datetime, timezone
@@ -3637,6 +3652,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
+    application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
     application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
@@ -5169,9 +5185,28 @@ def run_bot() -> None:
 
             async def _fetch_candidates():
                 async with get_session() as session:
-                    sigs = await list_signals_missing_outcomes(session, max_age_days=3, limit=30)
+                    recent = await list_signals_missing_outcomes(
+                        session,
+                        max_age_days=int(os.getenv("OUTCOME_SCAN_MAX_AGE_DAYS", "3") or 3),
+                        min_age_hours=0,
+                        limit=int(os.getenv("OUTCOME_SCAN_LIMIT", "40") or 40),
+                    )
+                    catchup = await list_signals_missing_outcomes(
+                        session,
+                        max_age_days=int(os.getenv("OUTCOME_CATCHUP_MAX_AGE_DAYS", "30") or 30),
+                        min_age_hours=int(os.getenv("OUTCOME_CATCHUP_MIN_AGE_HOURS", "24") or 24),
+                        limit=int(os.getenv("OUTCOME_CATCHUP_LIMIT", "250") or 250),
+                    )
                     await session.commit()
-                    return sigs
+                    dedup: dict[str, object] = {}
+                    for _s in list(recent or []) + list(catchup or []):
+                        try:
+                            _sid = str(getattr(_s, "signal_id", "") or "")
+                            if _sid:
+                                dedup[_sid] = _s
+                        except Exception:
+                            continue
+                    return list(dedup.values())
 
             try:
                 candidates = run_sync(_fetch_candidates())
@@ -6084,6 +6119,146 @@ def run_bot() -> None:
         except Exception as exc:
             logger.error("[ML] ml_market_analysis_job failed: %s", exc, exc_info=True)
 
+    def weekly_gemini_ml_review_job():
+        """Optional weekly Gemini review over DB aggregates.
+
+        This is analysis-only: it stores recommendations and does not directly
+        retrain or override model artifacts automatically.
+        """
+        try:
+            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+            if not api_key:
+                return
+
+            import json as _json
+            import urllib.request as _urlreq
+            from datetime import datetime, timedelta
+            from sqlalchemy import text as _sql_text
+            from db.session import get_session as _gs_gm
+
+            async def _collect() -> dict:
+                async with _gs_gm() as session:
+                    since = datetime.utcnow() - timedelta(days=7)
+                    perf_row = (
+                        await session.execute(
+                            _sql_text(
+                                """
+                                SELECT
+                                  COUNT(*) AS outcomes_total,
+                                  SUM(CASE WHEN status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) AS wins,
+                                  SUM(CASE WHEN status = 'sl' THEN 1 ELSE 0 END) AS losses,
+                                  AVG(r_multiple) AS avg_r,
+                                  SUM(r_multiple) AS net_r
+                                FROM outcomes
+                                WHERE closed_at >= :since
+                                """
+                            ),
+                            {"since": since},
+                        )
+                    ).first()
+
+                    rej_rows = (
+                        await session.execute(
+                            _sql_text(
+                                """
+                                SELECT COALESCE(reason, '') AS reason, COUNT(*) AS c
+                                FROM decision_log
+                                WHERE created_at >= :since AND decision IN ('rejected','skipped')
+                                GROUP BY reason
+                                ORDER BY c DESC
+                                LIMIT 10
+                                """
+                            ),
+                            {"since": since},
+                        )
+                    ).fetchall()
+
+                    await session.commit()
+
+                return {
+                    "window_days": 7,
+                    "outcomes_total": int((perf_row[0] or 0) if perf_row else 0),
+                    "wins": int((perf_row[1] or 0) if perf_row else 0),
+                    "losses": int((perf_row[2] or 0) if perf_row else 0),
+                    "avg_r": float(perf_row[3]) if perf_row and perf_row[3] is not None else None,
+                    "net_r": float(perf_row[4]) if perf_row and perf_row[4] is not None else None,
+                    "top_rejections": [
+                        {"reason": str(r[0] or ""), "count": int(r[1] or 0)} for r in (rej_rows or [])
+                    ],
+                }
+
+            summary = run_sync(_collect())
+            prompt = {
+                "task": "You are a quantitative trading ML reviewer. Provide concise tuning recommendations.",
+                "constraints": [
+                    "Do not suggest overfitting.",
+                    "Prioritize higher win rate and stable expectancy.",
+                    "Provide 5 actionable parameter suggestions.",
+                ],
+                "data": summary,
+            }
+
+            req_body = {
+                "contents": [
+                    {
+                        "parts": [
+                            {
+                                "text": _json.dumps(prompt)
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 800,
+                },
+            }
+
+            req = _urlreq.Request(
+                url=(
+                    "https://generativelanguage.googleapis.com/v1beta/models/"
+                    "gemini-1.5-pro:generateContent?key=" + api_key
+                ),
+                data=_json.dumps(req_body).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with _urlreq.urlopen(req, timeout=30) as resp:
+                payload = _json.loads(resp.read().decode("utf-8"))
+
+            text_out = ""
+            try:
+                text_out = str(
+                    payload["candidates"][0]["content"]["parts"][0].get("text") or ""
+                ).strip()
+            except Exception:
+                text_out = ""
+
+            if text_out:
+                async def _store() -> None:
+                    from sqlalchemy import text as _text
+                    async with _gs_gm() as session:
+                        await session.execute(
+                            _text(
+                                """
+                                INSERT INTO runtime_state(key, value, expires_at, updated_at)
+                                VALUES (:k, :v::jsonb, NULL, NOW())
+                                ON CONFLICT (key) DO UPDATE
+                                SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+                                """
+                            ),
+                            {
+                                "k": "gemini_weekly_ml_review",
+                                "v": _json.dumps({"summary": summary, "recommendations": text_out}),
+                            },
+                        )
+                        await session.commit()
+
+                run_sync(_store())
+                logger.info("[gemini] weekly ML review stored in runtime_state")
+        except Exception as exc:
+            logger.warning(f"[gemini] weekly ML review failed: {exc}")
+
     # ── APScheduler setup ───────────────────────────────────────────────────
     # APScheduler 3.x's SQLAlchemyJobStore uses *synchronous* SQLAlchemy.
     # Passing an asyncpg:// URL causes the driver to be rejected and the store
@@ -6315,6 +6490,16 @@ def run_bot() -> None:
             hour=2,
             minute=0,
             id='auto_retrain_ml_model_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        scheduler.add_job(
+            weekly_gemini_ml_review_job,
+            'cron',
+            day_of_week='sun',
+            hour=3,
+            minute=0,
+            id='weekly_gemini_ml_review_job',
             replace_existing=True,
             max_instances=1,
         )

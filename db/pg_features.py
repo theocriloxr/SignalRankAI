@@ -682,11 +682,19 @@ async def list_signals_missing_outcomes(
     session: AsyncSession,
     *,
     max_age_days: int = 3,
+    min_age_hours: int = 0,
     limit: int = 50,
 ) -> list[Signal]:
     """Signals that were delivered to at least one user but have no Outcome row yet."""
     now: datetime = _utcnow()
     start: datetime = now - timedelta(days=max(1, int(max_age_days)))
+    min_created_at: datetime | None = None
+    try:
+        _h = int(min_age_hours)
+    except Exception:
+        _h = 0
+    if _h > 0:
+        min_created_at = now - timedelta(hours=_h)
 
     delivered_ids: Subquery = (
         select(SignalDelivery.signal_id)
@@ -695,24 +703,28 @@ async def list_signals_missing_outcomes(
         .subquery()
     )
 
+    _predicates = [
+        Signal.signal_id.in_(select(delivered_ids.c.signal_id)),
+        Signal.created_at >= start,
+        (
+            ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists()
+        )
+        |
+        (
+            select(Outcome.id)
+            .where(
+                Outcome.signal_id == Signal.signal_id,
+                Outcome.status.in_(["tp1", "tp2"]),
+            )
+            .exists()
+        ),
+    ]
+    if min_created_at is not None:
+        _predicates.append(Signal.created_at <= min_created_at)
+
     q: Select[Tuple[Signal]] = (
         select(Signal)
-        .where(
-            Signal.signal_id.in_(select(delivered_ids.c.signal_id)),
-            Signal.created_at >= start,
-            (
-                ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists()
-            )
-            |
-            (
-                select(Outcome.id)
-                .where(
-                    Outcome.signal_id == Signal.signal_id,
-                    Outcome.status.in_(["tp1", "tp2"]),
-                )
-                .exists()
-            ),
-        )
+        .where(*_predicates)
         .order_by(Signal.created_at.asc())
         .limit(max(1, int(limit)))
     )

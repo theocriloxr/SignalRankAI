@@ -3762,6 +3762,99 @@ async def performance_command(update, context):
 		return
 
 
+@require_tier("PREMIUM")
+async def quality_command(update, context) -> None:
+	if await _public_guard(update):
+		return
+	if update.message is None:
+		return
+
+	try:
+		from datetime import datetime, timedelta
+		from collections import Counter
+		from sqlalchemy import text
+		from db.session import get_session
+
+		cutoff = datetime.utcnow() - timedelta(hours=24)
+		rows = []
+		async with get_session() as session:
+			res = await session.execute(
+				text(
+					"""
+					SELECT decision, COALESCE(reason, '') AS reason, COUNT(*) AS c
+					FROM decision_log
+					WHERE created_at >= :cutoff
+					GROUP BY decision, reason
+					"""
+				),
+				{"cutoff": cutoff},
+			)
+			rows = list(res.fetchall() or [])
+			await session.commit()
+
+		if not rows:
+			await update.message.reply_text(
+				"📉 Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
+			)
+			return
+
+		issued = 0
+		rejected = 0
+		cats = Counter()
+		top_reasons = Counter()
+
+		for decision, reason, c in rows:
+			cnt = int(c or 0)
+			d = str(decision or "").lower()
+			r = str(reason or "").lower()
+
+			if d == "issued":
+				issued += cnt
+			if d in {"rejected", "skipped"}:
+				rejected += cnt
+				top_reasons[r or "(empty)"] += cnt
+				if "slippage" in r:
+					cats["slippage"] += cnt
+				elif "stale" in r:
+					cats["stale"] += cnt
+				elif "news" in r:
+					cats["news"] += cnt
+				elif "ml" in r:
+					cats["ml"] += cnt
+				elif "score" in r:
+					cats["score"] += cnt
+				else:
+					cats["other"] += cnt
+
+		total = issued + rejected
+		accept_rate = (issued / total * 100.0) if total > 0 else 0.0
+		top_lines = []
+		for reason, cnt in top_reasons.most_common(3):
+			if not reason:
+				continue
+			top_lines.append(f"- {reason[:70]}: {cnt}")
+
+		msg = (
+			"🧪 Quality (last 24h)\n\n"
+			f"Issued: {issued}\n"
+			f"Rejected/Skipped: {rejected}\n"
+			f"Acceptance rate: {accept_rate:.1f}%\n\n"
+			"Reject buckets:\n"
+			f"- score: {int(cats.get('score', 0))}\n"
+			f"- ML: {int(cats.get('ml', 0))}\n"
+			f"- news: {int(cats.get('news', 0))}\n"
+			f"- stale: {int(cats.get('stale', 0))}\n"
+			f"- slippage: {int(cats.get('slippage', 0))}\n"
+			f"- other: {int(cats.get('other', 0))}"
+		)
+		if top_lines:
+			msg += "\n\nTop reject reasons:\n" + "\n".join(top_lines)
+
+		await update.message.reply_text(msg)
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not build quality report: {exc}")
+
+
 # -------- Premium commands --------
 @require_tier("PREMIUM")
 async def stats_command(update, context) -> None:
@@ -4479,7 +4572,7 @@ async def setlot_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	try:
 		from db.session import get_session as _gs
 		from db.models import User
-		from sqlalchemy import select
+		from sqlalchemy import select, text
 
 		async with _gs() as session:
 			row = (await session.execute(select(User).where(User.telegram_user_id == user_id))).scalar_one_or_none()
@@ -4645,6 +4738,24 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 			row.execution_mode = mode
 			row.auto_signals_daily_limit = int(cap)
+			optin_key = f"autoexec_user_optin:{int(user_id)}"
+			if mode == "auto":
+				await session.execute(
+					text(
+						"""
+						INSERT INTO runtime_state(key, value, expires_at, updated_at)
+						VALUES (:k, :v::jsonb, NULL, NOW())
+						ON CONFLICT (key) DO UPDATE
+						SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
+						"""
+					),
+					{"k": optin_key, "v": '{"enabled": true}'},
+				)
+			else:
+				await session.execute(
+					text("DELETE FROM runtime_state WHERE key = :k"),
+					{"k": optin_key},
+				)
 			await session.commit()
 
 		cap_txt = "all" if int(cap) < 0 else str(int(cap))
