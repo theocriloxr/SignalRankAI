@@ -294,22 +294,25 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         logger.warning(f"[bot] run_bot() executor failed: {exc}; skipping webhook setup")
         return None, False
 
-    # Retrieve the application as soon as run_bot exposes it.
+    # Retrieve the application only after run_bot reports handlers registered.
     app_obj = None
+    handlers_ready = False
     discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "30") or 30)
     deadline = asyncio.get_running_loop().time() + max(1, discover_timeout_s)
-    while app_obj is None and asyncio.get_running_loop().time() < deadline:
+    while asyncio.get_running_loop().time() < deadline:
         try:
             from signalrank_telegram import bot as _bot_module
             app_obj = getattr(_bot_module, "_webhook_application", None)
+            handlers_ready = bool(getattr(_bot_module, "_webhook_handlers_ready", False))
         except Exception:
             app_obj = None
-        if app_obj is not None:
+            handlers_ready = False
+        if app_obj is not None and handlers_ready:
             break
         await asyncio.sleep(0.25)
 
     # If still none, check whether run_bot finished with a setup error.
-    if app_obj is None and setup_future.done():
+    if (app_obj is None or not handlers_ready) and setup_future.done():
         try:
             setup_error = setup_future.result()
         except Exception as exc:
@@ -317,9 +320,11 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         if setup_error:
             logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
 
-    if app_obj is None:
-        print("[bot] webhook setup failed: _webhook_application is None", flush=True)
-        logger.warning("[bot] _webhook_application is None after run_bot(); skipping webhook setup")
+    if app_obj is None or not handlers_ready:
+        print("[bot] webhook setup failed: handlers not ready", flush=True)
+        logger.warning(
+            "[bot] webhook application/handlers not ready after discovery window; skipping webhook setup"
+        )
         return None, False
 
     # Initialize and start the Application on uvicorn's event loop

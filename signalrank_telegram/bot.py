@@ -3105,6 +3105,7 @@ _bot_init_started = False
 # here instead of blocking in run_polling().  railway_main.py reads this variable
 # after run_bot() returns to obtain the application for process_update() calls.
 _webhook_application = None
+_webhook_handlers_ready = False
 _bot_scheduler = None  # keeps the BackgroundScheduler alive after run_bot() returns
 
 def run_bot() -> None:
@@ -3118,7 +3119,7 @@ def run_bot() -> None:
 
     # Idempotency guard for webhook deployments: if setup already completed in
     # this process, do not create a second scheduler/app instance.
-    global _webhook_application, _bot_scheduler, _bot_init_started
+    global _webhook_application, _webhook_handlers_ready, _bot_scheduler, _bot_init_started
 
     # Hard process-local guard (covers races during startup where run_bot() can
     # be invoked twice before _bot_scheduler is assigned).
@@ -3131,6 +3132,7 @@ def run_bot() -> None:
     try:
         if os.getenv("TELEGRAM_USE_WEBHOOK") and _webhook_application is not None:
             if _bot_scheduler is not None and bool(getattr(_bot_scheduler, "running", False)):
+                _webhook_handlers_ready = True
                 logger.info("[bot] run_bot already initialized in webhook mode; skipping duplicate init")
                 return
     except Exception:
@@ -3191,6 +3193,7 @@ def run_bot() -> None:
     # retrieve it even if later optional setup steps fail (scheduler/jobstore,
     # ancillary jobs, etc.). Handlers are registered on the same object below.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
+        _webhook_handlers_ready = False
         _webhook_application = application
 
     # Ensure required schema exists — belt-and-suspenders patch for any live DB
@@ -6306,6 +6309,7 @@ def run_bot() -> None:
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
         _webhook_application = application
         _bot_scheduler = scheduler  # prevent GC; daemon threads keep running
+        _webhook_handlers_ready = True
         if scheduler is None:
             print("[bot] webhook mode: application ready, scheduler disabled on this instance", flush=True)
         else:
