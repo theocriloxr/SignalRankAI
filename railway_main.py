@@ -36,6 +36,25 @@ _bot_ready: bool = False
 _pending_webhook_updates = deque(maxlen=500)
 
 
+def _app_has_registered_handlers(app_obj: object) -> bool:
+    """Best-effort readiness check for PTB Application handler registration."""
+    if app_obj is None:
+        return False
+    try:
+        handlers_map = getattr(app_obj, "handlers", None)
+        if not isinstance(handlers_map, dict):
+            return False
+        for _group, handler_list in handlers_map.items():
+            try:
+                if handler_list and len(handler_list) > 0:
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
+
+
 async def _drain_pending_webhook_updates(max_items: int = 200) -> int:
     """Drain queued webhook updates once bot is ready."""
     global _pending_webhook_updates
@@ -297,13 +316,14 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     # Retrieve the application only after run_bot reports handlers registered.
     app_obj = None
     handlers_ready = False
-    discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "30") or 30)
+    discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "90") or 90)
     deadline = asyncio.get_running_loop().time() + max(1, discover_timeout_s)
     while asyncio.get_running_loop().time() < deadline:
         try:
             from signalrank_telegram import bot as _bot_module
             app_obj = getattr(_bot_module, "_webhook_application", None)
-            handlers_ready = bool(getattr(_bot_module, "_webhook_handlers_ready", False))
+            handlers_flag = bool(getattr(_bot_module, "_webhook_handlers_ready", False))
+            handlers_ready = handlers_flag or _app_has_registered_handlers(app_obj)
         except Exception:
             app_obj = None
             handlers_ready = False
@@ -319,6 +339,15 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
             setup_error = str(exc)
         if setup_error:
             logger.warning(f"[bot] run_bot() returned setup error: {setup_error}")
+
+    # Fallback: if an application object exists and handlers are attached,
+    # proceed even if the explicit readiness flag never flipped.
+    if app_obj is not None and not handlers_ready:
+        handlers_ready = _app_has_registered_handlers(app_obj)
+        if handlers_ready:
+            logger.warning(
+                "[bot] readiness flag missing but handlers detected; proceeding with webhook startup"
+            )
 
     if app_obj is None or not handlers_ready:
         print("[bot] webhook setup failed: handlers not ready", flush=True)
