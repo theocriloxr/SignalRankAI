@@ -1527,6 +1527,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 			"required_tier": "PREMIUM",
 			"commands": [
 				("/performance", "30-day performance summary"),
+				("/quality", "24h reject-reason quality diagnostics"),
 				("/stats", "Win rate, avg R, and net R"),
 				("/history", "Recent signal history"),
 				("/mystats", "Personal trading and signal stats"),
@@ -1568,6 +1569,8 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 			"required_tier": "ADMIN",
 			"commands": [
 				("/admin", "Open the admin dashboard"),
+				("/gemini", "Run all-time Gemini review + ML retrain"),
+				("/gemini_review", "Show latest Gemini review/training rundown"),
 				("/admin_top_assets", "Top assets by signal quality"),
 				("/admin_top_strategies", "Top strategies by performance"),
 				("/admin_user_engagement", "User engagement analytics"),
@@ -3853,6 +3856,105 @@ async def quality_command(update, context) -> None:
 		await update.message.reply_text(msg)
 	except Exception as exc:
 		await update.message.reply_text(f"❌ Could not build quality report: {exc}")
+
+
+async def gemini_command(update, context) -> None:
+	"""Admin-only: trigger Gemini review over all-time aggregate and retrain ML."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+
+	from services.gemini_ml import run_gemini_review_pipeline
+
+	await update.message.reply_text(
+		"Running Gemini all-time review and ML retrain. This can take up to 2 minutes..."
+	)
+	try:
+		result = await run_gemini_review_pipeline(
+			trigger=f"admin:{int(update.effective_user.id)}",
+			scope="all_time",
+		)
+		err = str(result.get("error") or "").strip()
+		if not bool(result.get("ok", False)):
+			await update.message.reply_text(f"Gemini run failed: {err or 'unknown error'}")
+			return
+
+		received = dict(result.get("received") or {})
+		processed = dict(result.get("processed") or {})
+		training = dict(result.get("training") or {})
+		review = str(result.get("review") or "").strip()
+
+		msg = (
+			"Gemini run completed.\n\n"
+			"Received:\n"
+			f"- outcomes: {int(received.get('outcomes_total', 0))}\n"
+			f"- wins/losses: {int(received.get('wins', 0))}/{int(received.get('losses', 0))}\n"
+			f"- issued: {int(received.get('issued', 0))}\n"
+			f"- rejected/skipped: {int(received.get('rejected_or_skipped', 0))}\n"
+			"Processed:\n"
+			f"- prompt chars: {int(processed.get('prompt_chars', 0))}\n"
+			f"- review chars: {int(processed.get('review_chars', 0))}\n"
+			"ML training:\n"
+			f"- attempted: {bool(training.get('attempted', False))}\n"
+			f"- succeeded: {bool(training.get('succeeded', False))}\n"
+			f"- note: {str(training.get('note') or 'n/a')}"
+		)
+		await update.message.reply_text(msg)
+		if review:
+			await update.message.reply_text(
+				"Gemini review:\n" + review[:3500]
+			)
+	except Exception as exc:
+		await update.message.reply_text(f"Gemini run exception: {exc}")
+
+
+async def gemini_review_command(update, context) -> None:
+	"""Admin-only: show latest Gemini review/training rundown."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+
+	from services.gemini_ml import get_last_gemini_review
+
+	try:
+		result = await get_last_gemini_review()
+		if not result:
+			await update.message.reply_text(
+				"No Gemini review found yet. Run /gemini first or wait for the weekly job."
+			)
+			return
+
+		received = dict(result.get("received") or {})
+		processed = dict(result.get("processed") or {})
+		training = dict(result.get("training") or {})
+		review = str(result.get("review") or "").strip()
+
+		msg = (
+			"Latest Gemini review.\n\n"
+			f"Trigger: {str(result.get('trigger') or 'unknown')}\n"
+			f"Scope: {str(result.get('scope') or 'unknown')}\n"
+			f"Finished: {str(result.get('finished_at') or 'unknown')}\n\n"
+			"Received:\n"
+			f"- outcomes: {int(received.get('outcomes_total', 0))}\n"
+			f"- wins/losses: {int(received.get('wins', 0))}/{int(received.get('losses', 0))}\n"
+			f"- issued: {int(received.get('issued', 0))}\n"
+			f"- rejected/skipped: {int(received.get('rejected_or_skipped', 0))}\n"
+			"Processed:\n"
+			f"- prompt chars: {int(processed.get('prompt_chars', 0))}\n"
+			f"- review chars: {int(processed.get('review_chars', 0))}\n"
+			"ML training:\n"
+			f"- succeeded: {bool(training.get('succeeded', False))}\n"
+			f"- note: {str(training.get('note') or 'n/a')}"
+		)
+		await update.message.reply_text(msg)
+		if review:
+			await update.message.reply_text("Gemini review:\n" + review[:3500])
+	except Exception as exc:
+		await update.message.reply_text(f"Could not load Gemini review: {exc}")
 
 
 # -------- Premium commands --------

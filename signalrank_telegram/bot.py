@@ -420,6 +420,8 @@ from .commands import (
     support_command,
     performance_command,
     quality_command,
+    gemini_command,
+    gemini_review_command,
     pricing_command,
     upgrade_command,
     policy_command,
@@ -3522,6 +3524,8 @@ def run_bot() -> None:
             ("unlock", "Owner: unlock tier"),
             ("dev_pause", "Owner: pause engine"),
             ("dev_resume", "Owner: resume engine"),
+            ("gemini", "Admin: run Gemini+ML"),
+            ("gemini_review", "Admin: Gemini rundown"),
             ("owner_users", "Owner: user list"),
             ("owner_revenue", "Owner: revenue"),
             ("provider_status", "Owner: provider health"),
@@ -3653,6 +3657,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
     application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
+    application.add_handler(CommandHandler("gemini", _audit_handler("gemini", gemini_command)))
+    application.add_handler(CommandHandler("gemini_review", _audit_handler("gemini_review", gemini_review_command)))
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
     application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
@@ -6120,142 +6126,18 @@ def run_bot() -> None:
             logger.error("[ML] ml_market_analysis_job failed: %s", exc, exc_info=True)
 
     def weekly_gemini_ml_review_job():
-        """Optional weekly Gemini review over DB aggregates.
-
-        This is analysis-only: it stores recommendations and does not directly
-        retrain or override model artifacts automatically.
-        """
+        """Weekly Gemini review plus model retrain from recent aggregate window."""
         try:
-            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-            if not api_key:
-                return
+            from services.gemini_ml import run_gemini_review_pipeline
 
-            import json as _json
-            import urllib.request as _urlreq
-            from datetime import datetime, timedelta
-            from sqlalchemy import text as _sql_text
-            from db.session import get_session as _gs_gm
-
-            async def _collect() -> dict:
-                async with _gs_gm() as session:
-                    since = datetime.utcnow() - timedelta(days=7)
-                    perf_row = (
-                        await session.execute(
-                            _sql_text(
-                                """
-                                SELECT
-                                  COUNT(*) AS outcomes_total,
-                                  SUM(CASE WHEN status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) AS wins,
-                                  SUM(CASE WHEN status = 'sl' THEN 1 ELSE 0 END) AS losses,
-                                  AVG(r_multiple) AS avg_r,
-                                  SUM(r_multiple) AS net_r
-                                FROM outcomes
-                                WHERE closed_at >= :since
-                                """
-                            ),
-                            {"since": since},
-                        )
-                    ).first()
-
-                    rej_rows = (
-                        await session.execute(
-                            _sql_text(
-                                """
-                                SELECT COALESCE(reason, '') AS reason, COUNT(*) AS c
-                                FROM decision_log
-                                WHERE created_at >= :since AND decision IN ('rejected','skipped')
-                                GROUP BY reason
-                                ORDER BY c DESC
-                                LIMIT 10
-                                """
-                            ),
-                            {"since": since},
-                        )
-                    ).fetchall()
-
-                    await session.commit()
-
-                return {
-                    "window_days": 7,
-                    "outcomes_total": int((perf_row[0] or 0) if perf_row else 0),
-                    "wins": int((perf_row[1] or 0) if perf_row else 0),
-                    "losses": int((perf_row[2] or 0) if perf_row else 0),
-                    "avg_r": float(perf_row[3]) if perf_row and perf_row[3] is not None else None,
-                    "net_r": float(perf_row[4]) if perf_row and perf_row[4] is not None else None,
-                    "top_rejections": [
-                        {"reason": str(r[0] or ""), "count": int(r[1] or 0)} for r in (rej_rows or [])
-                    ],
-                }
-
-            summary = run_sync(_collect())
-            prompt = {
-                "task": "You are a quantitative trading ML reviewer. Provide concise tuning recommendations.",
-                "constraints": [
-                    "Do not suggest overfitting.",
-                    "Prioritize higher win rate and stable expectancy.",
-                    "Provide 5 actionable parameter suggestions.",
-                ],
-                "data": summary,
-            }
-
-            req_body = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "text": _json.dumps(prompt)
-                            }
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.2,
-                    "maxOutputTokens": 800,
-                },
-            }
-
-            req = _urlreq.Request(
-                url=(
-                    "https://generativelanguage.googleapis.com/v1beta/models/"
-                    "gemini-1.5-pro:generateContent?key=" + api_key
-                ),
-                data=_json.dumps(req_body).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+            result = run_sync(
+                run_gemini_review_pipeline(trigger="scheduler:weekly", scope="weekly"),
+                timeout=1800.0,
             )
-            with _urlreq.urlopen(req, timeout=30) as resp:
-                payload = _json.loads(resp.read().decode("utf-8"))
-
-            text_out = ""
-            try:
-                text_out = str(
-                    payload["candidates"][0]["content"]["parts"][0].get("text") or ""
-                ).strip()
-            except Exception:
-                text_out = ""
-
-            if text_out:
-                async def _store() -> None:
-                    from sqlalchemy import text as _text
-                    async with _gs_gm() as session:
-                        await session.execute(
-                            _text(
-                                """
-                                INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                                VALUES (:k, :v::jsonb, NULL, NOW())
-                                ON CONFLICT (key) DO UPDATE
-                                SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
-                                """
-                            ),
-                            {
-                                "k": "gemini_weekly_ml_review",
-                                "v": _json.dumps({"summary": summary, "recommendations": text_out}),
-                            },
-                        )
-                        await session.commit()
-
-                run_sync(_store())
-                logger.info("[gemini] weekly ML review stored in runtime_state")
+            if bool(result.get("ok", False)):
+                logger.info("[gemini] weekly run complete: training=%s", bool((result.get("training") or {}).get("succeeded", False)))
+            else:
+                logger.warning("[gemini] weekly run skipped/failed: %s", result.get("error"))
         except Exception as exc:
             logger.warning(f"[gemini] weekly ML review failed: {exc}")
 
