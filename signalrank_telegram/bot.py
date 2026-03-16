@@ -1179,7 +1179,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
 
                 mode = str(getattr(user, "execution_mode", "manual") or "manual").lower()
                 if mode != "auto":
-                    return (False, "Execution mode is not AUTO")
+                    return (False, "Execution mode is not AUTO", "not_auto")
 
                 # Daily drawdown guard based on realized PnL%.
                 from datetime import datetime, timezone
@@ -1195,7 +1195,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 blocked_reason = _drawdown_guard_block_reason(user, pnl_today)
                 if blocked_reason:
                     await session.commit()
-                    return (False, blocked_reason)
+                    return (False, blocked_reason, "risk_guard")
 
                 entry = float(signal.get("entry") or 0)
                 sl = float(signal.get("stop_loss") or 0)
@@ -1204,13 +1204,13 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 direction = str(signal.get("direction") or "").lower().strip()
 
                 if not symbol or direction not in {"long", "short", "buy", "sell"}:
-                    return (False, "Invalid symbol/direction")
+                    return (False, "Invalid symbol/direction", "invalid_signal")
                 if not entry or not sl or not tp:
-                    return (False, "Signal missing entry/SL/TP")
+                    return (False, "Signal missing entry/SL/TP", "invalid_signal")
 
                 acct_id = await get_user_mt5_account_id(int(telegram_user_id))
                 if not acct_id:
-                    return (False, "No linked MT5 account")
+                    return (False, "No linked MT5 account", "setup_missing")
 
                 # PREMIUM daily cap for AUTO mode.
                 tier_up = str(getattr(user, "tier", "FREE") or "FREE").upper()
@@ -1223,18 +1223,34 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                         user.daily_executions_reset_at = now
                     if int(getattr(user, "daily_executions_today", 0) or 0) >= int(limit):
                         await session.commit()
-                        return (False, f"PREMIUM daily limit reached ({limit})")
+                        return (False, f"PREMIUM daily limit reached ({limit})", "limit")
 
                 # Optional per-user AUTO cap.
                 auto_cap = int(getattr(user, "auto_signals_daily_limit", 3) or 0)
                 if auto_cap == 0:
                     await session.commit()
-                    return (False, "AUTO cap is 0")
+                    return (False, "AUTO cap is 0", "setup_missing")
 
                 ok, slip, live_px = await validate_slippage(acct_id, symbol, entry)
                 if not ok:
                     await session.commit()
-                    return (False, f"Slippage too high ({float(slip):.1f} pts)")
+                    return (False, f"Slippage too high ({float(slip):.1f} pts)", "slippage")
+
+                # Send the signal notice before attempting AUTO execution.
+                try:
+                    await _send_message_with_retry(
+                        Bot(token=_require_telegram_token()),
+                        chat_id=int(telegram_user_id),
+                        text=(
+                            "📩 <b>Signal Received</b>\n\n"
+                            f"Asset: <b>{symbol}</b>\n"
+                            f"Direction: <b>{('LONG' if direction in {'long', 'buy'} else 'SHORT')}</b>\n"
+                            "Attempting AUTO execution now..."
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
 
                 lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
                 result = await execute_trade(
@@ -1274,9 +1290,13 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                         pass
 
                 await session.commit()
-                return (bool(result.get("success")), str(result.get("order_id") or result.get("error") or "unknown"))
+                return (
+                    bool(result.get("success")),
+                    str(result.get("order_id") or result.get("error") or "unknown"),
+                    ("success" if bool(result.get("success")) else "execute_failed"),
+                )
 
-        ok, detail = run_sync(_run_auto())
+            ok, detail, reason_code = run_sync(_run_auto())
 
         try:
             state.set_sync(auto_key, "1", ex=86400)
@@ -1286,27 +1306,41 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
         bot = Bot(token=_require_telegram_token())
         asset = str(signal.get("asset") or "")
         if ok:
+            # Send a clean execution receipt after successful AUTO placement.
             _send_message_with_retry_sync(
                 bot,
                 chat_id=int(telegram_user_id),
                 text=(
-                    "🤖 <b>AUTO execution placed</b>\n\n"
+                    "🧾 <b>Execution Receipt (AUTO)</b>\n\n"
                     f"Asset: <b>{asset}</b>\n"
-                    f"Order: <code>{detail}</code>"
+                    f"Order: <code>{detail}</code>\n"
+                    f"Signal ID: <code>{sig_id}</code>"
                 ),
                 parse_mode="HTML",
             )
-        else:
-            _send_message_with_retry_sync(
-                bot,
-                chat_id=int(telegram_user_id),
-                text=(
-                    "⚠️ <b>AUTO execution skipped</b>\n\n"
-                    f"Asset: <b>{asset}</b>\n"
-                    f"Reason: {detail}"
-                ),
-                parse_mode="HTML",
-            )
+        elif reason_code == "setup_missing":
+            # Only notify skips when user selected AUTO but setup is incomplete.
+            setup_key = f"autoexec:setup_missing:{int(telegram_user_id)}"
+            should_warn = True
+            try:
+                if state.get_sync(setup_key):
+                    should_warn = False
+                else:
+                    state.set_sync(setup_key, "1", ex=21600)  # 6h cooldown
+            except Exception:
+                pass
+            if should_warn:
+                _send_message_with_retry_sync(
+                    bot,
+                    chat_id=int(telegram_user_id),
+                    text=(
+                        "⚠️ <b>AUTO execution needs setup</b>\n\n"
+                        f"Asset: <b>{asset}</b>\n"
+                        f"Reason: {detail}\n\n"
+                        "Complete your setup and AUTO execution will resume."
+                    ),
+                    parse_mode="HTML",
+                )
     except Exception as exc:
         logger.debug(f"[autoexec] failed user={telegram_user_id}: {exc}")
 
@@ -3835,8 +3869,26 @@ def run_bot() -> None:
                         parse_mode="HTML",
                         reply_markup=_build_monitor_keyboard(signal_id),
                     )
-                except Exception:
-                    message_id = None
+                except Exception as exc:
+                    err = str(exc).lower()
+                    if "message is not modified" in err:
+                        # Keep the tracked message; no need to send a duplicate.
+                        pass
+                    elif any(
+                        token in err
+                        for token in (
+                            "message to edit not found",
+                            "chat not found",
+                            "bot was blocked",
+                            "message can't be edited",
+                        )
+                    ):
+                        # Original monitor message is no longer editable; recreate once.
+                        message_id = None
+                    else:
+                        # Transient edit failure: keep existing monitor message id to
+                        # avoid spawning duplicate monitor threads/messages.
+                        logger.debug(f"[monitor] edit_message_text transient failure: {exc}")
 
             if not message_id:
                 monitor_msg = await context.bot.send_message(
@@ -4102,6 +4154,20 @@ def run_bot() -> None:
                     f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`{_remaining_text}",
                     parse_mode="Markdown"
                 )
+                try:
+                    await _send_message_with_retry(
+                        context.bot,
+                        chat_id=int(user_id),
+                        text=(
+                            "🧾 <b>Execution Receipt (MANUAL)</b>\n\n"
+                            f"Asset: <b>{asset}</b>\n"
+                            f"Order: <code>{oid}</code>\n"
+                            f"Signal ID: <code>{signal_id}</code>"
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
             else:
                 await query.edit_message_text(f"❌ Trade failed: `{result.get('error', 'unknown')}`", parse_mode="Markdown")
         except Exception as exc:
