@@ -3266,6 +3266,32 @@ def run_bot() -> None:
 
     _webhook_mode = bool(os.getenv("TELEGRAM_USE_WEBHOOK"))
 
+    def _refresh_webhook_handlers_ready(stage: str) -> None:
+        """Mark webhook handler readiness only when a sufficient handler set is present."""
+        global _webhook_handlers_ready
+        if not _webhook_mode:
+            return
+        try:
+            handlers_map = getattr(application, "handlers", {}) or {}
+            total_handlers = 0
+            if isinstance(handlers_map, dict):
+                for _group, _lst in handlers_map.items():
+                    try:
+                        total_handlers += int(len(_lst or []))
+                    except Exception:
+                        continue
+            min_handlers = max(1, int(os.getenv("BOT_WEBHOOK_READY_MIN_HANDLERS", "60") or 60))
+            _webhook_handlers_ready = total_handlers >= min_handlers
+            logger.info(
+                "[bot] webhook handler readiness check: stage=%s total=%s min=%s ready=%s",
+                stage,
+                total_handlers,
+                min_handlers,
+                bool(_webhook_handlers_ready),
+            )
+        except Exception as _ready_err:
+            logger.warning("[bot] webhook readiness check failed at stage=%s: %s", stage, _ready_err)
+
     # Ensure required schema exists — belt-and-suspenders patch for any live DB
     # that was bootstrapped before Alembic migration 0010_consolidate_full_schema ran.
     # Every statement uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so it is safe
@@ -4328,8 +4354,7 @@ def run_bot() -> None:
     # In webhook mode, handlers are now fully registered. Mark readiness here so
     # railway_main can begin processing updates while non-critical jobs continue
     # bootstrapping in this thread.
-    if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        _webhook_handlers_ready = True
+    _refresh_webhook_handlers_ready("post_handler_registration")
 
     def send_weekly_recap():
         user_ids = get_all_user_ids_compat()
@@ -6474,7 +6499,7 @@ def run_bot() -> None:
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
         _webhook_application = application
         _bot_scheduler = scheduler  # prevent GC; daemon threads keep running
-        _webhook_handlers_ready = True
+        _refresh_webhook_handlers_ready("webhook_return")
         if scheduler is None:
             print("[bot] webhook mode: application ready, scheduler disabled on this instance", flush=True)
         else:
