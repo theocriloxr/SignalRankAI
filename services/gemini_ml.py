@@ -15,6 +15,55 @@ from db.session import get_session
 logger = logging.getLogger(__name__)
 
 
+def _extract_feature_suggestions(review_text: str, limit: int = 8) -> list[str]:
+    text = str(review_text or "").strip()
+    if not text:
+        return []
+
+    lines = [ln.strip() for ln in text.splitlines()]
+    suggestions: list[str] = []
+    capture = False
+
+    for ln in lines:
+        low = ln.lower()
+        if any(
+            marker in low
+            for marker in (
+                "feature suggestions",
+                "bot feature suggestions",
+                "functionality suggestions",
+                "product suggestions",
+            )
+        ):
+            capture = True
+            continue
+
+        if capture:
+            if low.startswith("###") or low.startswith("##"):
+                break
+            if low.startswith("-") or low.startswith("*") or low[:2].isdigit() and low[1] == ".":
+                cleaned = ln.lstrip("-*0123456789. ").strip()
+                if cleaned:
+                    suggestions.append(cleaned)
+
+    # Fallback: pick lines that explicitly mention feature/product/system upgrades.
+    if not suggestions:
+        for ln in lines:
+            low = ln.lower()
+            if any(k in low for k in ("feature", "module", "workflow", "automation", "dashboard", "alert")):
+                candidate = ln.lstrip("-*0123456789. ").strip()
+                if candidate and candidate not in suggestions:
+                    suggestions.append(candidate)
+
+    out: list[str] = []
+    for s in suggestions:
+        if s not in out:
+            out.append(s)
+        if len(out) >= max(1, int(limit)):
+            break
+    return out
+
+
 async def _collect_aggregate(scope: str) -> dict[str, Any]:
     scope_norm = str(scope or "weekly").strip().lower()
     if scope_norm not in {"weekly", "all_time"}:
@@ -220,13 +269,15 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
         "task": (
             "You are a quantitative trading review assistant. Analyze the supplied aggregate stats, "
             "then provide: 1) tuning suggestions, 2) risk controls, 3) short research-style insights "
-            "based on broad market best practices, 4) ML feature ideas to improve win ratio."
+            "based on broad market best practices, 4) ML feature ideas to improve win ratio, "
+            "5) bot feature suggestions to improve functionality, execution safety, and reliability."
         ),
         "constraints": [
             "Avoid overfitting and data leakage.",
             "Use concise and actionable bullet points.",
             "Do not provide investment guarantees.",
             "Prefer robust improvements over aggressive optimization.",
+            "Format output with clear section headers including 'Feature Suggestions'.",
         ],
         "aggregate": aggregate,
     }
@@ -238,6 +289,7 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
         logger.warning("[gemini] review request failed: %s", exc)
 
     training = await _train_model_with_overwrite()
+    feature_suggestions = _extract_feature_suggestions(review_text)
 
     result = {
         "ok": True,
@@ -260,6 +312,7 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
         },
         "aggregate": aggregate,
         "review": review_text,
+        "feature_suggestions": feature_suggestions,
         "training": training,
     }
 
@@ -269,6 +322,7 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
         {
             "summary": aggregate,
             "recommendations": review_text,
+            "feature_suggestions": feature_suggestions,
             "training": training,
             "trigger": trigger,
             "scope": scope,

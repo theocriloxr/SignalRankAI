@@ -3885,6 +3885,7 @@ async def gemini_command(update, context) -> None:
 		processed = dict(result.get("processed") or {})
 		training = dict(result.get("training") or {})
 		review = str(result.get("review") or "").strip()
+		feature_suggestions = list(result.get("feature_suggestions") or [])
 
 		msg = (
 			"Gemini run completed.\n\n"
@@ -3902,6 +3903,11 @@ async def gemini_command(update, context) -> None:
 			f"- note: {str(training.get('note') or 'n/a')}"
 		)
 		await update.message.reply_text(msg)
+		if feature_suggestions:
+			feat_lines = [f"- {str(x)[:180]}" for x in feature_suggestions[:6]]
+			await update.message.reply_text(
+				"Feature suggestions:\n" + "\n".join(feat_lines)
+			)
 		if review:
 			await update.message.reply_text(
 				"Gemini review:\n" + review[:3500]
@@ -3932,6 +3938,7 @@ async def gemini_review_command(update, context) -> None:
 		processed = dict(result.get("processed") or {})
 		training = dict(result.get("training") or {})
 		review = str(result.get("review") or "").strip()
+		feature_suggestions = list(result.get("feature_suggestions") or [])
 
 		msg = (
 			"Latest Gemini review.\n\n"
@@ -3951,6 +3958,11 @@ async def gemini_review_command(update, context) -> None:
 			f"- note: {str(training.get('note') or 'n/a')}"
 		)
 		await update.message.reply_text(msg)
+		if feature_suggestions:
+			feat_lines = [f"- {str(x)[:180]}" for x in feature_suggestions[:6]]
+			await update.message.reply_text(
+				"Feature suggestions:\n" + "\n".join(feat_lines)
+			)
 		if review:
 			await update.message.reply_text("Gemini review:\n" + review[:3500])
 	except Exception as exc:
