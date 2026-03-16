@@ -327,17 +327,31 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     handlers_ready = False
     discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "90") or 90)
     deadline = asyncio.get_running_loop().time() + max(1, discover_timeout_s)
+    next_diag_log_at = asyncio.get_running_loop().time() + 10.0
     while asyncio.get_running_loop().time() < deadline:
         try:
             from signalrank_telegram import bot as _bot_module
             app_obj = getattr(_bot_module, "_webhook_application", None)
             handlers_flag = bool(getattr(_bot_module, "_webhook_handlers_ready", False))
-            handlers_ready = handlers_flag or _app_has_registered_handlers(app_obj)
+            handlers_detected = _app_has_registered_handlers(app_obj)
+            handlers_ready = handlers_flag or handlers_detected
         except Exception:
             app_obj = None
+            handlers_flag = False
+            handlers_detected = False
             handlers_ready = False
         if app_obj is not None and handlers_ready:
             break
+        now_monotonic = asyncio.get_running_loop().time()
+        if now_monotonic >= next_diag_log_at:
+            logger.info(
+                "[bot] discovery waiting: app_present=%s handlers_flag=%s handlers_detected=%s timeout_s=%s",
+                bool(app_obj is not None),
+                bool(handlers_flag),
+                bool(handlers_detected),
+                discover_timeout_s,
+            )
+            next_diag_log_at = now_monotonic + 10.0
         await asyncio.sleep(0.25)
 
     # If still none, check whether run_bot finished with a setup error.
@@ -607,8 +621,20 @@ async def lifespan(_: FastAPI):
     async def _start_bot_bg() -> None:
         nonlocal application, bot_started
         backoff_seconds = 5
-        attempt_timeout_s = int(os.getenv("BOT_START_ATTEMPT_TIMEOUT_SECONDS", "45") or 45)
+        attempt_no = 0
+        discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "90") or 90)
+        attempt_timeout_env = int(os.getenv("BOT_START_ATTEMPT_TIMEOUT_SECONDS", "45") or 45)
+        # Ensure a single attempt can complete discovery + init + webhook registration.
+        attempt_timeout_s = max(attempt_timeout_env, discover_timeout_s + 20)
+        logger.info(
+            "[startup] Telegram bot timeout config: attempt_timeout=%ss discovery_timeout=%ss",
+            attempt_timeout_s,
+            discover_timeout_s,
+        )
         while not bot_stop_event.is_set() and not bot_started:
+            attempt_no += 1
+            _attempt_started = asyncio.get_running_loop().time()
+            _attempt_result = "unknown"
             try:
                 print("[startup] Telegram webhook setup attempt", flush=True)
                 application, bot_started = await asyncio.wait_for(
@@ -616,7 +642,15 @@ async def lifespan(_: FastAPI):
                     timeout=attempt_timeout_s,
                 )
                 print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
+                _attempt_result = "started" if bot_started else "not_ready"
                 if bot_started:
+                    _elapsed = asyncio.get_running_loop().time() - _attempt_started
+                    logger.info(
+                        "[startup] Telegram webhook attempt summary: attempt=%s result=%s elapsed_s=%.2f",
+                        attempt_no,
+                        _attempt_result,
+                        _elapsed,
+                    )
                     return
             except asyncio.TimeoutError:
                 print("[startup] Telegram webhook setup attempt timed out", flush=True)
@@ -624,9 +658,20 @@ async def lifespan(_: FastAPI):
                     "[startup] Telegram webhook setup attempt timed out after %ss",
                     attempt_timeout_s,
                 )
+                _attempt_result = "timeout"
             except Exception as exc:
                 print(f"[startup] Telegram webhook setup error (background): {exc}", flush=True)
                 logger.warning(f"[startup] Telegram webhook setup error (background): {exc}")
+                _attempt_result = "error"
+
+            _elapsed = asyncio.get_running_loop().time() - _attempt_started
+            logger.info(
+                "[startup] Telegram webhook attempt summary: attempt=%s result=%s elapsed_s=%.2f next_backoff_s=%s",
+                attempt_no,
+                _attempt_result,
+                _elapsed,
+                backoff_seconds,
+            )
 
             try:
                 await asyncio.wait_for(bot_stop_event.wait(), timeout=backoff_seconds)
