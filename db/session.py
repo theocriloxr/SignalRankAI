@@ -15,6 +15,24 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
+def _engine_connect_args() -> dict:
+    """Return asyncpg connection args tuned for Railway network conditions."""
+    try:
+        connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "15").strip())
+    except Exception:
+        connect_timeout = 15.0
+    try:
+        command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "45").strip())
+    except Exception:
+        command_timeout = 45.0
+    app_name = (os.getenv("DB_APP_NAME") or "signalrankai").strip() or "signalrankai"
+    return {
+        "timeout": connect_timeout,
+        "command_timeout": command_timeout,
+        "server_settings": {"application_name": app_name},
+    }
+
+
 def _prefer_ipv4_url(url: str) -> str:
     """Resolve the database hostname to an IPv4 address and substitute it in
     the URL before handing it to asyncpg.
@@ -105,9 +123,10 @@ def create_engine() -> Optional[AsyncEngine]:
     # cleanup. Using NullPool avoids cross-loop pool reuse.
     mode = (os.getenv("RUN_MODE") or "").strip().lower()
     poolclass = NullPool if mode == "all" else None
+    connect_args = _engine_connect_args()
     if poolclass is None:
-        return create_async_engine(url, pool_pre_ping=True)
-    return create_async_engine(url, pool_pre_ping=True, poolclass=poolclass)
+        return create_async_engine(url, pool_pre_ping=True, connect_args=connect_args)
+    return create_async_engine(url, pool_pre_ping=True, poolclass=poolclass, connect_args=connect_args)
 
 
 def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
@@ -159,7 +178,12 @@ def _get_global_engine() -> Optional[AsyncEngine]:
             return None
         # Always NullPool + per-thread engine object to avoid cross-event-loop
         # lock binding errors in multi-thread runtime.
-        engine = create_async_engine(url, pool_pre_ping=True, poolclass=NullPool)
+        engine = create_async_engine(
+            url,
+            pool_pre_ping=True,
+            poolclass=NullPool,
+            connect_args=_engine_connect_args(),
+        )
         sm = async_sessionmaker(engine, expire_on_commit=False)
         _engines_by_thread[tid] = engine
         _sessionmakers_by_thread[tid] = sm

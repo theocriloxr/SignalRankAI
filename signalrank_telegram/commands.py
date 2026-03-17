@@ -3386,87 +3386,96 @@ async def start_command(update, context):
 			from db.pg_features import record_bot_event
 			from db.pg_features import ensure_alert_prefs
 			import asyncio
-			timeout_s = float((os.getenv("DB_START_TIMEOUT") or "10").strip())
-			async with get_session() as session:
-				logger.info("[/start] user_id=%s — DB session open, querying user row", user_id)
-				res: Result[Tuple[User]] = await asyncio.wait_for(
-					session.execute(select(User).where(User.telegram_user_id == int(user_id))),
-					timeout=timeout_s,
-				)
-				existing: User | None = res.scalar_one_or_none()
-				is_new: bool = existing is None
-				user_row = await asyncio.wait_for(
-					get_or_create_user(session, telegram_user_id=user_id, username=username),
-					timeout=timeout_s,
-				)
-				# Avoid nested DB resolution inside /start; use env-configured tiers only.
+			timeout_s = float((os.getenv("DB_START_TIMEOUT") or "20").strip())
+			max_attempts = 2
+			for attempt in range(1, max_attempts + 1):
 				try:
-					if int(user_id) in OWNER_IDS:
-						effective_tier = "OWNER"
-					elif int(user_id) in ADMIN_IDS:
-						effective_tier = "ADMIN"
-					else:
-						effective_tier = "FREE"
-				except Exception:
-					effective_tier = "FREE"
-				if effective_tier in {"OWNER", "ADMIN"}:
-					current = str(getattr(user_row, "tier", "") or "").lower()
-					if current not in {"owner", "admin"}:
+					async with get_session() as session:
+						logger.info("[/start] user_id=%s — DB session open, querying user row (attempt=%s)", user_id, attempt)
+						res: Result[Tuple[User]] = await asyncio.wait_for(
+							session.execute(select(User).where(User.telegram_user_id == int(user_id))),
+							timeout=timeout_s,
+						)
+						existing: User | None = res.scalar_one_or_none()
+						is_new: bool = existing is None
+						user_row = await asyncio.wait_for(
+							get_or_create_user(session, telegram_user_id=user_id, username=username),
+							timeout=timeout_s,
+						)
+						# Avoid nested DB resolution inside /start; use env-configured tiers only.
 						try:
-							user_row.tier = "owner" if effective_tier == "OWNER" else "admin"
-							upgrade_notice = (
-								"✅ Owner access granted via configuration. Use /help to see owner commands."
-								if effective_tier == "OWNER"
-								else "✅ Admin access granted. Use /help to see admin commands."
-							)
+							if int(user_id) in OWNER_IDS:
+								effective_tier = "OWNER"
+							elif int(user_id) in ADMIN_IDS:
+								effective_tier = "ADMIN"
+							else:
+								effective_tier = "FREE"
+						except Exception:
+							effective_tier = "FREE"
+						if effective_tier in {"OWNER", "ADMIN"}:
+							current = str(getattr(user_row, "tier", "") or "").lower()
+							if current not in {"owner", "admin"}:
+								try:
+									user_row.tier = "owner" if effective_tier == "OWNER" else "admin"
+									upgrade_notice = (
+										"✅ Owner access granted via configuration. Use /help to see owner commands."
+										if effective_tier == "OWNER"
+										else "✅ Admin access granted. Use /help to see admin commands."
+									)
+								except Exception:
+									pass
+						# Ensure alert preferences row exists for all users.
+						try:
+							await asyncio.wait_for(ensure_alert_prefs(session, int(user_id)), timeout=timeout_s)
 						except Exception:
 							pass
-				# Ensure alert preferences row exists for all users.
-				try:
-					await asyncio.wait_for(ensure_alert_prefs(session, int(user_id)), timeout=timeout_s)
-				except Exception:
-					pass
 
-				# Referral attribution (only for first-time users)
-				code = None
-				if ref_token:
-					code = str(ref_token)
-					if code.startswith("ref_"):
-						code: str = code[4:]
-					code: str | None = (code or "").strip() or None
-				if code:
-					try:
-						from db.pg_features import process_referral_start as process_referral_start_pg
-						referral_outcome = await process_referral_start_pg(
-							session,
-							referred_telegram_user_id=int(user_id),
-							referral_code=str(code),
-							is_new_user=bool(is_new),
-						)
-					except Exception:
-						referral_outcome = None
+						# Referral attribution (only for first-time users)
+						code = None
+						if ref_token:
+							code = str(ref_token)
+							if code.startswith("ref_"):
+								code: str = code[4:]
+							code: str | None = (code or "").strip() or None
+						if code:
+							try:
+								from db.pg_features import process_referral_start as process_referral_start_pg
+								referral_outcome = await process_referral_start_pg(
+									session,
+									referred_telegram_user_id=int(user_id),
+									referral_code=str(code),
+									is_new_user=bool(is_new),
+								)
+							except Exception:
+								referral_outcome = None
 
-				# Audit: always record the start event when Postgres is available
-				try:
-					await asyncio.wait_for(record_bot_event(
-						session,
-						telegram_user_id=int(user_id),
-						username=username,
-						event_type="user_start",
-						meta={
-							"is_new": bool(is_new),
-							"ref_token": str(ref_token) if ref_token else None,
-							"referral": referral_outcome,
-						},
-					), timeout=timeout_s)
-				except Exception:
-					pass
+						# Audit: always record the start event when Postgres is available
+						try:
+							await asyncio.wait_for(record_bot_event(
+								session,
+								telegram_user_id=int(user_id),
+								username=username,
+								event_type="user_start",
+								meta={
+									"is_new": bool(is_new),
+									"ref_token": str(ref_token) if ref_token else None,
+									"referral": referral_outcome,
+								},
+							), timeout=timeout_s)
+						except Exception:
+							pass
 
-				# Read accepted_terms before session closes (object becomes detached after commit)
-				terms_accepted: bool = bool(getattr(user_row, "accepted_terms", False))
+						# Read accepted_terms before session closes (object becomes detached after commit)
+						terms_accepted: bool = bool(getattr(user_row, "accepted_terms", False))
 
-				await asyncio.wait_for(session.commit(), timeout=timeout_s)
-				logger.info("[/start] user_id=%s — DB session commit complete", user_id)
+						await asyncio.wait_for(session.commit(), timeout=timeout_s)
+						logger.info("[/start] user_id=%s — DB session commit complete (attempt=%s)", user_id, attempt)
+						break
+				except asyncio.TimeoutError:
+					if attempt >= max_attempts:
+						raise
+					logger.warning("[/start] user_id=%s timeout on attempt=%s, retrying", user_id, attempt)
+					await asyncio.sleep(1.0)
 		else:
 			raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 	except Exception as e:

@@ -3520,6 +3520,16 @@ def run_bot() -> None:
 
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
+        err_text = str(err or "")
+        # Harmless Telegram callback race: user tapped an old button and the
+        # callback query answer window already expired.
+        if (
+            "Query is too old" in err_text
+            or "response timeout expired" in err_text
+            or "query id is invalid" in err_text
+        ):
+            logger.info("[bot] stale callback ignored: %s", err_text)
+            return
         print(f"[bot] error: {err}", flush=True)
         # Alert all owners about every unhandled exception so nothing is silent
         try:
