@@ -6,6 +6,7 @@ import logging
 import os
 import urllib.error
 import urllib.request
+import traceback
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -233,6 +234,7 @@ def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
             except Exception:
                 return ""
         except urllib.error.HTTPError as exc:
+            import traceback
             last_err = exc
             body = ""
             try:
@@ -243,11 +245,25 @@ def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
             if int(getattr(exc, "code", 0) or 0) == 404:
                 logger.warning("[gemini] model '%s' not found (HTTP 404), trying fallback", model)
                 continue
-            logger.warning("[gemini] HTTP %s for model '%s': %s", getattr(exc, "code", "?"), model, body or str(exc))
+            logger.error(
+                "[gemini] HTTP %s for model '%s': %s\nType: %s\nTraceback:\n%s",
+                getattr(exc, "code", "?"),
+                model,
+                body or str(exc),
+                type(exc).__name__,
+                traceback.format_exc(),
+            )
             raise
         except Exception as exc:
+            import traceback
             last_err = exc
-            logger.warning("[gemini] request failed for model '%s': %s", model, exc)
+            logger.error(
+                "[gemini] request failed for model '%s': %s\nType: %s\nTraceback:\n%s",
+                model,
+                exc,
+                type(exc).__name__,
+                traceback.format_exc(),
+            )
             continue
 
     if last_err is not None:
@@ -331,7 +347,12 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
     try:
         review_text = await asyncio.to_thread(_call_gemini_sync, api_key, prompt_payload)
     except Exception as exc:
-        logger.warning("[gemini] review request failed: %s", exc)
+        logger.error(
+            "[gemini] review request failed: %s\nType: %s\nTraceback:\n%s",
+            exc,
+            type(exc).__name__,
+            traceback.format_exc(),
+        )
 
     training = await _train_model_with_overwrite()
     feature_suggestions = _extract_feature_suggestions(review_text)
