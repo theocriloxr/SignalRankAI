@@ -6192,6 +6192,12 @@ def run_bot() -> None:
     def weekly_gemini_ml_review_job():
         """Weekly Gemini review plus model retrain from recent aggregate window."""
         try:
+            _enabled = str(os.getenv("GEMINI_REVIEW_ENABLED", "1") or "1").strip().lower() in {
+                "1", "true", "yes", "y", "on"
+            }
+            if not _enabled:
+                logger.info("[gemini] weekly job disabled via GEMINI_REVIEW_ENABLED=0")
+                return
             from services.gemini_ml import run_gemini_review_pipeline
 
             result = run_sync(

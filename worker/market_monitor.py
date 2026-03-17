@@ -220,4 +220,4 @@ async def start_market_monitor():
 
 if __name__ == '__main__':
     # For standalone testing
-    run_sync(start_market_monitor())
+    run_sync(start_market_monitor(), timeout=None)

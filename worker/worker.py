@@ -153,7 +153,8 @@ async def _amain() -> None:
 
 
 def main() -> None:
-    run_sync(_amain())
+    # Worker is a long-running loop; do not apply run_sync timeout.
+    run_sync(_amain(), timeout=None)
 
 
 if __name__ == "__main__":

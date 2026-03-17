@@ -47,7 +47,7 @@ def _ensure_background_loop() -> asyncio.AbstractEventLoop:
     return _bg_loop
 
 
-def run_sync(coro, timeout: float = 30.0) -> Any:
+def run_sync(coro, timeout: float | None = None) -> Any:
     """Run an async coroutine from sync code safely.
 
     Always routes execution through a single long-lived background event loop
@@ -66,7 +66,9 @@ def run_sync(coro, timeout: float = 30.0) -> Any:
     bg_loop = _ensure_background_loop()
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
-        return fut.result(timeout=timeout)
+        if timeout is None or float(timeout) <= 0:
+            return fut.result()
+        return fut.result(timeout=float(timeout))
     except Exception:
         # Best effort cancellation on timeout/error.
         try:

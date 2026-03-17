@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from typing import Any
@@ -181,8 +182,28 @@ async def _collect_aggregate(scope: str) -> dict[str, Any]:
     }
 
 
+def _gemini_model_candidates() -> list[str]:
+    """Resolve Gemini model candidates, starting with GEMINI_MODEL.
+
+    Defaults include currently common public model IDs. Users can override with
+    GEMINI_MODEL_FALLBACKS="model_a,model_b,...".
+    """
+    primary = (os.getenv("GEMINI_MODEL") or "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+    fallbacks_raw = (os.getenv("GEMINI_MODEL_FALLBACKS") or "").strip()
+    if fallbacks_raw:
+        extra = [m.strip() for m in fallbacks_raw.split(",") if m.strip()]
+    else:
+        extra = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+
+    out: list[str] = []
+    for m in [primary] + extra:
+        if m not in out:
+            out.append(m)
+    return out
+
+
 def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
-    model = (os.getenv("GEMINI_MODEL") or "gemini-1.5-pro").strip()
+    models = _gemini_model_candidates()
     req_body = {
         "contents": [{"parts": [{"text": json.dumps(prompt_payload)}]}],
         "generationConfig": {
@@ -191,23 +212,47 @@ def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
         },
     }
 
-    req = urllib.request.Request(
-        url=(
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{model}:generateContent?key={api_key}"
-        ),
-        data=json.dumps(req_body).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     timeout = int(os.getenv("GEMINI_REVIEW_HTTP_TIMEOUT_SEC", "60") or 60)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        payload = json.loads(resp.read().decode("utf-8"))
 
-    try:
-        return str(payload["candidates"][0]["content"]["parts"][0].get("text") or "").strip()
-    except Exception:
-        return ""
+    last_err: Exception | None = None
+    for model in models:
+        req = urllib.request.Request(
+            url=(
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{model}:generateContent?key={api_key}"
+            ),
+            data=json.dumps(req_body).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+            try:
+                return str(payload["candidates"][0]["content"]["parts"][0].get("text") or "").strip()
+            except Exception:
+                return ""
+        except urllib.error.HTTPError as exc:
+            last_err = exc
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="ignore")[:800]
+            except Exception:
+                body = ""
+            # Model-level 404 is usually recoverable by trying next candidate.
+            if int(getattr(exc, "code", 0) or 0) == 404:
+                logger.warning("[gemini] model '%s' not found (HTTP 404), trying fallback", model)
+                continue
+            logger.warning("[gemini] HTTP %s for model '%s': %s", getattr(exc, "code", "?"), model, body or str(exc))
+            raise
+        except Exception as exc:
+            last_err = exc
+            logger.warning("[gemini] request failed for model '%s': %s", model, exc)
+            continue
+
+    if last_err is not None:
+        raise last_err
+    return ""
 
 
 async def _train_model_with_overwrite() -> dict[str, Any]:
