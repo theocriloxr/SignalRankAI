@@ -3678,6 +3678,54 @@ async def performance_command(update, context):
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.pg_features import get_user_performance_30d
+			from sqlalchemy import text
+
+			async def _fallback_performance_stats(session, tg_user_id: int) -> dict[str, object]:
+				"""Fallback aggregate in case helper query fails in production."""
+				row = (
+					await session.execute(
+						text(
+							"""
+							SELECT
+							  COUNT(DISTINCT sd.id) AS total,
+							  SUM(CASE WHEN LOWER(COALESCE(o.status, '')) IN ('tp','tp1','tp2','partial_tp') THEN 1 ELSE 0 END) AS wins,
+							  SUM(CASE WHEN LOWER(COALESCE(o.status, '')) = 'sl' THEN 1 ELSE 0 END) AS losses,
+							  AVG(o.r_multiple) AS avg_r,
+							  SUM(o.r_multiple) AS net_r
+							FROM users u
+							LEFT JOIN signal_deliveries sd
+							  ON sd.user_id = u.id
+							  AND sd.delivered_at >= (NOW() - INTERVAL '30 days')
+							LEFT JOIN outcomes o
+							  ON o.signal_id = sd.signal_id
+							WHERE u.telegram_user_id = :uid
+							"""
+						),
+						{"uid": int(tg_user_id)},
+					)
+				).first()
+				if not row:
+					return {
+						"total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
+						"avg_r": None, "net_r": None, "tracked_outcomes": 0, "profit_loss_pct": 0.0,
+					}
+				total = int(row[0] or 0)
+				wins = int(row[1] or 0)
+				losses = int(row[2] or 0)
+				tracked = wins + losses
+				avg_r = float(row[3]) if row[3] is not None else None
+				net_r = float(row[4]) if row[4] is not None else None
+				profit_loss_pct = ((float(net_r) / tracked) * 1.0) if (net_r is not None and tracked > 0) else 0.0
+				return {
+					"total": total,
+					"wins": wins,
+					"losses": losses,
+					"win_rate": (wins / max(1, tracked)) if tracked > 0 else 0.0,
+					"avg_r": avg_r,
+					"net_r": net_r,
+					"tracked_outcomes": tracked,
+					"profit_loss_pct": float(profit_loss_pct),
+				}
 
 			# Fetch performance stats
 			stats = {}
@@ -3686,6 +3734,11 @@ async def performance_command(update, context):
 					stats = await get_user_performance_30d(session, int(user_id))
 			except Exception as e:
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
+				try:
+					async with get_session() as session:
+						stats = await _fallback_performance_stats(session, int(user_id))
+				except Exception as e2:
+					_audit_logger.error(f"/performance fallback query failed for user={user_id}: {e2}")
 
 			total = int((stats or {}).get("total") or 0)
 			wins = int((stats or {}).get("wins") or 0)
@@ -3705,12 +3758,12 @@ async def performance_command(update, context):
 					cutoff: datetime = datetime.utcnow() - timedelta(days=30)
 					
 					async with get_session() as session:
-						res_u: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
-						u: User | None = res_u.scalar_one_or_none()
+						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
+						u = res_u.scalar_one_or_none()
 						if u is None:
 							deliveries_30d = 0
 						else:
-							res_d: Result[Tuple[int]] = await session.execute(
+							res_d = await session.execute(
 								select(func.count(SignalDelivery.id)).where(
 									SignalDelivery.user_id == u.id,
 									SignalDelivery.delivered_at >= cutoff,

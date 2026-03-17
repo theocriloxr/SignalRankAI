@@ -482,8 +482,10 @@ def _start_worker_loop_in_background() -> asyncio.Task:
         try:
             await loop.run_in_executor(None, worker_main)
         except Exception as exc:
-            print(f"[worker] background loop crashed: {exc}", flush=True)
-            logger.exception(f"[worker] background loop crashed: {exc}")
+            _etype = type(exc).__name__
+            _erepr = repr(exc)
+            print(f"[worker] background loop crashed: type={_etype} repr={_erepr}", flush=True)
+            logger.exception("[worker] background loop crashed: type=%s repr=%r", _etype, exc)
             raise
 
     return asyncio.create_task(_runner())
