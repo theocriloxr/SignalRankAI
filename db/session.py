@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import socket as _socket
 import threading
 from config import config
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
@@ -15,7 +16,7 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 
-def _engine_connect_args() -> dict:
+def _engine_connect_args() -> dict[str, Any]:
     """Return asyncpg connection args tuned for Railway network conditions."""
     try:
         connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "15").strip())
@@ -55,6 +56,7 @@ def _prefer_ipv4_url(url: str) -> str:
         host = sa_url.host
         if not host:
             return url
+        host = str(host)
         # Already an IPv4 literal (digits + dots) or bracketed IPv6 literal — skip
         if ":" in host or all(c in "0123456789." for c in host):
             return url
@@ -62,7 +64,7 @@ def _prefer_ipv4_url(url: str) -> str:
         infos = _socket.getaddrinfo(host, port, _socket.AF_INET, _socket.SOCK_STREAM)
         if not infos:
             return url
-        ipv4 = infos[0][4][0]
+        ipv4 = str(infos[0][4][0])
         # IMPORTANT: use render_as_string(hide_password=False) — NOT str().
         # SQLAlchemy 2.x's str(url) redacts the password as "***", which causes
         # asyncpg to authenticate with the literal string "***" and get
@@ -147,10 +149,25 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
 
 _global_engine: Optional[AsyncEngine] = None  # Backward-compat reference only
 _global_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
-_engines_by_thread: dict[int, AsyncEngine] = {}
-_sessionmakers_by_thread: dict[int, async_sessionmaker[AsyncSession]] = {}
+_engines_by_loop: dict[str, AsyncEngine] = {}
+_sessionmakers_by_loop: dict[str, async_sessionmaker[AsyncSession]] = {}
 _global_engine_lock = threading.Lock()
 _schema_checked = False
+
+
+def _engine_cache_key() -> str:
+    """Return a stable cache key for the current execution context.
+
+    Prefer event-loop scoping to avoid reusing one AsyncEngine across different
+    loops in the same thread (common with repeated asyncio.run() calls).
+    """
+    tid = int(threading.get_ident())
+    try:
+        loop = asyncio.get_running_loop()
+        return f"t{tid}:l{id(loop)}"
+    except RuntimeError:
+        # No running loop in this thread.
+        return f"t{tid}:l0"
 
 
 def _get_global_engine() -> Optional[AsyncEngine]:
@@ -160,12 +177,12 @@ def _get_global_engine() -> Optional[AsyncEngine]:
     any thread, with or without a running event loop.
     """
     global _global_engine, _global_sessionmaker
-    tid = int(threading.get_ident())
-    existing = _engines_by_thread.get(tid)
+    cache_key = _engine_cache_key()
+    existing = _engines_by_loop.get(cache_key)
     if existing is not None:
         return existing
     with _global_engine_lock:
-        existing = _engines_by_thread.get(tid)
+        existing = _engines_by_loop.get(cache_key)
         if existing is not None:  # re-check after lock
             return existing
         try:
@@ -176,6 +193,9 @@ def _get_global_engine() -> Optional[AsyncEngine]:
                 "Set DATABASE_URL or DATABASE_PUBLIC_URL in your environment. (%s)", _ve
             )
             return None
+        if not url:
+            logger.critical("[db] DATABASE_URL resolved to empty value")
+            return None
         # Always NullPool + per-thread engine object to avoid cross-event-loop
         # lock binding errors in multi-thread runtime.
         engine = create_async_engine(
@@ -185,8 +205,8 @@ def _get_global_engine() -> Optional[AsyncEngine]:
             connect_args=_engine_connect_args(),
         )
         sm = async_sessionmaker(engine, expire_on_commit=False)
-        _engines_by_thread[tid] = engine
-        _sessionmakers_by_thread[tid] = sm
+        _engines_by_loop[cache_key] = engine
+        _sessionmakers_by_loop[cache_key] = sm
         # Backward compatibility for modules peeking at globals.
         _global_engine = engine
         _global_sessionmaker = sm
@@ -203,8 +223,8 @@ def _get_global_engine() -> Optional[AsyncEngine]:
 
 def _get_global_sessionmaker() -> Optional[async_sessionmaker[AsyncSession]]:
     _get_global_engine()  # ensure current-thread engine/sessionmaker exists
-    tid = int(threading.get_ident())
-    sm = _sessionmakers_by_thread.get(tid)
+    cache_key = _engine_cache_key()
+    sm = _sessionmakers_by_loop.get(cache_key)
     if sm is not None:
         return sm
     return _global_sessionmaker

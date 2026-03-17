@@ -3160,6 +3160,9 @@ _bot_init_started_at = 0.0
 _webhook_application = None
 _webhook_handlers_ready = False
 _bot_scheduler = None  # keeps the BackgroundScheduler alive after run_bot() returns
+# Public module-level handle used by cross-module senders (e.g. engine outcome
+# notifications). Must be assigned during run_bot() startup.
+application = None
 
 def run_bot() -> None:
     """Run the Telegram polling bot.
@@ -3172,7 +3175,7 @@ def run_bot() -> None:
 
     # Idempotency guard for webhook deployments: if setup already completed in
     # this process, do not create a second scheduler/app instance.
-    global _webhook_application, _webhook_handlers_ready, _bot_scheduler, _bot_init_started, _bot_init_started_at
+    global _webhook_application, _webhook_handlers_ready, _bot_scheduler, _bot_init_started, _bot_init_started_at, application
 
     # Hard process-local guard (covers races during startup where run_bot() can
     # be invoked twice before _bot_scheduler is assigned).
@@ -3466,7 +3469,7 @@ def run_bot() -> None:
                             text(
                             """
                             INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                            VALUES (:k, :v::jsonb, NULL, NOW())
+                            VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
                             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
                             """
                             ),
@@ -4992,7 +4995,7 @@ def run_bot() -> None:
                             UPDATE mt5_executions
                             SET status = 'closed_by_killsw',
                                 closed_at = COALESCE(closed_at, NOW()),
-                                meta = COALESCE(meta, '{}'::jsonb) || :meta::jsonb
+                                meta = COALESCE(meta, '{}'::jsonb) || CAST(:meta AS JSONB)
                             WHERE closed_at IS NULL
                               AND status IN ('pending','open','tp1','tp2')
                             """

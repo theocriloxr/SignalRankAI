@@ -4867,7 +4867,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 					text(
 						"""
 						INSERT INTO runtime_state(key, value, expires_at, updated_at)
-						VALUES (:k, :v::jsonb, NULL, NOW())
+						VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
 						ON CONFLICT (key) DO UPDATE
 						SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
 						"""

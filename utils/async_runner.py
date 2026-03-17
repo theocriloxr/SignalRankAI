@@ -50,23 +50,19 @@ def _ensure_background_loop() -> asyncio.AbstractEventLoop:
 def run_sync(coro, timeout: float = 30.0) -> Any:
     """Run an async coroutine from sync code safely.
 
-    - If there's no running event loop, uses `asyncio.run`.
-    - If an event loop is already running, runs the coroutine in a new
-      background thread with its own event loop and returns the result.
+    Always routes execution through a single long-lived background event loop
+    and blocks for the result.
+
+    Using `asyncio.run()` for short-lived calls repeatedly creates/tears down
+    event loops, which can leave async DB resources tied to closed loops and
+    trigger noisy SQLAlchemy/asyncpg GC warnings.
 
     This is a pragmatic shim to avoid crashes from calling `asyncio.run`
     while an event loop is active. It is not a perfect substitute for
     refactoring callers to be async-aware, but reduces immediate runtime
     failures.
     """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop in this thread — safe to use asyncio.run
-        return asyncio.run(coro)
-
-    # Event loop is already running in this thread. Execute on a dedicated,
-    # long-lived background loop and block for the result.
+    # Execute on a dedicated, long-lived background loop and block for result.
     bg_loop = _ensure_background_loop()
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
