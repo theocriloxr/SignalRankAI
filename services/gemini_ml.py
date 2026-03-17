@@ -191,14 +191,51 @@ def _gemini_model_candidates() -> list[str]:
     """
     primary = (os.getenv("GEMINI_MODEL") or "gemini-2.0-flash").strip() or "gemini-2.0-flash"
     fallbacks_raw = (os.getenv("GEMINI_MODEL_FALLBACKS") or "").strip()
+    # Comprehensive list of public Gemini models (add more as released)
+    all_known_models = [
+        # Gemini 3.1 Series
+        "gemini-3.1-pro",
+        "gemini-3.1-flash-lite",
+        "gemini-3.1-flash-image",
+
+        # Gemini 3 Series
+        "gemini-3-pro",
+        "gemini-3-flash",
+        "gemini-3-deep-think",
+        "gemini-3-pro-image",
+
+        # Gemini 2.5 Series
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash-image",
+
+        # Gemini 2.0 Series
+        "gemini-2.0-pro",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+
+        # Gemini 1.5 Series
+        "gemini-1.5-pro",
+        "gemini-1.5-flash",
+
+        # Gemini 1.0 Series
+        "gemini-1.0-ultra",
+        "gemini-1.0-pro",
+        "gemini-1.0-pro-vision",
+        "gemini-1.0-nano",
+
+        # Legacy Aliases
+        "gemini-pro",
+        "gemini-pro-vision",
+    ]
+    extra = []
     if fallbacks_raw:
         extra = [m.strip() for m in fallbacks_raw.split(",") if m.strip()]
-    else:
-        extra = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-
+    # Always try primary, then user fallbacks, then all known models (deduped, in order)
     out: list[str] = []
-    for m in [primary] + extra:
-        if m not in out:
+    for m in [primary] + extra + all_known_models:
+        if m and m not in out:
             out.append(m)
     return out
 
