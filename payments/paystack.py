@@ -73,18 +73,22 @@ async def process_event(event):
     except Exception as e:
         return {"processed": False, "reason": str(e)}
     
-    # Send Telegram confirmation
+    # Send Telegram confirmation (MarkdownV2 escaped)
     try:
         from signalrank_telegram.bot import application
         bot = application.bot
         from datetime import datetime, timedelta
+        import re
         expiry = datetime.utcnow() + timedelta(days=int(duration_days))
+        def escape_md(text):
+            # Escape all MarkdownV2 special chars
+            return re.sub(r'([_\*\[\]()~`>#+\-=|{}.!])', r'\\\1', str(text))
         msg = (
-            f"✅ Payment confirmed! You're now {tier} tier.\n\n"
-            f"📅 Active until: {expiry.strftime('%Y-%m-%d')}\n"
-            f"Use /signals for the latest trading ideas."
+            f"✅ Payment confirmed\! You\'re now {escape_md(tier)} tier\.\n\n"
+            f"📅 Active until: {escape_md(expiry.strftime('%Y-%m-%d'))}\n"
+            f"Use /signals for the latest trading ideas\."
         )
-        await bot.send_message(chat_id=int(telegram_user_id), text=msg)
+        await bot.send_message(chat_id=int(telegram_user_id), text=msg, parse_mode="MarkdownV2")
     except Exception:
         pass
     
