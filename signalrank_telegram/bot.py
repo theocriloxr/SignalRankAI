@@ -3295,231 +3295,28 @@ def run_bot() -> None:
         except Exception as _ready_err:
             logger.warning("[bot] webhook readiness check failed at stage=%s: %s", stage, _ready_err)
 
-    # Ensure required schema exists — belt-and-suspenders patch for any live DB
-    # that was bootstrapped before Alembic migration 0010_consolidate_full_schema ran.
-    # Every statement uses IF NOT EXISTS / ADD COLUMN IF NOT EXISTS so it is safe
-    # to run against any DB state on every bot restart.
-    if _webhook_mode:
-        logger.info("[bot] webhook mode: skipping run_bot schema ensure (handled by startup ops)")
-    else:
-        try:
-            from db.session import is_db_configured, get_session
-            from sqlalchemy import text
 
-            if is_db_configured():
-                async def _ensure_schema() -> None:
-                    _stmts = [
-                    # users — columns added after 0001_init / 0008_user_tier_column
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMP",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS fixed_lot_size FLOAT NOT NULL DEFAULT 0.01",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_today INTEGER NOT NULL DEFAULT 0",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_executions_reset_at TIMESTAMP",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_risk_percentage FLOAT NOT NULL DEFAULT 1.0",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS max_daily_drawdown_pct FLOAT NOT NULL DEFAULT 8.0",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS execution_mode VARCHAR(16) NOT NULL DEFAULT 'manual'",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_signals_daily_limit INTEGER NOT NULL DEFAULT 3",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_subscription_code VARCHAR(128)",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS paystack_customer_code VARCHAR(128)",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE",
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0",
-                    # subscriptions
-                    "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
-                    # signals
-                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS ml_probability FLOAT",
-                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
-                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
-                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE",
-                    # referrals
-                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS is_successful BOOLEAN NOT NULL DEFAULT FALSE",
-                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
-                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS successful_at TIMESTAMP",
-                    "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
-                    # managed_assets
-                    "ALTER TABLE managed_assets ADD COLUMN IF NOT EXISTS last_analyzed_at TIMESTAMP",
-                    # persistent ML training archive (kept across test resets)
-                    """
-                    CREATE TABLE IF NOT EXISTS ml_past_training_data (
-                        id SERIAL PRIMARY KEY,
-                        signal_id VARCHAR(36) UNIQUE NOT NULL,
-                        asset VARCHAR(32) NOT NULL,
-                        timeframe VARCHAR(8) NOT NULL,
-                        direction VARCHAR(8) NOT NULL,
-                        entry DOUBLE PRECISION NOT NULL,
-                        stop_loss DOUBLE PRECISION NOT NULL,
-                        take_profit TEXT NOT NULL,
-                        rr_estimate DOUBLE PRECISION NULL,
-                        score DOUBLE PRECISION NULL,
-                        strength DOUBLE PRECISION NULL,
-                        regime VARCHAR(32) NULL,
-                        strategy_name VARCHAR(64) NULL,
-                        ml_probability DOUBLE PRECISION NULL,
-                        outcome_status VARCHAR(16) NOT NULL,
-                        outcome_r_multiple DOUBLE PRECISION NULL,
-                        outcome_percent DOUBLE PRECISION NULL,
-                        outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        signal_created_at TIMESTAMP NULL,
-                        outcome_closed_at TIMESTAMP NULL,
-                        archived_at TIMESTAMP NOT NULL DEFAULT NOW()
-                    )
-                    """,
-                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_signal_id ON ml_past_training_data(signal_id)",
-                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_asset ON ml_past_training_data(asset)",
-                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_timeframe ON ml_past_training_data(timeframe)",
-                    "CREATE INDEX IF NOT EXISTS ix_ml_past_training_data_outcome_status ON ml_past_training_data(outcome_status)",
-                ]
-                    async with get_session() as session:
-                        for stmt in _stmts:
-                            try:
-                                await session.execute(text(stmt))
-                            except Exception:
-                                pass  # Column/table may already exist
-                        await session.commit()
-
-                run_sync(_ensure_schema())
-        except Exception as e:
-            _log_once("ensure_schema_failed", f"[bot] schema ensure failed: {type(e).__name__}: {e}")
-
-    # Optional destructive test mode:
-    # Wipes all tables except users + ml_past_training_data + alembic_version.
-    # Before wipe, snapshots current signal/outcome history into
-    # ml_past_training_data. Also runs only once per DB (marker key).
-    if _webhook_mode:
-        logger.info("[bot] webhook mode: skipping run_bot fresh-reset path")
-    else:
-        try:
-            from db.session import is_db_configured
-            _fresh_raw = str(os.getenv("START_FRESH_KEEP_USERS_ON_BOOT", "0") or "0").strip().lower()
-            _fresh_enabled = _fresh_raw in {"1", "true", "yes", "on"}
-            if _fresh_enabled and is_db_configured():
-                async def _fresh_reset_keep_users() -> tuple[int, bool]:
-                    from db.session import get_session
-                    from sqlalchemy import text
-
-                    async with get_session() as session:
-                        _reset_version = str(os.getenv("START_FRESH_RESET_VERSION", "v1") or "v1").strip()
-                        _force_reset = str(os.getenv("START_FRESH_FORCE", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
-                        marker_key = f"startup_reset_done_{_reset_version}"
-
-                        # One-time marker guard.
-                        if not _force_reset:
-                            marker = await session.execute(
-                                text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
-                                {"k": marker_key},
-                            )
-                            marker_row = marker.scalar_one_or_none()
-                            if marker_row is not None:
-                                return (0, False)
-
-                        try:
-                            # Prevent duplicate wipe in multi-instance boot.
-                            lock_row = await session.execute(
-                                text("SELECT pg_try_advisory_lock(739909)")
-                            )
-                            lock_ok = bool((lock_row.scalar_one_or_none() or False))
-                        except Exception:
-                            lock_ok = True
-
-                        if not lock_ok:
-                            return (0, False)
-
-                        # Snapshot current labeled samples into persistent ML archive.
-                        await session.execute(
-                            text(
-                            """
-                            INSERT INTO ml_past_training_data (
-                                signal_id, asset, timeframe, direction,
-                                entry, stop_loss, take_profit,
-                                rr_estimate, score, strength, regime, strategy_name, ml_probability,
-                                outcome_status, outcome_r_multiple, outcome_percent, outcome_meta,
-                                signal_created_at, outcome_closed_at, archived_at
-                            )
-                            SELECT
-                                s.signal_id, s.asset, s.timeframe, s.direction,
-                                s.entry, s.stop_loss, s.take_profit,
-                                s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
-                                o.status, o.r_multiple, o.percent, COALESCE(o.meta::jsonb, '{}'::jsonb),
-                                s.created_at, o.closed_at, NOW()
-                            FROM signals s
-                            JOIN outcomes o ON o.signal_id = s.signal_id
-                            ON CONFLICT (signal_id) DO NOTHING
-                            """
-                            )
-                        )
-
-                        rows = await session.execute(
-                            text(
-                            """
-                            SELECT tablename
-                            FROM pg_tables
-                            WHERE schemaname = 'public'
-                              AND tablename NOT IN ('users', 'alembic_version', 'ml_past_training_data', 'runtime_state')
-                            """
-                            )
-                        )
-                        tables = [str(r[0]) for r in rows.all() if r and r[0]]
-
-                        if tables:
-                            quoted = ", ".join('"' + str(t).replace('"', '""') + '"' for t in tables)
-                            await session.execute(text(f"TRUNCATE TABLE {quoted} RESTART IDENTITY CASCADE"))
-
-                        # Clear runtime state to start fresh, then store one-time marker.
-                        await session.execute(text("DELETE FROM runtime_state"))
-                        await session.execute(
-                            text(
-                            """
-                            INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                            VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
-                            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
-                            """
-                            ),
-                            {"k": marker_key, "v": '{"done": true}'},
-                        )
-                    await session.commit()
-                    return (len(tables), True)
-
-                _wiped_count, _ran = run_sync(_fresh_reset_keep_users())
-                if _ran:
-                    logger.warning(
-                        "[boot] START_FRESH_KEEP_USERS_ON_BOOT active: reset complete (wiped_tables=%d, kept=users+ml_past_training_data)",
-                        int(_wiped_count),
-                    )
-                else:
-                    logger.info("[boot] startup reset skipped: already done or lock held by another instance")
-        except Exception as _fresh_err:
-            logger.warning(f"[boot] startup fresh reset failed: {_fresh_err}")
-
-    # Advisory lock: only needed in polling mode to prevent duplicate pollers
-    # across Railway replicas.  In webhook mode Telegram delivers each update
-    # exactly once to the registered URL, so the lock is unnecessary.
-    if not os.getenv("TELEGRAM_USE_WEBHOOK"):
-        try:
-            import psycopg2
-
-            lock_id = int(os.getenv("TELEGRAM_BOT_LOCK_ID", "739105"))
-            dsn = (os.getenv("DATABASE_URL") or "").strip()
-            if dsn.startswith("postgresql+asyncpg://"):
-                dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-
-            if dsn:
-                conn = psycopg2.connect(dsn, connect_timeout=5)
-                conn.autocommit = True
-                with conn.cursor() as cur:
-                    cur.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,))
-                    locked = bool(cur.fetchone()[0])
-                if not locked:
-                    try:
-                        conn.close()
-                    except Exception as e:
-                        logger.debug(f"[boot] Failed to close database connection: {e}")
-                        pass
-                    print("[boot] telegram bot polling skipped: another instance holds the lock", flush=True)
-                    return
-                global _bot_lock_conn
-                _bot_lock_conn = conn
-        except Exception:
-            # If DB is unavailable or lock fails, fall back to running (single-instance environments).
-            pass
+    # Always start scheduler and jobs, regardless of webhook or polling mode
+    try:
+        if _bot_scheduler is None:
+            _bot_scheduler = BackgroundScheduler(timezone="UTC")
+            # Schedule all bot jobs (including resend_unsent_signals_job)
+            from signalrank_telegram.bot import (
+                resend_unsent_signals_job,
+                downgrade_expired_subscriptions_job,
+                auto_delete_old_signals_job,
+                distribute_random_signals_to_free_users_job,
+                send_outcome_notifications,
+            )
+            _bot_scheduler.add_job(resend_unsent_signals_job, "interval", minutes=5, id="resend_unsent_signals", replace_existing=True, max_instances=1)
+            _bot_scheduler.add_job(downgrade_expired_subscriptions_job, "cron", hour=0, id="downgrade_expired_subs", replace_existing=True, max_instances=1)
+            _bot_scheduler.add_job(auto_delete_old_signals_job, "cron", day_of_week="sun", hour=3, id="auto_delete_old_signals", replace_existing=True, max_instances=1)
+            _bot_scheduler.add_job(distribute_random_signals_to_free_users_job, "interval", minutes=30, id="distribute_free_signals", replace_existing=True, max_instances=1)
+            _bot_scheduler.add_job(send_outcome_notifications, "interval", minutes=3, id="send_outcome_notifications", replace_existing=True, max_instances=1)
+            _bot_scheduler.start()
+            logger.info("[bot] scheduler started and jobs scheduled (webhook/polling mode)")
+    except Exception as sched_exc:
+        logger.warning(f"[bot] scheduler/job setup failed: {sched_exc}")
 
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
