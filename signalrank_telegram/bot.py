@@ -2303,9 +2303,9 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                     bot,
                     telegram_user_id=int(uid),
                     signal=dict(signal or {}),
-                    display_tier="free",
+                    display_tier="free",):
                 # Global fix: escape text for Markdown/MarkdownV2 parse modes
-                send_text = str(text)
+                    send_text = str(text)
                 if parse_mode and parse_mode.lower().startswith("markdown"):
                     try:
                         from telegram.helpers import escape_markdown
@@ -2324,6 +2324,9 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                 except Exception as e:
                     logger.debug(f"[send_message] Failed to create async task for message: {e}")
                     pass
+            except Exception as e:
+                logger.debug(f"[fomo_free] Failed to send free fomo message to user {uid}: {e}")
+                continue
         if sent:
             logger.info(f"[fomo_free] dispatched signal={signal_id[:8]} to free_users={sent}")
         return int(sent)
