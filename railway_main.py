@@ -493,13 +493,13 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-        # ── Lifespan heartbeat: confirm event loop is alive ──
-        async def _lifespan_heartbeat():
-            import time
-            while True:
-                logger.info(f"[lifespan] heartbeat: event loop alive at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-                await asyncio.sleep(60)
-        asyncio.create_task(_lifespan_heartbeat())
+    # ── Lifespan heartbeat: confirm event loop is alive ──
+    async def _lifespan_heartbeat():
+        import time
+        while True:
+            logger.info(f"[lifespan] heartbeat: event loop alive at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+            await asyncio.sleep(60)
+    asyncio.create_task(_lifespan_heartbeat())
     # ── 1) DB startup/background maintenance ───────────────────────────────────
     # Keep startup healthcheck-friendly: schedule DB-heavy work in background,
     # and only wait for bounded time when explicitly configured.
