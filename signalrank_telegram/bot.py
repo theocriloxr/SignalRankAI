@@ -6058,29 +6058,10 @@ def run_bot() -> None:
     # Cross-process scheduler ownership lock (important when multiple workers/
     # replicas are alive). Only the lock holder starts APScheduler jobs.
     _scheduler_enabled = True
-    if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        try:
-            import psycopg2 as _psycopg2
-            _dsn = _sched_sync_url or ""
-            if _dsn:
-                _sched_lock_id = int(os.getenv("TELEGRAM_SCHEDULER_LOCK_ID", "739305"))
-                _conn = _psycopg2.connect(_dsn, connect_timeout=5)
-                _conn.autocommit = True
-                with _conn.cursor() as _cur:
-                    _cur.execute("SELECT pg_try_advisory_lock(%s)", (_sched_lock_id,))
-                    _owned = bool((_cur.fetchone() or [False])[0])
-                if _owned:
-                    global _bot_sched_lock_conn
-                    _bot_sched_lock_conn = _conn
-                else:
-                    try:
-                        _conn.close()
-                    except Exception:
-                        pass
-                    _scheduler_enabled = False
-                    logger.info("[sched] webhook instance not lock-owner; scheduler bootstrap skipped")
-        except Exception as _sched_lock_err:
-            logger.warning("[sched] scheduler lock unavailable (%s); continuing with scheduler", _sched_lock_err)
+    # PATCH: Always enable scheduler in single-instance mode (Railway Free Tier)
+    # so resend job and all critical jobs run, even if not lock-owner.
+    # The lock logic is bypassed to ensure jobs are always scheduled.
+    # If you ever run multiple instances, restore the lock logic for safety.
 
     scheduler = None
     if _scheduler_enabled:
