@@ -212,7 +212,7 @@ async def persist_decision_log(
                 return 0
     except Exception as e:
         import logging
-        logging.warning(f"Failed to persist decision log: {e}")
+        logging.exception(f"Failed to persist decision log: {e}")
         return 0
 
 

@@ -167,23 +167,24 @@ def format_signal_free(signal) -> str:
 	- No explanations, no updates, optional delay
 	- Purpose: Attract users, build trust, showcase accuracy
 	"""
+	import html
 	ref = signal.get("signal_id") or signal.get("id")
-	ref_short = str(ref)[:8] if ref else "N/A"
-	
+	ref_short = html.escape(str(ref)[:8]) if ref else "N/A"
+
 	msg = f"""\
-🚀 BUY SIGNAL
+	🚀 BUY SIGNAL
 
-Asset: {signal.get('asset')}
-Timeframe: {signal.get('timeframe')}
+	Asset: {html.escape(str(signal.get('asset', '')))}
+	Timeframe: {html.escape(str(signal.get('timeframe', '')))}
 
-Entry: {signal.get('entry')}
-Stop Loss: {signal.get('stop_loss')}
-Take Profit: {signal.get('take_profit')}
+	Entry: {html.escape(str(signal.get('entry', '')))}
+	Stop Loss: {html.escape(str(signal.get('stop_loss', '')))}
+	Take Profit: {html.escape(str(signal.get('take_profit', '')))}
 
-⚠️ Risk max 1–2%
+	⚠️ Risk max 1–2%
 
-📋 Ref: {ref_short} (use /outcome {ref_short})
-"""
+	📋 Ref: {ref_short} (use /outcome {ref_short})
+	"""
 	return msg
 
 def format_signal_premium(signal) -> str:
@@ -199,39 +200,39 @@ def format_signal_premium(signal) -> str:
 	- Purpose: Core revenue, active traders, better clarity & control
 	"""
 	ref = signal.get("signal_id") or signal.get("id")
-	ref_short = str(ref)[:8] if ref else "N/A"
-	
+	ref_short = html.escape(str(ref)[:8]) if ref else "N/A"
+
 	tp_levels = signal.get('tp_levels', [])
 	score = signal.get('score', 0)
-	session = signal.get('session', '')
+	session = html.escape(str(signal.get('session', '')))
 	expires_at = signal.get('expires_at')
-	
-	msg = f"""\
-🚀 BUY SIGNAL
 
-Asset: {signal.get('asset')}
-Timeframe: {signal.get('timeframe')}
-"""
-	
+	msg = f"""\
+	🚀 BUY SIGNAL
+
+	Asset: {html.escape(str(signal.get('asset', '')))}
+	Timeframe: {html.escape(str(signal.get('timeframe', '')))}
+	"""
+
 	if session:
 		msg += f"Session: {session}\n"
-	
+
 	msg += f"""
-Entry: {signal.get('entry')}
-Stop Loss: {signal.get('stop_loss')}
-"""
-	
+	Entry: {html.escape(str(signal.get('entry', '')))}
+	Stop Loss: {html.escape(str(signal.get('stop_loss', '')))}
+	"""
+
 	# Multiple TP levels (2-3)
 	if tp_levels:
 		for i, tp in enumerate(tp_levels[:3], 1):
-			msg += f"TP{i}: {tp}\n"
+			msg += f"TP{i}: {html.escape(str(tp))}\n"
 	else:
-		msg += f"TP: {signal.get('take_profit')}\n"
-	
+		msg += f"TP: {html.escape(str(signal.get('take_profit', '')))}\n"
+
 	msg += f"""
-🔥 Confidence: {int(score)}%
-"""
-	
+	🔥 Confidence: {int(score)}%
+	"""
+
 	# Validity window
 	if expires_at:
 		try:
@@ -244,12 +245,12 @@ Stop Loss: {signal.get('stop_loss')}
 			import logging
 			logging.debug(f"[formatter] Failed to calculate validity window: {e}")
 			pass
-	
-	msg += f"""
-⚠️ Risk max 1–2%
 
-📋 Ref: {ref_short} (use /outcome {ref_short})
-"""
+	msg += f"""
+	⚠️ Risk max 1–2%
+
+	📋 Ref: {ref_short} (use /outcome {ref_short})
+	"""
 	return msg
 
 def format_signal_vip(signal) -> str:
@@ -269,80 +270,80 @@ def format_signal_vip(signal) -> str:
 	- Purpose: High-value users, institutional-style
 	"""
 	ref = signal.get("signal_id") or signal.get("id")
-	ref_short = str(ref)[:8] if ref else "N/A"
-	
+	ref_short = html.escape(str(ref)[:8]) if ref else "N/A"
+
 	tp_levels = signal.get('tp_levels', [])
 	score = signal.get('score', 0)
-	session = signal.get('session', '')
-	regime = signal.get('regime', '')
+	session = html.escape(str(signal.get('session', '')))
+	regime = html.escape(str(signal.get('regime', '')))
 	confluence_count = signal.get('confluence_count', 0)
 	confluence_total = signal.get('confluence_total', 5)
 	rr_ratio = signal.get('rr_ratio', 0)
-	strategy = signal.get('strategy_name') or signal.get('strategy')
-	
-	msg = f"""\
-🚀 BUY SIGNAL — VIP
+	strategy = html.escape(str(signal.get('strategy_name') or signal.get('strategy') or ''))
 
-Asset: {signal.get('asset')}
-Timeframe: {signal.get('timeframe')}
-"""
-	
+	msg = f"""\
+	🚀 BUY SIGNAL — VIP
+
+	Asset: {html.escape(str(signal.get('asset', '')))}
+	Timeframe: {html.escape(str(signal.get('timeframe', '')))}
+	"""
+
 	if session:
 		msg += f"Session: {session}\n"
 	if regime:
 		msg += f"Market Regime: {regime}\n"
-	
-	msg += f"""
-Entry Zone: {signal.get('entry')}
-Stop Loss: {signal.get('stop_loss')}
 
-"""
-	
+	msg += f"""
+	Entry Zone: {html.escape(str(signal.get('entry', '')))}
+	Stop Loss: {html.escape(str(signal.get('stop_loss', '')))}
+
+	"""
+
 	# All 3 TP levels for VIP
 	if tp_levels and len(tp_levels) >= 3:
-		msg += f"TP1: {tp_levels[0]}\n"
-		msg += f"TP2: {tp_levels[1]}\n"
-		msg += f"TP3: {tp_levels[2]}\n"
+		msg += f"TP1: {html.escape(str(tp_levels[0]))}\n"
+		msg += f"TP2: {html.escape(str(tp_levels[1]))}\n"
+		msg += f"TP3: {html.escape(str(tp_levels[2]))}\n"
 	else:
-		msg += f"TP: {signal.get('take_profit')}\n"
-	
+		msg += f"TP: {html.escape(str(signal.get('take_profit', '')))}\n"
+
 	# Full score breakdown
 	msg += f"""
-📊 Confluence Score: {int(score)} / 100
-🔥 Confidence: {'VERY HIGH' if score >= 80 else ('HIGH' if score >= 65 else 'MEDIUM')}
-"""
-	
+	📊 Confluence Score: {int(score)} / 100
+	🔥 Confidence: {'VERY HIGH' if score >= 80 else ('HIGH' if score >= 65 else 'MEDIUM')}
+	"""
+
 	# HTF Bias
 	htf_bias = signal.get('htf_bias', {})
 	if isinstance(htf_bias, dict):
-		bias_str = htf_bias.get('bias', 'NEUTRAL')
+		bias_str = html.escape(str(htf_bias.get('bias', 'NEUTRAL')))
 		msg += f"📈 HTF Bias: {bias_str}\n"
-	
+
 	# Risk-Reward ratio
 	if rr_ratio and rr_ratio > 0:
 		msg += f"📊 Risk–Reward: 1 : {rr_ratio:.1f}\n"
-	
+
 	# Invalidation levels
 	invalid_price = signal.get('invalid_if_price')
 	if invalid_price:
 		msg += f"""
-❌ Invalidation:
-• Close below {invalid_price}
-"""
-	
+	❌ Invalidation:
+	• Close below {html.escape(str(invalid_price))}
+	"""
+
 	# Trading logic / reasoning
 	if signal.get('technical_reason'):
 		msg += f"""
-🧠 Trade Logic:
-• {signal.get('technical_reason')}
-"""
-	
-	msg += f"""
-📌 Signal ID: {ref_short}
-📈 Strategy: {strategy or 'Multi-Strategy'}
+	🧠 Trade Logic:
+	• {html.escape(str(signal.get('technical_reason')))}
+	"""
 
-📋 (use /outcome {ref_short} WIN/LOSS/CANCEL to track result)
-"""
+	msg += f"""
+	📌 Signal ID: {ref_short}
+	📈 Strategy: {strategy or 'Multi-Strategy'}
+
+	📋 (use /outcome {ref_short} WIN/LOSS/CANCEL to track result)
+	"""
 	return msg
 
 def format_signal_admin(signal) -> str:
