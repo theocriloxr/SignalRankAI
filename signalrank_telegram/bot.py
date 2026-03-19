@@ -3296,28 +3296,6 @@ def run_bot() -> None:
             logger.warning("[bot] webhook readiness check failed at stage=%s: %s", stage, _ready_err)
 
 
-    # Always start scheduler and jobs, regardless of webhook or polling mode
-    try:
-        if _bot_scheduler is None:
-            _bot_scheduler = BackgroundScheduler(timezone="UTC")
-            # Schedule all bot jobs (including resend_unsent_signals_job)
-            from signalrank_telegram.bot import (
-                resend_unsent_signals_job,
-                downgrade_expired_subscriptions_job,
-                auto_delete_old_signals_job,
-                distribute_random_signals_to_free_users_job,
-                send_outcome_notifications,
-            )
-            _bot_scheduler.add_job(resend_unsent_signals_job, "interval", minutes=5, id="resend_unsent_signals", replace_existing=True, max_instances=1)
-            _bot_scheduler.add_job(downgrade_expired_subscriptions_job, "cron", hour=0, id="downgrade_expired_subs", replace_existing=True, max_instances=1)
-            _bot_scheduler.add_job(auto_delete_old_signals_job, "cron", day_of_week="sun", hour=3, id="auto_delete_old_signals", replace_existing=True, max_instances=1)
-            _bot_scheduler.add_job(distribute_random_signals_to_free_users_job, "interval", minutes=30, id="distribute_free_signals", replace_existing=True, max_instances=1)
-            _bot_scheduler.add_job(send_outcome_notifications, "interval", minutes=3, id="send_outcome_notifications", replace_existing=True, max_instances=1)
-            _bot_scheduler.start()
-            logger.info("[bot] scheduler started and jobs scheduled (webhook/polling mode)")
-    except Exception as sched_exc:
-        logger.warning(f"[bot] scheduler/job setup failed: {sched_exc}")
-
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
         err_text = str(err or "")
