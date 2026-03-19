@@ -3340,7 +3340,7 @@ def run_bot() -> None:
             for _oid in (OWNER_IDS or []):
                 try:
                     await application.bot.send_message(
-                        chat_id=int(_oid), text=alert, parse_mode="MarkdownV2"
+                        chat_id=int(_oid), text=alert, parse_mode="MarkdownV2V2"
                     )
                 except Exception:
                     pass
@@ -3470,7 +3470,7 @@ def run_bot() -> None:
                             await app.bot.send_message(
                                 chat_id=int(_uid_ab),
                                 text=_disclaimer_ab,
-                                parse_mode="MarkdownV2",
+                                parse_mode="MarkdownV2V2",
                                 reply_markup=_kbd_ab,
                             )
                             _sent_ab += 1
@@ -3837,7 +3837,7 @@ def run_bot() -> None:
                         "dedicated support, and exclusive market insights.\n\n"
                         "🚀 Type /upgrade right now to unlock these features and catch this trade!"
                     ),
-                    parse_mode="MarkdownV2",
+                    parse_mode="MarkdownV2V2",
                 )
                 return
         except Exception as _te:
@@ -3973,7 +3973,7 @@ def run_bot() -> None:
             if not within_tol:
                 await query.edit_message_text(
                     f"⚠️ *Slippage Warning*\n\nSignal entry: `{entry}`\nLive price: `{live_px:.5f}`\nSlippage: `{slip:.1f}` pts\n\nToo far from entry — trade not executed.",
-                    parse_mode="MarkdownV2"
+                    parse_mode="MarkdownV2V2"
                 )
                 return
             # Use user's configured lot size (/setlot) or default 0.01
@@ -4036,7 +4036,7 @@ def run_bot() -> None:
                 lp = result.get("live_price") or entry
                 await query.edit_message_text(
                     f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`{_remaining_text}",
-                    parse_mode="MarkdownV2"
+                    parse_mode="MarkdownV2V2"
                 )
                 try:
                     await _send_message_with_retry(
@@ -4053,9 +4053,9 @@ def run_bot() -> None:
                 except Exception:
                     pass
             else:
-                await query.edit_message_text(f"❌ Trade failed: `{result.get('error', 'unknown')}`", parse_mode="MarkdownV2")
+                await query.edit_message_text(f"❌ Trade failed: `{result.get('error', 'unknown')}`", parse_mode="MarkdownV2V2")
         except Exception as exc:
-            await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="MarkdownV2")
+            await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="MarkdownV2V2")
 
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 

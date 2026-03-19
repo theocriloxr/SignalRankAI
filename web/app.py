@@ -594,7 +594,7 @@ async def _send_telegram_dm(telegram_user_id: int, text: str) -> None:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": telegram_user_id, "text": text, "parse_mode": "Markdown"},
+                json={"chat_id": telegram_user_id, "text": text, "parse_mode": "MarkdownV2"},
             )
     except Exception as _e:
         logger.warning(f"[dm] Failed to send DM to {telegram_user_id}: {_e}")

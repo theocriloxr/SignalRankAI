@@ -207,10 +207,10 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 	return vip_used, vip_seats_left, vip_seats_left <= 0
 
 
-def _vip_plan_line(*, markdown: bool, seats_left: int, sold_out: bool) -> str:
+def _vip_plan_line(*, MarkdownV2: bool, seats_left: int, sold_out: bool) -> str:
 	if sold_out:
 		return "💎 VIP Monthly — ₦40,000 | 🔴 VIP Sold Out"
-	if markdown:
+	if MarkdownV2:
 		return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
 	return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
 
@@ -250,7 +250,7 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 
 async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
-	vip_line = _vip_plan_line(markdown=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
 	msg = (
 		"🚀 SignalRankAI — Choose Your Plan\n\n"
 		f"{vip_line}\n"
@@ -262,7 +262,7 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 
 async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
-	vip_line = _vip_plan_line(markdown=True, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	vip_line = _vip_plan_line(MarkdownV2=True, seats_left=vip_seats_left, sold_out=vip_sold_out)
 	msg = (
 		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
 		f"{vip_line}\n"
@@ -1156,7 +1156,7 @@ async def assets_command(update, context) -> None:
 			lines.append(f"{status} `{r.symbol}` ({r.asset_type})")
 		await update.message.reply_text(
 			f"*Managed Assets ({len(rows)}):*\n" + "\n".join(lines),
-			parse_mode="Markdown",
+			parse_mode="MarkdownV2",
 		)
 		return
 
@@ -1172,7 +1172,7 @@ async def assets_command(update, context) -> None:
 				added_by=update.effective_user.id,
 			)
 			await session.commit()
-		await update.message.reply_text(f"✅ `{symbol}` pinned ({atype}).", parse_mode="Markdown")
+		await update.message.reply_text(f"✅ `{symbol}` pinned ({atype}).", parse_mode="MarkdownV2")
 		return
 
 	if subcmd == "remove":
@@ -1184,9 +1184,9 @@ async def assets_command(update, context) -> None:
 			found = await remove_managed_asset(session, symbol=symbol)
 			await session.commit()
 		if found:
-			await update.message.reply_text(f"❌ `{symbol}` unpinned.", parse_mode="Markdown")
+			await update.message.reply_text(f"❌ `{symbol}` unpinned.", parse_mode="MarkdownV2")
 		else:
-			await update.message.reply_text(f"`{symbol}` was not in the managed list.", parse_mode="Markdown")
+			await update.message.reply_text(f"`{symbol}` was not in the managed list.", parse_mode="MarkdownV2")
 		return
 
 	await update.message.reply_text(
@@ -1788,7 +1788,7 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
 	msg: str = f"Your Telegram user ID: `{user_id}`\nYour current tier: *{tier}*"
-	await update.message.reply_text(msg, parse_mode="Markdown")
+	await update.message.reply_text(msg, parse_mode="MarkdownV2")
 
 # --------- DASHBOARD COMMAND ---------
 @require_tier("PREMIUM")
@@ -1806,7 +1806,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		return
 	sep = "&" if "?" in base_url else "?"
 	dashboard_url: str = f"{base_url}{sep}uid={user_id}"
-	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="Markdown")
+	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="MarkdownV2")
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2868,7 +2868,7 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id = update.effective_user.id
 	msg, keyboard = await _compose_upgrade_message(int(user_id))
-	await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=keyboard)
+	await update.message.reply_text(msg, parse_mode="MarkdownV2", reply_markup=keyboard)
 
 
 # ── Inline-button callbacks for /upgrade VIP waitlist ─────────────────────
@@ -2941,12 +2941,12 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 		"Use /signals to see the latest setups."
 	)
 	try:
-		await query.edit_message_text(welcome, parse_mode="Markdown")
+		await query.edit_message_text(welcome, parse_mode="MarkdownV2")
 	except Exception:
 		try:
 			if update.effective_chat:
 				await context.bot.send_message(
-					chat_id=update.effective_chat.id, text=welcome, parse_mode="Markdown"
+					chat_id=update.effective_chat.id, text=welcome, parse_mode="MarkdownV2"
 				)
 		except Exception:
 			pass
@@ -3031,7 +3031,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 			f"📊 Total Signals (all-time): `{total_signals:,}`\n\n"
 			f"🕐 UTC: `{now.strftime('%Y-%m-%d %H:%M')}`"
 		)
-		await update.message.reply_text(msg, parse_mode="Markdown")
+		await update.message.reply_text(msg, parse_mode="MarkdownV2")
 
 	except Exception as e:
 		logger.error(f"[admin] admin_command failed: {e}")
@@ -3085,7 +3085,7 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 						await context.bot.send_message(
 							chat_id=int(uid),
 							text=broadcast_text,
-							parse_mode="Markdown",
+							parse_mode="MarkdownV2",
 						)
 						break
 					except RetryAfter as e:
@@ -3167,7 +3167,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 						await context.bot.send_message(
 							chat_id=int(uid),
 							text=disclaimer,
-							parse_mode="Markdown",
+							parse_mode="MarkdownV2",
 							reply_markup=_kbd_bt,
 						)
 						break
@@ -3237,7 +3237,7 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 						await context.bot.send_message(
 							chat_id=int(uid),
 							text=disclaimer,
-							parse_mode="Markdown",
+							parse_mode="MarkdownV2",
 							reply_markup=_kbd_bt,
 						)
 						break
@@ -3551,7 +3551,7 @@ async def start_command(update, context):
 				await context.bot.send_message(
 					chat_id=referrer_id,
 					text=f"🎁 *Bonus Plan Extension*\n\n+{days} premium days have been added to your current plan!\n\nUse /signals to get the latest trading ideas.",
-					parse_mode="Markdown"
+					parse_mode="MarkdownV2"
 				)
 	except Exception:
 		pass
@@ -3573,7 +3573,7 @@ async def start_command(update, context):
 			_IKB("✅ I Agree", callback_data="agree_terms"),
 			_IKB("❌ Decline", callback_data="decline_terms"),
 		]])
-		await update.message.reply_text(disclaimer, parse_mode="Markdown", reply_markup=_kbd)
+		await update.message.reply_text(disclaimer, parse_mode="MarkdownV2", reply_markup=_kbd)
 		return  # Hold back welcome message until terms are accepted
 
 	# Terms already accepted — send normal welcome
@@ -4097,7 +4097,7 @@ async def stats_command(update, context) -> None:
 			lines.append("\nUse /history to view recent signals.")
 			msg: str = "\n".join(l for l in lines if l is not None)
 			if update.message is not None:
-				await update.message.reply_text(msg, parse_mode="Markdown")
+				await update.message.reply_text(msg, parse_mode="MarkdownV2")
 			return
 	except Exception:
 		pass
@@ -4592,7 +4592,7 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			"Example:\n`/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo`\n\n"
 			"🔒 Your password is encrypted end-to-end with AES-256 (Fernet) before storage.\n"
 			"Neither SignalRankAI staff nor Railway can read it in plaintext.",
-			parse_mode="Markdown"
+			parse_mode="MarkdownV2"
 		)
 		return
 
@@ -4650,9 +4650,9 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		)
 
 	try:
-		await processing_msg.edit_text(reply, parse_mode="Markdown")
+		await processing_msg.edit_text(reply, parse_mode="MarkdownV2")
 	except Exception:
-		await update.effective_chat.send_message(reply, parse_mode="Markdown")
+		await update.effective_chat.send_message(reply, parse_mode="MarkdownV2")
 
 
 # --------- MT5 STATUS COMMAND ---------
@@ -4698,7 +4698,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		if row.metaapi_account_id:
 			reply += f"☁️ MetaApi ID: `{row.metaapi_account_id}`\n"
 		reply += "\nUse ⚡ buttons on signals to trade instantly."
-		await update.message.reply_text(reply, parse_mode="Markdown")
+		await update.message.reply_text(reply, parse_mode="MarkdownV2")
 	except Exception as exc:
 		await update.message.reply_text(f"Error fetching MT5 status: {exc}")
 
@@ -5481,7 +5481,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			InlineKeyboardButton("\u274c Yes, Cancel Auto-Renew", callback_data="cancel_confirm"),
 			InlineKeyboardButton("\U0001f519 Nevermind", callback_data="cancel_nevermind"),
 		]])
-		await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="Markdown")
+		await update.message.reply_text(msg, reply_markup=keyboard, parse_mode="MarkdownV2")
 
 	except Exception as e:
 		logger.error(f"[cancel] cancel_command failed for user {user_id}: {e}")
@@ -5575,7 +5575,7 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 		if not result["success"]:
 			await query.edit_message_text(
 				"\u274c Cancellation failed. Please contact /support.",
-				parse_mode="Markdown",
+				parse_mode="MarkdownV2",
 			)
 			return
 
@@ -5591,7 +5591,7 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 			f"You keep full access until your billing cycle ends.\n\n"
 			f"{gateway_note}\n\n"
 			f"You can re-subscribe anytime with /upgrade. \U0001f64f",
-			parse_mode="Markdown",
+			parse_mode="MarkdownV2",
 		)
 
 	except Exception as e:
@@ -5616,7 +5616,7 @@ async def cancel_nevermind_callback(update: Update, context: ContextTypes.DEFAUL
 		await query.edit_message_text(
 			"\U0001f519 *Cancellation Aborted*\n\n"
 			"Your subscription remains fully active. Keep catching those pips! \U0001f680",
-			parse_mode="Markdown",
+			parse_mode="MarkdownV2",
 		)
 	except Exception as e:
 		logger.warning(f"[cancel] cancel_nevermind_callback edit failed: {e}")

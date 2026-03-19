@@ -323,7 +323,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "⚡ Trade directly on MT5\n\n"
         f"📅 Your premium expires on: {premium_until.strftime('%Y-%m-%d')}\n\n"
         "🔒 This key can only be used once. After expiry, use /upgrade to continue.",
-        parse_mode="Markdown",
+        parse_mode="MarkdownV2",
     )
 
 

@@ -411,7 +411,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                     user_stmt = select(User).where(User.id == row.user_id)
                     user = (await session.execute(user_stmt)).scalar_one_or_none()
                     if user:
-                        _send_message_sync(bot, chat_id=user.telegram_user_id, text=body, parse_mode="Markdown")
+                        _send_message_sync(bot, chat_id=user.telegram_user_id, text=body, parse_mode="MarkdownV2")
                 except Exception as exc:
                     logger.debug("[outcome_tracker] notify user %s error: %s", row.user_id, exc)
 
