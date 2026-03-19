@@ -69,9 +69,15 @@ class Worker:
             except Exception as e:
                 print(f"[worker] Failed to start ML train loop: {e}", flush=True)
                 ml_task = None
+        import time
+        last_heartbeat = time.time()
         try:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
+                now = time.time()
+                if now - last_heartbeat > 60:
+                    print(f"[worker] heartbeat: running", flush=True)
+                    last_heartbeat = now
         finally:
             if market_monitor_task is not None:
                 market_monitor_task.cancel()

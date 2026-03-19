@@ -524,9 +524,15 @@ def main_loop(DRY_RUN: bool = False):
     }
 
     # Keep the main loop simple and robust
+    last_heartbeat = time.time()
     while True:
         cycle_no += 1
         cycle_sleep_seconds = 10
+        # Heartbeat log every 60 seconds
+        now = time.time()
+        if now - last_heartbeat > 60:
+            logger.info(f"[engine] heartbeat: cycle={cycle_no} running")
+            last_heartbeat = now
 
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets
         # with DB-managed assets and discovered trending pairs so nothing pinned is missed.

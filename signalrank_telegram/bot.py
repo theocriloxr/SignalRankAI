@@ -1824,8 +1824,14 @@ async def _send_message_with_retry(
     import asyncio
     from telegram.error import RetryAfter
 
+    import time
+    last_heartbeat = time.time()
     while True:
         try:
+            now = time.time()
+            if now - last_heartbeat > 60:
+                print(f"[bot] heartbeat: polling loop running", flush=True)
+                last_heartbeat = now
             send_text = str(text)
             if parse_mode and parse_mode.lower().startswith("markdown"):
                 from telegram.helpers import escape_markdown

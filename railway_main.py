@@ -583,6 +583,7 @@ async def lifespan(_: FastAPI):
     except Exception as exc:
         logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
 
+
     # ── 2) Engine loop (long-running background task) ─────────────────────────
     engine_task = None
     try:
@@ -602,6 +603,19 @@ async def lifespan(_: FastAPI):
     except Exception as exc:
         print(f"[startup] Could not start worker loop: {exc}", flush=True)
         logger.warning(f"[startup] Could not start worker loop: {exc}")
+
+    # ── Crash detection for background tasks ─────────────────────────────────
+    async def _monitor_background_tasks():
+        while True:
+            await asyncio.sleep(30)
+            if engine_task and engine_task.done():
+                logger.warning("[monitor] Engine task has stopped unexpectedly!")
+            if worker_task and worker_task.done():
+                logger.warning("[monitor] Worker task has stopped unexpectedly!")
+            if bot_start_task and bot_start_task.done():
+                logger.warning("[monitor] Bot start task has stopped unexpectedly!")
+
+    asyncio.create_task(_monitor_background_tasks())
 
     # ── 3) APScheduler jobs ───────────────────────────────────────────────────
     scheduler = None
