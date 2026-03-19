@@ -528,10 +528,11 @@ def main_loop(DRY_RUN: bool = False):
     while True:
         cycle_no += 1
         cycle_sleep_seconds = 10
-        # Heartbeat log every 60 seconds
         now = time.time()
-        if now - last_heartbeat > 60:
+        # Heartbeat log every 30 seconds
+        if now - last_heartbeat > 30:
             logger.info(f"[engine] heartbeat: cycle={cycle_no} running")
+            print(f"[engine] heartbeat: cycle={cycle_no} running", flush=True)
             last_heartbeat = now
 
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets

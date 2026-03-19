@@ -411,7 +411,23 @@ async def _lifespan(app_: FastAPI):
     logger.info("[lifespan] Waitlist scheduler stopped")
 
 
+
 app = FastAPI(title=APP_NAME, version="0.1.0", lifespan=_lifespan)
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"[web] HTTP {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"[web] HTTP {request.method} {request.url} -> {response.status_code}")
+    return response
+
+# Simple healthz endpoint with heartbeat log
+@app.get("/healthz")
+async def healthz():
+    logger.info("[web] healthz endpoint hit")
+    print("[web] healthz endpoint hit", flush=True)
+    return {"ok": True, "service": APP_NAME, "status": "healthy"}
 
 
 @app.middleware("http")

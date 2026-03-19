@@ -3193,6 +3193,14 @@ _bot_scheduler = None  # keeps the BackgroundScheduler alive after run_bot() ret
 application = None
 
 def run_bot() -> None:
+        import threading
+        import time
+        def _bot_heartbeat():
+            while True:
+                print(f"[bot] heartbeat: running", flush=True)
+                logger.info(f"[bot] heartbeat: running (thread={threading.get_ident()})")
+                time.sleep(30)
+        threading.Thread(target=_bot_heartbeat, daemon=True).start()
     """Run the Telegram polling bot.
 
     This must be explicitly invoked (e.g. RUN_MODE=bot or RUN_MODE=all). It must

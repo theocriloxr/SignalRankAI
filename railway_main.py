@@ -778,6 +778,8 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/telegram/webhook")
 async def _telegram_webhook_route(req: Request) -> dict:
     """Receive Telegram updates and dispatch them to the bot application.
+    logger.info("[webhook] Telegram webhook endpoint hit")
+    print("[webhook] Telegram webhook endpoint hit", flush=True)
 
     Telegram POSTs to this URL for every incoming message or command.
     PTB's Application.process_update() dispatches the update to the

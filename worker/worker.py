@@ -75,8 +75,9 @@ class Worker:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
                 now = time.time()
-                if now - last_heartbeat > 60:
+                if now - last_heartbeat > 30:
                     print(f"[worker] heartbeat: running", flush=True)
+                    logger.info(f"[worker] heartbeat: running")
                     last_heartbeat = now
         finally:
             if market_monitor_task is not None:
