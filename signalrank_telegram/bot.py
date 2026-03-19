@@ -519,6 +519,11 @@ def _normalized_delivery_tier(tier: str | None) -> str:
 
 
 async def _send_message_async(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
+    # Global fix: escape text for Markdown/MarkdownV2 parse modes
+    if parse_mode and parse_mode.lower().startswith("markdown"):
+        from telegram.helpers import escape_markdown
+        version = 2 if "v2" in parse_mode.lower() else 1
+        text = escape_markdown(str(text), version=version)
     await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
 
 
@@ -1821,9 +1826,14 @@ async def _send_message_with_retry(
 
     while True:
         try:
+            send_text = str(text)
+            if parse_mode and parse_mode.lower().startswith("markdown"):
+                from telegram.helpers import escape_markdown
+                version = 2 if "v2" in parse_mode.lower() else 1
+                send_text = escape_markdown(send_text, version=version)
             await bot.send_message(
                 chat_id=int(chat_id),
-                text=str(text),
+                text=send_text,
                 parse_mode=parse_mode,
                 reply_markup=reply_markup,
             )
@@ -2294,17 +2304,26 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                     telegram_user_id=int(uid),
                     signal=dict(signal or {}),
                     display_tier="free",
-                ):
-                    sent += 1
+                # Global fix: escape text for Markdown/MarkdownV2 parse modes
+                send_text = str(text)
+                if parse_mode and parse_mode.lower().startswith("markdown"):
                     try:
-                        from core.redis_state import state as _state
-                        _state.incr_sync(f"signals_sent:{uid}:{date_str}", ex=86400)
+                        from telegram.helpers import escape_markdown
+                        version = 2 if "v2" in parse_mode.lower() else 1
+                        send_text = escape_markdown(send_text, version=version)
                     except Exception:
                         pass
-            except Exception as exc:
-                logger.debug(f"[fomo_free] failed user={uid} signal={signal_id[:8]} err={exc}")
-                continue
-
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    run_sync(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode))
+                    return
+                # If we're already in an event loop, schedule it.
+                try:
+                    loop.create_task(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode))
+                except Exception as e:
+                    logger.debug(f"[send_message] Failed to create async task for message: {e}")
+                    pass
         if sent:
             logger.info(f"[fomo_free] dispatched signal={signal_id[:8]} to free_users={sent}")
         return int(sent)
