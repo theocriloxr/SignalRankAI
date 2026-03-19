@@ -14,7 +14,7 @@ Key behaviours:
 
 Environment:
     OUTCOME_CHECK_INTERVAL_SECONDS  - Poll interval (default: 15)
-    ACTIVE_SIGNAL_LOOKBACK_HOURS    - How far back to look for open signals (default: 72)
+    ACTIVE_SIGNAL_LOOKBACK_HOURS    - How far back to look for open signals (default: 720)
 """
 from __future__ import annotations
 
@@ -37,9 +37,9 @@ def _check_interval() -> int:
 
 def _lookback_hours() -> int:
     try:
-        return int(os.getenv("ACTIVE_SIGNAL_LOOKBACK_HOURS", "72"))
+        return int(os.getenv("ACTIVE_SIGNAL_LOOKBACK_HOURS", "720"))
     except Exception:
-        return 72
+        return 720
 
 
 async def _fetch_active_signals() -> List[Dict[str, Any]]:
@@ -565,8 +565,51 @@ class RealtimeOutcomeTracker:
 
         logger.debug("[outcome_tracker] Checking %d active signals", len(signals))
 
-        tasks = [self._check_signal(sig) for sig in signals]
+        # Track which users had outcomes updated
+        updated_users = set()
+
+        async def wrapped_check_signal(sig):
+            try:
+                await self._check_signal(sig)
+                # Find all users who received this signal
+                from db.session import get_session
+                from db.models import SignalDelivery
+                from sqlalchemy import select
+                async with get_session() as session:
+                    rows = await session.execute(select(SignalDelivery.user_id).where(SignalDelivery.signal_id == sig["signal_id"]))
+                    for (user_id,) in rows.all():
+                        updated_users.add(user_id)
+            except Exception as exc:
+                logger.warning(f"[outcome_tracker] Error updating user performance for signal {sig.get('signal_id')}: {exc}")
+
+        tasks = [wrapped_check_signal(sig) for sig in signals]
         await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Retrain ML after all outcomes processed
+        try:
+            logger.info("[outcome_tracker] Triggering ML retraining after outcome tracking...")
+            import sys
+            import asyncio as _asyncio
+            sys.path.append("ml")
+            from ml import train_model as _train_model
+            await _train_model.main()
+            logger.info("[outcome_tracker] ML retraining complete.")
+        except Exception as exc:
+            logger.error(f"[outcome_tracker] ML retraining failed: {exc}")
+
+        # Update user performance for all affected users
+        try:
+            from db.session import get_session
+            from db.pg_features import get_user_performance_30d
+            async with get_session() as session:
+                for user_id in updated_users:
+                    try:
+                        perf = await get_user_performance_30d(session, int(user_id))
+                        logger.info(f"[outcome_tracker] Updated performance for user {user_id}: {perf}")
+                    except Exception as exc:
+                        logger.warning(f"[outcome_tracker] Failed to update performance for user {user_id}: {exc}")
+        except Exception as exc:
+            logger.error(f"[outcome_tracker] Bulk user performance update failed: {exc}")
 
     async def _check_signal(self, signal: Dict[str, Any]) -> None:
         symbol = signal["asset"]

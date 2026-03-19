@@ -1590,24 +1590,24 @@ def main_loop(DRY_RUN: bool = False):
                     for sig in _fresh_scored_signals:
                         if signals_sent_today + len(user_signals) >= daily_limit:
                             break
-                        
+
                         try:
                             from engine.price_validator import (
-                                is_signal_fresh, validate_price_drift, 
+                                is_signal_fresh, validate_price_drift,
                                 check_sl_tp_hit, get_current_price,
                                 enrich_signal_with_live_price
                             )
-                            
+
                             # Check signal freshness
                             is_fresh, fresh_reason = is_signal_fresh(sig)
                             if not is_fresh:
                                 logger.info(f"[engine] Skipping stale signal for {sig.get('asset')}: {fresh_reason}")
                                 continue
-                            
+
                             # Get current market price
                             asset = sig.get('asset')
                             current_price = get_current_price(asset)
-                            
+
                             if current_price is None:
                                 logger.warning(f"[engine] Failed to fetch current price for {asset}, using signal as-is")
                                 # Still deliver if we can't fetch price - enrich with age at least
@@ -1618,7 +1618,7 @@ def main_loop(DRY_RUN: bool = False):
                                 if should_skip:
                                     logger.info(f"[engine] Skipping signal for {asset}: {skip_reason}")
                                     continue
-                                
+
                                 # Validate price drift and update if needed
                                 is_valid, drift_reason, updated_sig = validate_price_drift(sig, current_price)
                                 if updated_sig:
@@ -1634,13 +1634,15 @@ def main_loop(DRY_RUN: bool = False):
                         except Exception as e:
                             logger.warning(f"[engine] Price validation failed for signal: {e}")
                             # Continue with signal delivery even if validation fails
-                        
+
+                        # Robust eligibility check with logging
                         try:
                             eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
+                            logger.info(f"[engine] Eligibility for user={user_id} tier={user_tier} score={sig.get('score', 0)}: {eligible}")
                             if eligible:
                                 user_signals.append(sig)
                         except Exception as e:
-                            logger.debug(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
+                            logger.warning(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                             pass
 
                     if not user_signals:
