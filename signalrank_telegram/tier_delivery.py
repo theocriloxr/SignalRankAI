@@ -41,6 +41,7 @@ class TierDeliveryManager:
         'premium': 10,    # 5-10 signals/day
         'vip': None,      # No limit (quality-filtered)
         'admin': None,    # All signals
+        'owners': None,   # All signals
     }
     def __init__(self):
         """Initialize delivery manager."""
