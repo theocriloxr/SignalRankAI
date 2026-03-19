@@ -1318,6 +1318,7 @@ async def selfcheck_command(update, context) -> None:
 		await update.message.reply_text("🔍 System Health\n\n" + "\n".join(checks))
 from .user_prefs import user_prefs_store
 from telegram import Update
+from telegram.helpers import escape_markdown
 from telegram.ext import ContextTypes
 # --------- NOTIFICATION CUSTOMIZATION COMMAND ---------
 @require_tier("PREMIUM")
@@ -4621,11 +4622,11 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			meta_id = result.get("metaapi_account_id") or ""
 			reply = (
 				"✅ *MT5 Account Linked Successfully!*\n\n"
-				f"🏦 Server: `{mt5_server}`\n"
-				f"🔐 Login: `{mt5_login}` *(credentials encrypted)*\n"
+				f"🏦 Server: `{escape_markdown(mt5_server, version=2)}`\n"
+				f"🔐 Login: `{escape_markdown(mt5_login, version=2)}` *(credentials encrypted)*\n"
 			)
 			if meta_id:
-				reply += f"☁️ MetaApi Account ID: `{meta_id}`\n"
+				reply += f"☁️ MetaApi Account ID: `{escape_markdown(meta_id, version=2)}`\n"
 			reply += (
 				"\nYou can now use the ⚡ *Trade on MT5* button "
 				"on any signal to execute instantly.\n\n"
@@ -4638,13 +4639,13 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			err = result.get("error", "Unknown error")
 			reply = (
 				f"❌ *MT5 Link Failed*\n\n"
-				f"Error: `{err}`\n\n"
+				f"Error: `{escape_markdown(err, version=2)}`\n\n"
 				"Please check your login, password and server name, then try again.\n"
 				"Use /mt5_link <login> <password> <server>"
 			)
 	except Exception as exc:
 		reply = (
-			f"❌ *MT5 Link Error*\n\n`{type(exc).__name__}: {exc}`\n\n"
+			f"❌ *MT5 Link Error*\n\n`{escape_markdown(type(exc).__name__, version=2)}: {escape_markdown(str(exc), version=2)}`\n\n"
 			"Please try again or contact support with /support"
 		)
 
