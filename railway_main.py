@@ -124,6 +124,46 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _log_railway_env_readiness() -> None:
+    """Log deployment-critical env readiness for Railway."""
+    running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    if not running_on_railway:
+        return
+
+    has_gemini = bool((os.getenv("GEMINI_API_KEY") or "").strip())
+    has_mt5_token = bool((os.getenv("META_API_TOKEN") or "").strip())
+    has_encryption = bool((os.getenv("ENCRYPTION_KEY") or "").strip())
+    has_owner = bool((os.getenv("OWNER_IDS") or "").strip() or (os.getenv("OWNER_TELEGRAM_ID") or "").strip() or (os.getenv("TELEGRAM_OWNER_ID") or "").strip())
+    has_telegram_token = bool((os.getenv("TELEGRAM_BOT_TOKEN") or "").strip())
+    has_domain = bool((os.getenv("RAILWAY_PUBLIC_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_DOMAIN") or "").strip() or (os.getenv("WEBHOOK_URL") or "").strip())
+
+    logger.info(
+        "[railway] env readiness: telegram_token=%s webhook_domain=%s owner=%s gemini=%s mt5_token=%s encryption=%s",
+        has_telegram_token,
+        has_domain,
+        has_owner,
+        has_gemini,
+        has_mt5_token,
+        has_encryption,
+    )
+
+    missing = []
+    if not has_telegram_token:
+        missing.append("TELEGRAM_BOT_TOKEN")
+    if not has_domain:
+        missing.append("RAILWAY_PUBLIC_DOMAIN|WEBHOOK_DOMAIN")
+    if not has_owner:
+        missing.append("OWNER_IDS|OWNER_TELEGRAM_ID")
+    if not has_gemini:
+        missing.append("GEMINI_API_KEY")
+    if not has_mt5_token:
+        missing.append("META_API_TOKEN")
+    if not has_encryption:
+        missing.append("ENCRYPTION_KEY")
+    if missing:
+        logger.warning("[railway] missing env vars: %s", ", ".join(missing))
+
+
 async def _run_startup_ops() -> None:
     """Run DB migrations/startup ops first.
 
@@ -555,6 +595,7 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _log_railway_env_readiness()
     # ── Lifespan heartbeat: confirm event loop is alive ──
     async def _lifespan_heartbeat():
         import time

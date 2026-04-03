@@ -1,3 +1,5 @@
+import os
+
 from telegram import Update
 from telegram.ext import ContextTypes
 from db.session import get_session, get_engine_for_event_loop
@@ -19,6 +21,19 @@ TIER_RANKS: dict[str, int] = {
 
 def tier_rank(tier) -> int:
 	return TIER_RANKS.get((tier or "").strip().upper(), 0)
+
+
+def _railway_env_hint(feature: str, missing: list[str]) -> str:
+	missing_list = ", ".join(missing)
+	return (
+		f"⚠️ {feature} is not configured on this deployment.\n\n"
+		f"Missing env vars: {missing_list}\n\n"
+		"Railway setup:\n"
+		"1) Open your Railway service\n"
+		"2) Go to Variables\n"
+		f"3) Add {missing_list}\n"
+		"4) Redeploy the service"
+	)
 
 def require_tier(min_tier):
 	def wrapper(func):
@@ -536,7 +551,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	if data.startswith("locked_"):
 		try:
 			await query.answer(
-				"⭐ This feature requires VIP. Type /upgrade to unlock!",
+				"⭐ This feature requires Premium or VIP. Type /upgrade to unlock!",
 				show_alert=True,
 			)
 		except Exception:
@@ -551,7 +566,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			tier = _effective_tier(int(uid))
 			if tier_rank(tier) < tier_rank("PREMIUM"):
 				await query.answer(
-					"⭐ This feature requires VIP. Type /upgrade to unlock!",
+					"⭐ This feature requires Premium or VIP. Type /upgrade to unlock!",
 					show_alert=True,
 				)
 				return
@@ -1264,6 +1279,7 @@ async def admin_user_engagement_command(update, context) -> None:
 async def selfcheck_command(update, context) -> None:
 	"""Admin/Owner: Show quick health summary of the system."""
 	checks = []
+	running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
 	
 	# DB check
 	try:
@@ -1280,6 +1296,15 @@ async def selfcheck_command(update, context) -> None:
 		checks.append("✅ Redis: connected")
 	except Exception:
 		checks.append("❌ Redis: not connected")
+
+	# Railway env readiness check
+	if running_on_railway:
+		checks.append("✅ Railway: detected")
+		checks.append("✅ GEMINI_API_KEY: set" if (os.getenv("GEMINI_API_KEY") or "").strip() else "❌ GEMINI_API_KEY: missing")
+		checks.append("✅ META_API_TOKEN: set" if (os.getenv("META_API_TOKEN") or "").strip() else "❌ META_API_TOKEN: missing")
+		checks.append("✅ ENCRYPTION_KEY: set" if (os.getenv("ENCRYPTION_KEY") or "").strip() else "❌ ENCRYPTION_KEY: missing")
+		_owner_ids_raw = (os.getenv("OWNER_IDS") or "").strip()
+		checks.append("✅ OWNER_IDS: set" if _owner_ids_raw else "⚠️ OWNER_IDS: missing (owner-only commands disabled)")
 	
 	# yfinance check
 	try:
@@ -2932,21 +2957,21 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 	except Exception:
 		pass
 	welcome = (
-		"✅ *Welcome to SignalRankAI!*\n\n"
+		"✅ <b>Welcome to SignalRankAI!</b>\n\n"
 		"You're all set. Here's what you get:\n"
 		"• Risk-managed signals filtered for high-probability setups\n"
-		"• Outcome tracking — no hype, no guarantees\n"
+		"• Outcome tracking - no hype, no guarantees\n"
 		"• Real-time market coverage: Crypto, Forex, Stocks, Commodities\n\n"
 		"Use /pricing to see plans, or /upgrade to subscribe.\n"
 		"Use /signals to see the latest setups."
 	)
 	try:
-		await query.edit_message_text(welcome, parse_mode="MarkdownV2")
+		await query.edit_message_text(welcome, parse_mode="HTML")
 	except Exception:
 		try:
 			if update.effective_chat:
 				await context.bot.send_message(
-					chat_id=update.effective_chat.id, text=welcome, parse_mode="MarkdownV2"
+					chat_id=update.effective_chat.id, text=welcome, parse_mode="HTML"
 				)
 		except Exception:
 			pass
@@ -3928,6 +3953,9 @@ async def gemini_command(update, context) -> None:
 	if not _is_admin(update.effective_user.id):
 		await update.message.reply_text("Admin only.")
 		return
+	if not (os.getenv("GEMINI_API_KEY") or "").strip():
+		await update.message.reply_text(_railway_env_hint("Gemini", ["GEMINI_API_KEY"]))
+		return
 
 	from services.gemini_ml import run_gemini_review_pipeline
 
@@ -4582,6 +4610,15 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 			"🔒 MT5 account linking requires a Premium or VIP subscription.\n"
 			"Use /upgrade to unlock one-click MT5 execution."
 		)
+		return
+
+	missing_vars = []
+	if not (os.getenv("ENCRYPTION_KEY") or "").strip():
+		missing_vars.append("ENCRYPTION_KEY")
+	if not (os.getenv("META_API_TOKEN") or "").strip():
+		missing_vars.append("META_API_TOKEN")
+	if missing_vars:
+		await update.message.reply_text(_railway_env_hint("MT5 linking", missing_vars))
 		return
 
 	args = (context.args or [])
@@ -5325,6 +5362,15 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 	server: str = context.user_data.get("mt5_server", "")
 	context.user_data.clear()
 
+	missing_vars = []
+	if not (os.getenv("ENCRYPTION_KEY") or "").strip():
+		missing_vars.append("ENCRYPTION_KEY")
+	if not (os.getenv("META_API_TOKEN") or "").strip():
+		missing_vars.append("META_API_TOKEN")
+	if missing_vars:
+		await update.message.reply_text(_railway_env_hint("MT5 linking", missing_vars))
+		return -1
+
 	await update.message.reply_text("⏳ Linking your account via MetaApi… (this may take 30–60 s)")
 
 	try:
@@ -5333,17 +5379,25 @@ async def connect_broker_confirm(update: Update, context: ContextTypes.DEFAULT_T
 			telegram_user_id=user_id,
 			mt5_login=login,
 			mt5_password=password,
-			server=server,
+			mt5_server=server,
 		)
-		account_id = result.get("metaapi_account_id") or result.get("id") or "unknown"
-		await update.message.reply_text(
-			f"✅ <b>MT5 account linked!</b>\n\n"
-			f"☁️ MetaApi ID: <code>{account_id}</code>\n\n"
-			"You can now use ⚡ buttons on signals to execute trades instantly.\n"
-			"Use /setlot to configure your lot size.\n"
-			"Use /execution manual|none|auto [count|all] to choose execution mode.",
-			parse_mode="HTML",
-		)
+		if bool(result.get("success")):
+			account_id = result.get("metaapi_account_id") or result.get("id") or "pending"
+			await update.message.reply_text(
+				f"✅ <b>MT5 account linked!</b>\n\n"
+				f"☁️ MetaApi ID: <code>{account_id}</code>\n\n"
+				"You can now use ⚡ buttons on signals to execute trades instantly.\n"
+				"Use /setlot to configure your lot size.\n"
+				"Use /execution manual|none|auto [count|all] to choose execution mode.",
+				parse_mode="HTML",
+			)
+		else:
+			err = str(result.get("error") or "unknown error")
+			await update.message.reply_text(
+				f"❌ <b>Failed to link account:</b> {err}\n\n"
+				"Check your login/password/server and try /connect_broker again.",
+				parse_mode="HTML",
+			)
 	except Exception as exc:
 		await update.message.reply_text(
 			f"❌ <b>Failed to link account:</b> {exc}\n\n"
