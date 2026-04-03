@@ -4621,14 +4621,14 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		if result.get("success"):
 			meta_id = result.get("metaapi_account_id") or ""
 			reply = (
-				"✅ *MT5 Account Linked Successfully!*\n\n"
-				f"🏦 Server: `{escape_markdown(mt5_server, version=2)}`\n"
-				f"🔐 Login: `{escape_markdown(mt5_login, version=2)}` *(credentials encrypted)*\n"
+				"✅ MT5 Account Linked Successfully!\n\n"
+				f"🏦 Server: {mt5_server}\n"
+				f"🔐 Login: {mt5_login} (credentials encrypted)\n"
 			)
 			if meta_id:
-				reply += f"☁️ MetaApi Account ID: `{escape_markdown(meta_id, version=2)}`\n"
+				reply += f"☁️ MetaApi Account ID: {meta_id}\n"
 			reply += (
-				"\nYou can now use the ⚡ *Trade on MT5* button "
+				"\nYou can now use the Trade on MT5 button "
 				"on any signal to execute instantly.\n\n"
 				"⚙️ Configure execution routing with /execution\n"
 				"• /execution manual (default)\n"
@@ -4638,21 +4638,21 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		else:
 			err = result.get("error", "Unknown error")
 			reply = (
-				f"❌ *MT5 Link Failed*\n\n"
-				f"Error: `{escape_markdown(err, version=2)}`\n\n"
+				"❌ MT5 Link Failed\n\n"
+				f"Error: {err}\n\n"
 				"Please check your login, password and server name, then try again.\n"
 				"Use /mt5_link <login> <password> <server>"
 			)
 	except Exception as exc:
 		reply = (
-			f"❌ *MT5 Link Error*\n\n`{escape_markdown(type(exc).__name__, version=2)}: {escape_markdown(str(exc), version=2)}`\n\n"
+			f"❌ MT5 Link Error\n\n{type(exc).__name__}: {exc}\n\n"
 			"Please try again or contact support with /support"
 		)
 
 	try:
-		await processing_msg.edit_text(reply, parse_mode="MarkdownV2")
+		await processing_msg.edit_text(reply)
 	except Exception:
-		await update.effective_chat.send_message(reply, parse_mode="MarkdownV2")
+		await update.effective_chat.send_message(reply)
 
 
 # --------- MT5 STATUS COMMAND ---------
@@ -4691,14 +4691,14 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			)
 			return
 		reply = (
-			"⚙️ *Your Linked MT5 Account*\n\n"
-			f"🏦 Server: `{row.server}`\n"
-			f"🔐 Login: `{row.mt5_login}` *(password encrypted)*\n"
+			"⚙️ Your Linked MT5 Account\n\n"
+			f"🏦 Server: {row.server}\n"
+			f"🔐 Login: {row.mt5_login} (password encrypted)\n"
 		)
 		if row.metaapi_account_id:
-			reply += f"☁️ MetaApi ID: `{row.metaapi_account_id}`\n"
+			reply += f"☁️ MetaApi ID: {row.metaapi_account_id}\n"
 		reply += "\nUse ⚡ buttons on signals to trade instantly."
-		await update.message.reply_text(reply, parse_mode="MarkdownV2")
+		await update.message.reply_text(reply)
 	except Exception as exc:
 		await update.message.reply_text(f"Error fetching MT5 status: {exc}")
 

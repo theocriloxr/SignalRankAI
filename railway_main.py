@@ -480,12 +480,20 @@ async def _stop_telegram_bot(application: object) -> None:
         return
     global _bot_ready
     _bot_ready = False
-    # Delete webhook first so Telegram stops queuing updates during shutdown
+    # In webhook mode, keep webhook by default to avoid deploy races where an
+    # old instance clears the webhook after a new instance has already set it.
     if os.getenv("TELEGRAM_USE_WEBHOOK"):
-        try:
-            await application.bot.delete_webhook()
-        except Exception:
-            pass
+        _delete_on_shutdown = str(
+            os.getenv("TELEGRAM_DELETE_WEBHOOK_ON_SHUTDOWN", "0")
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if _delete_on_shutdown:
+            try:
+                await application.bot.delete_webhook()
+                logger.info("[bot] webhook deleted on shutdown (TELEGRAM_DELETE_WEBHOOK_ON_SHUTDOWN=1)")
+            except Exception:
+                pass
+        else:
+            logger.info("[bot] preserving webhook on shutdown (default)")
     # Stop the updater if it was started (polling mode only)
     updater = getattr(application, "updater", None)
     try:
@@ -680,21 +688,35 @@ async def lifespan(_: FastAPI):
                 continue
             try:
                 wh = await _bot_application.bot.get_webhook_info()
+                _url_set = bool(getattr(wh, "url", ""))
+                _pending = int(getattr(wh, "pending_update_count", 0) or 0)
+                _last_err_date = getattr(wh, "last_error_date", None)
+                _last_err_msg = getattr(wh, "last_error_message", None)
                 logger.info(
                     "[webhook] periodic status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
-                    bool(getattr(wh, "url", "")),
-                    int(getattr(wh, "pending_update_count", 0) or 0),
-                    getattr(wh, "last_error_date", None),
-                    getattr(wh, "last_error_message", None),
+                    _url_set,
+                    _pending,
+                    _last_err_date,
+                    _last_err_msg,
                 )
                 print(
                     "[webhook] periodic status: "
-                    f"url_set={bool(getattr(wh, 'url', ''))} "
-                    f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
-                    f"last_error_date={getattr(wh, 'last_error_date', None)} "
-                    f"last_error_message={getattr(wh, 'last_error_message', None)}",
+                    f"url_set={_url_set} "
+                    f"pending={_pending} "
+                    f"last_error_date={_last_err_date} "
+                    f"last_error_message={_last_err_msg}",
                     flush=True,
                 )
+                if not _url_set:
+                    try:
+                        _base = _get_webhook_url()
+                        if _base:
+                            _endpoint = f"{_base}/telegram/webhook"
+                            await _bot_application.bot.set_webhook(_endpoint)
+                            logger.warning("[webhook] periodic self-heal: webhook was unset, re-registered=%s", _endpoint)
+                            print(f"[webhook] periodic self-heal: re-registered={_endpoint}", flush=True)
+                    except Exception as _heal_exc:
+                        logger.warning("[webhook] periodic self-heal failed: %s", _heal_exc)
             except Exception as exc:
                 logger.warning("[webhook] periodic status check failed: %s", exc)
 
