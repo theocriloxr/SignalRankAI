@@ -5061,40 +5061,6 @@ async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		"👉 Use /upgrade to subscribe"
 	)
 	await update.message.reply_text(msg, parse_mode="HTML")
-async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Display a tier comparison table and upgrade links."""
-	if update.effective_user is None or update.message is None:
-		return
-
-	premium_price = int(os.getenv("PREMIUM_PRICE_NGN", "15000"))
-	vip_price = int(os.getenv("VIP_PRICE_NGN", "30000"))
-	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
-
-	msg = (
-		"👑 <b>SIGNALRANK AI — TIER BREAKDOWN</b> 👑\n\n"
-		"Not sure which plan is right for you? Here is how we dominate the markets:\n\n"
-
-		"🟢 <b>FREE TIER</b>\n"
-		"• 2 Delayed market recaps per day.\n"
-		"• See what the VIPs are catching <i>after</i> the move happens.\n\n"
-
-		f"🥈 <b>PREMIUM TIER (₦{premium_price:,} / month)</b>\n"
-		"• ⚡ Real-Time Instant Signals.\n"
-		"• 🤖 AI Conviction Scores &amp; Macro News Warnings.\n"
-		"• 📉 Basic MT5 Execution (Max 3 trades/day, Fixed Lot Sizes).\n"
-		"<i>Best for: Manual traders who want top-tier data.</i>\n\n"
-
-		f"🥇 <b>VIP TIER (₦{vip_price:,} / month) — ⚠️ SPOTS LIMITED ({vip_limit} seats)</b>\n"
-		"• Everything in Premium, PLUS:\n"
-		"• 🛡️ <b>Smart Risk Management:</b> Set your risk to 1%, and the bot calculates your exact lot size dynamically.\n"
-		"• 💰 <b>Scaling Out:</b> The bot automatically secures 50% profit at TP1 and moves your stop-loss to break-even while you sleep.\n"
-		"• ♾️ <b>Unlimited Auto-Trading.</b>\n"
-		"<i>Best for: Traders who want an automated AI hedge-fund experience.</i>\n\n"
-
-		"Ready to stop leaving money on the table?\n"
-		"👉 <b>Click /upgrade to secure your spot.</b>"
-	)
-	await update.message.reply_text(msg, parse_mode="HTML")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

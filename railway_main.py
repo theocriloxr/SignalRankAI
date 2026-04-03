@@ -35,6 +35,8 @@ _bot_application: object = None
 _bot_ready: bool = False
 _pending_webhook_updates = deque(maxlen=500)
 _inflight_update_tasks: set[asyncio.Task] = set()
+_webhook_dispatch_queue: asyncio.Queue | None = None
+_webhook_dispatch_workers: list[asyncio.Task] = []
 
 
 async def _safe_get_webhook_info() -> dict | None:
@@ -721,8 +723,45 @@ async def lifespan(_: FastAPI):
             except Exception as exc:
                 logger.warning("[webhook] periodic status check failed: %s", exc)
 
+    async def _webhook_worker(worker_id: int) -> None:
+        """Background worker: process Telegram updates from queue."""
+        while True:
+            payload = await _webhook_dispatch_queue.get()
+            try:
+                if (not _bot_ready) or (_bot_application is None):
+                    _pending_webhook_updates.append(payload)
+                    continue
+                from telegram import Update
+                update_id = (payload or {}).get("update_id", "?")
+                update_type = next((k for k in (payload or {}) if k not in ("update_id",)), "unknown")
+                logger.info("[webhook] worker=%s processing update_id=%s type=%s", worker_id, update_id, update_type)
+                update = Update.de_json(payload, _bot_application.bot)
+                await _bot_application.process_update(update)
+            except Exception as exc:
+                logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
+            finally:
+                try:
+                    _webhook_dispatch_queue.task_done()
+                except Exception:
+                    pass
+
     asyncio.create_task(_monitor_background_tasks())
     asyncio.create_task(_monitor_telegram_webhook_health())
+
+    # Bounded queue + worker pool to sustain high concurrent webhook traffic.
+    global _webhook_dispatch_queue, _webhook_dispatch_workers
+    _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", "5000") or 5000)
+    _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", "64") or 64)
+    _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
+    _webhook_dispatch_workers = [
+        asyncio.create_task(_webhook_worker(i + 1))
+        for i in range(max(4, _worker_count))
+    ]
+    logger.info(
+        "[webhook] dispatcher started workers=%s queue_size=%s",
+        len(_webhook_dispatch_workers),
+        _webhook_dispatch_queue.maxsize,
+    )
 
     # ── 3) APScheduler jobs ───────────────────────────────────────────────────
     scheduler = None
@@ -869,6 +908,13 @@ async def lifespan(_: FastAPI):
             except Exception:
                 pass
 
+        if _webhook_dispatch_workers:
+            for _wt in _webhook_dispatch_workers:
+                try:
+                    _wt.cancel()
+                except Exception:
+                    pass
+
 
 from web.app import app as _web_app
 
@@ -909,25 +955,21 @@ async def _telegram_webhook_route(req: Request) -> dict:
             (k for k in (data or {}) if k not in ("update_id",)), "unknown"
         )
         logger.info("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
-        update = Update.de_json(data, _bot_application.bot)
+        if _webhook_dispatch_queue is None:
+            _pending_webhook_updates.append(data)
+            logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
+            return {"ok": True, "queued": True, "dispatcher": "pending_buffer"}
 
-        async def _process_update_bg() -> None:
-            try:
-                await _bot_application.process_update(update)
-            except Exception as exc:
-                logger.error("[webhook] async process_update failed update_id=%s: %s", update_id, exc)
-
-        task = asyncio.create_task(_process_update_bg())
-        _inflight_update_tasks.add(task)
-
-        def _cleanup_task(_t: asyncio.Task) -> None:
-            try:
-                _inflight_update_tasks.discard(_t)
-            except Exception:
-                pass
-
-        task.add_done_callback(_cleanup_task)
-        return {"ok": True, "dispatched": True}
+        try:
+            _webhook_dispatch_queue.put_nowait(data)
+            return {
+                "ok": True,
+                "dispatched": True,
+                "queue_size": int(_webhook_dispatch_queue.qsize()),
+            }
+        except asyncio.QueueFull:
+            logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
+            return {"ok": False, "error": "queue_full"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
         return {"ok": False, "error": str(exc)}

@@ -16,6 +16,25 @@ from db.session import get_session
 
 logger = logging.getLogger(__name__)
 
+_gemini_cooldown_until_utc: datetime | None = None
+
+
+def _gemini_in_cooldown() -> tuple[bool, str | None]:
+    global _gemini_cooldown_until_utc
+    if _gemini_cooldown_until_utc is None:
+        return False, None
+    now = datetime.utcnow()
+    if now >= _gemini_cooldown_until_utc:
+        _gemini_cooldown_until_utc = None
+        return False, None
+    return True, _gemini_cooldown_until_utc.isoformat()
+
+
+def _set_gemini_cooldown(hours: int) -> None:
+    global _gemini_cooldown_until_utc
+    safe_hours = max(1, int(hours or 24))
+    _gemini_cooldown_until_utc = datetime.utcnow() + timedelta(hours=safe_hours)
+
 
 def _extract_feature_suggestions(review_text: str, limit: int = 8) -> list[str]:
     text = str(review_text or "").strip()
@@ -241,6 +260,10 @@ def _gemini_model_candidates() -> list[str]:
 
 
 def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
+    in_cd, until = _gemini_in_cooldown()
+    if in_cd:
+        raise RuntimeError(f"gemini cooldown active until {until}")
+
     models = _gemini_model_candidates()
     req_body = {
         "contents": [{"parts": [{"text": json.dumps(prompt_payload)}]}],
@@ -282,6 +305,10 @@ def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
             if int(getattr(exc, "code", 0) or 0) == 404:
                 logger.warning("[gemini] model '%s' not found (HTTP 404), trying fallback", model)
                 continue
+            if int(getattr(exc, "code", 0) or 0) == 429:
+                cd_hours = int(os.getenv("GEMINI_COOLDOWN_HOURS", "24") or 24)
+                _set_gemini_cooldown(cd_hours)
+                logger.warning("[gemini] HTTP 429 detected; enabling cooldown for %sh", cd_hours)
             logger.error(
                 "[gemini] HTTP %s for model '%s': %s\nType: %s\nTraceback:\n%s",
                 getattr(exc, "code", "?"),
@@ -351,6 +378,15 @@ async def _store_review(key: str, value: dict[str, Any]) -> None:
 
 
 async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, Any]:
+    in_cd, until = _gemini_in_cooldown()
+    if in_cd:
+        return {
+            "ok": False,
+            "error": f"gemini cooldown active until {until}",
+            "trigger": trigger,
+            "scope": scope,
+        }
+
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not api_key:
         return {

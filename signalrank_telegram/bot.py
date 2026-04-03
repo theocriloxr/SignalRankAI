@@ -79,11 +79,24 @@ async def _resend_unsent_signals_async():
         from db.pg_features import list_all_user_telegram_ids
         async with get_session() as _uid_session:
             user_ids = await list_all_user_telegram_ids(_uid_session)
+        # Always include configured owner/admin IDs as a fallback audience,
+        # even if user rows are missing in DB due onboarding races.
+        try:
+            from config import OWNER_IDS, ADMIN_IDS
+            _fallback_ids = set(int(x) for x in (OWNER_IDS or set())) | set(int(x) for x in (ADMIN_IDS or set()))
+            if _fallback_ids:
+                user_ids = list(user_ids or []) + sorted(_fallback_ids)
+        except Exception:
+            pass
         # Defensive dedupe: malformed joins or legacy rows can surface duplicates.
         try:
             user_ids = sorted({int(uid) for uid in (user_ids or [])})
         except Exception:
             user_ids = list(user_ids or [])
+
+        if not user_ids:
+            logger.warning("[resend] audience empty: no user IDs found (DB + OWNER_IDS/ADMIN_IDS)")
+            return
 
         # Cache user tiers once per run for consistent routing and diagnostics.
         user_tier_map: dict[int, str] = {}
@@ -109,6 +122,7 @@ async def _resend_unsent_signals_async():
                 raw_signals = []
 
         if not raw_signals:
+            logger.info("[resend] no active signals found in last 24h")
             return
 
         resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
@@ -138,7 +152,17 @@ async def _resend_unsent_signals_async():
         signals = list(best_by_bucket.values())[:max(1, resend_max_signals)]
 
         if not signals:
+            logger.info(
+                "[resend] no signals passed quality filters (min_score=%s, max_signals=%s)",
+                resend_min_score,
+                resend_max_signals,
+            )
             return
+
+        delivered_count = 0
+        failed_count = 0
+        skipped_eligibility_count = 0
+        skipped_already_delivered_count = 0
 
         # Single Bot instance, properly initialised — avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
@@ -226,12 +250,14 @@ async def _resend_unsent_signals_async():
                     gate_tier = _normalized_delivery_tier(user_tier)
                     try:
                         if int(user_id) in delivered_user_ids:
+                            skipped_already_delivered_count += 1
                             continue
 
                         # Tier, score, and daily-limit gate
                         score = float(getattr(sig, 'score', 0) or 0)
                         # No Redis dependency in resend flow; DB delivery table is the source of truth.
                         if not delivery_mgr.should_send_signal(gate_tier, score, user_id=int(user_id)):
+                            skipped_eligibility_count += 1
                             logger.debug(
                                 f"[resend] User {user_id} not eligible for signal {signal_id} "
                                 f"(tier={gate_tier}/score/limit), skipping."
@@ -262,6 +288,7 @@ async def _resend_unsent_signals_async():
                         except Exception as send_err:
                             raise send_err
                         await asyncio.sleep(0.5)
+                        delivered_count += 1
                         logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
 
                         # Record delivery in DB (sequential — no races)
@@ -283,6 +310,7 @@ async def _resend_unsent_signals_async():
                             logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {db_err}")
 
                     except Exception as send_err:
+                        failed_count += 1
                         _err_text = str(send_err or "")
                         if "bot was blocked by the user" in _err_text.lower():
                             logger.info(f"[resend] User {user_id} blocked bot; suppressing retries for signal {signal_id}")
@@ -304,6 +332,16 @@ async def _resend_unsent_signals_async():
                 # Do NOT expire signals based only on current recipient eligibility.
                 # Eligibility can change (new users, upgrades, daily-limit reset), and
                 # unresolved signals should remain active until real expiry/outcome rules do it.
+
+        logger.info(
+            "[resend] summary: users=%s candidate_signals=%s delivered=%s failed=%s skipped_eligibility=%s skipped_already_delivered=%s",
+            len(user_ids),
+            len(signals),
+            delivered_count,
+            failed_count,
+            skipped_eligibility_count,
+            skipped_already_delivered_count,
+        )
 
     except Exception as e:
         logger.warning(f"[resend] Job inner error: {e}")
@@ -2215,10 +2253,11 @@ def _format_free_delayed_digest(items: list) -> str:
 def _is_free_fomo_dispatch_only_enabled() -> bool:
     """When enabled, FREE delivery is unlocked by VIP TP1 events (no random delay queue)."""
     try:
-        raw = str(os.getenv("FREE_FOMO_DISPATCH_ONLY", "1") or "1").strip().lower()
+        # Default OFF: free users should receive realtime limited-detail signals.
+        raw = str(os.getenv("FREE_FOMO_DISPATCH_ONLY", "0") or "0").strip().lower()
         return raw in {"1", "true", "yes", "on"}
     except Exception:
-        return True
+        return False
 
 
 def _format_free_fomo_unlock_message(signal: dict) -> str:
@@ -2918,7 +2957,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             # In production, FREE delivery should be driven by queued scheduler jobs
             # (distribute_random_signals_to_free_users_job + resend job) to keep timing
             # randomized and prevent burst/spam behavior from engine dispatch loops.
-            if str(os.getenv("FREE_DIRECT_DISPATCH", "0")).strip().lower() in {"1", "true", "yes"}:
+            if str(os.getenv("FREE_DIRECT_DISPATCH", "1")).strip().lower() in {"1", "true", "yes"}:
                 try:
                     run_sync(_send_random_signals_immediately())
                     return
@@ -3637,36 +3676,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("force_market_scan", _audit_handler("force_market_scan", force_market_scan_command)))
     application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
 
-    # ── Commands previously only on the module-level application — now added here ──
-    # These were mistakenly registered on the boot-time application object, which is
-    # NOT the one that serves polling/webhook requests. run_bot() creates its own
-    # Application instance and ALL handlers must be added to it.
-    from .commands import (
-        myid_command, dashboard_command, selfcheck_command,
-        notify_command, feedback_command, analyze_command,
-        referral_leaderboard_command, referral_rewards_command,
-        admin_top_assets_command, admin_top_strategies_command,
-        admin_user_engagement_command, assets_command,
-        reports_command, filter_command, apikey_command, language_command,
-        account_command,
-    )
-    application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
-    application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
-    application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
-    application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
-    application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
-    application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
-    application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
-    application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
-    application.add_handler(CommandHandler("admin_top_assets", _audit_handler("admin_top_assets", admin_top_assets_command)))
-    application.add_handler(CommandHandler("admin_top_strategies", _audit_handler("admin_top_strategies", admin_top_strategies_command)))
-    application.add_handler(CommandHandler("admin_user_engagement", _audit_handler("admin_user_engagement", admin_user_engagement_command)))
-    application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
-    application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
-    application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
-    application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
-    application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
-    application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
+    # NOTE: Commands are intentionally registered once above. Avoid duplicate
+    # add_handler calls, which can execute the same command twice per update.
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
@@ -6262,6 +6273,7 @@ def run_bot() -> None:
             coalesce=True,
             misfire_grace_time=20,
             jobstore=_sa,
+            next_run_time=datetime.utcnow(),
         )
         scheduler.add_job(
             distribute_random_signals_to_free_users_job,

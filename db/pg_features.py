@@ -788,7 +788,20 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
 
 async def list_all_user_telegram_ids(session: AsyncSession) -> list[int]:
     res: Result[Tuple[int]] = await session.execute(select(User.telegram_user_id).order_by(User.telegram_user_id.asc()))
-    return [int(x) for (x,) in (res.all() or [])]
+    ids = [int(x) for (x,) in (res.all() or [])]
+    try:
+        from config import OWNER_IDS, ADMIN_IDS
+        priority = [int(x) for x in list(OWNER_IDS or set()) + list(ADMIN_IDS or set())]
+        seen: set[int] = set()
+        ordered: list[int] = []
+        for uid in priority + ids:
+            if uid in seen:
+                continue
+            seen.add(uid)
+            ordered.append(uid)
+        return ordered
+    except Exception:
+        return ids
 
 
 async def record_payment_event(
