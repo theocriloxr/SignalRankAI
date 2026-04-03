@@ -391,6 +391,19 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     _bot_application = app_obj
     _bot_ready = True
 
+    # Log bot identity to confirm the expected bot token/account is in use.
+    try:
+        me = await app_obj.bot.get_me()
+        logger.info(
+            "[bot] identity: id=%s username=@%s can_join_groups=%s can_read_all_group_messages=%s",
+            getattr(me, "id", "?"),
+            getattr(me, "username", "?"),
+            getattr(me, "can_join_groups", None),
+            getattr(me, "can_read_all_group_messages", None),
+        )
+    except Exception as exc:
+        logger.warning("[bot] get_me failed during startup: %s", exc)
+
     # Replay any updates received before bot became ready.
     try:
         await _drain_pending_webhook_updates(max_items=300)
@@ -406,6 +419,17 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
             await app_obj.bot.set_webhook(webhook_endpoint)
             print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
             logger.info("[bot] webhook registered: %s", webhook_endpoint)
+            try:
+                wh = await app_obj.bot.get_webhook_info()
+                logger.info(
+                    "[webhook] startup status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
+                    bool(getattr(wh, "url", "")),
+                    int(getattr(wh, "pending_update_count", 0) or 0),
+                    getattr(wh, "last_error_date", None),
+                    getattr(wh, "last_error_message", None),
+                )
+            except Exception as _wh_exc:
+                logger.warning("[webhook] get_webhook_info failed after set_webhook: %s", _wh_exc)
         except Exception as exc:
             print(f"[bot] set_webhook failed: {exc}", flush=True)
             logger.warning(
@@ -622,7 +646,25 @@ async def lifespan(_: FastAPI):
             if bot_start_task and bot_start_task.done():
                 logger.warning("[monitor] Bot start task has stopped unexpectedly!")
 
+    async def _monitor_telegram_webhook_health():
+        while True:
+            await asyncio.sleep(60)
+            if (not _bot_ready) or (_bot_application is None):
+                continue
+            try:
+                wh = await _bot_application.bot.get_webhook_info()
+                logger.info(
+                    "[webhook] periodic status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
+                    bool(getattr(wh, "url", "")),
+                    int(getattr(wh, "pending_update_count", 0) or 0),
+                    getattr(wh, "last_error_date", None),
+                    getattr(wh, "last_error_message", None),
+                )
+            except Exception as exc:
+                logger.warning("[webhook] periodic status check failed: %s", exc)
+
     asyncio.create_task(_monitor_background_tasks())
+    asyncio.create_task(_monitor_telegram_webhook_health())
 
     # ── 3) APScheduler jobs ───────────────────────────────────────────────────
     scheduler = None
@@ -778,13 +820,13 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/telegram/webhook")
 async def _telegram_webhook_route(req: Request) -> dict:
     """Receive Telegram updates and dispatch them to the bot application.
-    logger.info("[webhook] Telegram webhook endpoint hit")
-    print("[webhook] Telegram webhook endpoint hit", flush=True)
 
     Telegram POSTs to this URL for every incoming message or command.
     PTB's Application.process_update() dispatches the update to the
     correct CommandHandler on uvicorn's event loop — no polling conflict.
     """
+    logger.info("[webhook] Telegram webhook endpoint hit")
+    print("[webhook] Telegram webhook endpoint hit", flush=True)
     logger.info(
         "[webhook] incoming update — content_type=%s",
         req.headers.get("content-type", ""),
