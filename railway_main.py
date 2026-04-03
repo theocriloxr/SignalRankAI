@@ -716,14 +716,36 @@ async def lifespan(_: FastAPI):
 
     # ── Crash detection for background tasks ─────────────────────────────────
     async def _monitor_background_tasks():
+        _reported_done: set[tuple[str, int]] = set()
+
+        def _report_task(name: str, task: asyncio.Task | None, expected_completion: bool = False) -> None:
+            if task is None or not task.done():
+                return
+            key = (name, id(task))
+            if key in _reported_done:
+                return
+            _reported_done.add(key)
+
+            try:
+                if task.cancelled():
+                    logger.info("[monitor] %s task cancelled", name)
+                    return
+                exc = task.exception()
+                if exc is not None:
+                    logger.warning("[monitor] %s task failed: %s", name, exc)
+                    return
+                if expected_completion:
+                    logger.info("[monitor] %s task completed", name)
+                else:
+                    logger.warning("[monitor] %s task has stopped unexpectedly!", name)
+            except Exception as _mt_err:
+                logger.warning("[monitor] could not inspect %s task state: %s", name, _mt_err)
+
         while True:
             await asyncio.sleep(30)
-            if engine_task and engine_task.done():
-                logger.warning("[monitor] Engine task has stopped unexpectedly!")
-            if worker_task and worker_task.done():
-                logger.warning("[monitor] Worker task has stopped unexpectedly!")
-            if bot_start_task and bot_start_task.done():
-                logger.warning("[monitor] Bot start task has stopped unexpectedly!")
+            _report_task("Engine", engine_task, expected_completion=False)
+            _report_task("Worker", worker_task, expected_completion=False)
+            _report_task("Bot start", bot_start_task, expected_completion=True)
 
     async def _monitor_telegram_webhook_health():
         while True:

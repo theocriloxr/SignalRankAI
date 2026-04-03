@@ -1507,6 +1507,9 @@ def main_loop(DRY_RUN: bool = False):
 
         async def deliver_all():
             dispatched_count = 0
+            skipped_daily_limit = 0
+            skipped_no_eligible_signals = 0
+            users_seen = 0
             # session management adapted to your codebase
             try:
                 from db.session import get_session
@@ -1570,6 +1573,7 @@ def main_loop(DRY_RUN: bool = False):
 
             for user_id in user_ids:
                 try:
+                    users_seen += 1
                     from signalrank_telegram.access import resolve_user_tier
                     user_tier = 'free'
                     try:
@@ -1595,6 +1599,7 @@ def main_loop(DRY_RUN: bool = False):
                     
                     if signals_sent_today >= daily_limit:
                         logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")
+                        skipped_daily_limit += 1
                         continue
 
                     user_signals = []
@@ -1657,14 +1662,18 @@ def main_loop(DRY_RUN: bool = False):
                             pass
 
                     if not user_signals:
+                        skipped_no_eligible_signals += 1
                         continue
 
                     if DRY_RUN:
                         for msg in user_signals:
                             print(f"[DRY RUN][{user_tier}] {msg}")
+                        dispatched_count += 1
                     else:
+                        _dispatched_ok = False
                         try:
                             dispatch_signals(user_signals, user_id=user_id)
+                            _dispatched_ok = True
                             # Increment Redis counter
                             try:
                                 new_count = signals_sent_today + len(user_signals)
@@ -1675,9 +1684,17 @@ def main_loop(DRY_RUN: bool = False):
                         except Exception as e:
                             logger.warning(f"[engine] Failed to dispatch signals: {e}")
                             logger.exception("dispatch_signals failed")
-                    dispatched_count += 1
+                        if _dispatched_ok:
+                            dispatched_count += 1
                 except Exception:
                     logger.exception("deliver_all per-user failed")
+            logger.info(
+                "[engine] delivery summary: users_seen=%s users_dispatched=%s skipped_daily_limit=%s skipped_no_eligible=%s",
+                users_seen,
+                dispatched_count,
+                skipped_daily_limit,
+                skipped_no_eligible_signals,
+            )
             return dispatched_count
 
         try:

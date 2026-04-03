@@ -11,6 +11,7 @@
 import asyncio
 from utils.async_runner import run_sync
 import contextlib
+import logging
 from config import config
 import signal
 import threading
@@ -18,6 +19,8 @@ from typing import Optional
 
 from db.session import get_session
 from db.repository import expire_subscriptions
+
+logger = logging.getLogger(__name__)
 
 
 
