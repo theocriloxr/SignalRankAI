@@ -34,6 +34,7 @@ except Exception:
 _bot_application: object = None
 _bot_ready: bool = False
 _pending_webhook_updates = deque(maxlen=500)
+_inflight_update_tasks: set[asyncio.Task] = set()
 
 
 async def _safe_get_webhook_info() -> dict | None:
@@ -909,8 +910,24 @@ async def _telegram_webhook_route(req: Request) -> dict:
         )
         logger.info("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
         update = Update.de_json(data, _bot_application.bot)
-        await _bot_application.process_update(update)
-        return {"ok": True}
+
+        async def _process_update_bg() -> None:
+            try:
+                await _bot_application.process_update(update)
+            except Exception as exc:
+                logger.error("[webhook] async process_update failed update_id=%s: %s", update_id, exc)
+
+        task = asyncio.create_task(_process_update_bg())
+        _inflight_update_tasks.add(task)
+
+        def _cleanup_task(_t: asyncio.Task) -> None:
+            try:
+                _inflight_update_tasks.discard(_t)
+            except Exception:
+                pass
+
+        task.add_done_callback(_cleanup_task)
+        return {"ok": True, "dispatched": True}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
         return {"ok": False, "error": str(exc)}
