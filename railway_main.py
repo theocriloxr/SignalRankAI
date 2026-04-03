@@ -36,6 +36,25 @@ _bot_ready: bool = False
 _pending_webhook_updates = deque(maxlen=500)
 
 
+async def _safe_get_webhook_info() -> dict | None:
+    """Best-effort Telegram webhook info for diagnostics."""
+    if (not _bot_ready) or (_bot_application is None):
+        return None
+    try:
+        wh = await _bot_application.bot.get_webhook_info()
+        return {
+            "url": getattr(wh, "url", ""),
+            "pending_update_count": int(getattr(wh, "pending_update_count", 0) or 0),
+            "last_error_date": str(getattr(wh, "last_error_date", None)),
+            "last_error_message": str(getattr(wh, "last_error_message", None)),
+            "max_connections": int(getattr(wh, "max_connections", 0) or 0),
+            "ip_address": str(getattr(wh, "ip_address", "") or ""),
+        }
+    except Exception as exc:
+        logger.warning("[webhook] get_webhook_info failed: %s", exc)
+        return {"error": str(exc)}
+
+
 def _app_has_registered_handlers(app_obj: object) -> bool:
     """Best-effort readiness check for PTB Application handler registration."""
     if app_obj is None:
@@ -428,6 +447,14 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
                     getattr(wh, "last_error_date", None),
                     getattr(wh, "last_error_message", None),
                 )
+                print(
+                    "[webhook] startup status: "
+                    f"url_set={bool(getattr(wh, 'url', ''))} "
+                    f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
+                    f"last_error_date={getattr(wh, 'last_error_date', None)} "
+                    f"last_error_message={getattr(wh, 'last_error_message', None)}",
+                    flush=True,
+                )
             except Exception as _wh_exc:
                 logger.warning("[webhook] get_webhook_info failed after set_webhook: %s", _wh_exc)
         except Exception as exc:
@@ -660,6 +687,14 @@ async def lifespan(_: FastAPI):
                     getattr(wh, "last_error_date", None),
                     getattr(wh, "last_error_message", None),
                 )
+                print(
+                    "[webhook] periodic status: "
+                    f"url_set={bool(getattr(wh, 'url', ''))} "
+                    f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
+                    f"last_error_date={getattr(wh, 'last_error_date', None)} "
+                    f"last_error_message={getattr(wh, 'last_error_message', None)}",
+                    flush=True,
+                )
             except Exception as exc:
                 logger.warning("[webhook] periodic status check failed: %s", exc)
 
@@ -857,6 +892,18 @@ async def _telegram_webhook_route(req: Request) -> dict:
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
         return {"ok": False, "error": str(exc)}
+
+
+@app.get("/telegram/webhook_status")
+async def _telegram_webhook_status() -> dict:
+    """Runtime diagnostics for Telegram webhook delivery."""
+    info = await _safe_get_webhook_info()
+    return {
+        "ok": True,
+        "bot_ready": bool(_bot_ready),
+        "queued_updates": len(_pending_webhook_updates),
+        "webhook_info": info,
+    }
 
 
 # Mount the existing web app AFTER the webhook route — FastAPI checks routes
