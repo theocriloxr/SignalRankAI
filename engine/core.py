@@ -748,9 +748,13 @@ def main_loop(DRY_RUN: bool = False):
         # Fetch market data (async)
         try:
             from utils.async_runner import run_sync
-            all_market_data = run_sync(_fetch_market_data_for_assets(asset_to_tfs_degraded))
+            fetch_timeout_s = max(30.0, float(_env_float("ENGINE_MARKET_FETCH_TIMEOUT_SECONDS", 180.0) or 180.0))
+            all_market_data = run_sync(
+                _fetch_market_data_for_assets(asset_to_tfs_degraded),
+                timeout=fetch_timeout_s,
+            )
         except Exception:
-            logger.exception("Market data fetch failed")
+            logger.exception("Market data fetch failed or timed out")
             all_market_data = {}
 
         scored_signals_all: List[Dict] = []
