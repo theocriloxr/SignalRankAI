@@ -101,6 +101,9 @@ async def _resend_unsent_signals_async():
         # Cache user tiers once per run for consistent routing and diagnostics.
         user_tier_map: dict[int, str] = {}
         tier_counts: dict[str, int] = {}
+        include_free_in_resend = str(
+            os.getenv("RESEND_INCLUDE_FREE", "0") or "0"
+        ).strip().lower() in {"1", "true", "yes", "on"}
         for _uid in user_ids:
             try:
                 _tier = str(resolve_user_tier(int(_uid)) or "free").lower()
@@ -249,6 +252,12 @@ async def _resend_unsent_signals_async():
                     user_tier = str(user_tier_map.get(int(user_id), "free") or "free").lower()
                     gate_tier = _normalized_delivery_tier(user_tier)
                     try:
+                        # Free users are random-realtime routed by dispatch_signals();
+                        # skip score-ranked resend flow unless explicitly enabled.
+                        if gate_tier == "free" and not include_free_in_resend:
+                            skipped_eligibility_count += 1
+                            continue
+
                         if int(user_id) in delivered_user_ids:
                             skipped_already_delivered_count += 1
                             continue
