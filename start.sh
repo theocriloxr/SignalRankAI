@@ -4,6 +4,9 @@
 # Activate virtual environment (if any)
 # source venv/bin/activate
 
+# Emit version/build metadata at boot.
+python -c "from core.version import get_version_banner; print('[boot] ' + get_version_banner())" || true
+
 # Install dependencies at boot only when explicitly requested.
 # (Image build already installs requirements in Dockerfile.)
 if [ "${INSTALL_AT_BOOT:-false}" = "true" ] && [ -f requirements.txt ]; then

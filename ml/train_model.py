@@ -5,6 +5,7 @@ Loads signals + outcomes from Postgres, builds feature matrix, trains model.
 """
 
 import os
+import hashlib
 import sys
 import json
 import logging
@@ -603,11 +604,15 @@ def save_model(model, feature_cols):
     booster = model.get_booster()
     model_bytes = booster.save_raw('ubj')  # Binary format, no warnings
     
+    artifact_hash_sha256 = hashlib.sha256(model_bytes).hexdigest()
     model_dict = {
         "type": "xgboost",
+        "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
         "feature_cols": feature_cols,
         "model_bytes_b64": base64.b64encode(model_bytes).decode('utf-8'),
         "trained_at": datetime.utcnow().isoformat(),
+        "xgboost_version": getattr(xgb, "__version__", ""),
+        "artifact_hash_sha256": artifact_hash_sha256,
     }
 
     with open(model_path, 'w') as f:

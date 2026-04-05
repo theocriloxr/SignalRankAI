@@ -35,14 +35,6 @@ class TierDeliveryManager:
     MIN_SCORE_FREE = 80.0      # Only prove best signals
     MIN_SCORE_PREMIUM = 75.0   # More opportunity
     MIN_SCORE_VIP = 75.0       # Accept all, but show quality-first
-    # Daily signal limits (soft limits, quality-based)
-    MAX_SIGNALS_PER_DAY = {
-        'free': 3,        # 1-3 signals/day
-        'premium': 10,    # 5-10 signals/day
-        'vip': None,      # No limit (quality-filtered)
-        'admin': None,    # All signals
-        'owners': None,   # All signals
-    }
     def __init__(self):
         """Initialize delivery manager."""
         self.delivery_log = []
@@ -333,4 +325,3 @@ _delivery_manager = TierDeliveryManager()
 def get_delivery_manager() -> TierDeliveryManager:
     """Get global delivery manager instance."""
     return _delivery_manager
-

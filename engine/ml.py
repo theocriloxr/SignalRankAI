@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import base64
 import gc
-import json
 import os
 import logging
 from pathlib import Path
@@ -15,6 +13,8 @@ try:
 except Exception:  # pragma: no cover - xgboost might not be present in minimal envs
     xgb = None
 
+from ml.model_registry import load_model_with_metadata
+
 
 _MODEL_CACHE: dict[str, Any] = {
     "loaded": False,
@@ -22,6 +22,8 @@ _MODEL_CACHE: dict[str, Any] = {
     "booster": None,
     "path": None,
     "error": None,
+    "version": "",
+    "trained_at": "",
 }
 logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
@@ -49,24 +51,18 @@ def _load_model() -> None:
         return
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        feature_cols: List[str] = list(payload.get("feature_cols") or [])
-        model_bytes_b64 = payload.get("model_bytes_b64")
-        if not model_bytes_b64 or not feature_cols:
-            _MODEL_CACHE["error"] = "model_payload_invalid"
+        booster, feature_cols, metadata, err = load_model_with_metadata(path, xgb)
+        if err:
+            _MODEL_CACHE["error"] = err
             return
-
-        raw_bytes = base64.b64decode(model_bytes_b64)
-        booster = xgb.Booster()
         # Memory-optimised config for Railway 500 MB tier
         booster.set_param("nthread", int(os.getenv("XGB_NTHREAD", "2")))
-        booster.load_model(bytearray(raw_bytes))
-        del raw_bytes  # release raw bytes immediately
         gc.collect()  # free any cyclic garbage from model initialisation
 
         _MODEL_CACHE["feature_cols"] = feature_cols
         _MODEL_CACHE["booster"] = booster
+        _MODEL_CACHE["version"] = str(metadata.get("version") or "")
+        _MODEL_CACHE["trained_at"] = str(metadata.get("trained_at") or "")
     except Exception as exc:  # pragma: no cover - defensive
         _MODEL_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
 

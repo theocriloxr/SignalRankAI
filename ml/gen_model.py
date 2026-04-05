@@ -4,6 +4,7 @@ import json
 import xgboost as xgb
 from pathlib import Path
 import base64
+import hashlib
 
 # Create a minimal model
 model = xgb.XGBClassifier(n_estimators=1, max_depth=2, random_state=42)
@@ -24,6 +25,7 @@ model_b64 = base64.b64encode(model_bytes).decode('utf-8')
 # Save to file
 model_data = {
     "type": "xgboost",
+    "version": "1.0.0",
     "feature_cols": [
         "score_normalized",
         "risk_reward_ratio",
@@ -40,6 +42,8 @@ model_data = {
     ],
     "model_bytes_b64": model_b64,
     "trained_at": "2026-01-03T12:00:00",
+    "xgboost_version": getattr(xgb, "__version__", ""),
+    "artifact_hash_sha256": hashlib.sha256(model_bytes).hexdigest(),
     "note": "Minimal test model. Train with ml/train_model.py for production."
 }
 
