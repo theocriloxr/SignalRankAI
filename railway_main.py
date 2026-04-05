@@ -15,9 +15,11 @@ import asyncio
 import logging
 from collections import deque
 from contextlib import asynccontextmanager
+import time
 
 from fastapi import FastAPI, Request, HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from prometheus_client import Counter, Gauge, Histogram
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,100 @@ _pending_webhook_updates = deque(maxlen=500)
 _inflight_update_tasks: set[asyncio.Task] = set()
 _webhook_dispatch_queue: asyncio.Queue | None = None
 _webhook_dispatch_workers: list[asyncio.Task] = []
+_webhook_enqueue_started_at: dict[str, float] = {}
+_webhook_dispatch_latency_window_s = deque(maxlen=2000)
+
+webhook_queue_full_total = Counter(
+    "signalrankai_webhook_queue_full_total",
+    "Total dropped webhook updates due to full dispatch queue",
+)
+webhook_slo_alerts_total = Counter(
+    "signalrankai_webhook_slo_alerts_total",
+    "Total webhook/outcome SLO alerts",
+    labelnames=("kind",),
+)
+webhook_dispatch_latency_seconds = Histogram(
+    "signalrankai_webhook_dispatch_latency_seconds",
+    "Latency from webhook enqueue to worker dispatch completion",
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60),
+)
+webhook_queue_depth_gauge = Gauge(
+    "signalrankai_webhook_queue_depth",
+    "Current in-process webhook dispatch queue depth",
+)
+webhook_queue_utilization_gauge = Gauge(
+    "signalrankai_webhook_queue_utilization_ratio",
+    "Current in-process webhook dispatch queue utilization ratio",
+)
+outcome_resolution_latency_seconds = Histogram(
+    "signalrankai_outcome_resolution_latency_seconds",
+    "Observed signal outcome resolution latency in seconds",
+    buckets=(60, 300, 900, 1800, 3600, 14400, 43200, 86400, 172800, 604800),
+)
+
+
+def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    vals = sorted(float(v) for v in values)
+    p = max(0.0, min(100.0, float(percentile)))
+    if len(vals) == 1:
+        return vals[0]
+    rank = (p / 100.0) * (len(vals) - 1)
+    lo = int(rank)
+    hi = min(lo + 1, len(vals) - 1)
+    frac = rank - lo
+    return vals[lo] + ((vals[hi] - vals[lo]) * frac)
+
+
+def _emit_slo_alert(kind: str, message: str) -> None:
+    webhook_slo_alerts_total.labels(kind=str(kind or "unknown")).inc()
+    logger.warning("[slo] %s", message)
+
+
+def _record_dispatch_latency(update_id: str, started_at: float | None) -> None:
+    if started_at is None:
+        return
+    elapsed = max(0.0, time.monotonic() - started_at)
+    _webhook_dispatch_latency_window_s.append(elapsed)
+    webhook_dispatch_latency_seconds.observe(elapsed)
+
+
+async def _sample_outcome_latency_p95_seconds(hours: int = 24, limit: int = 500) -> float | None:
+    try:
+        from db.session import get_session, is_db_configured
+        from sqlalchemy import text
+        if not is_db_configured():
+            return None
+        async with get_session() as session:
+            result = await session.execute(
+                text(
+                    """
+                    SELECT EXTRACT(EPOCH FROM (o.closed_at - s.created_at)) AS latency_seconds
+                    FROM outcomes o
+                    JOIN signals s ON s.signal_id = o.signal_id
+                    WHERE o.closed_at IS NOT NULL
+                      AND s.created_at IS NOT NULL
+                      AND o.closed_at >= NOW() - (:hours || ' hours')::interval
+                    ORDER BY o.closed_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"hours": int(hours), "limit": int(limit)},
+            )
+            samples: list[float] = []
+            for row in result.fetchall() or []:
+                try:
+                    val = float(getattr(row, "latency_seconds", None) or 0.0)
+                    if val >= 0:
+                        samples.append(val)
+                        outcome_resolution_latency_seconds.observe(val)
+                except Exception:
+                    continue
+            return _percentile(samples, 95.0)
+    except Exception as exc:
+        logger.debug("[slo] outcome latency sampling skipped: %s", exc)
+        return None
 
 
 async def _safe_get_webhook_info() -> dict | None:
@@ -184,6 +280,7 @@ async def _run_startup_ops() -> None:
 async def _archive_ml_history_job() -> None:
     """Backfill ml_past_training_data from finalized outcomes (idempotent)."""
     try:
+        from ml.schema_version import MODEL_FORMAT_VERSION, get_current_schema_version
         from db.session import get_session, is_db_configured
         from sqlalchemy import text
         if not is_db_configured():
@@ -212,12 +309,30 @@ async def _archive_ml_history_job() -> None:
                     outcome_r_multiple DOUBLE PRECISION NULL,
                     outcome_percent DOUBLE PRECISION NULL,
                     outcome_meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    schema_version INTEGER NOT NULL DEFAULT 1,
+                    model_format_version INTEGER NOT NULL DEFAULT 1,
                     signal_created_at TIMESTAMP NULL,
                     outcome_closed_at TIMESTAMP NULL,
                     archived_at TIMESTAMP NOT NULL DEFAULT NOW()
                 )
                 """
             ))
+            await session.execute(
+                text(
+                    """
+                    ALTER TABLE ml_past_training_data
+                    ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 1
+                    """
+                )
+            )
+            await session.execute(
+                text(
+                    """
+                    ALTER TABLE ml_past_training_data
+                    ADD COLUMN IF NOT EXISTS model_format_version INTEGER NOT NULL DEFAULT 1
+                    """
+                )
+            )
 
             # Insert only unseen rows by unique signal_id.
             result = await session.execute(
@@ -228,6 +343,7 @@ async def _archive_ml_history_job() -> None:
                         entry, stop_loss, take_profit,
                         rr_estimate, score, strength, regime, strategy_name, ml_probability,
                         outcome_status, outcome_r_multiple, outcome_percent, outcome_meta,
+                        schema_version, model_format_version,
                         signal_created_at, outcome_closed_at, archived_at
                     )
                     SELECT
@@ -235,13 +351,18 @@ async def _archive_ml_history_job() -> None:
                         s.entry, s.stop_loss, s.take_profit,
                         s.rr_estimate, s.score, s.strength, s.regime, s.strategy_name, s.ml_probability,
                         o.status, o.r_multiple, o.percent, COALESCE(o.meta::jsonb, '{}'::jsonb),
+                        :schema_version, :model_format_version,
                         s.created_at, o.closed_at, NOW()
                     FROM signals s
                     JOIN outcomes o ON o.signal_id = s.signal_id
                     WHERE o.status IN ('tp', 'tp1', 'tp2', 'tp3', 'partial_tp', 'sl', 'expired', 'timeout', 'invalidated')
                     ON CONFLICT (signal_id) DO NOTHING
                     """
-                )
+                ),
+                {
+                    "schema_version": int(get_current_schema_version()),
+                    "model_format_version": int(MODEL_FORMAT_VERSION),
+                },
             )
             await session.commit()
             try:
@@ -753,6 +874,36 @@ async def lifespan(_: FastAPI):
             if (not _bot_ready) or (_bot_application is None):
                 continue
             try:
+                queue_size = 0
+                queue_util = 0.0
+                if _webhook_dispatch_queue is not None:
+                    queue_size = int(_webhook_dispatch_queue.qsize())
+                    try:
+                        queue_util = float(queue_size) / float(max(1, _webhook_dispatch_queue.maxsize))
+                    except Exception:
+                        queue_util = 0.0
+                webhook_queue_depth_gauge.set(queue_size)
+                webhook_queue_utilization_gauge.set(queue_util)
+                if queue_util >= 0.90:
+                    _emit_slo_alert(
+                        "webhook_queue_utilization",
+                        f"webhook queue utilization high: utilization={queue_util:.2f} size={queue_size}",
+                    )
+
+                lat_p99 = _percentile(list(_webhook_dispatch_latency_window_s), 99.0)
+                if lat_p99 is not None and lat_p99 > 5.0:
+                    _emit_slo_alert(
+                        "webhook_dispatch_latency",
+                        f"webhook dispatch latency p99 breached: p99_s={lat_p99:.3f}",
+                    )
+
+                out_p95 = await _sample_outcome_latency_p95_seconds(hours=24, limit=500)
+                if out_p95 is not None and out_p95 > 86400.0:
+                    _emit_slo_alert(
+                        "outcome_latency",
+                        f"outcome latency p95 breached: p95_s={out_p95:.1f}",
+                    )
+
                 wh = await _bot_application.bot.get_webhook_info()
                 _url_set = bool(getattr(wh, "url", ""))
                 _pending = int(getattr(wh, "pending_update_count", 0) or 0)
@@ -790,16 +941,18 @@ async def lifespan(_: FastAPI):
         """Background worker: process Telegram updates from queue."""
         while True:
             payload = await _webhook_dispatch_queue.get()
+            update_id = (payload or {}).get("update_id", "?")
+            started_at = _webhook_enqueue_started_at.pop(str(update_id), None)
             try:
                 if (not _bot_ready) or (_bot_application is None):
                     _pending_webhook_updates.append(payload)
                     continue
                 from telegram import Update
-                update_id = (payload or {}).get("update_id", "?")
                 update_type = next((k for k in (payload or {}) if k not in ("update_id",)), "unknown")
                 logger.info("[webhook] worker=%s processing update_id=%s type=%s", worker_id, update_id, update_type)
                 update = Update.de_json(payload, _bot_application.bot)
                 await _bot_application.process_update(update)
+                _record_dispatch_latency(str(update_id), started_at)
             except Exception as exc:
                 logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
             finally:
@@ -1025,12 +1178,14 @@ async def _telegram_webhook_route(req: Request) -> dict:
 
         try:
             _webhook_dispatch_queue.put_nowait(data)
+            _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
             return {
                 "ok": True,
                 "dispatched": True,
                 "queue_size": int(_webhook_dispatch_queue.qsize()),
             }
         except asyncio.QueueFull:
+            webhook_queue_full_total.inc()
             logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
             return {"ok": False, "error": "queue_full"}
     except Exception as exc:

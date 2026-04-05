@@ -3,6 +3,9 @@ import json
 import base64
 import tempfile
 from pathlib import Path
+import logging
+
+from ml.schema_version import migrate_feature_payload, normalize_model_payload
 
 try:
     import xgboost as xgb  # type: ignore
@@ -13,6 +16,7 @@ except Exception:  # pragma: no cover
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_MODEL_PATH = str(PROJECT_ROOT / "ml" / "model.json")
 MODEL_PATH = os.getenv("ML_MODEL_PATH", DEFAULT_MODEL_PATH)
+logger = logging.getLogger(__name__)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -43,13 +47,17 @@ class MLFilter:
 
         self.model = None
         self.feature_cols = None
+        self.schema_version = None
+        self.model_format_version = None
         try:
             with open(MODEL_PATH, 'r') as f:
-                model_data = json.load(f)
+                model_data = normalize_model_payload(json.load(f))
             
             # Extract metadata and model bytes
             model_b64 = model_data.get("model_bytes_b64")
             self.feature_cols = model_data.get("feature_cols", [])
+            self.schema_version = model_data.get("schema_version")
+            self.model_format_version = model_data.get("model_format_version")
             
             if not model_b64:
                 self.active = False
@@ -66,6 +74,7 @@ class MLFilter:
             self.active = False
             self.model = None
             self.feature_cols = None
+            logger.warning("[ml] inference model init failed; fail-open mode active: %s", e)
 
     def ml_filter(self, features, threshold=0.6):
         """
@@ -83,9 +92,10 @@ class MLFilter:
         
         try:
             # Map input features to model's expected feature order
+            normalized = migrate_feature_payload(features if isinstance(features, dict) else {}, list(self.feature_cols or []))
             feature_vector = []
             for col in (self.feature_cols or []):
-                feature_vector.append(float(features.get(col, 0.0)))
+                feature_vector.append(float(normalized.get(col, 0.0)))
             
             if not feature_vector:
                 return True, None
