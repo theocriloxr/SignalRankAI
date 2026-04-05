@@ -29,6 +29,7 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
         rm._bot_application = object()
         rm._webhook_dispatch_queue = asyncio.Queue(maxsize=1)
         rm._webhook_dispatch_queue.put_nowait({"update_id": 1})
+        before = rm.webhook_queue_full_total._value.get()
 
         class _Req:
             headers = {}
@@ -39,6 +40,8 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
         resp = await rm._telegram_webhook_route(_Req())
         self.assertFalse(resp.get("ok"))
         self.assertEqual(resp.get("error"), "queue_full")
+        after = rm.webhook_queue_full_total._value.get()
+        self.assertGreater(after, before)
 
     async def test_build_scheduler_registers_expected_jobs(self):
         import railway_main as rm
@@ -59,7 +62,15 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
         app.updater = MagicMock()
         app.updater.stop = AsyncMock()
 
-        with patch("os.getenv", side_effect=lambda k, d=None: "1" if k in {"TELEGRAM_USE_WEBHOOK", "TELEGRAM_DELETE_WEBHOOK_ON_SHUTDOWN"} else d):
+        env_values = {
+            "TELEGRAM_USE_WEBHOOK": "1",
+            "TELEGRAM_DELETE_WEBHOOK_ON_SHUTDOWN": "1",
+        }
+
+        def _fake_getenv(key, default=None):
+            return env_values.get(key, default)
+
+        with patch("os.getenv", side_effect=_fake_getenv):
             await rm._stop_telegram_bot(app)
 
         app.bot.delete_webhook.assert_awaited()

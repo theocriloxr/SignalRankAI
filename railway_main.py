@@ -16,6 +16,7 @@ import logging
 from collections import deque
 from contextlib import asynccontextmanager
 import time
+from typing import Iterable
 
 from fastapi import FastAPI, Request, HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -71,7 +72,7 @@ outcome_resolution_latency_seconds = Histogram(
 )
 
 
-def _percentile(values: list[float], percentile: float) -> float | None:
+def _percentile(values: Iterable[float], percentile: float) -> float | None:
     if not values:
         return None
     vals = sorted(float(v) for v in values)
@@ -890,7 +891,7 @@ async def lifespan(_: FastAPI):
                         f"webhook queue utilization high: utilization={queue_util:.2f} size={queue_size}",
                     )
 
-                lat_p99 = _percentile(list(_webhook_dispatch_latency_window_s), 99.0)
+                lat_p99 = _percentile(_webhook_dispatch_latency_window_s, 99.0)
                 if lat_p99 is not None and lat_p99 > 5.0:
                     _emit_slo_alert(
                         "webhook_dispatch_latency",
@@ -941,18 +942,18 @@ async def lifespan(_: FastAPI):
         """Background worker: process Telegram updates from queue."""
         while True:
             payload = await _webhook_dispatch_queue.get()
-            update_id = (payload or {}).get("update_id", "?")
-            started_at = _webhook_enqueue_started_at.pop(str(update_id), None)
+            payload_update_id = (payload or {}).get("update_id", "?")
+            started_at = _webhook_enqueue_started_at.pop(str(payload_update_id), None)
             try:
                 if (not _bot_ready) or (_bot_application is None):
                     _pending_webhook_updates.append(payload)
                     continue
                 from telegram import Update
                 update_type = next((k for k in (payload or {}) if k not in ("update_id",)), "unknown")
-                logger.info("[webhook] worker=%s processing update_id=%s type=%s", worker_id, update_id, update_type)
+                logger.info("[webhook] worker=%s processing update_id=%s type=%s", worker_id, payload_update_id, update_type)
                 update = Update.de_json(payload, _bot_application.bot)
                 await _bot_application.process_update(update)
-                _record_dispatch_latency(str(update_id), started_at)
+                _record_dispatch_latency(str(payload_update_id), started_at)
             except Exception as exc:
                 logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
             finally:
@@ -1178,6 +1179,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
 
         try:
             _webhook_dispatch_queue.put_nowait(data)
+            # Removed by worker pop(update_id) when processed; unmatched IDs are bounded by queue volume.
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
             return {
                 "ok": True,

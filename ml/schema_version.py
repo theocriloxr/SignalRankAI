@@ -68,4 +68,3 @@ def migrate_feature_payload(
         except Exception:
             out[col] = 0.0
     return out
-
