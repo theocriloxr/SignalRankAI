@@ -1,0 +1,15 @@
+{
+  "strict_schema": false,
+  "primary": {
+    "name": "xgb_primary",
+    "path": "ml/model.json",
+    "version": "1.0.0",
+    "feature_schema_version": "1"
+  },
+  "candidate": {
+    "name": "xgb_candidate",
+    "path": "ml/model_candidate.json",
+    "version": "1.0.0-shadow",
+    "feature_schema_version": "1"
+  }
+}

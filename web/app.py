@@ -15,7 +15,14 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from db.session import get_session
-from db.repository import activate_subscription, count_active_vip_users, get_active_subscription
+from db.repository import (
+    activate_subscription,
+    count_active_vip_users,
+    get_active_subscription,
+    mark_webhook_event_processed,
+    paystack_event_identity,
+)
+from db.session import is_db_configured
 from core.redis_state import state
 
 
@@ -29,6 +36,29 @@ request_latency = Histogram(
     "signalrankai_http_request_latency_seconds",
     "HTTP request latency",
     labelnames=("path", "method", "status"),
+)
+
+paystack_webhook_processing_seconds = Histogram(
+    "signalrankai_paystack_webhook_processing_seconds",
+    "Paystack webhook processing latency",
+    labelnames=("event_type", "status"),
+)
+
+ml_scoring_execution_seconds = Histogram(
+    "signalrankai_ml_scoring_execution_seconds",
+    "ML scoring execution latency",
+    labelnames=("model", "status"),
+)
+
+telegram_dispatch_latency_seconds = Histogram(
+    "signalrankai_telegram_dispatch_latency_seconds",
+    "Telegram dispatch latency",
+    labelnames=("status",),
+)
+
+db_pool_utilization_ratio = Histogram(
+    "signalrankai_db_pool_utilization_ratio",
+    "Approximate DB pool utilization ratio",
 )
 
 webhook_failures = Counter(
@@ -140,7 +170,7 @@ def _map_amount_to_tier(amount_ngn: int) -> tuple[str, int] | None:
 
 
 async def _persist_subscription_if_configured(event: Dict[str, Any]) -> Dict[str, Any]:
-    if ENGINE is None:
+    if not is_db_configured():
         return {"persisted": False, "reason": "DATABASE_URL not set"}
 
     try:
@@ -231,7 +261,7 @@ async def _check_waitlist_capacity_job() -> None:
       uninvited entry: sets invited_at + invite_expires_at = now + 24 h, DMs the user.
     Scheduled: every 1 hour via the FastAPI lifespan AsyncIOScheduler.
     """
-    if ENGINE is None:
+    if not is_db_configured():
         return
     try:
         from db.models import VIPWaitlist, User
@@ -321,7 +351,7 @@ async def _monitor_expired_invites_job() -> None:
     - Triggers _check_waitlist_capacity_job to immediately fill any freed seat.
     Scheduled: every 15 minutes via the FastAPI lifespan AsyncIOScheduler.
     """
-    if ENGINE is None:
+    if not is_db_configured():
         return
     try:
         from db.models import VIPWaitlist, User
@@ -422,14 +452,6 @@ async def log_requests(request: Request, call_next):
     logger.info(f"[web] HTTP {request.method} {request.url} -> {response.status_code}")
     return response
 
-# Simple healthz endpoint with heartbeat log
-@app.get("/healthz")
-async def healthz():
-    logger.info("[web] healthz endpoint hit")
-    print("[web] healthz endpoint hit", flush=True)
-    return {"ok": True, "service": APP_NAME, "status": "healthy"}
-
-
 @app.middleware("http")
 async def metrics_middleware(request: Request, call_next):
     path = request.url.path
@@ -443,6 +465,17 @@ async def metrics_middleware(request: Request, call_next):
     finally:
         elapsed = max(0.0, time.perf_counter() - started)
         request_latency.labels(path=path, method=method, status=status).observe(elapsed)
+        try:
+            from db.session import get_engine_for_event_loop
+            eng = get_engine_for_event_loop()
+            if eng is not None:
+                pool = getattr(getattr(eng, "sync_engine", None), "pool", None)
+                if pool is not None and hasattr(pool, "checkedout") and hasattr(pool, "size"):
+                    size = max(1, int(pool.size() or 1))
+                    checked = max(0, int(pool.checkedout() or 0))
+                    db_pool_utilization_ratio.observe(min(1.0, float(checked) / float(size)))
+        except Exception:
+            pass
 
 
 @app.get("/health")
@@ -494,12 +527,13 @@ async def health() -> Dict[str, Any]:
         checks["database"] = f"error: {str(e)}"
         checks["status"] = "degraded"
     
-    # Check Redis
+    # Shared state backend check (Postgres-backed)
     try:
         state.set_sync("health_check", "ok", ex=60)
-        checks["redis"] = "ok"
+        checks["state_backend"] = "ok"
     except Exception:
-        checks["redis"] = "unavailable"
+        checks["state_backend"] = "unavailable"
+        checks["status"] = "degraded"
     
     return checks
 
@@ -522,6 +556,28 @@ async def healthz() -> Dict[str, Any]:
         "service": APP_NAME,
         "timestamp": datetime.utcnow().isoformat() + "Z",
     }
+
+
+@app.get("/ready")
+async def ready() -> Dict[str, Any]:
+    """Readiness endpoint that checks DB and shared state accessibility."""
+    checks: Dict[str, Any] = {"status": "ok", "service": APP_NAME}
+    try:
+        async with get_session() as session:
+            from sqlalchemy import text
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:
+        checks["status"] = "degraded"
+        checks["database"] = f"error: {exc}"
+    else:
+        checks["database"] = "ok"
+    try:
+        state.set_sync("ready_check", "ok", ex=30)
+        checks["state_backend"] = "ok"
+    except Exception as exc:
+        checks["status"] = "degraded"
+        checks["state_backend"] = f"error: {exc}"
+    return checks
 
 
 def _require_admin_token(x_admin_token: Optional[str]) -> None:
@@ -622,20 +678,44 @@ async def paystack_webhook(
     request: Request,
     x_paystack_signature: Optional[str] = Header(default=None, alias="x-paystack-signature"),
 ) -> JSONResponse:
+    _started = time.perf_counter()
     raw = await request.body()
     verify_paystack_signature(raw, x_paystack_signature)
 
     event = await request.json()
     event_type = str(event.get("event") or "")
+    event_id, payload_hash = paystack_event_identity(event, raw)
+    reference = str((event.get("data") or {}).get("reference") or "").strip() or None
 
     # ── Payment failure: no reference to confirm — handle directly then ACK ───
     if event_type == "invoice.payment_failed":
         await _handle_payment_failed(event)
+        paystack_webhook_processing_seconds.labels(
+            event_type=event_type or "unknown", status="ok"
+        ).observe(max(0.0, time.perf_counter() - _started))
         return JSONResponse({"received": True, "event": event_type})
 
     confirmation = await confirm_paystack_event(event)
     if not confirmation.get("ok"):
         raise HTTPException(status_code=400, detail="Payment not verified")
+
+    if is_db_configured():
+        async with get_session() as _session:
+            inserted = await mark_webhook_event_processed(
+                _session,
+                provider="paystack",
+                event_id=event_id,
+                event_type=event_type,
+                reference=reference,
+                payload_hash=payload_hash,
+                meta={"dedupe_stage": "verified"},
+            )
+            await _session.commit()
+        if not inserted:
+            paystack_webhook_processing_seconds.labels(
+                event_type=event_type or "unknown", status="idempotent"
+            ).observe(max(0.0, time.perf_counter() - _started))
+            return JSONResponse({"received": True, "idempotent": True, "event": event_type})
 
     persisted = await _persist_subscription_if_configured(event)
     if persisted.get("persisted") is False and str(persisted.get("reason", "")).startswith("vip_full"):
@@ -648,6 +728,9 @@ async def paystack_webhook(
                 await _add_to_vip_waitlist(uid)
         except Exception:
             pass
+        paystack_webhook_processing_seconds.labels(
+            event_type=event_type or "unknown", status="conflict"
+        ).observe(max(0.0, time.perf_counter() - _started))
         raise HTTPException(status_code=409, detail="VIP is currently full. You have been added to the waitlist.")
 
     # ── Referral bonus ────────────────────────────────────────────────────
@@ -658,6 +741,9 @@ async def paystack_webhook(
     if event_type == "charge.success":
         await _handle_charge_success_recurring(event, persisted)
 
+    paystack_webhook_processing_seconds.labels(
+        event_type=event_type or "unknown", status="ok"
+    ).observe(max(0.0, time.perf_counter() - _started))
     return JSONResponse(
         {
             "received": True,
@@ -669,20 +755,27 @@ async def paystack_webhook(
 
 async def _add_to_vip_waitlist(telegram_user_id: int) -> None:
     """Insert a row into vip_waitlist if not already present."""
-    if ENGINE is None:
+    if not is_db_configured():
         return
     try:
         from db.models import VIPWaitlist
         from sqlalchemy import select
+        from db.models import User
 
         async with get_session() as session:
+            user_row = await session.execute(
+                select(User).where(User.telegram_user_id == int(telegram_user_id))
+            )
+            user = user_row.scalars().first()
+            if not user:
+                return
             exists = await session.execute(
-                select(VIPWaitlist).where(VIPWaitlist.user_id == telegram_user_id)
+                select(VIPWaitlist).where(VIPWaitlist.user_id == user.id)
             )
             if exists.scalars().first() is None:
                 session.add(
                     VIPWaitlist(
-                        user_id=telegram_user_id,
+                        user_id=user.id,
                         joined_at=datetime.utcnow(),
                     )
                 )
@@ -698,7 +791,7 @@ async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
     Looks up ``referred_by`` on the paying user and extends the referrer's
     active subscription by 7 days (or adds 7 days to their PREMIUM tier).
     """
-    if ENGINE is None:
+    if not is_db_configured():
         return
     REFERRAL_BONUS_DAYS = int(os.getenv("REFERRAL_BONUS_DAYS", "7"))
     try:
@@ -729,10 +822,13 @@ async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
 
             # Extend the referrer's active subscription
             sub_row = await session.execute(
-                select(Subscription).where(
-                    Subscription.telegram_user_id == referrer_id,
-                    Subscription.is_active.is_(True),
-                ).order_by(Subscription.expires_at.desc())
+                select(Subscription)
+                .where(
+                    Subscription.user_id == referrer.id,
+                    Subscription.status == "active",
+                    Subscription.expires_at.is_not(None),
+                )
+                .order_by(Subscription.expires_at.desc())
             )
             sub = sub_row.scalars().first()
             if sub and sub.expires_at:
@@ -759,7 +855,7 @@ async def _handle_charge_success_recurring(
 ) -> None:
     """On every charge.success, save subscription/customer codes and send a
     renewal DM when the charge is an automatic monthly renewal (not first-time)."""
-    if ENGINE is None:
+    if not is_db_configured():
         return
     try:
         data = event.get("data") or {}
@@ -809,7 +905,7 @@ async def _handle_charge_success_recurring(
 
 async def _handle_payment_failed(event: Dict[str, Any]) -> None:
     """Handle invoice.payment_failed: downgrade to FREE, clear auto_renew, send DM."""
-    if ENGINE is None:
+    if not is_db_configured():
         return
     try:
         data = event.get("data") or {}
