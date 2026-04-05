@@ -3713,6 +3713,11 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mystats", _audit_handler("mystats", mystats_command)))
     application.add_handler(CommandHandler("referral", _audit_handler("referral", referral_command)))
     application.add_handler(CommandHandler("cancel", _audit_handler("cancel", cancel_command)))
+
+    # ── New commands ──────────────────────────────────────────────────────────
+    from .commands import leaderboard_command
+    application.add_handler(CommandHandler("leaderboard", _audit_handler("leaderboard", leaderboard_command)))
+
     application.add_handler(build_connect_broker_conversation())
 
     # Subscription cancellation confirmation callbacks
@@ -6142,6 +6147,30 @@ def run_bot() -> None:
         except Exception as exc:
             logger.warning(f"[gemini] weekly ML review failed: {exc}")
 
+    def daily_gemini_ml_review_job():
+        """Daily Gemini review using last 24-hour scope for faster feedback loops."""
+        try:
+            _enabled = str(os.getenv("GEMINI_REVIEW_ENABLED", "1") or "1").strip().lower() in {
+                "1", "true", "yes", "y", "on"
+            }
+            _daily_enabled = str(os.getenv("GEMINI_DAILY_REVIEW_ENABLED", "1") or "1").strip().lower() in {
+                "1", "true", "yes", "y", "on"
+            }
+            if not _enabled or not _daily_enabled:
+                logger.info("[gemini] daily review disabled by env flag")
+                return
+            from services.gemini_ml import run_gemini_review_pipeline
+            result = run_sync(
+                run_gemini_review_pipeline(trigger="scheduler:daily", scope="weekly"),
+                timeout=600.0,
+            )
+            if bool(result.get("ok", False)):
+                logger.info("[gemini] daily review complete: training=%s", bool((result.get("training") or {}).get("succeeded", False)))
+            else:
+                logger.info("[gemini] daily review skipped/failed: %s", result.get("error"))
+        except Exception as exc:
+            logger.warning("[gemini] daily ML review failed: %s", exc)
+
     # ── APScheduler setup ───────────────────────────────────────────────────
     # APScheduler 3.x's SQLAlchemyJobStore uses *synchronous* SQLAlchemy.
     # Passing an asyncpg:// URL causes the driver to be rejected and the store
@@ -6364,6 +6393,16 @@ def run_bot() -> None:
             hour=3,
             minute=0,
             id='weekly_gemini_ml_review_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        # Daily Gemini review — runs every day at 04:00 UTC for fast feedback
+        scheduler.add_job(
+            daily_gemini_ml_review_job,
+            'cron',
+            hour=4,
+            minute=0,
+            id='daily_gemini_ml_review_job',
             replace_existing=True,
             max_instances=1,
         )
