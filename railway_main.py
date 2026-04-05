@@ -828,13 +828,18 @@ async def lifespan(_: FastAPI):
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
     worker_task = None
-    try:
-        worker_task = _start_worker_loop_in_background()
-        print("[startup] Worker loop task created", flush=True)
-        logger.info("[startup] Worker loop task created")
-    except Exception as exc:
-        print(f"[startup] Could not start worker loop: {exc}", flush=True)
-        logger.warning(f"[startup] Could not start worker loop: {exc}")
+    _run_worker_default = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "1"
+    _run_worker = str(os.getenv("RUN_WORKER_LOOP", _run_worker_default) or _run_worker_default).strip().lower() in {"1", "true", "yes", "on"}
+    if _run_worker:
+        try:
+            worker_task = _start_worker_loop_in_background()
+            print("[startup] Worker loop task created", flush=True)
+            logger.info("[startup] Worker loop task created")
+        except Exception as exc:
+            print(f"[startup] Could not start worker loop: {exc}", flush=True)
+            logger.warning(f"[startup] Could not start worker loop: {exc}")
+    else:
+        logger.info("[startup] Worker loop skipped (RUN_WORKER_LOOP=0)")
 
     # ── Crash detection for background tasks ─────────────────────────────────
     async def _monitor_background_tasks():
@@ -968,8 +973,8 @@ async def lifespan(_: FastAPI):
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers
     _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-    _default_queue_size = "1000" if _running_on_railway else "5000"
-    _default_worker_count = "16" if _running_on_railway else "64"
+    _default_queue_size = "400" if _running_on_railway else "5000"
+    _default_worker_count = "6" if _running_on_railway else "64"
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
     _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))

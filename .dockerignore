@@ -1,4 +1,7 @@
 # .dockerignore
+.git/
+.venv/
+venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -12,6 +15,19 @@ alembic/versions/
 
 # Ignore test and dev artifacts
 tests/
+docs/
+admin/
+*.md
+deploy*.txt
+deploy*.md
+IMPLEMENTATION_*.md
+AUDIT_*.md
+CHANGELOG_*.md
+manual_migration_*.sql
+APPLY_ML_COLUMN_IMMEDIATELY.sql
+fix_*.py
+test_*.py
+tmp_test_*.py
 *.ipynb
 *.bak
 *.swp

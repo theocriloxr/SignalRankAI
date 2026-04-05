@@ -490,42 +490,50 @@ def load_tradable_assets() -> List[str]:
 def main_loop(DRY_RUN: bool = False):
     start_outage_alert_job()
 
-    # Start the real-time outcome tracker as a background async task within
-    # the engine's own event loop.  If a separate Worker is already running the
-    # tracker in its loop this call is a no-op (start() guards against double-start).
+    # Start outcome tracker unless explicitly disabled (default off on Railway).
     try:
-        import threading
-        import asyncio as _asyncio
+        _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+        _enable_engine_tracker_default = False if _running_on_railway else True
+        _enable_engine_tracker = str(
+            os.getenv(
+                "ENGINE_OUTCOME_TRACKER_ENABLED",
+                "1" if _enable_engine_tracker_default else "0",
+            )
+        ).strip().lower() in {"1", "true", "yes", "on"}
 
-        def _start_outcome_tracker_thread() -> None:
-            try:
-                loop = _asyncio.new_event_loop()
-                _asyncio.set_event_loop(loop)
-                from engine.realtime_outcome_tracker import outcome_tracker
+        if _enable_engine_tracker:
+            import threading
+            import asyncio as _asyncio
 
-                async def _run_tracker():
-                    stop_event = _asyncio.Event()
-                    await outcome_tracker.start()
-                    # Block until the daemon thread is interrupted (e.g. process exit).
-                    # Using wait() instead of a polling loop avoids busy-waiting.
-                    try:
-                        await stop_event.wait()
-                    except (_asyncio.CancelledError, Exception):
-                        pass
-                    finally:
-                        await outcome_tracker.stop()
+            def _start_outcome_tracker_thread() -> None:
+                try:
+                    loop = _asyncio.new_event_loop()
+                    _asyncio.set_event_loop(loop)
+                    from engine.realtime_outcome_tracker import outcome_tracker
 
-                loop.run_until_complete(_run_tracker())
-            except Exception as _ot_err:
-                logger.warning("[engine] outcome tracker thread error: %s", _ot_err)
+                    async def _run_tracker():
+                        stop_event = _asyncio.Event()
+                        await outcome_tracker.start()
+                        try:
+                            await stop_event.wait()
+                        except (_asyncio.CancelledError, Exception):
+                            pass
+                        finally:
+                            await outcome_tracker.stop()
 
-        _ot_thread = threading.Thread(
-            target=_start_outcome_tracker_thread,
-            name="outcome-tracker",
-            daemon=True,
-        )
-        _ot_thread.start()
-        logger.info("[engine] RealtimeOutcomeTracker thread launched")
+                    loop.run_until_complete(_run_tracker())
+                except Exception as _ot_err:
+                    logger.warning("[engine] outcome tracker thread error: %s", _ot_err)
+
+            _ot_thread = threading.Thread(
+                target=_start_outcome_tracker_thread,
+                name="outcome-tracker",
+                daemon=True,
+            )
+            _ot_thread.start()
+            logger.info("[engine] RealtimeOutcomeTracker thread launched")
+        else:
+            logger.info("[engine] RealtimeOutcomeTracker disabled for this engine instance")
     except Exception as _launch_err:
         logger.warning("[engine] Could not launch outcome tracker thread: %s", _launch_err)
 
@@ -545,10 +553,12 @@ def main_loop(DRY_RUN: bool = False):
 
     fx_enabled = _env_bool('FX_ENABLED', True)
     stocks_enabled = _env_bool('STOCKS_ENABLED', True)
-    crypto_timeframes = [tf.strip() for tf in (os.getenv('CRYPTO_TIMEFRAMES', '1h,4h,1d').split(',')) if tf.strip()]
-    fx_timeframes = [tf.strip() for tf in (os.getenv('FX_TIMEFRAMES', '1h,4h,1d').split(',')) if tf.strip()]
-    stock_timeframes = [tf.strip() for tf in (os.getenv('STOCK_TIMEFRAMES', '1h,4h,1d').split(',')) if tf.strip()]
-    commodity_timeframes = [tf.strip() for tf in (os.getenv('COMMODITY_TIMEFRAMES', '1h,4h,1d').split(',')) if tf.strip()]
+    _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    _tf_default = '1h,4h' if _running_on_railway else '1h,4h,1d'
+    crypto_timeframes = [tf.strip() for tf in (os.getenv('CRYPTO_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
+    fx_timeframes = [tf.strip() for tf in (os.getenv('FX_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
+    stock_timeframes = [tf.strip() for tf in (os.getenv('STOCK_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
+    commodity_timeframes = [tf.strip() for tf in (os.getenv('COMMODITY_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
 
     cycle_no = 0
 
