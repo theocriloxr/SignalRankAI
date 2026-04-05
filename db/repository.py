@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import json
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -10,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
-from db.models import Subscription, User, Signal, DecisionLog
+from db.models import Subscription, User, Signal, DecisionLog, ProcessedWebhookEvent, ApiToken
 from db.session import async_session
 
 
@@ -246,3 +248,125 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
         import logging
         logging.error(f"Failed to persist signal: {e}")
         return None
+
+
+def hash_api_token(raw_token: str) -> str:
+    token = str(raw_token or "").strip()
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def token_prefix(raw_token: str) -> str:
+    token = str(raw_token or "").strip()
+    return token[:8]
+
+
+async def create_api_token(
+    session: AsyncSession,
+    telegram_user_id: int,
+    raw_token: str,
+    *,
+    scope: str = "signals:read",
+    expires_at: datetime | None = None,
+) -> ApiToken:
+    user = await get_or_create_user(session, telegram_user_id=telegram_user_id)
+    tok = ApiToken(
+        user_id=user.id,
+        token_hash=hash_api_token(raw_token),
+        token_prefix=token_prefix(raw_token),
+        scope=str(scope or "signals:read"),
+        expires_at=expires_at,
+        revoked_at=None,
+    )
+    session.add(tok)
+    await session.flush()
+    return tok
+
+
+async def get_api_token_owner(
+    session: AsyncSession,
+    raw_token: str,
+    *,
+    required_scope: str = "signals:read",
+) -> Optional[int]:
+    now = datetime.utcnow()
+    tok_hash = hash_api_token(raw_token)
+    row = await session.execute(
+        select(ApiToken, User.telegram_user_id)
+        .join(User, User.id == ApiToken.user_id)
+        .where(
+            ApiToken.token_hash == tok_hash,
+            ApiToken.revoked_at.is_(None),
+            (ApiToken.expires_at.is_(None) | (ApiToken.expires_at > now)),
+        )
+        .limit(1)
+    )
+    found = row.first()
+    if not found:
+        return None
+    api_token, telegram_user_id = found
+    if required_scope and api_token.scope not in {required_scope, "signals:*", "*"}:
+        return None
+    api_token.last_used_at = now
+    await session.flush()
+    try:
+        return int(telegram_user_id)
+    except Exception:
+        return None
+
+
+async def revoke_api_token(
+    session: AsyncSession,
+    raw_token: str,
+) -> int:
+    now = datetime.utcnow()
+    tok_hash = hash_api_token(raw_token)
+    stmt = (
+        update(ApiToken)
+        .where(ApiToken.token_hash == tok_hash, ApiToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    res = await session.execute(stmt)
+    await session.flush()
+    return int(getattr(res, "rowcount", 0) or 0)
+
+
+def paystack_event_identity(event: Dict[str, Any], raw_body: bytes) -> tuple[str, str]:
+    data = event.get("data") or {}
+    event_type = str(event.get("event") or "").strip() or "unknown"
+    explicit_id = str(event.get("id") or "").strip()
+    reference = str(data.get("reference") or "").strip()
+    if explicit_id:
+        event_id = explicit_id
+    elif reference:
+        event_id = f"{event_type}:{reference}"
+    else:
+        event_id = f"{event_type}:{hashlib.sha256(raw_body).hexdigest()[:24]}"
+    payload_hash = hashlib.sha256(raw_body).hexdigest()
+    return event_id, payload_hash
+
+
+async def mark_webhook_event_processed(
+    session: AsyncSession,
+    *,
+    provider: str,
+    event_id: str,
+    event_type: str,
+    reference: str | None,
+    payload_hash: str,
+    meta: Dict[str, Any] | None = None,
+) -> bool:
+    row = ProcessedWebhookEvent(
+        provider=str(provider or "paystack"),
+        event_id=str(event_id),
+        event_type=str(event_type or "unknown"),
+        reference=(str(reference).strip() or None) if reference is not None else None,
+        payload_hash=str(payload_hash),
+        meta=meta or {},
+    )
+    session.add(row)
+    try:
+        await session.flush()
+        return True
+    except IntegrityError:
+        await session.rollback()
+        return False

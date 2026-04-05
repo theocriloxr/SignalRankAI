@@ -102,6 +102,39 @@ class PaymentEvent(Base):
     meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
+class ProcessedWebhookEvent(Base):
+    __tablename__ = "processed_webhook_events"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_processed_webhook_events_event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="paystack")
+    event_type: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    reference: Mapped[Optional[str]] = mapped_column(String(128), index=True, nullable=True)
+    payload_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+
+
+class ApiToken(Base):
+    __tablename__ = "api_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_hash", name="uq_api_tokens_token_hash"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    token_prefix: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), index=True, nullable=False, default="signals:read")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True, nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, index=True, nullable=True)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class BotEvent(Base):
     __tablename__ = "bot_events"
 
