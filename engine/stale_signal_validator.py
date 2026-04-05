@@ -7,7 +7,12 @@ Before any signal is pushed to the delivery queue, this module:
   3. Drops (invalidates) the signal if price has drifted beyond the tolerance.
 
 Environment variables:
-    STALE_PRICE_THRESHOLD_PCT   - Max % drift from entry before invalidation (default: 0.5)
+    STALE_PRICE_THRESHOLD_PCT   - Override % drift threshold for ALL asset classes.
+                                   When not set, per-class defaults are used:
+                                     crypto     = 2.0 %  (volatile, 24/7 market)
+                                     stocks     = 1.0 %
+                                     commodities= 0.8 %
+                                     forex/FX   = 0.3 %
     STALE_PRICE_FETCH_TIMEOUT   - Seconds to wait for live price (default: 5)
 """
 from __future__ import annotations
@@ -19,12 +24,48 @@ from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Asset-class defaults when STALE_PRICE_THRESHOLD_PCT is not set.
+# Crypto is intentionally generous (2 %) because a full engine cycle can take
+# 30-120 s — BTC/ETH move well beyond 0.5 % in that window and signals would
+# be invalidated before anyone sees them.
+_CLASS_THRESHOLDS: dict[str, float] = {
+    "crypto":    2.0,
+    "stock":     1.0,
+    "commodity": 0.8,
+    "fx":        0.3,
+}
 
-def _threshold_pct() -> float:
+
+def _detect_asset_class(symbol: str) -> str:
+    """Identify asset class from the symbol string."""
+    sym = symbol.upper()
+    # Crypto: ends with USDT / USDC / BTC / ETH / BNB suffix
+    if sym.endswith(("USDT", "USDC", "BTC", "ETH", "BNB")):
+        return "crypto"
+    # FX: standard 6-char currency pairs or contains a slash
+    if "/" in sym or (len(sym) == 6 and sym.isalpha()):
+        return "fx"
+    # Commodities: common tickers
+    if sym in {"XAUUSD", "XAGUSD", "WTIUSD", "BRENTUSD", "XAUEUR",
+               "GOLD", "SILVER", "OIL", "CRUDE"}:
+        return "commodity"
+    return "stock"
+
+
+def _threshold_pct(symbol: str = "") -> float:
+    """Return the drift tolerance (%) for the given symbol.
+
+    If STALE_PRICE_THRESHOLD_PCT is set explicitly it overrides all classes.
+    Otherwise the per-class default is used (see _CLASS_THRESHOLDS).
+    """
     try:
-        return float(os.getenv("STALE_PRICE_THRESHOLD_PCT", "0.5"))
+        override = os.getenv("STALE_PRICE_THRESHOLD_PCT", "")
+        if override.strip():
+            return max(0.01, float(override.strip()))
     except Exception:
-        return 0.5
+        pass
+    asset_class = _detect_asset_class(symbol) if symbol else "crypto"
+    return _CLASS_THRESHOLDS.get(asset_class, 2.0)
 
 
 def _fetch_timeout() -> float:
@@ -92,14 +133,22 @@ async def _get_live_price_async(symbol: str) -> Optional[float]:
 
 async def validate_signal_freshness(
     signal: Dict[str, Any],
+    cached_live_price: Optional[float] = None,
 ) -> Tuple[bool, str, Optional[float]]:
     """Validate that a signal's entry price is still achievable at current market price.
+
+    Args:
+        signal: Signal dict containing at least 'entry' and 'asset'/'symbol'.
+        cached_live_price: Pre-fetched live price.  When provided the network
+            fetch is skipped entirely, making batch validation O(1) per signal
+            instead of O(1 HTTP round-trip) per signal.
 
     Returns:
         (is_fresh: bool, reason: str, live_price: Optional[float])
 
     A signal is considered stale when:
-        abs(live_price - entry) / entry > STALE_PRICE_THRESHOLD_PCT / 100
+        abs(live_price - entry) / entry > threshold_pct / 100
+    where threshold_pct is asset-class-aware (see _threshold_pct).
     """
     entry = float(signal.get("entry") or 0)
     symbol = str(signal.get("asset") or signal.get("symbol") or "")
@@ -107,24 +156,28 @@ async def validate_signal_freshness(
     if not entry or not symbol:
         return True, "no_entry_or_symbol_skip", None
 
-    try:
-        live = await asyncio.wait_for(
-            _get_live_price_async(symbol),
-            timeout=_fetch_timeout(),
-        )
-    except asyncio.TimeoutError:
-        logger.warning("[stale_validator] Timeout fetching price for %s — allowing signal", symbol)
-        return True, "price_fetch_timeout_skip", None
-    except Exception as exc:
-        logger.warning("[stale_validator] Error fetching price for %s: %s — allowing signal", symbol, exc)
-        return True, f"price_fetch_error_skip:{exc}", None
+    # Use the pre-fetched price when available (avoids redundant HTTP call).
+    if cached_live_price is not None and float(cached_live_price) > 0:
+        live = float(cached_live_price)
+    else:
+        try:
+            live = await asyncio.wait_for(
+                _get_live_price_async(symbol),
+                timeout=_fetch_timeout(),
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[stale_validator] Timeout fetching price for %s — allowing signal", symbol)
+            return True, "price_fetch_timeout_skip", None
+        except Exception as exc:
+            logger.warning("[stale_validator] Error fetching price for %s: %s — allowing signal", symbol, exc)
+            return True, f"price_fetch_error_skip:{exc}", None
 
     if live is None:
         logger.debug("[stale_validator] No price available for %s — allowing signal", symbol)
         return True, "price_unavailable_skip", None
 
     drift_pct = abs(live - entry) / entry * 100.0
-    threshold = _threshold_pct()
+    threshold = _threshold_pct(symbol)
 
     if drift_pct > threshold:
         reason = (

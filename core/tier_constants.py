@@ -31,12 +31,13 @@ MAX_SIGNAL_AGE_SECONDS = {
     "commodity": 3600,   # 60 min  — same as FX
 }
 
-# Price drift tolerance: max % deviation from entry price
+# Price drift tolerance: max fractional deviation from entry price (not %).
+# These mirror the % values in engine/stale_signal_validator._CLASS_THRESHOLDS.
 PRICE_DRIFT_TOLERANCE = {
-    "crypto": 0.005,   # 0.5% for crypto
-    "fx": 0.002,       # 0.2% for forex
-    "stock": 0.003,    # 0.3% for stocks
-    "commodity": 0.004 # 0.4% for commodities
+    "crypto":    0.020,  # 2.0 % — volatile 24/7 market; full cycle can take 30-120 s
+    "fx":        0.003,  # 0.3 % — tight spreads; FX moves slowly relative to crypto
+    "stock":     0.010,  # 1.0 % — intraday moves justify 1 % tolerance
+    "commodity": 0.008,  # 0.8 % — between FX and stock volatility
 }
 
 # Candle staleness multiplier: max age = timeframe * this value
