@@ -34,6 +34,8 @@ COMMAND_TIERS = {
     "liveprice":           "FREE",
     "market":              "FREE",
     "myid":                "FREE",
+    "account":             "FREE",
+    "leaderboard":         "FREE",
     "tiers":               "FREE",   # shows tier comparison — useful for all
     # unlock is intentionally omitted from help menus — keep access for owners
     "unlock":              "FREE",
@@ -52,10 +54,15 @@ COMMAND_TIERS = {
     "reports":             "PREMIUM",
     "notify":              "PREMIUM",
     "portfolio":           "PREMIUM",
+    "quality":             "PREMIUM",
+    "execution":           "PREMIUM",
+    "drawdown":            "PREMIUM",
     "setlot":              "PREMIUM",
-    "setrisk":             "PREMIUM",
+    "setrisk":             "VIP",
     "mystats":             "PREMIUM",
     "referral":            "PREMIUM",
+    "mt5":                 "PREMIUM",
+    "mt5link":             "PREMIUM",
     "mt5_link":            "PREMIUM",
     "mt5_status":          "PREMIUM",
     "connect_broker":      "PREMIUM",
@@ -68,9 +75,18 @@ COMMAND_TIERS = {
 
     # ── ADMIN ─────────────────────────────────────────────────────────────────
     "admin":               "ADMIN",
+    "admin_dashboard":     "ADMIN",
     "admin_broadcast":     "ADMIN",
     "force_market_scan":   "ADMIN",
     "force_signal":        "ADMIN",
+    "gemini":              "ADMIN",
+    "gemini_review":       "ADMIN",
+    "admin_top_assets":    "ADMIN",
+    "admin_top_strategies":"ADMIN",
+    "admin_user_engagement":"ADMIN",
+    "selfcheck":           "ADMIN",
+    "blast_terms":         "ADMIN",
+    "assets":              "ADMIN",
 
     # ── OWNER only (hidden from regular help) ─────────────────────────────────
     "dev_pause":           "OWNER",
@@ -81,14 +97,8 @@ COMMAND_TIERS = {
     "owner_revenue":       "OWNER",
     "version":             "OWNER",
     "correct_signal":      "OWNER",
-    "admin_top_assets":    "OWNER",
-    "admin_top_strategies":"OWNER",
-    "admin_user_engagement":"OWNER",
-    "selfcheck":           "OWNER",
     "provider_status":     "OWNER",
     "broadcast":           "OWNER",
-    "blast_terms":         "OWNER",
-    "assets":              "OWNER",
 }
 
 # Tier ranking (higher = more access)
