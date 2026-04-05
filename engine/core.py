@@ -490,6 +490,39 @@ def load_tradable_assets() -> List[str]:
 def main_loop(DRY_RUN: bool = False):
     start_outage_alert_job()
 
+    # Start the real-time outcome tracker as a background async task within
+    # the engine's own event loop.  If a separate Worker is already running the
+    # tracker in its loop this call is a no-op (start() guards against double-start).
+    try:
+        import threading
+        import asyncio as _asyncio
+
+        def _start_outcome_tracker_thread() -> None:
+            try:
+                loop = _asyncio.new_event_loop()
+                _asyncio.set_event_loop(loop)
+                from engine.realtime_outcome_tracker import outcome_tracker
+
+                async def _run_tracker():
+                    await outcome_tracker.start()
+                    # Keep the loop alive so the tracker's internal task keeps running
+                    while outcome_tracker.running:
+                        await _asyncio.sleep(1.0)
+
+                loop.run_until_complete(_run_tracker())
+            except Exception as _ot_err:
+                logger.warning("[engine] outcome tracker thread error: %s", _ot_err)
+
+        _ot_thread = threading.Thread(
+            target=_start_outcome_tracker_thread,
+            name="outcome-tracker",
+            daemon=True,
+        )
+        _ot_thread.start()
+        logger.info("[engine] RealtimeOutcomeTracker thread launched")
+    except Exception as _launch_err:
+        logger.warning("[engine] Could not launch outcome tracker thread: %s", _launch_err)
+
     account_equity = 10000.0
     risk_manager = RiskManager(account_equity)
     correlation_manager = CorrelationManager()

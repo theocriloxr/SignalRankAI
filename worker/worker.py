@@ -47,6 +47,19 @@ class Worker:
         ml_task: Optional[asyncio.Task] = None
         market_monitor_task: Optional[asyncio.Task] = None
         ws_task: Optional[asyncio.Task] = None
+        outcome_tracker_task: Optional[asyncio.Task] = None
+
+        # Start real-time TP/SL outcome tracker — this is the core monitoring loop
+        # that detects when signals hit their targets and notifies users.
+        try:
+            from engine.realtime_outcome_tracker import outcome_tracker
+            outcome_tracker_task = asyncio.create_task(outcome_tracker.start())
+            print("[worker] RealtimeOutcomeTracker started", flush=True)
+            logger.info("[worker] RealtimeOutcomeTracker started")
+        except Exception as e:
+            print(f"[worker] Failed to start outcome tracker: {e}", flush=True)
+            logger.warning("[worker] Failed to start outcome tracker: %s", e)
+            outcome_tracker_task = None
 
         # Start market monitor for NO TRADE alerts
         if config.MARKET_MONITOR_ENABLED:
@@ -83,6 +96,15 @@ class Worker:
                     logger.info(f"[worker] heartbeat: running")
                     last_heartbeat = now
         finally:
+            if outcome_tracker_task is not None:
+                try:
+                    from engine.realtime_outcome_tracker import outcome_tracker
+                    await outcome_tracker.stop()
+                except Exception:
+                    pass
+                outcome_tracker_task.cancel()
+                with contextlib.suppress(Exception):
+                    await outcome_tracker_task
             if market_monitor_task is not None:
                 market_monitor_task.cancel()
                 with contextlib.suppress(Exception):

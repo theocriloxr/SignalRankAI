@@ -185,6 +185,9 @@ def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 3600) 
             return False
         state.set_sync(key, "1", ex=max(3600, int(ttl_seconds)))
         return True
+    except Exception:
+        # If Redis is unavailable, allow trigger (idempotency is still mostly safe).
+        return True
 
 
 def _get_tp_progress(signal: Dict[str, Any]) -> int:
@@ -336,8 +339,110 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
         logger.debug("[outcome_tracker] retrace warning send failed: %s", exc)
 
 
+def _h(text: str) -> str:
+    """Escape text for Telegram HTML parse_mode."""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _fmt_price(price: float) -> str:
+    """Format price with appropriate decimal places."""
+    if price >= 1000:
+        return f"{price:,.2f}"
+    if price >= 1:
+        return f"{price:.5f}"
+    return f"{price:.8f}"
+
+
+def _build_outcome_message(
+    signal_id: str,
+    asset: str,
+    direction: str,
+    entry: float,
+    price: float,
+    status: str,
+    pnl_pct: float,
+    tier_at_send: str,
+) -> str:
+    """Build a tier-appropriate HTML outcome message.
+
+    Free users get a stripped-down version (signal ref + outcome label only).
+    Premium/VIP users get the full PnL breakdown.
+    """
+    pnl_sign = "+" if pnl_pct >= 0 else ""
+    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    status_u = status.upper()
+    is_tp = status.startswith("tp")
+    is_sl = status == "sl"
+    tier = str(tier_at_send or "free").lower()
+    is_free = tier == "free"
+
+    ref_short = _h(signal_id[:8])
+    asset_h = _h(asset)
+    dir_h = _h(direction)
+
+    if is_tp:
+        if is_free:
+            # Free: proof of result — minimal info to build trust
+            return (
+                f"🎯 <b>TAKE PROFIT HIT</b>\n\n"
+                f"🪙 <b>{asset_h}</b> {dir_h}\n"
+                f"📊 Ref: <code>{ref_short}</code>\n"
+                f"🏆 {status_u} reached!\n"
+                f"🕐 {_h(now_str)}\n\n"
+                f"<i>Upgrade to Premium for full PnL details.</i>"
+            )
+        # Premium / VIP full message
+        tp1_line = "\n🛡️ <b>Stop-loss moved to break-even.</b>" if status == "tp1" else ""
+        return (
+            f"🎯🔥 <b>TAKE PROFIT HIT</b>\n\n"
+            f"🪙 <b>{asset_h}</b> {dir_h}\n"
+            f"📊 Ref: <code>{ref_short}</code>\n\n"
+            f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
+            f"💰 Close: <code>{_h(_fmt_price(price))}</code>\n"
+            f"📈 ROI: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
+            f"🏆 <b>{status_u} reached!</b>{tp1_line}\n"
+            f"💪 Screenshot &amp; share your win!\n"
+            f"🕐 {_h(now_str)}\n\n"
+            f"<i>SignalRankAI — Trade smarter.</i>"
+        )
+
+    if is_sl:
+        if is_free:
+            return (
+                f"🛑 <b>STOP LOSS HIT</b>\n\n"
+                f"🪙 <b>{asset_h}</b> {dir_h}\n"
+                f"📊 Ref: <code>{ref_short}</code>\n"
+                f"🕐 {_h(now_str)}\n\n"
+                f"<i>Upgrade to Premium for full details &amp; next signals.</i>"
+            )
+        return (
+            f"🛑 <b>STOP LOSS HIT</b>\n\n"
+            f"🪙 <b>{asset_h}</b> {dir_h}\n"
+            f"📊 Ref: <code>{ref_short}</code>\n\n"
+            f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
+            f"💰 SL hit: <code>{_h(_fmt_price(price))}</code>\n"
+            f"📉 Loss: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
+            f"🔄 The next setup is loading...\n"
+            f"🕐 {_h(now_str)}\n\n"
+            f"<i>SignalRankAI — Risk managed.</i>"
+        )
+
+    # Generic closed status
+    return (
+        f"📌 <b>Signal Closed</b>\n\n"
+        f"🪙 <b>{asset_h}</b> | Ref: <code>{ref_short}</code>\n"
+        f"Status: <b>{_h(status_u)}</b> @ <code>{_h(_fmt_price(price))}</code>\n"
+        f"🕐 {_h(now_str)}"
+    )
+
+
 async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> None:
-    """Send branded PnL notification to signal recipients."""
+    """Send branded PnL notification to signal recipients (only users who got this signal)."""
     try:
         from db.session import get_session
         from db.models import SignalDelivery, User
@@ -352,68 +457,51 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
         entry = float(signal.get("entry", 0))
 
         is_tp = status.startswith("tp")
-        is_sl = status == "sl"
 
         if direction == "LONG":
             pnl_pct = ((price - entry) / entry) * 100
         else:
             pnl_pct = ((entry - price) / entry) * 100
 
-        pnl_sign = "+" if pnl_pct >= 0 else ""
-
-        if is_tp:
-            header = "🎯🔥 TAKE PROFIT HIT"
-            emoji = "✅"
-            body = (
-                f"{header}\n\n"
-                f"🪙 *{asset}* {direction}\n"
-                f"📊 Ref: `{signal_id[:8]}`\n\n"
-                f"📥 Entry: `{entry:.5f}`\n"
-                f"💰 Close: `{price:.5f}`\n"
-                f"📈 ROI: *{pnl_sign}{pnl_pct:.2f}%*\n\n"
-                f"🏆 *Target {status.upper()} reached!*\n"
-                f"💪 Screenshot & share your win!\n\n"
-                f"_SignalRankAI — Trade smarter._"
-            )
-        elif is_sl:
-            header = "🛑 STOP LOSS HIT"
-            emoji = "❌"
-            body = (
-                f"{header}\n\n"
-                f"🪙 *{asset}* {direction}\n"
-                f"📊 Ref: `{signal_id[:8]}`\n\n"
-                f"📥 Entry: `{entry:.5f}`\n"
-                f"💰 SL hit: `{price:.5f}`\n"
-                f"📉 Loss: *{pnl_sign}{pnl_pct:.2f}%*\n\n"
-                f"🔄 The next setup is loading...\n\n"
-                f"_SignalRankAI — Risk managed._"
-            )
-        else:
-            body = f"Signal `{signal_id[:8]}` closed at {price:.5f} ({status})"
-
-        # TP1 -> move SL to break-even (trailing stop)
+        # TP1 → move SL to break-even (trailing stop), done before sending messages
         if status == "tp1":
-            body += "\n\n🛡️ *TP1 Hit! Stop-loss moved to break-even.*"
             await _apply_trailing_sl_to_breakeven(signal, price)
 
-        # Send to all recipients
+        # Send to all recipients of this signal only
         bot_token = (config.TELEGRAM_BOT_TOKEN or "").strip()
         if not bot_token:
             return
         bot = Bot(token=bot_token)
 
         async with get_session() as session:
-            stmt = select(SignalDelivery).where(SignalDelivery.signal_id == signal_id)
-            rows = (await session.execute(stmt)).scalars().all()
-            for row in rows:
+            # Join with User so we get tier_at_send for each recipient
+            stmt = (
+                select(SignalDelivery, User)
+                .join(User, User.id == SignalDelivery.user_id)
+                .where(SignalDelivery.signal_id == signal_id)
+            )
+            rows = (await session.execute(stmt)).all()
+            for row_sd, row_user in rows:
                 try:
-                    # Get Telegram user_id
-                    user_stmt = select(User).where(User.id == row.user_id)
-                    user = (await session.execute(user_stmt)).scalar_one_or_none()
-                    if user:
-                        _send_message_sync(bot, chat_id=user.telegram_user_id, text=body, parse_mode="MarkdownV2")
+                    tier_at_send = str(getattr(row_sd, "tier_at_send", "free") or "free").lower()
+                    body = _build_outcome_message(
+                        signal_id=signal_id,
+                        asset=asset,
+                        direction=direction,
+                        entry=entry,
+                        price=price,
+                        status=status,
+                        pnl_pct=pnl_pct,
+                        tier_at_send=tier_at_send,
+                    )
+                    _send_message_sync(
+                        bot,
+                        chat_id=row_user.telegram_user_id,
+                        text=body,
+                        parse_mode="HTML",
+                    )
                 except Exception as exc:
-                    logger.debug("[outcome_tracker] notify user %s error: %s", row.user_id, exc)
+                    logger.debug("[outcome_tracker] notify user %s error: %s", getattr(row_sd, "user_id", "?"), exc)
 
     except Exception as exc:
         logger.error("[outcome_tracker] _notify_outcome error: %s", exc)

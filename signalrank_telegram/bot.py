@@ -1308,6 +1308,33 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                     await session.commit()
                     return (False, f"Slippage too high ({float(slip):.1f} pts)", "slippage")
 
+                # Determine lot size by tier:
+                # - VIP: risk-based sizing using account balance
+                # - PREMIUM: fixed lot size from user profile
+                if tier_up == "VIP":
+                    try:
+                        from engine.tiered_executor import calculate_lot_size_vip
+                        from services.mt5_client import _http_get, _client_base, _deploy_account
+                        # Fetch account balance from MetaApi
+                        await _deploy_account(acct_id)
+                        acct_info = await _http_get(f"{_client_base(acct_id)}/account-information")
+                        balance = float((acct_info or {}).get("balance") or 0)
+                        if balance <= 0:
+                            # Fall back to equity or equity-like fields
+                            balance = float((acct_info or {}).get("equity") or 100.0)
+                        lot = calculate_lot_size_vip(
+                            user,
+                            account_balance=balance,
+                            entry_price=entry,
+                            stop_loss=sl,
+                            symbol=symbol,
+                        )
+                    except Exception as _lot_err:
+                        logger.warning("[autoexec] VIP lot calc failed: %s — using fixed lot", _lot_err)
+                        lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
+                else:
+                    lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
+
                 # Send the signal notice before attempting AUTO execution.
                 try:
                     await _send_message_with_retry(
@@ -1317,6 +1344,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                             "📩 <b>Signal Received</b>\n\n"
                             f"Asset: <b>{symbol}</b>\n"
                             f"Direction: <b>{('LONG' if direction in {'long', 'buy'} else 'SHORT')}</b>\n"
+                            f"Lot size: <b>{lot:.3f}</b>\n"
                             "Attempting AUTO execution now..."
                         ),
                         parse_mode="HTML",
@@ -1324,7 +1352,6 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 except Exception:
                     pass
 
-                lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
                 result = await execute_trade(
                     account_id=acct_id,
                     symbol=symbol,
@@ -1356,6 +1383,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                             extra_meta={
                                 "auto_execution": True,
                                 "hard_stop_attached": bool(result.get("hard_stop_attached", True)),
+                                "lot_method": "risk_based" if tier_up == "VIP" else "fixed",
                             },
                         )
                     except Exception:

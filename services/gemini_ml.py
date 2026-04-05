@@ -245,6 +245,43 @@ async def _collect_aggregate(scope: str) -> dict[str, Any]:
             )
         ).fetchall()
 
+        # Collect individual signal+outcome records with timestamps so Gemini can
+        # confirm each outcome and identify patterns at the signal level.
+        signal_detail_where = ""
+        signal_detail_params: dict[str, Any] = {}
+        if since is not None:
+            signal_detail_where = "WHERE s.created_at >= :since"
+            signal_detail_params["since"] = since
+
+        signal_rows = (
+            await session.execute(
+                text(
+                    f"""
+                    SELECT
+                        s.signal_id,
+                        s.asset,
+                        s.direction,
+                        s.entry,
+                        s.stop_loss,
+                        s.take_profit,
+                        s.timeframe,
+                        s.score,
+                        s.created_at AS signal_created_at,
+                        o.status AS outcome_status,
+                        o.r_multiple,
+                        o.closed_at AS outcome_closed_at,
+                        o.meta AS outcome_meta
+                    FROM signals s
+                    LEFT JOIN outcomes o ON o.signal_id = s.signal_id
+                    {signal_detail_where}
+                    ORDER BY s.created_at DESC
+                    LIMIT 120
+                    """
+                ),
+                signal_detail_params,
+            )
+        ).fetchall()
+
         await session.commit()
 
     outcomes_total = int((perf_row[0] or 0) if perf_row else 0)
@@ -252,6 +289,38 @@ async def _collect_aggregate(scope: str) -> dict[str, Any]:
     losses = int((perf_row[2] or 0) if perf_row else 0)
     issued = int((issued_rejected[0] or 0) if issued_rejected else 0)
     rejected = int((issued_rejected[1] or 0) if issued_rejected else 0)
+
+    # Build per-signal detail list for Gemini's per-signal confirmation
+    per_signal_records: list[dict[str, Any]] = []
+    for row in (signal_rows or []):
+        try:
+            sig_id = str(row[0] or "")[:12]
+            created_ts = row[8]
+            closed_ts = row[11]
+            outcome_meta = row[12]
+            close_price: Any = None
+            try:
+                if isinstance(outcome_meta, dict):
+                    close_price = outcome_meta.get("close_price")
+            except Exception:
+                pass
+            per_signal_records.append({
+                "signal_id": sig_id,
+                "asset": str(row[1] or ""),
+                "direction": str(row[2] or ""),
+                "entry": float(row[3]) if row[3] is not None else None,
+                "stop_loss": float(row[4]) if row[4] is not None else None,
+                "take_profit": str(row[5] or ""),
+                "timeframe": str(row[6] or ""),
+                "score": float(row[7]) if row[7] is not None else None,
+                "signal_timestamp": created_ts.isoformat() if created_ts else None,
+                "outcome_status": str(row[9] or "pending"),
+                "r_multiple": float(row[10]) if row[10] is not None else None,
+                "outcome_timestamp": closed_ts.isoformat() if closed_ts else None,
+                "close_price": float(close_price) if close_price is not None else None,
+            })
+        except Exception:
+            continue
 
     return {
         "scope": scope_norm,
@@ -270,6 +339,7 @@ async def _collect_aggregate(scope: str) -> dict[str, Any]:
         "top_assets": [
             {"asset": str(r[0] or ""), "count": int(r[1] or 0)} for r in (assets or [])
         ],
+        "per_signal_records": per_signal_records,
     }
 
 
@@ -469,22 +539,42 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
 
     started_at = datetime.utcnow().isoformat()
     aggregate = await _collect_aggregate(scope=scope)
+    per_signal_records = list(aggregate.get("per_signal_records") or [])
+
+    # Build a compact per-signal confirmation list for Gemini.
+    # Limit to 80 records to stay within token budgets; most recent first.
+    signal_sample = per_signal_records[:80]
 
     prompt_payload = {
         "task": (
-            "You are a quantitative trading review assistant. Analyze the supplied aggregate stats, "
-            "then provide: 1) tuning suggestions, 2) risk controls, 3) short research-style insights "
-            "based on broad market best practices, 4) ML feature ideas to improve win ratio, "
-            "5) bot feature suggestions to improve functionality, execution safety, and reliability."
+            "You are a quantitative trading review assistant for the SignalRankAI bot. "
+            "You will receive: (a) aggregate performance stats, (b) a list of individual signals "
+            "each with their timestamp, entry, SL, TP, score and outcome. "
+            "Your job is to: "
+            "1) Confirm the outcome of every signal in the list (signal_id, outcome_status, "
+            "outcome_timestamp) so they are validated. "
+            "2) Identify patterns — which assets/timeframes/directions perform best or worst. "
+            "3) Provide actionable ML feature suggestions to improve the win rate. "
+            "4) Provide bot feature suggestions to improve functionality and execution safety. "
+            "5) Provide risk-management tuning recommendations. "
+            "6) Point out any signals where the outcome appears inconsistent with the score "
+            "or direction (potential data quality issues). "
+            "Format your response with clear section headers: "
+            "'Signal Outcome Confirmations', 'Performance Patterns', 'ML Feature Suggestions', "
+            "'Bot Feature Suggestions', 'Risk Controls', 'Data Quality Issues'."
         ),
         "constraints": [
             "Avoid overfitting and data leakage.",
             "Use concise and actionable bullet points.",
             "Do not provide investment guarantees.",
             "Prefer robust improvements over aggressive optimization.",
-            "Format output with clear section headers including 'Feature Suggestions'.",
+            "When confirming signal outcomes, output a brief table or list: "
+            "signal_id | asset | direction | score | outcome | timestamp.",
         ],
-        "aggregate": aggregate,
+        "aggregate": {k: v for k, v in aggregate.items() if k != "per_signal_records"},
+        "signals_with_outcomes": signal_sample,
+        "total_signals_in_period": len(per_signal_records),
+        "review_generated_at": datetime.utcnow().isoformat(),
     }
 
     review_text = ""
@@ -515,6 +605,7 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
             "rejected_or_skipped": int(aggregate.get("rejected_or_skipped") or 0),
             "top_assets_count": len(aggregate.get("top_assets") or []),
             "top_rejections_count": len(aggregate.get("top_rejections") or []),
+            "per_signal_records_sent": len(signal_sample),
         },
         "processed": {
             "prompt_chars": len(json.dumps(prompt_payload)),
@@ -530,12 +621,13 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
     await _store_review(
         "gemini_weekly_ml_review",
         {
-            "summary": aggregate,
+            "summary": {k: v for k, v in aggregate.items() if k != "per_signal_records"},
             "recommendations": review_text,
             "feature_suggestions": feature_suggestions,
             "training": training,
             "trigger": trigger,
             "scope": scope,
+            "per_signal_records_sent": len(signal_sample),
             "updated_at": datetime.utcnow().isoformat(),
         },
     )
