@@ -8,6 +8,7 @@ import json
 import base64
 import logging
 import asyncio
+import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -199,9 +200,13 @@ async def retrain_model() -> bool:
             os.unlink(tmp.name)
         
         model_data = {
+            "type": "xgboost",
+            "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
             "model_bytes_b64": base64.b64encode(model_bytes).decode(),
             "feature_cols": FEATURE_COLS,
             "trained_at": datetime.now(timezone.utc).isoformat(),
+            "xgboost_version": getattr(xgb, "__version__", ""),
+            "artifact_hash_sha256": hashlib.sha256(model_bytes).hexdigest(),
             "samples": len(data),
             "auc": round(auc, 4),
             "win_rate": round(float(sum(1 for d in data if d["label"] == 1)) / len(data), 4),
