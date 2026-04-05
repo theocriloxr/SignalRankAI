@@ -257,7 +257,7 @@ def hash_api_token(raw_token: str) -> str:
         "sha256",
         token.encode("utf-8"),
         pepper.encode("utf-8"),
-        120_000,
+        600_000,
         dklen=32,
     )
     return dk.hex()

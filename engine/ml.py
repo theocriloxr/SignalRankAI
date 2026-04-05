@@ -200,7 +200,9 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
 
         missing = [col for col in feature_cols if col not in values]
         if missing:
-            logger.warning("[ml] schema mismatch: missing features=%s", ",".join(missing[:8]))
+            preview = ",".join(missing[:8])
+            suffix = f" (+{len(missing)-8} more)" if len(missing) > 8 else ""
+            logger.warning("[ml] schema mismatch: missing features=%s%s", preview, suffix)
             if str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {"1", "true", "yes", "on"}:
                 return None
         vec = [float(values.get(col, 0.0)) for col in feature_cols]

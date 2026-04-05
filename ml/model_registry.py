@@ -65,7 +65,8 @@ def load_registry(manifest_path: str | Path) -> ModelRegistry:
         if csum:
             fp = _sha256_file(Path(entry.path))
             if fp.lower() != csum.lower():
-                raise RuntimeError(f"model checksum mismatch for {entry.name}")
+                raise RuntimeError(
+                    f"model checksum mismatch for {entry.name}: expected={csum} actual={fp}"
+                )
 
     return ModelRegistry(primary=primary, candidate=candidate, strict_schema=strict_schema)
-

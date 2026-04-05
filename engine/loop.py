@@ -100,7 +100,7 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
     """Run one cycle across assets and strategies with bounded concurrency."""
     max_concurrency = max(1, int(os.getenv("ENGINE_MAX_CONCURRENCY", "8")))
     timeout_seconds = max(5, int(os.getenv("ENGINE_TASK_TIMEOUT_SECONDS", "45")))
-    retries = max(0, int(os.getenv("ENGINE_TASK_RETRIES", "1")))
+    retries = max(0, int(os.getenv("ENGINE_TASK_RETRIES", "3")))
     sem = asyncio.Semaphore(max_concurrency)
     results: Dict[str, List] = {str(a): [] for a in assets}
 
@@ -138,7 +138,7 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
                         attempt + 1,
                         exc,
                     )
-                await asyncio.sleep(min(2**attempt, 5))
+                await asyncio.sleep(min(2**attempt, 30))
         return []
 
     tasks: list[tuple[str, asyncio.Task]] = []

@@ -198,8 +198,9 @@ class RedisState:
         while not self._flush_stop.is_set():
             try:
                 self._flush_pending_once()
-            except Exception:
-                pass
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("[state-cache] flush error: %s", exc)
             self._flush_stop.wait(self._flush_interval)
 
     def _ensure_flush_worker(self) -> None:

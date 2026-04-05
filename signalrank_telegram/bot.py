@@ -536,6 +536,7 @@ _tier_notifier = TierNotificationManager()
 
 # Module-level logger for scheduled jobs and dispatch traces
 logger = logging.getLogger(__name__)
+_vip_webhook_client = None
 
 TIER_LIMITS = {
     'free': 3,
@@ -1839,6 +1840,7 @@ async def _send_signal_with_engagement_async(
             import httpx
             from sqlalchemy import select
             from sqlalchemy.dialects.postgresql import insert as pg_insert
+            global _vip_webhook_client
             async with get_session() as session:
                 user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
                 stmt = pg_insert(ActiveSignalMessage).values(
@@ -1863,6 +1865,8 @@ async def _send_signal_with_engagement_async(
                         )
                     ).scalars().first()
                     if wh_row and signal:
+                        if _vip_webhook_client is None:
+                            _vip_webhook_client = httpx.AsyncClient(timeout=8)
                         payload = {
                             "event": "signal",
                             "signal_id": str(signal_id),
@@ -1879,15 +1883,14 @@ async def _send_signal_with_engagement_async(
                         headers = {}
                         if getattr(wh_row, "secret_token", None):
                             headers["X-SignalRank-Signature"] = str(wh_row.secret_token)
-                        async with httpx.AsyncClient(timeout=8) as client:
-                            resp = await client.post(str(wh_row.webhook_url), json=payload, headers=headers)
-                            if int(resp.status_code) >= 400:
-                                logger.warning(
-                                    "[vip_webhook] non-2xx user=%s status=%s url=%s",
-                                    telegram_user_id,
-                                    resp.status_code,
-                                    wh_row.webhook_url,
-                                )
+                        resp = await _vip_webhook_client.post(str(wh_row.webhook_url), json=payload, headers=headers)
+                        if int(resp.status_code) >= 400:
+                            logger.warning(
+                                "[vip_webhook] non-2xx user=%s status=%s url=%s",
+                                telegram_user_id,
+                                resp.status_code,
+                                wh_row.webhook_url,
+                            )
                 except Exception as _wh_exc:
                     logger.debug(f"[vip_webhook] dispatch failed for user={telegram_user_id}: {_wh_exc}")
                 await session.commit()

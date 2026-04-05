@@ -39,10 +39,10 @@ async def get_user_by_apikey(
 
     # Dual-layer limit: per token + per IP.
     import hashlib
-    token_key = f"api:token:{api_key[:8]}"
+    token_key = f"api:token:{api_key}"
     ip_key = f"api:ip:{request.client.host if request.client else 'unknown'}"
-    token_uid = int(hashlib.sha256(token_key.encode("utf-8")).hexdigest()[:12], 16)
-    ip_uid = int(hashlib.sha256(ip_key.encode("utf-8")).hexdigest()[:12], 16)
+    token_uid = int(hashlib.sha256(token_key.encode("utf-8")).hexdigest()[:16], 16)
+    ip_uid = int(hashlib.sha256(ip_key.encode("utf-8")).hexdigest()[:16], 16)
     if await state.rate_limited(token_uid, limit=120, window_seconds=60):
         raise HTTPException(status_code=429, detail="Too many requests (token)")
     if await state.rate_limited(ip_uid, limit=240, window_seconds=60):
