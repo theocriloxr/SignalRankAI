@@ -553,7 +553,31 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"Ref: {signal_id[:8]}"
         )
 
-    await update.message.reply_text(msg)
+    # Send as a real signal card (same delivery path as live dispatch) so
+    # /force_signal can be used to verify end-to-end Telegram delivery.
+    delivered = False
+    try:
+        from telegram import Bot
+        from signalrank_telegram.bot import _deliver_or_update_signal_sync, _require_telegram_token
+
+        delivered = bool(
+            _deliver_or_update_signal_sync(
+                Bot(token=_require_telegram_token()),
+                telegram_user_id=int(update.effective_user.id),
+                signal=dict(signal_payload or {}),
+                display_tier="vip",
+            )
+        )
+    except Exception as _send_err:
+        _owner_logger.warning("[/force_signal] direct signal send failed: %s", _send_err)
+
+    if delivered:
+        await update.message.reply_text(
+            f"✅ Forced signal delivered to your Telegram inbox\n"
+            f"Asset: {best_asset} | TF: {best_tf} | Score: {score_for_storage:.1f}"
+        )
+    else:
+        await update.message.reply_text(msg)
 
 
 async def dev_invalidate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

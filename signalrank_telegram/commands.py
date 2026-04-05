@@ -3780,8 +3780,11 @@ async def start_command(update, context):
 				days = int(referral_outcome.get("days_granted"))
 				await context.bot.send_message(
 					chat_id=referrer_id,
-					text=f"🎁 *Bonus Plan Extension*\n\n+{days} premium days have been added to your current plan!\n\nUse /signals to get the latest trading ideas.",
-					parse_mode="MarkdownV2"
+					text=(
+						f"🎁 Bonus Plan Extension\n\n"
+						f"+{days} premium days have been added to your current plan!\n\n"
+						"Use /signals to get the latest trading ideas."
+					)
 				)
 	except Exception:
 		pass

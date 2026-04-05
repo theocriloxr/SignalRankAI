@@ -664,10 +664,18 @@ async def _send_telegram_dm(telegram_user_id: int, text: str) -> None:
         if not token:
             return
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(
+            resp = await client.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": telegram_user_id, "text": text, "parse_mode": "MarkdownV2"},
+                # Use plain text to avoid MarkdownV2 escaping issues that can drop messages.
+                json={"chat_id": telegram_user_id, "text": text},
             )
+            if resp.status_code >= 400:
+                logger.warning(
+                    "[dm] Telegram API sendMessage failed chat_id=%s status=%s body=%s",
+                    telegram_user_id,
+                    resp.status_code,
+                    (resp.text or "")[:300],
+                )
     except Exception as _e:
         logger.warning(f"[dm] Failed to send DM to {telegram_user_id}: {_e}")
 
@@ -801,8 +809,8 @@ async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
         if not buyer_id:
             return
 
-        from sqlalchemy import select, update
-        from db.models import User, Subscription
+        from sqlalchemy import select
+        from db.models import User
 
         async with get_session() as session:
             buyer_row = await session.execute(
@@ -820,31 +828,31 @@ async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
             if not referrer:
                 return
 
-            # Extend the referrer's active subscription
-            sub_row = await session.execute(
-                select(Subscription)
-                .where(
-                    Subscription.user_id == referrer.id,
-                    Subscription.status == "active",
-                    Subscription.expires_at.is_not(None),
-                )
-                .order_by(Subscription.expires_at.desc())
+            tier_to_extend = "vip" if str(getattr(referrer, "tier", "") or "").strip().lower() == "vip" else "premium"
+            reference = str(data.get("reference") or "").strip() or f"buyer-{buyer_id}"
+            reward_ref = f"REFERRAL_PAY:{referrer_id}:{reference}"[:120]
+            await activate_subscription(
+                session=session,
+                telegram_user_id=referrer_id,
+                tier=tier_to_extend,
+                duration_days=int(REFERRAL_BONUS_DAYS),
+                paystack_reference=reward_ref,
+                meta={
+                    "source": "referral_payment_bonus",
+                    "buyer_id": int(buyer_id),
+                    "reference": reference,
+                    "grant_days": int(REFERRAL_BONUS_DAYS),
+                },
             )
-            sub = sub_row.scalars().first()
-            if sub and sub.expires_at:
-                from datetime import timedelta
-
-                new_expiry = sub.expires_at + timedelta(days=REFERRAL_BONUS_DAYS)
-                await session.execute(
-                    update(Subscription)
-                    .where(Subscription.id == sub.id)
-                    .values(expires_at=new_expiry)
-                )
-                await session.commit()
-                logger.info(
-                    f"[referral] Granted +{REFERRAL_BONUS_DAYS} days to referrer {referrer_id} "
-                    f"(buyer: {buyer_id})"
-                )
+            await session.commit()
+            logger.info(
+                "[referral] Granted +%s days to referrer %s (buyer=%s reference=%s tier=%s)",
+                REFERRAL_BONUS_DAYS,
+                referrer_id,
+                buyer_id,
+                reference,
+                tier_to_extend,
+            )
     except Exception as exc:
         logger.warning(f"[referral] _apply_referral_bonus failed: {exc}")
 

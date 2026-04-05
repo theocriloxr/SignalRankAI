@@ -51,7 +51,7 @@ from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals, _send_message_sync
 from core.redis_state import state
-from config import OWNER_IDS
+from config import OWNER_IDS, ADMIN_IDS
 
 # Optional advanced features (graceful fallback if missing)
 try:
@@ -1558,7 +1558,7 @@ def main_loop(DRY_RUN: bool = False):
         except Exception:
             user_ids = []
 
-        # ensure owners included
+        # ensure owners/admins included
         for _oid in (OWNER_IDS or []):
             try:
                 oid = int(_oid)
@@ -1567,6 +1567,18 @@ def main_loop(DRY_RUN: bool = False):
             except Exception as e:
                 logger.debug(f"[engine] Failed to parse user ID from OWNER_TELEGRAM_ID: {e}")
                 pass
+        for _aid in (ADMIN_IDS or []):
+            try:
+                aid = int(_aid)
+                if aid not in user_ids:
+                    user_ids.append(aid)
+            except Exception as e:
+                logger.debug(f"[engine] Failed to parse user ID from ADMIN_IDS: {e}")
+                pass
+
+        logger.info("[engine] delivery audience size=%s", len(user_ids))
+        if not user_ids:
+            logger.warning("[engine] delivery audience is empty; no users eligible for dispatch")
 
         async def deliver_all():
             dispatched_count = 0
