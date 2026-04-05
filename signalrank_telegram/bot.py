@@ -2757,6 +2757,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     reserve_failed = True
                     logger.debug(f"[db] dispatch reserve failed (falling back to direct send): {type(e).__name__}: {e}")
 
+                if not reserved and not reserve_failed:
+                    logger.warning(
+                        "[dispatch] reservation returned no signals for user=%s tier=%s; falling back to direct send",
+                        user_id,
+                        routing_tier,
+                    )
+                    reserve_failed = True
+
                 logger.debug(f"[dispatch] user={user_id} tier={tier} effective_tier={effective_tier} signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}")
 
                 if reserve_failed:
