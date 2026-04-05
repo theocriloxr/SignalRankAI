@@ -10,6 +10,13 @@ from engine.strategies.signal_generator import SignalGenerator
 from data.news import get_news_sentiment, fetch_news_headlines
 import inspect
 from core.redis_state import KillSwitchState, state
+from core.command_limits import (
+	REQUIRE_TIER_RATE_LIMIT,
+	PUBLIC_COMMAND_RATE_LIMIT,
+	START_COMMAND_RATE_LIMIT,
+	FREE_MIN_SCORE,
+	FREE_SIGNAL_DAILY_LIMIT,
+)
 
 TIER_RANKS: dict[str, int] = {
 	"FREE": 0,
@@ -52,7 +59,11 @@ def require_tier(min_tier):
 
 			# Rate limit (20/min)
 			try:
-				limited: bool = state.rate_limited_sync(user_id, limit=20, window_seconds=60)
+				limited: bool = state.rate_limited_sync(
+					user_id,
+					limit=int(REQUIRE_TIER_RATE_LIMIT["limit"]),
+					window_seconds=int(REQUIRE_TIER_RATE_LIMIT["window_seconds"]),
+				)
 			except Exception:
 				limited = False
 			if limited:
@@ -1541,7 +1552,11 @@ async def _public_guard(update: Update) -> bool:
 		pass
 	# Rate limit public commands (30/min)
 	try:
-		if state.rate_limited_sync(user_id, limit=30, window_seconds=60):
+		if state.rate_limited_sync(
+			user_id,
+			limit=int(PUBLIC_COMMAND_RATE_LIMIT["limit"]),
+			window_seconds=int(PUBLIC_COMMAND_RATE_LIMIT["window_seconds"]),
+		):
 			await update.message.reply_text("Rate limit exceeded. Please wait.")
 			return True
 	except Exception:
@@ -2101,7 +2116,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				score_val = float(s.get('score') or 0)
 			except Exception:
 				score_val = 0.0
-			if score_val >= 80.0:
+			if score_val >= float(FREE_MIN_SCORE):
 				eligible.append(s)
 
 		if not eligible:
@@ -2111,11 +2126,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				else:
 					await update.message.reply_text("⚠️ No FREE-eligible active signals (80+) right now. Upgrade for full access or check back later.")
 			return
-		picked = eligible[:3]
+		picked = eligible[: int(FREE_SIGNAL_DAILY_LIMIT)]
 		from .formatter import format_signal_free_new
 		for s in picked:
 			try:
-				formatted = format_signal_free_new(s, signals_sent_today=len(signals_list), daily_limit=3)
+				formatted = format_signal_free_new(
+					s,
+					signals_sent_today=len(signals_list),
+					daily_limit=int(FREE_SIGNAL_DAILY_LIMIT),
+				)
 				if formatted and update.message is not None:
 					await update.message.reply_text(
 						formatted,
@@ -3522,7 +3541,11 @@ async def start_command(update, context):
 	# Do not block user registration on kill-switch.
 	# Keep only a light rate limit to prevent abuse.
 	try:
-		if state.rate_limited_sync(int(user_id), limit=10, window_seconds=30):
+		if state.rate_limited_sync(
+			int(user_id),
+			limit=int(START_COMMAND_RATE_LIMIT["limit"]),
+			window_seconds=int(START_COMMAND_RATE_LIMIT["window_seconds"]),
+		):
 			await update.message.reply_text("Rate limit exceeded. Please wait.")
 			return
 	except Exception:

@@ -1,6 +1,9 @@
+from core.tier_constants import TIER_DAILY_LIMITS
+
+
 MAX_SIGNALS_PER_DAY = {
-    "PREMIUM": 5,
-    "VIP": 8
+    "PREMIUM": TIER_DAILY_LIMITS.get("premium", float("inf")),
+    "VIP": TIER_DAILY_LIMITS.get("vip", float("inf")),
 }
 
 signals_sent_today = {"PREMIUM": 0, "VIP": 0}
