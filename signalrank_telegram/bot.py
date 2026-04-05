@@ -2556,11 +2556,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     return True, "UNKNOWN"
 
                 import httpx
-                sym = asset
                 try:
                     resp = httpx.get(
                         "https://api.binance.com/api/v3/ticker/price",
-                        params={"symbol": sym},
+                        params={"symbol": asset},
                         timeout=4.0,
                     )
                     if resp.is_success:
@@ -3496,7 +3495,7 @@ def run_bot() -> None:
                     logger.warning("[bot] per-user command scope update failed: %s", _e)
 
             # Schedule as a fire-and-forget background task — does NOT block _post_init
-            asyncio.ensure_future(_set_per_user_commands())
+            asyncio.create_task(_set_per_user_commands())
         except Exception as e:
             logger.warning(f"[bot] BotCommandScopeChat update skipped: {e}")
         try:

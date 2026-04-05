@@ -1551,6 +1551,11 @@ def main_loop(DRY_RUN: bool = False):
                             _live_price_cache[_a] = float(_pr)
                         else:
                             _live_price_cache[_a] = None
+                            if _pr is not None and not isinstance(_pr, float):
+                                logger.debug(
+                                    "[engine] batch price prefetch failed for %s: %s",
+                                    _a, _pr,
+                                )
                     logger.info(
                         "[engine] batch price prefetch: assets=%d cached=%d",
                         len(_unique_assets),

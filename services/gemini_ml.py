@@ -38,10 +38,16 @@ def _load_cooldown_from_db() -> None:
 
         val = _rs(_fetch(), timeout=5.0)
         if val:
-            # value is stored as a JSONB string (quoted ISO timestamp)
-            ts_str = val if isinstance(val, str) else str(val)
-            ts_str = ts_str.strip('"')
+            # JSONB columns are returned as Python objects or JSON strings.
+            # Use json.loads for robust parsing regardless of driver behaviour.
+            if isinstance(val, str):
+                ts_str = json.loads(val) if val.startswith('"') else val
+            else:
+                ts_str = str(val)
             ts = datetime.fromisoformat(ts_str)
+            # Normalise to naive UTC for consistent comparison with datetime.utcnow()
+            if ts.tzinfo is not None:
+                ts = ts.replace(tzinfo=None) - ts.utcoffset()
             if ts > datetime.utcnow():
                 _gemini_cooldown_until_utc = ts
                 logger.info("[gemini] cooldown restored from DB: until=%s", ts.isoformat())
