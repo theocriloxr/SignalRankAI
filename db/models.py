@@ -135,6 +135,35 @@ class ApiToken(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class UserWebhook(Base):
+    __tablename__ = "user_webhooks"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_webhooks_user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    webhook_url: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    secret_token: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+class MLShadowPrediction(Base):
+    __tablename__ = "ml_shadow_predictions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, nullable=True)
+    model_name: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    model_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    probability: Mapped[float] = mapped_column(Float, nullable=False)
+    is_shadow: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    feature_schema_ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class BotEvent(Base):
     __tablename__ = "bot_events"
 

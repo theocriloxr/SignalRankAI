@@ -1817,17 +1817,27 @@ async def _send_signal_with_engagement_async(
     counts = await _load_signal_engagement_counts(str(signal_id))
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
     try:
+        _dispatch_started = time.perf_counter()
         msg = await bot.send_message(
             chat_id=chat_id,
             text=text,
             reply_markup=keyboard,
             parse_mode="HTML",
         )
+        try:
+            from web.app import telegram_dispatch_latency_seconds
+            telegram_dispatch_latency_seconds.labels(status="ok").observe(
+                max(0.0, time.perf_counter() - _dispatch_started)
+            )
+        except Exception:
+            pass
         # Persist message location so tiered_executor can live-edit it later
         try:
             from db.session import get_session
-            from db.models import ActiveSignalMessage
+            from db.models import ActiveSignalMessage, UserWebhook
             from db.pg_features import get_or_create_user
+            import httpx
+            from sqlalchemy import select
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             async with get_session() as session:
                 user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
@@ -1842,10 +1852,48 @@ async def _send_signal_with_engagement_async(
                     set_={"message_id": int(msg.message_id), "is_active": True},
                 )
                 await session.execute(stmt)
+                # VIP webhook dispatch (best effort, async)
+                try:
+                    wh_row = (
+                        await session.execute(
+                            select(UserWebhook).where(
+                                UserWebhook.user_id == int(user.id),
+                                UserWebhook.is_active.is_(True),
+                            )
+                        )
+                    ).scalars().first()
+                    if wh_row and signal:
+                        payload = {
+                            "event": "signal",
+                            "signal_id": str(signal_id),
+                            "user_id": int(telegram_user_id),
+                            "asset": signal.get("asset"),
+                            "timeframe": signal.get("timeframe"),
+                            "direction": signal.get("direction"),
+                            "entry": signal.get("entry"),
+                            "stop_loss": signal.get("stop_loss"),
+                            "take_profit": signal.get("take_profit"),
+                            "score": signal.get("score"),
+                            "ml_probability": signal.get("ml_probability"),
+                        }
+                        headers = {}
+                        if getattr(wh_row, "secret_token", None):
+                            headers["X-SignalRank-Signature"] = str(wh_row.secret_token)
+                        async with httpx.AsyncClient(timeout=8) as client:
+                            await client.post(str(wh_row.webhook_url), json=payload, headers=headers)
+                except Exception as _wh_exc:
+                    logger.debug(f"[vip_webhook] dispatch failed for user={telegram_user_id}: {_wh_exc}")
                 await session.commit()
         except Exception as _e:
             logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
     except Exception:
+        try:
+            from web.app import telegram_dispatch_latency_seconds
+            telegram_dispatch_latency_seconds.labels(status="fallback").observe(
+                max(0.0, time.perf_counter() - _dispatch_started)
+            )
+        except Exception:
+            pass
         # Fallback: send without buttons so the signal still reaches the user
         await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
@@ -3699,7 +3747,7 @@ def run_bot() -> None:
     # MT5 commands (Premium+)
     from .commands import (
         mt5_link_command, mt5_status_command,
-        setlot_command, setrisk_command, drawdown_command, tiers_command,
+        setlot_command, setrisk_command, setwebhook_command, drawdown_command, tiers_command,
         mystats_command, referral_command, execution_command, build_connect_broker_conversation,
         cancel_command,
     )
@@ -3710,6 +3758,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mt5_status", _audit_handler("mt5_status", mt5_status_command)))
     application.add_handler(CommandHandler("setlot", _audit_handler("setlot", setlot_command)))
     application.add_handler(CommandHandler("setrisk", _audit_handler("setrisk", setrisk_command)))
+    application.add_handler(CommandHandler("setwebhook", _audit_handler("setwebhook", setwebhook_command)))
     application.add_handler(CommandHandler("drawdown", _audit_handler("drawdown", drawdown_command)))
     application.add_handler(CommandHandler("execution", _audit_handler("execution", execution_command)))
     application.add_handler(CommandHandler("tiers", _audit_handler("tiers", tiers_command)))

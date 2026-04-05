@@ -920,11 +920,27 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
 try:
-	from web.api import generate_api_key, set_user_api_key, get_user_api_key
+	from web.api import generate_api_key
 except Exception:
 	generate_api_key = lambda: "demo-key"
-	set_user_api_key = lambda user_id, key: None
-	get_user_api_key = lambda user_id: None
+
+
+async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
+	from datetime import datetime, timedelta
+	from db.session import get_session
+	from db.repository import create_api_token
+	token = generate_api_key()
+	expires = datetime.utcnow() + timedelta(days=max(1, min(int(ttl_days), 365)))
+	async with get_session() as session:
+		await create_api_token(
+			session,
+			telegram_user_id=int(user_id),
+			raw_token=str(token),
+			scope="signals:read",
+			expires_at=expires,
+		)
+		await session.commit()
+	return str(token)
 
 @require_tier("PREMIUM")
 async def apikey_command(update, context) -> None:
@@ -933,15 +949,11 @@ async def apikey_command(update, context) -> None:
 	user_id = update.effective_user.id
 	args = context.args or []
 	if args and args[0].lower() == "regenerate":
-		key: str = generate_api_key()
-		set_user_api_key(user_id, key)
+		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
 		await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
 		return
-	key = get_user_api_key(user_id)
-	if not key:
-		key: str = generate_api_key()
-		set_user_api_key(user_id, key)
-	await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to reset.")
+	key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
+	await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
 # Basic translation dictionary
 TRANSLATIONS: dict[str, dict[str, str]] = {
 	"en": {
@@ -5154,6 +5166,65 @@ async def setrisk_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		"Lot size will be calculated automatically based on your account balance and SL distance.",
 		parse_mode="HTML",
 	)
+
+
+@require_tier("VIP")
+async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""VIP command to save or disable third-party execution webhook URL."""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id: int = int(update.effective_user.id)
+	args = context.args or []
+	if not args:
+		await update.message.reply_text(
+			"Usage:\n"
+			"/setwebhook <https://your-endpoint>\n"
+			"/setwebhook off",
+		)
+		return
+	raw = str(args[0]).strip()
+	disable = raw.lower() in {"off", "disable", "none"}
+	if (not disable) and not (raw.startswith("https://") or raw.startswith("http://")):
+		await update.message.reply_text("❌ Webhook URL must start with http:// or https://")
+		return
+	try:
+		from sqlalchemy import select
+		from db.models import User, UserWebhook
+		from db.session import get_session as _gs
+		async with _gs() as session:
+			user = (await session.execute(
+				select(User).where(User.telegram_user_id == int(user_id))
+			)).scalar_one_or_none()
+			if user is None:
+				await update.message.reply_text("No account profile found. Send /start then try again.")
+				return
+			row = (await session.execute(
+				select(UserWebhook).where(UserWebhook.user_id == int(user.id))
+			)).scalar_one_or_none()
+			if disable:
+				if row is not None:
+					row.is_active = False
+					row.updated_at = datetime.utcnow()
+					await session.commit()
+				await update.message.reply_text("✅ VIP execution webhook disabled.")
+				return
+			if row is None:
+				session.add(
+					UserWebhook(
+						user_id=int(user.id),
+						webhook_url=raw,
+						is_active=True,
+						updated_at=datetime.utcnow(),
+					)
+				)
+			else:
+				row.webhook_url = raw
+				row.is_active = True
+				row.updated_at = datetime.utcnow()
+			await session.commit()
+		await update.message.reply_text("✅ VIP execution webhook saved.")
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not save webhook: {exc}")
 
 
 async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

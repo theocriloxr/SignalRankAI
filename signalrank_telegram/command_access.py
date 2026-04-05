@@ -59,6 +59,7 @@ COMMAND_TIERS = {
     "drawdown":            "PREMIUM",
     "setlot":              "PREMIUM",
     "setrisk":             "VIP",
+    "setwebhook":          "VIP",
     "mystats":             "PREMIUM",
     "referral":            "PREMIUM",
     "mt5":                 "PREMIUM",

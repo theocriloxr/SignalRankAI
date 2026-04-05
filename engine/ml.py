@@ -4,6 +4,7 @@ import base64
 import gc
 import json
 import os
+import logging
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -22,6 +23,8 @@ _MODEL_CACHE: dict[str, Any] = {
     "path": None,
     "error": None,
 }
+logger = logging.getLogger(__name__)
+_SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
 
 
 def _model_path() -> Path:
@@ -66,6 +69,58 @@ def _load_model() -> None:
         _MODEL_CACHE["booster"] = booster
     except Exception as exc:  # pragma: no cover - defensive
         _MODEL_CACHE["error"] = f"model_load_failed:{type(exc).__name__}"
+
+
+def _load_shadow_model() -> None:
+    if _SHADOW_CACHE.get("loaded"):
+        return
+    _SHADOW_CACHE.update({"loaded": True, "booster": None, "feature_cols": []})
+    shadow_path = os.getenv("ML_CANDIDATE_MODEL_PATH", str(Path(__file__).parent.parent / "ml" / "model_candidate.json"))
+    if xgb is None:
+        return
+    p = Path(shadow_path)
+    if not p.exists():
+        return
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8"))
+        feature_cols: List[str] = list(payload.get("feature_cols") or [])
+        model_bytes_b64 = payload.get("model_bytes_b64")
+        if not model_bytes_b64 or not feature_cols:
+            return
+        raw_bytes = base64.b64decode(model_bytes_b64)
+        booster = xgb.Booster()
+        booster.set_param("nthread", int(os.getenv("XGB_NTHREAD", "2")))
+        booster.load_model(bytearray(raw_bytes))
+        _SHADOW_CACHE["booster"] = booster
+        _SHADOW_CACHE["feature_cols"] = feature_cols
+        _SHADOW_CACHE["version"] = str(payload.get("version") or "unknown")
+    except Exception as exc:
+        logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
+
+
+def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: bool) -> None:
+    try:
+        from utils.async_runner import run_sync
+        from db.session import get_session
+        from db.models import MLShadowPrediction
+
+        async def _save():
+            async with get_session() as session:
+                row = MLShadowPrediction(
+                    signal_id=str(signal.get("signal_id") or "") or None,
+                    model_name=str(_SHADOW_CACHE.get("name") or "xgb_candidate"),
+                    model_version=str(_SHADOW_CACHE.get("version") or "unknown"),
+                    probability=float(prob),
+                    is_shadow=True,
+                    feature_schema_ok=bool(schema_ok),
+                    meta={"asset": signal.get("asset"), "timeframe": signal.get("timeframe")},
+                )
+                session.add(row)
+                await session.commit()
+
+        run_sync(_save())
+    except Exception as exc:
+        logger.debug("[ml-shadow] persist failed: %s", exc)
 
 
 def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Optional[np.ndarray]:
@@ -143,6 +198,9 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             "btc_corr": btc_corr,
         }
 
+        missing = [col for col in feature_cols if col not in values]
+        if missing:
+            logger.warning("[ml] schema mismatch: missing features=%s", ",".join(missing[:8]))
         vec = [float(values.get(col, 0.0)) for col in feature_cols]
         return np.asarray([vec], dtype=np.float32)
     except Exception:
@@ -172,6 +230,22 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
         prob = float(preds[0])
         if prob < 0 or prob > 1:
             return None
+        # Shadow mode: evaluate candidate model silently and persist.
+        if str(os.getenv("ML_SHADOW_MODE", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+            try:
+                _load_shadow_model()
+                sh_booster = _SHADOW_CACHE.get("booster")
+                sh_cols: List[str] = _SHADOW_CACHE.get("feature_cols") or []
+                if sh_booster is not None and sh_cols:
+                    x_shadow = _feature_vector(signal, sh_cols)
+                    schema_ok = x_shadow is not None
+                    if x_shadow is not None:
+                        dm_shadow = xgb.DMatrix(x_shadow, feature_names=sh_cols)
+                        sh_preds = sh_booster.predict(dm_shadow)
+                        if sh_preds is not None and len(sh_preds) > 0:
+                            _persist_shadow_prediction(signal, float(sh_preds[0]), schema_ok=schema_ok)
+            except Exception as shadow_exc:
+                logger.debug("[ml-shadow] scoring skipped: %s", shadow_exc)
         return prob
     except Exception:  # pragma: no cover - defensive
         return None

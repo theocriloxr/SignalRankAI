@@ -6,6 +6,8 @@ import time
 import json
 import hashlib
 import os
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -80,6 +82,15 @@ class RedisState:
         self._memory: Dict[str, Any] = {}
         self._redis_sync: Any = None
         self._pg_dsn: Optional[str] = None
+        self._cache_max = int(os.getenv("STATE_CACHE_MAX_KEYS", "4096") or 4096)
+        self._cache: "OrderedDict[str, tuple[Any, float | None]]" = OrderedDict()
+        self._cache_lock = threading.Lock()
+        self._pending_writes: Dict[str, tuple[str, Optional[int]]] = {}
+        self._pending_lock = threading.Lock()
+        self._flush_thread: Optional[threading.Thread] = None
+        self._flush_stop = threading.Event()
+        self._flush_interval = max(1, int(os.getenv("STATE_FLUSH_INTERVAL_SECONDS", "3") or 3))
+        self._ensure_flush_worker()
 
     def _redis_url(self) -> Optional[str]:
         # Redis is intentionally disabled for this project.
@@ -132,6 +143,71 @@ class RedisState:
                 conn.close()
         except Exception:
             return None
+
+    def _cache_get(self, key: str) -> Optional[Any]:
+        now = time.time()
+        with self._cache_lock:
+            rec = self._cache.get(key)
+            if not rec:
+                return None
+            val, exp = rec
+            if exp is not None and exp <= now:
+                self._cache.pop(key, None)
+                return None
+            self._cache.move_to_end(key)
+            return val
+
+    def _cache_set(self, key: str, val: Any, ex: Optional[int] = None) -> None:
+        expiry = (time.time() + int(ex)) if ex else None
+        with self._cache_lock:
+            self._cache[key] = (val, expiry)
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._cache_max:
+                self._cache.popitem(last=False)
+
+    def _enqueue_write(self, key: str, value: str, ex: Optional[int]) -> None:
+        with self._pending_lock:
+            self._pending_writes[key] = (str(value), ex)
+
+    def _flush_pending_once(self) -> None:
+        if not self._pg_available():
+            return
+        with self._pending_lock:
+            if not self._pending_writes:
+                return
+            batch = dict(self._pending_writes)
+            self._pending_writes.clear()
+        for key, (value, ex) in batch.items():
+            data = {"value": str(value)}
+            if ex:
+                self._pg_exec_one(
+                    "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                    "VALUES (%s, %s::jsonb, NOW() + (%s || ' seconds')::interval, NOW()) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=EXCLUDED.expires_at, updated_at=NOW()",
+                    (key, json.dumps(data), str(ex)),
+                )
+            else:
+                self._pg_exec_one(
+                    "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                    "VALUES (%s, %s::jsonb, NULL, NOW()) "
+                    "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=NULL, updated_at=NOW()",
+                    (key, json.dumps(data)),
+                )
+
+    def _flush_loop(self) -> None:
+        while not self._flush_stop.is_set():
+            try:
+                self._flush_pending_once()
+            except Exception:
+                pass
+            self._flush_stop.wait(self._flush_interval)
+
+    def _ensure_flush_worker(self) -> None:
+        if self._flush_thread and self._flush_thread.is_alive():
+            return
+        self._flush_stop.clear()
+        self._flush_thread = threading.Thread(target=self._flush_loop, name="state-flush-worker", daemon=True)
+        self._flush_thread.start()
 
     def _get_redis_sync(self):
         # Redis backend disabled: always return None so callers use Postgres or memory.
@@ -460,6 +536,14 @@ class RedisState:
         """Simple fixed-window rate limit."""
         window = max(1, int(window_seconds))
         key = f"signalrankai:rl:{telegram_user_id}:{int(time.time() // window)}"
+        cached_hits = self._cache_get(key)
+        if cached_hits is not None:
+            try:
+                hits = int(cached_hits) + 1
+            except Exception:
+                hits = 1
+            self._cache_set(key, hits, ex=window)
+            return hits > int(limit)
 
         r = self._get_redis_sync()
         if r is None:
@@ -476,18 +560,24 @@ class RedisState:
                     (key, str(window)),
                 )
                 count = int((row or (0,))[0] or 0)
+                self._cache_set(key, count, ex=window)
                 return count > int(limit)
             bucket = int(self._memory.get(key, 0)) + 1
             self._memory[key] = bucket
+            self._cache_set(key, bucket, ex=window)
             return bucket > int(limit)
 
         count = int(r.incr(key))
         if count == 1:
             r.expire(key, window)
+        self._cache_set(key, count, ex=window)
         return count > int(limit)
 
     def get_sync(self, key: str) -> Optional[str]:
         """Get a value from the state store (Postgres or memory)."""
+        cached = self._cache_get(key)
+        if cached is not None:
+            return str(cached)
         r = self._get_redis_sync()
         if r is None:
             if self._pg_available():
@@ -500,8 +590,12 @@ class RedisState:
                         # If it's a dict, try to get a 'value' field, otherwise convert to string
                         data = row[0]
                         if isinstance(data, dict):
-                            return str(data.get('value', ''))
-                        return str(data)
+                            out = str(data.get('value', ''))
+                            self._cache_set(key, out, ex=30)
+                            return out
+                        out = str(data)
+                        self._cache_set(key, out, ex=30)
+                        return out
                     except Exception as e:
                         import logging
                         logging.warning(f"[redis_state] Failed to parse value for key {key}: {e}")
@@ -512,7 +606,9 @@ class RedisState:
         # Redis path (not used in this project)
         try:
             val = r.get(key)
-            return val.decode('utf-8') if isinstance(val, bytes) else val
+            out = val.decode('utf-8') if isinstance(val, bytes) else val
+            self._cache_set(key, out, ex=30)
+            return out
         except Exception as e:
             import logging
             logging.warning(f"[redis_state] Failed to get key {key} from Redis: {e}")
@@ -520,24 +616,11 @@ class RedisState:
 
     def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
         """Set a value in the state store (Postgres or memory) with optional expiration."""
+        self._cache_set(key, str(value), ex=ex or 30)
         r = self._get_redis_sync()
         if r is None:
             if self._pg_available():
-                data = {"value": str(value)}
-                if ex:
-                    self._pg_exec_one(
-                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
-                        "VALUES (%s, %s::jsonb, NOW() + (%s || ' seconds')::interval, NOW()) "
-                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=EXCLUDED.expires_at, updated_at=NOW()",
-                        (key, json.dumps(data), str(ex)),
-                    )
-                else:
-                    self._pg_exec_one(
-                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
-                        "VALUES (%s, %s::jsonb, NULL, NOW()) "
-                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=NULL, updated_at=NOW()",
-                        (key, json.dumps(data)),
-                    )
+                self._enqueue_write(key, str(value), ex)
                 return
             # Memory fallback
             self._memory[key] = str(value)

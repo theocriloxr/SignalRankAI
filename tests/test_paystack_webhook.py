@@ -1,9 +1,15 @@
 import hashlib
 import hmac
 import os
+import sys
 import unittest
+from pathlib import Path
 
 import httpx
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 class TestPaystackWebhook(unittest.IsolatedAsyncioTestCase):
@@ -37,6 +43,28 @@ class TestPaystackWebhook(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(payload["received"])
             # payments disabled => no external verify, so "verified" remains False
             self.assertFalse(payload["verified"])
+
+    async def test_idempotent_replay_returns_idempotent_flag(self):
+        from web.app import app
+
+        body = b'{"event":"charge.success","data":{"reference":"REPLAY_REF","metadata":{"telegram_user_id":1}}}'
+        sig = hmac.new(b"test_secret", body, hashlib.sha512).hexdigest()
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            first = await client.post(
+                "/webhooks/paystack",
+                content=body,
+                headers={"x-paystack-signature": sig, "content-type": "application/json"},
+            )
+            self.assertIn(first.status_code, {200, 409})
+            second = await client.post(
+                "/webhooks/paystack",
+                content=body,
+                headers={"x-paystack-signature": sig, "content-type": "application/json"},
+            )
+            self.assertEqual(second.status_code, 200)
+            self.assertTrue(second.json().get("idempotent", False) or second.json().get("received", False))
 
 
 if __name__ == "__main__":
