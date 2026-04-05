@@ -186,7 +186,8 @@ def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 3600) 
         state.set_sync(key, "1", ex=max(3600, int(ttl_seconds)))
         return True
     except Exception:
-        # If Redis is unavailable, allow trigger (idempotency is still mostly safe).
+        # Warning: allows duplicate notifications if Redis is down.
+        # Accepted trade-off — missing a notification is worse than a duplicate.
         return True
 
 

@@ -1320,7 +1320,9 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                         acct_info = await _http_get(f"{_client_base(acct_id)}/account-information")
                         balance = float((acct_info or {}).get("balance") or 0)
                         if balance <= 0:
-                            # Fall back to equity or equity-like fields
+                            # Fall back to equity; use 100.0 as last-resort minimum so
+                            # calculate_lot_size_vip always returns MIN_LOT rather than
+                            # erroring — the slippage guard will catch oversized orders.
                             balance = float((acct_info or {}).get("equity") or 100.0)
                         lot = calculate_lot_size_vip(
                             user,

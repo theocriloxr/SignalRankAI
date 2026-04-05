@@ -542,7 +542,9 @@ async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, A
     per_signal_records = list(aggregate.get("per_signal_records") or [])
 
     # Build a compact per-signal confirmation list for Gemini.
-    # Limit to 80 records to stay within token budgets; most recent first.
+    # We fetch up to 120 records from the DB but cap the payload at 80 to stay
+    # within Gemini's token budget.  The extra 40 give a buffer so that if some
+    # records are filtered out above they don't leave the sample short.
     signal_sample = per_signal_records[:80]
 
     prompt_payload = {

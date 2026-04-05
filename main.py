@@ -94,12 +94,12 @@ def main() -> None:
             - Bot:    ThreadPoolExecutor (PTB run_polling owns its own event loop)
             """
             loop = asyncio.get_running_loop()
-            _RESTART_BASE_DELAY = 5     # seconds before first restart
-            _RESTART_MAX_DELAY  = 300   # cap at 5 minutes
+            RESTART_BASE_DELAY = 5     # seconds before first restart attempt
+            RESTART_MAX_DELAY  = 300   # cap restart wait at 5 minutes
 
             async def _supervised(name: str, target) -> None:
                 """Run *target* coroutine-factory, restarting it on any exception."""
-                delay = _RESTART_BASE_DELAY
+                delay = RESTART_BASE_DELAY
                 while True:
                     print(f"[boot] {name} starting", flush=True)
                     try:
@@ -118,7 +118,7 @@ def main() -> None:
                         )
                         traceback.print_exc()
                         await asyncio.sleep(delay)
-                        delay = min(delay * 2, _RESTART_MAX_DELAY)
+                        delay = min(delay * 2, RESTART_MAX_DELAY)
 
             async def _web_once() -> None:
                 import uvicorn

@@ -504,10 +504,16 @@ def main_loop(DRY_RUN: bool = False):
                 from engine.realtime_outcome_tracker import outcome_tracker
 
                 async def _run_tracker():
+                    stop_event = _asyncio.Event()
                     await outcome_tracker.start()
-                    # Keep the loop alive so the tracker's internal task keeps running
-                    while outcome_tracker.running:
-                        await _asyncio.sleep(1.0)
+                    # Block until the daemon thread is interrupted (e.g. process exit).
+                    # Using wait() instead of a polling loop avoids busy-waiting.
+                    try:
+                        await stop_event.wait()
+                    except (_asyncio.CancelledError, Exception):
+                        pass
+                    finally:
+                        await outcome_tracker.stop()
 
                 loop.run_until_complete(_run_tracker())
             except Exception as _ot_err:
