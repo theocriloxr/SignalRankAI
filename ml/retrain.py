@@ -19,12 +19,13 @@ MODEL_PATH = os.getenv("ML_MODEL_PATH", "ml/model.json")
 RETRAIN_MIN_SAMPLES = int(os.getenv("ML_RETRAIN_MIN_SAMPLES", "100"))
 RETRAIN_LOOKBACK_DAYS = int(os.getenv("ML_RETRAIN_LOOKBACK_DAYS", "90"))
 
-FEATURE_COLS = [
-    "rr_estimate", "score", "strength", "regime_score",
-    "trend_ema", "rsi", "volume_ratio", "macd_trend",
-    "adx_value", "news_sentiment",
-    "nearest_support_dist", "nearest_resistance_dist",
-]
+from ml.schema_version import (
+    MODEL_FORMAT_VERSION,
+    get_current_schema_version,
+    get_feature_columns,
+)
+
+FEATURE_COLS = get_feature_columns()
 
 
 async def collect_training_data() -> list:
@@ -204,6 +205,8 @@ async def retrain_model() -> bool:
             "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
             "model_bytes_b64": base64.b64encode(model_bytes).decode(),
             "feature_cols": FEATURE_COLS,
+            "schema_version": get_current_schema_version(),
+            "model_format_version": MODEL_FORMAT_VERSION,
             "trained_at": datetime.now(timezone.utc).isoformat(),
             "xgboost_version": getattr(xgb, "__version__", ""),
             "artifact_hash_sha256": hashlib.sha256(model_bytes).hexdigest(),
