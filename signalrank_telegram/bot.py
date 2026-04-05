@@ -492,6 +492,7 @@ from .commands import (
     notify_command,
     selfcheck_command,
     myid_command,
+    account_command,
     dashboard_command,
     liveprice_command,
     portfolio_command,
@@ -506,6 +507,7 @@ from .commands import (
 
 # Register new commands
 application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
+application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
 application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
 application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
 application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
@@ -3662,6 +3664,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("recap", _audit_handler("recap", recap_command)))
     application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
+    application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
     application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
     application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
     application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
