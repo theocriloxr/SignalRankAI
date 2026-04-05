@@ -252,7 +252,15 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
 
 def hash_api_token(raw_token: str) -> str:
     token = str(raw_token or "").strip()
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+    pepper = str(os.getenv("API_TOKEN_PEPPER") or "signalrankai-api-token-pepper")
+    dk = hashlib.pbkdf2_hmac(
+        "sha256",
+        token.encode("utf-8"),
+        pepper.encode("utf-8"),
+        120_000,
+        dklen=32,
+    )
+    return dk.hex()
 
 
 def token_prefix(raw_token: str) -> str:
@@ -330,6 +338,31 @@ async def revoke_api_token(
     return int(getattr(res, "rowcount", 0) or 0)
 
 
+async def get_latest_active_api_token_meta(
+    session: AsyncSession,
+    telegram_user_id: int,
+) -> Optional[dict]:
+    now = datetime.utcnow()
+    row = await session.execute(
+        select(ApiToken.token_prefix, ApiToken.expires_at)
+        .join(User, User.id == ApiToken.user_id)
+        .where(
+            User.telegram_user_id == int(telegram_user_id),
+            ApiToken.revoked_at.is_(None),
+            (ApiToken.expires_at.is_(None) | (ApiToken.expires_at > now)),
+        )
+        .order_by(ApiToken.created_at.desc())
+        .limit(1)
+    )
+    found = row.first()
+    if not found:
+        return None
+    return {
+        "token_prefix": str(found[0] or ""),
+        "expires_at": found[1].isoformat() if found[1] else None,
+    }
+
+
 def paystack_event_identity(event: Dict[str, Any], raw_body: bytes) -> tuple[str, str]:
     data = event.get("data") or {}
     event_type = str(event.get("event") or "").strip() or "unknown"
@@ -340,7 +373,12 @@ def paystack_event_identity(event: Dict[str, Any], raw_body: bytes) -> tuple[str
     elif reference:
         event_id = f"{event_type}:{reference}"
     else:
-        event_id = f"{event_type}:{hashlib.sha256(raw_body).hexdigest()[:24]}"
+        customer_code = str((data.get("customer") or {}).get("customer_code") or "").strip()
+        amount = str(data.get("amount") or "").strip()
+        currency = str(data.get("currency") or "").strip()
+        paid_at = str(data.get("paid_at") or data.get("created_at") or "").strip()
+        stable = "|".join([event_type, customer_code, amount, currency, paid_at])
+        event_id = f"{event_type}:{hashlib.sha256(stable.encode('utf-8')).hexdigest()[:24]}"
     payload_hash = hashlib.sha256(raw_body).hexdigest()
     return event_id, payload_hash
 

@@ -687,24 +687,6 @@ async def paystack_webhook(
     event_id, payload_hash = paystack_event_identity(event, raw)
     reference = str((event.get("data") or {}).get("reference") or "").strip() or None
 
-    if is_db_configured():
-        async with get_session() as _session:
-            inserted = await mark_webhook_event_processed(
-                _session,
-                provider="paystack",
-                event_id=event_id,
-                event_type=event_type,
-                reference=reference,
-                payload_hash=payload_hash,
-                meta={"dedupe_stage": "ingest"},
-            )
-            await _session.commit()
-        if not inserted:
-            paystack_webhook_processing_seconds.labels(
-                event_type=event_type or "unknown", status="idempotent"
-            ).observe(max(0.0, time.perf_counter() - _started))
-            return JSONResponse({"received": True, "idempotent": True, "event": event_type})
-
     # ── Payment failure: no reference to confirm — handle directly then ACK ───
     if event_type == "invoice.payment_failed":
         await _handle_payment_failed(event)
@@ -716,6 +698,24 @@ async def paystack_webhook(
     confirmation = await confirm_paystack_event(event)
     if not confirmation.get("ok"):
         raise HTTPException(status_code=400, detail="Payment not verified")
+
+    if is_db_configured():
+        async with get_session() as _session:
+            inserted = await mark_webhook_event_processed(
+                _session,
+                provider="paystack",
+                event_id=event_id,
+                event_type=event_type,
+                reference=reference,
+                payload_hash=payload_hash,
+                meta={"dedupe_stage": "verified"},
+            )
+            await _session.commit()
+        if not inserted:
+            paystack_webhook_processing_seconds.labels(
+                event_type=event_type or "unknown", status="idempotent"
+            ).observe(max(0.0, time.perf_counter() - _started))
+            return JSONResponse({"received": True, "idempotent": True, "event": event_type})
 
     persisted = await _persist_subscription_if_configured(event)
     if persisted.get("persisted") is False and str(persisted.get("reason", "")).startswith("vip_full"):

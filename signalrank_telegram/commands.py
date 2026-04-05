@@ -942,6 +942,15 @@ async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
 		await session.commit()
 	return str(token)
 
+
+async def _get_existing_api_token_meta(user_id: int):
+	from db.session import get_session
+	from db.repository import get_latest_active_api_token_meta
+	async with get_session() as session:
+		meta = await get_latest_active_api_token_meta(session, telegram_user_id=int(user_id))
+		await session.commit()
+	return meta
+
 @require_tier("PREMIUM")
 async def apikey_command(update, context) -> None:
 	if update.effective_user is None or update.message is None:
@@ -952,8 +961,20 @@ async def apikey_command(update, context) -> None:
 		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
 		await update.message.reply_text(f"🔑 Your new API key: {key}\nKeep it secret. Use it with the /signals API endpoint.")
 		return
-	key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
-	await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
+	meta = await _get_existing_api_token_meta(int(user_id))
+	if meta is None:
+		key = await _rotate_api_token_for_user(int(user_id), ttl_days=30)
+		await update.message.reply_text(f"🔑 Your API key: {key}\nUse it with the /signals API endpoint. Send /apikey regenerate to rotate.")
+		return
+	prefix = str(meta.get("token_prefix") or "")
+	exp = str(meta.get("expires_at") or "unknown")
+	await update.message.reply_text(
+		f"🔑 Active API key exists.\n"
+		f"Prefix: <code>{prefix}</code>\n"
+		f"Expires: <code>{exp}</code>\n\n"
+		f"Use /apikey regenerate to rotate and receive a new full key.",
+		parse_mode="HTML",
+	)
 # Basic translation dictionary
 TRANSLATIONS: dict[str, dict[str, str]] = {
 	"en": {

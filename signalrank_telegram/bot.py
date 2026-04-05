@@ -1880,7 +1880,14 @@ async def _send_signal_with_engagement_async(
                         if getattr(wh_row, "secret_token", None):
                             headers["X-SignalRank-Signature"] = str(wh_row.secret_token)
                         async with httpx.AsyncClient(timeout=8) as client:
-                            await client.post(str(wh_row.webhook_url), json=payload, headers=headers)
+                            resp = await client.post(str(wh_row.webhook_url), json=payload, headers=headers)
+                            if int(resp.status_code) >= 400:
+                                logger.warning(
+                                    "[vip_webhook] non-2xx user=%s status=%s url=%s",
+                                    telegram_user_id,
+                                    resp.status_code,
+                                    wh_row.webhook_url,
+                                )
                 except Exception as _wh_exc:
                     logger.debug(f"[vip_webhook] dispatch failed for user={telegram_user_id}: {_wh_exc}")
                 await session.commit()

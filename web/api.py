@@ -12,6 +12,7 @@ from db.pg_features import list_signals_sent_today
 from db.repository import (
     create_api_token,
     get_api_token_owner,
+    get_latest_active_api_token_meta,
     revoke_api_token,
 )
 from db.session import get_session, is_db_configured
@@ -37,11 +38,14 @@ async def get_user_by_apikey(
         raise HTTPException(status_code=503, detail="Database unavailable")
 
     # Dual-layer limit: per token + per IP.
+    import hashlib
     token_key = f"api:token:{api_key[:8]}"
     ip_key = f"api:ip:{request.client.host if request.client else 'unknown'}"
-    if await state.rate_limited(token_key.__hash__(), limit=120, window_seconds=60):
+    token_uid = int(hashlib.sha256(token_key.encode("utf-8")).hexdigest()[:12], 16)
+    ip_uid = int(hashlib.sha256(ip_key.encode("utf-8")).hexdigest()[:12], 16)
+    if await state.rate_limited(token_uid, limit=120, window_seconds=60):
         raise HTTPException(status_code=429, detail="Too many requests (token)")
-    if await state.rate_limited(ip_key.__hash__(), limit=240, window_seconds=60):
+    if await state.rate_limited(ip_uid, limit=240, window_seconds=60):
         raise HTTPException(status_code=429, detail="Too many requests (ip)")
 
     async with get_session() as session:
@@ -118,3 +122,16 @@ async def revoke_token(payload: dict):
         await session.commit()
     return {"revoked": revoked}
 
+
+@app.get("/auth/tokens/current")
+async def get_current_token_meta(
+    telegram_user_id: int,
+):
+    if not is_db_configured():
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    async with get_session() as session:
+        meta = await get_latest_active_api_token_meta(session, int(telegram_user_id))
+        await session.commit()
+    if meta is None:
+        raise HTTPException(status_code=404, detail="No active token")
+    return meta

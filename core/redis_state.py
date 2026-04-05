@@ -536,14 +536,6 @@ class RedisState:
         """Simple fixed-window rate limit."""
         window = max(1, int(window_seconds))
         key = f"signalrankai:rl:{telegram_user_id}:{int(time.time() // window)}"
-        cached_hits = self._cache_get(key)
-        if cached_hits is not None:
-            try:
-                hits = int(cached_hits) + 1
-            except Exception:
-                hits = 1
-            self._cache_set(key, hits, ex=window)
-            return hits > int(limit)
 
         r = self._get_redis_sync()
         if r is None:
@@ -616,7 +608,7 @@ class RedisState:
 
     def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
         """Set a value in the state store (Postgres or memory) with optional expiration."""
-        self._cache_set(key, str(value), ex=ex or 30)
+        self._cache_set(key, str(value), ex=ex)
         r = self._get_redis_sync()
         if r is None:
             if self._pg_available():
