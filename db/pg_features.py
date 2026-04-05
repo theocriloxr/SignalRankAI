@@ -1174,7 +1174,9 @@ async def process_referral_start(
         return result
 
     # STEP 1: Look up referral code to find who created it (the referrer)
-    res: Result[Tuple[ReferralCode]] = await session.execute(select(ReferralCode).where(ReferralCode.code == code))
+    res: Result[Tuple[ReferralCode]] = await session.execute(
+        select(ReferralCode).where(func.lower(ReferralCode.code) == code.lower())
+    )
     rc: ReferralCode | None = res.scalar_one_or_none()
     if rc is None:
         result["status"] = "invalid_code"
@@ -1221,6 +1223,13 @@ async def process_referral_start(
         referrer_user_id=rc.referrer_user_id  # Referrer ID from the referral link owner
     )
     session.add(attribution)
+
+    # Persist denormalized referrer mapping for fast reads and payment bonus logic.
+    try:
+        if not getattr(referred_user, "referred_by", None):
+            referred_user.referred_by = int(referrer_tid)
+    except Exception:
+        pass
     
     session.add(
         ReferralReward(

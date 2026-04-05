@@ -1793,13 +1793,6 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             dispatch_signals(user_signals, user_id=user_id)
                             _dispatched_ok = True
-                            # Increment Redis counter
-                            try:
-                                new_count = signals_sent_today + len(user_signals)
-                                state.set_sync(redis_key, str(new_count), ex=86400)
-                            except Exception as e:
-                                logger.debug(f"[engine] Failed to update signal count in Redis: {e}")
-                                pass
                         except Exception as e:
                             logger.warning(f"[engine] Failed to dispatch signals: {e}")
                             logger.exception("dispatch_signals failed")

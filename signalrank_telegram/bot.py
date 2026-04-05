@@ -2504,6 +2504,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     tier_raw = resolve_user_tier(user_id)
     tier = (tier_raw or 'FREE').strip().lower()
     routing_tier = _normalized_delivery_tier(tier)
+    try:
+        from signalrank_telegram.tier_delivery import TierDeliveryManager
+        delivery_mgr = TierDeliveryManager()
+    except Exception:
+        delivery_mgr = None
 
     # Free users with paid extra-signal quota receive highest scoring signal
     extra_left = 0
@@ -2526,15 +2531,23 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     if isinstance(strategy_signals, dict):
         vip_list = list(strategy_signals.get('vip', []) or [])
         prem_list = list(strategy_signals.get('premium', []) or [])
-        # Tier-based signal selection with score thresholds
-        if routing_tier in ('vip',):
-            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
-        elif routing_tier in ('premium',):
-            signals_list = [s for s in (vip_list + prem_list) if s.get('score', 0) >= 55.0]
-        else:  # FREE
-            signals_list = (vip_list + prem_list)
+        # Keep upstream ranking intent, then apply canonical tier gates below.
+        signals_list = (vip_list + prem_list)
     else:
         signals_list = list(strategy_signals or [])
+
+    # Canonical tier quality gate: enforce per-tier score thresholds centrally,
+    # independent of caller/source (engine, resend, callbacks, etc.).
+    if delivery_mgr is not None:
+        gated_signals: list[dict] = []
+        for _sig in (signals_list or []):
+            try:
+                _score = float((_sig or {}).get('score', 0) or 0)
+                if delivery_mgr.should_send_signal(routing_tier, _score, user_id=None):
+                    gated_signals.append(_sig)
+            except Exception:
+                continue
+        signals_list = gated_signals
 
     # --- USER PREFERENCES FILTERING ---
     try:
@@ -2714,6 +2727,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     to_send: list[dict] = []
                     async with get_session() as session:
                         for signal in signals_list[: max(0, int(limit))]:
+                            try:
+                                _score = float((signal or {}).get('score', 0) or 0)
+                                if delivery_mgr is not None and not delivery_mgr.should_send_signal(
+                                    str(effective_tier),
+                                    _score,
+                                    user_id=int(user_id),
+                                ):
+                                    continue
+                            except Exception:
+                                continue
                             if await _is_asset_delivery_locked(
                                 int(user_id),
                                 str(signal.get('asset') or signal.get('symbol') or ''),
@@ -2843,6 +2866,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                             )
                             if not best_sig:
                                 break
+                            try:
+                                _best_score = float(getattr(best_sig, 'score', 0) or 0)
+                                if delivery_mgr is not None and not delivery_mgr.should_send_signal(
+                                    'premium',
+                                    _best_score,
+                                    user_id=int(user_id),
+                                ):
+                                    continue
+                            except Exception:
+                                continue
                             
                             # Record delivery
                             ok = await record_signal_delivery(
@@ -2982,6 +3015,16 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     
                     # Send each signal
                     for sig in available_signals:
+                        try:
+                            _free_score = float(getattr(sig, 'score', 0) or 0)
+                            if delivery_mgr is not None and not delivery_mgr.should_send_signal(
+                                'free',
+                                _free_score,
+                                user_id=int(user_id),
+                            ):
+                                continue
+                        except Exception:
+                            continue
                         # Record delivery
                         ok = await record_signal_delivery(
                             session,
@@ -4531,6 +4574,10 @@ def run_bot() -> None:
                     logger.debug(f"[fomo_free] outcome hook failed ref={ref[:8]} err={_fomo_outer_exc}")
 
                 now_hour = int(datetime.now().hour)
+                sent_count = 0
+                failed_count = 0
+                quiet_deferred_count = 0
+                eligible_count = 0
 
                 for telegram_user_id, tier_at_send, prefs in recipients:
                     try:
@@ -4546,10 +4593,12 @@ def run_bot() -> None:
                                 continue
                             if qs < qe:
                                 if qs <= now_hour < qe:
+                                    quiet_deferred_count += 1
                                     continue
                             else:
                                 # Wrap-around (e.g. 22 -> 6)
                                 if now_hour >= qs or now_hour < qe:
+                                    quiet_deferred_count += 1
                                     continue
                     except Exception as e:
                         logger.debug(f"[dispatch] Failed to check quiet hours for user: {e}")
@@ -4565,7 +4614,7 @@ def run_bot() -> None:
                         tp_level_num = 1
                     elif status == "tp2":
                         tp_level_num = 2
-                    elif status == "tp3":
+                    elif status in {"tp3", "tp"}:
                         tp_level_num = 3
 
                     # Fetch the delivered signal for this user and signal_id
@@ -4620,7 +4669,7 @@ def run_bot() -> None:
                                 "Status: Awaiting next high-probability setup."
                             )
                     elif user_tier == "premium":
-                        if tp_level_num in (1, 2):
+                        if tp_level_num in (1, 2, 3):
                             notify = True
                             msg = _tier_notifier.format_tp_hit_notification(signal_data, user_tier, tp_level_num, float(getattr(oc, "percent", 0) or 0), current_market_price)
                         elif status == "sl":
@@ -4655,29 +4704,55 @@ def run_bot() -> None:
                             )
 
                     if notify and msg:
+                        eligible_count += 1
                         try:
-                            _send_message_with_retry_sync(application.bot, chat_id=int(telegram_user_id), text=msg)
+                            _send_message_with_retry_sync(
+                                application.bot,
+                                chat_id=int(telegram_user_id),
+                                text=msg,
+                                parse_mode="HTML",
+                            )
                             try:
                                 import asyncio
                                 run_sync(asyncio.sleep(0.5))
                             except Exception:
                                 pass
+                            sent_count += 1
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
+                            failed_count += 1
                             pass
 
-                # Mark as notified so this outcome is never sent again.
-                # Once marked, list_unnotified_outcomes() won't return it.
-                try:
-                    async def _mark(oid: int) -> None:
-                        async with get_session() as session:
-                            await mark_outcome_notified(session, int(oid))
-                            await session.commit()
+                mark_notified = False
+                if sent_count > 0:
+                    mark_notified = True
+                elif len(recipients or []) == 0:
+                    # No recipients for this signal; avoid permanent retry loop.
+                    mark_notified = True
+                elif eligible_count == 0 and quiet_deferred_count == 0:
+                    # No tier-qualified recipients and no quiet-hour deferrals.
+                    mark_notified = True
 
-                    run_sync(_mark(int(getattr(oc, 'id'))))
-                except Exception as e:
-                    logger.debug(f"[outcome] Failed to mark outcome as handled: {e}")
-                    pass
+                if mark_notified:
+                    try:
+                        async def _mark(oid: int) -> None:
+                            async with get_session() as session:
+                                await mark_outcome_notified(session, int(oid))
+                                await session.commit()
+
+                        run_sync(_mark(int(getattr(oc, 'id'))))
+                    except Exception as e:
+                        logger.debug(f"[outcome] Failed to mark outcome as handled: {e}")
+                else:
+                    logger.info(
+                        "[outcome] deferring notify mark ref=%s status=%s recipients=%s sent=%s failed=%s quiet_deferred=%s",
+                        ref_short,
+                        status,
+                        len(recipients or []),
+                        sent_count,
+                        failed_count,
+                        quiet_deferred_count,
+                    )
         except Exception as e:
             logger.warning(f"[outcome] Failed to process outcomes: {e}")
             return

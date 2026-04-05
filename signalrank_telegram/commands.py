@@ -1094,49 +1094,57 @@ from db.models import Outcome, ReferralReward, ReferralAttribution, Signal, Subs
 import asyncio
 
 async def referral_leaderboard_command(update, context) -> None:
+	if await _public_guard(update):
+		return
 	if update.effective_user is None or update.message is None:
 		return
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
 	async with get_session() as session:
-		# Top referrers by count
-		from sqlalchemy import text
+		from sqlalchemy import select, func, desc
+
 		res = await session.execute(
-			text("""
-			SELECT referrer_user_id, COUNT(*) as cnt
-			FROM referral_attributions
-			GROUP BY referrer_user_id
-			ORDER BY cnt DESC
-			LIMIT 10
-			""")
+			select(
+				ReferralAttribution.referrer_user_id,
+				func.count(ReferralAttribution.id).label("cnt"),
+			)
+			.group_by(ReferralAttribution.referrer_user_id)
+			.order_by(desc("cnt"))
+			.limit(10)
 		)
-		rows = res.fetchall()
+		rows = list(res.all() or [])
 		if not rows:
 			await update.message.reply_text("No referral data yet.")
+			await session.commit()
 			return
+
 		# Get usernames if possible
-		ids = [r[0] for r in rows]
+		ids = [int(r[0]) for r in rows]
 		users = {}
 		if ids:
-			from sqlalchemy import text
 			res2 = await session.execute(
-				text("SELECT id, telegram_user_id, username FROM users WHERE id = ANY(:ids)"), {"ids": ids}
+				select(User.id, User.telegram_user_id, User.username).where(User.id.in_(ids))
 			)
-			users = {r[0]: (r[1], r[2]) for r in res2.fetchall()}
+			users = {int(r[0]): (r[1], r[2]) for r in (res2.all() or [])}
+
 		msg = "🏆 Referral Leaderboard:\n\n"
 		for i, (uid, cnt) in enumerate(rows, 1):
+			uid = int(uid)
 			telegram_uid, username = users.get(uid, (None, None))
 			if username:
-				uname = username
+				uname = f"@{username}"
 			elif telegram_uid:
 				uname = f"User ***{str(telegram_uid)[-3:]}"
 			else:
 				uname = f"User ***{str(uid)[-3:]}"
 			msg += f"{i}. {uname}: {cnt} referrals\n"
+		await session.commit()
 		await update.message.reply_text(msg)
 
 async def referral_rewards_command(update, context) -> None:
+	if await _public_guard(update):
+		return
 	if update.effective_user is None or update.message is None:
 		return
 	user_id = update.effective_user.id
@@ -1145,26 +1153,47 @@ async def referral_rewards_command(update, context) -> None:
 		return
 	async with get_session() as session:
 		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
-		from sqlalchemy import text
+		from sqlalchemy import select, func
+		from db.pg_features import get_referral_progress
+
 		res = await session.execute(
-			text("SELECT reward_type, COUNT(*) as cnt, SUM(reward_value) as total FROM referral_rewards WHERE referrer_user_id = :uid GROUP BY reward_type"),
-			{"uid": user.id}
+			select(
+				ReferralReward.reward_type,
+				func.count(ReferralReward.id).label("cnt"),
+				func.coalesce(func.sum(ReferralReward.reward_value), 0).label("total"),
+			)
+			.where(ReferralReward.referrer_user_id == int(user.id))
+			.group_by(ReferralReward.reward_type)
 		)
-		rows = res.fetchall()
+		rows = list(res.all() or [])
+
+		progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
+		total_refs = int(progress.get("total", 0) or 0)
+		toward_next = int(progress.get("toward_next", 0) or 0)
+		needed = int(progress.get("needed_for_next", 0) or 0)
+
+		total_days = 0
+		for rtype, _cnt, total in rows:
+			if str(rtype).lower().startswith("premium_days"):
+				total_days += int(total or 0)
+
 		if not rows:
 			msg = "No rewards earned yet. Refer friends to earn rewards!"
 		else:
 			msg = "🎁 Your Referral Rewards:\n"
 			for rtype, cnt, total in rows:
-				msg += f"{rtype}: {cnt} times, total value: {total}\n"
-		
-		# Show progress toward next reward
-		from db.pg_features import get_referral_progress
-		progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
-		total = progress.get("total", 0)
-		needed = progress.get("needed_for_next", 3)
-		msg += f"\n\n📊 Progress: {total} total referrals\n"
-		msg += f"🎯 {needed} more referrals for next reward (7 premium days)"
+				msg += f"• {rtype}: {int(cnt or 0)} time(s), total value: {int(total or 0)}\n"
+
+		if total_days > 0:
+			msg += f"\n✅ Total premium days earned: +{total_days}"
+
+		msg += f"\n\n📊 Progress: {toward_next}/3"
+		if needed > 0:
+			msg += f" (invite {needed} more for next +7 days)"
+		else:
+			msg += " (milestone reached on latest referral)"
+		msg += f"\n👥 Total referrals: {total_refs}"
+		await session.commit()
 		await update.message.reply_text(msg)
 from engine.signal_analytics import signal_analytics
 # --------- ADMIN ANALYTICS COMMANDS ---------
@@ -5655,39 +5684,52 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		bot_username = os.getenv("BOT_USERNAME", "")
 	bot_username = (bot_username or "").strip().lstrip("@")
 
-	referral_url = f"https://t.me/{bot_username}?start=ref_{user_id}" if bot_username else ""
+	referral_code = str(user_id)
+	referral_url = ""
 	bonus_days = int(os.getenv("REFERRAL_BONUS_DAYS", "7"))
 
-	# Count how many users were referred by this user
+	# Source of truth: referral_code + attributions + reward ledger in Postgres.
 	referred_count = 0
+	toward_next = 0
+	needed_for_next = 0
 	bonus_earned_days = 0
 	try:
 		from db.session import get_session as _gs
-		from db.models import User
+		from db.models import User, ReferralReward
 		from sqlalchemy import select, func
+		from db.pg_features import get_or_create_referral_code, get_referral_progress
 
 		async with _gs() as session:
-			referred_count = (await session.execute(
-				select(func.count()).where(User.referred_by == user_id)
-			)).scalar() or 0
-			# Bonus is earned when referred user pays — count paying referrals
-			# (users who are PREMIUM or VIP and were referred by this user)
-			paying = (await session.execute(
-				select(func.count()).where(
-					User.referred_by == user_id,
-					User.tier.in_(["PREMIUM", "VIP"]),
-				)
-			)).scalar() or 0
-			bonus_earned_days = paying * bonus_days
+			referral_code = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
+			progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
+			referred_count = int(progress.get("total", 0) or 0)
+			toward_next = int(progress.get("toward_next", 0) or 0)
+			needed_for_next = int(progress.get("needed_for_next", 0) or 0)
+
+			user_row = (await session.execute(
+				select(User).where(User.telegram_user_id == int(user_id))
+			)).scalar_one_or_none()
+			if user_row is not None:
+				bonus_earned_days = int((await session.execute(
+					select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+						ReferralReward.referrer_user_id == user_row.id,
+						ReferralReward.reward_type == "premium_days",
+					)
+				)).scalar() or 0)
 	except Exception:
 		pass
+
+	if bot_username:
+		referral_url = f"https://t.me/{bot_username}?start=ref_{referral_code}"
 
 	msg = (
 		f"🔗 <b>Your Referral Link</b>\n\n"
 		f"<code>{referral_url or 'Bot username not set'}</code>\n\n"
 		f"📊 Referrals: <b>{referred_count}</b>\n"
-		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n\n"
-		f"💡 Earn <b>+{bonus_days} free days</b> every time someone you refer upgrades to PREMIUM or VIP.\n"
+		f"🎁 Bonus earned: <b>+{bonus_earned_days} days</b> subscription\n"
+		f"📈 Progress: <b>{toward_next}/3</b>"
+		f"{' (invite ' + str(needed_for_next) + ' more)' if needed_for_next else ' (reward unlocked on your latest milestone)'}\n\n"
+		f"💡 Earn <b>+{bonus_days} free days</b> for every 3 valid referrals.\n"
 		f"Share your link and grow your streak!"
 	)
 	try:

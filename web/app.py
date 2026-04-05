@@ -768,7 +768,7 @@ async def _add_to_vip_waitlist(telegram_user_id: int) -> None:
     try:
         from db.models import VIPWaitlist
         from sqlalchemy import select
-        from db.models import User
+        from db.models import User, ReferralReward
 
         async with get_session() as session:
             user_row = await session.execute(
@@ -843,6 +843,14 @@ async def _apply_referral_bonus(event: Dict[str, Any]) -> None:
                     "reference": reference,
                     "grant_days": int(REFERRAL_BONUS_DAYS),
                 },
+            )
+            session.add(
+                ReferralReward(
+                    referrer_user_id=int(referrer.id),
+                    referred_user_id=int(buyer.id),
+                    reward_type="premium_days_payment",
+                    reward_value=int(REFERRAL_BONUS_DAYS),
+                )
             )
             await session.commit()
             logger.info(
