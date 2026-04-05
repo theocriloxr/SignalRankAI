@@ -1848,20 +1848,132 @@ async def myid_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 # --------- DASHBOARD COMMAND ---------
 @require_tier("PREMIUM")
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show an inline bot dashboard — stats, execution mode, tier, quick links."""
 	if update.effective_user is None or update.message is None:
 		return
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
-	if tier.strip().upper() not in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
-		await update.message.reply_text("The dashboard is only available for Premium, VIP, and above.")
-		return
-	base_url = os.getenv("DASHBOARD_URL")
-	if not base_url:
-		await update.message.reply_text("Dashboard is coming soon.")
-		return
-	sep = "&" if "?" in base_url else "?"
-	dashboard_url: str = f"{base_url}{sep}uid={user_id}"
-	await update.message.reply_text(f"🌐 [Open your dashboard]({dashboard_url})", disable_web_page_preview=True, parse_mode="MarkdownV2")
+
+	try:
+		from db.session import get_session, get_engine_for_event_loop
+		from db.models import User, Signal, SignalDelivery, Outcome
+		from sqlalchemy import select, func
+		from datetime import datetime, timedelta
+
+		# If a web dashboard URL is configured, send premium users to it
+		base_url = os.getenv("DASHBOARD_URL", "").strip()
+		if base_url and tier.upper() in {"PREMIUM", "VIP", "ADMIN", "OWNER"}:
+			sep = "&" if "?" in base_url else "?"
+			url = f"{base_url}{sep}uid={user_id}"
+			try:
+				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+				kbd = InlineKeyboardMarkup([[
+					InlineKeyboardButton("🌐 Open Dashboard", url=url),
+					InlineKeyboardButton("📊 Portfolio", callback_data="nav_portfolio"),
+				]])
+			except Exception:
+				kbd = None
+			await update.message.reply_text(
+				f"🌐 <b>Your Dashboard</b>\n\n"
+				f"Tier: <b>{tier.upper()}</b>\n"
+				f"Tap the button below to open your full dashboard.",
+				parse_mode="HTML",
+				reply_markup=kbd,
+			)
+			return
+
+		if get_engine_for_event_loop() is None:
+			await update.message.reply_text(
+				"📊 <b>Dashboard</b>\n\n"
+				f"Tier: <b>{tier.upper()}</b>\n\n"
+				"Use /stats, /portfolio, /mystats and /performance for your trading data.",
+				parse_mode="HTML",
+			)
+			return
+
+		async with get_session() as session:
+			user_row = (await session.execute(
+				select(User).where(User.telegram_user_id == user_id)
+			)).scalar_one_or_none()
+
+			cutoff = datetime.utcnow() - timedelta(days=30)
+			db_user_id = user_row.id if user_row else None
+
+			# Signals received in last 30d
+			total_signals = 0
+			wins = 0
+			losses = 0
+			if db_user_id:
+				total_signals = (await session.execute(
+					select(func.count(SignalDelivery.id)).where(
+						SignalDelivery.user_id == db_user_id,
+						SignalDelivery.delivered_at >= cutoff,
+					)
+				)).scalar() or 0
+
+				oc_rows = (await session.execute(
+					select(Outcome)
+					.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
+					.where(
+						SignalDelivery.user_id == db_user_id,
+						Outcome.closed_at >= cutoff,
+					)
+				)).scalars().all()
+				wins = sum(1 for o in oc_rows if str(o.status or "").startswith("tp"))
+				losses = sum(1 for o in oc_rows if o.status == "sl")
+			await session.commit()
+
+		win_rate = wins / (wins + losses) * 100 if (wins + losses) > 0 else 0.0
+		exec_mode = str(getattr(user_row, "execution_mode", "manual") or "manual").upper() if user_row else "N/A"
+
+		expiry_txt = ""
+		if user_row:
+			from datetime import timezone as _tz
+			exp = getattr(user_row, "premium_until", None)
+			if exp:
+				if hasattr(exp, "tzinfo") and exp.tzinfo is None:
+					exp = exp.replace(tzinfo=_tz.utc)
+				expiry_txt = f"\n📅 Sub expires: <b>{exp.strftime('%d %b %Y')}</b>"
+
+		msg = (
+			f"📊 <b>Dashboard — {tier.upper()}</b>\n\n"
+			f"🎯 Signals (30d): <b>{total_signals}</b>\n"
+			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
+			f"📈 Win rate: <b>{win_rate:.1f}%</b>\n"
+			f"⚙️ Execution mode: <b>{exec_mode}</b>"
+			f"{expiry_txt}\n\n"
+			"<b>Quick commands:</b>\n"
+			"/portfolio — live P&amp;L\n"
+			"/mystats — full stats\n"
+			"/history — signal history\n"
+			"/performance — 30-day review\n"
+			"/tiers — subscription info"
+		)
+
+		try:
+			from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+			kbd = InlineKeyboardMarkup([
+				[
+					InlineKeyboardButton("📊 Portfolio", callback_data="nav_portfolio"),
+					InlineKeyboardButton("📈 Performance", callback_data="nav_performance"),
+				],
+				[
+					InlineKeyboardButton("⚙️ Execution", callback_data="nav_execution"),
+					InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
+				],
+			])
+		except Exception:
+			kbd = None
+
+		await update.message.reply_text(msg, parse_mode="HTML", reply_markup=kbd)
+
+	except Exception as exc:
+		await update.message.reply_text(
+			"📊 <b>Dashboard</b>\n\n"
+			f"Tier: <b>{tier.upper()}</b>\n\n"
+			"Use /stats, /portfolio, /mystats, /performance for your trading data.",
+			parse_mode="HTML",
+		)
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4166,57 +4278,154 @@ async def stats_command(update, context) -> None:
 
 @require_tier("PREMIUM")
 async def history_command(update, context):
+	"""Show last 10 signals delivered to this user, with outcome status."""
+	if update.effective_user is None:
+		return
 	user_id = update.effective_user.id
-	asset = None
-	tf = None
+	asset: str | None = None
+	tf: str | None = None
 	if context.args:
-		asset: str = str(context.args[0]).upper()
+		asset = str(context.args[0]).upper()
 		if len(context.args) > 1:
 			tf = str(context.args[1])
 
-	# Postgres-first
 	try:
 		from db.session import get_engine_for_event_loop, get_session
+		from db.models import Signal, Outcome
+		from sqlalchemy import select
+
 		engine = get_engine_for_event_loop()
-		if engine is not None:
-			from db.pg_features import list_recent_signals_delivered
-			async with get_session() as session:
-				rows: list[Signal] = await list_recent_signals_delivered(
-					session,
-					telegram_user_id=int(user_id),
-					limit=10,
-					asset=asset,
-					timeframe=tf,
-				)
-				await session.commit()
-			if not rows:
-				if update.message is not None:
-					await update.message.reply_text("No history available yet.")
-				return
-			lines: list[str] = ["🧾 History (last 10):", ""]
-			for s in rows:
-				lines.append(
-					f"• {s.asset} {s.timeframe} {s.direction} ref={s.signal_id} entry={s.entry} sl={s.stop_loss} tp={s.take_profit}"
-				)
+		if engine is None:
 			if update.message is not None:
-				await update.message.reply_text("\n".join(lines))
+				await update.message.reply_text("⚠️ Database not configured.")
 			return
-	except Exception:
-		pass
-	
-	if update.message is not None:
-		await update.message.reply_text("No history available yet.")
+
+		from db.pg_features import list_recent_signals_delivered
+		async with get_session() as session:
+			rows: list[Signal] = await list_recent_signals_delivered(
+				session,
+				telegram_user_id=int(user_id),
+				limit=15,
+				asset=asset,
+				timeframe=tf,
+			)
+			# Fetch outcomes for these signals
+			if rows:
+				sids = [s.signal_id for s in rows]
+				oc_map: dict[str, Outcome] = {}
+				oc_rows = (await session.execute(
+					select(Outcome).where(Outcome.signal_id.in_(sids))
+				)).scalars().all()
+				for oc in oc_rows:
+					oc_map[oc.signal_id] = oc
+			else:
+				oc_map = {}
+			await session.commit()
+
+		if not rows:
+			if update.message is not None:
+				await update.message.reply_text(
+					"📭 No signal history found yet.\n\n"
+					"You'll see your past signals here as they arrive."
+				)
+			return
+
+		lines: list[str] = [f"🧾 <b>Signal History</b> (last {len(rows)})\n"]
+		for s in rows:
+			oc = oc_map.get(s.signal_id)
+			if oc is not None and oc.status:
+				status_u = str(oc.status).upper()
+				oc_emoji = "✅" if oc.status.startswith("tp") else ("❌" if oc.status == "sl" else "⏳")
+				r_txt = ""
+				if oc.r_multiple is not None:
+					r_sign = "+" if float(oc.r_multiple) >= 0 else ""
+					r_txt = f" | {r_sign}{float(oc.r_multiple):.1f}R"
+				outcome_txt = f"{oc_emoji} <b>{status_u}</b>{r_txt}"
+			else:
+				outcome_txt = "⏳ Open"
+
+			tf_txt = f" [{s.timeframe}]" if s.timeframe else ""
+			entry_txt = f"{float(s.entry):.5f}" if s.entry is not None else "—"
+			ref = s.signal_id[:8]
+			lines.append(
+				f"• <b>{s.asset}</b>{tf_txt} {str(s.direction or '').upper()}\n"
+				f"  Entry: <code>{entry_txt}</code>  {outcome_txt}  Ref: <code>{ref}</code>"
+			)
+
+		lines.append("\n💡 /signal &lt;ref&gt; for full signal details")
+		if update.message is not None:
+			await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+		return
+
+	except Exception as exc:
+		if update.message is not None:
+			await update.message.reply_text(f"❌ Could not load history: {exc}")
 
 
 @require_tier("PREMIUM")
 async def risk_command(update, context) -> None:
-	if update.message is None:
+	"""Show or update risk settings (recommended % per trade).
+
+	Usage:
+	  /risk           → show current setting
+	  /risk 1.5       → set risk to 1.5% per trade
+	"""
+	if update.message is None or update.effective_user is None:
 		return
-	await update.message.reply_text(
-		"🛡️ Risk (recommended)\n\n"
-		"Suggested risk: ~1% per trade.\n"
-		"Keep position sizes consistent and avoid overtrading."
-	)
+	user_id: int = update.effective_user.id
+
+	args = [str(a).strip() for a in (context.args or []) if str(a).strip()]
+
+	try:
+		from db.session import get_session as _gs, get_engine_for_event_loop
+		from db.models import User
+		from sqlalchemy import select
+
+		if get_engine_for_event_loop() is None:
+			await update.message.reply_text("⚠️ Database not configured.")
+			return
+
+		async with _gs() as session:
+			user_row = (await session.execute(
+				select(User).where(User.telegram_user_id == user_id)
+			)).scalar_one_or_none()
+
+			if user_row is None:
+				await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+				return
+
+			if not args:
+				current = float(getattr(user_row, "max_risk_percentage", 1.0) or 1.0)
+				await update.message.reply_text(
+					"🛡️ <b>Risk Per Trade</b>\n\n"
+					f"Current setting: <b>{current:.2f}%</b> per trade\n\n"
+					"Recommended: 1% per trade. Never risk more than 2–3%.\n\n"
+					"To update: <code>/risk 1.5</code>",
+					parse_mode="HTML",
+				)
+				return
+
+			try:
+				new_risk = float(args[0])
+			except ValueError:
+				await update.message.reply_text("❌ Invalid value. Use a number, e.g. /risk 1.5")
+				return
+
+			if new_risk < 0.1 or new_risk > 10.0:
+				await update.message.reply_text("❌ Risk must be between 0.1% and 10%.")
+				return
+
+			user_row.max_risk_percentage = round(new_risk, 2)
+			await session.commit()
+
+		await update.message.reply_text(
+			f"✅ <b>Risk per trade updated</b>\n\n"
+			f"New setting: <b>{round(new_risk, 2):.2f}%</b> per trade\n\n"
+			"This setting is used for VIP risk-based lot sizing on AUTO execution.",
+			parse_mode="HTML",
+		)
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not update risk: {exc}")
 
 
 @require_tier("PREMIUM")
@@ -4403,220 +4612,257 @@ async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 	"""Show real-time price for any asset."""
 	if update.effective_user is None or update.message is None:
 		return
-	
-	# Get asset from arguments
+
 	if not context.args:
 		await update.message.reply_text(
-			"Usage: /liveprice <asset>\n\n"
+			"Usage: /liveprice &lt;asset&gt;\n\n"
 			"Examples:\n"
 			"/liveprice BTCUSDT\n"
-			"/liveprice EUR/USD\n"
-			"/liveprice AAPL"
+			"/liveprice EURUSD\n"
+			"/liveprice AAPL",
+			parse_mode="HTML",
 		)
 		return
-	
+
 	asset = context.args[0].strip().upper()
-	
+
 	try:
+		import asyncio
 		from engine.price_validator import get_current_price
-		
-		# Fetch current price
-		current_price = get_current_price(asset)
-		
+		from datetime import datetime
+
+		loop = asyncio.get_event_loop()
+		current_price: float | None = await loop.run_in_executor(None, get_current_price, asset)
+
 		if current_price is None:
 			await update.message.reply_text(
-				f"❌ Could not fetch current price for {asset}.\n\n"
-				f"Please check the asset symbol and try again."
+				f"❌ Could not fetch price for <b>{asset}</b>.\n\n"
+				f"Check the symbol and try again.",
+				parse_mode="HTML",
 			)
 			return
-		
-		# Format price based on asset type
-		if 'USDT' in asset or 'USDC' in asset or 'BUSD' in asset:
-			price_str = f"${current_price:,.4f}"
+
+		if asset.endswith(("USDT", "USDC", "BUSD")):
+			price_str = f"${current_price:,.4f}" if current_price < 100 else f"${current_price:,.2f}"
 			asset_type = "Crypto"
-		elif '/' in asset:
+		elif len(asset) in (6, 7) and asset.isalpha():
 			price_str = f"{current_price:.5f}"
 			asset_type = "Forex"
 		else:
 			price_str = f"${current_price:,.2f}"
-			asset_type = "Stock"
-		
-		# Get timestamp
-		from datetime import datetime
+			asset_type = "Stock / Other"
+
 		timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
-		
-		message = (
-			f"💰 **Live Price**\n\n"
-			f"Asset: {asset}\n"
+		msg = (
+			f"💰 <b>Live Price</b>\n\n"
+			f"Asset: <b>{asset}</b>\n"
 			f"Type: {asset_type}\n"
-			f"Price: **{price_str}**\n\n"
-			f"📅 {timestamp}\n\n"
-			f"💡 Use /signal to view active signals"
+			f"Price: <b>{price_str}</b>\n\n"
+			f"🕐 {timestamp}"
 		)
-		
-		await update.message.reply_text(message)
-	
-	except Exception as e:
-		await update.message.reply_text(f"Error fetching price: {str(e)}")
+		await update.message.reply_text(msg, parse_mode="HTML")
+
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Error fetching price: {exc}")
 
 
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Show all active signals with current P&L for the user."""
+	"""Show all active signals with live P&L for the user."""
 	if update.effective_user is None or update.message is None:
 		return
-	
-	user_id = update.effective_user.id
-	
+
+	user_id: int = update.effective_user.id
+
 	try:
-		from db.session import get_session
-		from db.models import Signal, SignalDelivery
+		from db.session import get_session, get_engine_for_event_loop
+		from db.models import Signal, SignalDelivery, User, Outcome
 		from sqlalchemy import select
 		from datetime import datetime, timedelta
 		from engine.price_validator import get_current_price
 		from engine.signal_calculations import calculate_profit_loss_pct
-		
-		# Get active signals for this user
+		import asyncio
+
+		if get_engine_for_event_loop() is None:
+			await update.message.reply_text("⚠️ Database not configured.")
+			return
+
 		async with get_session() as session:
-			# Get signals delivered to this user in last 48 hours
-			cutoff = datetime.utcnow() - timedelta(hours=48)
+			# Resolve the DB user record to get the FK id used in signal_deliveries
+			user_row = (await session.execute(
+				select(User).where(User.telegram_user_id == user_id)
+			)).scalar_one_or_none()
+			if user_row is None:
+				await update.message.reply_text("⚠️ User profile not found. Send /start first.")
+				return
+
+			# Get signals delivered to this user (active = not archived, last 72 h)
+			cutoff = datetime.utcnow() - timedelta(hours=72)
 			stmt = (
-				select(Signal)
+				select(Signal, Outcome)
 				.join(SignalDelivery, Signal.signal_id == SignalDelivery.signal_id)
+				.outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
 				.where(
-					SignalDelivery.user_id == user_id,
+					SignalDelivery.user_id == user_row.id,
 					Signal.archived == False,
-					Signal.created_at >= cutoff
+					Signal.created_at >= cutoff,
 				)
-				.distinct()
+				.distinct(Signal.signal_id)
+				.order_by(Signal.signal_id, Signal.created_at.desc())
 			)
-			result = await session.execute(stmt)
-			signals = result.scalars().all()
-		
-		if not signals:
+			rows = (await session.execute(stmt)).all()
+			await session.commit()
+
+		if not rows:
 			await update.message.reply_text(
-				"📊 **Portfolio**\n\n"
-				"You have no active signals.\n\n"
-				"Use /signals to view available signals."
+				"📊 <b>Portfolio</b>\n\n"
+				"You have no active signals in the last 72 hours.\n\n"
+				"Use /signals to view available signals.",
+				parse_mode="HTML",
 			)
 			return
-		
-		# Build portfolio message
-		message = f"📊 **Your Active Signals** ({len(signals)})\n\n"
-		
+
+		# Deduplicate (distinct on signal_id returns first row per id)
+		seen: set = set()
+		signals_with_outcome: list = []
+		for sig, oc in rows:
+			if sig.signal_id not in seen:
+				seen.add(sig.signal_id)
+				signals_with_outcome.append((sig, oc))
+
+		# Fetch live prices concurrently in a thread pool
+		assets = list({sig.asset for sig, _ in signals_with_outcome})
+		prices: dict[str, float | None] = {}
+		loop = asyncio.get_event_loop()
+
+		async def _fetch_price(asset: str) -> tuple[str, float | None]:
+			try:
+				px = await loop.run_in_executor(None, get_current_price, asset)
+				return asset, px
+			except Exception:
+				return asset, None
+
+		price_results = await asyncio.gather(*[_fetch_price(a) for a in assets])
+		for asset, px in price_results:
+			prices[asset] = px
+
 		total_pnl = 0.0
-		valid_signals = 0
-		
-		for sig in signals:
+		valid_count = 0
+		lines: list[str] = [f"📊 <b>Your Active Portfolio</b> ({len(signals_with_outcome)} signals)\n"]
+
+		for sig, oc in signals_with_outcome:
 			try:
 				asset = sig.asset
-				direction = sig.direction.upper()
-				entry = sig.entry
+				direction = str(sig.direction or "long").upper()
+				entry = float(sig.entry or 0)
 				ref = sig.signal_id[:8]
-				
-				# Get current price
-				current_price = get_current_price(asset)
-				
-				if current_price is None:
+
+				# If signal already has a recorded outcome, show it
+				if oc is not None and oc.status is not None:
+					status_u = str(oc.status).upper()
+					r_txt = ""
+					if oc.r_multiple is not None:
+						r_sign = "+" if float(oc.r_multiple) >= 0 else ""
+						r_txt = f" | R: {r_sign}{float(oc.r_multiple):.2f}R"
+					status_emoji = "✅" if oc.status.startswith("tp") else "❌"
+					lines.append(
+						f"{status_emoji} <b>{asset}</b> {direction} — <b>{status_u}</b>{r_txt}\n"
+						f"   Entry: <code>{entry:.5f}</code> | Ref: <code>{ref}</code>\n"
+					)
 					continue
-				
-				# Calculate P&L
+
+				current_price = prices.get(asset)
+				if current_price is None or entry <= 0:
+					lines.append(
+						f"⚪ <b>{asset}</b> {direction}\n"
+						f"   Entry: <code>{entry:.5f}</code> | Price: unavailable | Ref: <code>{ref}</code>\n"
+					)
+					continue
+
 				pnl_pct = calculate_profit_loss_pct(entry, current_price, direction)
 				total_pnl += pnl_pct
-				valid_signals += 1
-				
-				# Format
+				valid_count += 1
 				pnl_sign = "+" if pnl_pct >= 0 else ""
 				pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
-				
-				message += (
-					f"{pnl_emoji} **{asset}** {direction}\n"
-					f"   Entry: {entry:.4f} | Now: {current_price:.4f}\n"
-					f"   P&L: {pnl_sign}{pnl_pct:.2f}% | Ref: `{ref}`\n\n"
+
+				lines.append(
+					f"{pnl_emoji} <b>{asset}</b> {direction}\n"
+					f"   Entry: <code>{entry:.5f}</code> → Now: <code>{current_price:.5f}</code>\n"
+					f"   P&amp;L: <b>{pnl_sign}{pnl_pct:.2f}%</b> | Ref: <code>{ref}</code>\n"
 				)
-			
-			except Exception as e:
+			except Exception:
 				continue
-		
-		# Add summary
-		if valid_signals > 0:
-			avg_pnl = total_pnl / valid_signals
+
+		if valid_count > 0:
+			avg_pnl = total_pnl / valid_count
 			avg_sign = "+" if avg_pnl >= 0 else ""
 			summary_emoji = "📈" if avg_pnl >= 0 else "📉"
-			
-			message += (
+			lines.append(
 				f"━━━━━━━━━━━━━━━━\n"
-				f"{summary_emoji} **Average P&L:** {avg_sign}{avg_pnl:.2f}%\n\n"
-				f"💡 Use /signal <ref> for details"
+				f"{summary_emoji} <b>Open P&amp;L avg:</b> {avg_sign}{avg_pnl:.2f}%\n"
 			)
-		
-		await update.message.reply_text(message)
-	
-	except Exception as e:
-		await update.message.reply_text(f"Error fetching portfolio: {str(e)}")
+
+		lines.append("💡 Use /signal &lt;ref&gt; for full signal details")
+		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not load portfolio: {exc}")
 
 
 async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Show overall market conditions."""
 	if update.effective_user is None or update.message is None:
 		return
-	
+
+	import asyncio
+
 	try:
 		from engine.price_validator import get_current_price
-		from data.news import get_news_sentiment
-		
+		loop = asyncio.get_event_loop()
+
 		# Define major assets to track
 		major_assets = [
-			('BTCUSDT', 'Bitcoin'),
-			('ETHUSDT', 'Ethereum'),
-			('EUR/USD', 'Euro/USD'),
-			('XAUUSD', 'Gold')
+			("BTCUSDT",  "Bitcoin",     "₿"),
+			("ETHUSDT",  "Ethereum",    "⬡"),
+			("EURUSD",   "EUR/USD",     "🇪🇺"),
+			("XAUUSD",   "Gold",        "🥇"),
+			("GBPUSD",   "GBP/USD",     "🇬🇧"),
+			("USDJPY",   "USD/JPY",     "🇯🇵"),
 		]
-		
-		message = "🌐 **Market Overview**\n\n"
-		
-		# Get prices and sentiment for each
-		for asset, name in major_assets:
+
+		async def _fetch(symbol: str) -> tuple[str, float | None]:
 			try:
-				price = get_current_price(asset)
-				
-				if price is None:
-					continue
-				
-				# Format price
-				if 'USDT' in asset or 'USD' in asset:
-					price_str = f"${price:,.2f}" if price > 100 else f"${price:,.4f}"
-				else:
-					price_str = f"{price:.5f}"
-				
-				# Get news sentiment (simplified - just show if available)
-				try:
-					sentiment = get_news_sentiment(asset, lookback_minutes=120)
-					if sentiment > 0:
-						sentiment_emoji = "📈🟢"
-					elif sentiment < 0:
-						sentiment_emoji = "📉🔴"
-					else:
-						sentiment_emoji = "➡️⚪"
-				except:
-					sentiment_emoji = "ℹ️"
-				
-				message += f"{sentiment_emoji} **{name}**: {price_str}\n"
-			
+				px = await loop.run_in_executor(None, get_current_price, symbol)
+				return symbol, px
 			except Exception:
-				continue
-		
-		# Add timestamp
+				return symbol, None
+
+		price_results = await asyncio.gather(*[_fetch(sym) for sym, _, _ in major_assets])
+		price_map: dict[str, float | None] = dict(price_results)
+
 		from datetime import datetime
 		timestamp = datetime.utcnow().strftime("%H:%M UTC")
-		
-		message += f"\n📅 Updated: {timestamp}\n\n"
-		message += "💡 Use /liveprice <asset> for specific prices\n"
-		message += "📊 Use /signals to see available signals"
-		
-		await update.message.reply_text(message)
-	
-	except Exception as e:
-		await update.message.reply_text(f"Error fetching market data: {str(e)}")
+
+		lines = [f"🌐 <b>Market Overview</b> — {timestamp}\n"]
+		for symbol, name, icon in major_assets:
+			price = price_map.get(symbol)
+			if price is None:
+				continue
+			if "USDT" in symbol or symbol in ("EURUSD", "GBPUSD", "USDJPY"):
+				if price >= 100:
+					price_str = f"{price:,.2f}"
+				elif price >= 1:
+					price_str = f"{price:.5f}"
+				else:
+					price_str = f"{price:.6f}"
+			else:
+				price_str = f"{price:,.2f}"
+			lines.append(f"{icon} <b>{name}</b>: <code>{price_str}</code>")
+
+		lines.append("\n💡 /liveprice &lt;symbol&gt; for any asset  |  /signals for active trades")
+		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not fetch market data: {exc}")
 
 
 # --------- MT5 LINK COMMAND ---------
@@ -5142,77 +5388,124 @@ async def mystats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	tier: str = _effective_tier(user_id)
 
 	try:
-		from db.session import get_session as _gs
-		from db.models import MT5Execution, User
+		from db.session import get_session as _gs, get_engine_for_event_loop
+		from db.models import MT5Execution, User, Outcome, SignalDelivery
 		from sqlalchemy import select, func
 
+		if get_engine_for_event_loop() is None:
+			await update.message.reply_text("⚠️ Database not configured.")
+			return
+
 		async with _gs() as session:
-			# User info
+			# Resolve DB user — MT5Execution.user_id is FK to users.id, NOT telegram_user_id
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == user_id)
 			)).scalar_one_or_none()
 
-			# Total executions
+			db_user_id: int | None = user_row.id if user_row is not None else None
+
+			if db_user_id is None:
+				await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+				return
+
+			# Total MT5 executions (correct FK)
 			total_exec = (await session.execute(
-				select(func.count()).where(MT5Execution.user_id == user_id)
+				select(func.count()).where(MT5Execution.user_id == db_user_id)
 			)).scalar() or 0
 
-			# Win / loss
-			wins = (await session.execute(
+			# Win / loss from MT5 executions
+			# Status values: 'tp1' | 'tp2' | 'tp3' | 'tp' — wins; 'sl' — losses
+			wins_exec = (await session.execute(
 				select(func.count()).where(
-					MT5Execution.user_id == user_id,
-					MT5Execution.status == "tp_hit",
+					MT5Execution.user_id == db_user_id,
+					MT5Execution.status.in_(["tp", "tp1", "tp2", "tp3"]),
 				)
 			)).scalar() or 0
 
-			losses = (await session.execute(
+			losses_exec = (await session.execute(
 				select(func.count()).where(
-					MT5Execution.user_id == user_id,
-					MT5Execution.status == "sl_hit",
+					MT5Execution.user_id == db_user_id,
+					MT5Execution.status == "sl",
 				)
 			)).scalar() or 0
 
-			# Total realized PnL
+			# Realized PnL sum from MT5 executions
 			total_pnl = (await session.execute(
 				select(func.sum(MT5Execution.realized_pnl)).where(
-					MT5Execution.user_id == user_id,
+					MT5Execution.user_id == db_user_id,
 					MT5Execution.realized_pnl.isnot(None),
 				)
 			)).scalar() or 0.0
 
-		win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0.0
+			# Also count from signal outcomes (broader — covers non-MT5 users too)
+			oc_rows = (await session.execute(
+				select(Outcome)
+				.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
+				.where(SignalDelivery.user_id == db_user_id)
+				.order_by(Outcome.closed_at.desc())
+				.limit(200)
+			)).scalars().all()
+			await session.commit()
 
+		# If no MT5 executions, fall back to signal outcome counts
+		if total_exec > 0:
+			wins = wins_exec
+			losses = losses_exec
+		else:
+			wins = sum(1 for o in oc_rows if str(o.status or "").startswith("tp"))
+			losses = sum(1 for o in oc_rows if o.status == "sl")
+
+		tracked = wins + losses
+		win_rate = (wins / tracked * 100) if tracked > 0 else 0.0
+
+		# Net/avg R from outcomes
+		r_values = [float(o.r_multiple) for o in oc_rows if o.r_multiple is not None]
+		net_r = sum(r_values) if r_values else None
+		avg_r = (sum(r_values) / len(r_values)) if r_values else None
+
+		# Subscription expiry
 		sub_expiry = ""
 		if user_row:
 			from datetime import timezone as _tz
-			from datetime import datetime as _dt
+			expiry = getattr(user_row, "premium_until", None)
+			if expiry:
+				if hasattr(expiry, "tzinfo") and expiry.tzinfo is None:
+					expiry = expiry.replace(tzinfo=_tz.utc)
+				sub_expiry = f"\n📅 Subscription expires: <b>{expiry.strftime('%d %b %Y')}</b>"
 
-			# Try premium_until / vip_until fields
-			for field in ("vip_until", "premium_until"):
-				expiry = getattr(user_row, field, None)
-				if expiry:
-					if hasattr(expiry, "tzinfo") and expiry.tzinfo is None:
-						expiry = expiry.replace(tzinfo=_tz.utc)
-					sub_expiry = f"\n📅 Subscription expires: <b>{expiry.strftime('%d %b %Y')}</b>"
-					break
-
+		# Daily execution counter
 		daily_exec = 0
 		if user_row:
-			from engine.tiered_executor import reset_daily_counter_if_needed
-			reset_daily_counter_if_needed(user_row)
+			try:
+				from engine.tiered_executor import reset_daily_counter_if_needed
+				reset_daily_counter_if_needed(user_row)
+			except Exception:
+				pass
 			daily_exec = int(getattr(user_row, "daily_executions_today", 0) or 0)
 
+		tier_disp = tier.upper()
 		msg = (
-			f"<b>📈 My Stats — {tier}</b>\n\n"
-			f"🔢 Total executions: <b>{total_exec}</b>\n"
+			f"<b>📈 My Stats — {tier_disp}</b>\n\n"
+			f"🔢 MT5 executions: <b>{total_exec}</b>\n"
 			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
 			f"🎯 Win rate: <b>{win_rate:.1f}%</b>\n"
-			f"💰 Total realized P&amp;L: <b>${total_pnl:+.2f}</b>\n"
 		)
-		if tier == "PREMIUM":
-			from engine.tiered_executor import PREMIUM_DAILY_LIMIT
-			remaining = max(0, PREMIUM_DAILY_LIMIT - daily_exec)
-			msg += f"📋 Today's executions: <b>{daily_exec}/{PREMIUM_DAILY_LIMIT}</b> ({remaining} remaining)\n"
+		if net_r is not None:
+			net_sign = "+" if net_r >= 0 else ""
+			msg += f"📐 Net R: <b>{net_sign}{net_r:.2f}R</b>\n"
+		if avg_r is not None:
+			avg_sign = "+" if avg_r >= 0 else ""
+			msg += f"📏 Avg R/trade: <b>{avg_sign}{avg_r:.2f}R</b>\n"
+		if total_exec > 0:
+			pnl_sign = "+" if float(total_pnl) >= 0 else ""
+			msg += f"💰 Realized P&amp;L: <b>{pnl_sign}${float(total_pnl):.2f}</b>\n"
+		if tier.upper() in ("PREMIUM", "VIP"):
+			try:
+				from engine.tiered_executor import PREMIUM_DAILY_LIMIT
+				remaining = max(0, PREMIUM_DAILY_LIMIT - daily_exec)
+				msg += f"📋 Today's executions: <b>{daily_exec}/{PREMIUM_DAILY_LIMIT}</b> ({remaining} remaining)\n"
+			except Exception:
+				pass
 		msg += sub_expiry
 		await update.message.reply_text(msg, parse_mode="HTML")
 
@@ -5286,6 +5579,104 @@ async def referral_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	except Exception:
 		keyboard = None
 	await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True, reply_markup=keyboard)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /leaderboard  — Weekly signal performance leaderboard (VIP)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show the weekly signal performance leaderboard.
+
+	VIP users are included with their username/alias.
+	Free/Premium users see the board anonymised.
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id: int = update.effective_user.id
+	tier: str = _effective_tier(user_id)
+
+	try:
+		from db.session import get_session, get_engine_for_event_loop
+		from sqlalchemy import text
+		from datetime import datetime
+
+		if get_engine_for_event_loop() is None:
+			await update.message.reply_text("⚠️ Database not configured.")
+			return
+
+		since = datetime.utcnow()
+		# Use last 7 days
+		query = text("""
+			SELECT
+				u.username,
+				u.tier,
+				COUNT(o.id) AS tracked,
+				SUM(CASE WHEN o.status LIKE 'tp%' THEN 1 ELSE 0 END) AS wins,
+				SUM(CASE WHEN o.status = 'sl' THEN 1 ELSE 0 END) AS losses,
+				AVG(o.r_multiple) AS avg_r
+			FROM users u
+			JOIN signal_deliveries sd ON sd.user_id = u.id
+			JOIN outcomes o ON o.signal_id = sd.signal_id
+			WHERE o.closed_at >= NOW() - INTERVAL '7 days'
+			GROUP BY u.id, u.username, u.tier
+			HAVING COUNT(o.id) >= 2
+			ORDER BY avg_r DESC NULLS LAST, wins DESC
+			LIMIT 15
+		""")
+
+		async with get_session() as session:
+			rows = (await session.execute(query)).fetchall()
+			await session.commit()
+
+		if not rows:
+			await update.message.reply_text(
+				"🏆 <b>Weekly Leaderboard</b>\n\n"
+				"No qualifying entries yet this week.\n\n"
+				"Leaderboard updates as signal outcomes are tracked.",
+				parse_mode="HTML",
+			)
+			return
+
+		viewer_in_vip = tier.upper() in {"VIP", "ADMIN", "OWNER"}
+		lines = ["🏆 <b>Weekly Signal Leaderboard</b> (last 7 days)\n"]
+		medals = ["🥇", "🥈", "🥉"]
+
+		for i, row in enumerate(rows, 1):
+			username = str(row[0] or "")
+			row_tier = str(row[1] or "").upper()
+			tracked = int(row[2] or 0)
+			wins = int(row[3] or 0)
+			losses = int(row[4] or 0)
+			avg_r = float(row[5]) if row[5] is not None else 0.0
+
+			win_rate = wins / max(1, wins + losses) * 100
+			rank_emoji = medals[i - 1] if i <= 3 else f"#{i}"
+
+			# Show username only for VIP users (privacy)
+			if row_tier == "VIP" and username and viewer_in_vip:
+				name_txt = f"@{username}"
+			elif row_tier == "VIP":
+				name_txt = "👑 VIP Member"
+			else:
+				name_txt = f"💎 Trader #{i}"
+
+			r_sign = "+" if avg_r >= 0 else ""
+			lines.append(
+				f"{rank_emoji} <b>{name_txt}</b>\n"
+				f"   {wins}W / {losses}L  •  {win_rate:.0f}% WR  •  Avg R: {r_sign}{avg_r:.2f}R\n"
+			)
+
+		lines.append("━━━━━━━━━━━━━━━━")
+		if tier.upper() not in {"VIP", "ADMIN", "OWNER"}:
+			lines.append("👑 Upgrade to VIP to appear on the leaderboard with your name.")
+		else:
+			lines.append("Your trades are included when their outcomes are recorded.")
+
+		await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Could not load leaderboard: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

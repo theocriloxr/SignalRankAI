@@ -1308,6 +1308,35 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                     await session.commit()
                     return (False, f"Slippage too high ({float(slip):.1f} pts)", "slippage")
 
+                # Determine lot size by tier:
+                # - VIP: risk-based sizing using account balance
+                # - PREMIUM: fixed lot size from user profile
+                if tier_up == "VIP":
+                    try:
+                        from engine.tiered_executor import calculate_lot_size_vip
+                        from services.mt5_client import _http_get, _client_base, _deploy_account
+                        # Fetch account balance from MetaApi
+                        await _deploy_account(acct_id)
+                        acct_info = await _http_get(f"{_client_base(acct_id)}/account-information")
+                        balance = float((acct_info or {}).get("balance") or 0)
+                        if balance <= 0:
+                            # Fall back to equity; use 100.0 as last-resort minimum so
+                            # calculate_lot_size_vip always returns MIN_LOT rather than
+                            # erroring — the slippage guard will catch oversized orders.
+                            balance = float((acct_info or {}).get("equity") or 100.0)
+                        lot = calculate_lot_size_vip(
+                            user,
+                            account_balance=balance,
+                            entry_price=entry,
+                            stop_loss=sl,
+                            symbol=symbol,
+                        )
+                    except Exception as _lot_err:
+                        logger.warning("[autoexec] VIP lot calc failed: %s — using fixed lot", _lot_err)
+                        lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
+                else:
+                    lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
+
                 # Send the signal notice before attempting AUTO execution.
                 try:
                     await _send_message_with_retry(
@@ -1317,6 +1346,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                             "📩 <b>Signal Received</b>\n\n"
                             f"Asset: <b>{symbol}</b>\n"
                             f"Direction: <b>{('LONG' if direction in {'long', 'buy'} else 'SHORT')}</b>\n"
+                            f"Lot size: <b>{lot:.3f}</b>\n"
                             "Attempting AUTO execution now..."
                         ),
                         parse_mode="HTML",
@@ -1324,7 +1354,6 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 except Exception:
                     pass
 
-                lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
                 result = await execute_trade(
                     account_id=acct_id,
                     symbol=symbol,
@@ -1356,6 +1385,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                             extra_meta={
                                 "auto_execution": True,
                                 "hard_stop_attached": bool(result.get("hard_stop_attached", True)),
+                                "lot_method": "risk_based" if tier_up == "VIP" else "fixed",
                             },
                         )
                     except Exception:
@@ -3683,6 +3713,11 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("mystats", _audit_handler("mystats", mystats_command)))
     application.add_handler(CommandHandler("referral", _audit_handler("referral", referral_command)))
     application.add_handler(CommandHandler("cancel", _audit_handler("cancel", cancel_command)))
+
+    # ── New commands ──────────────────────────────────────────────────────────
+    from .commands import leaderboard_command
+    application.add_handler(CommandHandler("leaderboard", _audit_handler("leaderboard", leaderboard_command)))
+
     application.add_handler(build_connect_broker_conversation())
 
     # Subscription cancellation confirmation callbacks
@@ -6112,6 +6147,30 @@ def run_bot() -> None:
         except Exception as exc:
             logger.warning(f"[gemini] weekly ML review failed: {exc}")
 
+    def daily_gemini_ml_review_job():
+        """Daily Gemini review using last 24-hour scope for faster feedback loops."""
+        try:
+            _enabled = str(os.getenv("GEMINI_REVIEW_ENABLED", "1") or "1").strip().lower() in {
+                "1", "true", "yes", "y", "on"
+            }
+            _daily_enabled = str(os.getenv("GEMINI_DAILY_REVIEW_ENABLED", "1") or "1").strip().lower() in {
+                "1", "true", "yes", "y", "on"
+            }
+            if not _enabled or not _daily_enabled:
+                logger.info("[gemini] daily review disabled by env flag")
+                return
+            from services.gemini_ml import run_gemini_review_pipeline
+            result = run_sync(
+                run_gemini_review_pipeline(trigger="scheduler:daily", scope="weekly"),
+                timeout=600.0,
+            )
+            if bool(result.get("ok", False)):
+                logger.info("[gemini] daily review complete: training=%s", bool((result.get("training") or {}).get("succeeded", False)))
+            else:
+                logger.info("[gemini] daily review skipped/failed: %s", result.get("error"))
+        except Exception as exc:
+            logger.warning("[gemini] daily ML review failed: %s", exc)
+
     # ── APScheduler setup ───────────────────────────────────────────────────
     # APScheduler 3.x's SQLAlchemyJobStore uses *synchronous* SQLAlchemy.
     # Passing an asyncpg:// URL causes the driver to be rejected and the store
@@ -6334,6 +6393,16 @@ def run_bot() -> None:
             hour=3,
             minute=0,
             id='weekly_gemini_ml_review_job',
+            replace_existing=True,
+            max_instances=1,
+        )
+        # Daily Gemini review — runs every day at 04:00 UTC for fast feedback
+        scheduler.add_job(
+            daily_gemini_ml_review_job,
+            'cron',
+            hour=4,
+            minute=0,
+            id='daily_gemini_ml_review_job',
             replace_existing=True,
             max_instances=1,
         )
