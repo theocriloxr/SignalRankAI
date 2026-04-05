@@ -47,6 +47,10 @@ jobs:
         run: |
           python -m alembic upgrade head
 
+      - name: Generate and verify env docs
+        run: |
+          python scripts/gen_env_index.py --check
+
       - name: Run tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/signalrank_test

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     SENTRY_DSN: Optional[str] = None
     NEWS_API_KEY: Optional[str] = None
     XGBOOST_MODEL_PATH: Optional[str] = None
+    ML_MODEL_PATH: Optional[str] = None
     RUN_MODE: str = "engine"
     PAPER_MODE: bool = False
 
@@ -80,4 +81,3 @@ def validate_required_settings() -> None:
         _log.warning("[settings] Optional settings missing: %s", ", ".join(warnings))
     if fatal:
         raise RuntimeError(f"Missing required settings: {', '.join(fatal)}")
-
