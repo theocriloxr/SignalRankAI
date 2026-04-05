@@ -665,7 +665,9 @@ def main_loop(DRY_RUN: bool = False):
         _cycle_queue.refresh_universe(_all_open, force=(cycle_no == 1))
 
         # Pop this batch from the queue.
-        CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", 10)
+        _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+        _default_cycle_batch = 6 if _running_on_railway else 10
+        CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", _default_cycle_batch)
         assets = _cycle_queue.pop_batch(CYCLE_BATCH_SIZE)
 
         # Guarantee class coverage: at least one asset per OPEN class each cycle.

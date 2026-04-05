@@ -813,8 +813,11 @@ async def lifespan(_: FastAPI):
 
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers
-    _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", "5000") or 5000)
-    _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", "64") or 64)
+    _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    _default_queue_size = "1000" if _running_on_railway else "5000"
+    _default_worker_count = "16" if _running_on_railway else "64"
+    _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
+    _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
     _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
     _webhook_dispatch_workers = [
         asyncio.create_task(_webhook_worker(i + 1))

@@ -6285,7 +6285,9 @@ def run_bot() -> None:
     scheduler = None
     if _scheduler_enabled:
         from apscheduler.executors.pool import ThreadPoolExecutor as _APThreadPoolExecutor
-        _sched_workers = max(4, _env_int("BOT_SCHEDULER_MAX_WORKERS", 12))
+        _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+        _sched_default_workers = 4 if _running_on_railway else 12
+        _sched_workers = max(2, _env_int("BOT_SCHEDULER_MAX_WORKERS", _sched_default_workers))
         _executors = {
             "default": _APThreadPoolExecutor(max_workers=_sched_workers),
         }

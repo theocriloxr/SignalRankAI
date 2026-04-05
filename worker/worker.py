@@ -12,6 +12,7 @@ import asyncio
 from utils.async_runner import run_sync
 import contextlib
 import logging
+import os
 from config import config
 import signal
 import threading
@@ -51,15 +52,21 @@ class Worker:
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
-        try:
-            from engine.realtime_outcome_tracker import outcome_tracker
-            outcome_tracker_task = asyncio.create_task(outcome_tracker.start())
-            print("[worker] RealtimeOutcomeTracker started", flush=True)
-            logger.info("[worker] RealtimeOutcomeTracker started")
-        except Exception as e:
-            print(f"[worker] Failed to start outcome tracker: {e}", flush=True)
-            logger.warning("[worker] Failed to start outcome tracker: %s", e)
-            outcome_tracker_task = None
+        _running_on_railway = bool((getattr(config, "RAILWAY_SERVICE_NAME", "") or "").strip() or (getattr(config, "RAILWAY_ENVIRONMENT", "") or "").strip())
+        _enable_worker_tracker_default = False if _running_on_railway else True
+        _enable_worker_tracker = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1" if _enable_worker_tracker_default else "0")).strip().lower() in {"1", "true", "yes", "on"}
+        if _enable_worker_tracker:
+            try:
+                from engine.realtime_outcome_tracker import outcome_tracker
+                outcome_tracker_task = asyncio.create_task(outcome_tracker.start())
+                print("[worker] RealtimeOutcomeTracker started", flush=True)
+                logger.info("[worker] RealtimeOutcomeTracker started")
+            except Exception as e:
+                print(f"[worker] Failed to start outcome tracker: {e}", flush=True)
+                logger.warning("[worker] Failed to start outcome tracker: %s", e)
+                outcome_tracker_task = None
+        else:
+            logger.info("[worker] RealtimeOutcomeTracker disabled for this worker instance")
 
         # Start market monitor for NO TRADE alerts
         if config.MARKET_MONITOR_ENABLED:

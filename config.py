@@ -68,7 +68,9 @@ class Config:
 		# Feature toggles (add more as needed)
 		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
 		self.CRYPTO_WS_ENABLED = self._env_bool("CRYPTO_WS_ENABLED", False)
-		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", True)
+		_running_on_railway = bool((self.RAILWAY_SERVICE_NAME or "").strip() or (self.RAILWAY_ENVIRONMENT or "").strip())
+		_ml_train_default = False if _running_on_railway else True
+		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", _ml_train_default)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
 
 	def _env_int(self, name: str, default: int = 0) -> int:
