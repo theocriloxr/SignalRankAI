@@ -486,7 +486,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			msg, keyboard = await _compose_main_menu_message(int(uid))
 			await query.edit_message_text(text=msg, reply_markup=keyboard)
 			return
-		except Exception:
+		except Exception as _e:
+			logger.exception("[button_click] nav_home failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
 			return
 	if data == "nav_signals":
 		try:
@@ -496,7 +501,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			msg, keyboard = await _compose_signals_menu_message(int(uid))
 			await query.edit_message_text(text=msg, reply_markup=keyboard)
 			return
-		except Exception:
+		except Exception as _e:
+			logger.exception("[button_click] nav_signals failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
 			return
 	if data == "nav_account":
 		try:
@@ -506,7 +516,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			msg, keyboard = await _compose_status_message(int(uid))
 			await _edit_message_or_reply(query, msg, keyboard)
 			return
-		except Exception:
+		except Exception as _e:
+			logger.exception("[button_click] nav_account failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
 			return
 	if data == "nav_performance":
 		try:
@@ -516,7 +531,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			msg, keyboard = await _compose_performance_menu_message(int(uid))
 			await query.edit_message_text(text=msg, reply_markup=keyboard)
 			return
-		except Exception:
+		except Exception as _e:
+			logger.exception("[button_click] nav_performance failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
 			return
 	if data == "nav_upgrade":
 		try:
@@ -526,7 +546,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			msg, keyboard = await _compose_upgrade_message(int(uid))
 			await _edit_message_or_reply(query, msg, keyboard)
 			return
-		except Exception:
+		except Exception as _e:
+			logger.exception("[button_click] nav_upgrade failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
 			return
 	if data == "nav_support":
 		try:
@@ -536,7 +561,12 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			msg, keyboard = await _compose_support_menu_message(int(uid))
 			await query.edit_message_text(text=msg, reply_markup=keyboard)
 			return
-		except Exception:
+		except Exception as _e:
+			logger.exception("[button_click] nav_support failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
 			return
 	if data == "vip_sold_out":
 		try:

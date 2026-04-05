@@ -14,18 +14,22 @@ cmds = [
   "/opt/venv/bin/pip install -r requirements.txt --quiet --no-cache-dir",
 ]
 
-[phases.build]
-cmds = [
-  # Run migrations with the venv python so alembic picks up asyncpg/psycopg2
-  "/opt/venv/bin/python -m alembic upgrade head || true",
-]
+# [phases.build] — Alembic migrations intentionally removed from build phase.
+# Build containers do not have access to runtime DATABASE_URL, so running
+# "alembic upgrade head" here would either fail silently (no DB) or target the
+# wrong database.  Migrations are applied at runtime inside db.auto_ops
+# (run_startup_ops → alembic upgrade head) which is called from the FastAPI
+# lifespan in railway_main.py.
 
 [start]
 # MALLOC_ARENA_MAX=2  — limit glibc malloc arenas; cuts RSS by ~30 % on multi-threaded Python
 # PYTHONMALLOC=malloc — use system malloc (avoids pymalloc arena fragmentation)
 # PYTHONDONTWRITEBYTECODE=1 — skip .pyc writes (saves ~10 MB on cold start I/O)
 # PYTHONUNBUFFERED=1 — line-buffered stdout so Railway log tailing works in real time
-cmd = "MALLOC_ARENA_MAX=2 PYTHONMALLOC=malloc PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 /opt/venv/bin/python main.py"
+# Runs railway_main:app (FastAPI + engine + worker + Telegram webhook) via uvicorn.
+# main.py is NOT used here because nixpacks.toml [start] is authoritative on Railway
+# with the Nixpacks builder and must start the full monolith (not just the engine).
+cmd = "MALLOC_ARENA_MAX=2 PYTHONMALLOC=malloc PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 /opt/venv/bin/python -m uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8000}"
 
 [variables]
 PYTHONUNBUFFERED = "1"

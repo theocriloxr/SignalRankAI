@@ -102,7 +102,7 @@ async def _resend_unsent_signals_async():
         user_tier_map: dict[int, str] = {}
         tier_counts: dict[str, int] = {}
         include_free_in_resend = str(
-            os.getenv("RESEND_INCLUDE_FREE", "0") or "0"
+            os.getenv("RESEND_INCLUDE_FREE", "1") or "1"
         ).strip().lower() in {"1", "true", "yes", "on"}
         for _uid in user_ids:
             try:
@@ -395,9 +395,11 @@ TELEGRAM_CONNECT_TIMEOUT = int(getattr(config, "TELEGRAM_CONNECT_TIMEOUT", 30)) 
 TELEGRAM_READ_TIMEOUT = int(getattr(config, "TELEGRAM_READ_TIMEOUT", 30))  # seconds, configurable
 TELEGRAM_WRITE_TIMEOUT = int(getattr(config, "TELEGRAM_WRITE_TIMEOUT", 30))  # seconds, configurable
 
-# Build the Telegram Application only when a token is provided and not in DRY_RUN
+# Build the Telegram Application only when a token is provided and not in DRY_RUN.
+# DRY_RUN defaults to "0" (disabled) — signals are sent for real unless you
+# explicitly set DRY_RUN=1 in your Railway variables.
 _token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
-_dry_run_env = str(os.getenv('DRY_RUN') or '').strip().lower() in {'1', 'true', 'yes'}
+_dry_run_env = str(os.getenv('DRY_RUN', '0') or '0').strip().lower() in {'1', 'true', 'yes'}
 if _token and not _dry_run_env:
     application = Application.builder()
     application = application.token(_token)
@@ -2520,64 +2522,56 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     def _check_entry_status(signal: dict) -> tuple[bool, str]:
         """
         Check if entry is valid and return (allow: bool, status: str).
-        Status can be: "PENDING_ENTRY" (price >3% away), "AT_ENTRY" (price ±3%), "ENTRY_MISSED" (>3% away, hard reject)
+        Status: "AT_ENTRY" (within ±3%), "PENDING_ENTRY" (outside ±3%), "UNKNOWN"
+
+        Uses signal["current_price"] when already enriched by a prior
+        enrich_signal_with_live_price() / stale-validator step to avoid a
+        blocking HTTP call from within the dispatch path.
         """
         try:
             asset = str(signal.get("asset") or "").upper()
             entry = float(signal.get("entry") or 0.0)
             if not asset or entry <= 0:
-                return True, "UNKNOWN"  # Can't validate, allow through
-            
-            # Fetch current price
-            try:
-                import requests
-                is_crypto = asset.endswith("USDT") or asset.endswith("USDC")
-                if not is_crypto:
-                    return True, "UNKNOWN"  # Skip FX validation for now
-                
-                # Try Binance first, then CryptoCompare fallback
-                sym = asset.replace("USDT", "").replace("USDC", "")
+                return True, "UNKNOWN"
+
+            # Prefer the cached price already attached to the signal dict.
+            # This is set by:
+            #   - engine/core.py deliver_all() after batch price fetch (P7)
+            #   - engine/price_validator.enrich_signal_with_live_price()
+            cached = signal.get("current_price") or signal.get("live_price")
+            if cached:
                 try:
-                    resp = requests.get(
-                        f"https://api.binance.com/api/v3/ticker/price",
-                        params={"symbol": asset},
-                        timeout=5,
-                    )
-                    if resp.ok:
-                        price = float(resp.json().get("price", entry))
-                    else:
-                        raise Exception("Binance failed")
+                    price = float(cached)
+                    if price > 0:
+                        price_distance_pct = abs(price - entry) / entry * 100.0
+                        return True, "AT_ENTRY" if price_distance_pct <= 3.0 else "PENDING_ENTRY"
                 except Exception:
-                    # Fallback to CryptoCompare
-                    api_key = (getattr(config, "CRYPTOCOMPARE_API_KEY", "") or "").strip()
-                    headers = {"authorization": f"Apikey {api_key}"} if api_key else {}
-                    resp = requests.get(
-                        "https://min-api.cryptocompare.com/data/price",
-                        params={"fsym": sym, "tsyms": "USDT,USD"},
-                        headers=headers,
-                        timeout=5,
+                    pass
+
+            # Only fall back to a live HTTP call for crypto when no cached price
+            # is available and we are not already in a tight event-loop context.
+            try:
+                is_crypto = asset.endswith(("USDT", "USDC", "BTC", "ETH", "BNB"))
+                if not is_crypto:
+                    return True, "UNKNOWN"
+
+                import httpx
+                sym = asset
+                try:
+                    resp = httpx.get(
+                        "https://api.binance.com/api/v3/ticker/price",
+                        params={"symbol": sym},
+                        timeout=4.0,
                     )
-                    if resp.ok:
-                        data = resp.json()
-                        price = float(data.get("USDT") or data.get("USD") or entry)
-                    else:
-                        return True, "UNKNOWN"  # Can't validate, allow through
-                
-                # Check if price is within ±3% of entry
-                price_distance_pct = abs(price - entry) / entry * 100.0
-                
-                # Determine entry status
-                if price_distance_pct <= 3.0:
-                    # Price is at entry (within tolerance)
-                    return True, "AT_ENTRY"
-                elif price < entry:
-                    # Price is below entry (pending long entry)
-                    return True, "PENDING_ENTRY"
-                else:
-                    # Price is above entry (potential miss)
-                    return True, "PENDING_ENTRY"
+                    if resp.is_success:
+                        price = float(resp.json().get("price", entry))
+                        price_distance_pct = abs(price - entry) / entry * 100.0
+                        return True, "AT_ENTRY" if price_distance_pct <= 3.0 else "PENDING_ENTRY"
+                except Exception:
+                    pass
+                return True, "UNKNOWN"
             except Exception:
-                return True, "UNKNOWN"  # On error, allow signal through
+                return True, "UNKNOWN"
         except Exception:
             return True, "UNKNOWN"
 
@@ -3248,6 +3242,16 @@ def run_bot() -> None:
     not run on import.
     """
 
+    # Default to webhook mode when running on Railway (RAILWAY_SERVICE_NAME is
+    # always injected by Railway).  This prevents the bot from falling back to
+    # long-polling on Railway where polling is unreliable and fights with the
+    # FastAPI webhook route.  Local development is unaffected (no
+    # RAILWAY_SERVICE_NAME → polling as before, unless TELEGRAM_USE_WEBHOOK=1
+    # is set explicitly).
+    if not os.getenv("TELEGRAM_USE_WEBHOOK") and os.getenv("RAILWAY_SERVICE_NAME"):
+        os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
+        logger.info("[bot] TELEGRAM_USE_WEBHOOK defaulted to 1 (Railway deployment detected)")
+
     import threading
     import time
     def _bot_heartbeat():
@@ -3460,23 +3464,39 @@ def run_bot() -> None:
             from telegram import BotCommandScopeChat
             from signalrank_telegram.access import resolve_user_tier
             from db.pg_compat import get_all_user_ids_compat
-            user_ids = get_all_user_ids_compat()
-            for _uid in (user_ids or []):
+
+            async def _set_per_user_commands() -> None:
+                """Set per-user BotCommand scopes respecting the tier hierarchy.
+
+                Runs in a background task so it never blocks _post_init /
+                app.initialize() — on large user bases this loop can take
+                tens of seconds and would time out the Railway startup
+                healthcheck otherwise.
+                """
                 try:
-                    _t = (resolve_user_tier(int(_uid)) or "free").lower()
-                    if _t in ("owner", "admin"):
-                        _cmds = _owner_cmds
-                    elif _t == "vip":
-                        _cmds = _vip_cmds
-                    elif _t == "premium":
-                        _cmds = _premium_cmds
-                    else:
-                        _cmds = _global_cmds
-                    await app.bot.set_my_commands(
-                        _cmds, scope=BotCommandScopeChat(chat_id=int(_uid))
-                    )
-                except Exception:
-                    pass
+                    user_ids = get_all_user_ids_compat()
+                    for _uid in (user_ids or []):
+                        try:
+                            _t = (resolve_user_tier(int(_uid)) or "free").lower()
+                            if _t in ("owner", "admin"):
+                                _cmds = _owner_cmds
+                            elif _t == "vip":
+                                _cmds = _vip_cmds
+                            elif _t == "premium":
+                                _cmds = _premium_cmds
+                            else:
+                                _cmds = _global_cmds
+                            await app.bot.set_my_commands(
+                                _cmds, scope=BotCommandScopeChat(chat_id=int(_uid))
+                            )
+                        except Exception:
+                            pass
+                    logger.info("[bot] per-user command scopes updated for %d users", len(user_ids or []))
+                except Exception as _e:
+                    logger.warning("[bot] per-user command scope update failed: %s", _e)
+
+            # Schedule as a fire-and-forget background task — does NOT block _post_init
+            asyncio.ensure_future(_set_per_user_commands())
         except Exception as e:
             logger.warning(f"[bot] BotCommandScopeChat update skipped: {e}")
         try:
@@ -6055,6 +6075,39 @@ def run_bot() -> None:
             )
             if bool(result.get("ok", False)):
                 logger.info("[gemini] weekly run complete: training=%s", bool((result.get("training") or {}).get("succeeded", False)))
+                # Notify all owners via DM so the review is visible without needing to
+                # run /gemini_review manually.
+                try:
+                    from config import OWNER_IDS as _owner_ids_gemini
+                    _wh_app = _webhook_application or globals().get("application")
+                    if _wh_app and _owner_ids_gemini:
+                        _rx = result.get("received") or {}
+                        _wins = int(_rx.get("wins") or 0)
+                        _losses = int(_rx.get("losses") or 0)
+                        _total = int(_rx.get("outcomes_total") or 0)
+                        _wr = f"{_wins/max(1,_wins+_losses)*100:.1f}%" if (_wins + _losses) > 0 else "n/a"
+                        _review_snippet = str(result.get("review") or "")
+                        _snippet = (_review_snippet[:500] + "…") if len(_review_snippet) > 500 else _review_snippet
+                        _training_ok = bool((result.get("training") or {}).get("succeeded", False))
+                        _msg = (
+                            "✅ <b>Weekly Gemini Review Complete</b>\n\n"
+                            f"Win rate: <b>{_wr}</b> ({_wins}W / {_losses}L of {_total} outcomes)\n"
+                            f"Model retrained: <b>{'yes' if _training_ok else 'no'}</b>\n\n"
+                            + (_snippet or "<i>No review text returned.</i>")
+                        )
+                        async def _notify_owners_gemini():
+                            for _oid in _owner_ids_gemini:
+                                try:
+                                    await _wh_app.bot.send_message(
+                                        chat_id=int(_oid),
+                                        text=_msg,
+                                        parse_mode="HTML",
+                                    )
+                                except Exception as _dm_err:
+                                    logger.debug("[gemini] owner DM failed for %s: %s", _oid, _dm_err)
+                        run_sync(_notify_owners_gemini(), timeout=30.0)
+                except Exception as _notify_err:
+                    logger.debug("[gemini] weekly owner notification failed: %s", _notify_err)
             else:
                 logger.warning("[gemini] weekly run skipped/failed: %s", result.get("error"))
         except Exception as exc:

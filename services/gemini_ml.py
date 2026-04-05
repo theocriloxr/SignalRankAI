@@ -17,10 +17,74 @@ from db.session import get_session
 logger = logging.getLogger(__name__)
 
 _gemini_cooldown_until_utc: datetime | None = None
+_gemini_cooldown_db_loaded: bool = False  # load from DB at most once per process
+
+
+def _load_cooldown_from_db() -> None:
+    """Restore any active Gemini cooldown from runtime_state so Railway
+    redeploys respect a previously set 429 cooldown."""
+    global _gemini_cooldown_until_utc
+    try:
+        from utils.async_runner import run_sync as _rs
+
+        async def _fetch() -> str | None:
+            async with get_session() as _s:
+                row = (
+                    await _s.execute(
+                        text("SELECT value FROM runtime_state WHERE key = 'gemini_cooldown_until'"),
+                    )
+                ).first()
+                return row[0] if row else None
+
+        val = _rs(_fetch(), timeout=5.0)
+        if val:
+            # value is stored as a JSONB string (quoted ISO timestamp)
+            ts_str = val if isinstance(val, str) else str(val)
+            ts_str = ts_str.strip('"')
+            ts = datetime.fromisoformat(ts_str)
+            if ts > datetime.utcnow():
+                _gemini_cooldown_until_utc = ts
+                logger.info("[gemini] cooldown restored from DB: until=%s", ts.isoformat())
+    except Exception as _e:
+        logger.debug("[gemini] cooldown load from DB failed (non-fatal): %s", _e)
+
+
+def _persist_cooldown_to_db() -> None:
+    """Write the current cooldown expiry to runtime_state so it survives restarts."""
+    global _gemini_cooldown_until_utc
+    if _gemini_cooldown_until_utc is None:
+        return
+    try:
+        from utils.async_runner import run_sync as _rs
+
+        _until_iso = json.dumps(_gemini_cooldown_until_utc.isoformat())
+
+        async def _save() -> None:
+            async with get_session() as _s:
+                await _s.execute(
+                    text(
+                        """
+                        INSERT INTO runtime_state(key, value, expires_at, updated_at)
+                        VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
+                        ON CONFLICT (key) DO UPDATE
+                        SET value = EXCLUDED.value, updated_at = NOW()
+                        """
+                    ),
+                    {"k": "gemini_cooldown_until", "v": _until_iso},
+                )
+                await _s.commit()
+
+        _rs(_save(), timeout=5.0)
+    except Exception as _e:
+        logger.debug("[gemini] cooldown persist to DB failed (non-fatal): %s", _e)
 
 
 def _gemini_in_cooldown() -> tuple[bool, str | None]:
-    global _gemini_cooldown_until_utc
+    global _gemini_cooldown_until_utc, _gemini_cooldown_db_loaded
+    # Restore from DB exactly once per process so restarts respect active cooldowns.
+    if not _gemini_cooldown_db_loaded:
+        _gemini_cooldown_db_loaded = True
+        _load_cooldown_from_db()
     if _gemini_cooldown_until_utc is None:
         return False, None
     now = datetime.utcnow()
@@ -34,6 +98,7 @@ def _set_gemini_cooldown(hours: int) -> None:
     global _gemini_cooldown_until_utc
     safe_hours = max(1, int(hours or 24))
     _gemini_cooldown_until_utc = datetime.utcnow() + timedelta(hours=safe_hours)
+    _persist_cooldown_to_db()
 
 
 def _extract_feature_suggestions(review_text: str, limit: int = 8) -> list[str]:

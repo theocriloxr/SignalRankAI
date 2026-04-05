@@ -461,7 +461,12 @@ async def _maybe_await(func, *a, **k):
         return func(*a, **k)
 
 
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 65)
+# Engine-level pre-storage score gate.
+# Must be <= the lowest tier delivery gate (PREMIUM = 70) so every stored
+# signal can reach at least one tier.  Signals scored 65-69 waste cooldown
+# slots and DB space while being unreachable by any tier; raising this to 70
+# prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
+MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
 
 
 def load_tradable_assets() -> List[str]:
@@ -1289,6 +1294,34 @@ def main_loop(DRY_RUN: bool = False):
                 pipeline_stats["final_signals"] += len(final_signals)
                 # store final_signals
                 from datetime import timedelta as _timedelta  # ensure available in this scope
+
+                # ── Batch DB cooldown check (P11) ────────────────────────────────────────
+                # One query for all (asset, timeframe) pairs in this batch instead of
+                # one query per signal inside the loop.  Builds a set of "cooled-down"
+                # keys so the loop only does an O(1) set-lookup per signal.
+                _cd_mins = _env_int("SIGNAL_COOLDOWN_MINUTES", 30)
+                _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
+                _cooled_down_pairs: set[str] = set()
+                try:
+                    from db.session import get_session as _get_s_cd
+                    from db.models import Signal as _SigModel
+                    from sqlalchemy import select as _sel_cd
+
+                    async def _batch_cooldown_check() -> set[str]:
+                        async with _get_s_cd() as _cs:
+                            rows = (await _cs.execute(
+                                _sel_cd(_SigModel.asset, _SigModel.timeframe).where(
+                                    _SigModel.created_at >= _cd_cutoff,
+                                    _SigModel.expired.is_(False),
+                                    _SigModel.archived.is_(False),
+                                ).distinct()
+                            )).fetchall()
+                            return {f"{r[0]}_{r[1]}" for r in rows}
+
+                    _cooled_down_pairs = run_sync(_batch_cooldown_check())
+                except Exception as _bcd_err:
+                    logger.debug(f"[engine] batch cooldown pre-check failed, falling back to per-signal: {_bcd_err}")
+
                 for sig in final_signals:
                     try:
                         _asset_tf_key = f"{sig.get('asset')}_{sig.get('timeframe')}"
@@ -1298,31 +1331,10 @@ def main_loop(DRY_RUN: bool = False):
                             logger.info(f"[engine] cooldown(cycle): skipping duplicate {_asset_tf_key}")
                             continue
 
-                        # Fix 2: DB cooldown — skip if a non-expired signal for this asset+TF
-                        # was created within the last SIGNAL_COOLDOWN_MINUTES (default 60)
-                        try:
-                            from db.session import get_session as _get_s_cd
-                            from db.models import Signal as _SigModel
-                            from sqlalchemy import select as _sel_cd
-                            _cd_mins = _env_int("SIGNAL_COOLDOWN_MINUTES", 60)
-                            _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
-                            async def _check_cooldown():
-                                async with _get_s_cd() as _cs:
-                                    return (await _cs.execute(
-                                        _sel_cd(_SigModel).where(
-                                            _SigModel.asset    == str(sig.get('asset', '')),
-                                            _SigModel.timeframe == str(sig.get('timeframe', '')),
-                                            _SigModel.created_at >= _cd_cutoff,
-                                            _SigModel.expired.is_(False),
-                                            _SigModel.archived.is_(False),
-                                        ).limit(1)
-                                    )).scalar_one_or_none()
-                            _dup_sig = run_sync(_check_cooldown())
-                            if _dup_sig is not None:
-                                logger.info(f"[engine] cooldown(db): active signal exists for {_asset_tf_key}, skipping")
-                                continue
-                        except Exception as _cd_err:
-                            logger.debug(f"[engine] cooldown DB check error: {_cd_err}")
+                        # DB cooldown — use pre-computed batch result (O(1) lookup)
+                        if _asset_tf_key in _cooled_down_pairs:
+                            logger.info(f"[engine] cooldown(db): active signal exists for {_asset_tf_key}, skipping")
+                            continue
 
                         # ── Confluence Engine enrichment ───────────────────────────────────
                         try:
@@ -1518,13 +1530,52 @@ def main_loop(DRY_RUN: bool = False):
 
             # Pre-filter stale signals ONCE before the per-user loop.
             # Without this, each stale signal gets logged N times (once per user).
+            # P7: Batch-fetch live prices for all unique assets in one concurrent
+            # gather instead of one blocking HTTP call per signal.
+            _live_price_cache: dict[str, float | None] = {}
+            try:
+                from engine.stale_signal_validator import _get_live_price_async
+                _unique_assets = list({
+                    str(_s.get("asset") or "")
+                    for _s in scored_signals_all
+                    if _s.get("asset")
+                })
+                if _unique_assets:
+                    _price_tasks = [
+                        asyncio.wait_for(_get_live_price_async(_a), timeout=5.0)
+                        for _a in _unique_assets
+                    ]
+                    _price_results = await asyncio.gather(*_price_tasks, return_exceptions=True)
+                    for _a, _pr in zip(_unique_assets, _price_results):
+                        if isinstance(_pr, (int, float)) and float(_pr) > 0:
+                            _live_price_cache[_a] = float(_pr)
+                        else:
+                            _live_price_cache[_a] = None
+                    logger.info(
+                        "[engine] batch price prefetch: assets=%d cached=%d",
+                        len(_unique_assets),
+                        sum(1 for v in _live_price_cache.values() if v is not None),
+                    )
+            except Exception as _pf_err:
+                logger.debug(f"[engine] batch price prefetch failed, continuing without cache: {_pf_err}")
+
             _fresh_scored_signals: list = []
             try:
-                from engine.stale_signal_validator import validate_signal_freshness_sync
+                from engine.stale_signal_validator import validate_signal_freshness
                 for _sig in scored_signals_all:
                     try:
-                        _fresh, _reason, _price = validate_signal_freshness_sync(_sig)
+                        _cached_px = _live_price_cache.get(str(_sig.get("asset") or ""))
+                        _fresh, _reason, _price = await validate_signal_freshness(
+                            _sig, cached_live_price=_cached_px
+                        )
                         if _fresh:
+                            # Store the confirmed live price so downstream steps
+                            # (dispatch_signals / _check_entry_status) can reuse
+                            # it without making another HTTP call.
+                            if _price and _price > 0:
+                                _sig["current_price"] = _price
+                            elif _cached_px and _cached_px > 0:
+                                _sig["current_price"] = _cached_px
                             _fresh_scored_signals.append(_sig)
                         else:
                             logger.info(
