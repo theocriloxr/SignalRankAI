@@ -1327,7 +1327,7 @@ def main_loop(DRY_RUN: bool = False):
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
 
-                        # attach regime & expiration (30 min hard cap)
+                        # attach regime & expiration (30-minute hard cap per product requirement)
                         sig['regime'] = regime
                         from datetime import timedelta as _timedelta
                         sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=30)

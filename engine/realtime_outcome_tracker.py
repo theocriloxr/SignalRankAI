@@ -444,7 +444,6 @@ def _build_outcome_message(
                 f"<i>Upgrade to Premium for full PnL details.</i>"
             )
         # Premium / VIP full message
-        tp1_line = "\n🛡️ <b>Stop-loss moved to break-even.</b>" if status in {"tp1", "partial_tp"} else ""
         return (
             f"🎯🔥 <b>TAKE PROFIT HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
@@ -452,7 +451,7 @@ def _build_outcome_message(
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 Close: <code>{_h(_fmt_price(price))}</code>\n"
             f"📈 ROI: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
-            f"🏆 <b>{status_u} reached!</b>{tp1_line}{suggested_sl_line}\n"
+            f"🏆 <b>{status_u} reached!</b>{suggested_sl_line}\n"
             f"💪 Screenshot &amp; share your win!\n"
             f"🕐 {_h(now_str)}\n\n"
             f"<i>SignalRankAI — Trade smarter.</i>"
