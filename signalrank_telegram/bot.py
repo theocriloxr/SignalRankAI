@@ -6091,21 +6091,32 @@ def run_bot() -> None:
 
     # ── Signal auto-expiry ──────────────────────────────────────────────────
     def expire_old_signals_job():
-        """Mark signals where expires_at < now as expired=True."""
+        """Mark signals where expires_at < now as expired=True, excluding unresolved tracked states."""
         try:
             from db.session import get_session as _gs
-            from db.models import Signal
-            from sqlalchemy import select, update
+            from db.models import Signal, Outcome
+            from sqlalchemy import select, update, and_
             from datetime import datetime
 
             async def _expire():
                 now = datetime.utcnow()
                 async with _gs() as session:
+                    unresolved_tracked = (
+                        select(Outcome.id)
+                        .where(
+                            and_(
+                                Outcome.signal_id == Signal.signal_id,
+                                Outcome.status.in_(["tp1", "tp2"]),
+                            )
+                        )
+                        .exists()
+                    )
                     await session.execute(
                         update(Signal)
                         .where(
                             Signal.expires_at <= now,
                             Signal.expired.is_(False),
+                            ~unresolved_tracked,
                         )
                         .values(expired=True)
                     )

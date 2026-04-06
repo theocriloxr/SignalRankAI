@@ -25,6 +25,7 @@ from db.models import (
     Signal,
     SignalDelivery,
     Outcome,
+    OutcomeNotification,
     User,
     StrategyStat,  # <-- Added import for StrategyStat
     Subscription,  # <-- Added import for Subscription
@@ -672,10 +673,52 @@ async def upsert_outcome(
             _meta.pop("notified", None)
             _meta.pop("notified_at", None)
             oc.meta = _meta
+            if oc.closed_at is not None:
+                await queue_outcome_notifications_for_outcome(
+                    session,
+                    int(getattr(oc, "id")),
+                    str(signal_id),
+                    new_status,
+                )
     except Exception:
         pass
     await session.flush()
     return oc
+
+
+async def queue_outcome_notifications_for_outcome(
+    session: AsyncSession,
+    outcome_id: int,
+    signal_id: str,
+    status: str,
+) -> int:
+    recipients = await list_delivery_recipients_for_signal(session, str(signal_id))
+    count = 0
+    status_l = str(status or "").lower()[:16]
+    now = _utcnow()
+    for telegram_user_id, tier_at_send in recipients:
+        idempotency_key = f"outcome:{signal_id}:{int(telegram_user_id)}:{status_l}"
+        exists = await session.execute(
+            select(OutcomeNotification.id).where(
+                OutcomeNotification.idempotency_key == idempotency_key[:128]
+            ).limit(1)
+        )
+        if exists.scalar_one_or_none() is not None:
+            continue
+        on = OutcomeNotification(
+            outcome_id=int(outcome_id),
+            signal_id=str(signal_id),
+            telegram_user_id=int(telegram_user_id),
+            tier_at_send=str(tier_at_send or "free")[:16],
+            outcome_status=status_l,
+            idempotency_key=idempotency_key[:128],
+            delivery_state="pending",
+            updated_at=now,
+        )
+        session.add(on)
+        await session.flush()
+        count += 1
+    return count
 
 
 async def list_signals_missing_outcomes(
@@ -732,40 +775,104 @@ async def list_signals_missing_outcomes(
     return list(res.scalars().all())
 
 
-async def list_unnotified_outcomes(session: AsyncSession, limit: int = 50) -> list[tuple[Outcome, Signal]]:
-    # Keep query simple; filter meta in Python for robustness.
-    res: Result[Tuple[Outcome, Signal]] = await session.execute(
-        select(Outcome, Signal)
-        .join(Signal, Signal.signal_id == Outcome.signal_id)
-        .where(Outcome.closed_at.is_not(None))
-        .order_by(Outcome.closed_at.asc())
+async def list_pending_outcome_notifications(
+    session: AsyncSession,
+    limit: int = 200,
+) -> list[tuple[OutcomeNotification, Outcome, Signal]]:
+    res: Result[Tuple[OutcomeNotification, Outcome, Signal]] = await session.execute(
+        select(OutcomeNotification, Outcome, Signal)
+        .join(Outcome, Outcome.id == OutcomeNotification.outcome_id)
+        .join(Signal, Signal.signal_id == OutcomeNotification.signal_id)
+        .where(
+            Outcome.closed_at.is_not(None),
+            OutcomeNotification.delivery_state.in_(["pending", "failed"]),
+        )
+        .order_by(Outcome.closed_at.asc(), OutcomeNotification.id.asc())
         .limit(max(1, int(limit)))
     )
-    rows: list[Row[Tuple[Outcome, Signal]]] = list(res.all())
+    return list(res.all())
+
+
+async def list_unnotified_outcomes(session: AsyncSession, limit: int = 50) -> list[tuple[Outcome, Signal]]:
+    """Backward-compatible alias: outcomes with pending/failed recipient notifications."""
+    pending = await list_pending_outcome_notifications(session, limit=max(1, int(limit)) * 10)
     out: list[tuple[Outcome, Signal]] = []
-    for oc, sig in rows:
-        try:
-            if bool((oc.meta or {}).get("notified")):
-                continue
-        except Exception:
-            pass
+    seen: set[int] = set()
+    for _n, oc, sig in pending:
+        oid = int(getattr(oc, "id", 0) or 0)
+        if oid <= 0 or oid in seen:
+            continue
+        seen.add(oid)
         out.append((oc, sig))
+        if len(out) >= max(1, int(limit)):
+            break
     return out
 
 
-async def mark_outcome_notified(session: AsyncSession, outcome_id: int) -> None:
-    res: Result[Tuple[Outcome]] = await session.execute(select(Outcome).where(Outcome.id == int(outcome_id)))
-    oc: Outcome | None = res.scalars().first()
-    if oc is None:
+async def mark_outcome_notification_delivered(
+    session: AsyncSession,
+    notification_id: int,
+) -> None:
+    res: Result[Tuple[OutcomeNotification]] = await session.execute(
+        select(OutcomeNotification).where(OutcomeNotification.id == int(notification_id))
+    )
+    row: OutcomeNotification | None = res.scalars().first()
+    if row is None:
         return
-    meta = {}
-    try:
-        meta: Dict[str, Any] = dict(oc.meta or {})
-    except Exception:
-        meta = {}
-    meta["notified"] = True
-    meta["notified_at"] = _utcnow().isoformat()
-    oc.meta = meta
+    now = _utcnow()
+    row.delivery_state = "delivered"
+    row.attempt_count = int(getattr(row, "attempt_count", 0) or 0) + 1
+    row.last_attempt_at = now
+    row.delivered_at = now
+    row.last_error = None
+    row.updated_at = now
+    await session.flush()
+
+
+async def mark_outcome_notified(session: AsyncSession, outcome_id: int) -> None:
+    """Backward-compatible alias: mark all recipient notifications as delivered."""
+    rows = (
+        await session.execute(
+            select(OutcomeNotification).where(
+                OutcomeNotification.outcome_id == int(outcome_id),
+                OutcomeNotification.delivery_state.in_(["pending", "failed"]),
+            )
+        )
+    ).scalars().all()
+    for row in rows:
+        await mark_outcome_notification_delivered(session, int(row.id))
+
+    # Keep legacy meta flags for compatibility with old readers.
+    res: Result[Tuple[Outcome]] = await session.execute(
+        select(Outcome).where(Outcome.id == int(outcome_id))
+    )
+    oc: Outcome | None = res.scalars().first()
+    if oc is not None:
+        meta: Dict[str, Any] = dict(getattr(oc, "meta", {}) or {})
+        meta["notified"] = True
+        meta["notified_at"] = _utcnow().isoformat()
+        oc.meta = meta
+    await session.flush()
+
+
+async def mark_outcome_notification_failed(
+    session: AsyncSession,
+    notification_id: int,
+    *,
+    error: str | None = None,
+) -> None:
+    res: Result[Tuple[OutcomeNotification]] = await session.execute(
+        select(OutcomeNotification).where(OutcomeNotification.id == int(notification_id))
+    )
+    row: OutcomeNotification | None = res.scalars().first()
+    if row is None:
+        return
+    now = _utcnow()
+    row.delivery_state = "failed"
+    row.attempt_count = int(getattr(row, "attempt_count", 0) or 0) + 1
+    row.last_attempt_at = now
+    row.last_error = (str(error)[:1000] if error else None)
+    row.updated_at = now
     await session.flush()
 
 

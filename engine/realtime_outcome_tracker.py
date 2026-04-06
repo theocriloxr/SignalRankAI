@@ -252,11 +252,12 @@ def _retrace_warning_triggered(direction: str, sl: float, best_tp_price: float, 
 
 
 async def _persist_outcome(signal_id: str, status: str, entry: float, price: float) -> None:
-    """Upsert outcome row. Archive only on terminal statuses."""
+    """Upsert outcome row and queue per-recipient notifications (idempotent)."""
     try:
         from db.session import get_session
         from db.models import Signal
         from db.pg_features import upsert_outcome
+        from db.pg_features import queue_outcome_notifications_for_outcome
         from sqlalchemy import update as sa_update
         now = datetime.utcnow()
         pct: Optional[float] = None
@@ -271,7 +272,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         terminal = status_l in {"sl", "tp3", "tp"}
 
         async with get_session() as session:
-            await upsert_outcome(
+            _outcome = await upsert_outcome(
                 session,
                 str(signal_id),
                 status_l,
@@ -281,11 +282,19 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 meta={"close_price": float(price)},
             )
             if terminal:
+                # new requirement: do not archive unresolved tracked states
+                # (tp1/tp2 are tracked states); archive only terminal outcomes.
                 await session.execute(
                     sa_update(Signal)
                     .where(Signal.signal_id == signal_id)
                     .values(archived=True)
                 )
+            await queue_outcome_notifications_for_outcome(
+                session,
+                int(getattr(_outcome, "id")),
+                str(signal_id),
+                status_l,
+            )
             await session.commit()
         logger.info("[outcome_tracker] Outcome persisted: %s -> %s @ %.5f", signal_id[:8], status_l, price)
     except Exception as exc:
@@ -387,6 +396,42 @@ def _build_outcome_message(
     dir_h = _h(direction)
 
     if is_tp:
+        tp_level_num = 1
+        try:
+            if status in {"tp3", "tp"}:
+                tp_level_num = 3
+            elif status == "tp2":
+                tp_level_num = 2
+            elif status in {"tp1", "partial_tp"}:
+                tp_level_num = 1
+        except Exception:
+            tp_level_num = 1
+
+        suggested_sl_line = ""
+        try:
+            if direction.upper() == "LONG":
+                if tp_level_num == 1:
+                    suggested_sl = entry
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (break-even)"
+                elif tp_level_num == 2:
+                    suggested_sl = entry + ((price - entry) * 0.5)
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (lock gains)"
+                else:
+                    suggested_sl = price
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (trail tight)"
+            else:
+                if tp_level_num == 1:
+                    suggested_sl = entry
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (break-even)"
+                elif tp_level_num == 2:
+                    suggested_sl = entry - ((entry - price) * 0.5)
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (lock gains)"
+                else:
+                    suggested_sl = price
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (trail tight)"
+        except Exception:
+            suggested_sl_line = ""
+
         if is_free:
             # Free: proof of result — minimal info to build trust
             return (
@@ -394,11 +439,11 @@ def _build_outcome_message(
                 f"🪙 <b>{asset_h}</b> {dir_h}\n"
                 f"📊 Ref: <code>{ref_short}</code>\n"
                 f"🏆 {status_u} reached!\n"
+                f"{suggested_sl_line}\n"
                 f"🕐 {_h(now_str)}\n\n"
                 f"<i>Upgrade to Premium for full PnL details.</i>"
             )
         # Premium / VIP full message
-        tp1_line = "\n🛡️ <b>Stop-loss moved to break-even.</b>" if status == "tp1" else ""
         return (
             f"🎯🔥 <b>TAKE PROFIT HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
@@ -406,7 +451,7 @@ def _build_outcome_message(
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 Close: <code>{_h(_fmt_price(price))}</code>\n"
             f"📈 ROI: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
-            f"🏆 <b>{status_u} reached!</b>{tp1_line}\n"
+            f"🏆 <b>{status_u} reached!</b>{suggested_sl_line}\n"
             f"💪 Screenshot &amp; share your win!\n"
             f"🕐 {_h(now_str)}\n\n"
             f"<i>SignalRankAI — Trade smarter.</i>"
@@ -443,21 +488,24 @@ def _build_outcome_message(
 
 
 async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> None:
-    """Send branded PnL notification to signal recipients (only users who got this signal)."""
+    """Send branded PnL notification to queued recipients (idempotent, personal-only)."""
     try:
         from db.session import get_session
-        from db.models import SignalDelivery, User
+        from db.models import OutcomeNotification, User
+        from db.pg_features import (
+            mark_outcome_notification_delivered,
+            mark_outcome_notification_failed,
+        )
         from sqlalchemy import select
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config
 
-        signal_id = signal["signal_id"]
-        asset = signal["asset"]
+        signal_id = str(signal["signal_id"])
+        asset = str(signal["asset"])
         direction = signal.get("direction", "long").upper()
         entry = float(signal.get("entry", 0))
-
-        is_tp = status.startswith("tp")
+        status_l = str(status or "").lower()[:16]
 
         if direction == "LONG":
             pnl_pct = ((price - entry) / entry) * 100
@@ -475,16 +523,56 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
         bot = Bot(token=bot_token)
 
         async with get_session() as session:
-            # Join with User so we get tier_at_send for each recipient
-            stmt = (
-                select(SignalDelivery, User)
-                .join(User, User.id == SignalDelivery.user_id)
-                .where(SignalDelivery.signal_id == signal_id)
+            q = (
+                select(OutcomeNotification)
+                .where(
+                    OutcomeNotification.signal_id == signal_id,
+                    OutcomeNotification.outcome_status == status_l,
+                    OutcomeNotification.delivery_state.in_(["pending", "failed"]),
+                )
+                .order_by(OutcomeNotification.id.asc())
+                .limit(500)
             )
-            rows = (await session.execute(stmt)).all()
-            for row_sd, row_user in rows:
+            notifications = (await session.execute(q)).scalars().all()
+
+            for row in notifications:
                 try:
-                    tier_at_send = str(getattr(row_sd, "tier_at_send", "free") or "free").lower()
+                    user_row = (
+                        await session.execute(
+                            select(User).where(User.telegram_user_id == int(row.telegram_user_id)).limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if user_row is None:
+                        await mark_outcome_notification_failed(
+                            session,
+                            int(row.id),
+                            error="recipient_missing",
+                        )
+                        continue
+
+                    tier_at_send = str(getattr(row, "tier_at_send", "free") or "free").lower()
+                    tp_level_num = 0
+                    if status_l in {"tp1", "partial_tp"}:
+                        tp_level_num = 1
+                    elif status_l == "tp2":
+                        tp_level_num = 2
+                    elif status_l in {"tp3", "tp"}:
+                        tp_level_num = 3
+
+                    can_receive_tp = False
+                    if tp_level_num > 0:
+                        if tier_at_send == "free":
+                            can_receive_tp = tp_level_num == 1
+                        elif tier_at_send == "premium":
+                            can_receive_tp = tp_level_num in {1, 2}
+                        elif tier_at_send in {"vip", "admin", "owner"}:
+                            can_receive_tp = tp_level_num in {1, 2, 3}
+                        else:
+                            can_receive_tp = False
+                    if tp_level_num > 0 and not can_receive_tp:
+                        await mark_outcome_notification_delivered(session, int(row.id))
+                        continue
+
                     body = _build_outcome_message(
                         signal_id=signal_id,
                         asset=asset,
@@ -497,12 +585,15 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                     )
                     _send_message_sync(
                         bot,
-                        chat_id=row_user.telegram_user_id,
+                        chat_id=int(row.telegram_user_id),
                         text=body,
                         parse_mode="HTML",
                     )
+                    await mark_outcome_notification_delivered(session, int(row.id))
                 except Exception as exc:
-                    logger.debug("[outcome_tracker] notify user %s error: %s", getattr(row_sd, "user_id", "?"), exc)
+                    await mark_outcome_notification_failed(session, int(row.id), error=str(exc))
+                    logger.debug("[outcome_tracker] notify user %s error: %s", getattr(row, "telegram_user_id", "?"), exc)
+            await session.commit()
 
     except Exception as exc:
         logger.error("[outcome_tracker] _notify_outcome error: %s", exc)

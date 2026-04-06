@@ -40,25 +40,17 @@ def _env(**overrides):
 # ---------------------------------------------------------------------------
 
 class TestLoopDefaults(unittest.TestCase):
-    """Loop defaults should be memory-safe on Railway."""
+    """Loop defaults should run monolith loops on Railway unless explicitly disabled."""
 
     def _run_worker_is_enabled(self, env_overrides: dict) -> bool:
         with patch("os.getenv", side_effect=_env(**env_overrides)):
-            running_on_railway = bool(
-                (os.getenv("RAILWAY_SERVICE_NAME") or "").strip()
-                or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
-            )
-            default_val = "0" if running_on_railway else "1"
+            default_val = "1"
             run_worker_raw = os.getenv("RUN_WORKER_LOOP", default_val) or default_val
             return run_worker_raw.strip().lower() in {"1", "true", "yes", "on"}
 
     def _run_engine_is_enabled(self, env_overrides: dict) -> bool:
         with patch("os.getenv", side_effect=_env(**env_overrides)):
-            running_on_railway = bool(
-                (os.getenv("RAILWAY_SERVICE_NAME") or "").strip()
-                or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
-            )
-            default_val = "0" if running_on_railway else "1"
+            default_val = "1"
             run_engine_raw = os.getenv("RUN_ENGINE_LOOP", default_val) or default_val
             return run_engine_raw.strip().lower() in {"1", "true", "yes", "on"}
 
@@ -68,7 +60,7 @@ class TestLoopDefaults(unittest.TestCase):
 
     def test_worker_default_is_off_with_railway_service_name(self):
         result = self._run_worker_is_enabled({"RAILWAY_SERVICE_NAME": "signalrankai"})
-        self.assertFalse(result, "Worker loop should default OFF on Railway")
+        self.assertTrue(result, "Worker loop should default ON on Railway monolith")
 
     def test_worker_explicit_zero_disables_worker(self):
         result = self._run_worker_is_enabled({"RUN_WORKER_LOOP": "0"})
@@ -84,7 +76,7 @@ class TestLoopDefaults(unittest.TestCase):
 
     def test_engine_default_is_off_with_railway_service_name(self):
         result = self._run_engine_is_enabled({"RAILWAY_SERVICE_NAME": "signalrankai"})
-        self.assertFalse(result, "Engine loop should default OFF on Railway")
+        self.assertTrue(result, "Engine loop should default ON on Railway monolith")
 
     def test_engine_explicit_one_enables_engine(self):
         result = self._run_engine_is_enabled({"RAILWAY_SERVICE_NAME": "signalrankai", "RUN_ENGINE_LOOP": "1"})

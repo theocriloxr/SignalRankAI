@@ -335,7 +335,7 @@ def _rebuild_stale_signal(sig: Dict[str, Any], live_price: float) -> Dict[str, A
         refreshed['stop_loss']              = new_sl
         refreshed['take_profit']            = new_tp
         refreshed['created_at']             = now
-        refreshed['expires_at']             = now + _timedelta(hours=12)
+        refreshed['expires_at']             = now + _timedelta(minutes=30)
         refreshed['refreshed_from']         = str(sig.get('signal_id') or '')
         refreshed['price_updated']          = True
         refreshed['entry_price_refreshed']  = True
@@ -1327,10 +1327,12 @@ def main_loop(DRY_RUN: bool = False):
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
 
-                        # attach regime & expiration (12 h from now — hard cap)
+                        # attach regime & expiration (30-minute hard cap per product requirement)
+                        # rationale: reduce stale-signal risk in fast markets and keep lifecycle aligned with
+                        # the short monitoring/tracking window used by outcome delivery and expiry jobs.
                         sig['regime'] = regime
                         from datetime import timedelta as _timedelta
-                        sig['expires_at'] = datetime.utcnow() + _timedelta(hours=12)
+                        sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=30)
 
                         final_signals.append(sig)
                     except Exception:
