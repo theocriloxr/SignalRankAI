@@ -1328,6 +1328,8 @@ def main_loop(DRY_RUN: bool = False):
                             continue
 
                         # attach regime & expiration (30-minute hard cap per product requirement)
+                        # rationale: reduce stale-signal risk in fast markets and keep lifecycle aligned with
+                        # the short monitoring/tracking window used by outcome delivery and expiry jobs.
                         sig['regime'] = regime
                         from datetime import timedelta as _timedelta
                         sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=30)
