@@ -28,11 +28,23 @@ if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL}" 
 fi
 
 # Railway-safe default:
-# - If RUN_MODE is explicitly set, honor it via main.py
-# - Otherwise run the monolith web entrypoint (railway_main) so /healthz exists
-#   and background services start in lifespan.
+# - On Railway, default to the monolith web entrypoint (railway_main) even when
+#   RUN_MODE is set, unless explicitly overridden.
+# - This prevents accidental RUN_MODE=engine/worker/bot deployments from failing
+#   platform HTTP healthchecks.
+# - Outside Railway, RUN_MODE is still honored via main.py.
 
-if [ -n "${RUN_MODE:-}" ]; then
+_on_railway="false"
+if [ -n "${RAILWAY_SERVICE_NAME:-}" ] || [ -n "${RAILWAY_ENVIRONMENT:-}" ]; then
+	_on_railway="true"
+fi
+
+_honor_run_mode_on_railway="false"
+if [ "${HONOR_RUN_MODE_ON_RAILWAY:-false}" = "true" ]; then
+	_honor_run_mode_on_railway="true"
+fi
+
+if [ -n "${RUN_MODE:-}" ] && { [ "${_on_railway}" != "true" ] || [ "${_honor_run_mode_on_railway}" = "true" ]; }; then
 	case "${RUN_MODE}" in
 		web|worker|engine|bot)
 			python main.py

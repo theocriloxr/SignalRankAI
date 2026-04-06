@@ -816,24 +816,33 @@ async def lifespan(_: FastAPI):
         logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
 
 
+    _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+
     # ── 2) Engine loop (long-running background task) ─────────────────────────
+    # Default OFF on Railway monolith to reduce memory usage/restart churn.
+    # Enable explicitly with RUN_ENGINE_LOOP=1.
     engine_task = None
-    try:
-        engine_task = _start_engine_loop_in_background()
-        print("[startup] Engine loop task created", flush=True)
-        logger.info("[startup] Engine loop task created")
-    except Exception as exc:
-        print(f"[startup] Could not start engine loop: {exc}", flush=True)
-        logger.warning(f"[startup] Could not start engine loop: {exc}")
+    _run_engine = str(
+        os.getenv("RUN_ENGINE_LOOP", "0" if _running_on_railway else "1") or ("0" if _running_on_railway else "1")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if _run_engine:
+        try:
+            engine_task = _start_engine_loop_in_background()
+            print("[startup] Engine loop task created", flush=True)
+            logger.info("[startup] Engine loop task created")
+        except Exception as exc:
+            print(f"[startup] Could not start engine loop: {exc}", flush=True)
+            logger.warning(f"[startup] Could not start engine loop: {exc}")
+    else:
+        logger.info("[startup] Engine loop skipped (RUN_ENGINE_LOOP=0 default on Railway)")
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
-    # Default to ON in all deployments (including single-service Railway).
-    # The worker is responsible for real-time outcome tracking (TP/SL detection)
-    # and ML retraining. Disabling it by default caused signals to be generated
-    # but never tracked to a terminal outcome state.
-    # Override with RUN_WORKER_LOOP=0 to explicitly disable.
+    # Default OFF on Railway monolith to reduce memory footprint.
+    # Enable explicitly with RUN_WORKER_LOOP=1 (recommended on dedicated worker service).
     worker_task = None
-    _run_worker = str(os.getenv("RUN_WORKER_LOOP", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
+    _run_worker = str(
+        os.getenv("RUN_WORKER_LOOP", "0" if _running_on_railway else "1") or ("0" if _running_on_railway else "1")
+    ).strip().lower() in {"1", "true", "yes", "on"}
     if _run_worker:
         try:
             worker_task = _start_worker_loop_in_background()
@@ -976,9 +985,8 @@ async def lifespan(_: FastAPI):
 
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers
-    _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-    _default_queue_size = "400" if _running_on_railway else "5000"
-    _default_worker_count = "6" if _running_on_railway else "64"
+    _default_queue_size = "200" if _running_on_railway else "5000"
+    _default_worker_count = "2" if _running_on_railway else "64"
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
     _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
