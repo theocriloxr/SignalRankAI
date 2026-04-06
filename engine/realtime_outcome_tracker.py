@@ -396,6 +396,42 @@ def _build_outcome_message(
     dir_h = _h(direction)
 
     if is_tp:
+        tp_level_num = 1
+        try:
+            if status in {"tp3", "tp"}:
+                tp_level_num = 3
+            elif status == "tp2":
+                tp_level_num = 2
+            elif status in {"tp1", "partial_tp"}:
+                tp_level_num = 1
+        except Exception:
+            tp_level_num = 1
+
+        suggested_sl_line = ""
+        try:
+            if direction.upper() == "LONG":
+                if tp_level_num == 1:
+                    suggested_sl = entry
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (break-even)"
+                elif tp_level_num == 2:
+                    suggested_sl = entry + ((price - entry) * 0.5)
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (lock gains)"
+                else:
+                    suggested_sl = price
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (trail tight)"
+            else:
+                if tp_level_num == 1:
+                    suggested_sl = entry
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (break-even)"
+                elif tp_level_num == 2:
+                    suggested_sl = entry - ((entry - price) * 0.5)
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (lock gains)"
+                else:
+                    suggested_sl = price
+                    suggested_sl_line = f"\n🛡️ Suggested SL: <code>{_h(_fmt_price(suggested_sl))}</code> (trail tight)"
+        except Exception:
+            suggested_sl_line = ""
+
         if is_free:
             # Free: proof of result — minimal info to build trust
             return (
@@ -403,11 +439,12 @@ def _build_outcome_message(
                 f"🪙 <b>{asset_h}</b> {dir_h}\n"
                 f"📊 Ref: <code>{ref_short}</code>\n"
                 f"🏆 {status_u} reached!\n"
+                f"{suggested_sl_line}\n"
                 f"🕐 {_h(now_str)}\n\n"
                 f"<i>Upgrade to Premium for full PnL details.</i>"
             )
         # Premium / VIP full message
-        tp1_line = "\n🛡️ <b>Stop-loss moved to break-even.</b>" if status == "tp1" else ""
+        tp1_line = "\n🛡️ <b>Stop-loss moved to break-even.</b>" if status in {"tp1", "partial_tp"} else ""
         return (
             f"🎯🔥 <b>TAKE PROFIT HIT</b>\n\n"
             f"🪙 <b>{asset_h}</b> {dir_h}\n"
@@ -415,7 +452,7 @@ def _build_outcome_message(
             f"📥 Entry: <code>{_h(_fmt_price(entry))}</code>\n"
             f"💰 Close: <code>{_h(_fmt_price(price))}</code>\n"
             f"📈 ROI: <b>{_h(pnl_sign + f'{pnl_pct:.2f}%')}</b>\n\n"
-            f"🏆 <b>{status_u} reached!</b>{tp1_line}\n"
+            f"🏆 <b>{status_u} reached!</b>{tp1_line}{suggested_sl_line}\n"
             f"💪 Screenshot &amp; share your win!\n"
             f"🕐 {_h(now_str)}\n\n"
             f"<i>SignalRankAI — Trade smarter.</i>"
@@ -515,6 +552,28 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         continue
 
                     tier_at_send = str(getattr(row, "tier_at_send", "free") or "free").lower()
+                    tp_level_num = 0
+                    if status_l in {"tp1", "partial_tp"}:
+                        tp_level_num = 1
+                    elif status_l == "tp2":
+                        tp_level_num = 2
+                    elif status_l in {"tp3", "tp"}:
+                        tp_level_num = 3
+
+                    can_receive_tp = False
+                    if tp_level_num > 0:
+                        if tier_at_send == "free":
+                            can_receive_tp = tp_level_num == 1
+                        elif tier_at_send == "premium":
+                            can_receive_tp = tp_level_num in {1, 2}
+                        elif tier_at_send in {"vip", "admin", "owner"}:
+                            can_receive_tp = tp_level_num in {1, 2, 3}
+                        else:
+                            can_receive_tp = False
+                    if tp_level_num > 0 and not can_receive_tp:
+                        await mark_outcome_notification_delivered(session, int(row.id))
+                        continue
+
                     body = _build_outcome_message(
                         signal_id=signal_id,
                         asset=asset,
