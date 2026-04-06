@@ -1,9 +1,4 @@
 import os
-import sys
-import asyncio
-import traceback
-
-
 
 
 def _infer_run_mode() -> str:
@@ -78,79 +73,16 @@ def main() -> None:
     except Exception:
         pass
     if mode == "all":
-        from config import config
-        dry_run = config.DRY_RUN
-
-        async def _run_all() -> None:
-            """Run web, worker, engine, and bot concurrently with auto-restart.
-
-            Each service runs in its own supervised task. If any service crashes it
-            is automatically restarted with exponential backoff (capped at 5 minutes)
-            so the entire process never stays dead after a transient failure.
-
-            - Web:    uvicorn.Server (native async)
-            - Engine: ThreadPoolExecutor (blocking main_loop)
-            - Worker: ThreadPoolExecutor (blocking worker_main)
-            - Bot:    ThreadPoolExecutor (PTB run_polling owns its own event loop)
-            """
-            loop = asyncio.get_running_loop()
-            RESTART_BASE_DELAY = 5     # seconds before first restart attempt
-            RESTART_MAX_DELAY  = 300   # cap restart wait at 5 minutes
-
-            async def _supervised(name: str, target) -> None:
-                """Run *target* coroutine-factory, restarting it on any exception."""
-                delay = RESTART_BASE_DELAY
-                while True:
-                    print(f"[boot] {name} starting", flush=True)
-                    try:
-                        await target()
-                        # Clean exit (e.g. KeyboardInterrupt forwarded): don't restart.
-                        print(f"[boot] {name} exited cleanly", flush=True)
-                        return
-                    except asyncio.CancelledError:
-                        print(f"[boot] {name} cancelled", flush=True)
-                        return
-                    except Exception as exc:
-                        print(
-                            f"[boot] {name} crashed ({type(exc).__name__}: {exc}) — "
-                            f"restarting in {delay}s",
-                            file=sys.stderr, flush=True,
-                        )
-                        traceback.print_exc()
-                        await asyncio.sleep(delay)
-                        delay = min(delay * 2, RESTART_MAX_DELAY)
-
-            async def _web_once() -> None:
-                import uvicorn
-                port = int(os.getenv("PORT", "8000"))
-                cfg = uvicorn.Config(
-                    "web.app:app", host="0.0.0.0", port=port, log_level="info"
-                )
-                server = uvicorn.Server(cfg)
-                await server.serve()
-
-            async def _engine_once() -> None:
-                from engine.core import main_loop
-                await loop.run_in_executor(None, lambda: main_loop(dry_run))
-
-            async def _worker_once() -> None:
-                from worker.worker import main as worker_main
-                await loop.run_in_executor(None, worker_main)
-
-            async def _bot_once() -> None:
-                from signalrank_telegram.bot import run_bot as bot_main
-                # PTB run_polling() manages its own event loop; run in executor
-                # to avoid conflicting with the outer asyncio loop.
-                await loop.run_in_executor(None, bot_main)
-
-            await asyncio.gather(
-                _supervised("web",    _web_once),
-                _supervised("engine", _engine_once),
-                _supervised("worker", _worker_once),
-                _supervised("bot",    _bot_once),
-            )
-
-        asyncio.run(_run_all())
+        # Delegate to railway_main which owns the /telegram/webhook FastAPI route.
+        # Running separate per-mode processes (old approach) caused the bot process
+        # to register a Telegram webhook URL that the web process (web.app:app,
+        # which has no /telegram/webhook route) couldn't serve, producing 404s for
+        # every inbound Telegram update.  railway_main bundles web + engine + worker
+        # + bot in a single asyncio event loop with correct route registration.
+        import uvicorn
+        port = int(os.getenv("PORT", "8000"))
+        print("[boot] all mode → delegating to railway_main:app (webhook route included)", flush=True)
+        uvicorn.run("railway_main:app", host="0.0.0.0", port=port, log_level="info")
         return
     elif mode == "web":
         import uvicorn

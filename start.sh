@@ -62,13 +62,13 @@ if [ -n "${RUN_MODE:-}" ] && { [ "${_on_railway}" != "true" ] || [ "${_honor_run
 	esac
 fi
 
-# Optional legacy mode: run separate processes in one container.
+# Optional legacy mode: consolidate all subsystems under railway_main, which
+# owns the /telegram/webhook FastAPI route. Running separate per-mode
+# python main.py processes caused the bot process to register a Telegram
+# webhook URL that the web process (web.app:app, no /telegram/webhook route)
+# couldn't serve — producing 404s for every inbound Telegram update.
 if [ "${RUN_ALL:-false}" = "true" ]; then
-	RUN_MODE=web python main.py &
-	RUN_MODE=engine python main.py &
-	RUN_MODE=bot python main.py &
-	wait
-	exit $?
+	exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"
 fi
 
 exec uvicorn railway_main:app --host 0.0.0.0 --port "${PORT:-8000}"

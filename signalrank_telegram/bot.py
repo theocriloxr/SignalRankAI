@@ -6385,7 +6385,29 @@ def run_bot() -> None:
         _executors = {
             "default": _APThreadPoolExecutor(max_workers=_sched_workers),
         }
-        scheduler = BackgroundScheduler(jobstores=_jobstores or {}, executors=_executors, timezone="UTC")
+        # job_defaults ensure that:
+        #  - coalesce=True collapses multiple missed firings into one, preventing
+        #    job storms after startup lag or container restarts.
+        #  - misfire_grace_time=60 discards a job only if it misfired by more than
+        #    60 s, which avoids cascaded submissions that race with executor shutdown.
+        #  - max_instances=1 prevents concurrent overlapping runs of the same job.
+        _job_defaults = {
+            "coalesce": True,
+            "max_instances": 1,
+            "misfire_grace_time": 60,
+        }
+        scheduler = BackgroundScheduler(
+            jobstores=_jobstores or {},
+            executors=_executors,
+            job_defaults=_job_defaults,
+            timezone="UTC",
+        )
+        logger.info(
+            "[sched] BackgroundScheduler created workers=%s jobstore=%s job_defaults=%s",
+            _sched_workers,
+            _sa,
+            _job_defaults,
+        )
 
     # Clear stale jobs in the persistent store to prevent duplicates on restart.
     if scheduler is not None:
@@ -6656,7 +6678,9 @@ def run_bot() -> None:
             jobstore=_sa,
         )
 
+        logger.info("[sched] BackgroundScheduler starting (state=pre_start)")
         scheduler.start()
+        logger.info("[sched] BackgroundScheduler started (state=running jobs=%d)", len(scheduler.get_jobs()))
 
     # One-shot startup migration: refresh keyboards on previously sent active messages.
     try:

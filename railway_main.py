@@ -1157,6 +1157,21 @@ async def lifespan(_: FastAPI):
             except Exception as exc:
                 logger.warning(f"[shutdown] bot stop error: {exc}")
 
+        # Shut down the bot's BackgroundScheduler (owned by signalrank_telegram.bot)
+        # before Python's atexit handlers shut down its ThreadPoolExecutor.  Without
+        # this, APScheduler fires pending jobs after the executor is already gone,
+        # producing: RuntimeError: cannot schedule new futures after shutdown.
+        try:
+            from signalrank_telegram import bot as _bot_mod
+            _bot_sched = getattr(_bot_mod, "_bot_scheduler", None)
+            if _bot_sched is not None and getattr(_bot_sched, "running", False):
+                _bot_sched.shutdown(wait=False)
+                logger.info("[sched] bot BackgroundScheduler shutdown")
+            else:
+                logger.debug("[sched] bot BackgroundScheduler not running — skip shutdown")
+        except Exception as exc:
+            logger.warning("[shutdown] bot BackgroundScheduler shutdown error: %s", exc)
+
         if scheduler is not None:
             try:
                 scheduler.shutdown(wait=False)
