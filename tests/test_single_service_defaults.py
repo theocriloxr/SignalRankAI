@@ -1,7 +1,7 @@
-"""Tests for single-service (Railway monolith) deployment correctness.
+"""Tests for single-service deployment defaults.
 
 Covers:
-1. Worker loop defaults to ON so outcome tracking runs in single-service mode.
+1. Railway memory-safe defaults for monolith loop toggles.
 2. Tier-gated signal distribution — deterministic score threshold behaviour.
 3. Outcome tracker enabled by default in worker.
 """
@@ -36,37 +36,59 @@ def _env(**overrides):
 
 
 # ---------------------------------------------------------------------------
-# 1. Worker-loop defaults
+# 1. Loop defaults
 # ---------------------------------------------------------------------------
 
-class TestWorkerLoopDefault(unittest.TestCase):
-    """Worker loop must be ON by default in all deployment contexts."""
+class TestLoopDefaults(unittest.TestCase):
+    """Loop defaults should be memory-safe on Railway."""
 
     def _run_worker_is_enabled(self, env_overrides: dict) -> bool:
-        """Simulate railway_main.py's RUN_WORKER_LOOP resolution logic."""
         with patch("os.getenv", side_effect=_env(**env_overrides)):
-            run_worker_raw = os.getenv("RUN_WORKER_LOOP", "1") or "1"
+            running_on_railway = bool(
+                (os.getenv("RAILWAY_SERVICE_NAME") or "").strip()
+                or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
+            )
+            default_val = "0" if running_on_railway else "1"
+            run_worker_raw = os.getenv("RUN_WORKER_LOOP", default_val) or default_val
             return run_worker_raw.strip().lower() in {"1", "true", "yes", "on"}
 
-    def test_default_is_on_without_railway_env(self):
-        """No env vars set → worker loop should be ON."""
+    def _run_engine_is_enabled(self, env_overrides: dict) -> bool:
+        with patch("os.getenv", side_effect=_env(**env_overrides)):
+            running_on_railway = bool(
+                (os.getenv("RAILWAY_SERVICE_NAME") or "").strip()
+                or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip()
+            )
+            default_val = "0" if running_on_railway else "1"
+            run_engine_raw = os.getenv("RUN_ENGINE_LOOP", default_val) or default_val
+            return run_engine_raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    def test_worker_default_is_on_without_railway_env(self):
         result = self._run_worker_is_enabled({})
-        self.assertTrue(result, "Worker loop must be ON by default")
+        self.assertTrue(result, "Worker loop should default ON outside Railway")
 
-    def test_default_is_on_with_railway_service_name(self):
-        """RAILWAY_SERVICE_NAME set (single-service deploy) → worker still ON."""
+    def test_worker_default_is_off_with_railway_service_name(self):
         result = self._run_worker_is_enabled({"RAILWAY_SERVICE_NAME": "signalrankai"})
-        self.assertTrue(result, "Worker loop must be ON even on Railway")
+        self.assertFalse(result, "Worker loop should default OFF on Railway")
 
-    def test_explicit_zero_disables_worker(self):
-        """RUN_WORKER_LOOP=0 must disable the worker loop."""
+    def test_worker_explicit_zero_disables_worker(self):
         result = self._run_worker_is_enabled({"RUN_WORKER_LOOP": "0"})
         self.assertFalse(result, "RUN_WORKER_LOOP=0 must disable the worker")
 
-    def test_explicit_one_enables_worker(self):
-        """RUN_WORKER_LOOP=1 must enable the worker loop."""
+    def test_worker_explicit_one_enables_worker(self):
         result = self._run_worker_is_enabled({"RUN_WORKER_LOOP": "1"})
         self.assertTrue(result, "RUN_WORKER_LOOP=1 must enable the worker")
+
+    def test_engine_default_is_on_without_railway_env(self):
+        result = self._run_engine_is_enabled({})
+        self.assertTrue(result, "Engine loop should default ON outside Railway")
+
+    def test_engine_default_is_off_with_railway_service_name(self):
+        result = self._run_engine_is_enabled({"RAILWAY_SERVICE_NAME": "signalrankai"})
+        self.assertFalse(result, "Engine loop should default OFF on Railway")
+
+    def test_engine_explicit_one_enables_engine(self):
+        result = self._run_engine_is_enabled({"RAILWAY_SERVICE_NAME": "signalrankai", "RUN_ENGINE_LOOP": "1"})
+        self.assertTrue(result, "RUN_ENGINE_LOOP=1 must enable engine loop")
 
 
 # ---------------------------------------------------------------------------
