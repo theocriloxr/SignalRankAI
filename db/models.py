@@ -255,6 +255,29 @@ class Outcome(Base):
     meta: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
+class OutcomeNotification(Base):
+    __tablename__ = "outcome_notifications"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_outcome_notifications_idempotency_key"),
+        UniqueConstraint("signal_id", "telegram_user_id", "outcome_status", name="uq_outcome_notifications_sig_user_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    outcome_id: Mapped[int] = mapped_column(ForeignKey("outcomes.id"), index=True, nullable=False)
+    signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    tier_at_send: Mapped[str] = mapped_column(String(16), nullable=False, default="free")
+    outcome_status: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    delivery_state: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
 class Trade(Base):
     """Track open and closed trades for position management."""
     __tablename__ = "trades"

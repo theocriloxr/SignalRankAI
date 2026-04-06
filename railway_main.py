@@ -823,11 +823,11 @@ async def lifespan(_: FastAPI):
     _running_on_railway = _is_running_on_railway()
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
-    # Default OFF on Railway monolith to reduce memory usage/restart churn.
-    # Enable explicitly with RUN_ENGINE_LOOP=1.
+    # Default ON in monolith so web+bot+engine+worker run in one service.
+    # Can still be disabled explicitly with RUN_ENGINE_LOOP=0.
     engine_task = None
     _run_engine = str(
-        os.getenv("RUN_ENGINE_LOOP", "0" if _running_on_railway else "1") or ("0" if _running_on_railway else "1")
+        os.getenv("RUN_ENGINE_LOOP", "1")
     ).strip().lower() in {"1", "true", "yes", "on"}
     if _run_engine:
         try:
@@ -844,11 +844,11 @@ async def lifespan(_: FastAPI):
         )
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
-    # Default OFF on Railway monolith to reduce memory footprint.
-    # Enable explicitly with RUN_WORKER_LOOP=1 (recommended on dedicated worker service).
+    # Default ON in monolith so web+bot+engine+worker run in one service.
+    # Can still be disabled explicitly with RUN_WORKER_LOOP=0.
     worker_task = None
     _run_worker = str(
-        os.getenv("RUN_WORKER_LOOP", "0" if _running_on_railway else "1") or ("0" if _running_on_railway else "1")
+        os.getenv("RUN_WORKER_LOOP", "1")
     ).strip().lower() in {"1", "true", "yes", "on"}
     if _run_worker:
         try:
