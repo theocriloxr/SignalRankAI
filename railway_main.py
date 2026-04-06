@@ -221,9 +221,13 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _is_running_on_railway() -> bool:
+    return bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+
+
 def _log_railway_env_readiness() -> None:
     """Log deployment-critical env readiness for Railway."""
-    running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    running_on_railway = _is_running_on_railway()
     if not running_on_railway:
         return
 
@@ -816,7 +820,7 @@ async def lifespan(_: FastAPI):
         logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
 
 
-    _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    _running_on_railway = _is_running_on_railway()
 
     # ── 2) Engine loop (long-running background task) ─────────────────────────
     # Default OFF on Railway monolith to reduce memory usage/restart churn.
@@ -992,8 +996,9 @@ async def lifespan(_: FastAPI):
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers
     # Railway defaults are intentionally conservative to reduce memory usage on
-    # small container tiers. Tune via WEBHOOK_UPDATE_QUEUE_SIZE/WORKERS and
-    # monitor queue utilization via webhook_queue_utilization_ratio metrics.
+    # small container tiers. If you observe queue_full responses, sustained
+    # queue_utilization_ratio > 0.80, or dispatch latency growth, increase
+    # WEBHOOK_UPDATE_QUEUE_SIZE and/or WEBHOOK_UPDATE_WORKERS for your traffic.
     _default_queue_size = "200" if _running_on_railway else "5000"
     _default_worker_count = "2" if _running_on_railway else "64"
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
