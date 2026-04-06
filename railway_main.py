@@ -834,7 +834,10 @@ async def lifespan(_: FastAPI):
             print(f"[startup] Could not start engine loop: {exc}", flush=True)
             logger.warning(f"[startup] Could not start engine loop: {exc}")
     else:
-        logger.info("[startup] Engine loop skipped (RUN_ENGINE_LOOP=0 default on Railway)")
+        logger.info(
+            "[startup] Engine loop skipped (RUN_ENGINE_LOOP=0)%s",
+            " [Railway default]" if _running_on_railway else "",
+        )
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
     # Default OFF on Railway monolith to reduce memory footprint.
@@ -852,7 +855,10 @@ async def lifespan(_: FastAPI):
             print(f"[startup] Could not start worker loop: {exc}", flush=True)
             logger.warning(f"[startup] Could not start worker loop: {exc}")
     else:
-        logger.info("[startup] Worker loop skipped (RUN_WORKER_LOOP=0)")
+        logger.info(
+            "[startup] Worker loop skipped (RUN_WORKER_LOOP=0)%s",
+            " [Railway default]" if _running_on_railway else "",
+        )
 
     # ── Crash detection for background tasks ─────────────────────────────────
     async def _monitor_background_tasks():
@@ -985,6 +991,9 @@ async def lifespan(_: FastAPI):
 
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers
+    # Railway defaults are intentionally conservative to reduce memory usage on
+    # small container tiers. Tune via WEBHOOK_UPDATE_QUEUE_SIZE/WORKERS and
+    # monitor queue utilization via webhook_queue_utilization_ratio metrics.
     _default_queue_size = "200" if _running_on_railway else "5000"
     _default_worker_count = "2" if _running_on_railway else "64"
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
