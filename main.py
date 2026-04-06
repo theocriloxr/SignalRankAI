@@ -1,7 +1,6 @@
 import os
 
 
-
 def _infer_run_mode() -> str:
     """Derive a sensible default RUN_MODE from Railway service naming.
 

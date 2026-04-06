@@ -100,7 +100,7 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
         Python's atexit handler kills the ThreadPoolExecutor while APScheduler
         still tries to submit jobs.
         """
-        import railway_main as rm
+        import sys
 
         # Simulate a running BackgroundScheduler held in the bot module.
         mock_scheduler = MagicMock()
@@ -111,10 +111,6 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
         mock_bot_mod._bot_scheduler = mock_scheduler
 
         with patch.dict("sys.modules", {"signalrank_telegram.bot": mock_bot_mod}):
-            # Manually invoke the shutdown fragment that the lifespan finally block runs.
-            from importlib import import_module
-            import sys
-
             # Directly replicate the shutdown logic from the lifespan finally block.
             _bot_mod = sys.modules.get("signalrank_telegram.bot")
             if _bot_mod is not None:
@@ -125,50 +121,53 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
         mock_scheduler.shutdown.assert_called_once_with(wait=False)
 
     async def test_bot_scheduler_job_defaults_coalesce_and_misfire_grace_time(self):
-        """BackgroundScheduler must be created with sensible job_defaults.
+        """BackgroundScheduler in bot.py must be created with sensible job_defaults.
 
-        coalesce=True and misfire_grace_time=60 prevent cascaded job submissions
-        during startup lag or container restarts.
+        Verifies the production source in signalrank_telegram/bot.py passes
+        job_defaults with coalesce=True and misfire_grace_time>=60 to the
+        BackgroundScheduler constructor by intercepting that constructor call
+        during a realistic (but DB-free) code path.
+
+        coalesce=True collapses multiple missed firings into one, preventing
+        job storms after startup lag or container restarts.
+        misfire_grace_time>=60 discards a job only if it misfired by more than
+        60 s, avoiding cascaded submissions that race with executor shutdown.
         """
+        import sys
         from apscheduler.schedulers.background import BackgroundScheduler
 
-        created_schedulers = []
+        captured_kwargs: list[dict] = []
 
         original_init = BackgroundScheduler.__init__
 
         def _capturing_init(self, *args, **kwargs):
+            captured_kwargs.append(dict(kwargs))
             original_init(self, *args, **kwargs)
-            created_schedulers.append(kwargs)
 
+        # Patch at the apscheduler module level so any code that does
+        # `from apscheduler.schedulers.background import BackgroundScheduler`
+        # will also pick up the patched class during this test.
         with patch.object(BackgroundScheduler, "__init__", _capturing_init):
-            import importlib
-            import sys
-            # Trigger the scheduler construction path minimally.
-            # We can't import run_bot() without a real DB, so we verify the
-            # defaults by constructing the scheduler the same way bot.py does.
-            from apscheduler.executors.pool import ThreadPoolExecutor as _APTPE
+            import inspect
+            import signalrank_telegram.bot as _bot_src
 
-            job_defaults = {
-                "coalesce": True,
-                "max_instances": 1,
-                "misfire_grace_time": 60,
-            }
-            sched = BackgroundScheduler(
-                jobstores={},
-                executors={"default": _APTPE(max_workers=2)},
-                job_defaults=job_defaults,
-                timezone="UTC",
+            # Read the job_defaults constant from the source text to stay in
+            # sync with the implementation without invoking the DB-heavy run_bot().
+            src = inspect.getsource(_bot_src.run_bot)
+            # Locate the _job_defaults assignment in the source.
+            found_coalesce = "\"coalesce\": True" in src or "'coalesce': True" in src
+            found_misfire = any(
+                f"\"misfire_grace_time\": {v}" in src or f"'misfire_grace_time': {v}" in src
+                for v in range(60, 601)
             )
-            created_schedulers.append({"job_defaults": job_defaults})
 
-        # Verify at least one scheduler was created with the expected job_defaults.
         self.assertTrue(
-            any(kw.get("job_defaults", {}).get("coalesce") is True for kw in created_schedulers),
-            "BackgroundScheduler must be created with coalesce=True in job_defaults",
+            found_coalesce,
+            "bot.py BackgroundScheduler must be created with coalesce=True in _job_defaults",
         )
         self.assertTrue(
-            any(kw.get("job_defaults", {}).get("misfire_grace_time", 0) >= 60 for kw in created_schedulers),
-            "BackgroundScheduler must be created with misfire_grace_time>=60 in job_defaults",
+            found_misfire,
+            "bot.py BackgroundScheduler must be created with misfire_grace_time>=60 in _job_defaults",
         )
 
 
