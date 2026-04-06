@@ -177,12 +177,26 @@ class TestTierGatedDistribution(unittest.TestCase):
     # ── admin tier ────────────────────────────────────────────────────────────
 
     def test_admin_receives_all_signals(self):
-        """Admin tier must receive signals regardless of score."""
+        """Admin tier must receive signals at or above its configured threshold."""
         from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        admin_threshold = TIER_SCORE_THRESHOLDS.get("admin", 0)
-        # Admin threshold is 75 in current config; ensure very low scores pass
-        self.assertTrue(mgr.should_send_signal("admin", float(admin_threshold)))
+        admin_threshold = float(TIER_SCORE_THRESHOLDS.get("admin", 0))
+        # Verify at the configured threshold passes.
+        self.assertTrue(
+            mgr.should_send_signal("admin", admin_threshold),
+            f"Admin must receive signals at the configured threshold ({admin_threshold})",
+        )
+        # Verify well above threshold also passes.
+        self.assertTrue(
+            mgr.should_send_signal("admin", admin_threshold + 10.0),
+            "Admin must receive signals above threshold",
+        )
+        # Verify just below threshold is rejected (consistent behaviour).
+        if admin_threshold > 0:
+            self.assertFalse(
+                mgr.should_send_signal("admin", admin_threshold - 1.0),
+                "Admin should_send_signal must be consistent with TIER_SCORE_THRESHOLDS",
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +223,13 @@ class TestMinimalSchedulerJobList(unittest.TestCase):
 
         # The else branch starts the full set; we want expire inside the if block.
         else_idx = source.find("        else:", minimal_idx)
-        minimal_block = source[minimal_idx:else_idx] if else_idx > minimal_idx else source[minimal_idx:]
+        # Sanity check: else must come after the if block start.
+        self.assertGreater(
+            else_idx,
+            minimal_idx,
+            "Could not locate 'else:' branch after if _minimal_scheduler_mode: — bot.py structure may have changed",
+        )
+        minimal_block = source[minimal_idx:else_idx]
         self.assertIn(
             "expire_old_signals_job",
             minimal_block,
