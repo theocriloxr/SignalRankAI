@@ -827,9 +827,13 @@ async def lifespan(_: FastAPI):
         logger.warning(f"[startup] Could not start engine loop: {exc}")
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
+    # Default to ON in all deployments (including single-service Railway).
+    # The worker is responsible for real-time outcome tracking (TP/SL detection)
+    # and ML retraining. Disabling it by default caused signals to be generated
+    # but never tracked to a terminal outcome state.
+    # Override with RUN_WORKER_LOOP=0 to explicitly disable.
     worker_task = None
-    _run_worker_default = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "1"
-    _run_worker = str(os.getenv("RUN_WORKER_LOOP", _run_worker_default) or _run_worker_default).strip().lower() in {"1", "true", "yes", "on"}
+    _run_worker = str(os.getenv("RUN_WORKER_LOOP", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
     if _run_worker:
         try:
             worker_task = _start_worker_loop_in_background()
@@ -1078,6 +1082,33 @@ async def lifespan(_: FastAPI):
         f"worker={'ok' if worker_task else 'skipped'} "
         f"scheduler={'ok' if scheduler else 'skipped'} "
         f"bot={'webhook' if bot_started else 'initializing'}"
+    )
+
+    # ── Startup subsystem summary ─────────────────────────────────────────────
+    # Emit a single consolidated log line showing which subsystems are active so
+    # operators can immediately verify the single-service deployment is healthy.
+    _worker_outcome_enabled = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    print(
+        "[startup] subsystem summary | "
+        f"signal_engine={'ENABLED' if engine_task else 'DISABLED'} | "
+        f"outcome_worker={'ENABLED' if worker_task else 'DISABLED'} | "
+        f"worker_outcome_tracker={'ENABLED' if (worker_task and _worker_outcome_enabled) else 'DISABLED'} | "
+        f"engine_outcome_tracker={'ENABLED' if _engine_outcome_enabled else 'DISABLED'} | "
+        f"scheduler={'ENABLED' if scheduler else 'DISABLED'} | "
+        f"bot={'ENABLED' if bot_started else 'INITIALIZING'}",
+        flush=True,
+    )
+    logger.info(
+        "[startup] subsystem summary | "
+        "signal_engine=%s | outcome_worker=%s | worker_outcome_tracker=%s | "
+        "engine_outcome_tracker=%s | scheduler=%s | bot=%s",
+        "ENABLED" if engine_task else "DISABLED",
+        "ENABLED" if worker_task else "DISABLED",
+        "ENABLED" if (worker_task and _worker_outcome_enabled) else "DISABLED",
+        "ENABLED" if _engine_outcome_enabled else "DISABLED",
+        "ENABLED" if scheduler else "DISABLED",
+        "ENABLED" if bot_started else "INITIALIZING",
     )
 
     try:

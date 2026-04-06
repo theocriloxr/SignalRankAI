@@ -6421,6 +6421,16 @@ def run_bot() -> None:
                 replace_existing=True,
                 max_instances=1,
             )
+            # Signal expiry must also run in minimal mode so signals transition
+            # to an expired terminal state when their expires_at timestamp passes.
+            scheduler.add_job(
+                expire_old_signals_job,
+                'interval',
+                minutes=30,
+                id='expire_old_signals_job',
+                replace_existing=True,
+                max_instances=1,
+            )
         else:
             scheduler.add_job(
                 ml_market_analysis_job,

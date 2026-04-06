@@ -52,9 +52,9 @@ class Worker:
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
-        _running_on_railway = bool((getattr(config, "RAILWAY_SERVICE_NAME", "") or "").strip() or (getattr(config, "RAILWAY_ENVIRONMENT", "") or "").strip())
-        _enable_worker_tracker_default = False if _running_on_railway else True
-        _enable_worker_tracker = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1" if _enable_worker_tracker_default else "0")).strip().lower() in {"1", "true", "yes", "on"}
+        # Default to ON in all deployments so every generated signal is tracked.
+        # Override with WORKER_OUTCOME_TRACKER_ENABLED=0 to explicitly disable.
+        _enable_worker_tracker = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
         if _enable_worker_tracker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
