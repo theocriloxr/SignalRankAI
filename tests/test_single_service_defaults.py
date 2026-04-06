@@ -123,7 +123,7 @@ class TestTierGatedDistribution(unittest.TestCase):
         mgr = self._make_manager()
         self.assertFalse(mgr.should_send_signal("free", 79.0))
 
-    def test_free_rejects_at_threshold_boundary(self):
+    def test_free_accepts_at_threshold_boundary(self):
         """Free tier: score exactly at threshold (80) must pass."""
         mgr = self._make_manager()
         self.assertTrue(mgr.should_send_signal("free", 80.0))

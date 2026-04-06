@@ -1089,27 +1089,17 @@ async def lifespan(_: FastAPI):
     # operators can immediately verify the single-service deployment is healthy.
     _worker_outcome_enabled = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
     _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
-    print(
+    _subsystem_summary = (
         "[startup] subsystem summary | "
         f"signal_engine={'ENABLED' if engine_task else 'DISABLED'} | "
         f"outcome_worker={'ENABLED' if worker_task else 'DISABLED'} | "
         f"worker_outcome_tracker={'ENABLED' if (worker_task and _worker_outcome_enabled) else 'DISABLED'} | "
         f"engine_outcome_tracker={'ENABLED' if _engine_outcome_enabled else 'DISABLED'} | "
         f"scheduler={'ENABLED' if scheduler else 'DISABLED'} | "
-        f"bot={'ENABLED' if bot_started else 'INITIALIZING'}",
-        flush=True,
+        f"bot={'ENABLED' if bot_started else 'INITIALIZING'}"
     )
-    logger.info(
-        "[startup] subsystem summary | "
-        "signal_engine=%s | outcome_worker=%s | worker_outcome_tracker=%s | "
-        "engine_outcome_tracker=%s | scheduler=%s | bot=%s",
-        "ENABLED" if engine_task else "DISABLED",
-        "ENABLED" if worker_task else "DISABLED",
-        "ENABLED" if (worker_task and _worker_outcome_enabled) else "DISABLED",
-        "ENABLED" if _engine_outcome_enabled else "DISABLED",
-        "ENABLED" if scheduler else "DISABLED",
-        "ENABLED" if bot_started else "INITIALIZING",
-    )
+    print(_subsystem_summary, flush=True)
+    logger.info(_subsystem_summary)
 
     try:
         yield
