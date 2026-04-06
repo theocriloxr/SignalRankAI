@@ -13,7 +13,11 @@ def test_db_migration_revision_ids_fit_alembic_version_column() -> None:
     overlong: list[tuple[str, str, int]] = []
     for path in sorted(versions_dir.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        match = revision_re.search(text)
+        match = None
+        for line in text.splitlines():
+            match = revision_re.match(line)
+            if match:
+                break
         if not match:
             continue
         rev = match.group(1)
