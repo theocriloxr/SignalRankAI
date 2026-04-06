@@ -1,6 +1,6 @@
 """Platform hardening: webhook idempotency, api tokens, indexes, vip webhooks, shadow predictions
 
-Revision ID: 0011_platform_hardening_security_scaling
+Revision ID: 0011_platform_hardening_security
 Revises: 0010_consolidate_full_schema
 Create Date: 2026-04-05
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0011_platform_hardening_security_scaling"
+revision = "0011_platform_hardening_security"
 down_revision = "0010_consolidate_full_schema"
 branch_labels = None
 depends_on = None
