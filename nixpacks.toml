@@ -22,14 +22,15 @@ cmds = [
 # lifespan in railway_main.py.
 
 [start]
-# MALLOC_ARENA_MAX=2  — limit glibc malloc arenas; cuts RSS by ~30 % on multi-threaded Python
-# PYTHONMALLOC=malloc — use system malloc (avoids pymalloc arena fragmentation)
-# PYTHONDONTWRITEBYTECODE=1 — skip .pyc writes (saves ~10 MB on cold start I/O)
-# PYTHONUNBUFFERED=1 — line-buffered stdout so Railway log tailing works in real time
+# Environment variables (MALLOC_ARENA_MAX, PYTHONMALLOC, PYTHONDONTWRITEBYTECODE,
+# PYTHONUNBUFFERED) are already injected via the [variables] section below.
+# Do NOT prefix the cmd with VAR=value assignments: Railway may exec the command
+# directly (non-shell), which would treat the first token as the executable name
+# and produce "The executable 'MALLOC_ARENA_MAX=2' could not be found."
 # Runs railway_main:app (FastAPI + engine + worker + Telegram webhook) via uvicorn.
 # main.py is NOT used here because nixpacks.toml [start] is authoritative on Railway
 # with the Nixpacks builder and must start the full monolith (not just the engine).
-cmd = "MALLOC_ARENA_MAX=2 PYTHONMALLOC=malloc PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 /opt/venv/bin/python -m uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8000}"
+cmd = "exec /opt/venv/bin/python -m uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8000}"
 
 [variables]
 PYTHONUNBUFFERED = "1"
