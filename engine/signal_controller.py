@@ -8,6 +8,7 @@ import json
 import os
 import urllib.request
 import urllib.error
+import threading
 
 from engine.risk import calculate_dynamic_risk
 from engine.scoring import calculate_signal_score
@@ -35,6 +36,7 @@ class SignalController:
     _gemini_daily_limit: int = 10
     _gemini_call_count: int = 0
     _gemini_call_day: str = ""
+    _gemini_counter_lock = threading.Lock()
 
     def __init__(self) -> None:
         self._kill_switch_enabled: bool = False
@@ -172,11 +174,16 @@ class SignalController:
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
             if not api_key:
                 return False
+            try:
+                self._gemini_daily_limit = max(1, int(os.getenv("GEMINI_DAILY_LIMIT", "10") or 10))
+            except Exception:
+                self._gemini_daily_limit = 10
             today = datetime.utcnow().strftime("%Y-%m-%d")
-            if self._gemini_call_day != today:
-                self._gemini_call_day = today
-                self._gemini_call_count = 0
-            return self._gemini_call_count < self._gemini_daily_limit
+            with self._gemini_counter_lock:
+                if self._gemini_call_day != today:
+                    self._gemini_call_day = today
+                    self._gemini_call_count = 0
+                return self._gemini_call_count < self._gemini_daily_limit
 
         def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> str | None:
             if not _can_call_gemini():
@@ -198,9 +205,11 @@ class SignalController:
             req = urllib.request.Request(url, data=body, method="POST")
             req.add_header("Content-Type", "application/json")
             try:
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                timeout_s = max(2, int(os.getenv("GEMINI_API_TIMEOUT_SECONDS", "8") or 8))
+                with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                     raw = resp.read().decode("utf-8", errors="ignore")
-                self._gemini_call_count += 1
+                with self._gemini_counter_lock:
+                    self._gemini_call_count += 1
                 txt = raw.lower()
                 if '"winner":"short"' in txt or "winner short" in txt:
                     return "short"

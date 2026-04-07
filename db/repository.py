@@ -15,6 +15,8 @@ from sqlalchemy.exc import IntegrityError
 from db.models import Subscription, User, Signal, Outcome, DecisionLog, ProcessedWebhookEvent, ApiToken
 from db.session import get_session
 
+ACTIVE_PARTIAL_OUTCOME_STATUSES = ("tp1", "tp2")
+
 
 def _env_int(name: str, default: int) -> int:
     try:
@@ -235,7 +237,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                         Signal.timeframe == timeframe,
                         Signal.direction == opposite,
                         Signal.archived.is_(False),
-                        (Outcome.id.is_(None) | Outcome.status.in_(["tp1", "tp2"])),
+                        (Outcome.id.is_(None) | Outcome.status.in_(ACTIVE_PARTIAL_OUTCOME_STATUSES)),
                     )
                     .limit(1)
                 )

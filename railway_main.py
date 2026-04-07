@@ -100,6 +100,13 @@ def _record_dispatch_latency(update_id: str, started_at: float | None) -> None:
     webhook_dispatch_latency_seconds.observe(elapsed)
 
 
+def _extract_chat_id(payload: dict | None) -> int:
+    try:
+        return int((((payload or {}).get("message") or {}).get("chat") or {}).get("id") or 0)
+    except Exception:
+        return 0
+
+
 async def _sample_outcome_latency_p95_seconds(hours: int = 24, limit: int = 500) -> float | None:
     try:
         from db.session import get_session, is_db_configured
@@ -1002,13 +1009,12 @@ async def lifespan(_: FastAPI):
                 process_task = asyncio.create_task(_bot_application.process_update(update))
                 _inflight_update_tasks.add(process_task)
                 process_task.add_done_callback(lambda t: _inflight_update_tasks.discard(t))
+                soft_timeout_s = max(5.0, float(os.getenv("WEBHOOK_SOFT_TIMEOUT_SECONDS", "30") or 30.0))
+                hard_timeout_s = max(10.0, float(os.getenv("WEBHOOK_HARD_TIMEOUT_SECONDS", "120") or 120.0))
                 try:
-                    await asyncio.wait_for(asyncio.shield(process_task), timeout=30.0)
+                    await asyncio.wait_for(asyncio.shield(process_task), timeout=soft_timeout_s)
                 except asyncio.TimeoutError:
-                    try:
-                        chat_id = int((((payload or {}).get("message") or {}).get("chat") or {}).get("id") or 0)
-                    except Exception:
-                        chat_id = 0
+                    chat_id = _extract_chat_id(payload)
                     if chat_id > 0:
                         try:
                             await _bot_application.bot.send_message(
@@ -1017,6 +1023,11 @@ async def lifespan(_: FastAPI):
                             )
                         except Exception:
                             pass
+                    try:
+                        await asyncio.wait_for(process_task, timeout=hard_timeout_s)
+                    except asyncio.TimeoutError:
+                        process_task.cancel()
+                        logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
                 _record_dispatch_latency(str(payload_update_id), started_at)
             except Exception as exc:
                 logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)

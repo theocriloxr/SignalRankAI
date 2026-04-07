@@ -44,6 +44,7 @@ class Worker:
         self._stop.set()
 
     async def run(self) -> None:
+        heartbeat_interval_s = max(60, int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "300") or 300))
         expiry_task = asyncio.create_task(self._expiry_loop())
         ml_task: Optional[asyncio.Task] = None
         market_monitor_task: Optional[asyncio.Task] = None
@@ -98,8 +99,8 @@ class Worker:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
                 now = time.time()
-                if now - last_heartbeat > 300:
-                    logger.debug("[worker] heartbeat: running")
+                if now - last_heartbeat > heartbeat_interval_s:
+                    logger.debug("[worker] heartbeat: running (interval=%ss)", heartbeat_interval_s)
                     last_heartbeat = now
         finally:
             if outcome_tracker_task is not None:
