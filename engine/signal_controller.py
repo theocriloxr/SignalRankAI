@@ -174,6 +174,8 @@ class SignalController:
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
             if not api_key:
                 return False, "missing_api_key"
+            if len(api_key) < 20:
+                return False, "invalid_api_key"
             try:
                 self._gemini_daily_limit = max(1, int(os.getenv("GEMINI_DAILY_LIMIT", "10") or 10))
             except Exception:
