@@ -567,19 +567,6 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			except Exception:
 				pass
 			return
-	if data == "nav_proof":
-		try:
-			if update.effective_user is None:
-				return
-			from types import SimpleNamespace
-			proxy_update = SimpleNamespace(
-				effective_user=update.effective_user,
-				message=query.message,
-			)
-			await proof_command(proxy_update, context)
-			return
-		except Exception:
-			return
 	if data == "nav_performance":
 		try:
 			uid = update.effective_user.id if update.effective_user else None
