@@ -14,8 +14,8 @@ TIER_DAILY_LIMITS: Final[dict[str, float]] = {
 # Tier quality score thresholds
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
     "free": 80,
-    "premium": 75,
-    "vip": 85,
+    "premium": 70,
+    "vip": 75,
     "owner": 75,
     "admin": 75,
 }

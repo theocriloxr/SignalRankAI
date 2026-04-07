@@ -203,7 +203,7 @@ class TierDeliveryManager:
             },
             'vip': {
                 'signals_per_day': 'Quality-based',
-                'min_score': int(TIER_SCORE_THRESHOLDS.get('vip', 85)),
+                'min_score': int(TIER_SCORE_THRESHOLDS.get('vip', 75)),
                 'multiple_tps': True,       # 3+ TP levels
                 'confidence_percent': True, # Full score (0-100)
                 'validity_window': True,
