@@ -304,7 +304,7 @@ async def _check_waitlist_capacity_job() -> None:
                 invite_window_hours = max(1, int(os.getenv("VIP_WAITLIST_INVITE_WINDOW_HOURS", "2") or 2))
             except Exception:
                 invite_window_hours = 2
-            expires = now + timedelta(hours=int(invite_window_hours))
+            expires = now + timedelta(hours=invite_window_hours)
             await session.execute(
                 sa_update(VIPWaitlist).where(VIPWaitlist.id == entry.id).values(
                     invited_at=now,

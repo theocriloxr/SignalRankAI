@@ -2816,7 +2816,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from sqlalchemy import select, func
 			from db.session import get_engine_for_event_loop, get_session
 			from db.models import Signal, Outcome, SignalDelivery, User
-			user_tier = _effective_tier(int(user_id))
+			user_tier = str(_effective_tier(int(user_id)) or "FREE").upper()
 			if user_tier == "FREE":
 				outcome_row_limit = max(1, int(os.getenv("OUTCOME_GLOBAL_FREE_LIMIT", str(FREE_PROOF_FEED_LIMIT)) or FREE_PROOF_FEED_LIMIT))
 			elif user_tier in {"OWNER", "ADMIN"}:
