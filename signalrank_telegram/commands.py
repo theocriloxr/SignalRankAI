@@ -2818,11 +2818,11 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from db.models import Signal, Outcome
 			user_tier = _effective_tier(int(user_id))
 			if user_tier == "FREE":
-				row_limit = max(1, int(os.getenv("OUTCOME_GLOBAL_FREE_LIMIT", str(FREE_PROOF_FEED_LIMIT)) or FREE_PROOF_FEED_LIMIT))
+				outcome_row_limit = max(1, int(os.getenv("OUTCOME_GLOBAL_FREE_LIMIT", str(FREE_PROOF_FEED_LIMIT)) or FREE_PROOF_FEED_LIMIT))
 			elif user_tier in {"OWNER", "ADMIN"}:
-				row_limit = max(10, int(os.getenv("OUTCOME_GLOBAL_ADMIN_OWNER_LIMIT", "50") or 50))
+				outcome_row_limit = max(10, int(os.getenv("OUTCOME_GLOBAL_ADMIN_OWNER_LIMIT", "50") or 50))
 			else:
-				row_limit = max(5, int(os.getenv("OUTCOME_GLOBAL_PAID_LIMIT", "30") or 30))
+				outcome_row_limit = max(5, int(os.getenv("OUTCOME_GLOBAL_PAID_LIMIT", "30") or 30))
 			engine = get_engine_for_event_loop()
 			if engine is None:
 				raise RuntimeError("Postgres not configured")
@@ -2843,14 +2843,14 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						.join(Outcome, Outcome.signal_id == Signal.signal_id)
 						.where(func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at) >= cutoff)
 						.order_by(func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at).desc())
-						.limit(int(row_limit))
+						.limit(int(outcome_row_limit))
 					)
 				).all()
 			if not rows:
 				await update.message.reply_text("📭 No recorded outcomes in the last 24 hours.")
 				return
 			lines = [
-				f"📣 Outcomes (last 24h, global • showing {len(rows)})",
+				f"📣 Outcomes (last 24h, global • showing {len(rows)} up to {int(outcome_row_limit)})",
 				"",
 			]
 			for signal_id, asset, timeframe, direction, status, r_multiple, percent, recorded_at in rows:
