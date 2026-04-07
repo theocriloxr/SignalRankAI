@@ -39,30 +39,16 @@ class TierDeliveryManager:
         """Initialize delivery manager."""
         self.delivery_log = []
     def should_send_signal(self, user_tier: str, score: float, user_id: Optional[str | int] = None, session=None) -> bool:
-        """Check if signal should be sent to this user based on tier and quality, using Redis for daily limit."""
+        """Check score eligibility for this tier.
+
+        Daily limits are enforced by dispatch callers against Postgres delivery
+        history so runtime memory usage stays low on constrained hosts.
+        """
         import logging
-        from utils.async_runner import run_sync
-        from core.tier_constants import TIER_DAILY_LIMITS, TIER_SCORE_THRESHOLDS
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
 
         tier = str(user_tier or 'free').lower()
-        
-        # Check daily limit using Redis
-        if user_id is not None:
-            try:
-                from core.redis_state import state
-                from datetime import datetime
-                date_str = datetime.utcnow().strftime('%Y-%m-%d')
-                key = f"signals_sent:{user_id}:{date_str}"
-                sent_today = int(state.get_sync(key) or 0)
-                
-                limit = TIER_DAILY_LIMITS.get(tier, 2)
-                if sent_today >= limit:
-                    logging.debug(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
-                    return False
-            except Exception as e:
-                logging.warning(f"[delivery] Failed to check Redis daily limit for user {user_id}: {e}")
-                pass
-        
+
         # Quality gates (MUST pass)
         min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
         if score < min_score:
@@ -75,27 +61,10 @@ class TierDeliveryManager:
     async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str | int] = None, session=None) -> bool:
         """Async variant of should_send_signal for async contexts."""
         import logging
-        from core.tier_constants import TIER_DAILY_LIMITS, TIER_SCORE_THRESHOLDS
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
 
         tier = str(user_tier or 'free').lower()
-        
-        # Check daily limit using Redis
-        if user_id is not None:
-            try:
-                from core.redis_state import state
-                from datetime import datetime
-                date_str = datetime.utcnow().strftime('%Y-%m-%d')
-                key = f"signals_sent:{user_id}:{date_str}"
-                sent_today = int(state.get_sync(key) or 0)
-                
-                limit = TIER_DAILY_LIMITS.get(tier, 2)
-                if sent_today >= limit:
-                    logging.debug(f"[delivery] User {user_id} ({tier}) daily limit {limit} reached: {sent_today} delivered today.")
-                    return False
-            except Exception as e:
-                logging.warning(f"[delivery] Failed to check Redis daily limit for user {user_id} (async): {e}")
-                pass
-        
+
         # Quality gates (MUST pass)
         min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
         if score < min_score:

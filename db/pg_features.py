@@ -517,6 +517,30 @@ async def list_signals_sent_today(
     return list(res2.scalars().all())
 
 
+async def count_signals_sent_today(
+    session: AsyncSession,
+    telegram_user_id: int,
+) -> int:
+    """Return how many signals were delivered to this user since UTC midnight."""
+    now: datetime = to_naive_utc(_utcnow())
+    start: datetime = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    res: Result[Tuple[User]] = await session.execute(
+        select(User).where(User.telegram_user_id == int(telegram_user_id))
+    )
+    user: User | None = res.scalar_one_or_none()
+    if user is None:
+        return 0
+
+    cnt_res: Result[Tuple[int]] = await session.execute(
+        select(func.count(SignalDelivery.id)).where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.delivered_at >= start,
+        )
+    )
+    return int(cnt_res.scalar() or 0)
+
+
 async def list_recent_signals_delivered(
     session: AsyncSession,
     telegram_user_id: int,

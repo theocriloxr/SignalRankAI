@@ -1704,16 +1704,23 @@ def main_loop(DRY_RUN: bool = False):
                         user_tier = 'free'
 
                     # Check daily limit
-                    from datetime import datetime
-                    from core.redis_state import state
                     from core.tier_constants import TIER_DAILY_LIMITS
+                    from db.session import get_session as _get_limit_session
+                    from db.pg_features import count_signals_sent_today
                     
-                    date_str = datetime.utcnow().strftime('%Y-%m-%d')
-                    redis_key = f"signals_sent:{user_id}:{date_str}"
                     signals_sent_today = 0
                     try:
-                        signals_sent_today = int(state.get_sync(redis_key) or 0)
-                    except Exception:
+                        async with _get_limit_session() as _ls:
+                            signals_sent_today = int(
+                                await count_signals_sent_today(_ls, int(user_id))
+                            )
+                            await _ls.commit()
+                    except Exception as _dl_err:
+                        logger.debug(
+                            "[engine] DB daily-limit count failed for user=%s: %s",
+                            user_id,
+                            _dl_err,
+                        )
                         signals_sent_today = 0
                     
                     daily_limit = TIER_DAILY_LIMITS.get(user_tier, 2)

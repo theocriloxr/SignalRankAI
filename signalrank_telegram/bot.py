@@ -2373,6 +2373,23 @@ def _format_free_fomo_unlock_message(signal: dict) -> str:
     )
 
 
+def _count_signals_sent_today_sync(telegram_user_id: int) -> int:
+    """Count today's delivered signals for a user from Postgres."""
+    try:
+        from db.session import get_session
+        from db.pg_features import count_signals_sent_today
+
+        async def _count() -> int:
+            async with get_session() as session:
+                v = await count_signals_sent_today(session, int(telegram_user_id))
+                await session.commit()
+                return int(v or 0)
+
+        return int(run_sync(_count()) or 0)
+    except Exception:
+        return 0
+
+
 def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
     """Instant FREE dispatch trigger fired by VIP TP1 events."""
     if not _is_free_fomo_dispatch_only_enabled():
@@ -2391,13 +2408,10 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
     try:
         from db.pg_compat import get_all_user_ids_compat
         from signalrank_telegram.access import resolve_user_tier
-        from core.redis_state import state as redis_state
         from core.tier_constants import TIER_DAILY_LIMITS
-        from datetime import datetime
 
         all_users = list(get_all_user_ids_compat() or [])
         free_users: list[int] = []
-        date_str = datetime.utcnow().strftime('%Y-%m-%d')
 
         for uid in all_users:
             try:
@@ -2405,8 +2419,7 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                 if str(resolve_user_tier(uid_i) or "free").lower() != "free":
                     continue
                 daily_limit = int(TIER_DAILY_LIMITS.get("free", 2) or 2)
-                sent_key = f"signals_sent:{uid_i}:{date_str}"
-                already_sent = int(redis_state.get_sync(sent_key) or 0)
+                already_sent = int(_count_signals_sent_today_sync(uid_i) or 0)
                 if already_sent >= daily_limit:
                     continue
                 free_users.append(uid_i)
@@ -2723,16 +2736,24 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 async def _reserve() -> list[dict]:
                     from db.pg_features import get_or_create_signal, record_signal_delivery
+                    from db.pg_features import count_signals_sent_today
+                    from core.tier_constants import TIER_DAILY_LIMITS
 
                     to_send: list[dict] = []
                     async with get_session() as session:
+                        daily_limit = TIER_DAILY_LIMITS.get(str(effective_tier), 2)
+                        already_sent_today = int(
+                            await count_signals_sent_today(session, int(user_id))
+                        )
                         for signal in signals_list[: max(0, int(limit))]:
+                            if daily_limit != float('inf') and (already_sent_today + len(to_send)) >= int(daily_limit):
+                                break
                             try:
                                 _score = float((signal or {}).get('score', 0) or 0)
                                 if delivery_mgr is not None and not delivery_mgr.should_send_signal(
                                     str(effective_tier),
                                     _score,
-                                    user_id=int(user_id),
+                                    user_id=None,
                                 ):
                                     continue
                             except Exception:
@@ -2977,18 +2998,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     if not user:
                         return
                     
-                    # Check how many signals user already received today using Redis
-                    from core.redis_state import state
+                    # Check how many signals user already received today from DB
                     from core.tier_constants import TIER_DAILY_LIMITS
                     from signalrank_telegram.access import resolve_user_tier
+                    from db.pg_features import count_signals_sent_today
                     
-                    date_str = datetime.utcnow().strftime('%Y-%m-%d')
-                    redis_key = f"signals_sent:{user_id}:{date_str}"
-                    signals_sent_today = 0
-                    try:
-                        signals_sent_today = int(state.get_sync(redis_key) or 0)
-                    except Exception:
-                        signals_sent_today = 0
+                    signals_sent_today = int(
+                        await count_signals_sent_today(session, int(user_id))
+                    )
                     
                     # Get user's actual tier for accurate logging
                     user_tier_actual = 'free'
@@ -3078,19 +3095,6 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     display_tier=signal_display_tier,
                                 ):
                                     continue
-                                # Mark as delivered in Redis
-                                try:
-                                    mark_signal_delivered_sync(user_id, str(sig_dict.get('signal_id')))
-                                except Exception as e:
-                                    logger.debug(f"[dispatch] Failed to mark signal as delivered in Redis: {e}")
-                                    pass
-                                # Increment daily counter
-                                try:
-                                    from core.redis_state import state
-                                    state.incr_sync(redis_key, ex=86400)
-                                except Exception as e:
-                                    logger.debug(f"[dispatch] Failed to increment daily counter in Redis: {e}")
-                                    pass
                             except Exception as e:
                                 logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {e}")
                                 pass
@@ -3117,18 +3121,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         )
 
     if routing_tier in ('premium', 'vip'):
-        from core.redis_state import state
         from core.tier_constants import TIER_DAILY_LIMITS
-        from datetime import datetime
-        
-        # Check daily limit
-        date_str = datetime.utcnow().strftime('%Y-%m-%d')
-        redis_key = f"signals_sent:{user_id}:{date_str}"
-        signals_sent_today = 0
-        try:
-            signals_sent_today = int(state.get_sync(redis_key) or 0)
-        except Exception:
-            signals_sent_today = 0
+
+        # Check daily limit from DB deliveries
+        signals_sent_today = int(_count_signals_sent_today_sync(int(user_id)) or 0)
         
         daily_limit = TIER_DAILY_LIMITS.get(routing_tier, 2)
         
@@ -3161,18 +3157,6 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         routing_tier=str(routing_tier),
                     )
                 except Exception:
-                    pass
-                # Mark as delivered in Redis
-                try:
-                    mark_signal_delivered_sync(user_id, str(signal.get('signal_id')))
-                except Exception as e:
-                    logger.debug(f"[dispatch] Failed to mark signal as delivered in Redis for user {user_id}: {e}")
-                    pass
-                # Increment daily counter
-                try:
-                    state.incr_sync(redis_key, ex=86400)
-                except Exception as e:
-                    logger.debug(f"[dispatch] Failed to increment daily counter in Redis for user {user_id}: {e}")
                     pass
                 sent += 1
             except Exception as e:
