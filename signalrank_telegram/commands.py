@@ -1674,7 +1674,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/signals", "View the latest signal feed"),
 				("/proof", "See recent verified outcomes and wins"),
 				("/signal", "Look up a specific signal by reference"),
-				("/outcome", "View global 24h outcomes or check a specific delivered signal"),
+				("/outcome", "View your 24h outcomes or check a specific delivered signal"),
 				("/pricing", "See current plan pricing"),
 				("/upgrade", "Open the upgrade menu"),
 				("/liveprice", "Fetch the real-time price of any asset"),
@@ -2815,7 +2815,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			from datetime import datetime, timedelta, timezone
 			from sqlalchemy import select, func
 			from db.session import get_engine_for_event_loop, get_session
-			from db.models import Signal, Outcome
+			from db.models import Signal, Outcome, SignalDelivery, User
 			user_tier = _effective_tier(int(user_id))
 			if user_tier == "FREE":
 				outcome_row_limit = max(1, int(os.getenv("OUTCOME_GLOBAL_FREE_LIMIT", str(FREE_PROOF_FEED_LIMIT)) or FREE_PROOF_FEED_LIMIT))
@@ -2827,7 +2827,16 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			if engine is None:
 				raise RuntimeError("Postgres not configured")
 			cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+			recorded_at_expr = func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at)
 			async with get_session() as session:
+				user_row = (
+					await session.execute(
+						select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
+					)
+				).scalar_one_or_none()
+				if user_row is None:
+					await update.message.reply_text("📭 No recorded outcomes for you in the last 24 hours.")
+					return
 				rows = (
 					await session.execute(
 						select(
@@ -2838,19 +2847,23 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 							Outcome.status,
 							Outcome.r_multiple,
 							Outcome.percent,
-							func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at).label("recorded_at"),
+							recorded_at_expr.label("recorded_at"),
 						)
+						.join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
 						.join(Outcome, Outcome.signal_id == Signal.signal_id)
-						.where(func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at) >= cutoff)
-						.order_by(func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at).desc())
+						.where(
+							SignalDelivery.user_id == int(user_row),
+							recorded_at_expr >= cutoff,
+						)
+						.order_by(recorded_at_expr.desc())
 						.limit(int(outcome_row_limit))
 					)
 				).all()
 			if not rows:
-				await update.message.reply_text("📭 No recorded outcomes in the last 24 hours.")
+				await update.message.reply_text("📭 No recorded outcomes for you in the last 24 hours.")
 				return
 			lines = [
-				f"📣 Outcomes (last 24h, global • showing {len(rows)} up to {int(outcome_row_limit)})",
+				f"📣 Your outcomes (last 24h • showing {len(rows)} up to {int(outcome_row_limit)})",
 				"",
 			]
 			for signal_id, asset, timeframe, direction, status, r_multiple, percent, recorded_at in rows:

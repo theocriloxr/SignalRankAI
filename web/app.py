@@ -258,7 +258,7 @@ async def _check_waitlist_capacity_job() -> None:
     """Pop the oldest uninvited VIP waitlist entry when a seat becomes available.
 
     - Counts active VIP subscribers; if below VIP_SEAT_LIMIT, invites the oldest
-      uninvited entry: sets invited_at + invite_expires_at = now + 24 h, DMs the user.
+      uninvited entry: sets invited_at + invite_expires_at using configured window, DMs the user.
     Scheduled: every 1 hour via the FastAPI lifespan AsyncIOScheduler.
     """
     if not is_db_configured():
@@ -298,9 +298,13 @@ async def _check_waitlist_capacity_job() -> None:
                 await session.commit()
                 return
 
-            # Set invite TTL = 24 h from now
+            # Set invite window (default 2 h) from now.
             now = datetime.utcnow()
-            expires = now + timedelta(hours=24)
+            try:
+                invite_window_hours = max(1, int(os.getenv("VIP_WAITLIST_INVITE_WINDOW_HOURS", "2") or 2))
+            except Exception:
+                invite_window_hours = 2
+            expires = now + timedelta(hours=int(invite_window_hours))
             await session.execute(
                 sa_update(VIPWaitlist).where(VIPWaitlist.id == entry.id).values(
                     invited_at=now,
@@ -329,7 +333,7 @@ async def _check_waitlist_capacity_job() -> None:
             await _send_telegram_dm(
                 user.telegram_user_id,
                 f"\U0001f6a8 *VIP SPOT UNLOCKED!*\n\n"
-                f"A seat has opened up just for you. You have exactly *24 hours* to "
+                f"A seat has opened up just for you. You have exactly *{int(invite_window_hours)} hours* to "
                 f"complete your payment before this link expires and the spot is passed "
                 f"to the next trader in line."
                 + link_text
@@ -343,7 +347,7 @@ async def _check_waitlist_capacity_job() -> None:
 
 
 async def _monitor_expired_invites_job() -> None:
-    """Expire VIP invitations not acted upon within 24 hours.
+    """Expire VIP invitations not acted upon within the configured invite window.
 
     - Finds entries where invite_expires_at < now AND user has not upgraded to VIP.
     - Resets invited_at + invite_expires_at = NULL (re-queues for next cycle).
@@ -383,7 +387,7 @@ async def _monitor_expired_invites_job() -> None:
                 await _send_telegram_dm(
                     user.telegram_user_id,
                     "\u23f3 *VIP Invite Expired*\n\n"
-                    "Your 24-hour VIP spot has been passed to the next trader in line. "
+                    "Your VIP spot has been passed to the next trader in line. "
                     "Don't worry \u2014 you're still on the waitlist and will be notified "
                     "again when the next seat opens.\n\n"
                     "You can also try /upgrade directly if more seats open. \U0001f64f",
@@ -402,7 +406,7 @@ async def _monitor_expired_invites_job() -> None:
 
 
 async def _send_waitlist_reminder_job() -> None:
-    """Send one 12-hour reminder to invited waitlist users before 24h expiry."""
+    """Send one half-window reminder before invite expiry (default 1h into a 2h window)."""
     if not is_db_configured():
         return
     try:
@@ -411,8 +415,13 @@ async def _send_waitlist_reminder_job() -> None:
         from datetime import timedelta
 
         now = datetime.utcnow()
-        win_start = now + timedelta(hours=11, minutes=45)
-        win_end = now + timedelta(hours=12, minutes=15)
+        try:
+            invite_window_hours = max(1, int(os.getenv("VIP_WAITLIST_INVITE_WINDOW_HOURS", "2") or 2))
+        except Exception:
+            invite_window_hours = 2
+        half_window_minutes = max(15, int((int(invite_window_hours) * 60) / 2))
+        win_start = now + timedelta(minutes=half_window_minutes - 15)
+        win_end = now + timedelta(minutes=half_window_minutes + 15)
         reminded = 0
 
         async with get_session() as session:
@@ -446,7 +455,7 @@ async def _send_waitlist_reminder_job() -> None:
                 await _send_telegram_dm(
                     user.telegram_user_id,
                     "⏰ *VIP Invite Reminder*\n\n"
-                    "Your VIP checkout invite is still active, but your 24-hour window is halfway gone.\n"
+                    f"Your VIP checkout invite is still active, but your {int(invite_window_hours)}-hour window is halfway gone.\n"
                     f"Expiry time: *{exp_txt}*\n\n"
                     "Complete your upgrade before expiry to secure your seat.",
                 )
@@ -498,7 +507,7 @@ async def _lifespan(app_: FastAPI):
         _send_waitlist_reminder_job,
         "interval",
         minutes=15,
-        id="wl_reminder_12h",
+        id="wl_reminder_half_window",
         replace_existing=True,
         max_instances=1,
     )

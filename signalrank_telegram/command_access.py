@@ -126,7 +126,7 @@ COMMAND_HELP = {
             ("signals",              "View latest signals (limited on Free)"),
             ("signal",               "Lookup a specific signal by reference"),
             ("proof",                "Proof feed: recent verified wins/outcomes"),
-            ("outcome",              "View global 24h outcomes or check one signal outcome"),
+            ("outcome",              "View your 24h outcomes or check one signal outcome"),
             ("liveprice",            "Get real-time price for any asset"),
             ("market",               "Market overview — major assets at a glance"),
             ("invite",               "Get your referral link and earn rewards"),
