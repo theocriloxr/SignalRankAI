@@ -927,6 +927,10 @@ def main_loop(DRY_RUN: bool = False):
                             sig.setdefault('regime', ind.get('regime', regime))
                             if sig.get('volatility') is None:
                                 sig['volatility'] = float(ind.get('atr_percent', 0) or ind.get('bollinger', {}).get('width', 0) or 0)
+                        # Preserve asset-class open-market context and full-strategy coverage hints.
+                        sig['market_open_confirmed'] = True
+                        sig['strategy_coverage_count'] = int(len(strategy_signals or []))
+                        sig['news_sentiment'] = market_data.get('news_sentiment')
 
                         # preview score (even if it doesn't pass validation/gates)
                         try:
@@ -957,6 +961,25 @@ def main_loop(DRY_RUN: bool = False):
                             sig['rejection_reason'] = f'confluence {conf:.1f}%'
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
                             continue
+                        # News confirmation gate (all supported classes: FX/crypto/commodities/stocks).
+                        # Strong opposing sentiment blocks signal; aligned sentiment gets a light confidence bonus.
+                        try:
+                            from core.tier_constants import STRONG_SENTIMENT_THRESHOLD
+                            _news = float(market_data.get('news_sentiment') or 0.0)
+                            _dir = str(sig.get('direction') or '').lower().strip()
+                            _thr = float(STRONG_SENTIMENT_THRESHOLD or 2)
+                            _oppose = (_news >= _thr and _dir == 'short') or (_news <= -_thr and _dir == 'long')
+                            if _oppose:
+                                sig['rejection_reason'] = f"news_conflict sentiment={_news:.2f}"
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"news_sentiment": _news})
+                                continue
+                            if ((_news >= _thr and _dir == 'long') or (_news <= -_thr and _dir == 'short')):
+                                try:
+                                    sig['confidence'] = min(1.0, float(sig.get('confidence') or 0.0) + 0.05)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         strict_candidates.append(sig)
                     except Exception:
                         logger.exception("candidate gating failed")

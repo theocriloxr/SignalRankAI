@@ -170,10 +170,10 @@ class SignalController:
                 risk = 1.0
             return (_conf(sig) * 0.6) + (_roi(sig) * 30.0) - (risk * 10.0)
 
-        def _can_call_gemini() -> bool:
+        def _can_call_gemini() -> tuple[bool, str]:
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
             if not api_key:
-                return False
+                return False, "missing_api_key"
             try:
                 self._gemini_daily_limit = max(1, int(os.getenv("GEMINI_DAILY_LIMIT", "10") or 10))
             except Exception:
@@ -183,12 +183,15 @@ class SignalController:
                 if self._gemini_call_day != today:
                     self._gemini_call_day = today
                     self._gemini_call_count = 0
-                return self._gemini_call_count < self._gemini_daily_limit
+                if self._gemini_call_count >= self._gemini_daily_limit:
+                    return False, "daily_limit_reached"
+                return True, "ok"
 
-        def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> str | None:
-            if not _can_call_gemini():
-                self.audit_logger.debug("gemini_inline skipped asset=%s tf=%s reason=budget_or_missing_key", asset, tf)
-                return None
+        def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> tuple[str | None, str]:
+            can_call, reason = _can_call_gemini()
+            if not can_call:
+                self.audit_logger.debug("gemini_inline skipped asset=%s tf=%s reason=%s", asset, tf, reason)
+                return None, reason
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
             model = (os.getenv("GEMINI_INLINE_MODEL") or "gemini-1.5-flash").strip()
             prompt = {
@@ -213,13 +216,13 @@ class SignalController:
                     self._gemini_call_count += 1
                 txt = raw.lower()
                 if '"winner":"short"' in txt or "winner short" in txt:
-                    return "short"
+                    return "short", "ok"
                 if '"winner":"long"' in txt or "winner long" in txt:
-                    return "long"
+                    return "long", "ok"
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception) as exc:
                 self.audit_logger.debug("gemini_inline failed asset=%s tf=%s error=%s", asset, tf, exc)
-                return None
-            return None
+                return None, "request_failed"
+            return None, "unparseable_response"
 
         try:
             gemini_top_n = max(1, int(os.getenv("GEMINI_INLINE_TOP_N", "3") or 3))
@@ -251,8 +254,12 @@ class SignalController:
                 continue
 
             winning_side = None
+            gemini_reason = "not_applicable"
             if longs and shorts:
-                gemini_winner = _gemini_pick(asset, tf, longs, shorts) if (asset, tf) in gemini_shortlist else None
+                if (asset, tf) in gemini_shortlist:
+                    gemini_winner, gemini_reason = _gemini_pick(asset, tf, longs, shorts)
+                else:
+                    gemini_winner, gemini_reason = (None, "not_shortlisted")
                 if gemini_winner == "long":
                     winning_side = "long"
                 elif gemini_winner == "short":
@@ -286,6 +293,8 @@ class SignalController:
                     winning_ml_probs = [s.get("ml_probability") for s in winning if s.get("ml_probability") is not None]
                     if winning_ml_probs:
                         best["winning_avg_ml_prob"] = sum(winning_ml_probs) / len(winning_ml_probs)
+                best["gemini_inline_reason"] = str(gemini_reason)
+                best["gemini_inline_used"] = bool(gemini_reason == "ok")
             except Exception:
                 pass
 

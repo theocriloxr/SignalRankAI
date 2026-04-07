@@ -1674,7 +1674,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/signals", "View the latest signal feed"),
 				("/proof", "See recent verified outcomes and wins"),
 				("/signal", "Look up a specific signal by reference"),
-				("/outcome", "Check the result of a delivered signal"),
+				("/outcome", "View global 24h outcomes or check a specific delivered signal"),
 				("/pricing", "See current plan pricing"),
 				("/upgrade", "Open the upgrade menu"),
 				("/liveprice", "Fetch the real-time price of any asset"),
@@ -2811,10 +2811,71 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if len(context.args or []) > 1:
 		action = str(context.args[1] or "").strip().upper()
 	if not arg:
-		await update.message.reply_text(
-			"Usage: /outcome <reference> [WIN|LOSS|CANCEL|TP1|TP2|TP3]"
-		)
-		return
+		try:
+			from datetime import datetime, timedelta, timezone
+			from sqlalchemy import select, func
+			from db.session import get_engine_for_event_loop, get_session
+			from db.models import Signal, Outcome
+			engine = get_engine_for_event_loop()
+			if engine is None:
+				raise RuntimeError("Postgres not configured")
+			cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+			async with get_session() as session:
+				rows = (
+					await session.execute(
+						select(
+							Signal.signal_id,
+							Signal.asset,
+							Signal.timeframe,
+							Signal.direction,
+							Outcome.status,
+							Outcome.r_multiple,
+							Outcome.percent,
+							func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at).label("recorded_at"),
+						)
+						.join(Outcome, Outcome.signal_id == Signal.signal_id)
+						.where(func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at) >= cutoff)
+						.order_by(func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at).desc())
+						.limit(30)
+					)
+				).all()
+			if not rows:
+				await update.message.reply_text("📭 No recorded outcomes in the last 24 hours.")
+				return
+			lines = [
+				"📣 Outcomes (last 24h, global)",
+				"",
+			]
+			for signal_id, asset, timeframe, direction, status, r_multiple, percent, recorded_at in rows:
+				try:
+					_ts = recorded_at if getattr(recorded_at, "tzinfo", None) is not None else recorded_at.replace(tzinfo=timezone.utc)
+					ts_txt = _ts.strftime("%Y-%m-%d %H:%M UTC")
+				except Exception:
+					ts_txt = "unknown time"
+				status_txt = str(status or "").upper()
+				lines.append(f"• {str(signal_id)[:8]} | {asset} {timeframe} {str(direction).upper()} | {status_txt} | {ts_txt}")
+				if r_multiple is not None or percent is not None:
+					try:
+						parts = []
+						if r_multiple is not None:
+							parts.append(f"{float(r_multiple):.2f}R")
+						if percent is not None:
+							parts.append(f"{float(percent):.2f}%")
+						if parts:
+							lines.append(f"  ↳ {' | '.join(parts)}")
+					except Exception:
+						pass
+			lines.extend([
+				"",
+				"Use /outcome <reference> for a full single-signal breakdown.",
+			])
+			await update.message.reply_text("\n".join(lines))
+			return
+		except Exception:
+			await update.message.reply_text(
+				"Usage: /outcome <reference> [WIN|LOSS|CANCEL|TP1|TP2|TP3]"
+			)
+			return
 
 	try:
 		from db.session import get_engine_for_event_loop, get_session
@@ -6194,7 +6255,7 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 	"""Shared helper: call Paystack /subscription/disable and set auto_renew=False in DB.
 
 	Returns:
-	  {"success": bool, "gateway_cancelled": bool, "tier": str}
+	  {"success": bool, "gateway_cancelled": bool, "tier": str, "retry_attempts": int, "escalate_admin": bool}
 	Used by cancel_confirm_callback to perform the actual cancellation work.
 	"""
 	try:
@@ -6216,31 +6277,40 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 
 			# Disable Paystack recurring billing (2-step: fetch email_token → POST disable)
 			gateway_cancelled = False
+			retry_attempts = 0
 			if sub_code:
 				try:
 					import httpx as _httpx, os as _os
 					secret = _os.getenv("PAYSTACK_SECRET_KEY", "").strip()
 					if secret:
+						try:
+							max_retries = max(1, int(_os.getenv("PAYSTACK_CANCEL_RETRY_ATTEMPTS", "3") or 3))
+						except Exception:
+							max_retries = 3
 						headers = {
 							"Authorization": f"Bearer {secret}",
 							"Content-Type": "application/json",
 						}
-						async with _httpx.AsyncClient(timeout=15) as client:
-							# Step 1: fetch subscription to get email_token
-							r1 = await client.get(
-								f"https://api.paystack.co/subscription/{sub_code}",
-								headers=headers,
-							)
-							email_token = ""
-							if r1.status_code < 400:
-								email_token = (r1.json().get("data") or {}).get("email_token", "")
-							# Step 2: disable with code + email_token
-							r2 = await client.post(
-								"https://api.paystack.co/subscription/disable",
-								json={"code": sub_code, "token": email_token},
-								headers=headers,
-							)
-							gateway_cancelled = r2.status_code < 400
+						for attempt in range(1, max_retries + 1):
+							retry_attempts = attempt
+							async with _httpx.AsyncClient(timeout=15) as client:
+								# Step 1: fetch subscription to get email_token
+								r1 = await client.get(
+									f"https://api.paystack.co/subscription/{sub_code}",
+									headers=headers,
+								)
+								email_token = ""
+								if r1.status_code < 400:
+									email_token = (r1.json().get("data") or {}).get("email_token", "")
+								# Step 2: disable with code + email_token
+								r2 = await client.post(
+									"https://api.paystack.co/subscription/disable",
+									json={"code": sub_code, "token": email_token},
+									headers=headers,
+								)
+								gateway_cancelled = r2.status_code < 400
+								if gateway_cancelled:
+									break
 				except Exception as _ge:
 					# Non-fatal — DB cancellation still proceeds
 					logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
@@ -6250,11 +6320,17 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 				sa_update(User).where(User.id == user.id).values(auto_renew=False)
 			)
 			await session.commit()
-			return {"success": True, "gateway_cancelled": gateway_cancelled, "tier": current_tier}
+			return {
+				"success": True,
+				"gateway_cancelled": gateway_cancelled,
+				"tier": current_tier,
+				"retry_attempts": int(retry_attempts),
+				"escalate_admin": bool(sub_code and not gateway_cancelled),
+			}
 
 	except Exception as e:
 		logger.error(f"[cancel] _cancel_and_disable_paystack failed for user {user_id}: {e}")
-		return {"success": False, "gateway_cancelled": False, "tier": "free"}
+		return {"success": False, "gateway_cancelled": False, "tier": "free", "retry_attempts": 0, "escalate_admin": True}
 
 
 async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6293,6 +6369,26 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 			f"You can re-subscribe anytime with /upgrade. \U0001f64f",
 			parse_mode="MarkdownV2",
 		)
+		if result.get("escalate_admin"):
+			try:
+				admin_msg = (
+					f"⚠️ Paystack cancel gateway failed after retries.\n"
+					f"user_id={int(user_id)} tier={tier} attempts={int(result.get('retry_attempts') or 0)}\n"
+					"DB auto_renew was set to False."
+				)
+				target_ids = set()
+				for _id in (list(ADMIN_IDS) + list(OWNER_IDS)):
+					try:
+						target_ids.add(int(_id))
+					except Exception:
+						continue
+				for _chat_id in target_ids:
+					try:
+						await context.bot.send_message(chat_id=int(_chat_id), text=admin_msg)
+					except Exception:
+						pass
+			except Exception:
+				pass
 
 	except Exception as e:
 		logger.error(f"[cancel] cancel_confirm_callback failed for user {user_id}: {e}")
