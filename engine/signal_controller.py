@@ -187,6 +187,7 @@ class SignalController:
 
         def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> str | None:
             if not _can_call_gemini():
+                self.audit_logger.debug("gemini_inline skipped asset=%s tf=%s reason=budget_or_missing_key", asset, tf)
                 return None
             api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
             model = (os.getenv("GEMINI_INLINE_MODEL") or "gemini-1.5-flash").strip()
@@ -215,7 +216,8 @@ class SignalController:
                     return "short"
                 if '"winner":"long"' in txt or "winner long" in txt:
                     return "long"
-            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception):
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception) as exc:
+                self.audit_logger.debug("gemini_inline failed asset=%s tf=%s error=%s", asset, tf, exc)
                 return None
             return None
 

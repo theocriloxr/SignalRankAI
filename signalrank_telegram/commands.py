@@ -25,6 +25,7 @@ TIER_RANKS: dict[str, int] = {
 	"ADMIN": 3,
 	"OWNER": 3,
 }
+FREE_PROOF_FEED_LIMIT = 5
 
 def tier_rank(tier) -> int:
 	return TIER_RANKS.get((tier or "").strip().upper(), 0)
@@ -2224,7 +2225,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						f"⚠️ No FREE-eligible proof cards ({free_min}+) right now. Upgrade for full active feed access."
 					)
 			return
-		picked = eligible[:5]
+		picked = eligible[:FREE_PROOF_FEED_LIMIT]
 		from .formatter import format_signal_free_new
 		for s in picked:
 			try:
