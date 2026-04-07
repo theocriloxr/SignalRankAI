@@ -2419,7 +2419,7 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                 uid_i = int(uid)
                 if str(resolve_user_tier(uid_i) or "free").lower() != "free":
                     continue
-                daily_limit = int(TIER_DAILY_LIMITS.get("free", 2) or 2)
+                daily_limit = int(TIER_DAILY_LIMITS.get("free", 3) or 3)
                 already_sent = int(_count_signals_sent_today_sync(uid_i) or 0)
                 if already_sent >= daily_limit:
                     continue
@@ -2503,7 +2503,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     - ADMIN: VIP-equivalent stream (30/day, same selection as VIP)
     - VIP: 30 signals/day (score >= 72 only, real-time)
     - PREMIUM: 10 signals/day (score 55-80, real-time)
-    - FREE: 2 random signals/day (delayed queue, bot picks any from global pool)
+    - FREE: 3 random signals/day (delayed queue, bot picks any from global pool)
     - EXTRA: 1 signal per purchase (highest scoring available, real-time)
     
     FREE tier: Bot queues ALL generated signals to global pool, then randomly 
@@ -2742,7 +2742,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                     to_send: list[dict] = []
                     async with get_session() as session:
-                        daily_limit = TIER_DAILY_LIMITS.get(str(effective_tier), 2)
+                        daily_limit = TIER_DAILY_LIMITS.get(
+                            str(effective_tier),
+                            TIER_DAILY_LIMITS.get("free", 3),
+                        )
                         already_sent_today = int(
                             await count_signals_sent_today(session, int(user_id))
                         )
@@ -3016,7 +3019,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         user_tier_actual = 'free'
                     
                     # Get tier limit from constants
-                    daily_limit = TIER_DAILY_LIMITS.get(user_tier_actual, 2)
+                    daily_limit = TIER_DAILY_LIMITS.get(
+                        user_tier_actual,
+                        TIER_DAILY_LIMITS.get("free", 3),
+                    )
                     remaining = max(0, daily_limit - signals_sent_today) if daily_limit != float('inf') else 999
                     
                     if remaining <= 0:
@@ -3127,7 +3133,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         # Check daily limit from DB deliveries
         signals_sent_today = int(_count_signals_sent_today_sync(int(user_id)) or 0)
         
-        daily_limit = TIER_DAILY_LIMITS.get(routing_tier, 2)
+        daily_limit = TIER_DAILY_LIMITS.get(
+            routing_tier,
+            TIER_DAILY_LIMITS.get("free", 3),
+        )
         
         if signals_sent_today >= daily_limit:
             logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")

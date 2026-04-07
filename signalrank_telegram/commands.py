@@ -911,8 +911,8 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	except Exception:
 		pass
 
-	limits = {"free": 2, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
-	limit = limits.get(tier, 2)
+	limits = {"free": 3, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
+	limit = limits.get(tier, 3)
 
 	tier_emoji = {"free": "🆓", "premium": "⭐", "vip": "👑", "owner": "🔧", "admin": "🔧"}.get(tier, "🆓")
 

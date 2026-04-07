@@ -1707,7 +1707,10 @@ def main_loop(DRY_RUN: bool = False):
                         )
                         signals_sent_today = 0
                     
-                    daily_limit = TIER_DAILY_LIMITS.get(user_tier, 2)
+                    daily_limit = TIER_DAILY_LIMITS.get(
+                        user_tier,
+                        TIER_DAILY_LIMITS.get("free", 3),
+                    )
                     
                     if signals_sent_today >= daily_limit:
                         logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")

@@ -1,7 +1,7 @@
 """
 Tier-Based Notification System
 - Premium/VIP: Detailed TP/SL advice, partial exit suggestions, position management
-- Free: Basic TP/SL hit notifications only (for their 2 daily signals)
+- Free: Basic TP/SL hit notifications only (for their 3 daily signals)
 """
 
 import os

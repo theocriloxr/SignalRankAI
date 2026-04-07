@@ -1024,13 +1024,13 @@ async def queue_free_signal_summary(
     if delay_minutes is None:
         delay_minutes = _env_int("FREE_DELAY_MINUTES", 30)
     if daily_limit is None:
-        daily_limit = _env_int("FREE_DAILY_LIMIT", 2)
+        daily_limit = _env_int("FREE_DAILY_LIMIT", 3)
 
-    # Product rule: Free tier gets at most 2 delayed signals per day.
+    # Product rule: Free tier gets at most 3 delayed signals per day.
     try:
-        daily_limit = min(int(daily_limit), 2)
+        daily_limit = min(int(daily_limit), 3)
     except Exception:
-        daily_limit = 2
+        daily_limit = 3
 
     now: datetime = _utcnow()
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
