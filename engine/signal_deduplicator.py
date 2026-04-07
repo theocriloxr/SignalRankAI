@@ -5,28 +5,28 @@ import logging
 from typing import Optional, Dict, Set
 from datetime import datetime, timedelta
 from db.models import Signal, MLRejectedSignal
-from db.session import async_session
+from db.session import get_session
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
 class SignalDeduplicator:
-    """Prevent duplicate signals within 24h."""
+    """Prevent duplicate signals within configured dedup window."""
     
     def __init__(self):
         self.recent_signals: Set[str] = set()
-        self._cache_ttl = timedelta(hours=24)
+        self._cache_ttl = timedelta(hours=1)
     
     def make_fingerprint(self, asset: str, timeframe: str, direction: str, entry_price: float) -> str:
         """Create unique signal fingerprint."""
         return f"{asset}_{timeframe}_{direction}_{int(entry_price)}"
     
     async def is_duplicate(self, asset: str, timeframe: str, direction: str, entry_price: float) -> bool:
-        """Check if signal is duplicate within 24h."""
+        """Check if signal is duplicate within dedup window."""
         try:
             fingerprint = self.make_fingerprint(asset, timeframe, direction, entry_price)
             
-            async with async_session() as session:
+            async with get_session() as session:
                 cutoff = datetime.utcnow() - self._cache_ttl
                 stmt = select(Signal).where(
                     Signal.asset == asset,
@@ -67,7 +67,7 @@ class MLRejectionTracker:
                                features: Dict[str, float]) -> None:
         """Store ML rejection for future outcome tracking."""
         try:
-            async with async_session() as session:
+            async with get_session() as session:
                 rejection = MLRejectedSignal(
                     asset=asset,
                     timeframe=timeframe,
@@ -92,7 +92,7 @@ class MLRejectionTracker:
     async def track_rejection_outcomes(self) -> int:
         """Check rejected signals for actual outcomes (TP/SL hit). Returns count tracked."""
         try:
-            async with async_session() as session:
+            async with get_session() as session:
                 # Get untracked rejections
                 stmt = select(MLRejectedSignal).where(
                     MLRejectedSignal.actual_outcome.is_(None),

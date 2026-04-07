@@ -1,3 +1,5 @@
+__test__ = False
+
 from utils.async_runner import run_sync
 import asyncio
 

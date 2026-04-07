@@ -18,7 +18,7 @@ import signal
 import threading
 from typing import Optional
 
-from db.session import get_session
+from db.session import get_session, run_with_db_retry, is_db_configured
 from db.repository import expire_subscriptions
 
 logger = logging.getLogger(__name__)
@@ -98,9 +98,8 @@ class Worker:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
                 now = time.time()
-                if now - last_heartbeat > 30:
-                    print(f"[worker] heartbeat: running", flush=True)
-                    logger.info(f"[worker] heartbeat: running")
+                if now - last_heartbeat > 300:
+                    logger.debug("[worker] heartbeat: running")
                     last_heartbeat = now
         finally:
             if outcome_tracker_task is not None:
@@ -132,10 +131,12 @@ class Worker:
         # Runs periodically; safe no-op when DATABASE_URL not configured.
         while not self._stop.is_set():
             try:
-                if ENGINE is not None:
-                    async with get_session() as session:
-                        _ = await expire_subscriptions(session)
-                        await session.commit()
+                if is_db_configured():
+                    async def _do_expire() -> None:
+                        async with get_session() as session:
+                            _ = await expire_subscriptions(session)
+                            await session.commit()
+                    await run_with_db_retry(_do_expire)
             except Exception:
                 # Keep worker alive; production version should log structured errors.
                 pass

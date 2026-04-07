@@ -2136,7 +2136,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		except Exception:
 			return signals_in
 	
-	# FREE tier: show delivered signals only - now sample 2 random signals with score >= 55
+	# FREE tier: show last 5 active signals received today.
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		try:
 			from db.session import get_session
@@ -2178,15 +2178,21 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 		signals_list = await _filter_unvoted(signals_list)
 
-		# FREE view: only include signals that meet FREE tier threshold (80+)
+		# FREE view: last 5 for the current UTC day.
 		eligible = []
 		for s in signals_list:
 			try:
-				score_val = float(s.get('score') or 0)
+				_created = s.get("created_at")
+				if _created is None:
+					continue
+				from datetime import datetime, timezone
+				_created = _created if getattr(_created, "tzinfo", None) is not None else _created.replace(tzinfo=timezone.utc)
+				_now = datetime.now(timezone.utc)
+				if _created.date() != _now.date():
+					continue
 			except Exception:
-				score_val = 0.0
-			if score_val >= float(FREE_MIN_SCORE):
-				eligible.append(s)
+				continue
+			eligible.append(s)
 
 		if not eligible:
 			if update.message is not None:
@@ -2195,7 +2201,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				else:
 					await update.message.reply_text("⚠️ No FREE-eligible active signals (80+) right now. Upgrade for full access or check back later.")
 			return
-		picked = eligible[: int(FREE_SIGNAL_DAILY_LIMIT)]
+		picked = eligible[:5]
 		from .formatter import format_signal_free_new
 		for s in picked:
 			try:
@@ -2213,7 +2219,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			except Exception as e:
 				_audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
 		if update.message is not None:
-			await update.message.reply_text("👆 Upgrade to PREMIUM for full details and more signals.")
+			await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence, full TP ladder and execution tools.")
 		return
 	
 	# PREMIUM/VIP: show unresolved signals (ongoing trades)
@@ -2265,18 +2271,12 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			try:
 				from datetime import datetime, timedelta, timezone
 				_created = created_at if getattr(created_at, "tzinfo", None) is not None else created_at.replace(tzinfo=timezone.utc)
-				if _created < datetime.now(timezone.utc) - timedelta(days=1):
+				if _created < datetime.now(timezone.utc) - timedelta(days=30):
 					continue
 			except Exception:
 				pass
-		if is_vip:
-			# VIP/Owner/Admin: show all signals with score >= 55
-			if score_val >= 55.0:
-				filtered_signals.append(s)
-		else:
-			# Premium: show signals in 55–75 band
-			if 55.0 <= score_val <= 75.0:
-				filtered_signals.append(s)
+		# PREMIUM/VIP/ADMIN/OWNER: show active unresolved signals user received.
+		filtered_signals.append(s)
 
 	if not filtered_signals:
 		if update.message is not None:
@@ -2293,10 +2293,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 	total_active: int = len(filtered_signals)
 	if update.message is not None and total_active > 0:
-		if is_vip:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} with score ≥ 55):")
-		else:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} between 55–75 score):")
+		await update.message.reply_text(f"📊 Your Active Signals ({total_active} in last 30 days):")
 
 	for idx, s in enumerate(filtered_signals, 1):
 		try:

@@ -3376,15 +3376,6 @@ def run_bot() -> None:
         os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
         logger.info("[bot] TELEGRAM_USE_WEBHOOK defaulted to 1 (Railway deployment detected)")
 
-    import threading
-    import time
-    def _bot_heartbeat():
-        while True:
-            print(f"[bot] heartbeat: running", flush=True)
-            logger.info(f"[bot] heartbeat: running (thread={threading.get_ident()})")
-            time.sleep(30)
-    threading.Thread(target=_bot_heartbeat, daemon=True).start()
-
     from apscheduler.schedulers.background import BackgroundScheduler
 
     # Idempotency guard for webhook deployments: if setup already completed in
@@ -3629,13 +3620,8 @@ def run_bot() -> None:
             logger.warning(f"[bot] Failed to set bot commands: {e}")
             pass
 
-        # Start the real-time outcome tracker (polls open signals every 15s for TP/SL hits)
-        try:
-            from engine.realtime_outcome_tracker import outcome_tracker
-            await outcome_tracker.start()
-            logger.info("[bot] RealtimeOutcomeTracker started")
-        except Exception as _e:
-            logger.warning(f"[bot] RealtimeOutcomeTracker failed to start: {_e}")
+        # Outcome tracker is worker-owned in monolith runtime.
+        logger.info("[bot] RealtimeOutcomeTracker startup skipped (worker-owned)")
 
         # ── Post-deploy terms blast ───────────────────────────────────────────
         # Set env var TERMS_BLAST_ON_DEPLOY=1 on Railway to automatically send

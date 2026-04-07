@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from uuid import uuid4
+import json
+import os
+import urllib.request
+import urllib.error
 
 from engine.risk import calculate_dynamic_risk
 from engine.scoring import calculate_signal_score
@@ -28,6 +32,9 @@ class SignalController:
     # Score thresholds
     PREMIUM_THRESHOLD: int = 75
     VIP_THRESHOLD: int = 85
+    _gemini_daily_limit: int = 10
+    _gemini_call_count: int = 0
+    _gemini_call_day: str = ""
 
     def __init__(self) -> None:
         self._kill_switch_enabled: bool = False
@@ -136,6 +143,72 @@ class SignalController:
                 return 0.0
 
         out: List[Signal] = []
+
+        def _roi(sig: Signal) -> float:
+            try:
+                entry = float(sig.get("entry") or 0.0)
+                stop_loss = float(sig.get("stop_loss") or sig.get("stop") or 0.0)
+                take_profit = sig.get("take_profit")
+                if isinstance(take_profit, list) and take_profit:
+                    tp = float((take_profit[0] or {}).get("price") or take_profit[0])
+                else:
+                    tp = float(take_profit or 0.0)
+                risk = abs(entry - stop_loss)
+                reward = abs(tp - entry)
+                if risk <= 0:
+                    return 0.0
+                return reward / risk
+            except Exception:
+                return 0.0
+
+        def _composite(sig: Signal) -> float:
+            try:
+                risk = max(0.0001, float(sig.get("risk", 1.0) or 1.0))
+            except Exception:
+                risk = 1.0
+            return (_conf(sig) * 0.6) + (_roi(sig) * 30.0) - (risk * 10.0)
+
+        def _can_call_gemini() -> bool:
+            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+            if not api_key:
+                return False
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            if self._gemini_call_day != today:
+                self._gemini_call_day = today
+                self._gemini_call_count = 0
+            return self._gemini_call_count < self._gemini_daily_limit
+
+        def _gemini_pick(asset: str, tf: str, longs: List[Signal], shorts: List[Signal]) -> str | None:
+            if not _can_call_gemini():
+                return None
+            api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+            model = (os.getenv("GEMINI_INLINE_MODEL") or "gemini-1.5-flash").strip()
+            prompt = {
+                "asset": asset,
+                "timeframe": tf,
+                "long_candidates": longs[:5],
+                "short_candidates": shorts[:5],
+                "goal": "Pick direction with highest chance of success, highest ROI, lowest risk. Return JSON {\"winner\":\"long|short\"}",
+            }
+            body = json.dumps({
+                "contents": [{"parts": [{"text": json.dumps(prompt)}]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200},
+            }).encode("utf-8")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+            req = urllib.request.Request(url, data=body, method="POST")
+            req.add_header("Content-Type", "application/json")
+            try:
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    raw = resp.read().decode("utf-8", errors="ignore")
+                self._gemini_call_count += 1
+                txt = raw.lower()
+                if '"winner":"short"' in txt or "winner short" in txt:
+                    return "short"
+                if '"winner":"long"' in txt or "winner long" in txt:
+                    return "long"
+            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception):
+                return None
+            return None
         for (asset, tf), items in grouped.items():
             longs = [s for s in items if str(s.get("direction")).lower() == "long"]
             shorts = [s for s in items if str(s.get("direction")).lower() == "short"]
@@ -146,8 +219,22 @@ class SignalController:
             if long_sum == 0 and short_sum == 0:
                 continue
 
-            # Pick the direction with higher total confidence for THIS pair only
-            winning = longs if long_sum >= short_sum else shorts
+            winning_side = None
+            if longs and shorts:
+                gemini_winner = _gemini_pick(asset, tf, longs, shorts)
+                if gemini_winner == "long":
+                    winning_side = "long"
+                elif gemini_winner == "short":
+                    winning_side = "short"
+                else:
+                    long_best = max((_composite(s) for s in longs), default=0.0)
+                    short_best = max((_composite(s) for s in shorts), default=0.0)
+                    winning_side = "long" if long_best >= short_best else "short"
+            else:
+                winning_side = "long" if long_sum >= short_sum else "short"
+
+            # Pick the direction with higher quality for THIS pair only
+            winning = longs if winning_side == "long" else shorts
             if not winning:
                 continue
 

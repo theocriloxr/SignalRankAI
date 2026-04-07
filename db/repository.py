@@ -12,8 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 
-from db.models import Subscription, User, Signal, DecisionLog, ProcessedWebhookEvent, ApiToken
-from db.session import async_session
+from db.models import Subscription, User, Signal, Outcome, DecisionLog, ProcessedWebhookEvent, ApiToken
+from db.session import get_session
 
 
 def _env_int(name: str, default: int) -> int:
@@ -197,7 +197,7 @@ async def persist_decision_log(
     Returns inserted row id (when available) or 0.
     """
     try:
-        async with async_session() as session:
+        async with get_session() as session:
             dl = DecisionLog(
                 signal_id=signal_id,
                 asset=asset,
@@ -221,14 +221,34 @@ async def persist_decision_log(
 async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
     """Persist a new signal to database."""
     try:
-        async with async_session() as session:
+        async with get_session() as session:
+            asset = str(signal_data.get("asset") or "").strip().upper()
+            timeframe = str(signal_data.get("timeframe") or "").strip().lower()
+            direction = str(signal_data.get("direction") or "").strip().lower()
+            opposite = "short" if direction == "long" else ("long" if direction == "short" else "")
+            if asset and timeframe and opposite:
+                conflict_q = (
+                    select(Signal.signal_id)
+                    .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+                    .where(
+                        Signal.asset == asset,
+                        Signal.timeframe == timeframe,
+                        Signal.direction == opposite,
+                        Signal.archived.is_(False),
+                        (Outcome.id.is_(None) | Outcome.status.in_(["tp1", "tp2"])),
+                    )
+                    .limit(1)
+                )
+                existing_conflict = (await session.execute(conflict_q)).first()
+                if existing_conflict:
+                    return None
             # Convert take_profit list to JSON string
             tp_json = json.dumps(signal_data.get('take_profit', []))
             
             signal = Signal(
-                asset=signal_data.get('asset'),
-                timeframe=signal_data.get('timeframe'),
-                direction=signal_data.get('direction'),
+                asset=asset or signal_data.get('asset'),
+                timeframe=timeframe or signal_data.get('timeframe'),
+                direction=direction or signal_data.get('direction'),
                 entry=signal_data.get('entry'),
                 stop_loss=signal_data.get('stop_loss'),
                 take_profit=tp_json,
