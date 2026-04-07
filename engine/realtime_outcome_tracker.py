@@ -13,7 +13,7 @@ Key behaviours:
   - Persists outcome to the `outcomes` table.
 
 Environment:
-    OUTCOME_CHECK_INTERVAL_SECONDS  - Poll interval (default: 15)
+    OUTCOME_CHECK_INTERVAL_SECONDS  - Poll interval (default: 20)
     ACTIVE_SIGNAL_LOOKBACK_HOURS    - How far back to look for open signals (default: 720)
 """
 from __future__ import annotations
@@ -30,9 +30,9 @@ logger = logging.getLogger(__name__)
 
 def _check_interval() -> int:
     try:
-        return max(5, int(os.getenv("OUTCOME_CHECK_INTERVAL_SECONDS", "15")))
+        return max(5, int(os.getenv("OUTCOME_CHECK_INTERVAL_SECONDS", "20")))
     except Exception:
-        return 15
+        return 20
 
 
 def _lookback_hours() -> int:

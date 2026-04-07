@@ -490,52 +490,8 @@ def load_tradable_assets() -> List[str]:
 def main_loop(DRY_RUN: bool = False):
     start_outage_alert_job()
 
-    # Start outcome tracker unless explicitly disabled (default off on Railway).
-    try:
-        _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-        _enable_engine_tracker_default = False if _running_on_railway else True
-        _enable_engine_tracker = str(
-            os.getenv(
-                "ENGINE_OUTCOME_TRACKER_ENABLED",
-                "1" if _enable_engine_tracker_default else "0",
-            )
-        ).strip().lower() in {"1", "true", "yes", "on"}
-
-        if _enable_engine_tracker:
-            import threading
-            import asyncio as _asyncio
-
-            def _start_outcome_tracker_thread() -> None:
-                try:
-                    loop = _asyncio.new_event_loop()
-                    _asyncio.set_event_loop(loop)
-                    from engine.realtime_outcome_tracker import outcome_tracker
-
-                    async def _run_tracker():
-                        stop_event = _asyncio.Event()
-                        await outcome_tracker.start()
-                        try:
-                            await stop_event.wait()
-                        except (_asyncio.CancelledError, Exception):
-                            pass
-                        finally:
-                            await outcome_tracker.stop()
-
-                    loop.run_until_complete(_run_tracker())
-                except Exception as _ot_err:
-                    logger.warning("[engine] outcome tracker thread error: %s", _ot_err)
-
-            _ot_thread = threading.Thread(
-                target=_start_outcome_tracker_thread,
-                name="outcome-tracker",
-                daemon=True,
-            )
-            _ot_thread.start()
-            logger.info("[engine] RealtimeOutcomeTracker thread launched")
-        else:
-            logger.info("[engine] RealtimeOutcomeTracker disabled for this engine instance")
-    except Exception as _launch_err:
-        logger.warning("[engine] Could not launch outcome tracker thread: %s", _launch_err)
+    # Outcome tracker ownership is worker-only in monolith runtime.
+    logger.info("[engine] RealtimeOutcomeTracker disabled (owned by worker loop)")
 
     account_equity = 10000.0
     risk_manager = RiskManager(account_equity)
@@ -554,11 +510,17 @@ def main_loop(DRY_RUN: bool = False):
     fx_enabled = _env_bool('FX_ENABLED', True)
     stocks_enabled = _env_bool('STOCKS_ENABLED', True)
     _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-    _tf_default = '1h,4h' if _running_on_railway else '1h,4h,1d'
-    crypto_timeframes = [tf.strip() for tf in (os.getenv('CRYPTO_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
-    fx_timeframes = [tf.strip() for tf in (os.getenv('FX_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
-    stock_timeframes = [tf.strip() for tf in (os.getenv('STOCK_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
-    commodity_timeframes = [tf.strip() for tf in (os.getenv('COMMODITY_TIMEFRAMES', _tf_default).split(',')) if tf.strip()]
+    _tf_default = '1h,4h,24h'
+    def _norm_tf(tf: str) -> str:
+        _tf = str(tf or "").strip().lower()
+        if _tf == "24h":
+            return "1d"
+        return _tf
+    _allowed_tfs = {"1h", "4h", "1d"}
+    crypto_timeframes = [_norm_tf(tf) for tf in (os.getenv('CRYPTO_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
+    fx_timeframes = [_norm_tf(tf) for tf in (os.getenv('FX_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
+    stock_timeframes = [_norm_tf(tf) for tf in (os.getenv('STOCK_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
+    commodity_timeframes = [_norm_tf(tf) for tf in (os.getenv('COMMODITY_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
 
     cycle_no = 0
 
@@ -581,7 +543,7 @@ def main_loop(DRY_RUN: bool = False):
     last_heartbeat = time.time()
     while True:
         cycle_no += 1
-        cycle_sleep_seconds = 10
+        cycle_sleep_seconds = 30
         now = time.time()
         # Heartbeat log every 30 seconds
         if now - last_heartbeat > 30:
@@ -670,14 +632,17 @@ def main_loop(DRY_RUN: bool = False):
                     pass
             _cat_iters = _next_iters
 
+        _universe_cap = max(1, _env_int("ENGINE_UNIVERSE_CAP", 20))
+        _all_open = _all_open[:_universe_cap]
         # Feed the queue; refresh_universe only rebuilds once per hour
         # (CYCLE_UNIVERSE_REFRESH_INTERVAL env var) unless this is wakeup #1.
         _cycle_queue.refresh_universe(_all_open, force=(cycle_no == 1))
 
         # Pop this batch from the queue.
         _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-        _default_cycle_batch = 6 if _running_on_railway else 10
+        _default_cycle_batch = 20 if _running_on_railway else 20
         CYCLE_BATCH_SIZE = _env_int("CYCLE_BATCH_SIZE", _default_cycle_batch)
+        CYCLE_BATCH_SIZE = min(CYCLE_BATCH_SIZE, _universe_cap)
         assets = _cycle_queue.pop_batch(CYCLE_BATCH_SIZE)
 
         # Guarantee class coverage: at least one asset per OPEN class each cycle.
@@ -786,16 +751,12 @@ def main_loop(DRY_RUN: bool = False):
             asset_to_tfs[asset] = list(tfs)
 
         # Dynamic cycle sleep based on smallest timeframe
-        _TF_SLEEP_MAP = {"1m": 60, "5m": 120, "15m": 300, "1h": 300, "4h": 900, "1d": 3600, "1w": 7200}
+        _TF_SLEEP_MAP = {"1h": 30, "4h": 30, "1d": 30}
         env_sleep = _env_int("ENGINE_CYCLE_SLEEP_SECONDS", 0)
         if env_sleep > 0:
             cycle_sleep_seconds = env_sleep
         else:
-            all_tfs = []
-            for tfs in asset_to_tfs.values():
-                all_tfs.extend(tfs)
-            smallest_tf = min(all_tfs, key=lambda tf: _TF_SLEEP_MAP.get(tf, 300)) if all_tfs else "1h"
-            cycle_sleep_seconds = _TF_SLEEP_MAP.get(smallest_tf, 300)
+            cycle_sleep_seconds = 30
 
         # Graceful degradation slice
         degraded_assets = set()
@@ -966,6 +927,10 @@ def main_loop(DRY_RUN: bool = False):
                             sig.setdefault('regime', ind.get('regime', regime))
                             if sig.get('volatility') is None:
                                 sig['volatility'] = float(ind.get('atr_percent', 0) or ind.get('bollinger', {}).get('width', 0) or 0)
+                        # Preserve asset-class open-market context and full-strategy coverage hints.
+                        sig['market_open_confirmed'] = True
+                        sig['strategy_coverage_count'] = int(len(strategy_signals or []))
+                        sig['news_sentiment'] = market_data.get('news_sentiment')
 
                         # preview score (even if it doesn't pass validation/gates)
                         try:
@@ -996,6 +961,25 @@ def main_loop(DRY_RUN: bool = False):
                             sig['rejection_reason'] = f'confluence {conf:.1f}%'
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
                             continue
+                        # News confirmation gate (all supported classes: FX/crypto/commodities/stocks).
+                        # Strong opposing sentiment blocks signal; aligned sentiment gets a light confidence bonus.
+                        try:
+                            from core.tier_constants import STRONG_SENTIMENT_THRESHOLD
+                            _news = float(market_data.get('news_sentiment') or 0.0)
+                            _dir = str(sig.get('direction') or '').lower().strip()
+                            _thr = float(STRONG_SENTIMENT_THRESHOLD or 2)
+                            _oppose = (_news >= _thr and _dir == 'short') or (_news <= -_thr and _dir == 'long')
+                            if _oppose:
+                                sig['rejection_reason'] = f"news_conflict sentiment={_news:.2f}"
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"news_sentiment": _news})
+                                continue
+                            if ((_news >= _thr and _dir == 'long') or (_news <= -_thr and _dir == 'short')):
+                                try:
+                                    sig['confidence'] = min(1.0, float(sig.get('confidence') or 0.0) + 0.05)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                         strict_candidates.append(sig)
                     except Exception:
                         logger.exception("candidate gating failed")
@@ -1723,7 +1707,10 @@ def main_loop(DRY_RUN: bool = False):
                         )
                         signals_sent_today = 0
                     
-                    daily_limit = TIER_DAILY_LIMITS.get(user_tier, 2)
+                    daily_limit = TIER_DAILY_LIMITS.get(
+                        user_tier,
+                        TIER_DAILY_LIMITS.get("free", 3),
+                    )
                     
                     if signals_sent_today >= daily_limit:
                         logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")

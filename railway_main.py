@@ -42,6 +42,7 @@ _webhook_dispatch_queue: asyncio.Queue | None = None
 _webhook_dispatch_workers: list[asyncio.Task] = []
 _webhook_enqueue_started_at: dict[str, float] = {}
 _webhook_dispatch_latency_window_s = deque(maxlen=2000)
+_scheduler_instance: AsyncIOScheduler | None = None
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -97,6 +98,13 @@ def _record_dispatch_latency(update_id: str, started_at: float | None) -> None:
     elapsed = max(0.0, time.monotonic() - started_at)
     _webhook_dispatch_latency_window_s.append(elapsed)
     webhook_dispatch_latency_seconds.observe(elapsed)
+
+
+def _extract_chat_id(payload: dict | None) -> int:
+    try:
+        return int((((payload or {}).get("message") or {}).get("chat") or {}).get("id") or 0)
+    except Exception:
+        return 0
 
 
 async def _sample_outcome_latency_p95_seconds(hours: int = 24, limit: int = 500) -> float | None:
@@ -678,6 +686,24 @@ async def _stop_telegram_bot(application: object) -> None:
         pass
 
 
+async def _notify_admin_bot_ready() -> None:
+    if (not _bot_ready) or (_bot_application is None):
+        return
+    try:
+        from config import OWNER_IDS
+
+        if not OWNER_IDS:
+            return
+        msg = "✅ SignalRankAI bot is alive, webhook-ready, and core functions are running."
+        for owner_id in OWNER_IDS:
+            try:
+                await _bot_application.bot.send_message(chat_id=int(owner_id), text=msg)
+            except Exception:
+                continue
+    except Exception:
+        return
+
+
 def _start_engine_loop_in_background() -> asyncio.Task:
     """Start the blocking engine.main_loop in a thread executor."""
     from config import config
@@ -727,7 +753,7 @@ async def lifespan(_: FastAPI):
         import time
         while True:
             logger.info(f"[lifespan] heartbeat: event loop alive at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-            await asyncio.sleep(60)
+            await asyncio.sleep(300)
     asyncio.create_task(_lifespan_heartbeat())
     # ── 1) DB startup/background maintenance ───────────────────────────────────
     # Keep startup healthcheck-friendly: schedule DB-heavy work in background,
@@ -978,9 +1004,30 @@ async def lifespan(_: FastAPI):
                     continue
                 from telegram import Update
                 update_type = next((k for k in (payload or {}) if k not in ("update_id",)), "unknown")
-                logger.info("[webhook] worker=%s processing update_id=%s type=%s", worker_id, payload_update_id, update_type)
+                logger.debug("[webhook] worker=%s processing update_id=%s type=%s", worker_id, payload_update_id, update_type)
                 update = Update.de_json(payload, _bot_application.bot)
-                await _bot_application.process_update(update)
+                process_task = asyncio.create_task(_bot_application.process_update(update))
+                _inflight_update_tasks.add(process_task)
+                process_task.add_done_callback(lambda t: _inflight_update_tasks.discard(t))
+                soft_timeout_s = max(5.0, float(os.getenv("WEBHOOK_SOFT_TIMEOUT_SECONDS", "30") or 30.0))
+                hard_timeout_s = max(10.0, float(os.getenv("WEBHOOK_HARD_TIMEOUT_SECONDS", "120") or 120.0))
+                try:
+                    await asyncio.wait_for(asyncio.shield(process_task), timeout=soft_timeout_s)
+                except asyncio.TimeoutError:
+                    chat_id = _extract_chat_id(payload)
+                    if chat_id > 0:
+                        try:
+                            await _bot_application.bot.send_message(
+                                chat_id=chat_id,
+                                text="⏳ Still processing your request. I’ll send the complete result shortly.",
+                            )
+                        except Exception:
+                            pass
+                    try:
+                        await asyncio.wait_for(process_task, timeout=hard_timeout_s)
+                    except asyncio.TimeoutError:
+                        process_task.cancel()
+                        logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
                 _record_dispatch_latency(str(payload_update_id), started_at)
             except Exception as exc:
                 logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
@@ -1014,15 +1061,7 @@ async def lifespan(_: FastAPI):
         _webhook_dispatch_queue.maxsize,
     )
 
-    # ── 3) APScheduler jobs ───────────────────────────────────────────────────
     scheduler = None
-    try:
-        scheduler = _build_scheduler()
-        scheduler.start()
-        logger.info("[sched] started")
-    except Exception as exc:
-        logger.warning(f"[startup] Scheduler failed to start: {exc}")
-        scheduler = None
 
     # ── 4) Telegram webhook ───────────────────────────────────────────────────
     # Keep startup fast for Railway healthchecks; initialize bot in background
@@ -1030,6 +1069,22 @@ async def lifespan(_: FastAPI):
     application, bot_started = None, False
     bot_start_task: asyncio.Task | None = None
     bot_stop_event = asyncio.Event()
+
+    def _start_scheduler_once() -> AsyncIOScheduler | None:
+        nonlocal scheduler
+        global _scheduler_instance
+        if _scheduler_instance is not None:
+            scheduler = _scheduler_instance
+            return scheduler
+        try:
+            _scheduler_instance = _build_scheduler()
+            _scheduler_instance.start()
+            scheduler = _scheduler_instance
+            logger.info("[sched] started")
+            return scheduler
+        except Exception as exc:
+            logger.warning("[startup] Scheduler failed to start: %s", exc)
+            return None
 
     async def _start_bot_bg() -> None:
         nonlocal application, bot_started
@@ -1057,6 +1112,8 @@ async def lifespan(_: FastAPI):
                 print(f"[startup] Telegram webhook setup completed: started={bot_started}", flush=True)
                 _attempt_result = "started" if bot_started else "not_ready"
                 if bot_started:
+                    _start_scheduler_once()
+                    await _notify_admin_bot_ready()
                     _elapsed = asyncio.get_running_loop().time() - _attempt_started
                     logger.info(
                         "[startup] Telegram webhook attempt summary: attempt=%s result=%s elapsed_s=%.2f",
@@ -1197,6 +1254,12 @@ async def lifespan(_: FastAPI):
                     _wt.cancel()
                 except Exception:
                     pass
+        if _inflight_update_tasks:
+            for _task in list(_inflight_update_tasks):
+                try:
+                    _task.cancel()
+                except Exception:
+                    pass
 
 
 from web.app import app as _web_app
@@ -1212,9 +1275,8 @@ async def _telegram_webhook_route(req: Request) -> dict:
     PTB's Application.process_update() dispatches the update to the
     correct CommandHandler on uvicorn's event loop — no polling conflict.
     """
-    logger.info("[webhook] Telegram webhook endpoint hit")
-    print("[webhook] Telegram webhook endpoint hit", flush=True)
-    logger.info(
+    logger.debug("[webhook] Telegram webhook endpoint hit")
+    logger.debug(
         "[webhook] incoming update — content_type=%s",
         req.headers.get("content-type", ""),
     )
@@ -1237,7 +1299,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
         update_type = next(
             (k for k in (data or {}) if k not in ("update_id",)), "unknown"
         )
-        logger.info("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
+        logger.debug("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
         if _webhook_dispatch_queue is None:
             _pending_webhook_updates.append(data)
             logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")

@@ -1024,13 +1024,13 @@ async def queue_free_signal_summary(
     if delay_minutes is None:
         delay_minutes = _env_int("FREE_DELAY_MINUTES", 30)
     if daily_limit is None:
-        daily_limit = _env_int("FREE_DAILY_LIMIT", 2)
+        daily_limit = _env_int("FREE_DAILY_LIMIT", 3)
 
-    # Product rule: Free tier gets at most 2 delayed signals per day.
+    # Product rule: Free tier gets at most 3 delayed signals per day.
     try:
-        daily_limit = min(int(daily_limit), 2)
+        daily_limit = min(int(daily_limit), 3)
     except Exception:
-        daily_limit = 2
+        daily_limit = 3
 
     now: datetime = _utcnow()
     user: User = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
@@ -1419,6 +1419,33 @@ async def process_referral_start(
 
     # Make idempotent per reward “batch”.
     grant_days: int = 7
+    try:
+        monthly_cap_days = max(7, int(os.getenv("REFERRAL_MONTHLY_CAP_DAYS", "28") or 28))
+    except Exception:
+        monthly_cap_days = 28
+    now_utc = _utcnow()
+    month_start = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly_days_res: Result[Tuple[int]] = await session.execute(
+        select(func.coalesce(func.sum(ReferralReward.reward_value), 0)).where(
+            ReferralReward.referrer_user_id == rc.referrer_user_id,
+            ReferralReward.reward_type == "premium_days",
+            ReferralReward.created_at >= month_start,
+        )
+    )
+    monthly_days_used = int(monthly_days_res.scalar() or 0)
+    monthly_remaining = max(0, int(monthly_cap_days - monthly_days_used))
+    if monthly_remaining <= 0:
+        # Monthly cap reached: don't grant new days this month.
+        referrer_user.referral_count = 0
+        await session.flush()
+        result["status"] = "reward_capped"
+        result["days_granted"] = 0
+        result["referrer_message"] = (
+            "🎯 Referral milestone reached, but your monthly referral bonus cap is already reached.\n"
+            "More referral days can be earned again next month."
+        )
+        return result
+    grant_days = min(int(grant_days), int(monthly_remaining))
     total: int = int(referral_count or 0)
     batch_number: int = int(total // REFERRAL_REQUIREMENT)
     reward_ref: str = f"REFERRAL:{referrer_tid}:{batch_number}"
@@ -1462,14 +1489,16 @@ async def archive_signal_after_outcome(session: AsyncSession, signal_id: str) ->
 async def list_unresolved_signals_for_user(
     session: AsyncSession,
     telegram_user_id: int,
+    lookback_days: int = 1,
 ) -> list[Signal]:
-    """Return unresolved signals from the last 24h delivered to this user, excluding archived/expired."""
+    """Return unresolved signals delivered to this user in the configured lookback window."""
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return []
 
-    cutoff: datetime = _utcnow() - timedelta(days=1)
+    cutoff_days = max(1, int(lookback_days or 1))
+    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
 
     q: Select[Tuple[Signal]] = (
         select(Signal)

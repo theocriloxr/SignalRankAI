@@ -32,7 +32,7 @@ class MLFilter:
     def __init__(self):
         # Opt-in ML filtering; default off to avoid blocking signals when a model
         # is missing, mis-specified, or features are not aligned.
-        if not _env_bool("ML_ENABLED", False):
+        if not _env_bool("ML_ENABLED", True):
             self.active = False
             self.model = None
             self.feature_cols = None

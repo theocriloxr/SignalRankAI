@@ -25,6 +25,7 @@ TIER_RANKS: dict[str, int] = {
 	"ADMIN": 3,
 	"OWNER": 3,
 }
+FREE_PROOF_FEED_LIMIT = 5
 
 def tier_rank(tier) -> int:
 	return TIER_RANKS.get((tier or "").strip().upper(), 0)
@@ -163,6 +164,7 @@ def _build_dynamic_menu(user_id: int, tier: str):
 			InlineKeyboardButton("🏆 Performance", callback_data="nav_performance"),
 		])
 		if tier_rank(tier) < tier_rank("PREMIUM"):
+			rows.append([InlineKeyboardButton("✅ Proof Feed", callback_data="nav_proof")])
 			rows.append([InlineKeyboardButton("💳 Upgrade to VIP/Premium", callback_data="nav_upgrade")])
 			rows.append([InlineKeyboardButton("🔒 MT5 Auto‑Trading (VIP)", callback_data="locked_mt5")])
 		else:
@@ -254,15 +256,18 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 			vip_link = generate_paystack_link(user_id=user_id, price=40000, tier="VIP", duration="MONTHLY", duration_days=30)
 			if vip_link:
 				rows.append([InlineKeyboardButton(f"💎 VIP Monthly — ₦40,000 ({vip_seats_left} left)", url=vip_link)])
-		prem_week = generate_paystack_link(user_id=user_id, price=8000, tier="PREMIUM", duration="WEEKLY", duration_days=7)
-		prem_month = generate_paystack_link(user_id=user_id, price=24000, tier="PREMIUM", duration="MONTHLY", duration_days=30)
-		prem_qtr = generate_paystack_link(user_id=user_id, price=56000, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
-		if prem_week:
-			rows.append([InlineKeyboardButton("⭐ Premium Weekly — ₦8,000", url=prem_week)])
+		prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
+		prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
+		prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
+		prem_month = generate_paystack_link(user_id=user_id, price=prem_month_price, tier="PREMIUM", duration="MONTHLY", duration_days=30)
+		prem_qtr = generate_paystack_link(user_id=user_id, price=prem_qtr_price, tier="PREMIUM", duration="QUARTERLY", duration_days=90)
+		prem_year = generate_paystack_link(user_id=user_id, price=prem_year_price, tier="PREMIUM", duration="YEARLY", duration_days=365)
 		if prem_month:
-			rows.append([InlineKeyboardButton("⭐ Premium Monthly — ₦24,000", url=prem_month)])
+			rows.append([InlineKeyboardButton(f"⭐ Premium Monthly — ₦{prem_month_price:,}", url=prem_month)])
 		if prem_qtr:
-			rows.append([InlineKeyboardButton("⭐ Premium Quarterly — ₦56,000", url=prem_qtr)])
+			rows.append([InlineKeyboardButton(f"⭐ Premium Quarterly — ₦{prem_qtr_price:,}", url=prem_qtr)])
+		if prem_year:
+			rows.append([InlineKeyboardButton(f"🔥 Premium Yearly (Best Value) — ₦{prem_year_price:,}", url=prem_year)])
 		rows.append([InlineKeyboardButton("📞 Support: @theocrilox", url="https://t.me/theocrilox")])
 		if include_navigation:
 			rows.append([
@@ -277,10 +282,14 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
+	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
+	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 	msg = (
 		"🚀 SignalRankAI — Choose Your Plan\n\n"
 		f"{vip_line}\n"
-		"⭐ Premium — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr"
+		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr (Best Value)\n\n"
+		"⚠️ Trading involves risk. No guaranteed returns."
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=False)
 	return msg, keyboard
@@ -289,10 +298,17 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=True, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
+	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
+	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 	msg = (
 		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
 		f"{vip_line}\n"
-		"⭐ Premium — ₦8,000/wk · ₦24,000/mo · ₦56,000/qtr\n\n"
+		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr \\(Best Value\\)\n\n"
+		"✅ *What you unlock:*\n"
+		"• Premium: broader trade coverage, full Entry/SL/TP, analytics tools\n"
+		"• VIP: stricter quality stream, priority delivery, elite automation controls\n\n"
+		"⚠️ _No guaranteed profits. Trade responsibly._\n\n"
 		"_Tap a plan below to subscribe instantly via Paystack:_"
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=True)
@@ -514,6 +530,24 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			return
 		except Exception as _e:
 			logger.exception("[button_click] nav_signals failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
+			return
+	if data == "nav_proof":
+		try:
+			if update.effective_user is None:
+				return
+			from types import SimpleNamespace
+			proxy_update = SimpleNamespace(
+				effective_user=update.effective_user,
+				message=query.message,
+			)
+			await proof_command(proxy_update, context)
+			return
+		except Exception as _e:
+			logger.exception("[button_click] nav_proof failed: %s", _e)
 			try:
 				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
 			except Exception:
@@ -877,8 +911,8 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	except Exception:
 		pass
 
-	limits = {"free": 2, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
-	limit = limits.get(tier, 2)
+	limits = {"free": 3, "premium": 20, "vip": "∞", "owner": "∞", "admin": "∞"}
+	limit = limits.get(tier, 3)
 
 	tier_emoji = {"free": "🆓", "premium": "⭐", "vip": "👑", "owner": "🔧", "admin": "🔧"}.get(tier, "🆓")
 
@@ -1638,8 +1672,9 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/status", "Check your current tier and subscription"),
 				("/tiers", "See tier feature differences"),
 				("/signals", "View the latest signal feed"),
+				("/proof", "See recent verified outcomes and wins"),
 				("/signal", "Look up a specific signal by reference"),
-				("/outcome", "Check the result of a delivered signal"),
+				("/outcome", "View your 24h outcomes or check a specific delivered signal"),
 				("/pricing", "See current plan pricing"),
 				("/upgrade", "Open the upgrade menu"),
 				("/liveprice", "Fetch the real-time price of any asset"),
@@ -1658,7 +1693,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 				("/recap", "Weekly performance recap"),
 				("/myid", "View your Telegram ID and tier"),
 			],
-			"footer": "Tip: start with /signals, /status, and /upgrade if you want more access.",
+			"footer": "Tip: start with /proof, /signals, /status, and /upgrade if you want more access.",
 		},
 		2: {
 			"title": "⭐️ Premium Analytics",
@@ -2063,8 +2098,8 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Show user's signals with tier-specific formatting.
 	
-	FREE: Show signals they received (delivered)
-	PREMIUM/VIP: Show unresolved signals (ongoing trades)
+	FREE: Show last 5 delivered today (resolved + unresolved proof cards)
+	PREMIUM/VIP: Show unresolved active signals from last 30 days
 	"""
 	if await _public_guard(update):
 		return
@@ -2136,15 +2171,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		except Exception:
 			return signals_in
 	
-	# FREE tier: show delivered signals only - now sample 2 random signals with score >= 55
+	# FREE tier: show last 5 delivered signals from today (resolved + unresolved).
 	if tier_rank(tier) < tier_rank("PREMIUM"):
 		try:
 			from db.session import get_session
 			engine = get_engine_for_event_loop()
 			if engine is not None:
-				from db.pg_features import list_unresolved_signals_for_user
+				from db.pg_features import list_signals_sent_today
 				async with get_session() as session:
-					rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
+					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
 					signals_list = []
 					for r in rows:
 						sig_dict = {
@@ -2173,29 +2208,24 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		
 		if not signals_list:
 			if update.message is not None:
-				await update.message.reply_text("✅ No active signals right now.")
+				await update.message.reply_text("✅ No signal proof cards yet today. Check back after the next cycle.")
 			return
 
 		signals_list = await _filter_unvoted(signals_list)
-
-		# FREE view: only include signals that meet FREE tier threshold (80+)
-		eligible = []
-		for s in signals_list:
-			try:
-				score_val = float(s.get('score') or 0)
-			except Exception:
-				score_val = 0.0
-			if score_val >= float(FREE_MIN_SCORE):
-				eligible.append(s)
+		eligible = list(signals_list)
 
 		if not eligible:
 			if update.message is not None:
+				from core.tier_constants import TIER_SCORE_THRESHOLDS
+				free_min = int(float(TIER_SCORE_THRESHOLDS.get("free", FREE_MIN_SCORE)))
 				if show_unvoted_only:
-					await update.message.reply_text("✅ No unvoted FREE-eligible active signals right now.")
+					await update.message.reply_text("✅ No unvoted FREE proof cards right now.")
 				else:
-					await update.message.reply_text("⚠️ No FREE-eligible active signals (80+) right now. Upgrade for full access or check back later.")
+					await update.message.reply_text(
+						f"⚠️ No FREE-eligible proof cards ({free_min}+) right now. Upgrade for full active feed access."
+					)
 			return
-		picked = eligible[: int(FREE_SIGNAL_DAILY_LIMIT)]
+		picked = eligible[:FREE_PROOF_FEED_LIMIT]
 		from .formatter import format_signal_free_new
 		for s in picked:
 			try:
@@ -2213,10 +2243,10 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			except Exception as e:
 				_audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
 		if update.message is not None:
-			await update.message.reply_text("👆 Upgrade to PREMIUM for full details and more signals.")
+			await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence, full TP ladder and execution tools.")
 		return
 	
-	# PREMIUM/VIP: show unresolved signals (ongoing trades)
+	# PREMIUM/VIP: show unresolved active signals delivered in the last 30 days.
 	unresolved_signals: list[dict] = []
 	try:
 		from db.session import get_session
@@ -2224,7 +2254,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		if engine is not None:
 			from db.pg_features import list_unresolved_signals_for_user
 			async with get_session() as session:
-				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
+				rows: list[Signal] = await list_unresolved_signals_for_user(
+					session,
+					telegram_user_id=int(user_id),
+					lookback_days=30,
+				)
 				unresolved_signals = [
 					{
 						"signal_id": r.signal_id,
@@ -2256,27 +2290,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	unresolved_signals = await _filter_unvoted(unresolved_signals)
 	filtered_signals = []
 	for s in unresolved_signals:
-		try:
-			score_val = float(s.get('score') or 0)
-		except Exception:
-			score_val = 0.0
-		created_at = s.get("created_at")
-		if created_at is not None:
-			try:
-				from datetime import datetime, timedelta, timezone
-				_created = created_at if getattr(created_at, "tzinfo", None) is not None else created_at.replace(tzinfo=timezone.utc)
-				if _created < datetime.now(timezone.utc) - timedelta(days=1):
-					continue
-			except Exception:
-				pass
-		if is_vip:
-			# VIP/Owner/Admin: show all signals with score >= 55
-			if score_val >= 55.0:
-				filtered_signals.append(s)
-		else:
-			# Premium: show signals in 55–75 band
-			if 55.0 <= score_val <= 75.0:
-				filtered_signals.append(s)
+		# PREMIUM/VIP/ADMIN/OWNER: show active unresolved signals user received.
+		filtered_signals.append(s)
 
 	if not filtered_signals:
 		if update.message is not None:
@@ -2293,10 +2308,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 	total_active: int = len(filtered_signals)
 	if update.message is not None and total_active > 0:
-		if is_vip:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} with score ≥ 55):")
-		else:
-			await update.message.reply_text(f"📊 Your Active Signals ({total_active} between 55–75 score):")
+		await update.message.reply_text(f"📊 Your Active Signals ({total_active} in last 30 days):")
 
 	for idx, s in enumerate(filtered_signals, 1):
 		try:
@@ -2312,6 +2324,86 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		except Exception as e:
 			_audit_logger.error(f"Error formatting signal for {user_id}: {e}")
 			continue
+
+
+async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Show a free-friendly proof feed with recent verified outcomes."""
+	if await _public_guard(update):
+		return
+	if update.message is None:
+		return
+	try:
+		from datetime import datetime, timedelta, timezone
+		from sqlalchemy import select, func
+		from db.models import Signal, Outcome
+		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+
+		cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+		tp_statuses = {"tp", "tp1", "tp2", "tp3"}
+		loss_statuses = {"sl"}
+
+		recent_rows = []
+		wins = 0
+		losses = 0
+		engine = get_engine_for_event_loop()
+		if engine is not None:
+			async with get_session() as session:
+				recent_rows = (
+					await session.execute(
+						select(Signal.asset, Signal.timeframe, Outcome.status)
+						.join(Outcome, Outcome.signal_id == Signal.signal_id)
+						.where(Signal.created_at >= cutoff)
+						.where(func.lower(Outcome.status).in_(tp_statuses.union(loss_statuses)))
+						.order_by(Signal.created_at.desc())
+						.limit(5)
+					)
+				).all()
+				summary_rows = (
+					await session.execute(
+						select(Outcome.status, func.count(Outcome.id))
+						.join(Signal, Signal.signal_id == Outcome.signal_id)
+						.where(Signal.created_at >= cutoff)
+						.where(func.lower(Outcome.status).in_(tp_statuses.union(loss_statuses)))
+						.group_by(Outcome.status)
+					)
+				).all()
+				for status, count in summary_rows:
+					st = str(status or "").lower()
+					if st in tp_statuses:
+						wins += int(count or 0)
+					elif st in loss_statuses:
+						losses += int(count or 0)
+
+		total = wins + losses
+		win_rate = (wins / total * 100.0) if total > 0 else 0.0
+		lines = [
+			"✅ <b>Proof Feed</b>",
+			"Recent verified outcomes to show real performance quality.",
+			"",
+			f"📊 Last 30d tracked outcomes: <b>{total}</b>",
+			f"✅ Wins: <b>{wins}</b>   ❌ Losses: <b>{losses}</b>   🎯 Win rate: <b>{win_rate:.1f}%</b>",
+			"",
+			"🔎 Latest verified outcomes:",
+		]
+		if recent_rows:
+			for asset, timeframe, status in recent_rows:
+				st = str(status or "").upper()
+				tag = "✅" if str(status or "").lower().startswith("tp") else "❌"
+				lines.append(f"{tag} {asset} • {timeframe} • {st}")
+		else:
+			lines.append("No verified outcomes yet in this window.")
+		lines.extend([
+			"",
+			"⚠️ Trading risk is real. No guaranteed returns.",
+		])
+		keyboard = InlineKeyboardMarkup([
+			[InlineKeyboardButton("📊 View Signals", callback_data="nav_signals")],
+			[InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade")],
+		])
+		await update.message.reply_text("\n".join(lines), parse_mode="HTML", reply_markup=keyboard)
+	except Exception as e:
+		_audit_logger.error(f"Error in proof command: {e}")
+		await update.message.reply_text("⚠️ Proof feed is temporarily unavailable. Please try again shortly.")
 
 
 async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -2719,10 +2811,91 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if len(context.args or []) > 1:
 		action = str(context.args[1] or "").strip().upper()
 	if not arg:
-		await update.message.reply_text(
-			"Usage: /outcome <reference> [WIN|LOSS|CANCEL|TP1|TP2|TP3]"
-		)
-		return
+		try:
+			from datetime import datetime, timedelta, timezone
+			from sqlalchemy import select, func
+			from db.session import get_engine_for_event_loop, get_session
+			from db.models import Signal, Outcome, SignalDelivery, User
+			user_tier = str(_effective_tier(int(user_id)) or "FREE").upper()
+			if user_tier == "FREE":
+				outcome_row_limit = max(1, int(os.getenv("OUTCOME_GLOBAL_FREE_LIMIT", str(FREE_PROOF_FEED_LIMIT)) or FREE_PROOF_FEED_LIMIT))
+			elif user_tier in {"OWNER", "ADMIN"}:
+				outcome_row_limit = max(10, int(os.getenv("OUTCOME_GLOBAL_ADMIN_OWNER_LIMIT", "50") or 50))
+			else:
+				outcome_row_limit = max(5, int(os.getenv("OUTCOME_GLOBAL_PAID_LIMIT", "30") or 30))
+			engine = get_engine_for_event_loop()
+			if engine is None:
+				raise RuntimeError("Postgres not configured")
+			cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+			recorded_at_expr = func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at)
+			async with get_session() as session:
+				user_row = (
+					await session.execute(
+						select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
+					)
+				).scalar_one_or_none()
+				if user_row is None:
+					await update.message.reply_text("📭 No recorded outcomes for you in the last 24 hours.")
+					return
+				rows = (
+					await session.execute(
+						select(
+							Signal.signal_id,
+							Signal.asset,
+							Signal.timeframe,
+							Signal.direction,
+							Outcome.status,
+							Outcome.r_multiple,
+							Outcome.percent,
+							recorded_at_expr.label("recorded_at"),
+						)
+						.join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+						.join(Outcome, Outcome.signal_id == Signal.signal_id)
+						.where(
+							SignalDelivery.user_id == int(user_row),
+							recorded_at_expr >= cutoff,
+						)
+						.order_by(recorded_at_expr.desc())
+						.limit(int(outcome_row_limit))
+					)
+				).all()
+			if not rows:
+				await update.message.reply_text("📭 No recorded outcomes for you in the last 24 hours.")
+				return
+			lines = [
+				f"📣 Your outcomes (last 24h • showing {len(rows)} up to {int(outcome_row_limit)})",
+				"",
+			]
+			for signal_id, asset, timeframe, direction, status, r_multiple, percent, recorded_at in rows:
+				try:
+					_ts = recorded_at if getattr(recorded_at, "tzinfo", None) is not None else recorded_at.replace(tzinfo=timezone.utc)
+					ts_txt = _ts.strftime("%Y-%m-%d %H:%M UTC")
+				except Exception:
+					ts_txt = "unknown time"
+				status_txt = str(status or "").upper()
+				lines.append(f"• {str(signal_id)[:8]} | {asset} {timeframe} {str(direction).upper()} | {status_txt} | {ts_txt}")
+				if r_multiple is not None or percent is not None:
+					try:
+						parts = []
+						if r_multiple is not None:
+							parts.append(f"{float(r_multiple):.2f}R")
+						if percent is not None:
+							parts.append(f"{float(percent):.2f}%")
+						if parts:
+							lines.append(f"  ↳ {' | '.join(parts)}")
+					except Exception:
+						pass
+			lines.extend([
+				"",
+				"Use /outcome <reference> for a full single-signal breakdown.",
+			])
+			await update.message.reply_text("\n".join(lines))
+			return
+		except Exception:
+			await update.message.reply_text(
+				"Usage: /outcome <reference> [WIN|LOSS|CANCEL|TP1|TP2|TP3]"
+			)
+			return
 
 	try:
 		from db.session import get_engine_for_event_loop, get_session
@@ -3775,7 +3948,7 @@ async def start_command(update, context):
 		"What you get:\n"
 		"• Risk-managed signals filtered for high-probability setups\n"
 		"• Outcome tracking (no hype, no guarantees)\n\n"
-		"Use /pricing to see plans, or /upgrade to subscribe."
+		"Use /proof for verified outcomes, /pricing to see plans, or /upgrade to subscribe."
 	)
 	# Referral feedback (minimal, non-spammy)
 	if referral_outcome and update.message is not None:
@@ -3880,9 +4053,9 @@ async def faq_command(update, context) -> None:
 		"4) What markets are covered?\n"
 		"Crypto (BTC, ETH, SOL), Forex (EUR/USD, GBP/USD, USD/JPY), Stocks (AAPL, TSLA, MSFT), and Commodities (Gold, Silver, Oil, Natural Gas).\n\n"
 		"5) What’s the difference between Free, Premium, and VIP?\n"
-		"Free: 2 signals/day with limited details.\n"
-		"Premium: 20 signals/day with full Entry, SL, TP, and analytics.\n"
-		"VIP: Unlimited signals with ML probability scores and elite signals.\n\n"
+		"Free: Proof-oriented feed (up to 3/day) with limited details.\n"
+		"Premium: Broader active feed with full Entry, SL, TP, and analytics.\n"
+		"VIP: Stricter high-conviction feed with elite controls and priority delivery.\n\n"
 		"Yes. Subscriptions expire automatically. Auto-renew only applies if you opt in and link a card.\n\n"
 		"7) Is this financial advice?\n"
 		"No. Signals are for informational purposes only."
@@ -6102,7 +6275,7 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 	"""Shared helper: call Paystack /subscription/disable and set auto_renew=False in DB.
 
 	Returns:
-	  {"success": bool, "gateway_cancelled": bool, "tier": str}
+	  {"success": bool, "gateway_cancelled": bool, "tier": str, "retry_attempts": int, "escalate_admin": bool}
 	Used by cancel_confirm_callback to perform the actual cancellation work.
 	"""
 	try:
@@ -6124,31 +6297,40 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 
 			# Disable Paystack recurring billing (2-step: fetch email_token → POST disable)
 			gateway_cancelled = False
+			retry_attempts = 0
 			if sub_code:
 				try:
 					import httpx as _httpx, os as _os
 					secret = _os.getenv("PAYSTACK_SECRET_KEY", "").strip()
 					if secret:
+						try:
+							max_retries = max(1, int(_os.getenv("PAYSTACK_CANCEL_RETRY_ATTEMPTS", "3") or 3))
+						except Exception:
+							max_retries = 3
 						headers = {
 							"Authorization": f"Bearer {secret}",
 							"Content-Type": "application/json",
 						}
-						async with _httpx.AsyncClient(timeout=15) as client:
-							# Step 1: fetch subscription to get email_token
-							r1 = await client.get(
-								f"https://api.paystack.co/subscription/{sub_code}",
-								headers=headers,
-							)
-							email_token = ""
-							if r1.status_code < 400:
-								email_token = (r1.json().get("data") or {}).get("email_token", "")
-							# Step 2: disable with code + email_token
-							r2 = await client.post(
-								"https://api.paystack.co/subscription/disable",
-								json={"code": sub_code, "token": email_token},
-								headers=headers,
-							)
-							gateway_cancelled = r2.status_code < 400
+						for attempt in range(1, max_retries + 1):
+							retry_attempts = attempt
+							async with _httpx.AsyncClient(timeout=15) as client:
+								# Step 1: fetch subscription to get email_token
+								r1 = await client.get(
+									f"https://api.paystack.co/subscription/{sub_code}",
+									headers=headers,
+								)
+								email_token = ""
+								if r1.status_code < 400:
+									email_token = (r1.json().get("data") or {}).get("email_token", "")
+								# Step 2: disable with code + email_token
+								r2 = await client.post(
+									"https://api.paystack.co/subscription/disable",
+									json={"code": sub_code, "token": email_token},
+									headers=headers,
+								)
+								gateway_cancelled = r2.status_code < 400
+								if gateway_cancelled:
+									break
 				except Exception as _ge:
 					# Non-fatal — DB cancellation still proceeds
 					logger.warning(f"[cancel] Paystack gateway cancel failed: {_ge}")
@@ -6158,11 +6340,17 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 				sa_update(User).where(User.id == user.id).values(auto_renew=False)
 			)
 			await session.commit()
-			return {"success": True, "gateway_cancelled": gateway_cancelled, "tier": current_tier}
+			return {
+				"success": True,
+				"gateway_cancelled": gateway_cancelled,
+				"tier": current_tier,
+				"retry_attempts": int(retry_attempts),
+				"escalate_admin": bool(sub_code and not gateway_cancelled),
+			}
 
 	except Exception as e:
 		logger.error(f"[cancel] _cancel_and_disable_paystack failed for user {user_id}: {e}")
-		return {"success": False, "gateway_cancelled": False, "tier": "free"}
+		return {"success": False, "gateway_cancelled": False, "tier": "free", "retry_attempts": 0, "escalate_admin": True}
 
 
 async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -6201,6 +6389,26 @@ async def cancel_confirm_callback(update: Update, context: ContextTypes.DEFAULT_
 			f"You can re-subscribe anytime with /upgrade. \U0001f64f",
 			parse_mode="MarkdownV2",
 		)
+		if result.get("escalate_admin"):
+			try:
+				admin_msg = (
+					f"⚠️ Paystack cancel gateway failed after retries.\n"
+					f"user_id={int(user_id)} tier={tier} attempts={int(result.get('retry_attempts') or 0)}\n"
+					"DB auto_renew was set to False."
+				)
+				target_ids = set()
+				for _id in (list(ADMIN_IDS) + list(OWNER_IDS)):
+					try:
+						target_ids.add(int(_id))
+					except Exception:
+						continue
+				for _chat_id in target_ids:
+					try:
+						await context.bot.send_message(chat_id=int(_chat_id), text=admin_msg)
+					except Exception:
+						pass
+			except Exception:
+				pass
 
 	except Exception as e:
 		logger.error(f"[cancel] cancel_confirm_callback failed for user {user_id}: {e}")

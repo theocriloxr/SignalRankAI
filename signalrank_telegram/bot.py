@@ -477,6 +477,7 @@ from .commands import (
     policy_command,
     recap_command,
     signals_command,
+    proof_command,
     signal_command,
     outcome_command,
     invite_command,
@@ -2418,7 +2419,7 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                 uid_i = int(uid)
                 if str(resolve_user_tier(uid_i) or "free").lower() != "free":
                     continue
-                daily_limit = int(TIER_DAILY_LIMITS.get("free", 2) or 2)
+                daily_limit = int(TIER_DAILY_LIMITS.get("free", 3) or 3)
                 already_sent = int(_count_signals_sent_today_sync(uid_i) or 0)
                 if already_sent >= daily_limit:
                     continue
@@ -2502,7 +2503,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     - ADMIN: VIP-equivalent stream (30/day, same selection as VIP)
     - VIP: 30 signals/day (score >= 72 only, real-time)
     - PREMIUM: 10 signals/day (score 55-80, real-time)
-    - FREE: 2 random signals/day (delayed queue, bot picks any from global pool)
+    - FREE: 3 random signals/day (delayed queue, bot picks any from global pool)
     - EXTRA: 1 signal per purchase (highest scoring available, real-time)
     
     FREE tier: Bot queues ALL generated signals to global pool, then randomly 
@@ -2741,7 +2742,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                     to_send: list[dict] = []
                     async with get_session() as session:
-                        daily_limit = TIER_DAILY_LIMITS.get(str(effective_tier), 2)
+                        daily_limit = TIER_DAILY_LIMITS.get(
+                            str(effective_tier),
+                            TIER_DAILY_LIMITS.get("free", 3),
+                        )
                         already_sent_today = int(
                             await count_signals_sent_today(session, int(user_id))
                         )
@@ -3015,7 +3019,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         user_tier_actual = 'free'
                     
                     # Get tier limit from constants
-                    daily_limit = TIER_DAILY_LIMITS.get(user_tier_actual, 2)
+                    daily_limit = TIER_DAILY_LIMITS.get(
+                        user_tier_actual,
+                        TIER_DAILY_LIMITS.get("free", 3),
+                    )
                     remaining = max(0, daily_limit - signals_sent_today) if daily_limit != float('inf') else 999
                     
                     if remaining <= 0:
@@ -3126,7 +3133,10 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         # Check daily limit from DB deliveries
         signals_sent_today = int(_count_signals_sent_today_sync(int(user_id)) or 0)
         
-        daily_limit = TIER_DAILY_LIMITS.get(routing_tier, 2)
+        daily_limit = TIER_DAILY_LIMITS.get(
+            routing_tier,
+            TIER_DAILY_LIMITS.get("free", 3),
+        )
         
         if signals_sent_today >= daily_limit:
             logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")
@@ -3376,15 +3386,6 @@ def run_bot() -> None:
         os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
         logger.info("[bot] TELEGRAM_USE_WEBHOOK defaulted to 1 (Railway deployment detected)")
 
-    import threading
-    import time
-    def _bot_heartbeat():
-        while True:
-            print(f"[bot] heartbeat: running", flush=True)
-            logger.info(f"[bot] heartbeat: running (thread={threading.get_ident()})")
-            time.sleep(30)
-    threading.Thread(target=_bot_heartbeat, daemon=True).start()
-
     from apscheduler.schedulers.background import BackgroundScheduler
 
     # Idempotency guard for webhook deployments: if setup already completed in
@@ -3629,13 +3630,8 @@ def run_bot() -> None:
             logger.warning(f"[bot] Failed to set bot commands: {e}")
             pass
 
-        # Start the real-time outcome tracker (polls open signals every 15s for TP/SL hits)
-        try:
-            from engine.realtime_outcome_tracker import outcome_tracker
-            await outcome_tracker.start()
-            logger.info("[bot] RealtimeOutcomeTracker started")
-        except Exception as _e:
-            logger.warning(f"[bot] RealtimeOutcomeTracker failed to start: {_e}")
+        # Outcome tracker is worker-owned in monolith runtime.
+        logger.info("[bot] RealtimeOutcomeTracker startup skipped (worker-owned)")
 
         # ── Post-deploy terms blast ───────────────────────────────────────────
         # Set env var TERMS_BLAST_ON_DEPLOY=1 on Railway to automatically send
@@ -3732,6 +3728,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
     application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
+    application.add_handler(CommandHandler("proof", _audit_handler("proof", proof_command)))
     application.add_handler(CommandHandler("signal", _audit_handler("signal", signal_command)))
     application.add_handler(CommandHandler("outcome", _audit_handler("outcome", outcome_command)))
     application.add_handler(CommandHandler("invite", _audit_handler("invite", invite_command)))

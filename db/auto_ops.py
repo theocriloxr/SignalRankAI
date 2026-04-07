@@ -50,8 +50,9 @@ def run_startup_ops(run_mode: str) -> None:
     if not db_url:
         return
 
-    # Default: auto-migrate when DATABASE_URL exists.
-    if not _env_bool("AUTO_MIGRATE", True):
+    # Production hardening: runtime auto-migrate disabled by default.
+    # Migrations must run in deploy/release step.
+    if not _env_bool("AUTO_MIGRATE", False):
         return
 
     try:

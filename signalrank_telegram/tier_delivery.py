@@ -31,10 +31,6 @@ class TierDeliveryManager:
         - Retry-safe: duplicate sends are deduped at DB and memory level
         - Tier-appropriate message formatting (see formatter.py)
     """
-    # Signal thresholds per tier (QUALITY GATES)
-    MIN_SCORE_FREE = 80.0      # Only prove best signals
-    MIN_SCORE_PREMIUM = 75.0   # More opportunity
-    MIN_SCORE_VIP = 75.0       # Accept all, but show quality-first
     def __init__(self):
         """Initialize delivery manager."""
         self.delivery_log = []
@@ -103,6 +99,7 @@ class TierDeliveryManager:
             Example: {'free': [user1, user2], 'premium': [user3, user4, user5], 'vip': [user6]}
         """
         score = float(signal.get('score', 0) or 0)
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         
         recipients = {
             'free': [],
@@ -115,9 +112,9 @@ class TierDeliveryManager:
         # NOTE: In real implementation, query users by tier from database
         
         # Quality gates determine who CAN receive
-        can_free = score >= self.MIN_SCORE_FREE
-        can_premium = score >= self.MIN_SCORE_PREMIUM
-        can_vip = score >= self.MIN_SCORE_VIP
+        can_free = score >= float(TIER_SCORE_THRESHOLDS.get('free', 80))
+        can_premium = score >= float(TIER_SCORE_THRESHOLDS.get('premium', 75))
+        can_vip = score >= float(TIER_SCORE_THRESHOLDS.get('vip', 75))
         
         # Example return (would be populated from database):
         # if can_free:
@@ -171,10 +168,12 @@ class TierDeliveryManager:
         Returns:
             Dict of features for this tier
         """
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
+
         features_by_tier = {
             'free': {
                 'signals_per_day': '1-3',
-                'min_score': 80,
+                'min_score': int(TIER_SCORE_THRESHOLDS.get('free', 80)),
                 'multiple_tps': False,
                 'confidence_percent': False,
                 'validity_window': False,
@@ -189,7 +188,7 @@ class TierDeliveryManager:
             },
             'premium': {
                 'signals_per_day': '5-10',
-                'min_score': 65,
+                'min_score': int(TIER_SCORE_THRESHOLDS.get('premium', 75)),
                 'multiple_tps': True,      # 2-3 TP levels
                 'confidence_percent': True, # % format
                 'validity_window': True,
@@ -204,7 +203,7 @@ class TierDeliveryManager:
             },
             'vip': {
                 'signals_per_day': 'Quality-based',
-                'min_score': 55,
+                'min_score': int(TIER_SCORE_THRESHOLDS.get('vip', 75)),
                 'multiple_tps': True,       # 3+ TP levels
                 'confidence_percent': True, # Full score (0-100)
                 'validity_window': True,
