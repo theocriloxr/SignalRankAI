@@ -15,7 +15,7 @@ TIER_DAILY_LIMITS: Final[dict[str, float]] = {
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
     "free": 80,
     "premium": 75,
-    "vip": 75,
+    "vip": 85,
     "owner": 75,
     "admin": 75,
 }

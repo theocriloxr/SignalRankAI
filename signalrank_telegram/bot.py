@@ -477,6 +477,7 @@ from .commands import (
     policy_command,
     recap_command,
     signals_command,
+    proof_command,
     signal_command,
     outcome_command,
     invite_command,
@@ -3718,6 +3719,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
     application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
+    application.add_handler(CommandHandler("proof", _audit_handler("proof", proof_command)))
     application.add_handler(CommandHandler("signal", _audit_handler("signal", signal_command)))
     application.add_handler(CommandHandler("outcome", _audit_handler("outcome", outcome_command)))
     application.add_handler(CommandHandler("invite", _audit_handler("invite", invite_command)))

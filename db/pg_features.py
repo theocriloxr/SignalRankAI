@@ -1462,14 +1462,16 @@ async def archive_signal_after_outcome(session: AsyncSession, signal_id: str) ->
 async def list_unresolved_signals_for_user(
     session: AsyncSession,
     telegram_user_id: int,
+    lookback_days: int = 1,
 ) -> list[Signal]:
-    """Return unresolved signals from the last 24h delivered to this user, excluding archived/expired."""
+    """Return unresolved signals delivered to this user in the configured lookback window."""
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
         return []
 
-    cutoff: datetime = _utcnow() - timedelta(days=1)
+    cutoff_days = max(1, int(lookback_days or 1))
+    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
 
     q: Select[Tuple[Signal]] = (
         select(Signal)

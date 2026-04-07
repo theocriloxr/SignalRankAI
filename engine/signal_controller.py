@@ -218,6 +218,26 @@ class SignalController:
             except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, Exception):
                 return None
             return None
+
+        try:
+            gemini_top_n = max(1, int(os.getenv("GEMINI_INLINE_TOP_N", "3") or 3))
+        except Exception:
+            gemini_top_n = 3
+        gemini_shortlist: Set[Tuple[str, str]] = set()
+        conflict_pairs: List[Tuple[float, str, str]] = []
+        for (asset, tf), items in grouped.items():
+            longs = [s for s in items if str(s.get("direction")).lower() == "long"]
+            shorts = [s for s in items if str(s.get("direction")).lower() == "short"]
+            if not (longs and shorts):
+                continue
+            long_sum = sum(_conf(s) for s in longs)
+            short_sum = sum(_conf(s) for s in shorts)
+            total = abs(long_sum) + abs(short_sum)
+            margin = abs(long_sum - short_sum) / (total + 1e-9)
+            conflict_pairs.append((margin, asset, tf))
+        conflict_pairs.sort(key=lambda x: x[0])
+        gemini_shortlist = {(asset, tf) for _, asset, tf in conflict_pairs[:gemini_top_n]}
+
         for (asset, tf), items in grouped.items():
             longs = [s for s in items if str(s.get("direction")).lower() == "long"]
             shorts = [s for s in items if str(s.get("direction")).lower() == "short"]
@@ -230,7 +250,7 @@ class SignalController:
 
             winning_side = None
             if longs and shorts:
-                gemini_winner = _gemini_pick(asset, tf, longs, shorts)
+                gemini_winner = _gemini_pick(asset, tf, longs, shorts) if (asset, tf) in gemini_shortlist else None
                 if gemini_winner == "long":
                     winning_side = "long"
                 elif gemini_winner == "short":
