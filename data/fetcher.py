@@ -109,6 +109,7 @@ from datetime import datetime
 
 import requests
 import asyncio
+from core.circuit_breaker import provider_breaker
 
 # Import market hours module for holiday checks
 try:
@@ -623,6 +624,37 @@ def get_crypto_candles(asset, timeframe):
     if not sym or len(sym) < 6:
         return []
 
+    _binance_breaker = provider_breaker("binance")
+    _bybit_breaker = provider_breaker("bybit")
+    _cc_breaker = provider_breaker("cryptocompare")
+
+    def _alert_provider_flip(from_provider: str, to_provider: str, reason: str) -> None:
+        try:
+            token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+            if not token:
+                return
+            from config import OWNER_IDS, ADMIN_IDS
+            recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
+            if not recipients:
+                return
+            text = (
+                "🚨 Provider Circuit Breaker Triggered\n"
+                f"From: {from_provider}\n"
+                f"To: {to_provider}\n"
+                f"Reason: {reason}"
+            )
+            for rid in recipients:
+                try:
+                    requests.post(
+                        f"https://api.telegram.org/bot{token}/sendMessage",
+                        json={"chat_id": int(rid), "text": text},
+                        timeout=6,
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     def _bybit_candles(symbol: str, tf: str) -> list[dict]:
         """Fetch candles from Bybit public API (free, often not geo-blocked)."""
         bybit_tf_map = {
@@ -767,15 +799,23 @@ def get_crypto_candles(asset, timeframe):
 
     # First, try connector adapter if available (preferred, pluggable path)
     try:
-        from data.connectors.binance_adapter import get_candles as connector_binance
-        try:
-            conn_out = connector_binance(sym, interval, limit=200)  # type: ignore
-            if conn_out:
-                logger.info(f"[data] crypto_connector=binance symbol={sym} tf={interval} candles={len(conn_out)}")
-                return conn_out
-        except Exception:
-            # Adapter failed; fall back to built-in logic
-            pass
+        if _binance_breaker.allow():
+            from data.connectors.binance_adapter import get_candles as connector_binance
+            try:
+                conn_out = connector_binance(sym, interval, limit=200)  # type: ignore
+                if conn_out:
+                    _binance_breaker.record_success()
+                    logger.info(f"[data] crypto_connector=binance symbol={sym} tf={interval} candles={len(conn_out)}")
+                    return conn_out
+                opened = _binance_breaker.record_failure()
+                if opened:
+                    _alert_provider_flip("binance", "bybit", "connector_empty_response")
+            except Exception:
+                opened = _binance_breaker.record_failure()
+                if opened:
+                    _alert_provider_flip("binance", "bybit", "connector_exception")
+        else:
+            logger.warning("[data] circuit_open provider=binance symbol=%s tf=%s", sym, interval)
     except Exception:
         # Connector not available – continue with legacy providers
         pass
@@ -785,11 +825,19 @@ def get_crypto_candles(asset, timeframe):
     
     # Nigeria fix: Binance blocked, prioritize CryptoCompare
     if provider == "cryptocompare":
-        candles = _cryptocompare_candles(sym, interval)
+        candles = _cryptocompare_candles(sym, interval) if _cc_breaker.allow() else []
+        if candles:
+            _cc_breaker.record_success()
+        else:
+            _cc_breaker.record_failure()
         if candles:
             return candles
     elif provider == "bybit":
-        candles = _bybit_candles(sym, interval)
+        candles = _bybit_candles(sym, interval) if _bybit_breaker.allow() else []
+        if candles:
+            _bybit_breaker.record_success()
+        else:
+            _bybit_breaker.record_failure()
         if candles:
             return candles
 
@@ -797,11 +845,19 @@ def get_crypto_candles(asset, timeframe):
     if _BINANCE_BLOCKED_REASON is not None:
         # Binance blocked: Try Bybit first, then CryptoCompare (NOT Yahoo/Twelve Data - they don't understand BTCUSDT format)
         logger.info(f"[data] binance_blocked={_BINANCE_BLOCKED_REASON} trying bybit/cryptocompare for {sym}")
-        candles = _bybit_candles(sym, interval)
+        candles = _bybit_candles(sym, interval) if _bybit_breaker.allow() else []
+        if candles:
+            _bybit_breaker.record_success()
+        else:
+            _bybit_breaker.record_failure()
         if candles:
             return candles
         # Try CryptoCompare as fallback (it understands Binance notation)
-        candles = _cryptocompare_candles(sym, interval)
+        candles = _cryptocompare_candles(sym, interval) if _cc_breaker.allow() else []
+        if candles:
+            _cc_breaker.record_success()
+        else:
+            _cc_breaker.record_failure()
         return candles or []
 
     url = "https://api.binance.com/api/v3/klines"
@@ -866,16 +922,22 @@ def get_crypto_candles(asset, timeframe):
                 except Exception:
                     continue
             logger.info(f"[data] crypto_primary=binance symbol={sym} tf={interval} candles={len(candles)}")
+            _binance_breaker.record_success()
             return candles
         except Exception as e:
+            opened = _binance_breaker.record_failure()
+            if opened:
+                _alert_provider_flip("binance", "bybit", "repeated_failures")
             print(f"[WARN] Binance candle fetch failed for {sym} {interval} (attempt {attempt}/{max_retries}): {e}")
             time.sleep(1)
 
     # Final fallback
     candles = _cryptocompare_candles(sym, interval)
     if candles:
+        _cc_breaker.record_success()
         logger.info(f"[data] crypto_fallback=cryptocompare symbol={sym} tf={interval} candles={len(candles)}")
         return candles
+    _cc_breaker.record_failure()
     logger.warning(f"[data] crypto_fetched=none symbol={sym} tf={interval} after_all_sources")
     return []
 

@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, HTMLResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from db.session import get_session
@@ -616,6 +616,42 @@ async def health() -> Dict[str, Any]:
         checks["status"] = "degraded"
     
     return checks
+
+
+@app.get("/vip/dashboard", response_class=HTMLResponse)
+async def vip_dashboard() -> str:
+        """Lightweight VIP dashboard shell with TradingView embed support."""
+        tv_symbol = (os.getenv("VIP_DASHBOARD_DEFAULT_SYMBOL") or "BINANCE:BTCUSDT").strip()
+        return f"""
+        <!doctype html>
+        <html>
+            <head>
+                <meta charset=\"utf-8\" />
+                <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />
+                <title>SignalRankAI VIP Dashboard</title>
+                <style>
+                    body {{ font-family: Segoe UI, sans-serif; margin: 0; background: #0d1220; color: #eef2ff; }}
+                    .wrap {{ max-width: 1100px; margin: 24px auto; padding: 0 16px; }}
+                    .card {{ background: #161d33; border: 1px solid #2a365e; border-radius: 14px; padding: 16px; margin-bottom: 16px; }}
+                    h1 {{ margin: 0 0 10px 0; }}
+                    p {{ opacity: 0.9; }}
+                    iframe {{ width: 100%; height: 520px; border: 0; border-radius: 10px; }}
+                </style>
+            </head>
+            <body>
+                <div class=\"wrap\">
+                    <div class=\"card\">
+                        <h1>VIP Dashboard</h1>
+                        <p>Manage execution settings, API keys, and review historical signal quality.</p>
+                    </div>
+                    <div class=\"card\">
+                        <h3>TradingView Chart</h3>
+                        <iframe src=\"https://s.tradingview.com/widgetembed/?symbol={tv_symbol}&interval=60&hidesidetoolbar=1&theme=dark\"></iframe>
+                    </div>
+                </div>
+            </body>
+        </html>
+        """
 
 
 @app.get("/metrics")

@@ -9,6 +9,7 @@
 # Example config toggles: config.MARKET_MONITOR_ENABLED, config.CRYPTO_WS_ENABLED, config.ML_TRAIN_ENABLED
 #
 import asyncio
+import json
 from utils.async_runner import run_sync
 import contextlib
 import logging
@@ -50,6 +51,7 @@ class Worker:
         market_monitor_task: Optional[asyncio.Task] = None
         ws_task: Optional[asyncio.Task] = None
         outcome_tracker_task: Optional[asyncio.Task] = None
+        drift_task: Optional[asyncio.Task] = None
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
@@ -93,6 +95,14 @@ class Worker:
             except Exception as e:
                 print(f"[worker] Failed to start ML train loop: {e}", flush=True)
                 ml_task = None
+
+        # Data drift monitor loop (enabled by default).
+        if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+            try:
+                drift_task = asyncio.create_task(self._drift_monitor_loop())
+            except Exception as e:
+                print(f"[worker] Failed to start drift monitor loop: {e}", flush=True)
+                drift_task = None
         import time
         last_heartbeat = time.time()
         try:
@@ -124,6 +134,10 @@ class Worker:
                 ml_task.cancel()
                 with contextlib.suppress(Exception):
                     await ml_task
+            if drift_task is not None:
+                drift_task.cancel()
+                with contextlib.suppress(Exception):
+                    await drift_task
             expiry_task.cancel()
             with contextlib.suppress(Exception):
                 await expiry_task
@@ -169,6 +183,74 @@ class Worker:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 continue
+
+    async def _drift_monitor_loop(self) -> None:
+        """Compare live feature distributions against baseline and alert admins on drift."""
+        interval = max(900, int(os.getenv("ML_DRIFT_CHECK_INTERVAL_SECONDS", "3600") or 3600))
+        psi_threshold = float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
+
+        while not self._stop.is_set():
+            try:
+                from ml.drift_monitor import detect_feature_drift
+
+                baseline_path = os.getenv("ML_BASELINE_FEATURE_STATS_PATH", "ml/baseline_feature_stats.json")
+                live_path = os.getenv("ML_LIVE_FEATURE_STATS_PATH", "ml/live_feature_stats.json")
+
+                if not (os.path.exists(baseline_path) and os.path.exists(live_path)):
+                    raise FileNotFoundError("baseline/live feature stats files not found")
+
+                with open(baseline_path, "r", encoding="utf-8") as fb:
+                    baseline = json.load(fb) or {}
+                with open(live_path, "r", encoding="utf-8") as fl:
+                    live = json.load(fl) or {}
+
+                result = detect_feature_drift(
+                    baseline_features=dict(baseline),
+                    live_features=dict(live),
+                    psi_threshold=psi_threshold,
+                )
+
+                if bool(result.get("drift_detected")):
+                    await self._notify_admin_drift(result)
+            except Exception as exc:
+                logger.debug("[worker] drift monitor skipped: %s", exc)
+
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
+
+    async def _notify_admin_drift(self, result: dict) -> None:
+        token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+        if not token:
+            return
+
+        try:
+            import requests
+            from config import OWNER_IDS, ADMIN_IDS
+
+            recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
+            if not recipients:
+                return
+
+            drifting = list(result.get("drifting_features") or [])
+            top = ", ".join(drifting[:8]) if drifting else "unknown"
+            text = (
+                "⚠️ ML Data Drift Detected\n"
+                f"Features drifting: {top}\n"
+                "Action: trigger retraining with hyperparameter tuning."
+            )
+            for rid in recipients:
+                try:
+                    requests.post(
+                        f"https://api.telegram.org/bot{token}/sendMessage",
+                        json={"chat_id": int(rid), "text": text},
+                        timeout=8,
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            return
 
 
 async def _amain() -> None:

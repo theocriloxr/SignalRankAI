@@ -649,6 +649,11 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             ).all()
             for _delivery, user in rows:
                 try:
+                    _tier_at_send = str(getattr(_delivery, "tier_at_send", "free") or "free").lower()
+                    if _tier_at_send not in {"premium", "vip", "admin", "owner", "free_fomo"}:
+                        continue
+                    if _tier_at_send == "free":
+                        continue
                     _send_message_sync(bot, chat_id=int(user.telegram_user_id), text=text, parse_mode="HTML")
                 except Exception as exc:
                     logger.debug("[outcome_tracker] risk-free notify user=%s error: %s", getattr(user, "id", "?"), exc)

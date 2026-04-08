@@ -1731,6 +1731,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 			"required_tier": "VIP",
 			"commands": [
 				("/setrisk", "Set risk limits per trade"),
+				("/simulate", "Run 1,000-path Monte Carlo forecast"),
 				("/elite", "High-conviction elite signals"),
 				("/early", "Early-access VIP flow"),
 				("/report", "VIP monthly performance report"),
@@ -4599,6 +4600,7 @@ async def history_command(update, context):
 			return
 
 		lines: list[str] = [f"🧾 <b>Signal History</b> (last {len(rows)})\n"]
+		_r_values: list[float] = []
 		for s in rows:
 			oc = oc_map.get(s.signal_id)
 			if oc is not None and oc.status:
@@ -4608,6 +4610,7 @@ async def history_command(update, context):
 				if oc.r_multiple is not None:
 					r_sign = "+" if float(oc.r_multiple) >= 0 else ""
 					r_txt = f" | {r_sign}{float(oc.r_multiple):.1f}R"
+					_r_values.append(float(oc.r_multiple))
 				outcome_txt = f"{oc_emoji} <b>{status_u}</b>{r_txt}"
 			else:
 				outcome_txt = "⏳ Open"
@@ -4620,7 +4623,20 @@ async def history_command(update, context):
 				f"  Entry: <code>{entry_txt}</code>  {outcome_txt}  Ref: <code>{ref}</code>"
 			)
 
+		if len(_r_values) >= 5:
+			try:
+				from engine.risk_analytics import sharpe_ratio, sortino_ratio
+				_sr = sharpe_ratio(_r_values)
+				_so = sortino_ratio(_r_values)
+				lines.append("")
+				lines.append("📐 <b>Advanced Ratios</b>")
+				lines.append(f"• Sharpe: <b>{_sr:.2f}</b>")
+				lines.append(f"• Sortino: <b>{_so:.2f}</b>")
+			except Exception:
+				pass
+
 		lines.append("\n💡 /signal &lt;ref&gt; for full signal details")
+		lines.append("💡 /simulate &lt;capital&gt; &lt;risk%&gt; for Monte Carlo forecast")
 		if update.message is not None:
 			await update.message.reply_text("\n".join(lines), parse_mode="HTML")
 		return
@@ -4628,6 +4644,108 @@ async def history_command(update, context):
 	except Exception as exc:
 		if update.message is not None:
 			await update.message.reply_text(f"❌ Could not load history: {exc}")
+
+
+@require_tier("VIP")
+async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Run a Monte Carlo projection using user's historical outcomes.
+
+	Usage:
+	  /simulate
+	  /simulate <starting_capital>
+	  /simulate <starting_capital> <risk_pct>
+	"""
+	if update.message is None or update.effective_user is None:
+		return
+
+	uid = int(update.effective_user.id)
+	args = [str(a).strip() for a in (context.args or []) if str(a).strip()]
+
+	capital = float(getattr(config, "PAPER_TRADING_START_BALANCE_USD", 1000.0) or 1000.0)
+	risk_pct = 1.0
+	if len(args) >= 1:
+		try:
+			capital = max(50.0, float(args[0]))
+		except Exception:
+			await update.message.reply_text("❌ Invalid capital. Example: /simulate 1000 1.5")
+			return
+	if len(args) >= 2:
+		try:
+			risk_pct = max(0.1, min(10.0, float(args[1])))
+		except Exception:
+			await update.message.reply_text("❌ Invalid risk %. Example: /simulate 1000 1.5")
+			return
+
+	try:
+		from db.session import get_session
+		from db.models import User, SignalDelivery, Outcome
+		from sqlalchemy import select
+		from engine.risk_analytics import monte_carlo_monthly_projection
+
+		r_values: list[float] = []
+		async with get_session() as session:
+			user_row = (
+				await session.execute(select(User).where(User.telegram_user_id == uid).limit(1))
+			).scalar_one_or_none()
+			if user_row is None:
+				await update.message.reply_text("⚠️ Profile not found. Send /start first.")
+				return
+
+			if len(args) < 2:
+				risk_pct = float(getattr(user_row, "max_risk_percentage", 1.0) or 1.0)
+
+			rows = (
+				await session.execute(
+					select(Outcome.r_multiple)
+					.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
+					.where(SignalDelivery.user_id == int(getattr(user_row, "id", 0) or 0))
+				)
+			).all()
+			await session.commit()
+
+		for row in rows or []:
+			try:
+				v = row[0]
+				if v is not None:
+					r_values.append(float(v))
+			except Exception:
+				continue
+
+		if len(r_values) >= 10:
+			wins = [r for r in r_values if r > 0]
+			losses = [r for r in r_values if r <= 0]
+			win_rate = len(wins) / len(r_values)
+			avg_win_r = sum(wins) / max(1, len(wins))
+			avg_loss_r = abs(sum(losses) / max(1, len(losses))) if losses else 1.0
+		else:
+			win_rate = 0.55
+			avg_win_r = 1.8
+			avg_loss_r = 1.0
+
+		result = monte_carlo_monthly_projection(
+			starting_capital=capital,
+			risk_pct_per_trade=risk_pct,
+			win_rate=win_rate,
+			avg_win_r=avg_win_r,
+			avg_loss_r=avg_loss_r,
+			trades_per_month=30,
+			runs=1000,
+		)
+
+		msg = (
+			"🧪 <b>Monte Carlo Forecast (VIP)</b>\n\n"
+			f"Start Capital: <b>${result['start']:.2f}</b>\n"
+			f"Risk per trade: <b>{risk_pct:.2f}%</b>\n"
+			f"Simulations: <b>{result['runs']}</b>\n\n"
+			"Projected month-end range:\n"
+			f"• 5th percentile: <b>${result['p05']:.2f}</b>\n"
+			f"• Median: <b>${result['p50']:.2f}</b>\n"
+			f"• 95th percentile: <b>${result['p95']:.2f}</b>\n\n"
+			f"Ruin probability: <b>{result['ruin_probability_pct']:.2f}%</b>"
+		)
+		await update.message.reply_text(msg, parse_mode="HTML")
+	except Exception as exc:
+		await update.message.reply_text(f"❌ Simulation failed: {exc}")
 
 
 @require_tier("PREMIUM")
@@ -5168,12 +5286,12 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 	args = (context.args or [])
 	if len(args) < 3:
 		await update.message.reply_text(
-			"⚙️ *Link your MT5 Account*\n\n"
-			"Usage: `/mt5_link <login> <password> <server>`\n\n"
-			"Example:\n`/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo`\n\n"
+			"⚙️ <b>Link your MT5 Account</b>\n\n"
+			"Usage: <code>/mt5_link &lt;login&gt; &lt;password&gt; &lt;server&gt;</code>\n\n"
+			"Example:\n<code>/mt5_link 123456 MyP@ssw0rd MetaQuotes-Demo</code>\n\n"
 			"🔒 Your password is encrypted end-to-end with AES-256 (Fernet) before storage.\n"
 			"Neither SignalRankAI staff nor Railway can read it in plaintext.",
-			parse_mode="MarkdownV2"
+			parse_mode="HTML"
 		)
 		return
 
@@ -5514,7 +5632,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 			if not args:
 				mode = str(getattr(row, "execution_mode", "manual") or "manual").lower()
-				cap = int(getattr(row, "auto_signals_daily_limit", 3) or 0)
+				cap = int(getattr(row, "auto_signals_daily_limit", -1) or 0)
 				cap_txt = "all" if cap < 0 else str(cap)
 				await update.message.reply_text(
 					"⚙️ <b>Execution Settings</b>\n\n"
@@ -5540,7 +5658,7 @@ async def execution_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				)
 				return
 
-			cap = int(getattr(row, "auto_signals_daily_limit", 3) or 3)
+			cap = int(getattr(row, "auto_signals_daily_limit", -1) or -1)
 			if mode == "auto":
 				if len(args) >= 2:
 					arg2 = args[1]

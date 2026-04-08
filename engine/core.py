@@ -1676,6 +1676,21 @@ def main_loop(DRY_RUN: bool = False):
             except Exception:
                 _fresh_scored_signals = list(scored_signals_all)
 
+            # Correlation governance: keep only the strongest signal per
+            # correlation cluster/timeframe to reduce compounding exposure.
+            try:
+                _corr_enabled = _env_bool("FEATURE_SIGNAL_CORRELATION_FILTER_ENABLED", True)
+                _corr_mode = str(os.getenv("CORRELATION_FILTER_MODE", "best_per_cluster") or "best_per_cluster").strip().lower()
+                if _corr_enabled and _corr_mode == "best_per_cluster":
+                    from engine.correlation_filter import select_best_per_cluster
+                    _before = len(_fresh_scored_signals)
+                    _fresh_scored_signals = select_best_per_cluster(_fresh_scored_signals)
+                    _after = len(_fresh_scored_signals)
+                    if _after < _before:
+                        logger.info("[engine] correlation filter reduced signals: before=%s after=%s", _before, _after)
+            except Exception as _corr_err:
+                logger.debug("[engine] correlation filter skipped: %s", _corr_err)
+
             for user_id in user_ids:
                 try:
                     users_seen += 1

@@ -483,6 +483,7 @@ from .commands import (
     invite_command,
     stats_command,
     history_command,
+    simulate_command,
     analyze_command,
     risk_command,
     alerts_command,
@@ -1302,7 +1303,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                         return (False, f"PREMIUM daily limit reached ({limit})", "limit")
 
                 # Optional per-user AUTO cap.
-                auto_cap = int(getattr(user, "auto_signals_daily_limit", 3) or 0)
+                auto_cap = int(getattr(user, "auto_signals_daily_limit", -1) or 0)
                 if auto_cap == 0:
                     await session.commit()
                     return (False, "AUTO cap is 0", "setup_missing")
@@ -3736,6 +3737,7 @@ def run_bot() -> None:
     # Premium (not advertised)
     application.add_handler(CommandHandler("stats", _audit_handler("stats", stats_command)))
     application.add_handler(CommandHandler("history", _audit_handler("history", history_command)))
+    application.add_handler(CommandHandler("simulate", _audit_handler("simulate", simulate_command)))
     application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
     application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
     

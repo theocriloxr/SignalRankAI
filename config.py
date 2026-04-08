@@ -50,6 +50,9 @@ class Config:
 		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
 		self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 		self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
+		self.BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
+		self.BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
+		self.BYBIT_TESTNET = self._env_bool("BYBIT_TESTNET", False)
 
 		# Trading and risk management
 		self.FX_PAIRS = [p.strip() for p in os.getenv("FX_PAIRS", "").split(",") if p.strip()]
@@ -68,10 +71,55 @@ class Config:
 		# Feature toggles (add more as needed)
 		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
 		self.CRYPTO_WS_ENABLED = self._env_bool("CRYPTO_WS_ENABLED", False)
-		_running_on_railway = bool((self.RAILWAY_SERVICE_NAME or "").strip() or (self.RAILWAY_ENVIRONMENT or "").strip())
-		_ml_train_default = False if _running_on_railway else True
-		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", _ml_train_default)
+		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", True)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
+
+		# Exchange scope (native execution and market connectors)
+		self.EXECUTION_EXCHANGES = self._env_csv("EXECUTION_EXCHANGES", ["binance", "bybit"])
+		self.CRYPTO_DATA_EXCHANGES = self._env_csv("CRYPTO_DATA_EXCHANGES", ["binance", "bybit"])
+
+		# Smart DCA profiles
+		self.DCA_PROFILE_DEFAULT = os.getenv("DCA_PROFILE_DEFAULT", "conservative_swing").strip().lower() or "conservative_swing"
+		self.DCA_CONSERVATIVE_BASE_ORDER_USD = self._env_float("DCA_CONSERVATIVE_BASE_ORDER_USD", 100.0)
+		self.DCA_CONSERVATIVE_MAX_LEGS = self._env_int("DCA_CONSERVATIVE_MAX_LEGS", 4)
+		self.DCA_CONSERVATIVE_INITIAL_SPACING_PCT = self._env_float("DCA_CONSERVATIVE_INITIAL_SPACING_PCT", 2.0)
+		self.DCA_CONSERVATIVE_VOLUME_SCALE = self._env_float("DCA_CONSERVATIVE_VOLUME_SCALE", 1.5)
+		self.DCA_CONSERVATIVE_STEP_SCALE = self._env_float("DCA_CONSERVATIVE_STEP_SCALE", 1.2)
+
+		self.DCA_AGGRESSIVE_BASE_ORDER_USD = self._env_float("DCA_AGGRESSIVE_BASE_ORDER_USD", 50.0)
+		self.DCA_AGGRESSIVE_MAX_LEGS = self._env_int("DCA_AGGRESSIVE_MAX_LEGS", 6)
+		self.DCA_AGGRESSIVE_INITIAL_SPACING_PCT = self._env_float("DCA_AGGRESSIVE_INITIAL_SPACING_PCT", 1.5)
+		self.DCA_AGGRESSIVE_VOLUME_SCALE = self._env_float("DCA_AGGRESSIVE_VOLUME_SCALE", 2.0)
+		self.DCA_AGGRESSIVE_STEP_SCALE = self._env_float("DCA_AGGRESSIVE_STEP_SCALE", 1.5)
+
+		# ML-adaptive DCA spacing
+		self.DCA_ML_ADAPTIVE_ENABLED = self._env_bool("DCA_ML_ADAPTIVE_ENABLED", True)
+		self.DCA_LOW_VOL_INITIAL_SPACING_PCT = self._env_float("DCA_LOW_VOL_INITIAL_SPACING_PCT", 1.0)
+		self.DCA_LOW_VOL_MAX_LEGS = self._env_int("DCA_LOW_VOL_MAX_LEGS", 3)
+		self.DCA_HIGH_VOL_INITIAL_SPACING_PCT = self._env_float("DCA_HIGH_VOL_INITIAL_SPACING_PCT", 3.5)
+		self.DCA_HIGH_VOL_STEP_SCALE = self._env_float("DCA_HIGH_VOL_STEP_SCALE", 1.4)
+
+		# Trailing behaviour
+		self.TRAILING_ACTIVATION_MODE = os.getenv("TRAILING_ACTIVATION_MODE", "on_favorable_move").strip().lower() or "on_favorable_move"
+
+		# Simulation and user experience defaults
+		self.PAPER_TRADING_SIMULATE_ALL = self._env_bool("PAPER_TRADING_SIMULATE_ALL", True)
+		self.PAPER_TRADING_SIMULATE_FEES = self._env_bool("PAPER_TRADING_SIMULATE_FEES", True)
+		self.PAPER_TRADING_SIMULATE_SLIPPAGE = self._env_bool("PAPER_TRADING_SIMULATE_SLIPPAGE", True)
+		self.PAPER_TRADING_START_BALANCE_USD = self._env_float("PAPER_TRADING_START_BALANCE_USD", 1000.0)
+		self.CHART_STYLE_DEFAULT = os.getenv("CHART_STYLE_DEFAULT", "tradingview").strip().lower() or "tradingview"
+		self.POSITION_RISK_DEFAULT_PCT = self._env_float("POSITION_RISK_DEFAULT_PCT", 1.0)
+		self.POSITION_RISK_USER_SELECTABLE = self._env_bool("POSITION_RISK_USER_SELECTABLE", True)
+
+		# Data ingestion choices
+		self.SENTIMENT_ROLLOUT_PHASE = os.getenv("SENTIMENT_ROLLOUT_PHASE", "rss_fear_greed_first").strip().lower() or "rss_fear_greed_first"
+		self.ONCHAIN_ALERT_INCLUDE_EXCHANGE_FLOWS = self._env_bool("ONCHAIN_ALERT_INCLUDE_EXCHANGE_FLOWS", True)
+		self.ONCHAIN_ALERT_INCLUDE_DORMANT_MOVES = self._env_bool("ONCHAIN_ALERT_INCLUDE_DORMANT_MOVES", True)
+
+		# AI journal and correlation governance
+		self.AI_JOURNAL_AUTO_SEND = self._env_bool("AI_JOURNAL_AUTO_SEND", True)
+		self.AI_JOURNAL_WEEKLY_DAY = os.getenv("AI_JOURNAL_WEEKLY_DAY", "sunday").strip().lower() or "sunday"
+		self.CORRELATION_FILTER_MODE = os.getenv("CORRELATION_FILTER_MODE", "best_per_cluster").strip().lower() or "best_per_cluster"
 
 	def _env_int(self, name: str, default: int = 0) -> int:
 		raw = os.getenv(name)
@@ -99,6 +147,12 @@ class Config:
 			except Exception:
 				continue
 		return out
+
+	def _env_csv(self, name: str, default: list[str] | None = None) -> list[str]:
+		raw = (os.getenv(name) or "").strip()
+		if not raw:
+			return [str(v).strip().lower() for v in (default or []) if str(v).strip()]
+		return [p.strip().lower() for p in raw.split(",") if p.strip()]
 
 	def _env_bool(self, name: str, default: bool = False) -> bool:
 		val = os.getenv(name)
