@@ -2485,10 +2485,10 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			a: str = a[:-3] + "USDT"
 		return a
 
-	def _current_price(asset: str) -> float | None:
+	async def _current_price(asset: str) -> float | None:
 		"""Fetch current price from live market data. Supports crypto, FX, and stocks."""
 		try:
-			from data.fetcher import get_candles, get_asset_type
+			from data.fetcher import async_get_candles, get_asset_type
 			
 			asset_type: str = get_asset_type(asset)
 			if asset_type not in {"crypto", "fx", "stock"}:
@@ -2497,7 +2497,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			# Try short timeframes first; fall back if unavailable
 			candles = []
 			for tf in ("1m", "5m", "15m"):
-				candles: list[dict] = get_candles(asset, tf)
+				candles = await async_get_candles(asset, tf)
 				if candles:
 					break
 			
@@ -2507,16 +2507,17 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				try:
 					atype: str = asset_type
 					if atype == "crypto":
-						# Bybit spot ticker
-						import requests
+						# Bybit spot ticker (async)
+						import httpx
 						sym: str = (asset or "").upper().replace("/", "").replace("-", "")
 						if sym.endswith("USD") and not sym.endswith("USDT"):
 							sym: str = sym[:-3] + "USDT"
 						url = "https://api.bybit.com/v5/market/tickers"
 						params: dict[str, str] = {"category": "spot", "symbol": sym}
 						try:
-							resp: Response = requests.get(url, params=params, timeout=8)
-							data = resp.json() if resp.ok else {}
+							async with httpx.AsyncClient(timeout=8) as client:
+								resp = await client.get(url, params=params)
+							data = resp.json() if resp.is_success else {}
 							result = (data.get("result") or {}).get("list") or []
 							if isinstance(result, list) and result:
 								last_price = result[0].get("lastPrice")
@@ -2532,8 +2533,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 							if ysym.endswith("USDT"):
 								base: str = ysym[:-4]
 								ysym: str = f"{base}-USD"
-							tkr = yf.Ticker(ysym)
-							h = tkr.history(period="1d", interval="1m")
+							tkr = await asyncio.to_thread(yf.Ticker, ysym)
+							h = await asyncio.to_thread(tkr.history, period="1d", interval="1m")
 							if not h.empty:
 								return float(h["Close"].iloc[-1])
 						except Exception:
@@ -2546,8 +2547,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 							ysym: str = (asset or "").upper().replace("_", "").replace("-", "")
 							if atype == "fx" and "/" not in ysym and len(ysym) == 6:
 								ysym: str = f"{ysym[:3]}{ysym[3:]}=X"
-							tkr = yf.Ticker(ysym)
-							h = tkr.history(period="1d", interval="1m")
+							tkr = await asyncio.to_thread(yf.Ticker, ysym)
+							h = await asyncio.to_thread(tkr.history, period="1d", interval="1m")
 							if not h.empty:
 								return float(h["Close"].iloc[-1])
 						except Exception:
@@ -2705,7 +2706,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		entry_status = "UNKNOWN"
 		
 		if entry is not None and _is_crypto(asset):
-			price: float | None = _current_price(asset)
+			price: float | None = await _current_price(asset)
 			if price is not None and entry > 0:
 				distance_pct: float = abs(price - entry) / entry * 100.0
 				if distance_pct <= 5.0:
@@ -2753,7 +2754,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			
 			# Live estimate (crypto only)
 			if entry is not None and sl is not None and tp is not None:
-				price: float | None = _current_price(str(sig_dict.get("asset") or ""))
+				price: float | None = await _current_price(str(sig_dict.get("asset") or ""))
 				if price is not None:
 					adv, metrics = _position_advice(
 						direction=str(sig_dict.get("direction") or ""),
