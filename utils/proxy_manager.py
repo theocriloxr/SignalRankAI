@@ -26,6 +26,15 @@ _PROXY_POOL_KEY = "proxy_pool:active"
 
 
 def _redis_url() -> str:
+    """Resolve Redis URL from supported env aliases in priority order.
+
+    Priority:
+    1) REDIS_URL
+    2) REDIS_PRIVATE_URL
+    3) REDIS_PUBLIC_URL
+    4) REDIS_INTERNAL_URL
+    5) REDIS_TLS_URL
+    """
     for key in ("REDIS_URL", "REDIS_PRIVATE_URL", "REDIS_PUBLIC_URL", "REDIS_INTERNAL_URL", "REDIS_TLS_URL"):
         val = (os.getenv(key) or "").strip()
         if val:
@@ -61,7 +70,7 @@ def _get_redis_sync():
         return None
 
 
-def _normalize_proxy_url(value: str) -> str | None:
+def normalize_proxy_url(value: str) -> str | None:
     raw = str(value or "").strip()
     if not raw:
         return None
@@ -76,7 +85,7 @@ def _parse_proxy_csv(raw: str) -> list[str]:
         return []
     out: list[str] = []
     for part in raw.split(","):
-        n = _normalize_proxy_url(part)
+        n = normalize_proxy_url(part)
         if n:
             out.append(n)
     return out
@@ -105,7 +114,7 @@ def _set_redis_pool_sync(proxy_urls: list[str]) -> None:
     cleaned = []
     seen: set[str] = set()
     for p in proxy_urls:
-        n = _normalize_proxy_url(p)
+        n = normalize_proxy_url(p)
         if not n or n in seen:
             continue
         seen.add(n)
@@ -129,7 +138,7 @@ def _rotate_redis_proxy_sync() -> Optional[str]:
         value = client.rpoplpush(_PROXY_POOL_KEY, _PROXY_POOL_KEY)
         if not value:
             return None
-        return _normalize_proxy_url(str(value))
+        return normalize_proxy_url(str(value))
     except Exception:
         return None
 
@@ -145,7 +154,7 @@ async def _fetch_active_proxies_from_db() -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for raw in urls:
-        n = _normalize_proxy_url(raw)
+        n = normalize_proxy_url(raw)
         if not n or n in seen:
             continue
         seen.add(n)

@@ -33,26 +33,17 @@ def _provider_url() -> str:
     )
 
 
-def _normalize_proxy_url(value: str) -> str | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    if "://" not in raw:
-        raw = f"http://{raw}"
-    return raw
-
-
 def _extract_proxy_candidates(payload: Any) -> list[str]:
     urls: list[str] = []
     if isinstance(payload, list):
         for item in payload:
             if isinstance(item, str):
-                n = _normalize_proxy_url(item)
+                n = proxy_manager.normalize_proxy_url(item)
                 if n:
                     urls.append(n)
             elif isinstance(item, dict):
                 raw = item.get("proxy_url") or item.get("url") or item.get("proxy")
-                n = _normalize_proxy_url(str(raw or ""))
+                n = proxy_manager.normalize_proxy_url(str(raw or ""))
                 if n:
                     urls.append(n)
     elif isinstance(payload, dict):
@@ -179,4 +170,4 @@ def proxy_validation_job() -> None:
     try:
         run_sync(run_proxy_validation_cycle(), timeout=None)
     except Exception as exc:
-        logger.warning("[proxy_worker] scheduled_job_failed err=%s", exc)
+        logger.warning("[proxy_worker] proxy_validation_cycle_failed err=%s", exc)
