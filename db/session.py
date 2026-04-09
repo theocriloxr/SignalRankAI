@@ -115,6 +115,10 @@ _engines_by_loop: dict[int, AsyncEngine] = {}
 _sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
 
+# Backward compatibility for legacy call-sites that still import
+# `_get_global_engine` / `_global_engine` from this module.
+_global_engine: Optional[AsyncEngine] = None
+
 
 def _loop_identity() -> int:
     """Return a stable identity for the current async loop context.
@@ -178,6 +182,13 @@ def _get_sessionmaker_for_loop(loop_id: int) -> Optional[async_sessionmaker[Asyn
 
 def get_engine_for_event_loop() -> Optional[AsyncEngine]:
     return _get_engine_for_loop(_loop_identity())
+
+
+def _get_global_engine() -> Optional[AsyncEngine]:
+    """Compatibility shim: return engine for current loop/thread context."""
+    global _global_engine
+    _global_engine = get_engine_for_event_loop()
+    return _global_engine
 
 
 def get_sessionmaker_for_event_loop() -> Optional[async_sessionmaker[AsyncSession]]:
