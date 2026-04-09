@@ -2728,26 +2728,12 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 except Exception:
                     pass
 
-            # Only fall back to a live HTTP call for crypto when no cached price
-            # is available and we are not already in a tight event-loop context.
+            # Do not perform blocking network calls in this synchronous dispatch path.
+            # If no cached price is available, keep status as UNKNOWN.
             try:
                 is_crypto = asset.endswith(("USDT", "USDC", "BTC", "ETH", "BNB"))
                 if not is_crypto:
                     return True, "UNKNOWN"
-
-                import httpx
-                try:
-                    resp = httpx.get(
-                        "https://api.binance.com/api/v3/ticker/price",
-                        params={"symbol": asset},
-                        timeout=4.0,
-                    )
-                    if resp.is_success:
-                        price = float(resp.json().get("price", entry))
-                        price_distance_pct = abs(price - entry) / entry * 100.0
-                        return True, "AT_ENTRY" if price_distance_pct <= 3.0 else "PENDING_ENTRY"
-                except Exception:
-                    pass
                 return True, "UNKNOWN"
             except Exception:
                 return True, "UNKNOWN"

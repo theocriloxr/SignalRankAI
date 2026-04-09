@@ -131,13 +131,6 @@ class Config:
 		raw = os.getenv(name)
 		if raw is None:
 			return default
-
-	def _first_env(self, *names: str) -> str:
-		for name in names:
-			raw = os.getenv(str(name), "")
-			if raw and raw.strip():
-				return raw.strip()
-		return ""
 		raw = raw.strip()
 		if not raw:
 			return default
@@ -145,6 +138,13 @@ class Config:
 			return int(raw)
 		except Exception:
 			return default
+
+	def _first_env(self, *names: str) -> str:
+		for name in names:
+			raw = os.getenv(str(name), "")
+			if raw and raw.strip():
+				return raw.strip()
+		return ""
 
 	def _env_int_set(self, name: str) -> set[int]:
 		raw = (os.getenv(name) or "").strip()

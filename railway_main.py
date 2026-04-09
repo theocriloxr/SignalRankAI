@@ -26,12 +26,28 @@ from core.redis_state import state
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_redis_url() -> str:
+    for key in ("REDIS_URL", "REDIS_PRIVATE_URL", "REDIS_PUBLIC_URL", "REDIS_INTERNAL_URL", "REDIS_TLS_URL"):
+        val = (os.getenv(key) or "").strip()
+        if val:
+            if key != "REDIS_URL" and not (os.getenv("REDIS_URL") or "").strip():
+                os.environ["REDIS_URL"] = val
+            return val
+    return ""
+
+
 # Ensure INFO-level logs are visible in Railway regardless of uvicorn's logging config.
 try:
     from utils.logging_config import setup_logging as _setup_logging
     _setup_logging()
 except Exception:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
+
+if _resolve_redis_url():
+    logger.info("[startup] Redis URL detected; webhook redis queue can be enabled")
+else:
+    logger.warning("[startup] Redis URL not detected; webhook queue will run in-process")
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
