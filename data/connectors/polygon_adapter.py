@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Dict, Any
 import os
 import logging
+import asyncio
 from datetime import datetime, timedelta
 
 try:
@@ -37,6 +38,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     start_date = end_date - timedelta(days=200 if timespan == 'day' else 30)
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
     params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
+    request_timeout = 2.5
 
     async def _do():
         # Resolve client inside _do() so test patches to get_client are respected at call time
@@ -44,7 +46,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         if _client is None:
             logger.debug("polygon_adapter: httpx client unavailable")
             return []
-        resp = await _client.get(url, params=params)
+        resp = await _client.get(url, params=params, timeout=request_timeout)
         if resp.status_code != 200:
             if resp.status_code == 429:
                 return []
@@ -69,7 +71,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return candles
 
     try:
-        return await httpx_client.retry_async(_do, retries=2, backoff=1.0)
+        return await asyncio.wait_for(
+            httpx_client.retry_async(_do, retries=2, backoff=1.0),
+            timeout=request_timeout,
+        )
     except Exception as e:
         logger.debug("polygon_adapter error: %s", e)
         return []

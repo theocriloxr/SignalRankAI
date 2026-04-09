@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List, Dict, Any
 import logging
+import asyncio
 
 from utils.async_runner import run_sync
 from utils import httpx_client
@@ -38,8 +39,14 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
         "limit": int(limit),
     }
 
+    request_timeout = min(2.5, max(0.1, float(timeout)))
+
     async def _do():
-        resp = await client.get("https://api.bybit.com/v5/market/klines", params=params, timeout=timeout)
+        resp = await client.get(
+            "https://api.bybit.com/v5/market/klines",
+            params=params,
+            timeout=request_timeout,
+        )
         if resp.status_code != 200:
             return []
         payload = resp.json() or {}
@@ -68,7 +75,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, time
         return out
 
     try:
-        return await httpx_client.retry_async(_do, retries=2, backoff=0.5)
+        return await asyncio.wait_for(
+            httpx_client.retry_async(_do, retries=2, backoff=0.5),
+            timeout=request_timeout,
+        )
     except Exception as exc:
         logger.debug("bybit_adapter error: %s", exc)
         return []

@@ -9,12 +9,15 @@ Supports: Polygon.io, Twelve Data, Yahoo Finance, OANDA, TradingView.
 """
 
 import os
+import asyncio
 import time
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 
 import requests
+from utils.async_runner import run_sync
+from utils import proxy_manager
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,76 @@ def _set_cooldown(provider: str, seconds: float) -> None:
     """Set provider cooldown."""
     global _PROVIDER_COOLDOWN
     _PROVIDER_COOLDOWN[provider] = time.monotonic() + seconds
+
+
+def _normalize_binance_symbol(symbol: str) -> str:
+    sym = (symbol or "").upper().strip().replace("/", "").replace("-", "")
+    if sym.endswith("USD") and not sym.endswith("USDT"):
+        sym = sym[:-3] + "USDT"
+    return sym
+
+
+def _map_binance_timeframe(timeframe: str) -> str:
+    return {
+        "5m": "5m",
+        "15m": "15m",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1d",
+    }.get((timeframe or "").strip(), "1h")
+
+
+def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
+    try:
+        import ccxt  # type: ignore
+    except Exception:
+        return []
+
+    try:
+        proxy_url = proxy_manager.get_proxy_sync()
+        exchange_config: dict = {
+            "enableRateLimit": True,
+            "timeout": 2500,
+        }
+        if proxy_url:
+            exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
+        exchange = ccxt.binance(exchange_config)
+        rows = exchange.fetch_ohlcv(
+            _normalize_binance_symbol(symbol),
+            timeframe=_map_binance_timeframe(timeframe),
+            limit=max(20, int(limit or 200)),
+        )
+        out: List[Dict] = []
+        for row in rows or []:
+            try:
+                out.append(
+                    {
+                        "timestamp": int(row[0]),
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    }
+                )
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
+
+def fetch_binance_ccxt_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
+    async def _call() -> List[Dict]:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_binance_ccxt_sync, symbol, timeframe, limit),
+            timeout=2.5,
+        )
+
+    try:
+        return run_sync(_call())
+    except Exception:
+        return []
 
 
 # ============================================================================
@@ -564,6 +637,10 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
 
     # --- Crypto waterfall ---
     if cls == "crypto":
+        # 0. CCXT Binance with explicit proxy injection
+        result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
+        if result and len(result) >= 10:
+            return result[-limit:]
         # 1. Binance (async adapter; call sync shim via fetcher.get_candles which handles this)
         try:
             from data.connectors.binance_adapter import get_candles as binance_get

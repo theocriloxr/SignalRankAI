@@ -79,6 +79,7 @@ _t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
 _t.start()
 import os
 import requests
+from utils import proxy_manager
 
 BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
 FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}'
@@ -185,7 +186,8 @@ def get_trending_crypto_pairs(top_n=20):
         # Fallback universe when Binance is blocked.
         return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
     try:
-        resp = requests.get(BINANCE_API, timeout=5)
+        px = proxy_manager.ccxt_proxy_config_sync().get("proxies") or None
+        resp = requests.get(BINANCE_API, timeout=5, proxies=px)
         data = resp.json()
 
         # Binance normally returns a list[dict]. If we get a dict, it's usually an
