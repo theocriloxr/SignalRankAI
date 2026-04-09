@@ -1478,6 +1478,91 @@ async def selfcheck_command(update, context) -> None:
 	
 	if update.message is not None:
 		await update.message.reply_text("🔍 System Health\n\n" + "\n".join(checks))
+
+
+@require_tier("ADMIN")
+async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Admin runtime reliability report.
+
+	Reports:
+	- delivered signals without outcomes
+	- force-closed invalid outcomes
+	- redis connectivity
+	- mt5 credential-link success rate
+	"""
+	if update.message is None:
+		return
+
+	try:
+		from datetime import datetime, timedelta
+		from sqlalchemy import select, func
+		from db.session import get_engine_for_event_loop, get_session
+		from db.models import SignalDelivery, Outcome, MT5Credentials
+
+		if get_engine_for_event_loop() is None:
+			await update.message.reply_text("⚠️ Database not configured.")
+			return
+
+		# Redis connectivity check (real connectivity, not local fallback).
+		redis_status = "❌ disconnected"
+		redis_url = (os.getenv("REDIS_URL") or "").strip()
+		if redis_url:
+			try:
+				import redis as _redis
+				_rc = _redis.from_url(redis_url, decode_responses=True, socket_connect_timeout=3, socket_timeout=3)
+				_rc.ping()
+				redis_status = "✅ connected"
+			except Exception as _re:
+				redis_status = f"❌ error ({type(_re).__name__})"
+		else:
+			redis_status = "⚠️ REDIS_URL not set"
+
+		window_days = 30
+		now = datetime.utcnow()
+		window_start = now - timedelta(days=window_days)
+
+		async with get_session() as session:
+			# 1) Delivered signals without any outcome row.
+			untracked_q = (
+				select(func.count(func.distinct(SignalDelivery.signal_id)))
+				.outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
+				.where(Outcome.id.is_(None))
+			)
+			untracked_count = int((await session.execute(untracked_q)).scalar() or 0)
+
+			# 2) Stale force-closed outcomes (tracked as status=invalid).
+			invalid_q = (
+				select(func.count(Outcome.id))
+				.where(Outcome.status == "invalid", Outcome.closed_at.is_not(None), Outcome.closed_at >= window_start)
+			)
+			invalid_count_30d = int((await session.execute(invalid_q)).scalar() or 0)
+
+			# 3) MT5 link success rate over recent credentials rows.
+			total_mt5_q = select(func.count(MT5Credentials.id)).where(MT5Credentials.created_at >= window_start)
+			success_mt5_q = select(func.count(MT5Credentials.id)).where(
+				MT5Credentials.created_at >= window_start,
+				MT5Credentials.metaapi_account_id.is_not(None),
+			)
+			total_mt5 = int((await session.execute(total_mt5_q)).scalar() or 0)
+			success_mt5 = int((await session.execute(success_mt5_q)).scalar() or 0)
+			await session.commit()
+
+		mt5_rate = (float(success_mt5) / float(total_mt5) * 100.0) if total_mt5 > 0 else 0.0
+
+		msg = (
+			"🛠️ <b>Ops Health</b>\n\n"
+			"<b>Runtime</b>\n"
+			f"• Redis: <b>{redis_status}</b>\n"
+			f"• Delivered signals without outcome: <b>{untracked_count}</b>\n"
+			f"• Force-closed invalid outcomes (last {window_days}d): <b>{invalid_count_30d}</b>\n\n"
+			"<b>Execution</b>\n"
+			f"• MT5 link success (last {window_days}d): <b>{success_mt5}/{total_mt5}</b> (<b>{mt5_rate:.1f}%</b>)\n\n"
+			"<i>Tip: if untracked is high, keep outcome tracker enabled and confirm live price providers are stable.</i>"
+		)
+		await update.message.reply_text(msg, parse_mode="HTML")
+	except Exception as exc:
+		await update.message.reply_text(f"❌ ops health failed: {exc}")
+
 from .user_prefs import user_prefs_store
 from telegram import Update
 from telegram.helpers import escape_markdown
@@ -1744,6 +1829,7 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 			"commands": [
 				("/admin", "Open the admin dashboard"),
 				("/admin_dashboard", "Open extended admin dashboard"),
+				("/ops_health", "Runtime health + delivery/outcome reliability"),
 				("/gemini", "Run all-time Gemini review + ML retrain"),
 				("/gemini_review", "Show latest Gemini review/training rundown"),
 				("/admin_top_assets", "Top assets by signal quality"),
