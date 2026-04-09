@@ -390,12 +390,24 @@ from signalrank_telegram.httpx_config import httpx_client
 
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
+        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
         # That would make start_command see the user as "not new" and prevent referral attribution.
         # start_command already handles user creation + start auditing in a single transaction.
         if str(command_name) == "start":
-            return await handler(update, context)
+            try:
+                return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
+            except Exception as exc:
+                logger.exception("[cmd:%s] handler failed: %s", command_name, exc)
+                try:
+                    if getattr(update, "message", None) is not None:
+                        await update.message.reply_text(
+                            "The command could not complete right now. Please try again in a moment."
+                        )
+                except Exception:
+                    pass
+                return
 
         try:
             from db.session import get_session
@@ -411,7 +423,28 @@ def _audit_handler(command_name: str, handler):
         except Exception as e:
             logger.debug(f"[audit] Failed to audit command wrapper: {e}")
             pass
-        return await handler(update, context)
+        try:
+            return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning("[cmd:%s] timed out after %ss", command_name, command_timeout_s)
+            try:
+                if getattr(update, "message", None) is not None:
+                    await update.message.reply_text(
+                        "That command is taking too long right now. Please try again shortly."
+                    )
+            except Exception:
+                pass
+            return
+        except Exception as exc:
+            logger.exception("[cmd:%s] handler failed: %s", command_name, exc)
+            try:
+                if getattr(update, "message", None) is not None:
+                    await update.message.reply_text(
+                        "The command could not complete right now. Please try again in a moment."
+                    )
+            except Exception:
+                pass
+            return
     return _inner
 
 from telegram.ext import Defaults
