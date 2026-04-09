@@ -91,7 +91,7 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
         return []
 
     try:
-        proxy_url = proxy_manager.next_proxy_url_sync()
+        proxy_url = proxy_manager.get_proxy_sync()
         exchange_config: dict = {
             "enableRateLimit": True,
             "timeout": 2500,

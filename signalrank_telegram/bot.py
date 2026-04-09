@@ -6665,6 +6665,21 @@ def run_bot() -> None:
 
     # ── Module-level jobs (picklable) → SQLAlchemy persistent store when available
     if scheduler is not None:
+        try:
+            from worker.proxy_worker import proxy_validation_job as _proxy_validation_job
+            scheduler.add_job(
+                _proxy_validation_job,
+                'interval',
+                minutes=30,
+                id='proxy_validation_job',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=120,
+                jobstore=_sa,
+            )
+        except Exception as _proxy_job_err:
+            logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err)
         scheduler.add_job(
             resend_unsent_signals_job,
             'interval',

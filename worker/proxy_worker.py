@@ -13,6 +13,7 @@ from sqlalchemy import select
 from config import config
 from db.models import ProxyNode
 from db.session import get_session
+from utils import proxy_manager
 from utils.timeutils import now_utc_naive
 from utils.async_runner import run_sync
 
@@ -162,6 +163,11 @@ async def run_proxy_validation_cycle() -> dict[str, int]:
         ok_count,
         failed_count,
     )
+    try:
+        active_pool = await proxy_manager.refresh_active_proxy_pool()
+        logger.info("[proxy_worker] active_proxy_pool_refreshed count=%s", len(active_pool))
+    except Exception as exc:
+        logger.warning("[proxy_worker] active_proxy_pool_refresh_failed err=%s", exc)
     return {
         "fetched": len(proxy_candidates),
         "validated_ok": ok_count,
