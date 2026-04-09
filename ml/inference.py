@@ -5,6 +5,11 @@ import tempfile
 from pathlib import Path
 import logging
 
+try:
+    import psycopg2
+except Exception:  # pragma: no cover
+    psycopg2 = None
+
 from ml.schema_version import migrate_feature_payload, normalize_model_payload
 
 try:
@@ -24,6 +29,41 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _runtime_state_model_payload() -> dict | None:
+    if psycopg2 is None:
+        return None
+    dsn = (
+        os.getenv("DATABASE_PUBLIC_URL")
+        or os.getenv("DATABASE_URL")
+        or ""
+    ).strip()
+    if not dsn:
+        return None
+    if dsn.startswith("postgresql+asyncpg://"):
+        dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
+    elif dsn.startswith("postgres://"):
+        dsn = dsn.replace("postgres://", "postgresql://", 1)
+    key = (os.getenv("ML_MODEL_RUNTIME_STATE_KEY") or "ml:model:primary").strip() or "ml:model:primary"
+    try:
+        conn = psycopg2.connect(dsn, connect_timeout=3)
+        conn.autocommit = True
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT value FROM runtime_state WHERE key=%s AND (expires_at IS NULL OR expires_at > NOW())",
+                    (key,),
+                )
+                row = cur.fetchone()
+                if not row or row[0] is None or not isinstance(row[0], dict):
+                    return None
+                payload = row[0].get("payload")
+                return payload if isinstance(payload, dict) else None
+        finally:
+            conn.close()
+    except Exception:
+        return None
 
 
 
@@ -50,8 +90,21 @@ class MLFilter:
         self.schema_version = None
         self.model_format_version = None
         try:
-            with open(MODEL_PATH, 'r') as f:
-                model_data = normalize_model_payload(json.load(f))
+            model_data = None
+            try:
+                with open(MODEL_PATH, 'r') as f:
+                    model_data = normalize_model_payload(json.load(f))
+            except Exception:
+                model_data = None
+
+            if not model_data:
+                db_payload = _runtime_state_model_payload()
+                if isinstance(db_payload, dict):
+                    model_data = normalize_model_payload(db_payload)
+
+            if not model_data:
+                self.active = False
+                return
             
             # Extract metadata and model bytes
             model_b64 = model_data.get("model_bytes_b64")
@@ -69,6 +122,9 @@ class MLFilter:
             booster.load_model(bytearray(model_bytes))  # Load directly from memory
             self.model = booster
             self.active = True
+
+            if str(os.getenv("RAILWAY_SERVICE_NAME") or "").strip() and MODEL_PATH == DEFAULT_MODEL_PATH:
+                logger.warning("[ml] using local model path on Railway; ensure runtime_state backup key is populated for durability")
                 
         except Exception as e:
             self.active = False

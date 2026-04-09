@@ -44,13 +44,22 @@ class BrokerPermissionValidationRequest(BaseModel):
     internal_transfer: bool = Field(default=False)
     futures: bool = Field(default=False)
     spot: bool = Field(default=True)
+    permissions: list[str] | None = Field(default=None)
 
 
 def _validate_trade_only_permissions(req: BrokerPermissionValidationRequest) -> tuple[bool, str]:
+    lowered_perms = {str(p or "").strip().lower() for p in (req.permissions or [])}
+    has_withdraw_like = any(tok in lowered_perms for tok in {"withdraw", "withdrawal", "cashout"})
+    has_transfer_like = any(tok in lowered_perms for tok in {"transfer", "internal_transfer", "internal-transfer"})
     if bool(req.withdraw) or bool(req.internal_transfer):
         return (
             False,
             "API keys with withdrawal or transfer permissions are forbidden. Use Trade-Only permissions.",
+        )
+    if has_withdraw_like or has_transfer_like:
+        return (
+            False,
+            "Permissions set contains withdrawal/transfer capability. Use Trade-Only permissions.",
         )
     if not bool(req.trade):
         return False, "Trade permission is required for execution-enabled integrations."
@@ -636,7 +645,7 @@ async def health() -> Dict[str, Any]:
     
     # Shared state backend check (Postgres-backed)
     try:
-        state.set_sync("health_check", "ok", ex=60)
+        await state.cache_set("health_check", "ok", ex=60)
         checks["state_backend"] = "ok"
     except Exception:
         checks["state_backend"] = "unavailable"
@@ -739,7 +748,7 @@ async def ready() -> Dict[str, Any]:
     else:
         checks["database"] = "ok"
     try:
-        state.set_sync("ready_check", "ok", ex=30)
+        await state.cache_set("ready_check", "ok", ex=30)
         checks["state_backend"] = "ok"
     except Exception as exc:
         checks["status"] = "degraded"

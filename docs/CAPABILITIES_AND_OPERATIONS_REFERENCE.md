@@ -156,7 +156,7 @@ This enables at-least-once retry flows with idempotent state inspection.
 
 ### 6.2 Telegram Webhook Runtime
 - Webhook setup and periodic health checks.
-- Queue-based dispatch workers.
+- Queue-based dispatch workers with Redis-backed queue support and in-process fallback.
 - Self-heal behavior when webhook is unexpectedly unset.
 
 ## 7. Deployment URL Configuration (`APP_BASE_URL` and `WEBHOOK_URL`)
@@ -166,6 +166,7 @@ Current Telegram webhook registration logic in `railway_main.py` derives the pub
 1. `RAILWAY_PUBLIC_DOMAIN` (preferred)
 2. `WEBHOOK_DOMAIN`
 3. `WEBHOOK_URL`
+4. `APP_BASE_URL`
 
 Then it registers: `<base>/telegram/webhook` with Telegram.
 

@@ -228,6 +228,25 @@ async def retrain_model() -> bool:
         
         with open(MODEL_PATH, "w") as f:
             json.dump(model_data, f)
+
+        # Also persist model payload in runtime_state for Railway durability fallback.
+        try:
+            from db.session import get_session
+            from sqlalchemy import text
+
+            key = (os.getenv("ML_MODEL_RUNTIME_STATE_KEY") or "ml:model:primary").strip() or "ml:model:primary"
+            async with get_session() as session:
+                await session.execute(
+                    text(
+                        "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
+                        "VALUES (:k, :v::jsonb, NULL, NOW()) "
+                        "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=NULL, updated_at=NOW()"
+                    ),
+                    {"k": key, "v": json.dumps({"payload": model_data})},
+                )
+                await session.commit()
+        except Exception as _db_persist_err:
+            logger.warning("Could not persist model payload to runtime_state: %s", _db_persist_err)
         
         logger.info(f"Model retrained and saved: AUC={auc:.4f}, samples={len(data)}")
         

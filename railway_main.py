@@ -21,6 +21,7 @@ from typing import Iterable
 from fastapi import FastAPI, Request, HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
+from core.redis_state import state
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,9 @@ _webhook_dispatch_workers: list[asyncio.Task] = []
 _webhook_enqueue_started_at: dict[str, float] = {}
 _webhook_dispatch_latency_window_s = deque(maxlen=2000)
 _scheduler_instance: AsyncIOScheduler | None = None
+_lifespan_heartbeat_task: asyncio.Task | None = None
+_monitor_tasks: list[asyncio.Task] = []
+_use_redis_webhook_queue: bool = False
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -213,6 +217,7 @@ def _get_webhook_url() -> str:
         os.getenv("RAILWAY_PUBLIC_DOMAIN")
         or os.getenv("WEBHOOK_DOMAIN")
         or os.getenv("WEBHOOK_URL")
+        or os.getenv("APP_BASE_URL")
         or ""
     ).strip()
     if not domain:
@@ -747,6 +752,7 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global _lifespan_heartbeat_task
     _log_railway_env_readiness()
     # ── Lifespan heartbeat: confirm event loop is alive ──
     async def _lifespan_heartbeat():
@@ -754,7 +760,7 @@ async def lifespan(_: FastAPI):
         while True:
             logger.info(f"[lifespan] heartbeat: event loop alive at {time.strftime('%Y-%m-%d %H:%M:%S')}")
             await asyncio.sleep(300)
-    asyncio.create_task(_lifespan_heartbeat())
+    _lifespan_heartbeat_task = asyncio.create_task(_lifespan_heartbeat())
     # ── 1) DB startup/background maintenance ───────────────────────────────────
     # Keep startup healthcheck-friendly: schedule DB-heavy work in background,
     # and only wait for bounded time when explicitly configured.
@@ -931,7 +937,17 @@ async def lifespan(_: FastAPI):
             try:
                 queue_size = 0
                 queue_util = 0.0
-                if _webhook_dispatch_queue is not None:
+                if _use_redis_webhook_queue:
+                    try:
+                        queue_size = int(await state.webhook_queue_depth())
+                    except Exception:
+                        queue_size = 0
+                    queue_cap = int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000)
+                    try:
+                        queue_util = float(queue_size) / float(max(1, queue_cap))
+                    except Exception:
+                        queue_util = 0.0
+                elif _webhook_dispatch_queue is not None:
                     queue_size = int(_webhook_dispatch_queue.qsize())
                     try:
                         queue_util = float(queue_size) / float(max(1, _webhook_dispatch_queue.maxsize))
@@ -995,7 +1011,13 @@ async def lifespan(_: FastAPI):
     async def _webhook_worker(worker_id: int) -> None:
         """Background worker: process Telegram updates from queue."""
         while True:
-            payload = await _webhook_dispatch_queue.get()
+            payload = None
+            if _use_redis_webhook_queue:
+                payload = await state.dequeue_webhook_update(timeout_seconds=1)
+                if not payload:
+                    continue
+            else:
+                payload = await _webhook_dispatch_queue.get()
             payload_update_id = (payload or {}).get("update_id", "?")
             started_at = _webhook_enqueue_started_at.pop(str(payload_update_id), None)
             try:
@@ -1032,22 +1054,26 @@ async def lifespan(_: FastAPI):
             except Exception as exc:
                 logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
             finally:
-                try:
-                    _webhook_dispatch_queue.task_done()
-                except Exception:
-                    pass
+                if not _use_redis_webhook_queue:
+                    try:
+                        _webhook_dispatch_queue.task_done()
+                    except Exception:
+                        pass
 
-    asyncio.create_task(_monitor_background_tasks())
-    asyncio.create_task(_monitor_telegram_webhook_health())
+    _monitor_tasks.append(asyncio.create_task(_monitor_background_tasks()))
+    _monitor_tasks.append(asyncio.create_task(_monitor_telegram_webhook_health()))
 
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
-    global _webhook_dispatch_queue, _webhook_dispatch_workers
+    global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
     # Railway defaults are intentionally conservative to reduce memory usage on
     # small container tiers. If you observe queue_full responses, sustained
     # queue_utilization_ratio > 0.80, or dispatch latency growth, increase
     # WEBHOOK_UPDATE_QUEUE_SIZE and/or WEBHOOK_UPDATE_WORKERS for your traffic.
     _default_queue_size = "200" if _running_on_railway else "5000"
     _default_worker_count = "2" if _running_on_railway else "64"
+    _use_redis_webhook_queue = bool(
+        str(os.getenv("WEBHOOK_QUEUE_USE_REDIS", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    ) and bool(await state.has_redis())
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
     _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
@@ -1056,9 +1082,10 @@ async def lifespan(_: FastAPI):
         for i in range(max(4, _worker_count))
     ]
     logger.info(
-        "[webhook] dispatcher started workers=%s queue_size=%s",
+        "[webhook] dispatcher started workers=%s queue_size=%s redis_queue=%s",
         len(_webhook_dispatch_workers),
         _webhook_dispatch_queue.maxsize,
+        _use_redis_webhook_queue,
     )
 
     scheduler = None
@@ -1254,6 +1281,19 @@ async def lifespan(_: FastAPI):
                     _wt.cancel()
                 except Exception:
                     pass
+        if _monitor_tasks:
+            for _mt in list(_monitor_tasks):
+                try:
+                    _mt.cancel()
+                except Exception:
+                    pass
+            _monitor_tasks.clear()
+        if _lifespan_heartbeat_task is not None:
+            try:
+                _lifespan_heartbeat_task.cancel()
+            except Exception:
+                pass
+            _lifespan_heartbeat_task = None
         if _inflight_update_tasks:
             for _task in list(_inflight_update_tasks):
                 try:
@@ -1304,6 +1344,24 @@ async def _telegram_webhook_route(req: Request) -> dict:
             _pending_webhook_updates.append(data)
             logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
             return {"ok": True, "queued": True, "dispatcher": "pending_buffer"}
+
+        if _use_redis_webhook_queue:
+            enqueued = await state.enqueue_webhook_update(
+                data,
+                max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
+            )
+            if not enqueued:
+                webhook_queue_full_total.inc()
+                logger.warning("[webhook] redis_queue_full — dropping update_id=%s", update_id)
+                return {"ok": False, "error": "queue_full"}
+            _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
+            q_depth = await state.webhook_queue_depth()
+            return {
+                "ok": True,
+                "dispatched": True,
+                "queue_backend": "redis",
+                "queue_size": int(q_depth),
+            }
 
         try:
             _webhook_dispatch_queue.put_nowait(data)

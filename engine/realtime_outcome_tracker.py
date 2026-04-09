@@ -233,14 +233,14 @@ def _retrace_warn_cache_key(signal_id: str) -> str:
     return f"tp_retrace_warned:{str(signal_id)}"
 
 
-def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 3600) -> bool:
+async def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 3600) -> bool:
     """Returns True only once per signal for the configured TTL window."""
     try:
         from core.redis_state import state
         key = _risk_free_cache_key(signal_id)
-        if state.get_sync(key):
+        if await state.cache_get(key):
             return False
-        state.set_sync(key, "1", ex=max(3600, int(ttl_seconds)))
+        await state.cache_set(key, "1", ex=max(3600, int(ttl_seconds)))
         return True
     except Exception:
         # Warning: allows duplicate notifications if Redis is down.
@@ -248,13 +248,13 @@ def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 3600) 
         return True
 
 
-def _get_tp_progress(signal: Dict[str, Any]) -> int:
+async def _get_tp_progress(signal: Dict[str, Any]) -> int:
     signal_id = str(signal.get("signal_id") or "")
     if not signal_id:
         return 0
     try:
         from core.redis_state import state
-        raw = state.get_sync(_tp_progress_cache_key(signal_id))
+        raw = await state.cache_get(_tp_progress_cache_key(signal_id))
         cached = int(raw or 0)
     except Exception:
         cached = 0
@@ -266,21 +266,25 @@ def _get_tp_progress(signal: Dict[str, Any]) -> int:
     return max(cached, db_idx)
 
 
-def _set_tp_progress(signal_id: str, idx: int, ttl_seconds: int = 10 * 24 * 3600) -> None:
+async def _set_tp_progress(signal_id: str, idx: int, ttl_seconds: int = 10 * 24 * 3600) -> None:
     try:
         from core.redis_state import state
-        state.set_sync(_tp_progress_cache_key(signal_id), str(max(0, int(idx))), ex=max(3600, int(ttl_seconds)))
+        await state.cache_set(
+            _tp_progress_cache_key(signal_id),
+            str(max(0, int(idx))),
+            ex=max(3600, int(ttl_seconds)),
+        )
     except Exception:
         pass
 
 
-def _mark_retrace_warned(signal_id: str, ttl_seconds: int = 10 * 24 * 3600) -> bool:
+async def _mark_retrace_warned(signal_id: str, ttl_seconds: int = 10 * 24 * 3600) -> bool:
     try:
         from core.redis_state import state
         key = _retrace_warn_cache_key(signal_id)
-        if state.get_sync(key):
+        if await state.cache_get(key):
             return False
-        state.set_sync(key, "1", ex=max(3600, int(ttl_seconds)))
+        await state.cache_set(key, "1", ex=max(3600, int(ttl_seconds)))
         return True
     except Exception:
         return True
@@ -316,7 +320,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         from db.pg_features import upsert_outcome
         from db.pg_features import queue_outcome_notifications_for_outcome
         from sqlalchemy import update as sa_update
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         pct: Optional[float] = None
         r_mult: Optional[float] = None
         try:
@@ -894,7 +898,7 @@ class RealtimeOutcomeTracker:
         entry = float(signal["entry"])
         sl = float(signal["stop_loss"])
         direction = signal.get("direction", "long")
-        prev_tp = int(_get_tp_progress(signal) or 0)
+        prev_tp = int(await _get_tp_progress(signal) or 0)
 
         # Normalize TP ladder before any checks.
         if str(direction).lower() == "short":
@@ -906,7 +910,7 @@ class RealtimeOutcomeTracker:
         try:
             tp1 = float(tp_levels[0])
             if _halfway_to_tp1_reached(direction, entry, tp1, float(price)):
-                if _mark_risk_free_triggered(signal_id):
+                if await _mark_risk_free_triggered(signal_id):
                     await _apply_trailing_sl_to_breakeven(signal, float(price))
                     await _notify_risk_free_update(signal, float(price))
                     logger.info(
@@ -926,7 +930,7 @@ class RealtimeOutcomeTracker:
                 ml_gate = float(os.getenv("TP_RETRACE_MIN_ML_CONF", "0.55") or 0.55)
                 ml_allows_warning = (ml_prob is None) or (float(ml_prob) <= ml_gate)
                 if ml_allows_warning and _retrace_warning_triggered(direction, sl, best_tp_price, float(price), zone_pct=zone_pct):
-                    if _mark_retrace_warned(signal_id):
+                    if await _mark_retrace_warned(signal_id):
                         await _notify_retrace_warning(signal, float(price), prev_tp)
                         logger.info(
                             "[outcome_tracker] Retrace warning: %s tp=%d price=%.5f sl=%.5f",
@@ -954,7 +958,7 @@ class RealtimeOutcomeTracker:
                 signal_id[:8], hit_l, price, entry, sl,
             )
             if hit_tp_idx > 0:
-                _set_tp_progress(signal_id, hit_tp_idx)
+                await _set_tp_progress(signal_id, hit_tp_idx)
             await _persist_outcome(signal_id, hit_l, entry, price)
             await _notify_outcome(signal, hit_l, price)
             return
@@ -985,6 +989,13 @@ class RealtimeOutcomeTracker:
                 age_h = 0.0
         except Exception:
             age_h = 0.0
+        # Persist transient SLA countdown in shared cache for fast read-side visibility.
+        try:
+            from core.redis_state import state
+            remaining_h = max(0.0, float(max(24, force_hours)) - float(age_h))
+            await state.cache_set(f"sla_countdown_hours:{signal_id}", f"{remaining_h:.4f}", ex=3600)
+        except Exception:
+            pass
         if age_h >= float(max(24, force_hours)):
             logger.info(
                 "[outcome_tracker] Time-stop stale signal %s age_h=%.1f status=time_stop",

@@ -5,6 +5,7 @@ Handles tier changes (demotion) by checking live tier on each access.
 """
 
 import os
+from core.redis_state import state
 
 # Map of command -> minimum tier required
 # NOTE: "unlock" is intentionally NOT listed in any help menu but IS in COMMAND_TIERS
@@ -393,6 +394,15 @@ def get_help_message(tier: str) -> str:
     # Unknown tiers default to FREE
     if tier not in ("FREE", "PREMIUM", "VIP", "OWNER"):
         tier = "FREE"
+
+    dashboard_url = os.getenv("DASHBOARD_URL")
+    cache_key = f"help_menu:{tier}:{'1' if dashboard_url else '0'}"
+    try:
+        cached = state.cache_get_sync(cache_key)
+        if cached:
+            return str(cached)
+    except Exception:
+        pass
     
     help_data = COMMAND_HELP.get(tier, COMMAND_HELP["FREE"])
     title = help_data.get("title", "🤖 SignalRankAI Commands")
@@ -436,7 +446,6 @@ def get_help_message(tier: str) -> str:
         ("analyze", "- /analyze BTCUSDT 1h – Run AI analysis"),
     ]
 
-    dashboard_url = os.getenv("DASHBOARD_URL")
     visible_adv = [line for cmd, line in adv_cmds if check_command_access(cmd, tier)[0] and (cmd != "dashboard" or dashboard_url)]
     visible_usage = [line for cmd, line in adv_usage if check_command_access(cmd, tier)[0]]
 
@@ -468,7 +477,13 @@ def get_help_message(tier: str) -> str:
     ]
     lines.extend([_he(line) if line else "" for line in disclaimers])
 
-    return "\n".join(lines)
+    rendered = "\n".join(lines)
+    try:
+        ttl = max(30, int((os.getenv("HELP_MENU_CACHE_TTL_SECONDS") or "300").strip()))
+        state.cache_set_sync(cache_key, rendered, ex=ttl)
+    except Exception:
+        pass
+    return rendered
 
 
 def check_command_access(command: str, user_tier: str) -> tuple[bool, str]:

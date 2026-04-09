@@ -25,45 +25,99 @@ except Exception:  # pragma: no cover
 _KILL_KEY = "signalrankai:killswitch"
 _EXTRA_SIGNALS_PREFIX = "signalrankai:extra_signals:"
 _DELIVERED_SIGNAL_PREFIX = "signalrankai:delivered_signal:"
+_WEBHOOK_QUEUE_KEY = "signalrankai:webhook:updates"
+_SIGNAL_DISPATCH_QUEUE_KEY = "signalrankai:signal_dispatch:queue"
+
+
+def _redis_max_connections() -> int:
+    try:
+        return max(10, int((os.getenv("REDIS_MAX_CONNECTIONS") or "60").strip()))
+    except Exception:
+        return 60
 
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
     """Mark that a signal was delivered to a user. No-op if Redis unavailable."""
+    r = None
     try:
         url = (os.getenv("REDIS_URL") or "").strip()
         if not url:
             return
-        r = redis.from_url(url, decode_responses=True)
+        if redis is None:
+            return
+        r = redis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+            max_connections=_redis_max_connections(),
+        )
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
         r.sadd(key, signal_id)
     except Exception:
         # Redis not available (dev/railway), skip
         pass
+    finally:
+        try:
+            if r is not None:
+                r.close()
+        except Exception:
+            pass
 
 def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
     """Check if a signal was delivered to a user. Returns False if Redis unavailable."""
+    r = None
     try:
         url = (os.getenv("REDIS_URL") or "").strip()
         if not url:
             return False
-        r = redis.from_url(url, decode_responses=True)
+        if redis is None:
+            return False
+        r = redis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+            max_connections=_redis_max_connections(),
+        )
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
         return bool(r.sismember(key, signal_id))
     except Exception:
         # Redis not available (dev/railway), always return False (so signal will be sent)
         return False
+    finally:
+        try:
+            if r is not None:
+                r.close()
+        except Exception:
+            pass
 
 def get_delivered_signals_sync(user_id: int) -> set:
     """Get all signal_ids delivered to a user. Returns empty set if Redis unavailable."""
+    r = None
     try:
         url = (os.getenv("REDIS_URL") or "").strip()
         if not url:
             return set()
-        r = redis.from_url(url, decode_responses=True)
+        if redis is None:
+            return set()
+        r = redis.from_url(
+            url,
+            decode_responses=True,
+            socket_connect_timeout=3,
+            socket_timeout=3,
+            max_connections=_redis_max_connections(),
+        )
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
         return set(r.smembers(key) or set())
     except Exception:
         # Redis not available (dev/railway), return empty set
         return set()
+    finally:
+        try:
+            if r is not None:
+                r.close()
+        except Exception:
+            pass
 
 
 @dataclass(frozen=True)
@@ -221,7 +275,15 @@ class RedisState:
         if not url or redis is None:
             return None
         try:
-            client = redis.from_url(url, decode_responses=True, socket_connect_timeout=3, socket_timeout=3)
+            client = redis.from_url(
+                url,
+                decode_responses=True,
+                socket_connect_timeout=3,
+                socket_timeout=3,
+                max_connections=_redis_max_connections(),
+                health_check_interval=30,
+                retry_on_timeout=True,
+            )
             # Validate connectivity once.
             client.ping()
             self._redis_sync = client
@@ -229,6 +291,9 @@ class RedisState:
         except Exception:
             self._redis_sync = None
             return None
+
+    def has_redis_sync(self) -> bool:
+        return self._get_redis_sync() is not None
 
     def _bypass_fingerprint(self) -> Optional[str]:
         """Fingerprint the active BYPASS_KEY.
@@ -623,6 +688,13 @@ class RedisState:
             logging.warning(f"[redis_state] Failed to get key {key} from Redis: {e}")
             return None
 
+    def cache_get_sync(self, key: str) -> Optional[str]:
+        return self.get_sync(f"cache:{str(key)}")
+
+    def cache_set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
+        ttl = ex if ex is not None else int(os.getenv("CACHE_DEFAULT_TTL_SECONDS", "120") or 120)
+        self.set_sync(f"cache:{str(key)}", str(value), ex=max(1, int(ttl)))
+
     def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
         """Set a value in the state store (Postgres or memory) with optional expiration."""
         self._cache_set(key, str(value), ex=ex)
@@ -689,6 +761,81 @@ class RedisState:
             logging.debug(f"[redis_state] Failed to increment counter in Redis: {e}")
             return 0
 
+    def enqueue_webhook_update_sync(self, payload: Dict[str, Any], max_depth: Optional[int] = None) -> bool:
+        r = self._get_redis_sync()
+        if r is None:
+            return False
+        try:
+            limit = int(max_depth or int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000))
+        except Exception:
+            limit = 2000
+        try:
+            depth = int(r.llen(_WEBHOOK_QUEUE_KEY) or 0)
+            if depth >= max(100, limit):
+                return False
+            r.rpush(_WEBHOOK_QUEUE_KEY, json.dumps(payload or {}))
+            return True
+        except Exception:
+            return False
+
+    def dequeue_webhook_update_sync(self, timeout_seconds: int = 1) -> Optional[Dict[str, Any]]:
+        r = self._get_redis_sync()
+        if r is None:
+            return None
+        try:
+            timeout = max(0, int(timeout_seconds))
+            item = r.blpop(_WEBHOOK_QUEUE_KEY, timeout=timeout)
+            if not item:
+                return None
+            _, raw = item
+            if not raw:
+                return None
+            return json.loads(raw)
+        except Exception:
+            return None
+
+    def webhook_queue_depth_sync(self) -> int:
+        r = self._get_redis_sync()
+        if r is None:
+            return 0
+        try:
+            return int(r.llen(_WEBHOOK_QUEUE_KEY) or 0)
+        except Exception:
+            return 0
+
+    def enqueue_signal_dispatch_sync(self, payload: Dict[str, Any], max_depth: Optional[int] = None) -> bool:
+        r = self._get_redis_sync()
+        if r is None:
+            return False
+        try:
+            limit = int(max_depth or int(os.getenv("REDIS_SIGNAL_QUEUE_MAX_DEPTH", "5000") or 5000))
+        except Exception:
+            limit = 5000
+        try:
+            depth = int(r.llen(_SIGNAL_DISPATCH_QUEUE_KEY) or 0)
+            if depth >= max(100, limit):
+                return False
+            r.rpush(_SIGNAL_DISPATCH_QUEUE_KEY, json.dumps(payload or {}))
+            return True
+        except Exception:
+            return False
+
+    def dequeue_signal_dispatch_sync(self, timeout_seconds: int = 1) -> Optional[Dict[str, Any]]:
+        r = self._get_redis_sync()
+        if r is None:
+            return None
+        try:
+            timeout = max(0, int(timeout_seconds))
+            item = r.blpop(_SIGNAL_DISPATCH_QUEUE_KEY, timeout=timeout)
+            if not item:
+                return None
+            _, raw = item
+            if not raw:
+                return None
+            return json.loads(raw)
+        except Exception:
+            return None
+
     # -------- Async API (FastAPI/worker) --------
     async def get_killswitch(self) -> KillSwitchState:
         return await asyncio.to_thread(self.get_killswitch_sync)
@@ -704,6 +851,30 @@ class RedisState:
 
     async def rate_limited(self, telegram_user_id: int, limit: int, window_seconds: int) -> bool:
         return await asyncio.to_thread(self.rate_limited_sync, telegram_user_id, limit, window_seconds)
+
+    async def has_redis(self) -> bool:
+        return await asyncio.to_thread(self.has_redis_sync)
+
+    async def cache_get(self, key: str) -> Optional[str]:
+        return await asyncio.to_thread(self.cache_get_sync, key)
+
+    async def cache_set(self, key: str, value: str, ex: Optional[int] = None) -> None:
+        await asyncio.to_thread(self.cache_set_sync, key, value, ex)
+
+    async def enqueue_webhook_update(self, payload: Dict[str, Any], max_depth: Optional[int] = None) -> bool:
+        return await asyncio.to_thread(self.enqueue_webhook_update_sync, payload, max_depth)
+
+    async def dequeue_webhook_update(self, timeout_seconds: int = 1) -> Optional[Dict[str, Any]]:
+        return await asyncio.to_thread(self.dequeue_webhook_update_sync, timeout_seconds)
+
+    async def webhook_queue_depth(self) -> int:
+        return await asyncio.to_thread(self.webhook_queue_depth_sync)
+
+    async def enqueue_signal_dispatch(self, payload: Dict[str, Any], max_depth: Optional[int] = None) -> bool:
+        return await asyncio.to_thread(self.enqueue_signal_dispatch_sync, payload, max_depth)
+
+    async def dequeue_signal_dispatch(self, timeout_seconds: int = 1) -> Optional[Dict[str, Any]]:
+        return await asyncio.to_thread(self.dequeue_signal_dispatch_sync, timeout_seconds)
 
 
 state = RedisState()

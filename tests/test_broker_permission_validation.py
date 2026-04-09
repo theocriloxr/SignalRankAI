@@ -38,3 +38,19 @@ def test_broker_permission_validation_accepts_trade_only_key() -> None:
     body = res.json()
     assert body.get("ok") is True
     assert body.get("policy") == "trade_only_required"
+
+
+def test_broker_permission_validation_rejects_transfer_permission_string() -> None:
+    res = client.post(
+        "/broker/validate-api-permissions",
+        json={
+            "provider": "bybit",
+            "trade": True,
+            "read": True,
+            "permissions": ["trade", "read", "transfer"],
+        },
+    )
+    assert res.status_code == 400
+    body = res.json()
+    assert body.get("ok") is False
+    assert body.get("policy") == "trade_only_required"
