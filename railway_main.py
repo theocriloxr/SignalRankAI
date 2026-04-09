@@ -47,6 +47,7 @@ _scheduler_instance: AsyncIOScheduler | None = None
 _lifespan_heartbeat_task: asyncio.Task | None = None
 _monitor_tasks: list[asyncio.Task] = []
 _use_redis_webhook_queue: bool = False
+_last_redis_backend_log_at: float = 0.0
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -1008,6 +1009,34 @@ async def lifespan(_: FastAPI):
             except Exception as exc:
                 logger.warning("[webhook] periodic status check failed: %s", exc)
 
+    async def _monitor_redis_webhook_backend() -> None:
+        """Re-check Redis availability and switch queue backend dynamically."""
+        global _use_redis_webhook_queue, _last_redis_backend_log_at
+        while True:
+            await asyncio.sleep(15)
+            try:
+                redis_enabled = str(os.getenv("WEBHOOK_QUEUE_USE_REDIS", "1")).strip().lower() in {"1", "true", "yes", "on"}
+                if not redis_enabled:
+                    if _use_redis_webhook_queue:
+                        _use_redis_webhook_queue = False
+                        logger.warning("[webhook] Redis queue disabled by config; using in-process queue")
+                    continue
+
+                redis_ok = bool(await state.has_redis())
+                if redis_ok and (not _use_redis_webhook_queue):
+                    _use_redis_webhook_queue = True
+                    logger.info("[webhook] Redis became available; switched queue_backend=redis")
+                elif (not redis_ok) and _use_redis_webhook_queue:
+                    _use_redis_webhook_queue = False
+                    logger.warning("[webhook] Redis unavailable; switched queue_backend=in_process")
+                elif not redis_ok:
+                    now = time.monotonic()
+                    if now - float(_last_redis_backend_log_at or 0.0) >= 60.0:
+                        _last_redis_backend_log_at = now
+                        logger.warning("[webhook] Redis unavailable; retaining queue_backend=in_process")
+            except Exception as exc:
+                logger.debug("[webhook] Redis backend monitor error: %s", exc)
+
     async def _webhook_worker(worker_id: int) -> None:
         """Background worker: process Telegram updates from queue."""
         while True:
@@ -1062,6 +1091,7 @@ async def lifespan(_: FastAPI):
 
     _monitor_tasks.append(asyncio.create_task(_monitor_background_tasks()))
     _monitor_tasks.append(asyncio.create_task(_monitor_telegram_webhook_health()))
+    _monitor_tasks.append(asyncio.create_task(_monitor_redis_webhook_backend()))
 
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
@@ -1330,8 +1360,9 @@ async def _telegram_webhook_route(req: Request) -> dict:
             )
             return {"ok": True, "queued": True, "bot_ready": False}
         except Exception:
-            # Return 503 only if payload could not be parsed/queued.
-            raise HTTPException(status_code=503, detail="bot_initializing")
+            # Keep Telegram delivery path healthy even during transient startup.
+            logger.warning("[webhook] bot_not_ready and payload parse failed; acknowledging")
+            return {"ok": True, "queued": False, "bot_ready": False}
     try:
         from telegram import Update
         data = await req.json()
@@ -1353,7 +1384,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
             if not enqueued:
                 webhook_queue_full_total.inc()
                 logger.warning("[webhook] redis_queue_full — dropping update_id=%s", update_id)
-                return {"ok": False, "error": "queue_full"}
+                return {"ok": True, "queued": False, "dropped": "queue_full", "queue_backend": "redis"}
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
             q_depth = await state.webhook_queue_depth()
             return {
@@ -1375,10 +1406,10 @@ async def _telegram_webhook_route(req: Request) -> dict:
         except asyncio.QueueFull:
             webhook_queue_full_total.inc()
             logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
-            return {"ok": False, "error": "queue_full"}
+            return {"ok": True, "queued": False, "dropped": "queue_full", "queue_backend": "in_process"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
-        return {"ok": False, "error": str(exc)}
+        return {"ok": True, "queued": False, "error": str(exc)}
 
 
 @app.get("/telegram/webhook_status")
