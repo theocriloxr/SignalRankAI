@@ -1426,7 +1426,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
             return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "in_process"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
-        return {"ok": True, "queued": False, "error": str(exc)}
+        return {"ok": False, "queued": False, "error": str(exc)}
 
 
 @app.get("/telegram/webhook_status")
