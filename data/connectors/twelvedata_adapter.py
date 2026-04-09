@@ -10,7 +10,7 @@ except Exception:
     httpx = None
 
 from utils.async_runner import run_sync
-from utils.httpx_client import get_client, retry_async
+from utils import httpx_client
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     tf_map = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"}
     interval = tf_map.get(timeframe, "1h")
     params = {"symbol": symbol, "interval": interval, "outputsize": 200, "apikey": api_key}
-    client = get_client()
+    client = httpx_client.get_client()
     if client is None:
         logger.debug("twelvedata_adapter: httpx client unavailable")
         return []
@@ -60,7 +60,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return candles
 
     try:
-        return await retry_async(_do, retries=2, backoff=0.5)
+        return await httpx_client.retry_async(_do, retries=2, backoff=0.5)
     except Exception as e:
         logger.debug("twelvedata_adapter error: %s", e)
         return []

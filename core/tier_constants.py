@@ -20,15 +20,13 @@ TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
     "admin": 75,
 }
 
-# Signal freshness: max age in seconds before signal is considered stale
-# Values are intentionally generous — the live-price stale validator
-# (validate_signal_freshness_sync / STALE_PRICE_THRESHOLD_PCT) is the
-# primary gate; these age limits only catch genuinely ancient signals.
+# Signal freshness: max age in seconds before signal is considered stale.
+# Keep this strict and centralized as the single source for freshness policy.
 MAX_SIGNAL_AGE_SECONDS = {
-    "crypto":    1800,   # 30 min  — crypto is 24/7, signals stay valid longer
-    "fx":        3600,   # 60 min  — FX candles close on the hour
-    "stock":     3600,   # 60 min  — intraday signals stay useful within session
-    "commodity": 3600,   # 60 min  — same as FX
+    "crypto":    300,    # 5 min
+    "fx":        900,    # 15 min
+    "stock":     900,    # 15 min
+    "commodity": 900,    # 15 min
 }
 
 # Price drift tolerance: max fractional deviation from entry price (not %).

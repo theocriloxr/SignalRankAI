@@ -6,13 +6,14 @@ from contextlib import asynccontextmanager
 from config import config
 import socket
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, HTMLResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from pydantic import BaseModel, Field
 
 from db.session import get_session
 from db.repository import (
@@ -28,6 +29,32 @@ from core.redis_state import state
 
 APP_NAME = "SignalRankAI"
 logger = logging.getLogger(__name__)
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+class BrokerPermissionValidationRequest(BaseModel):
+    provider: str = Field(default="exchange")
+    telegram_user_id: int | None = Field(default=None)
+    trade: bool = Field(default=False)
+    read: bool = Field(default=False)
+    withdraw: bool = Field(default=False)
+    internal_transfer: bool = Field(default=False)
+    futures: bool = Field(default=False)
+    spot: bool = Field(default=True)
+
+
+def _validate_trade_only_permissions(req: BrokerPermissionValidationRequest) -> tuple[bool, str]:
+    if bool(req.withdraw) or bool(req.internal_transfer):
+        return (
+            False,
+            "API keys with withdrawal or transfer permissions are forbidden. Use Trade-Only permissions.",
+        )
+    if not bool(req.trade):
+        return False, "Trade permission is required for execution-enabled integrations."
+    return True, "ok"
 
 # Optional global ENGINE placeholder (set by runtime if needed). Tests expect it to exist.
 ENGINE = None
@@ -154,7 +181,7 @@ def _extract_subscription_fields(event: Dict[str, Any]) -> Tuple[int, Optional[s
     meta_out: Dict[str, Any] = {
         "raw_event": event.get("event"),
         "metadata": meta,
-        "received_at": datetime.utcnow().isoformat() + "Z",
+        "received_at": _utcnow_naive().isoformat() + "Z",
     }
     return telegram_user_id_int, None, None, reference, meta_out
 
@@ -299,7 +326,7 @@ async def _check_waitlist_capacity_job() -> None:
                 return
 
             # Set invite window (default 2 h) from now.
-            now = datetime.utcnow()
+            now = _utcnow_naive()
             try:
                 invite_window_hours = max(1, int(os.getenv("VIP_WAITLIST_INVITE_WINDOW_HOURS", "2") or 2))
             except Exception:
@@ -361,7 +388,7 @@ async def _monitor_expired_invites_job() -> None:
         from db.models import VIPWaitlist, User
         from sqlalchemy import select, update as sa_update
 
-        now = datetime.utcnow()
+        now = _utcnow_naive()
         expired_count = 0
 
         async with get_session() as session:
@@ -414,7 +441,7 @@ async def _send_waitlist_reminder_job() -> None:
         from sqlalchemy import select, update as sa_update
         from datetime import timedelta
 
-        now = datetime.utcnow()
+        now = _utcnow_naive()
         try:
             invite_window_hours = max(1, int(os.getenv("VIP_WAITLIST_INVITE_WINDOW_HOURS", "2") or 2))
         except Exception:
@@ -567,7 +594,7 @@ async def health() -> Dict[str, Any]:
     if (os.getenv("RAILWAY_HEALTH_BASIC") or "").strip().lower() in {"1", "true", "yes", "on"}:
         return {
             "status": "ok",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive().isoformat(),
             "service": APP_NAME,
             "railway_basic": True,
         }
@@ -578,14 +605,14 @@ async def health() -> Dict[str, Any]:
     if os.getenv("RAILWAY_SERVICE_NAME"):
         return {
             "status": "ok",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive().isoformat(),
             "service": APP_NAME,
             "railway_basic": True,
         }
 
     checks = {
         "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": _utcnow_naive().isoformat(),
         "service": APP_NAME,
         "run_mode": (os.getenv("RUN_MODE") or "").strip().lower() or None,
         "hostname": socket.gethostname(),
@@ -659,6 +686,30 @@ async def metrics() -> PlainTextResponse:
     return PlainTextResponse(generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
 
 
+@app.post("/broker/validate-api-permissions")
+async def broker_validate_api_permissions(payload: BrokerPermissionValidationRequest) -> JSONResponse:
+    ok, reason = _validate_trade_only_permissions(payload)
+    if not ok:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "ok": False,
+                "provider": str(payload.provider or "exchange").lower(),
+                "reason": reason,
+                "policy": "trade_only_required",
+            },
+        )
+    return JSONResponse(
+        status_code=200,
+        content={
+            "ok": True,
+            "provider": str(payload.provider or "exchange").lower(),
+            "reason": reason,
+            "policy": "trade_only_required",
+        },
+    )
+
+
 # Lightweight health endpoint for simple load-balancer/railway checks
 @app.get("/healthz")
 async def healthz() -> Dict[str, Any]:
@@ -670,7 +721,7 @@ async def healthz() -> Dict[str, Any]:
     return {
         "status": "ok",
         "service": APP_NAME,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": _utcnow_naive().isoformat() + "Z",
     }
 
 
@@ -900,7 +951,7 @@ async def _add_to_vip_waitlist(telegram_user_id: int) -> None:
                 session.add(
                     VIPWaitlist(
                         user_id=user.id,
-                        joined_at=datetime.utcnow(),
+                        joined_at=_utcnow_naive(),
                     )
                 )
                 await session.commit()

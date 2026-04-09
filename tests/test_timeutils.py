@@ -20,7 +20,8 @@ class TimeutilsTest(unittest.TestCase):
         self.assertIsNotNone(n)
         self.assertIsNone(n.tzinfo)
         # should be close to actual utc now (allow small drift)
-        self.assertAlmostEqual(n.timestamp(), datetime.utcnow().timestamp(), delta=10)
+        expected = datetime.now(timezone.utc).replace(tzinfo=None)
+        self.assertAlmostEqual(n.timestamp(), expected.timestamp(), delta=10)
 
 
 if __name__ == "__main__":

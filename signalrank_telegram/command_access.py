@@ -56,6 +56,7 @@ COMMAND_TIERS = {
     "notify":              "PREMIUM",
     "portfolio":           "PREMIUM",
     "quality":             "PREMIUM",
+    "simulate":            "VIP",
     "execution":           "PREMIUM",
     "drawdown":            "PREMIUM",
     "setlot":              "PREMIUM",
@@ -87,6 +88,7 @@ COMMAND_TIERS = {
     "admin_top_strategies":"ADMIN",
     "admin_user_engagement":"ADMIN",
     "selfcheck":           "ADMIN",
+    "ops_health":          "ADMIN",
     "blast_terms":         "ADMIN",
     "assets":              "ADMIN",
 

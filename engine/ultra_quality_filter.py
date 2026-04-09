@@ -18,7 +18,7 @@ Key principles:
 import os
 import logging
 from typing import Dict, Tuple, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import statistics
 
 logger = logging.getLogger(__name__)
@@ -65,6 +65,27 @@ class UltraQualityFilter:
         Returns: (should_trade, rejection_reason, final_score)
         """
         score = signal.get("score", 0)
+
+        # Hard gate: never pass signals below the minimum score threshold.
+        if score < self.min_score:
+            return False, f"Score {score:.1f} < {self.min_score}", score
+
+        entry = signal.get("entry")
+        stop = signal.get("stop")
+        target = signal.get("targets", entry)
+        rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
+        if rr < self.min_rr_ratio:
+            return False, f"R:R {rr:.2f} < {self.min_rr_ratio}", score
+
+        regime = signal.get("regime", "unknown")
+        adx = signal.get("adx_trend", 0)
+        if not (regime == "trending" and adx >= self.min_adx):
+            return False, f"Regime not trending (ADX {float(adx):.1f} < {self.min_adx})", score
+
+        session = signal.get("session", "unknown")
+        if session not in self.high_conviction_sessions:
+            return False, f"Session {session} not in high-conviction list", score
+
         passed_checks = 0
         failed_checks = []
         
@@ -89,18 +110,12 @@ class UltraQualityFilter:
             failed_checks.append(f"Confidence {confidence:.2f} < {self.min_confidence}")
         
         # 4. R:R ratio check
-        entry = signal.get("entry")
-        stop = signal.get("stop")
-        target = signal.get("targets", entry)
-        rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
         if rr >= self.min_rr_ratio:
             passed_checks += 1
         else:
             failed_checks.append(f"R:R {rr:.2f} < {self.min_rr_ratio}")
         
         # 5. Regime check (must be trending)
-        regime = signal.get("regime", "unknown")
-        adx = signal.get("adx_trend", 0)
         if regime == "trending" and adx >= self.min_adx:
             passed_checks += 1
         else:
@@ -121,7 +136,6 @@ class UltraQualityFilter:
             failed_checks.append(f"Volatility {volatility:.2%} > {self.max_volatility:.2%}")
         
         # 8. Session check (high conviction only)
-        session = signal.get("session", "unknown")
         if session in self.high_conviction_sessions:
             passed_checks += 1
         else:
@@ -317,7 +331,7 @@ class UltraQualityFilter:
             "exit": exit,
             "stop_loss": stop_loss,
             "result": result,
-            "timestamp": datetime.utcnow(),
+            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None),
             "profit_loss": (exit - entry) if direction == "long" else (entry - exit)
         })
     

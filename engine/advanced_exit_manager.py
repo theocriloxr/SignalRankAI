@@ -15,7 +15,7 @@ Features:
 import os
 import logging
 from typing import Dict, Tuple, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -154,7 +154,7 @@ class AdvancedExitManager:
             'atr': atr,
             'current_sl': trailing_sl,
             'highest_price': entry_price if direction == "long" else entry_price,
-            'started_at': datetime.utcnow()
+            'started_at': datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         return {

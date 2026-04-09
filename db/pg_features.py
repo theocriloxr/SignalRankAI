@@ -402,7 +402,7 @@ async def record_signal_delivery(
                     except Exception:
                         pass
 
-                    resolved_statuses = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "cancel", "cancelled", "breakeven", "be"}
+                    resolved_statuses = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "time_stop", "cancel", "cancelled", "breakeven", "be"}
                     is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
 
                     is_upgrade_delivery = _tier_rank(tier_s) > _tier_rank(str(prev_tier_at_send or "free"))
@@ -476,7 +476,15 @@ async def record_signal_delivery(
 
 
     before: int = len(session.new)
-    delivery = SignalDelivery(user_id=user.id, signal_id=signal_id, tier_at_send=tier_s, delivered_at=_utcnow())
+    delivery = SignalDelivery(
+        user_id=user.id,
+        signal_id=signal_id,
+        tier_at_send=tier_s,
+        sent_ok=False,
+        attempt_count=1,
+        last_attempt_at=_utcnow(),
+        delivered_at=_utcnow(),
+    )
     session.add(delivery)
     try:
         await session.flush()
@@ -646,9 +654,15 @@ async def upsert_outcome(
     percent: float | None = None,
     opened_at: datetime | None = None,
     closed_at: datetime | None = None,
+    canonical_outcome: str | None = None,
+    vip_fill_outcome: str | None = None,
+    sentiment_outcome: str | None = None,
 ) -> Outcome:
-    res: Result[Tuple[Outcome]] = await session.execute(select(Outcome).where(Outcome.signal_id == str(signal_id)))
+    res: Result[Tuple[Outcome]] = await session.execute(
+        select(Outcome).where(Outcome.signal_id == str(signal_id))
+    )
     oc: Outcome | None = res.scalars().first()
+
     prev_status = None
     prev_tp_idx = 0
     try:
@@ -658,10 +672,12 @@ async def upsert_outcome(
     except Exception:
         prev_status = None
         prev_tp_idx = 0
+
     if oc is None:
         oc = Outcome(signal_id=str(signal_id), status=str(status).lower()[:16])
         session.add(oc)
         await session.flush()
+
     oc.status = str(status).lower()[:16]
     if opened_at is not None and oc.opened_at is None:
         oc.opened_at = opened_at
@@ -669,16 +685,29 @@ async def upsert_outcome(
         oc.closed_at = closed_at
     elif oc.closed_at is None:
         oc.closed_at = _utcnow()
+
     if r_multiple is not None:
         oc.r_multiple = float(r_multiple)
     if percent is not None:
         oc.percent = float(percent)
+
+    try:
+        if canonical_outcome is not None:
+            oc.canonical_outcome = str(canonical_outcome).lower()[:16]
+        if vip_fill_outcome is not None:
+            oc.vip_fill_outcome = str(vip_fill_outcome).lower()[:16]
+        if sentiment_outcome is not None:
+            oc.sentiment_outcome = str(sentiment_outcome).lower()[:16]
+    except Exception:
+        pass
+
     # Best-effort duration
     try:
         if oc.opened_at is not None and oc.closed_at is not None:
             oc.duration_seconds = int((oc.closed_at - oc.opened_at).total_seconds())
     except Exception:
         pass
+
     if meta:
         try:
             merged: Dict[str, Any] = dict(oc.meta or {})
@@ -706,6 +735,7 @@ async def upsert_outcome(
                 )
     except Exception:
         pass
+
     await session.flush()
     return oc
 
@@ -743,6 +773,46 @@ async def queue_outcome_notifications_for_outcome(
         await session.flush()
         count += 1
     return count
+
+
+async def mark_signal_delivery_result(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    signal_id: str,
+    sent_ok: bool,
+    error: str | None = None,
+) -> bool:
+    """Update delivery attempt result after Telegram/webhook dispatch."""
+    user_res = await session.execute(
+        select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+    )
+    user = user_res.scalar_one_or_none()
+    if user is None:
+        return False
+
+    row_res = await session.execute(
+        select(SignalDelivery)
+        .where(
+            SignalDelivery.user_id == int(user.id),
+            SignalDelivery.signal_id == str(signal_id),
+        )
+        .order_by(SignalDelivery.id.desc())
+        .limit(1)
+    )
+    row = row_res.scalar_one_or_none()
+    if row is None:
+        return False
+
+    row.sent_ok = bool(sent_ok)
+    row.last_attempt_at = _utcnow()
+    try:
+        row.attempt_count = int(getattr(row, "attempt_count", 0) or 0) + 1
+    except Exception:
+        row.attempt_count = 1
+    row.last_error = (str(error)[:1000] if error else None)
+    await session.flush()
+    return True
 
 
 async def list_signals_missing_outcomes(
@@ -1971,7 +2041,7 @@ def get_signal_outcome_status(signal_id: str) -> dict | None:
                 oc: Outcome | None = res.scalar_one_or_none()
                 if oc is None:
                     return None
-                terminal = {"tp", "tp1", "tp2", "tp3", "sl", "invalid"}
+                terminal = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "time_stop"}
                 return {"reached": oc.status in terminal, "status": oc.status}
 
         return run_sync(_check())

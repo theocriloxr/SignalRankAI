@@ -3,11 +3,15 @@ Price validation and freshness checks for signal delivery.
 Ensures signals are delivered with current market prices.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 from core.tier_constants import MAX_SIGNAL_AGE_SECONDS, PRICE_DRIFT_TOLERANCE
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def get_asset_type(asset: str) -> str:
@@ -30,14 +34,12 @@ def is_signal_fresh(signal: Dict, current_time: Optional[datetime] = None) -> Tu
         Tuple of (is_fresh: bool, reason: str)
     """
     if current_time is None:
-        current_time = datetime.utcnow()
+        current_time = _utcnow_naive()
     
     created_at = signal.get('created_at')
     if not created_at:
-        # No timestamp — assume the signal was just created and allow it through.
-        # Blocking on missing timestamp would silently drop all signals that
-        # weren't explicitly stamped before entering the delivery loop.
-        return True, "no_timestamp_allow"
+        # Hard reject unstamped signals: unknown age means unknown edge quality.
+        return False, "No creation timestamp"
     
     # Handle both datetime objects and string timestamps
     if isinstance(created_at, str):
@@ -269,7 +271,7 @@ def enrich_signal_with_live_price(signal: Dict) -> Dict:
                 if created_at.tzinfo is not None:
                     created_at = created_at.replace(tzinfo=None)
             
-            age_seconds = (datetime.utcnow() - created_at).total_seconds()
+            age_seconds = (_utcnow_naive() - created_at).total_seconds()
             enriched['signal_age_seconds'] = age_seconds
         except Exception as e:
             logger.warning(f"Failed to calculate signal age: {e}")
@@ -392,7 +394,7 @@ def filter_stale_signals(signals: list) -> list:
                             created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
                             if created_at.tzinfo is not None:
                                 created_at = created_at.replace(tzinfo=None)
-                        age_seconds = (datetime.utcnow() - created_at).total_seconds()
+                        age_seconds = (_utcnow_naive() - created_at).total_seconds()
                     except Exception:
                         age_seconds = 'unknown'
             

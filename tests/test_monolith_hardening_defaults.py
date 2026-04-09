@@ -32,13 +32,13 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
     def test_db_engine_singleton_per_process(self):
         import db.session as dbs
 
-        dbs._global_engine = None
-        dbs._global_sessionmaker = None
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
         fake_engine = object()
         with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
              patch("db.session.create_async_engine", return_value=fake_engine):
-            e1 = dbs._get_global_engine()
-            e2 = dbs._get_global_engine()
+            e1 = dbs.get_engine_for_event_loop()
+            e2 = dbs.get_engine_for_event_loop()
             self.assertIs(e1, e2)
 
 

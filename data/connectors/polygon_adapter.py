@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Dict, Any
 import os
 import logging
+from datetime import datetime, timedelta
 
 try:
     import httpx
@@ -10,7 +11,7 @@ except Exception:
     httpx = None
 
 from utils.async_runner import run_sync
-from utils.httpx_client import get_client, retry_async
+from utils import httpx_client
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +33,14 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         # keep as-is; callers may pass prefixed symbol
         pass
 
-    end_date = __import__('datetime').datetime.utcnow()
-    start_date = end_date - __import__('datetime').timedelta(days=200 if timespan == 'day' else 30)
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=200 if timespan == 'day' else 30)
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"
     params = {"adjusted": "true", "sort": "asc", "limit": 200, "apiKey": api_key}
 
     async def _do():
         # Resolve client inside _do() so test patches to get_client are respected at call time
-        _client = get_client()
+        _client = httpx_client.get_client()
         if _client is None:
             logger.debug("polygon_adapter: httpx client unavailable")
             return []
@@ -68,7 +69,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return candles
 
     try:
-        return await retry_async(_do, retries=2, backoff=1.0)
+        return await httpx_client.retry_async(_do, retries=2, backoff=1.0)
     except Exception as e:
         logger.debug("polygon_adapter error: %s", e)
         return []

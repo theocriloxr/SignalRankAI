@@ -1,7 +1,7 @@
 """Tests for signal freshness validation."""
 import unittest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sys
 import os
 
@@ -16,6 +16,10 @@ from engine.price_validator import (
     check_sl_tp_hit,
     get_asset_type,
 )
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class TestPriceValidator(unittest.TestCase):
@@ -33,7 +37,7 @@ class TestPriceValidator(unittest.TestCase):
         """Test freshness check with a fresh signal."""
         signal = {
             'asset': 'BTCUSDT',
-            'created_at': datetime.utcnow(),
+            'created_at': _utcnow_naive(),
             'entry': 50000.0,
         }
         is_fresh, reason = is_signal_fresh(signal)
@@ -44,7 +48,7 @@ class TestPriceValidator(unittest.TestCase):
         """Test freshness check with a stale signal."""
         signal = {
             'asset': 'BTCUSDT',
-            'created_at': datetime.utcnow() - timedelta(minutes=10),
+            'created_at': _utcnow_naive() - timedelta(minutes=10),
             'entry': 50000.0,
         }
         is_fresh, reason = is_signal_fresh(signal)
@@ -55,7 +59,7 @@ class TestPriceValidator(unittest.TestCase):
         """Test freshness check with string timestamp."""
         signal = {
             'asset': 'BTCUSDT',
-            'created_at': datetime.utcnow().isoformat(),
+            'created_at': _utcnow_naive().isoformat(),
             'entry': 50000.0,
         }
         is_fresh, reason = is_signal_fresh(signal)
@@ -78,7 +82,7 @@ class TestPriceValidator(unittest.TestCase):
         
         signal = {
             'asset': 'BTCUSDT',
-            'created_at': datetime.utcnow(),
+            'created_at': _utcnow_naive(),
             'entry': 50000.0,
             'direction': 'long',
         }
@@ -151,7 +155,7 @@ class TestPriceValidator(unittest.TestCase):
         
         signal = {
             'asset': 'BTCUSDT',
-            'created_at': datetime.utcnow() - timedelta(hours=2),
+            'created_at': _utcnow_naive() - timedelta(hours=2),
             'entry': 50000.0,
         }
         
@@ -172,9 +176,9 @@ class TestPriceValidator(unittest.TestCase):
         ]
         
         signals = [
-            {'asset': 'BTCUSDT', 'created_at': datetime.utcnow(), 'entry': 50000.0, 'signal_id': 'sig1'},
-            {'asset': 'ETHUSDT', 'created_at': datetime.utcnow() - timedelta(hours=1), 'entry': 3000.0, 'signal_id': 'sig2'},
-            {'asset': 'BNBUSDT', 'created_at': datetime.utcnow(), 'entry': 400.0, 'signal_id': 'sig3'},
+            {'asset': 'BTCUSDT', 'created_at': _utcnow_naive(), 'entry': 50000.0, 'signal_id': 'sig1'},
+            {'asset': 'ETHUSDT', 'created_at': _utcnow_naive() - timedelta(hours=1), 'entry': 3000.0, 'signal_id': 'sig2'},
+            {'asset': 'BNBUSDT', 'created_at': _utcnow_naive(), 'entry': 400.0, 'signal_id': 'sig3'},
         ]
         
         fresh_signals = filter_stale_signals(signals)

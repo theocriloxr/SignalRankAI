@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.trade_tracker import (
     TradeRecord,
@@ -10,6 +10,10 @@ from core.trade_tracker import (
     update_trade_outcomes,
     open_trades_list,
 )
+
+
+def _utcnow_naive_iso() -> str:
+    return datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
 
 class TestTradeTracker(unittest.TestCase):
@@ -26,7 +30,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         trade = TradeRecord(signal)
 
@@ -46,7 +50,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 3000.0,
             "stop": 3100.0,
             "targets": [2950.0, 2900.0, 2850.0],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         trade = TradeRecord(signal)
 
@@ -65,7 +69,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         
         trade = add_trade(signal)
@@ -83,7 +87,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         trade = TradeRecord(signal)
 
@@ -106,7 +110,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 3000.0,
             "stop": 3100.0,
             "targets": [2950.0, 2900.0],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         trade = TradeRecord(signal)
 
@@ -134,7 +138,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         trade = TradeRecord(signal)
 
@@ -160,7 +164,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 3000.0,
             "stop": 3100.0,
             "targets": [2950.0],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         trade = TradeRecord(signal)
 
@@ -182,7 +186,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         add_trade(signal)
 
@@ -204,7 +208,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         add_trade(signal)
 
@@ -226,7 +230,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "targets": [51000.0, 52000.0, 53000.0],
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         add_trade(signal)
 
@@ -249,7 +253,7 @@ class TestTradeTracker(unittest.TestCase):
             "entry": 50000.0,
             "stop_loss": 49000.0,
             "take_profit": 52000.0,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": _utcnow_naive_iso(),
         }
         add_trade(signal)
 

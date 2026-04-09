@@ -1486,7 +1486,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 	Reports:
 	- delivered signals without outcomes
-	- force-closed invalid outcomes
+	- time-stop/force-closed outcomes
 	- redis connectivity
 	- mt5 credential-link success rate
 	"""
@@ -1530,10 +1530,14 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			)
 			untracked_count = int((await session.execute(untracked_q)).scalar() or 0)
 
-			# 2) Stale force-closed outcomes (tracked as status=invalid).
+			# 2) Stale force-closed outcomes (TIME_STOP policy, with invalid fallback).
 			invalid_q = (
 				select(func.count(Outcome.id))
-				.where(Outcome.status == "invalid", Outcome.closed_at.is_not(None), Outcome.closed_at >= window_start)
+				.where(
+					Outcome.status.in_(["time_stop", "invalid"]),
+					Outcome.closed_at.is_not(None),
+					Outcome.closed_at >= window_start,
+				)
 			)
 			invalid_count_30d = int((await session.execute(invalid_q)).scalar() or 0)
 
@@ -1554,7 +1558,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			"<b>Runtime</b>\n"
 			f"• Redis: <b>{redis_status}</b>\n"
 			f"• Delivered signals without outcome: <b>{untracked_count}</b>\n"
-			f"• Force-closed invalid outcomes (last {window_days}d): <b>{invalid_count_30d}</b>\n\n"
+			f"• Time-stop/force-closed outcomes (last {window_days}d): <b>{invalid_count_30d}</b>\n\n"
 			"<b>Execution</b>\n"
 			f"• MT5 link success (last {window_days}d): <b>{success_mt5}/{total_mt5}</b> (<b>{mt5_rate:.1f}%</b>)\n\n"
 			"<i>Tip: if untracked is high, keep outcome tracker enabled and confirm live price providers are stable.</i>"
@@ -1747,111 +1751,35 @@ async def _public_guard(update: Update) -> bool:
 
 
 def _help_page_definitions() -> dict[int, dict[str, object]]:
-	return {
-		1: {
-			"title": "🟢 Basics & Free",
-			"required_tier": "FREE",
-			"commands": [
-				("/start", "Start or re-register the bot"),
-				("/help", "Open the paginated help menu"),
-				("/status", "Check your current tier and subscription"),
-				("/tiers", "See tier feature differences"),
-				("/signals", "View the latest signal feed"),
-				("/proof", "See recent verified outcomes and wins"),
-				("/signal", "Look up a specific signal by reference"),
-				("/outcome", "View your 24h outcomes or check a specific delivered signal"),
-				("/pricing", "See current plan pricing"),
-				("/upgrade", "Open the upgrade menu"),
-				("/liveprice", "Fetch the real-time price of any asset"),
-				("/market", "View a quick market overview"),
-				("/leaderboard", "View weekly performance leaderboard"),
-				("/language", "Change language preference"),
-				("/invite", "Get your referral link and rewards status"),
-				("/referral_leaderboard", "View top referrers"),
-				("/referral_rewards", "See referral reward details"),
-				("/support", "Contact support"),
-				("/faq", "Common questions and answers"),
-				("/about", "About SignalRankAI"),
-				("/disclaimer", "Financial risk disclaimer"),
-				("/policy", "Subscription and refund policy"),
-				("/refunds", "Subscription and refund policy"),
-				("/recap", "Weekly performance recap"),
-				("/myid", "View your Telegram ID and tier"),
-			],
-			"footer": "Tip: start with /proof, /signals, /status, and /upgrade if you want more access.",
-		},
-		2: {
-			"title": "⭐️ Premium Analytics",
-			"required_tier": "PREMIUM",
-			"commands": [
-				("/performance", "30-day performance summary"),
-				("/quality", "24h reject-reason quality diagnostics"),
-				("/stats", "Win rate, avg R, and net R"),
-				("/history", "Recent signal history"),
-				("/mystats", "Personal trading and signal stats"),
-				("/execution", "Set execution mode (none/manual; auto on VIP)"),
-				("/drawdown", "Set daily drawdown auto-pause threshold"),
-				("/alerts", "Custom TP/SL alerts and quiet hours"),
-				("/analyze", "AI market analysis for any asset"),
-				("/filter", "Custom score, RR, and regime filters"),
-				("/notify", "Signal notification preferences"),
-				("/reports", "Opt into scheduled summaries"),
-				("/account", "View profile and subscription details"),
-				("/feedback", "Rate a signal or report an issue"),
-				("/dashboard", "Open your analytics dashboard"),
-				("/portfolio", "Track active positions and P&L"),
-				("/apikey", "Get your API key for integrations"),
-				("/referral", "View your referral link and stats"),
-				("/cancel", "Cancel subscription auto-renewal"),
-				("/mt5", "Show MT5 quick help and status"),
-				("/mt5_link", "Link your MT5 account"),
-				("/mt5_status", "Check MT5 connection status"),
-				("/connect_broker", "Broker connection walkthrough"),
-				("/setlot", "Set fixed lot size"),
-			],
-			"footer": "⭐️ Upgrade to unlock these features.",
-		},
-		3: {
-			"title": "💎 VIP Exclusive",
-			"required_tier": "VIP",
-			"commands": [
-				("/setrisk", "Set risk limits per trade"),
-				("/simulate", "Run 1,000-path Monte Carlo forecast"),
-				("/elite", "High-conviction elite signals"),
-				("/early", "Early-access VIP flow"),
-				("/report", "VIP monthly performance report"),
-			],
-			"footer": "💎 VIP includes all Free and Premium commands plus these exclusives.",
-		},
-		4: {
-			"title": "👑 Admin & God Mode",
-			"required_tier": "ADMIN",
-			"commands": [
-				("/admin", "Open the admin dashboard"),
-				("/admin_dashboard", "Open extended admin dashboard"),
-				("/ops_health", "Runtime health + delivery/outcome reliability"),
-				("/gemini", "Run all-time Gemini review + ML retrain"),
-				("/gemini_review", "Show latest Gemini review/training rundown"),
-				("/admin_top_assets", "Top assets by signal quality"),
-				("/admin_top_strategies", "Top strategies by performance"),
-				("/admin_user_engagement", "User engagement analytics"),
-				("/admin_broadcast", "Broadcast a message to users"),
-				("/assets", "Manage pinned asset universe"),
-				("/force_market_scan", "Run the ML market scan now"),
-				("/dev_pause", "Pause the engine"),
-				("/dev_resume", "Resume the engine"),
-				("/force_signal", "Generate and send a fresh signal"),
-				("/version", "Runtime/build diagnostic info"),
-				("/owner_users", "Inspect user metrics"),
-				("/owner_revenue", "Review revenue analytics"),
-				("/correct_signal", "Correct a signal outcome"),
-				("/blast_terms", "Send terms gate prompts"),
-				("/provider_status", "Inspect provider health"),
-				("/selfcheck", "Run a system health check"),
-			],
-			"footer": "Restricted admin surface.",
-		},
+	from .command_access import COMMAND_TIERS, COMMAND_HELP
+
+	# Build description lookup from tier help data (single source of truth).
+	desc_lookup: dict[str, str] = {}
+	for _tier, _info in (COMMAND_HELP or {}).items():
+		for _cmd, _desc in (_info.get("commands") or []):
+			_c = str(_cmd or "").strip().lstrip("/").lower()
+			if _c and _c not in desc_lookup:
+				desc_lookup[_c] = str(_desc or "").strip()
+
+	pages: dict[int, dict[str, object]] = {
+		1: {"title": "🟢 Basics & Free", "required_tier": "FREE", "commands": [], "footer": "Tip: start with /proof, /signals, /status, and /upgrade if you want more access."},
+		2: {"title": "⭐️ Premium Analytics", "required_tier": "PREMIUM", "commands": [], "footer": "⭐️ Upgrade to unlock these features."},
+		3: {"title": "💎 VIP Exclusive", "required_tier": "VIP", "commands": [], "footer": "💎 VIP includes all Free and Premium commands plus these exclusives."},
+		4: {"title": "👑 Admin & God Mode", "required_tier": "ADMIN", "commands": [], "footer": "Restricted admin surface."},
 	}
+
+	hidden = {"unlock", "broadcast", "dev_invalidate", "dev_force_signal"}
+	page_by_tier = {"FREE": 1, "PREMIUM": 2, "VIP": 3, "ADMIN": 4, "OWNER": 4}
+
+	for cmd, required_tier in sorted((COMMAND_TIERS or {}).items(), key=lambda kv: (str(kv[1]), str(kv[0]))):
+		cmd_l = str(cmd or "").strip().lower()
+		if not cmd_l or cmd_l in hidden:
+			continue
+		page = page_by_tier.get(str(required_tier or "FREE").upper(), 1)
+		desc = desc_lookup.get(cmd_l) or "Command"
+		pages[page]["commands"].append((f"/{cmd_l}", desc))
+
+	return pages
 
 
 def _help_authorized_pages(user_id: int) -> list[int]:

@@ -1,14 +1,14 @@
-"""Comprehensive test suite for SignalRankAI enterprise features.
+﻿"""Comprehensive test suite for SignalRankAI enterprise features.
 
 Covers:
-    1.  Paystack webhook full flow (valid sig → tier upgrade → referral bonus)
+    1.  Paystack webhook full flow (valid sig â†’ tier upgrade â†’ referral bonus)
     2.  Dynamic Paystack checkout link generation
-    3.  Lot-size calculation — PREMIUM fixed lot (bounds)
-    4.  Lot-size calculation — VIP risk-based (various symbols)
+    3.  Lot-size calculation â€” PREMIUM fixed lot (bounds)
+    4.  Lot-size calculation â€” VIP risk-based (various symbols)
     5.  PREMIUM daily execution limit (3/day cap + reset)
     6.  Tier execution routing (FREE blocked, PREMIUM allowed, VIP allowed)
-    7.  Signal auto-expiry (expires_at → expired flag)
-    8.  VIP waitlist (capacity exceeded → waitlist entry)
+    7.  Signal auto-expiry (expires_at â†’ expired flag)
+    8.  VIP waitlist (capacity exceeded â†’ waitlist entry)
     9.  Referral bonus grant (+7 days on referrer subscription)
     10. Economic calendar no-trade zone (30-min buffer)
     11. format_ticker() multi-provider mapping
@@ -45,7 +45,7 @@ def _make_paystack_event(tier: str = "premium", uid: int = 100, ref: str = "REF0
         "event": "charge.success",
         "data": {
             "reference": ref,
-            "amount": 1500000,  # ₦15,000 in kobo
+            "amount": 1500000,  # â‚¦15,000 in kobo
             "currency": "NGN",
             "metadata": meta,
         },
@@ -142,7 +142,7 @@ class TestPaystackCheckoutLink:
 
 
 # ===========================================================================
-# 3. Lot size — PREMIUM fixed
+# 3. Lot size â€” PREMIUM fixed
 # ===========================================================================
 
 class TestLotSizePremium:
@@ -179,7 +179,7 @@ class TestLotSizePremium:
 
 
 # ===========================================================================
-# 4. Lot size — VIP risk-based
+# 4. Lot size â€” VIP risk-based
 # ===========================================================================
 
 class TestLotSizeVIP:
@@ -191,11 +191,11 @@ class TestLotSizeVIP:
         return u
 
     def test_basic_forex_calculation(self):
-        """Standard EURUSD: 1% of $10,000 / (20 pips × $10) = 0.5 lots."""
+        """Standard EURUSD: 1% of $10,000 / (20 pips Ã— $10) = 0.5 lots."""
         from engine.tiered_executor import calculate_lot_size_vip
 
         user = self._make_user(1.0)
-        # entry=1.10000, sl=1.09800 → 20 pips, pip_value=$10, balance=$10,000
+        # entry=1.10000, sl=1.09800 â†’ 20 pips, pip_value=$10, balance=$10,000
         lot = calculate_lot_size_vip(user, 10000.0, 1.10000, 1.09800, "EURUSD")
         assert 0.4 <= lot <= 0.6, f"Expected ~0.5, got {lot}"
 
@@ -204,8 +204,8 @@ class TestLotSizeVIP:
         from engine.tiered_executor import calculate_lot_size_vip
 
         user = self._make_user(1.0)
-        # entry=2000, sl=1990 → 1000 pips (0.01 each), pip_value=1.0
-        # risk = 1% × $5000 = $50; lots = 50 / (1000 × 1) = 0.05
+        # entry=2000, sl=1990 â†’ 1000 pips (0.01 each), pip_value=1.0
+        # risk = 1% Ã— $5000 = $50; lots = 50 / (1000 Ã— 1) = 0.05
         lot = calculate_lot_size_vip(user, 5000.0, 2000.0, 1990.0, "XAUUSD")
         assert 0.04 <= lot <= 0.06, f"Expected ~0.05, got {lot}"
 
@@ -226,7 +226,7 @@ class TestLotSizeVIP:
         assert lot <= MAX_LOT_VIP
 
     def test_zero_balance_returns_default(self):
-        """Zero balance should not crash — return DEFAULT_FIXED_LOT."""
+        """Zero balance should not crash â€” return DEFAULT_FIXED_LOT."""
         from engine.tiered_executor import calculate_lot_size_vip, DEFAULT_FIXED_LOT
 
         user = self._make_user(1.0)
@@ -270,7 +270,7 @@ class TestPremiumExecutionLimit:
         from engine.tiered_executor import can_execute_premium, PREMIUM_DAILY_LIMIT
 
         user = self._make_premium_user(PREMIUM_DAILY_LIMIT, reset_today=False)
-        # new day → counter resets
+        # new day â†’ counter resets
         allowed, _ = can_execute_premium(user)
         assert allowed is True
         assert user.daily_executions_today == 0
@@ -287,7 +287,7 @@ class TestPremiumExecutionLimit:
         """FREE users must be blocked from automated execution."""
         u = MagicMock()
         u.tier = "FREE"
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             __import__("engine.tiered_executor", fromlist=["can_execute"]).can_execute(u)
         )
         allowed, reason = result
@@ -488,11 +488,11 @@ class TestDetectOrderBlocks:
         assert detect_order_blocks(candles) is False
 
     def test_bullish_fvg_detected(self):
-        """Candle[i-2].high < candle[i].low and current close near mid → True."""
+        """Candle[i-2].high < candle[i].low and current close near mid â†’ True."""
         from data.market_data import detect_order_blocks
 
-        # Candle i-2: high=100; Candle i: low=100.3 → gap 100–100.3
-        # Current close = 100.15 (mid ≈ 100.15) within 0.5% of mid
+        # Candle i-2: high=100; Candle i: low=100.3 â†’ gap 100â€“100.3
+        # Current close = 100.15 (mid â‰ˆ 100.15) within 0.5% of mid
         candles = []
         for _ in range(10):
             candles.append(self._make_candle(99, 100, 98, 99.5))
@@ -506,14 +506,14 @@ class TestDetectOrderBlocks:
         """Normal overlapping candles should not trigger FVG detection."""
         from data.market_data import detect_order_blocks
 
-        # All candles overlap with neighbours — no gap
+        # All candles overlap with neighbours â€” no gap
         candles = [self._make_candle(1.0, 1.1, 0.9, 1.0) for _ in range(20)]
         assert detect_order_blocks(candles) is False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # 13.  Cancellation confirmation flow (/cancel 2-step)
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestCancellationConfirmationFlow:
     """Verify that /cancel shows a policy warning + InlineKeyboard before acting."""
@@ -548,7 +548,7 @@ class TestCancellationConfirmationFlow:
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         update.message.reply_text.assert_called_once()
         args, _ = update.message.reply_text.call_args
         assert "don't have an active paid subscription" in args[0].lower() or \
@@ -577,7 +577,7 @@ class TestCancellationConfirmationFlow:
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         update.message.reply_text.assert_called_once()
         _, kwargs = update.message.reply_text.call_args
         assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
@@ -609,7 +609,7 @@ class TestCancellationConfirmationFlow:
                 mock_gs.return_value = mock_session
                 await cancel_command(update, MagicMock())
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         args, _ = update.message.reply_text.call_args
         assert "NO REFUND" in args[0] or "STRICT" in args[0]
 
@@ -617,7 +617,7 @@ class TestCancellationConfirmationFlow:
         """_cancel_and_disable_paystack must set auto_renew=False and return success=True."""
         from signalrank_telegram.commands import _cancel_and_disable_paystack
 
-        user = self._make_user(tier="premium", sub_code=None)  # no sub_code → skip gateway
+        user = self._make_user(tier="premium", sub_code=None)  # no sub_code â†’ skip gateway
 
         executed_values = {}
 
@@ -635,7 +635,7 @@ class TestCancellationConfirmationFlow:
                 result = await _cancel_and_disable_paystack(99)
                 executed_values.update(result)
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         assert executed_values["success"] is True
         assert executed_values["tier"] == "premium"
 
@@ -650,7 +650,7 @@ class TestCancellationConfirmationFlow:
         update.callback_query = query
         update.effective_user.id = 99
 
-        asyncio.get_event_loop().run_until_complete(
+        asyncio.run(
             cancel_nevermind_callback(update, MagicMock())
         )
         query.edit_message_text.assert_called_once()
@@ -658,9 +658,9 @@ class TestCancellationConfirmationFlow:
         assert "Aborted" in args[0] or "Aborted" in str(kwargs if (kwargs := query.edit_message_text.call_args.kwargs) else "")
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # 14.  Recurring webhook events (charge.success renewal DM / invoice.payment_failed)
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestRecurringWebhookEvents:
     """Verify Paystack recurring billing webhook handlers."""
@@ -689,7 +689,7 @@ class TestRecurringWebhookEvents:
         }
 
     def test_charge_success_renewal_triggers_dm(self):
-        """charge.success on a subscription that already has a code → renewal DM sent."""
+        """charge.success on a subscription that already has a code â†’ renewal DM sent."""
         from web.app import _handle_charge_success_recurring
 
         persisted = {"subscription_id": 7, "tier": "premium"}
@@ -697,10 +697,11 @@ class TestRecurringWebhookEvents:
 
         user = MagicMock()
         user.telegram_user_id = 999
-        user.paystack_subscription_code = "SUB_abc"  # pre-existing → renewal
+        user.paystack_subscription_code = "SUB_abc"  # pre-existing â†’ renewal
 
         async def _run():
-            with patch("db.session.get_session") as mock_gs, \
+              with patch("web.app.is_db_configured", return_value=True), \
+                  patch("web.app.get_session") as mock_gs, \
                  patch("web.app._send_telegram_dm", new_callable=AsyncMock) as mock_dm:
                 mock_session = AsyncMock()
                 mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -714,7 +715,7 @@ class TestRecurringWebhookEvents:
                 await _handle_charge_success_recurring(event, persisted)
                 return mock_dm.called
 
-        dm_called = asyncio.get_event_loop().run_until_complete(_run())
+        dm_called = asyncio.run(_run())
         assert dm_called, "Renewal DM should be sent for repeat charge.success"
 
     def test_invoice_payment_failed_downgrades_user(self):
@@ -731,7 +732,8 @@ class TestRecurringWebhookEvents:
         downgraded = {}
 
         async def _run():
-            with patch("db.session.get_session") as mock_gs, \
+              with patch("web.app.is_db_configured", return_value=True), \
+                  patch("web.app.get_session") as mock_gs, \
                  patch("web.app._send_telegram_dm", new_callable=AsyncMock):
                 mock_session = AsyncMock()
                 mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -750,14 +752,14 @@ class TestRecurringWebhookEvents:
 
                 await _handle_payment_failed(event)
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         # The handler should have attempted a DB update (we captured the flag)
         assert downgraded.get("updated"), "payment_failed should execute a DB update"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # 15.  VIP Waitlist 24-hour TTL background jobs
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestWaitlistTTL:
     """Verify check_waitlist_capacity_job and monitor_expired_invites_job logic."""
@@ -803,9 +805,9 @@ class TestWaitlistTTL:
                 # execute should NOT be called with a VIPWaitlist select
                 invited["calls"] = mock_session.execute.call_count
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
-        # When at capacity, we return early — no DB select for waitlist entries
+        # When at capacity, we return early â€” no DB select for waitlist entries
         assert invited.get("calls", 0) == 0
 
     def test_check_waitlist_sets_24h_invite_ttl(self):
@@ -835,10 +837,10 @@ class TestWaitlistTTL:
 
                 async def fake_execute(stmt):
                     call_count[0] += 1
-                    # First call: VIPWaitlist select → return entry
+                    # First call: VIPWaitlist select â†’ return entry
                     if call_count[0] == 1:
                         return MagicMock(scalars=lambda: MagicMock(first=lambda: entry))
-                    # Second call: User select → return user
+                    # Second call: User select â†’ return user
                     elif call_count[0] == 2:
                         return MagicMock(scalars=lambda: MagicMock(first=lambda: user))
                     else:
@@ -854,7 +856,7 @@ class TestWaitlistTTL:
                 with patch.dict(os.environ, {"VIP_SEAT_LIMIT": "15", "VIP_PRICE_NGN": "30000"}):
                     await _check_waitlist_capacity_job()
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
 
     def test_monitor_expired_invites_resets_columns_and_sends_dm(self):
@@ -865,14 +867,15 @@ class TestWaitlistTTL:
         orig_engine = app_module.ENGINE
         app_module.ENGINE = MagicMock()
 
-        past = datetime.utcnow() - timedelta(hours=25)
+        past = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=25)
         entry = self._make_waitlist_entry(invited_at=past, expires_at=past)
         user = self._make_user(tier="free")
 
         dms_sent = []
 
         async def _run():
-            with patch("web.app.get_session") as mock_gs, \
+              with patch("web.app.is_db_configured", return_value=True), \
+                  patch("web.app.get_session") as mock_gs, \
                  patch("web.app._send_telegram_dm", new_callable=AsyncMock,
                        side_effect=lambda uid, msg: dms_sent.append(uid)):
 
@@ -890,19 +893,19 @@ class TestWaitlistTTL:
                 with patch("web.app._check_waitlist_capacity_job", new_callable=AsyncMock):
                     await _monitor_expired_invites_job()
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
         assert 555 in dms_sent, "DM should be sent to the user whose invite expired"
 
     def test_monitor_expired_invites_skips_already_upgraded_user(self):
-        """VIP-tier users should not be notified — they already upgraded."""
+        """VIP-tier users should not be notified â€” they already upgraded."""
         from web.app import _monitor_expired_invites_job
         import web.app as app_module
 
         orig_engine = app_module.ENGINE
         app_module.ENGINE = MagicMock()
 
-        past = datetime.utcnow() - timedelta(hours=25)
+        past = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=25)
         entry = self._make_waitlist_entry(invited_at=past, expires_at=past)
         user = self._make_user(tier="vip")  # already upgraded
 
@@ -927,14 +930,14 @@ class TestWaitlistTTL:
                 with patch("web.app._check_waitlist_capacity_job", new_callable=AsyncMock):
                     await _monitor_expired_invites_job()
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         app_module.ENGINE = orig_engine
         assert len(dms_sent) == 0, "No DM should be sent to a user who already upgraded to VIP"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # 16.  Paystack plan-code injection into checkout payload
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class TestPlanCodeInjection:
     """Verify checkout payload uses 'plan' key for recurring and 'amount' for one-off."""
@@ -973,7 +976,7 @@ class TestPlanCodeInjection:
                     _, kwargs = mock_client.post.call_args
                     payload_sent.update(kwargs.get("json", {}))
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         assert "plan" in payload_sent, "Recurring checkout must include 'plan' key"
         assert "amount" not in payload_sent, "'amount' key must be absent when plan code is set"
 
@@ -1013,5 +1016,6 @@ class TestPlanCodeInjection:
                     _, kwargs = mock_client.post.call_args
                     payload_sent.update(kwargs.get("json", {}))
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
         assert "amount" in payload_sent, "One-off checkout must include 'amount' key"
+

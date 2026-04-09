@@ -22,7 +22,7 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -326,7 +326,18 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             pass
 
         status_l = str(status or "").lower()
-        terminal = status_l in {"sl", "tp3", "tp", "invalid"}
+        terminal = status_l in {"sl", "tp3", "tp", "invalid", "time_stop"}
+
+        canonical_outcome = "pending"
+        if status_l in {"tp", "tp3"}:
+            canonical_outcome = "win"
+        elif status_l == "sl":
+            canonical_outcome = "loss"
+        elif status_l == "time_stop":
+            canonical_outcome = "time_stop"
+
+        vip_fill_outcome = "pending"
+        sentiment_outcome = "pending"
 
         async with get_session() as session:
             _outcome = await upsert_outcome(
@@ -336,6 +347,9 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 r_multiple=r_mult,
                 percent=pct,
                 closed_at=now,
+                canonical_outcome=canonical_outcome,
+                vip_fill_outcome=vip_fill_outcome,
+                sentiment_outcome=sentiment_outcome,
                 meta={"close_price": float(price)},
             )
             if terminal:
@@ -441,7 +455,7 @@ def _build_outcome_message(
     Premium/VIP users get the full PnL breakdown.
     """
     pnl_sign = "+" if pnl_pct >= 0 else ""
-    now_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     status_u = status.upper()
     is_tp = status.startswith("tp")
     is_sl = status == "sl"
@@ -945,10 +959,22 @@ class RealtimeOutcomeTracker:
             await _notify_outcome(signal, hit_l, price)
             return
 
-        # Force-close stale unresolved delivered signals so they can be used
-        # for model training and avoid remaining forever "open".
+        # Time-stop stale unresolved delivered signals by timeframe SLA.
         try:
-            force_hours = int(os.getenv("OUTCOME_FORCE_CLOSE_HOURS", "72") or 72)
+            tf = str(signal.get("timeframe") or "").strip().lower()
+            tf_hours_default = {
+                "15m": 12,
+                "1h": 48,
+                "4h": 7 * 24,
+                "1d": 30 * 24,
+            }
+            force_hours = int(
+                os.getenv(
+                    "OUTCOME_TIME_STOP_HOURS",
+                    str(tf_hours_default.get(tf, int(os.getenv("OUTCOME_FORCE_CLOSE_HOURS", "72") or 72))),
+                )
+                or 72
+            )
         except Exception:
             force_hours = 72
         created_at = signal.get("created_at")
@@ -961,12 +987,12 @@ class RealtimeOutcomeTracker:
             age_h = 0.0
         if age_h >= float(max(24, force_hours)):
             logger.info(
-                "[outcome_tracker] Force-closing stale signal %s age_h=%.1f status=invalid",
+                "[outcome_tracker] Time-stop stale signal %s age_h=%.1f status=time_stop",
                 signal_id[:8],
                 age_h,
             )
-            await _persist_outcome(signal_id, "invalid", entry, float(price))
-            await _notify_outcome(signal, "invalid", float(price))
+            await _persist_outcome(signal_id, "time_stop", entry, float(price))
+            await _notify_outcome(signal, "time_stop", float(price))
 
 
 # Singleton instance

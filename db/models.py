@@ -246,6 +246,12 @@ class Outcome(Base):
     signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
 
     status: Mapped[str] = mapped_column(String(16), index=True, nullable=False)  # tp1/tp2/tp/sl/invalid
+    # Canonical market-driven truth (global model truth): pending/win/loss/time_stop
+    canonical_outcome: Mapped[Optional[str]] = mapped_column(String(16), index=True, nullable=True)
+    # VIP execution truth (broker fill reality): pending/win/loss/aborted
+    vip_fill_outcome: Mapped[Optional[str]] = mapped_column(String(16), index=True, nullable=True)
+    # Community/manual sentiment channel: pending/win/loss/mixed
+    sentiment_outcome: Mapped[Optional[str]] = mapped_column(String(16), index=True, nullable=True)
     r_multiple: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     opened_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
@@ -418,6 +424,10 @@ class SignalDelivery(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
     signal_id: Mapped[str] = mapped_column(ForeignKey("signals.signal_id"), index=True, nullable=False)
     tier_at_send: Mapped[str] = mapped_column(String(16), index=True, nullable=False, default="free")
+    sent_ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     delivered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 

@@ -1,9 +1,13 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 import yfinance as yf
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 class TradeRecord:
     def __init__(self, signal):
@@ -19,7 +23,7 @@ class TradeRecord:
         # Normalize direction to lowercase 'long' or 'short' (tests expect lowercase)
         self.direction = (signal.get("direction") or signal.get("side") or "long").lower()
         # Timestamp fallback
-        self.open_time = signal.get("timestamp") or signal.get("created_at") or datetime.utcnow().isoformat()
+        self.open_time = signal.get("timestamp") or signal.get("created_at") or _utcnow_naive().isoformat()
         self.close_time = None
         self.outcome = None  # "TP" | "SL"
         self.signal = signal  # Keep reference to original signal
@@ -183,7 +187,7 @@ def price_hit_sl(trade, market_data=None):
     return False
 
 def close_trade(trade: TradeRecord, outcome: str):
-    trade.close_time = datetime.utcnow()
+    trade.close_time = _utcnow_naive()
     if trade.targets_hit and len(trade.targets_hit) < len(trade.targets):
         trade.outcome = "PARTIAL_TP"
     else:

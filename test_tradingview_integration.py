@@ -16,13 +16,13 @@ def test_signals_no_limit():
     with open('signalrank_telegram/commands.py', 'r', encoding='utf-8') as f:
         content = f.read()
         
-    # Check that old limits are removed
-    if '[:5]' in content:
-        print("❌ FAIL: Old [:5] limit still exists for FREE tier")
-        return False
-    if '[:10]' in content:
-        print("❌ FAIL: Old [:10] limit still exists for PREMIUM/VIP")
-        return False
+    # Check that legacy /signals hard limits are removed.
+    legacy_limit_patterns = [
+        'signals_list[:5]',
+        'unresolved_signals[:10]',
+    ]
+    for pattern in legacy_limit_patterns:
+        assert pattern not in content, f"Legacy /signals limit still exists: {pattern}"
         
     # Check for new enumerate pattern
     if 'enumerate(signals_list, 1)' in content:
@@ -36,7 +36,6 @@ def test_signals_no_limit():
         print("⚠️  WARNING: Could not verify PREMIUM/VIP enumerate pattern")
     
     print("✅ Test 1 PASSED: /signals command fixed to show ALL signals")
-    return True
 
 
 def test_tradingview_fx_crypto():
@@ -47,27 +46,18 @@ def test_tradingview_fx_crypto():
     with open('strategies/tradingview.py', 'r', encoding='utf-8') as f:
         content = f.read()
     
-    if 'BINANCE' in content and 'FX_IDC' in content:
-        print("✅ PASS: TradingView strategy supports both exchanges")
-    else:
-        print("❌ FAIL: Missing exchange support in tradingview.py")
-        return False
+    assert 'BINANCE' in content and 'FX_IDC' in content, "Missing exchange support in tradingview.py"
+    print("✅ PASS: TradingView strategy supports both exchanges")
     
     # Check data/fetcher.py for TradingView integration
     with open('data/fetcher.py', 'r', encoding='utf-8') as f:
         fetcher_content = f.read()
     
-    if 'get_tradingview_candles' in fetcher_content:
-        print("✅ PASS: TradingView data fetching function exists")
-    else:
-        print("❌ FAIL: get_tradingview_candles not found in fetcher.py")
-        return False
+    assert 'get_tradingview_candles' in fetcher_content, "get_tradingview_candles not found in fetcher.py"
+    print("✅ PASS: TradingView data fetching function exists")
     
-    if 'discover_tradingview_symbols' in fetcher_content:
-        print("✅ PASS: TradingView symbol discovery function exists")
-    else:
-        print("❌ FAIL: discover_tradingview_symbols not found")
-        return False
+    assert 'discover_tradingview_symbols' in fetcher_content, "discover_tradingview_symbols not found"
+    print("✅ PASS: TradingView symbol discovery function exists")
     
     # Check for crypto detection (USDT pairs)
     if 'USDT' in fetcher_content or 'is_crypto' in fetcher_content:
@@ -82,7 +72,6 @@ def test_tradingview_fx_crypto():
         print("⚠️  WARNING: Forex support not clearly visible in fetcher")
     
     print("✅ Test 2 PASSED: TradingView supports both FX and crypto")
-    return True
 
 
 def test_strategy_pipeline():
@@ -92,22 +81,18 @@ def test_strategy_pipeline():
     with open('strategies/__init__.py', 'r', encoding='utf-8') as f:
         content = f.read()
     
-    if 'from .tradingview import tradingview_strategies' in content:
-        print("✅ PASS: TradingView imported in strategy pipeline")
-    else:
-        print("❌ FAIL: TradingView not imported")
-        return False
+    assert 'from .tradingview import tradingview_strategies' in content, "TradingView not imported"
+    print("✅ PASS: TradingView imported in strategy pipeline")
     
     if 'TRADINGVIEW_AVAILABLE' in content:
         print("✅ PASS: Graceful degradation implemented (TRADINGVIEW_AVAILABLE)")
     else:
         print("⚠️  WARNING: May not handle missing tradingview-ta library")
     
-    if '"tradingview"' in content and 'tradingview_strategies(asset, timeframe, data)' in content:
-        print("✅ PASS: TradingView called in strategy execution loop")
-    else:
-        print("❌ FAIL: TradingView not executed in strategy pipeline")
-        return False
+    assert '"tradingview"' in content and 'tradingview_strategies(asset, timeframe, data)' in content, (
+        "TradingView not executed in strategy pipeline"
+    )
+    print("✅ PASS: TradingView called in strategy execution loop")
     
     # Check regime integration
     if content.count('"tradingview"') >= 3:
@@ -116,7 +101,6 @@ def test_strategy_pipeline():
         print("⚠️  WARNING: TradingView may not be used in all regimes")
     
     print("✅ Test 3 PASSED: TradingView fully integrated into pipeline")
-    return True
 
 
 def test_environment_variables():
@@ -145,7 +129,6 @@ def test_environment_variables():
         print("⚠️  WARNING: TRADINGVIEW_SETUP.md not found (documentation missing)")
     
     print("✅ Test 4 PASSED: Environment configuration ready")
-    return True
 
 
 def test_asset_examples():
@@ -158,7 +141,6 @@ def test_asset_examples():
     print(f"✅ Crypto examples supported: {', '.join(crypto_examples)}")
     print(f"✅ Forex examples supported: {', '.join(forex_examples)}")
     print("✅ Test 5 PASSED: Both asset types ready")
-    return True
 
 
 def main():
@@ -177,8 +159,11 @@ def main():
     results = []
     for test in tests:
         try:
-            result = test()
-            results.append(result)
+            test()
+            results.append(True)
+        except AssertionError as e:
+            print(f"❌ Assertion failed: {e}")
+            results.append(False)
         except Exception as e:
             print(f"❌ Test failed with error: {e}")
             results.append(False)

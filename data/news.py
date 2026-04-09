@@ -3,7 +3,7 @@ import requests
 import time
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,9 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
     
     Sources tried in order:
     1. NewsAPI.org (NEWSAPI_KEY env var)
-    2. CryptoCompare News API (free, no key for basic)
-    3. Fallback empty
+    2. X recent search (X_BEARER_TOKEN env var)
+    3. CryptoCompare News API (free, no key for basic)
+    4. Fallback empty
     """
     cache_key = f"{asset}:{lookback_minutes}"
     cached = _NEWS_CACHE.get(cache_key)
@@ -69,8 +70,17 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
                     headlines.append((title, pub, score))
         except Exception as e:
             logger.warning(f"NewsAPI fetch failed: {e}")
+
+    # 2. Try X/Twitter recent search if token is present
+    if not headlines:
+        x_bearer_token = (os.getenv("X_BEARER_TOKEN") or os.getenv("TWITTER_BEARER_TOKEN") or "").strip()
+        if x_bearer_token:
+            try:
+                headlines.extend(_fetch_x_headlines(asset, lookback_minutes, x_bearer_token))
+            except Exception as e:
+                logger.warning(f"X news fetch failed: {e}")
     
-    # 2. CryptoCompare News (free, good for crypto)
+    # 3. CryptoCompare News (free, good for crypto)
     if not headlines and _is_crypto_asset(asset):
         try:
             base = asset.upper().replace("USDT", "").replace("USD", "").replace("BUSD", "")
@@ -96,6 +106,62 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
     
     _NEWS_CACHE[cache_key] = {"ts": time.time(), "data": headlines}
     return headlines
+
+
+def _asset_to_x_query(asset: str) -> str:
+    a = (asset or "").upper().strip()
+    mapping = {
+        "BTCUSDT": "(bitcoin OR btc OR btcusdt) lang:en -is:retweet",
+        "ETHUSDT": "(ethereum OR eth OR ethusdt) lang:en -is:retweet",
+        "SOLUSDT": "(solana OR sol OR solusdt) lang:en -is:retweet",
+        "XRPUSDT": "(ripple OR xrp OR xrpusdt) lang:en -is:retweet",
+        "BNBUSDT": "(bnb OR binance coin OR bnbusdt) lang:en -is:retweet",
+        "EURUSD": "(EURUSD OR euro dollar OR eur usd forex) lang:en -is:retweet",
+        "GBPUSD": "(GBPUSD OR pound dollar OR gbp usd forex) lang:en -is:retweet",
+        "USDJPY": "(USDJPY OR dollar yen OR usd jpy forex) lang:en -is:retweet",
+        "XAUUSD": "(gold OR xauusd OR xau usd) lang:en -is:retweet",
+        "XAGUSD": "(silver OR xagusd OR xag usd) lang:en -is:retweet",
+    }
+    if a in mapping:
+        return mapping[a]
+    return f"({a} OR {a.replace('USDT', '')}) lang:en -is:retweet"
+
+
+def _fetch_x_headlines(asset: str, lookback_minutes: int, bearer_token: str) -> List[Tuple[str, str, int]]:
+    since_time = datetime.now(timezone.utc) - timedelta(minutes=max(5, int(lookback_minutes or 120)))
+    params = {
+        "query": _asset_to_x_query(asset),
+        "max_results": 20,
+        "tweet.fields": "created_at,text,lang",
+        "start_time": since_time.isoformat().replace("+00:00", "Z"),
+    }
+    headers = {"Authorization": f"Bearer {bearer_token}"}
+
+    resp = requests.get(
+        "https://api.twitter.com/2/tweets/search/recent",
+        params=params,
+        headers=headers,
+        timeout=8,
+    )
+    if not resp.ok:
+        return []
+
+    payload = resp.json() if callable(getattr(resp, "json", None)) else {}
+    data = payload.get("data", []) if isinstance(payload, dict) else []
+    if not isinstance(data, list):
+        data = []
+
+    out: list[tuple[str, str, int]] = []
+    for item in data[:20]:
+        if not isinstance(item, dict):
+            continue
+        text = _safe_text(item.get("text", ""))
+        if not text:
+            continue
+        created_at = _safe_text(item.get("created_at", ""))
+        score = simple_sentiment_score(text)
+        out.append((text[:240], created_at, score))
+    return out
 
 def _asset_to_news_query(asset: str) -> str:
     """Convert asset symbol to news search query."""

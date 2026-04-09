@@ -6,7 +6,7 @@ Run this to see freshness checks in action.
 
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,6 +17,10 @@ from engine.price_validator import (
     is_signal_stale,
     filter_stale_signals,
 )
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def test_freshness_validation():
@@ -33,7 +37,7 @@ def test_freshness_validation():
     fresh_signal = {
         'signal_id': 'sig_001',
         'asset': 'BTCUSDT',
-        'created_at': datetime.utcnow() - timedelta(minutes=1),
+        'created_at': _utcnow_naive() - timedelta(minutes=1),
         'entry': 50000.0,
         'direction': 'long',
         'take_profit': '[52000.0]',
@@ -52,7 +56,7 @@ def test_freshness_validation():
     stale_signal = {
         'signal_id': 'sig_002',
         'asset': 'ETHUSDT',
-        'created_at': datetime.utcnow() - timedelta(minutes=10),
+        'created_at': _utcnow_naive() - timedelta(minutes=10),
         'entry': 3000.0,
         'direction': 'long',
         'take_profit': '[3100.0]',
@@ -71,7 +75,7 @@ def test_freshness_validation():
     fx_signal = {
         'signal_id': 'sig_003',
         'asset': 'EUR/USD',
-        'created_at': datetime.utcnow() - timedelta(minutes=2),
+        'created_at': _utcnow_naive() - timedelta(minutes=2),
         'entry': 1.0850,
         'direction': 'long',
         'take_profit': '[1.0900]',
@@ -91,19 +95,19 @@ def test_freshness_validation():
         {
             'signal_id': 'sig_004',
             'asset': 'BTCUSDT',
-            'created_at': datetime.utcnow() - timedelta(seconds=30),
+            'created_at': _utcnow_naive() - timedelta(seconds=30),
             'entry': 50000.0,
         },
         {
             'signal_id': 'sig_005',
             'asset': 'ETHUSDT',
-            'created_at': datetime.utcnow() - timedelta(minutes=15),
+            'created_at': _utcnow_naive() - timedelta(minutes=15),
             'entry': 3000.0,
         },
         {
             'signal_id': 'sig_006',
             'asset': 'BNBUSDT',
-            'created_at': datetime.utcnow() - timedelta(minutes=1),
+            'created_at': _utcnow_naive() - timedelta(minutes=1),
             'entry': 400.0,
         },
     ]
@@ -121,7 +125,7 @@ def test_freshness_validation():
     test_signal = {
         'signal_id': 'sig_007',
         'asset': 'BTCUSDT',
-        'created_at': datetime.utcnow(),
+        'created_at': _utcnow_naive(),
         'entry': 50000.0,
         'direction': 'long',
     }

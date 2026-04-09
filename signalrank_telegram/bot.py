@@ -65,7 +65,12 @@ async def _resend_unsent_signals_async():
     """Async core of the resend job — all deliveries share one event loop / Bot instance."""
     try:
         from db.session import get_session
-        from db.pg_features import list_active_signals, get_signal_outcome_status, record_signal_delivery
+        from db.pg_features import (
+            list_active_signals,
+            get_signal_outcome_status,
+            record_signal_delivery,
+            mark_signal_delivery_result,
+        )
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
@@ -287,6 +292,24 @@ async def _resend_unsent_signals_async():
                                 f"(tier={user_tier}): formatter returned empty text"
                             )
                             continue
+                        # Pre-send reservation in DB (attempt tracked even if network fails).
+                        reserved = False
+                        try:
+                            async with get_session() as db_session:
+                                reserved = await record_signal_delivery(
+                                    db_session,
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(signal_id),
+                                    tier_at_send=str(gate_tier),
+                                )
+                                await db_session.commit()
+                            if not reserved:
+                                logger.info(f"[resend] DB deduped before send: signal {signal_id} to user {user_id} (tier={gate_tier})")
+                                continue
+                        except Exception as db_err:
+                            logger.error(f"[resend] DB reserve error: signal {signal_id} to user {user_id}: {db_err}")
+                            continue
+
                         try:
                             await _deliver_or_update_signal_async(
                                 bot=bot,
@@ -294,29 +317,33 @@ async def _resend_unsent_signals_async():
                                 signal=dict(sig_dict or {}),
                                 display_tier=str(display_tier),
                             )
-                        except Exception as send_err:
-                            raise send_err
-                        await asyncio.sleep(0.5)
-                        delivered_count += 1
-                        logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
-
-                        # Record delivery in DB (sequential — no races)
-                        try:
                             async with get_session() as db_session:
-                                ok = await record_signal_delivery(
+                                await mark_signal_delivery_result(
                                     db_session,
                                     telegram_user_id=int(user_id),
                                     signal_id=str(signal_id),
-                                    tier_at_send=str(gate_tier),
+                                    sent_ok=True,
                                 )
                                 await db_session.commit()
-                            if ok:
-                                logger.info(f"[resend] DB tracked delivery: signal {signal_id} to user {user_id} (tier={gate_tier})")
-                            else:
-                                logger.info(f"[resend] DB deduped: signal {signal_id} to user {user_id} (tier={gate_tier})")
-                            delivered_user_ids.add(int(user_id))
-                        except Exception as db_err:
-                            logger.error(f"[resend] DB error tracking delivery: signal {signal_id} to user {user_id}: {db_err}")
+                        except Exception as send_err:
+                            try:
+                                async with get_session() as db_session:
+                                    await mark_signal_delivery_result(
+                                        db_session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal_id),
+                                        sent_ok=False,
+                                        error=str(send_err),
+                                    )
+                                    await db_session.commit()
+                            except Exception:
+                                pass
+                            raise send_err
+
+                        await asyncio.sleep(0.5)
+                        delivered_count += 1
+                        logger.info(f"[resend] Delivered signal {signal_id} to user {user_id} (tier={user_tier})")
+                        delivered_user_ids.add(int(user_id))
 
                     except Exception as send_err:
                         failed_count += 1
