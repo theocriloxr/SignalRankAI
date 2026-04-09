@@ -29,8 +29,10 @@ _DELIVERED_SIGNAL_PREFIX = "signalrankai:delivered_signal:"
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
     """Mark that a signal was delivered to a user. No-op if Redis unavailable."""
     try:
-        import redis
-        r = redis.Redis()
+        url = (os.getenv("REDIS_URL") or "").strip()
+        if not url:
+            return
+        r = redis.from_url(url, decode_responses=True)
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
         r.sadd(key, signal_id)
     except Exception:
@@ -40,10 +42,12 @@ def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
 def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
     """Check if a signal was delivered to a user. Returns False if Redis unavailable."""
     try:
-        import redis
-        r = redis.Redis()
+        url = (os.getenv("REDIS_URL") or "").strip()
+        if not url:
+            return False
+        r = redis.from_url(url, decode_responses=True)
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
-        return r.sismember(key, signal_id)
+        return bool(r.sismember(key, signal_id))
     except Exception:
         # Redis not available (dev/railway), always return False (so signal will be sent)
         return False
@@ -51,10 +55,12 @@ def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
 def get_delivered_signals_sync(user_id: int) -> set:
     """Get all signal_ids delivered to a user. Returns empty set if Redis unavailable."""
     try:
-        import redis
-        r = redis.Redis()
+        url = (os.getenv("REDIS_URL") or "").strip()
+        if not url:
+            return set()
+        r = redis.from_url(url, decode_responses=True)
         key = f"{_DELIVERED_SIGNAL_PREFIX}{user_id}"
-        return set(r.smembers(key))
+        return set(r.smembers(key) or set())
     except Exception:
         # Redis not available (dev/railway), return empty set
         return set()
@@ -93,9 +99,7 @@ class RedisState:
         self._ensure_flush_worker()
 
     def _redis_url(self) -> Optional[str]:
-        # Redis is intentionally disabled for this project.
-        # Shared runtime state is persisted in Postgres (runtime_state table).
-        return None
+        return (os.getenv("REDIS_URL") or "").strip() or None
 
     def _get_pg_dsn(self) -> Optional[str]:
         if self._pg_dsn is not None:
@@ -211,8 +215,20 @@ class RedisState:
         self._flush_thread.start()
 
     def _get_redis_sync(self):
-        # Redis backend disabled: always return None so callers use Postgres or memory.
-        return None
+        if self._redis_sync is not None:
+            return self._redis_sync
+        url = self._redis_url()
+        if not url or redis is None:
+            return None
+        try:
+            client = redis.from_url(url, decode_responses=True, socket_connect_timeout=3, socket_timeout=3)
+            # Validate connectivity once.
+            client.ping()
+            self._redis_sync = client
+            return self._redis_sync
+        except Exception:
+            self._redis_sync = None
+            return None
 
     def _bypass_fingerprint(self) -> Optional[str]:
         """Fingerprint the active BYPASS_KEY.

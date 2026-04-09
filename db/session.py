@@ -111,25 +111,37 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
-_global_engine: Optional[AsyncEngine] = None
-_global_sessionmaker: Optional[async_sessionmaker[AsyncSession]] = None
-_global_engine_lock = threading.Lock()
+_engines_by_loop: dict[int, AsyncEngine] = {}
+_sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
+_engine_lock = threading.Lock()
 
 
-def _get_global_engine() -> Optional[AsyncEngine]:
-    global _global_engine, _global_sessionmaker
-    if _global_engine is not None:
-        return _global_engine
-    with _global_engine_lock:
-        if _global_engine is not None:
-            return _global_engine
+def _loop_identity() -> int:
+    """Return a stable identity for the current async loop context.
+
+    This prevents reusing an AsyncEngine across different event loops,
+    which causes asyncpg queue/connection warnings and loop-bound errors.
+    """
+    try:
+        return id(asyncio.get_running_loop())
+    except RuntimeError:
+        # Fallback for sync contexts that may call into async helpers.
+        return -int(threading.get_ident())
+
+
+def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
+    if loop_id in _engines_by_loop:
+        return _engines_by_loop[loop_id]
+    with _engine_lock:
+        if loop_id in _engines_by_loop:
+            return _engines_by_loop[loop_id]
         try:
             url = get_database_url()
         except ValueError as exc:
             logger.critical("[db] DATABASE_URL is not configured: %s", exc)
             return None
 
-        _global_engine = create_async_engine(
+        engine = create_async_engine(
             url,
             pool_size=_pool_int("DB_POOL_SIZE", 5, minimum=1),
             max_overflow=_pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
@@ -138,7 +150,8 @@ def _get_global_engine() -> Optional[AsyncEngine]:
             pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
             connect_args=_engine_connect_args(),
         )
-        _global_sessionmaker = async_sessionmaker(_global_engine, expire_on_commit=False)
+        _engines_by_loop[loop_id] = engine
+        _sessionmakers_by_loop[loop_id] = async_sessionmaker(engine, expire_on_commit=False)
         try:
             from sqlalchemy.engine.url import make_url as _mku
 
@@ -147,27 +160,28 @@ def _get_global_engine() -> Optional[AsyncEngine]:
         except Exception:
             _masked = "<url parse error>"
         logger.info(
-            "[db] async engine initialised url=%s pool_size=%s max_overflow=%s",
+            "[db] async engine initialised loop=%s url=%s pool_size=%s max_overflow=%s",
+            loop_id,
             _masked,
             _pool_int("DB_POOL_SIZE", 5, minimum=1),
             _pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
         )
-        return _global_engine
+        return engine
 
 
-def _get_global_sessionmaker() -> Optional[async_sessionmaker[AsyncSession]]:
-    if _global_sessionmaker is not None:
-        return _global_sessionmaker
-    _get_global_engine()
-    return _global_sessionmaker
+def _get_sessionmaker_for_loop(loop_id: int) -> Optional[async_sessionmaker[AsyncSession]]:
+    if loop_id in _sessionmakers_by_loop:
+        return _sessionmakers_by_loop[loop_id]
+    _get_engine_for_loop(loop_id)
+    return _sessionmakers_by_loop.get(loop_id)
 
 
 def get_engine_for_event_loop() -> Optional[AsyncEngine]:
-    return _get_global_engine()
+    return _get_engine_for_loop(_loop_identity())
 
 
 def get_sessionmaker_for_event_loop() -> Optional[async_sessionmaker[AsyncSession]]:
-    return _get_global_sessionmaker()
+    return _get_sessionmaker_for_loop(_loop_identity())
 
 
 def is_db_configured() -> bool:
@@ -222,7 +236,7 @@ async def run_with_db_retry(
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
-    session_local = _get_global_sessionmaker()
+    session_local = _get_sessionmaker_for_loop(_loop_identity())
     if session_local is None:
         raise RuntimeError("DATABASE_URL is not configured")
     async with session_local() as session:

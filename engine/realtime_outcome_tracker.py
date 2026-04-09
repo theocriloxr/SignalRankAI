@@ -87,6 +87,63 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         return []
 
 
+async def _fetch_delivered_untracked_signals(limit: int = 250) -> List[Dict[str, Any]]:
+    """Find delivered signals that still do not have any outcome row.
+
+    This supports outcome backfill and ensures delivered signals are eventually
+    marked for analytics/training even when live tracking missed them.
+    """
+    try:
+        from db.session import get_session
+        from db.models import Signal, SignalDelivery, Outcome
+        from sqlalchemy import select
+
+        lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "720") or 720)
+        cutoff = datetime.utcnow() - timedelta(hours=max(24, lookback_hours))
+
+        async with get_session() as session:
+            stmt = (
+                select(Signal)
+                .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+                .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+                .where(Outcome.id.is_(None))
+                .where(Signal.created_at >= cutoff)
+                .order_by(Signal.created_at.asc())
+                .limit(max(1, int(limit)))
+            )
+            res = await session.execute(stmt)
+            rows = res.scalars().all()
+            await session.commit()
+
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for s in rows:
+            sid = str(getattr(s, "signal_id", "") or "")
+            if not sid or sid in seen:
+                continue
+            seen.add(sid)
+            out.append(
+                {
+                    "signal_id": sid,
+                    "asset": s.asset,
+                    "direction": s.direction,
+                    "entry": s.entry,
+                    "stop_loss": s.stop_loss,
+                    "take_profit": s.take_profit,
+                    "created_at": s.created_at,
+                    "timeframe": s.timeframe,
+                    "score": s.score,
+                    "ml_probability": getattr(s, "ml_probability", None),
+                    "prev_outcome_status": None,
+                    "prev_outcome_meta": {},
+                }
+            )
+        return out
+    except Exception as exc:
+        logger.debug("[outcome_tracker] fetch_delivered_untracked_signals skipped: %s", exc)
+        return []
+
+
 async def _get_live_price(symbol: str) -> Optional[float]:
     """Fetch live price for a symbol (same logic as stale validator)."""
     try:
@@ -269,7 +326,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             pass
 
         status_l = str(status or "").lower()
-        terminal = status_l in {"sl", "tp3", "tp"}
+        terminal = status_l in {"sl", "tp3", "tp", "invalid"}
 
         async with get_session() as session:
             _outcome = await upsert_outcome(
@@ -717,6 +774,7 @@ class RealtimeOutcomeTracker:
     def __init__(self) -> None:
         self.running = False
         self._task: Optional[asyncio.Task] = None
+        self._last_retrain_ts: float = 0.0
 
     async def start(self) -> None:
         if self.running:
@@ -745,6 +803,15 @@ class RealtimeOutcomeTracker:
 
     async def _check_all(self) -> None:
         signals = await _fetch_active_signals()
+        # Backfill previously delivered-but-untracked signals so every delivered
+        # signal eventually receives an outcome state for analytics/training.
+        backfill = await _fetch_delivered_untracked_signals(limit=250)
+        if backfill:
+            known = {str(s.get("signal_id") or "") for s in signals}
+            for item in backfill:
+                sid = str(item.get("signal_id") or "")
+                if sid and sid not in known:
+                    signals.append(item)
         if not signals:
             return
 
@@ -770,15 +837,17 @@ class RealtimeOutcomeTracker:
         tasks = [wrapped_check_signal(sig) for sig in signals]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Retrain ML after all outcomes processed
+        # Retrain ML periodically (not on every tracking cycle).
         try:
-            logger.info("[outcome_tracker] Triggering ML retraining after outcome tracking...")
-            import sys
-            import asyncio as _asyncio
-            sys.path.append("ml")
-            from ml import train_model as _train_model
-            await _train_model.main()
-            logger.info("[outcome_tracker] ML retraining complete.")
+            now_ts = datetime.utcnow().timestamp()
+            retrain_interval = int(os.getenv("OUTCOME_TRACKER_ML_RETRAIN_INTERVAL_SECONDS", "21600") or 21600)
+            min_interval = max(900, retrain_interval)
+            if (now_ts - float(self._last_retrain_ts or 0.0)) >= float(min_interval):
+                logger.info("[outcome_tracker] Triggering scheduled ML retraining after outcome tracking...")
+                from ml import train_model as _train_model
+                ok = await _train_model.main()
+                self._last_retrain_ts = now_ts
+                logger.info("[outcome_tracker] ML retraining complete (ok=%s).", bool(ok))
         except Exception as exc:
             logger.error(f"[outcome_tracker] ML retraining failed: {exc}")
 
@@ -874,6 +943,30 @@ class RealtimeOutcomeTracker:
                 _set_tp_progress(signal_id, hit_tp_idx)
             await _persist_outcome(signal_id, hit_l, entry, price)
             await _notify_outcome(signal, hit_l, price)
+            return
+
+        # Force-close stale unresolved delivered signals so they can be used
+        # for model training and avoid remaining forever "open".
+        try:
+            force_hours = int(os.getenv("OUTCOME_FORCE_CLOSE_HOURS", "72") or 72)
+        except Exception:
+            force_hours = 72
+        created_at = signal.get("created_at")
+        try:
+            if isinstance(created_at, datetime):
+                age_h = (datetime.utcnow() - created_at).total_seconds() / 3600.0
+            else:
+                age_h = 0.0
+        except Exception:
+            age_h = 0.0
+        if age_h >= float(max(24, force_hours)):
+            logger.info(
+                "[outcome_tracker] Force-closing stale signal %s age_h=%.1f status=invalid",
+                signal_id[:8],
+                age_h,
+            )
+            await _persist_outcome(signal_id, "invalid", entry, float(price))
+            await _notify_outcome(signal, "invalid", float(price))
 
 
 # Singleton instance
