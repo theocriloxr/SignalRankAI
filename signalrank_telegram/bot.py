@@ -2699,7 +2699,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
     # Entry validation: check that current price is within entry zone (±3%)
     # Add entry_status flag to track if entry has been hit or is pending
-    async def _check_entry_status(signal: dict) -> tuple[bool, str]:
+    def _check_entry_status(signal: dict) -> tuple[bool, str]:
         """
         Check if entry is valid and return (allow: bool, status: str).
         Status: "AT_ENTRY" (within ±3%), "PENDING_ENTRY" (outside ±3%), "UNKNOWN"
@@ -2737,11 +2737,11 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
                 import httpx
                 try:
-                    async with httpx.AsyncClient(timeout=4.0) as client:
-                        resp = await client.get(
-                            "https://api.binance.com/api/v3/ticker/price",
-                            params={"symbol": asset},
-                        )
+                    resp = httpx.get(
+                        "https://api.binance.com/api/v3/ticker/price",
+                        params={"symbol": asset},
+                        timeout=4.0,
+                    )
                     if resp.is_success:
                         price = float(resp.json().get("price", entry))
                         price_distance_pct = abs(price - entry) / entry * 100.0
@@ -2757,7 +2757,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
     # Add entry_status flag to all signals
     try:
         for signal in signals_list:
-            allow, status = await _check_entry_status(signal)
+            allow, status = _check_entry_status(signal)
             signal["entry_status"] = status
             signal["current_price_pct"] = None  # Will be populated on display
     except Exception as e:

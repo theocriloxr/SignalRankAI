@@ -118,7 +118,11 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
         ordered = [
             ("binance_connector", getattr(c, "binance_get_candles", None)),
             ("bybit_connector", getattr(c, "bybit_get_candles", None)),
-            ("cryptocompare_connector", getattr(c, "cryptocompare_get_candles", None)),
+            (
+                "cryptocompare_connector",
+                getattr(c, "cryptocompare_get_candles_async", None)
+                or getattr(c, "cryptocompare_get_candles", None),
+            ),
         ]
     else:
         # Traditional assets: premium feeds first, then yfinance fallback.
