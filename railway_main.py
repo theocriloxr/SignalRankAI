@@ -1050,6 +1050,12 @@ async def lifespan(_: FastAPI):
             payload_update_id = (payload or {}).get("update_id", "?")
             started_at = _webhook_enqueue_started_at.pop(str(payload_update_id), None)
             try:
+                logger.info(
+                    "[webhook] worker=%s start update_id=%s backend=%s",
+                    worker_id,
+                    payload_update_id,
+                    "redis" if _use_redis_webhook_queue else "in_process",
+                )
                 if (not _bot_ready) or (_bot_application is None):
                     _pending_webhook_updates.append(payload)
                     continue
@@ -1080,6 +1086,7 @@ async def lifespan(_: FastAPI):
                         process_task.cancel()
                         logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
                 _record_dispatch_latency(str(payload_update_id), started_at)
+                logger.info("[webhook] worker=%s finished update_id=%s", worker_id, payload_update_id)
             except Exception as exc:
                 logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
             finally:
@@ -1353,6 +1360,10 @@ async def _telegram_webhook_route(req: Request) -> dict:
     if (not _bot_ready) or (_bot_application is None):
         try:
             payload = await req.json()
+            logger.info(
+                "[webhook] ingress queued while bot_not_ready update_id=%s",
+                (payload or {}).get("update_id", "?"),
+            )
             _pending_webhook_updates.append(payload)
             logger.warning(
                 "[webhook] bot_not_ready — update queued size=%d",
@@ -1370,6 +1381,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
         update_type = next(
             (k for k in (data or {}) if k not in ("update_id",)), "unknown"
         )
+        logger.info("[webhook] ingress received update_id=%s type=%s", update_id, update_type)
         logger.debug("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
         if _webhook_dispatch_queue is None:
             _pending_webhook_updates.append(data)
@@ -1398,6 +1410,11 @@ async def _telegram_webhook_route(req: Request) -> dict:
             _webhook_dispatch_queue.put_nowait(data)
             # Removed by worker pop(update_id) when processed; unmatched IDs are bounded by queue volume.
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
+            logger.info(
+                "[webhook] ingress enqueued update_id=%s backend=in_process size=%s",
+                update_id,
+                int(_webhook_dispatch_queue.qsize()),
+            )
             return {
                 "ok": True,
                 "dispatched": True,
