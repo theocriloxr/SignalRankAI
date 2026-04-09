@@ -40,7 +40,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
 
     async def _do():
         # Resolve client inside _do() so test patches to get_client are respected at call time
-        _client = httpx_client.get_client()
+        _client = httpx_client.get_client("polygon")
         if _client is None:
             logger.debug("polygon_adapter: httpx client unavailable")
             return []

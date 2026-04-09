@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Callable, Optional
+from utils import proxy_manager
 
 try:
     import httpx
@@ -12,26 +13,33 @@ except Exception:  # pragma: no cover - optional dependency
 
 logger = logging.getLogger(__name__)
 
-_CLIENT: Optional["httpx.AsyncClient"] = None
+_CLIENTS: dict[str, "httpx.AsyncClient"] = {}
 
 
-def get_client() -> Optional["httpx.AsyncClient"]:
-    global _CLIENT
+def get_client(provider: str | None = None) -> Optional["httpx.AsyncClient"]:
+    global _CLIENTS
     if httpx is None:
         return None
-    if _CLIENT is None:
-        _CLIENT = httpx.AsyncClient(timeout=10.0)
-    return _CLIENT
+    proxy_url = proxy_manager.next_proxy_url_sync()
+    key = proxy_url or "__direct__"
+    client = _CLIENTS.get(key)
+    if client is not None:
+        return client
+    kwargs: dict[str, Any] = {"timeout": 10.0}
+    if proxy_url:
+        kwargs["proxy"] = proxy_url
+    _CLIENTS[key] = httpx.AsyncClient(**kwargs)
+    return _CLIENTS[key]
 
 
 async def close_client():
-    global _CLIENT
-    if _CLIENT is not None:
+    global _CLIENTS
+    for client in list(_CLIENTS.values()):
         try:
-            await _CLIENT.aclose()
+            await client.aclose()
         except Exception:
             logger.exception("failed to close httpx client")
-        _CLIENT = None
+    _CLIENTS = {}
 
 
 async def retry_async(fn: Callable[..., Any], retries: int = 3, backoff: float = 1.0, *args, **kwargs) -> Any:

@@ -16,6 +16,8 @@ except Exception:
     requests = None
 
 from utils.async_runner import run_sync
+from utils import httpx_client
+from utils import proxy_manager
 
 
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
@@ -38,15 +40,30 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     params = {"symbol": sym, "interval": interval, "limit": limit}
 
     try:
-        # Prefer requests when available (tests patch requests.get)
-        if requests is not None:
-            resp = await __import__('asyncio').to_thread(requests.get, url, params=params, timeout=10)
+        client = httpx_client.get_client("binance")
+        if client is not None:
+            resp = await client.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                logger.debug("binance_adapter HTTP %s %s", resp.status_code, getattr(resp, "text", "")[:200])
+                return []
+            payload = resp.json()
+        elif requests is not None:
+            px = proxy_manager.ccxt_proxy_config_sync().get("proxies") or None
+            resp = await __import__("asyncio").to_thread(
+                requests.get,
+                url,
+                params=params,
+                timeout=10,
+                proxies=px,
+            )
+            if not getattr(resp, "ok", False):
+                return []
             payload = resp.json()
         else:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, params=params)
+            async with httpx.AsyncClient(timeout=10.0) as client_fallback:
+                resp = await client_fallback.get(url, params=params)
                 if resp.status_code != 200:
-                    logger.debug("binance_adapter HTTP %s %s", resp.status_code, getattr(resp, 'text', '')[:200])
+                    logger.debug("binance_adapter HTTP %s %s", resp.status_code, getattr(resp, "text", "")[:200])
                     return []
                 payload = resp.json()
 

@@ -27,7 +27,7 @@ def _map_timeframe(timeframe: str) -> str:
 
 
 async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200, timeout: int = 10) -> List[Dict[str, Any]]:
-    client = httpx_client.get_client()
+    client = httpx_client.get_client("bybit")
     if client is None:
         return []
 
