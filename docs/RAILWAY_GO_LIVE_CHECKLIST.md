@@ -55,6 +55,10 @@ Recommended:
 
 ## 4. Smoke Tests (immediately after deploy)
 
+Run one command first:
+
+- python scripts/post_deploy_smoke.py
+
 1. Health checks:
    - GET /health
    - GET /ready
