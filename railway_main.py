@@ -1410,8 +1410,44 @@ async def _telegram_webhook_route(req: Request) -> dict:
         )
         logger.info("[webhook] ingress received update_id=%s type=%s", update_id, update_type)
         logger.debug("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
-        asyncio.create_task(_enqueue_webhook_update_async(data))
-        return {"ok": True, "accepted": True, "queued": True}
+        if _webhook_dispatch_queue is None:
+            _pending_webhook_updates.append(data)
+            logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
+            return {"ok": True, "queued": True, "dispatcher": "pending_buffer"}
+
+        if _use_redis_webhook_queue:
+            enqueue_task = asyncio.create_task(_enqueue_webhook_update_async(data))
+            enqueue_task.add_done_callback(_log_webhook_enqueue_task_error)
+            q_depth = 0
+            try:
+                q_depth = int(
+                    await asyncio.wait_for(
+                        state.webhook_queue_depth(),
+                        timeout=0.05,
+                    )
+                )
+            except Exception:
+                pass
+            return {
+                "ok": True,
+                "queued": True,
+                "queue_backend": "redis",
+                "queue_size": q_depth,
+            }
+
+        try:
+            _webhook_dispatch_queue.put_nowait(data)
+            _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
+            return {
+                "ok": True,
+                "dispatched": True,
+                "queue_size": int(_webhook_dispatch_queue.qsize()),
+                "queue_backend": "in_process",
+            }
+        except asyncio.QueueFull:
+            webhook_queue_full_total.inc()
+            logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
+            return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "in_process"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
         return {"ok": False, "queued": False, "error": "internal_error"}
@@ -1419,41 +1455,57 @@ async def _telegram_webhook_route(req: Request) -> dict:
 
 async def _enqueue_webhook_update_async(data: dict) -> None:
     update_id = (data or {}).get("update_id", "?")
-    if _webhook_dispatch_queue is None:
+    queue_ref = _webhook_dispatch_queue
+    if queue_ref is None:
         _pending_webhook_updates.append(data)
         logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
         return
 
-    if _use_redis_webhook_queue:
-        try:
-            enqueued = await asyncio.wait_for(
-                state.enqueue_webhook_update(
-                    data,
-                    max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
-                ),
-                timeout=2.5,
-            )
-        except asyncio.TimeoutError:
-            enqueued = False
-            logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
-        except Exception as exc:
-            enqueued = False
-            logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
-        if enqueued:
-            _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
-            return
+    try:
+        enqueued = await asyncio.wait_for(
+            state.enqueue_webhook_update(
+                data,
+                max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
+            ),
+            timeout=2.5,
+        )
+    except asyncio.TimeoutError:
+        enqueued = False
+        logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
+    except Exception as exc:
+        enqueued = False
+        logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
+    if enqueued:
+        _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
+        return
 
     try:
-        _webhook_dispatch_queue.put_nowait(data)
+        queue_ref = _webhook_dispatch_queue
+        if queue_ref is None:
+            _pending_webhook_updates.append(data)
+            logger.warning("[webhook] dispatcher_not_ready during fallback enqueue update_id=%s", update_id)
+            return
+        queue_ref.put_nowait(data)
         _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
         logger.info(
             "[webhook] ingress enqueued update_id=%s backend=in_process size=%s",
             update_id,
-            int(_webhook_dispatch_queue.qsize()),
+            int(queue_ref.qsize()),
         )
     except asyncio.QueueFull:
         webhook_queue_full_total.inc()
         logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
+
+
+def _log_webhook_enqueue_task_error(task: asyncio.Task) -> None:
+    try:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning("[webhook] async enqueue task failed: %s", exc)
+    except Exception:
+        pass
 
 
 @app.get("/telegram/webhook_status")

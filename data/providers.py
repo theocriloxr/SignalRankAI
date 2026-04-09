@@ -92,13 +92,13 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
 
     try:
         proxy_url = proxy_manager.next_proxy_url_sync()
-        cfg: dict = {
+        exchange_config: dict = {
             "enableRateLimit": True,
             "timeout": 2500,
         }
         if proxy_url:
-            cfg["proxies"] = {"http": proxy_url, "https": proxy_url}
-        exchange = ccxt.binance(cfg)
+            exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
+        exchange = ccxt.binance(exchange_config)
         rows = exchange.fetch_ohlcv(
             _normalize_binance_symbol(symbol),
             timeframe=_map_binance_timeframe(timeframe),
