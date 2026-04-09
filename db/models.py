@@ -4,10 +4,10 @@ from datetime import datetime
 from typing import Optional
 from utils.timeutils import now_utc_naive
 from typing import Any, Dict, Optional
-from uuid import uuid4
+from uuid import uuid4, UUID as PyUUID
 
 from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Table, Column, MetaData
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -685,6 +685,20 @@ class MT5Credentials(Base):
     metaapi_account_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Proxy nodes (dynamic proxy manager pool)
+# ---------------------------------------------------------------------------
+class ProxyNode(Base):
+    __tablename__ = "proxy_nodes"
+
+    id: Mapped[PyUUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    proxy_url: Mapped[str] = mapped_column(String(512), unique=True, index=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    fail_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_checked: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    latency_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
 
 # ---------------------------------------------------------------------------
