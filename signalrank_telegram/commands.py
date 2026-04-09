@@ -4023,7 +4023,8 @@ async def start_command(update, context):
 			_IKB("✅ I Agree", callback_data="agree_terms"),
 			_IKB("❌ Decline", callback_data="decline_terms"),
 		]])
-		await update.message.reply_text(disclaimer, parse_mode="MarkdownV2", reply_markup=_kbd)
+		# Use plain text here to avoid MarkdownV2 parsing failures that can drop /start replies.
+		await update.message.reply_text(disclaimer, reply_markup=_kbd)
 		return  # Hold back welcome message until terms are accepted
 
 	# Terms already accepted — send normal welcome
