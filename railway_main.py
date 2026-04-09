@@ -1396,7 +1396,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
             if not enqueued:
                 webhook_queue_full_total.inc()
                 logger.warning("[webhook] redis_queue_full — dropping update_id=%s", update_id)
-                return {"ok": True, "queued": False, "dropped": "queue_full", "queue_backend": "redis"}
+                return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "redis"}
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
             q_depth = await state.webhook_queue_depth()
             return {
@@ -1423,7 +1423,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
         except asyncio.QueueFull:
             webhook_queue_full_total.inc()
             logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
-            return {"ok": True, "queued": False, "dropped": "queue_full", "queue_backend": "in_process"}
+            return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "in_process"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
         return {"ok": True, "queued": False, "error": str(exc)}
