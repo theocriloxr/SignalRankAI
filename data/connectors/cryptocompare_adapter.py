@@ -31,16 +31,21 @@ async def _fetch_for_quote(client, base_raw: str, tsym: str, endpoint: str, aggr
     api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
     headers = {"authorization": f"Apikey {api_key}"} if api_key else {}
 
+    request_timeout = min(2.5, max(0.1, float(timeout)))
+
     async def call():
         if client is None:
             raise RuntimeError("no httpx client")
-        resp = await client.get(url, params=params, headers=headers, timeout=timeout)
+        resp = await client.get(url, params=params, headers=headers, timeout=request_timeout)
         resp.raise_for_status()
         return resp.json()
 
     data = None
     try:
-        data = await retry_async(call, retries=2, backoff=1.0)
+        data = await asyncio.wait_for(
+            retry_async(call, retries=2, backoff=1.0),
+            timeout=request_timeout,
+        )
     except Exception as e:
         logger.debug("[cryptocompare] request failed %s %s", base_raw, e)
         return []
@@ -83,6 +88,7 @@ async def cryptocompare_get_candles(symbol: str, timeframe: str, timeout: int = 
             break
 
     endpoint, aggregate = _map_tf(timeframe)
+    request_timeout = min(2.5, max(0.1, float(timeout)))
 
     client = get_client("cryptocompare")
     # Try preferred quote, then fallbacks
@@ -96,7 +102,16 @@ async def cryptocompare_get_candles(symbol: str, timeframe: str, timeout: int = 
                 params = {"fsym": base_raw, "tsym": tsym, "limit": 200, "aggregate": aggregate}
                 api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
                 headers = {"authorization": f"Apikey {api_key}"} if api_key else {}
-                resp = requests.get(url, params=params, headers=headers, timeout=timeout)
+                resp = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        requests.get,
+                        url,
+                        params=params,
+                        headers=headers,
+                        timeout=request_timeout,
+                    ),
+                    timeout=request_timeout,
+                )
                 if not resp.ok:
                     continue
                 payload = resp.json() or {}
@@ -118,7 +133,14 @@ async def cryptocompare_get_candles(symbol: str, timeframe: str, timeout: int = 
                     ])
                 continue
             else:
-                out = await _fetch_for_quote(client, base_raw, tsym, endpoint, aggregate, timeout)
+                out = await _fetch_for_quote(
+                    client,
+                    base_raw,
+                    tsym,
+                    endpoint,
+                    aggregate,
+                    request_timeout,
+                )
                 if out:
                     return out
         except Exception:

@@ -1287,16 +1287,25 @@ async def async_get_candles(asset, timeframe):
 
         symbol_for_providers = asset
 
+        provider_timeout_s = 2.5
         for provider_name, fetch_fn in provs:
             try:
-                # Call the async provider with a small timeout kw; retry via shared async helper
-                candles = await retry_async_httpx(lambda: fetch_fn(symbol_for_providers, timeframe, timeout=10), retries=3, backoff=1)
+                # Strict per-provider timeout so slow upstreams fail fast and the chain can fallback.
+                candles = await asyncio.wait_for(
+                    fetch_fn(symbol_for_providers, timeframe, timeout=provider_timeout_s),
+                    timeout=provider_timeout_s,
+                )
                 if candles and len(candles) >= 20:
                     mark_provider_result(provider_name, True)
                     logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                     return candles
                 else:
                     mark_provider_result(provider_name, False)
+            except asyncio.TimeoutError:
+                mark_provider_result(provider_name, False)
+                logger.warning(
+                    f"[data][async] provider={provider_name} symbol={asset} timeout={provider_timeout_s}s"
+                )
             except Exception as e:
                 mark_provider_result(provider_name, False)
                 logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import List, Dict, Any
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,12 @@ from utils import httpx_client
 from utils import proxy_manager
 
 
-async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
+async def _async_get_candles(
+    symbol: str,
+    timeframe: str,
+    limit: int = 200,
+    timeout: float = 2.5,
+) -> List[Dict[str, Any]]:
     """Async implementation using httpx.AsyncClient.
 
     Returns list of {timestamp, open, high, low, close, volume} or empty list.
@@ -39,29 +45,39 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     url = "https://api.binance.com/api/v3/klines"
     params = {"symbol": sym, "interval": interval, "limit": limit}
 
+    request_timeout = min(2.5, max(0.1, float(timeout)))
     try:
         client = httpx_client.get_client("binance")
         if client is not None:
-            resp = await client.get(url, params=params, timeout=10)
+            resp = await asyncio.wait_for(
+                client.get(url, params=params, timeout=request_timeout),
+                timeout=request_timeout,
+            )
             if resp.status_code != 200:
                 logger.debug("binance_adapter HTTP %s %s", resp.status_code, getattr(resp, "text", "")[:200])
                 return []
             payload = resp.json()
         elif requests is not None:
             px = proxy_manager.ccxt_proxy_config_sync().get("proxies") or None
-            resp = await __import__("asyncio").to_thread(
-                requests.get,
-                url,
-                params=params,
-                timeout=10,
-                proxies=px,
+            resp = await asyncio.wait_for(
+                __import__("asyncio").to_thread(
+                    requests.get,
+                    url,
+                    params=params,
+                    timeout=request_timeout,
+                    proxies=px,
+                ),
+                timeout=request_timeout,
             )
             if not getattr(resp, "ok", False):
                 return []
             payload = resp.json()
         else:
-            async with httpx.AsyncClient(timeout=10.0) as client_fallback:
-                resp = await client_fallback.get(url, params=params)
+            async with httpx.AsyncClient(timeout=request_timeout) as client_fallback:
+                resp = await asyncio.wait_for(
+                    client_fallback.get(url, params=params),
+                    timeout=request_timeout,
+                )
                 if resp.status_code != 200:
                     logger.debug("binance_adapter HTTP %s %s", resp.status_code, getattr(resp, "text", "")[:200])
                     return []
@@ -90,9 +106,14 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return []
 
 
-def get_candles(symbol: str, timeframe: str, limit: int = 200) -> List[Dict[str, Any]]:
+def get_candles(
+    symbol: str,
+    timeframe: str,
+    limit: int = 200,
+    timeout: float = 2.5,
+) -> List[Dict[str, Any]]:
     """Sync-compatible wrapper that runs the async client safely.
 
     Uses `run_sync` shim to avoid `asyncio.run` in running loops.
     """
-    return run_sync(_async_get_candles(symbol, timeframe, limit=limit))
+    return run_sync(_async_get_candles(symbol, timeframe, limit=limit, timeout=timeout))

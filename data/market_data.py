@@ -134,7 +134,7 @@ async def fetch_candles_with_circuit_breaker(
     symbol: str,
     timeframe: str,
     limit: int = 200,
-    timeout: float = 3.0,
+    timeout: float = 2.5,
 ) -> list:
     """Fetch OHLCV data with async circuit-breaker fallback chain.
 
@@ -143,7 +143,7 @@ async def fetch_candles_with_circuit_breaker(
         2. yfinance (universal; 3 s timeout)
         3. MetaApi live price only (price-only stub for non-zero return)
 
-    Each provider is wrapped in ``asyncio.wait_for(..., timeout=timeout)`` so a
+    Each provider is wrapped in ``asyncio.wait_for(..., timeout=2.5)`` so a
     hanging upstream never blocks the engine.
     """
 
@@ -605,9 +605,10 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
 
         async def _fetch_one(tf: str):
             try:
+                strict_timeout = min(2.5, max(0.1, rest_timeout))
                 candles = await asyncio.wait_for(
                     async_get_candles(asset, tf),
-                    timeout=max(1.0, rest_timeout),
+                    timeout=strict_timeout,
                 )
                 if candles:
                     return tf, {

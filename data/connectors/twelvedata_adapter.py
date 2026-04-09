@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import List, Dict, Any
 import os
 import logging
+import asyncio
 
 try:
     import httpx
@@ -31,9 +32,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     if client is None:
         logger.debug("twelvedata_adapter: httpx client unavailable")
         return []
+    request_timeout = 2.5
 
     async def _do():
-        resp = await client.get(url, params=params)
+        resp = await client.get(url, params=params, timeout=request_timeout)
         if resp.status_code != 200:
             return []
         data = resp.json()
@@ -60,7 +62,10 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
         return candles
 
     try:
-        return await httpx_client.retry_async(_do, retries=2, backoff=0.5)
+        return await asyncio.wait_for(
+            httpx_client.retry_async(_do, retries=2, backoff=0.5),
+            timeout=request_timeout,
+        )
     except Exception as e:
         logger.debug("twelvedata_adapter error: %s", e)
         return []
