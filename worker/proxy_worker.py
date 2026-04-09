@@ -57,7 +57,7 @@ async def fetch_proxy_candidates() -> list[str]:
     if not url:
         return []
     try:
-        async with httpx.AsyncClient(timeout=max(2.0, _VALIDATION_TIMEOUT_S)) as client:
+        async with httpx.AsyncClient(timeout=_VALIDATION_TIMEOUT_S) as client:
             resp = await client.get(url)
             if resp.status_code != 200:
                 logger.warning("[proxy_worker] provider_fetch_failed status=%s url=%s", resp.status_code, url)

@@ -26,15 +26,7 @@ _PROXY_POOL_KEY = "proxy_pool:active"
 
 
 def _redis_url() -> str:
-    """Resolve Redis URL from supported env aliases in priority order.
-
-    Priority:
-    1) REDIS_URL
-    2) REDIS_PRIVATE_URL
-    3) REDIS_PUBLIC_URL
-    4) REDIS_INTERNAL_URL
-    5) REDIS_TLS_URL
-    """
+    """Checks env vars in order: REDIS_URL, REDIS_PRIVATE_URL, REDIS_PUBLIC_URL, REDIS_INTERNAL_URL, REDIS_TLS_URL."""
     for key in ("REDIS_URL", "REDIS_PRIVATE_URL", "REDIS_PUBLIC_URL", "REDIS_INTERNAL_URL", "REDIS_TLS_URL"):
         val = (os.getenv(key) or "").strip()
         if val:
