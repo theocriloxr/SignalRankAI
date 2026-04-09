@@ -21,7 +21,7 @@ def get_client(provider: str | None = None) -> Optional["httpx.AsyncClient"]:
     if httpx is None:
         return None
     proxy_url = proxy_manager.next_proxy_url_sync()
-    key = proxy_url or "__direct__"
+    key = f"{provider or '__default__'}|{proxy_url or '__direct__'}"
     client = _CLIENTS.get(key)
     if client is not None:
         return client
