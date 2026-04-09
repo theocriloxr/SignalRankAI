@@ -27,7 +27,7 @@ async def _async_get_candles(symbol: str, timeframe: str, limit: int = 200) -> L
     tf_map = {"5m": "5min", "15m": "15min", "1h": "1h", "4h": "4h", "1d": "1day"}
     interval = tf_map.get(timeframe, "1h")
     params = {"symbol": symbol, "interval": interval, "outputsize": 200, "apikey": api_key}
-    client = httpx_client.get_client()
+    client = httpx_client.get_client("twelvedata")
     if client is None:
         logger.debug("twelvedata_adapter: httpx client unavailable")
         return []

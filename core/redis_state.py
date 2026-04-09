@@ -35,11 +35,22 @@ def _redis_max_connections() -> int:
     except Exception:
         return 60
 
+
+def _resolve_redis_url() -> Optional[str]:
+    for key in ("REDIS_URL", "REDIS_PRIVATE_URL", "REDIS_PUBLIC_URL", "REDIS_INTERNAL_URL", "REDIS_TLS_URL"):
+        val = (os.getenv(key) or "").strip()
+        if val:
+            if key != "REDIS_URL" and not (os.getenv("REDIS_URL") or "").strip():
+                os.environ["REDIS_URL"] = val
+            return val
+    return None
+
+
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
     """Mark that a signal was delivered to a user. No-op if Redis unavailable."""
     r = None
     try:
-        url = (os.getenv("REDIS_URL") or "").strip()
+        url = _resolve_redis_url()
         if not url:
             return
         if redis is None:
@@ -67,7 +78,7 @@ def was_signal_delivered_sync(user_id: int, signal_id: str) -> bool:
     """Check if a signal was delivered to a user. Returns False if Redis unavailable."""
     r = None
     try:
-        url = (os.getenv("REDIS_URL") or "").strip()
+        url = _resolve_redis_url()
         if not url:
             return False
         if redis is None:
@@ -95,7 +106,7 @@ def get_delivered_signals_sync(user_id: int) -> set:
     """Get all signal_ids delivered to a user. Returns empty set if Redis unavailable."""
     r = None
     try:
-        url = (os.getenv("REDIS_URL") or "").strip()
+        url = _resolve_redis_url()
         if not url:
             return set()
         if redis is None:
@@ -153,7 +164,7 @@ class RedisState:
         self._ensure_flush_worker()
 
     def _redis_url(self) -> Optional[str]:
-        return (os.getenv("REDIS_URL") or "").strip() or None
+        return _resolve_redis_url()
 
     def _get_pg_dsn(self) -> Optional[str]:
         if self._pg_dsn is not None:

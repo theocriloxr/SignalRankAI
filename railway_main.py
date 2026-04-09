@@ -26,12 +26,28 @@ from core.redis_state import state
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_redis_url() -> str:
+    for key in ("REDIS_URL", "REDIS_PRIVATE_URL", "REDIS_PUBLIC_URL", "REDIS_INTERNAL_URL", "REDIS_TLS_URL"):
+        val = (os.getenv(key) or "").strip()
+        if val:
+            if key != "REDIS_URL" and not (os.getenv("REDIS_URL") or "").strip():
+                os.environ["REDIS_URL"] = val
+            return val
+    return ""
+
+
 # Ensure INFO-level logs are visible in Railway regardless of uvicorn's logging config.
 try:
     from utils.logging_config import setup_logging as _setup_logging
     _setup_logging()
 except Exception:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
+
+if _resolve_redis_url():
+    logger.info("[startup] Redis URL detected; webhook redis queue can be enabled")
+else:
+    logger.warning("[startup] Redis URL not detected; webhook queue will run in-process")
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
@@ -1396,7 +1412,7 @@ async def _telegram_webhook_route(req: Request) -> dict:
             if not enqueued:
                 webhook_queue_full_total.inc()
                 logger.warning("[webhook] redis_queue_full — dropping update_id=%s", update_id)
-                return {"ok": True, "queued": False, "dropped": "queue_full", "queue_backend": "redis"}
+                return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "redis"}
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
             q_depth = await state.webhook_queue_depth()
             return {
@@ -1423,10 +1439,10 @@ async def _telegram_webhook_route(req: Request) -> dict:
         except asyncio.QueueFull:
             webhook_queue_full_total.inc()
             logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
-            return {"ok": True, "queued": False, "dropped": "queue_full", "queue_backend": "in_process"}
+            return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "in_process"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
-        return {"ok": True, "queued": False, "error": str(exc)}
+        return {"ok": False, "queued": False, "error": "internal_error"}
 
 
 @app.get("/telegram/webhook_status")

@@ -21,7 +21,13 @@ class Config:
 	def __init__(self):
 		# Database and cache
 		self.DATABASE_URL = os.getenv("DATABASE_URL", "")
-		self.REDIS_URL = os.getenv("REDIS_URL", "")
+		self.REDIS_URL = self._first_env(
+			"REDIS_URL",
+			"REDIS_PRIVATE_URL",
+			"REDIS_PUBLIC_URL",
+			"REDIS_INTERNAL_URL",
+			"REDIS_TLS_URL",
+		)
 
 		# Telegram bot and owner(s)
 		self.TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
@@ -132,6 +138,13 @@ class Config:
 			return int(raw)
 		except Exception:
 			return default
+
+	def _first_env(self, *names: str) -> str:
+		for name in names:
+			raw = os.getenv(str(name), "")
+			if raw and raw.strip():
+				return raw.strip()
+		return ""
 
 	def _env_int_set(self, name: str) -> set[int]:
 		raw = (os.getenv(name) or "").strip()

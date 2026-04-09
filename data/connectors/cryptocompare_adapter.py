@@ -84,7 +84,7 @@ async def cryptocompare_get_candles(symbol: str, timeframe: str, timeout: int = 
 
     endpoint, aggregate = _map_tf(timeframe)
 
-    client = get_client()
+    client = get_client("cryptocompare")
     # Try preferred quote, then fallbacks
     for tsym in (preferred_quote, "USDT", "USD", "USDC", "BUSD"):
         try:

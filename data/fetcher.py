@@ -1282,17 +1282,12 @@ async def async_get_candles(asset, timeframe):
         # Import registry locally to avoid import cycles at module import time
         from data.connector_registry import get_async_providers_for_asset
 
-        # Build provider list
+        # Build provider list in strict fallback order.
         provs = get_async_providers_for_asset(asset_type)
-
-        # Split healthy/unhealthy similar to sync path
-        healthy = [p for p in provs if provider_is_healthy(p[0])]
-        unhealthy = [p for p in provs if not provider_is_healthy(p[0])]
 
         symbol_for_providers = asset
 
-        # Try healthy first, then unhealthy
-        for provider_name, fetch_fn in healthy + unhealthy:
+        for provider_name, fetch_fn in provs:
             try:
                 # Call the async provider with a small timeout kw; retry via shared async helper
                 candles = await retry_async_httpx(lambda: fetch_fn(symbol_for_providers, timeframe, timeout=10), retries=3, backoff=1)
@@ -1307,7 +1302,7 @@ async def async_get_candles(asset, timeframe):
                 logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")
                 continue
 
-        logger.warning(f"[data][async] fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+        logger.warning("[WARN] All providers failed for %s, skipping...", asset)
         return []
     except Exception:
         logger.exception("async_get_candles failed for %s %s", asset, timeframe)

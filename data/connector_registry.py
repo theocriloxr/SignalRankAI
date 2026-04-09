@@ -54,43 +54,44 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     asset_type: 'crypto' | 'fx' | 'stock'
     """
     providers: List[Tuple[str, Callable]] = []
-
-    # Try to import connector adapters first (sync wrappers)
-    try:
-        from data.connectors import binance_get_candles
-        providers.append(("binance_connector", _wrap_callable(binance_get_candles)))
-    except Exception:
-        pass
+    kind = str(asset_type or "").lower().strip()
+    if kind == "commodity":
+        kind = "stock"
 
     try:
-        from data.connectors import yfinance_get_candles
-        providers.append(("yfinance_connector", _wrap_callable(yfinance_get_candles)))
+        from data import connectors as c
     except Exception:
-        pass
+        c = None
 
-    try:
-        from data.connectors import polygon_get_candles, twelvedata_get_candles
-        providers.append(("polygon_connector", _wrap_callable(polygon_get_candles)))
-        providers.append(("twelvedata_connector", _wrap_callable(twelvedata_get_candles)))
-    except Exception:
-        pass
-    try:
-        from data.connectors import cryptocompare_get_candles
-        providers.append(("cryptocompare_connector", _wrap_callable(cryptocompare_get_candles)))
-    except Exception:
-        pass
+    if kind == "crypto":
+        ordered = [
+            ("binance_connector", getattr(c, "binance_get_candles", None)),
+            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
+            ("cryptocompare_connector", getattr(c, "cryptocompare_get_candles", None)),
+        ]
+    else:
+        # Traditional assets: prefer premium feeds first, then yfinance safety net.
+        ordered = [
+            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+        ]
 
-    # Fall back to legacy providers if connectors absent
+    for name, fn in ordered:
+        if fn is not None:
+            providers.append((name, _wrap_callable(fn)))
+
+    # Final legacy safety net in same priority shape.
     try:
         from data import providers as legacy
-        if asset_type == "crypto":
-            providers.append(("yahoo_legacy", _wrap_callable(legacy.fetch_yahoo_candles)))
-        if asset_type == "stock":
-            providers.append(("yahoo_legacy", _wrap_callable(legacy.fetch_yahoo_candles)))
-            providers.append(("polygon_legacy", _wrap_callable(legacy.fetch_polygon_candles)))
-            providers.append(("twelvedata_legacy", _wrap_callable(legacy.fetch_twelvedata_candles)))
-        if asset_type == "fx":
-            providers.append(("oanda_legacy", _wrap_callable(legacy.fetch_oanda_candles)))
+        if kind != "crypto":
+            providers.extend(
+                [
+                    ("polygon_legacy", _wrap_callable(legacy.fetch_polygon_candles)),
+                    ("twelvedata_legacy", _wrap_callable(legacy.fetch_twelvedata_candles)),
+                    ("yahoo_legacy", _wrap_callable(legacy.fetch_yahoo_candles)),
+                ]
+            )
     except Exception:
         pass
 
@@ -104,47 +105,35 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
     return the same candle list as sync providers.
     """
     providers: List[Tuple[str, Callable]] = []
+    kind = str(asset_type or "").lower().strip()
+    if kind == "commodity":
+        kind = "stock"
 
     try:
-        from data.connectors import binance_get_candles, yfinance_get_candles
+        from data import connectors as c
     except Exception:
-        binance_get_candles = None
-        yfinance_get_candles = None
+        c = None
 
-    try:
-        from data.connectors import polygon_get_candles, twelvedata_get_candles
-    except Exception:
-        polygon_get_candles = None
-        twelvedata_get_candles = None
+    if kind == "crypto":
+        ordered = [
+            ("binance_connector", getattr(c, "binance_get_candles", None)),
+            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
+            (
+                "cryptocompare_connector",
+                getattr(c, "cryptocompare_get_candles_async", None)
+                or getattr(c, "cryptocompare_get_candles", None),
+            ),
+        ]
+    else:
+        # Traditional assets: premium feeds first, then yfinance fallback.
+        ordered = [
+            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+        ]
 
-    # Prefer adapter async variants when present; wrap sync ones to async
-    if binance_get_candles is not None:
-        providers.append(("binance_connector", _wrap_to_async(binance_get_candles)))
-    if yfinance_get_candles is not None:
-        providers.append(("yfinance_connector", _wrap_to_async(yfinance_get_candles)))
-    if polygon_get_candles is not None:
-        providers.append(("polygon_connector", _wrap_to_async(polygon_get_candles)))
-    if twelvedata_get_candles is not None:
-        providers.append(("twelvedata_connector", _wrap_to_async(twelvedata_get_candles)))
-    try:
-        from data.connectors import cryptocompare_get_candles
-    except Exception:
-        cryptocompare_get_candles = None
-    if cryptocompare_get_candles is not None:
-        providers.append(("cryptocompare_connector", _wrap_to_async(cryptocompare_get_candles)))
-
-    # Legacy fallbacks
-    try:
-        from data import providers as legacy
-        if asset_type == "crypto":
-            providers.append(("yahoo_legacy", _wrap_to_async(legacy.fetch_yahoo_candles)))
-        if asset_type == "stock":
-            providers.append(("yahoo_legacy", _wrap_to_async(legacy.fetch_yahoo_candles)))
-            providers.append(("polygon_legacy", _wrap_to_async(legacy.fetch_polygon_candles)))
-            providers.append(("twelvedata_legacy", _wrap_to_async(legacy.fetch_twelvedata_candles)))
-        if asset_type == "fx":
-            providers.append(("oanda_legacy", _wrap_to_async(legacy.fetch_oanda_candles)))
-    except Exception:
-        pass
+    for name, fn in ordered:
+        if fn is not None:
+            providers.append((name, _wrap_to_async(fn)))
 
     return providers

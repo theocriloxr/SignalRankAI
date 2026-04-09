@@ -9,7 +9,7 @@ from typing import Iterable
 
 import yfinance as yf
 
-from data.fetcher import fetch_market_data as fetch_market_data_rest
+from data.fetcher import async_get_candles
 from db.market_cache import get_recent_candles
 from db.session import get_session
 import requests
@@ -597,18 +597,31 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
         except Exception:
             out = out or {}
 
-    # 3. Backfill still-missing timeframes via REST fetcher
+    # 3. Backfill still-missing timeframes via async provider waterfall
     missing = [tf for tf in tfs if tf not in out]
     if missing:
-        # Fallback providers (CryptoCompare/Bybit) can be slower when Binance is blocked; allow longer by default.
+        rest: dict = {}
         rest_timeout = float(_env_int("MARKET_REST_TIMEOUT_SECONDS", 60))
-        try:
-            rest = await asyncio.wait_for(
-                asyncio.to_thread(fetch_market_data_rest, asset, missing),
-                timeout=max(1.0, rest_timeout),
-            )
-        except asyncio.TimeoutError:
-            rest = {}
+
+        async def _fetch_one(tf: str):
+            try:
+                candles = await asyncio.wait_for(
+                    async_get_candles(asset, tf),
+                    timeout=max(1.0, rest_timeout),
+                )
+                if candles:
+                    return tf, {
+                        "candles": candles,
+                        "source": "provider_fallback_chain",
+                    }
+            except asyncio.TimeoutError:
+                logger.warning(f"[market_data] provider waterfall timeout for {asset} {tf}")
+            except Exception as e:
+                logger.warning(f"[market_data] provider waterfall failed for {asset} {tf}: {e}")
+            return tf, {}
+
+        fetched = await asyncio.gather(*[_fetch_one(tf) for tf in missing], return_exceptions=False)
+        rest = {tf: payload for tf, payload in fetched if payload}
         
         # Validate and add data_age_seconds for REST data
         for tf, payload in (rest or {}).items():

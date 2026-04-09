@@ -426,7 +426,7 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
             try:
                 data = await asyncio.wait_for(fetch_market_data_cached(asset, tfs), timeout=max(5.0, per_asset_timeout))
                 if not data or not any(data.values()):
-                    logger.error(f"[engine] candle_fetch asset={asset} status=empty (no candles returned)")
+                    logger.warning("[WARN] All providers failed for %s, skipping...", asset)
                     return asset, {}
                 # Ensure indicators are present per timeframe
                 for tf, tf_data in (data or {}).items():

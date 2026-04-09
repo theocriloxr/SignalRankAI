@@ -54,7 +54,8 @@ class TestConnectorsAndValidators(unittest.TestCase):
         mock_resp.ok = True
         mock_resp.json.return_value = sample_payload
 
-        with patch("data.connectors.binance_adapter.requests.get", return_value=mock_resp):
+        with patch("data.connectors.binance_adapter.requests.get", return_value=mock_resp), \
+             patch("data.connectors.binance_adapter.httpx_client.get_client", return_value=None):
             out = get_candles("BTCUSDT", "1h", limit=10)
             self.assertIsInstance(out, list)
             self.assertEqual(len(out), 2)
