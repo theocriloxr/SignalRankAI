@@ -134,6 +134,23 @@ def _redis_queue_requested() -> bool:
     return str(os.getenv("WEBHOOK_QUEUE_USE_REDIS", "1")).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _log_task_failure(task: asyncio.Task, task_name: str) -> None:
+    try:
+        if task.cancelled():
+            logger.info("[task] %s cancelled", task_name)
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(
+                "[task] %s crashed: %s",
+                task_name,
+                exc,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+    except Exception as inspect_exc:
+        logger.warning("[task] failed to inspect %s completion state: %s", task_name, inspect_exc)
+
+
 async def _sample_outcome_latency_p95_seconds(hours: int = 24, limit: int = 500) -> float | None:
     try:
         from db.session import get_session, is_db_configured
@@ -750,7 +767,9 @@ def _start_engine_loop_in_background() -> asyncio.Task:
             logger.exception(f"[engine] background loop crashed: {exc}")
             raise
 
-    return asyncio.create_task(_runner())
+    task = asyncio.create_task(_runner())
+    task.add_done_callback(lambda t: _log_task_failure(t, "engine-loop"))
+    return task
 
 
 def _start_worker_loop_in_background() -> asyncio.Task:
@@ -770,7 +789,9 @@ def _start_worker_loop_in_background() -> asyncio.Task:
             logger.exception("[worker] background loop crashed: type=%s repr=%r", _etype, exc)
             raise
 
-    return asyncio.create_task(_runner())
+    task = asyncio.create_task(_runner())
+    task.add_done_callback(lambda t: _log_task_failure(t, "worker-loop"))
+    return task
 
 
 @asynccontextmanager
@@ -784,6 +805,7 @@ async def lifespan(_: FastAPI):
             logger.info(f"[lifespan] heartbeat: event loop alive at {time.strftime('%Y-%m-%d %H:%M:%S')}")
             await asyncio.sleep(300)
     _lifespan_heartbeat_task = asyncio.create_task(_lifespan_heartbeat())
+    _lifespan_heartbeat_task.add_done_callback(lambda t: _log_task_failure(t, "lifespan-heartbeat"))
     # ── 1) DB startup/background maintenance ───────────────────────────────────
     # Keep startup healthcheck-friendly: schedule DB-heavy work in background,
     # and only wait for bounded time when explicitly configured.
@@ -796,6 +818,7 @@ async def lifespan(_: FastAPI):
 
     try:
         startup_ops_task = asyncio.create_task(_run_startup_ops())
+        startup_ops_task.add_done_callback(lambda t: _log_task_failure(t, "startup-ops"))
         startup_maintenance_tasks.append(startup_ops_task)
         if startup_ops_timeout_s > 0:
             await asyncio.wait_for(asyncio.shield(startup_ops_task), timeout=startup_ops_timeout_s)
@@ -861,6 +884,7 @@ async def lifespan(_: FastAPI):
     )
     try:
         maintenance_task = asyncio.create_task(_run_post_startup_maintenance())
+        maintenance_task.add_done_callback(lambda t: _log_task_failure(t, "startup-maintenance"))
         startup_maintenance_tasks.append(maintenance_task)
         if maintenance_timeout_s > 0:
             await asyncio.wait_for(asyncio.shield(maintenance_task), timeout=maintenance_timeout_s)
@@ -921,6 +945,7 @@ async def lifespan(_: FastAPI):
 
     # ── Crash detection for background tasks ─────────────────────────────────
     async def _monitor_background_tasks():
+        nonlocal engine_task, worker_task
         _reported_done: set[tuple[str, int]] = set()
 
         def _report_task(name: str, task: asyncio.Task | None, expected_completion: bool = False) -> None:
@@ -937,7 +962,12 @@ async def lifespan(_: FastAPI):
                     return
                 exc = task.exception()
                 if exc is not None:
-                    logger.warning("[monitor] %s task failed: %s", name, exc)
+                    logger.error(
+                        "[monitor] %s task failed: %s",
+                        name,
+                        exc,
+                        exc_info=(type(exc), exc, exc.__traceback__),
+                    )
                     return
                 if expected_completion:
                     logger.info("[monitor] %s task completed", name)
@@ -951,6 +981,40 @@ async def lifespan(_: FastAPI):
             _report_task("Engine", engine_task, expected_completion=False)
             _report_task("Worker", worker_task, expected_completion=False)
             _report_task("Bot start", bot_start_task, expected_completion=True)
+
+            # Auto-restart critical long-running loops if they stop unexpectedly.
+            try:
+                if engine_task is not None and engine_task.done() and not engine_task.cancelled() and _run_engine:
+                    logger.warning("[monitor] restarting Engine loop after unexpected stop")
+                    engine_task = _start_engine_loop_in_background()
+            except Exception as exc:
+                logger.warning("[monitor] engine restart attempt failed: %s", exc)
+            try:
+                if worker_task is not None and worker_task.done() and not worker_task.cancelled() and _run_worker:
+                    logger.warning("[monitor] restarting Worker loop after unexpected stop")
+                    worker_task = _start_worker_loop_in_background()
+            except Exception as exc:
+                logger.warning("[monitor] worker restart attempt failed: %s", exc)
+
+            # Keep webhook worker pool healthy if any worker task crashes.
+            try:
+                desired_workers = max(4, _worker_count)
+                active_workers: list[asyncio.Task] = []
+                for idx, wt in enumerate(list(_webhook_dispatch_workers), start=1):
+                    if wt.done():
+                        _log_task_failure(wt, f"webhook-worker-{idx}")
+                        continue
+                    active_workers.append(wt)
+                _webhook_dispatch_workers.clear()
+                _webhook_dispatch_workers.extend(active_workers)
+                while len(_webhook_dispatch_workers) < desired_workers:
+                    wid = len(_webhook_dispatch_workers) + 1
+                    new_worker = asyncio.create_task(_webhook_worker(wid))
+                    new_worker.add_done_callback(lambda t, _wid=wid: _log_task_failure(t, f"webhook-worker-{_wid}"))
+                    _webhook_dispatch_workers.append(new_worker)
+                    logger.warning("[monitor] restarted webhook worker id=%s", wid)
+            except Exception as exc:
+                logger.warning("[monitor] webhook worker health check failed: %s", exc)
 
     async def _monitor_telegram_webhook_health():
         while True:
@@ -1063,12 +1127,33 @@ async def lifespan(_: FastAPI):
         """Background worker: process Telegram updates from queue."""
         while True:
             payload = None
-            if _use_redis_webhook_queue:
+            payload_source = "redis" if _use_redis_webhook_queue else "in_process"
+            consumed_in_process = False
+
+            # Important: even in Redis mode, consume local fallback items first.
+            # This prevents ingress/worker disconnect when Redis enqueue times out.
+            if _webhook_dispatch_queue is not None:
+                try:
+                    payload = _webhook_dispatch_queue.get_nowait()
+                    consumed_in_process = True
+                    payload_source = "in_process"
+                except asyncio.QueueEmpty:
+                    payload = None
+
+            if payload is None and _use_redis_webhook_queue:
                 payload = await state.dequeue_webhook_update(timeout_seconds=1)
+                payload_source = "redis"
                 if not payload:
                     continue
-            else:
+
+            if payload is None:
+                if _webhook_dispatch_queue is None:
+                    await asyncio.sleep(0.25)
+                    continue
                 payload = await _webhook_dispatch_queue.get()
+                consumed_in_process = True
+                payload_source = "in_process"
+
             payload_update_id = (payload or {}).get("update_id", "?")
             started_at = _webhook_enqueue_started_at.pop(str(payload_update_id), None)
             try:
@@ -1076,7 +1161,7 @@ async def lifespan(_: FastAPI):
                     "[webhook] worker=%s start update_id=%s backend=%s",
                     worker_id,
                     payload_update_id,
-                    "redis" if _use_redis_webhook_queue else "in_process",
+                    payload_source,
                 )
                 if (not _bot_ready) or (_bot_application is None):
                     _pending_webhook_updates.append(payload)
@@ -1110,17 +1195,25 @@ async def lifespan(_: FastAPI):
                 _record_dispatch_latency(str(payload_update_id), started_at)
                 logger.info("[webhook] worker=%s finished update_id=%s", worker_id, payload_update_id)
             except Exception as exc:
-                logger.error("[webhook] worker=%s failed processing update: %s", worker_id, exc)
+                logger.error(
+                    "[webhook] worker=%s failed processing update: %s",
+                    worker_id,
+                    exc,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
             finally:
-                if not _use_redis_webhook_queue:
+                if consumed_in_process and _webhook_dispatch_queue is not None:
                     try:
                         _webhook_dispatch_queue.task_done()
                     except Exception:
                         pass
 
     _monitor_tasks.append(asyncio.create_task(_monitor_background_tasks()))
+    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-background"))
     _monitor_tasks.append(asyncio.create_task(_monitor_telegram_webhook_health()))
+    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-webhook-health"))
     _monitor_tasks.append(asyncio.create_task(_monitor_redis_webhook_backend()))
+    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-redis-backend"))
 
     # Bounded queue + worker pool to sustain high concurrent webhook traffic.
     global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
@@ -1138,6 +1231,8 @@ async def lifespan(_: FastAPI):
         asyncio.create_task(_webhook_worker(i + 1))
         for i in range(max(4, _worker_count))
     ]
+    for idx, _wt in enumerate(_webhook_dispatch_workers, start=1):
+        _wt.add_done_callback(lambda t, _idx=idx: _log_task_failure(t, f"webhook-worker-{_idx}"))
     logger.info(
         "[webhook] dispatcher started workers=%s queue_size=%s redis_queue=%s",
         len(_webhook_dispatch_workers),
@@ -1235,6 +1330,7 @@ async def lifespan(_: FastAPI):
 
     try:
         bot_start_task = asyncio.create_task(_start_bot_bg())
+        bot_start_task.add_done_callback(lambda t: _log_task_failure(t, "bot-start"))
         print("[startup] Telegram webhook setup scheduled in background", flush=True)
     except Exception as exc:
         print(f"[startup] Could not schedule Telegram webhook setup: {exc}", flush=True)
@@ -1475,7 +1571,11 @@ def _log_webhook_enqueue_task_error(task: asyncio.Task) -> None:
             return
         exc = task.exception()
         if exc is not None:
-            logger.warning("[webhook] async enqueue task failed: %s", exc)
+            logger.error(
+                "[webhook] async enqueue task failed: %s",
+                exc,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
     except Exception:
         pass
 

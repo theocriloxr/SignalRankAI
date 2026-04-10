@@ -44,14 +44,44 @@ class Worker:
     def request_stop(self) -> None:
         self._stop.set()
 
+    def _log_task_result(self, name: str, task: asyncio.Task) -> None:
+        try:
+            if task.cancelled():
+                logger.info("[worker] task cancelled: %s", name)
+                return
+            exc = task.exception()
+            if exc is not None:
+                logger.error(
+                    "[worker] task crashed: %s err=%s",
+                    name,
+                    exc,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+        except Exception as inspect_exc:
+            logger.warning("[worker] could not inspect task state for %s: %s", name, inspect_exc)
+
+    def _spawn_task(self, name: str, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t, _name=name: self._log_task_result(_name, t))
+        return task
+
     async def run(self) -> None:
         heartbeat_interval_s = max(60, int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "300") or 300))
-        expiry_task = asyncio.create_task(self._expiry_loop())
-        ml_task: Optional[asyncio.Task] = None
-        market_monitor_task: Optional[asyncio.Task] = None
-        ws_task: Optional[asyncio.Task] = None
-        outcome_tracker_task: Optional[asyncio.Task] = None
-        drift_task: Optional[asyncio.Task] = None
+        managed_tasks: dict[str, dict[str, object]] = {}
+
+        def _register_task(name: str, factory, restart_on_failure: bool = True) -> None:
+            try:
+                task = self._spawn_task(name, factory())
+                managed_tasks[name] = {
+                    "task": task,
+                    "factory": factory,
+                    "restart": bool(restart_on_failure),
+                }
+                logger.info("[worker] task started: %s", name)
+            except Exception as exc:
+                logger.error("[worker] failed to start task %s: %s", name, exc, exc_info=True)
+
+        _register_task("expiry_loop", lambda: self._expiry_loop(), restart_on_failure=True)
 
         # Start real-time TP/SL outcome tracker — this is the core monitoring loop
         # that detects when signals hit their targets and notifies users.
@@ -61,13 +91,12 @@ class Worker:
         if _enable_worker_tracker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
-                outcome_tracker_task = asyncio.create_task(outcome_tracker.start())
+                _register_task("outcome_tracker", lambda: outcome_tracker.start(), restart_on_failure=True)
                 print("[worker] RealtimeOutcomeTracker started", flush=True)
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 print(f"[worker] Failed to start outcome tracker: {e}", flush=True)
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
-                outcome_tracker_task = None
         else:
             logger.info("[worker] RealtimeOutcomeTracker disabled for this worker instance")
 
@@ -75,72 +104,74 @@ class Worker:
         if config.MARKET_MONITOR_ENABLED:
             try:
                 from worker.market_monitor import start_market_monitor
-                market_monitor_task = asyncio.create_task(start_market_monitor())
+                _register_task("market_monitor", lambda: start_market_monitor(), restart_on_failure=True)
             except Exception as e:
                 print(f"[worker] Failed to start market monitor: {e}", flush=True)
-                market_monitor_task = None
 
         if config.CRYPTO_WS_ENABLED:
             try:
                 from data.ws_ingest import run_ws_ingestor
-
-                ws_task = asyncio.create_task(run_ws_ingestor(self._stop))
+                _register_task("ws_ingestor", lambda: run_ws_ingestor(self._stop), restart_on_failure=True)
             except Exception:
-                ws_task = None
+                logger.exception("[worker] Failed to start WS ingestor")
 
         # ML daily retrain loop (optional)
         if config.ML_TRAIN_ENABLED:
             try:
-                ml_task = asyncio.create_task(self._ml_train_loop())
+                _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
             except Exception as e:
                 print(f"[worker] Failed to start ML train loop: {e}", flush=True)
-                ml_task = None
 
         # Data drift monitor loop (enabled by default).
         if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
             try:
-                drift_task = asyncio.create_task(self._drift_monitor_loop())
+                _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
                 print(f"[worker] Failed to start drift monitor loop: {e}", flush=True)
-                drift_task = None
         import time
         last_heartbeat = time.time()
         try:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
+                for name, spec in list(managed_tasks.items()):
+                    task = spec.get("task")
+                    if not isinstance(task, asyncio.Task):
+                        continue
+                    if not task.done():
+                        continue
+
+                    restart = bool(spec.get("restart", False))
+                    if restart and not self._stop.is_set():
+                        try:
+                            factory = spec.get("factory")
+                            if factory is None:
+                                continue
+                            logger.warning("[worker] restarting crashed task: %s", name)
+                            new_task = self._spawn_task(name, factory())
+                            spec["task"] = new_task
+                        except Exception as exc:
+                            logger.error("[worker] failed to restart task %s: %s", name, exc, exc_info=True)
+
                 now = time.time()
                 if now - last_heartbeat > heartbeat_interval_s:
                     logger.debug("[worker] heartbeat: running (interval=%ss)", heartbeat_interval_s)
                     last_heartbeat = now
         finally:
-            if outcome_tracker_task is not None:
+            if "outcome_tracker" in managed_tasks:
                 try:
                     from engine.realtime_outcome_tracker import outcome_tracker
                     await outcome_tracker.stop()
                 except Exception:
                     pass
-                outcome_tracker_task.cancel()
-                with contextlib.suppress(Exception):
-                    await outcome_tracker_task
-            if market_monitor_task is not None:
-                market_monitor_task.cancel()
-                with contextlib.suppress(Exception):
-                    await market_monitor_task
-            if ws_task is not None:
-                ws_task.cancel()
-                with contextlib.suppress(Exception):
-                    await ws_task
-            if ml_task is not None:
-                ml_task.cancel()
-                with contextlib.suppress(Exception):
-                    await ml_task
-            if drift_task is not None:
-                drift_task.cancel()
-                with contextlib.suppress(Exception):
-                    await drift_task
-            expiry_task.cancel()
-            with contextlib.suppress(Exception):
-                await expiry_task
+
+            for name, spec in list(managed_tasks.items()):
+                task = spec.get("task")
+                if not isinstance(task, asyncio.Task):
+                    continue
+                task.cancel()
+                with contextlib.suppress(BaseException):
+                    await task
+                logger.info("[worker] task stopped: %s", name)
 
     async def _expiry_loop(self) -> None:
         # Runs periodically; safe no-op when DATABASE_URL not configured.
@@ -153,8 +184,7 @@ class Worker:
                             await session.commit()
                     await run_with_db_retry(_do_expire)
             except Exception:
-                # Keep worker alive; production version should log structured errors.
-                pass
+                logger.exception("[worker] subscription expiry loop iteration failed")
             await asyncio.sleep(3600)
 
     async def _ml_train_loop(self) -> None:
