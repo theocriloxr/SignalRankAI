@@ -25,8 +25,12 @@ except Exception:  # pragma: no cover
 _KILL_KEY = "signalrankai:killswitch"
 _EXTRA_SIGNALS_PREFIX = "signalrankai:extra_signals:"
 _DELIVERED_SIGNAL_PREFIX = "signalrankai:delivered_signal:"
-_WEBHOOK_QUEUE_KEY = "signalrankai:webhook:updates"
+_WEBHOOK_QUEUE_KEY = "telegram_updates_queue"
 _SIGNAL_DISPATCH_QUEUE_KEY = "signalrankai:signal_dispatch:queue"
+
+
+def _webhook_queue_key() -> str:
+    return (os.getenv("TELEGRAM_UPDATES_QUEUE_KEY") or _WEBHOOK_QUEUE_KEY).strip() or _WEBHOOK_QUEUE_KEY
 
 
 def _redis_max_connections() -> int:
@@ -776,15 +780,16 @@ class RedisState:
         r = self._get_redis_sync()
         if r is None:
             return False
+        queue_key = _webhook_queue_key()
         try:
             limit = int(max_depth or int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000))
         except Exception:
             limit = 2000
         try:
-            depth = int(r.llen(_WEBHOOK_QUEUE_KEY) or 0)
+            depth = int(r.llen(queue_key) or 0)
             if depth >= max(100, limit):
                 return False
-            r.rpush(_WEBHOOK_QUEUE_KEY, json.dumps(payload or {}))
+            r.rpush(queue_key, json.dumps(payload or {}))
             return True
         except Exception:
             return False
@@ -793,9 +798,10 @@ class RedisState:
         r = self._get_redis_sync()
         if r is None:
             return None
+        queue_key = _webhook_queue_key()
         try:
             timeout = max(0, int(timeout_seconds))
-            item = r.blpop(_WEBHOOK_QUEUE_KEY, timeout=timeout)
+            item = r.blpop(queue_key, timeout=timeout)
             if not item:
                 return None
             _, raw = item
@@ -809,8 +815,9 @@ class RedisState:
         r = self._get_redis_sync()
         if r is None:
             return 0
+        queue_key = _webhook_queue_key()
         try:
-            return int(r.llen(_WEBHOOK_QUEUE_KEY) or 0)
+            return int(r.llen(queue_key) or 0)
         except Exception:
             return 0
 

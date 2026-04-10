@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 import time
 from typing import Iterable
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, Response
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
 from core.redis_state import state
@@ -1044,12 +1044,6 @@ async def lifespan(_: FastAPI):
                         logger.warning("[webhook] Redis queue disabled by config; using in-process queue")
                     continue
 
-                if _REDIS_URL_PRESENT:
-                    if not _use_redis_webhook_queue:
-                        _use_redis_webhook_queue = True
-                        logger.info("[webhook] Redis URL present; forcing queue_backend=redis")
-                    continue
-
                 redis_ok = bool(await state.has_redis())
                 if redis_ok and (not _use_redis_webhook_queue):
                     _use_redis_webhook_queue = True
@@ -1136,9 +1130,7 @@ async def lifespan(_: FastAPI):
     # WEBHOOK_UPDATE_QUEUE_SIZE and/or WEBHOOK_UPDATE_WORKERS for your traffic.
     _default_queue_size = "200" if _running_on_railway else "5000"
     _default_worker_count = "2" if _running_on_railway else "64"
-    _use_redis_webhook_queue = bool(_redis_queue_requested()) and bool(
-        _REDIS_URL_PRESENT or await state.has_redis()
-    )
+    _use_redis_webhook_queue = bool(_redis_queue_requested()) and bool(await state.has_redis())
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
     _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
@@ -1373,7 +1365,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/telegram/webhook")
-async def _telegram_webhook_route(req: Request) -> dict:
+async def _telegram_webhook_route(req: Request) -> Response:
     """Receive Telegram updates and dispatch them to the bot application.
 
     Telegram POSTs to this URL for every incoming message or command.
@@ -1397,11 +1389,11 @@ async def _telegram_webhook_route(req: Request) -> dict:
                 "[webhook] bot_not_ready — update queued size=%d",
                 len(_pending_webhook_updates),
             )
-            return {"ok": True, "queued": True, "bot_ready": False}
+            return Response(status_code=200)
         except Exception:
             # Keep Telegram delivery path healthy even during transient startup.
             logger.warning("[webhook] bot_not_ready and payload parse failed; acknowledging")
-            return {"ok": True, "queued": False, "bot_ready": False}
+            return Response(status_code=200)
     try:
         data = await req.json()
         update_id = (data or {}).get("update_id", "?")
@@ -1413,44 +1405,24 @@ async def _telegram_webhook_route(req: Request) -> dict:
         if _webhook_dispatch_queue is None:
             _pending_webhook_updates.append(data)
             logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
-            return {"ok": True, "queued": True, "dispatcher": "pending_buffer"}
+            return Response(status_code=200)
 
         if _use_redis_webhook_queue:
             enqueue_task = asyncio.create_task(_enqueue_webhook_update_async(data))
             enqueue_task.add_done_callback(_log_webhook_enqueue_task_error)
-            q_depth = 0
-            try:
-                q_depth = int(
-                    await asyncio.wait_for(
-                        state.webhook_queue_depth(),
-                        timeout=0.05,
-                    )
-                )
-            except Exception:
-                pass
-            return {
-                "ok": True,
-                "queued": True,
-                "queue_backend": "redis",
-                "queue_size": q_depth,
-            }
+            return Response(status_code=200)
 
         try:
             _webhook_dispatch_queue.put_nowait(data)
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
-            return {
-                "ok": True,
-                "dispatched": True,
-                "queue_size": int(_webhook_dispatch_queue.qsize()),
-                "queue_backend": "in_process",
-            }
+            return Response(status_code=200)
         except asyncio.QueueFull:
             webhook_queue_full_total.inc()
             logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
-            return {"ok": False, "queued": False, "error": "queue_full", "queue_backend": "in_process"}
+            return Response(status_code=200)
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
-        return {"ok": False, "queued": False, "error": "internal_error"}
+        return Response(status_code=200)
 
 
 async def _enqueue_webhook_update_async(data: dict) -> None:
