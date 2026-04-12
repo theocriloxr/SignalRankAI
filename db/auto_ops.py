@@ -50,10 +50,9 @@ def run_startup_ops(run_mode: str) -> None:
     if not db_url:
         return
 
-    # Production hardening: runtime auto-migrate disabled by default.
-    # Migrations must run in deploy/release step.
-    if not _env_bool("AUTO_MIGRATE", False):
-        return
+    # Production hardening: runtime auto-migrate can be disabled, but we still
+    # run schema bootstrap safety so fresh databases don't start half-ready.
+    auto_migrate_enabled = _env_bool("AUTO_MIGRATE", False)
 
     try:
         import psycopg2
@@ -97,17 +96,34 @@ def run_startup_ops(run_mode: str) -> None:
         if not have_lock:
             return
 
-        # 1) Migrate schema
-        try:
-            from alembic import command
-            from alembic.config import Config
+        # 1) Migrate schema (optional, env-controlled)
+        if auto_migrate_enabled:
+            try:
+                from alembic import command
+                from alembic.config import Config
 
-            cfg = Config("alembic.ini")
-            cfg.set_main_option("sqlalchemy.url", db_url)
-            command.upgrade(cfg, "head")
-        except Exception:
-            # If migrations fail, let the service crash to surface the error.
-            raise
+                cfg = Config("alembic.ini")
+                cfg.set_main_option("sqlalchemy.url", db_url)
+                command.upgrade(cfg, "head")
+            except Exception:
+                # If migrations fail, let the service crash to surface the error.
+                raise
+
+        # 1b) Failsafe bootstrap for fresh DBs when migrations are skipped or
+        # migration graph differs across branches. create_all is idempotent.
+        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", True):
+            try:
+                from sqlalchemy import create_engine
+                from db.models import Base
+
+                eng = create_engine(db_url, pool_pre_ping=True)
+                try:
+                    Base.metadata.create_all(bind=eng)
+                finally:
+                    eng.dispose()
+            except Exception:
+                # Keep startup strict: crash if bootstrap unexpectedly fails.
+                raise
 
         # 2) Optional one-time wipe to "start fresh"
         if _env_bool("FRESH_START", False) and run_mode in {"web", "all"}:

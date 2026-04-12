@@ -88,42 +88,33 @@ class TierDeliveryManager:
         # Format for tier
         return format_signal(signal, user_tier=user_tier)
     
-    def get_users_for_signal(self, signal: Dict) -> Dict[str, List[str]]:
-        """Determine which user tiers should receive this signal.
+    def get_users_for_signal(self, signal: Dict, signal_id: str, session=None) -> Dict[str, List[int]]:
+        """
+        Determine which users should receive this signal.
+        
+        Uses SignalDistributor to:
+        - Prevent duplicate delivery (never same user+signal twice)
+        - Respect daily limits per tier
+        - Rate-limit per cycle (don't exhaust daily limit in one cycle)
+        - Random sampling with even distribution
         
         Args:
-            signal: Signal dict
+            signal: Signal dict with 'score' field
+            signal_id: Signal ID
+            session: DB session for queries
         
         Returns:
-            Dict mapping tier -> list of user_ids
-            Example: {'free': [user1, user2], 'premium': [user3, user4, user5], 'vip': [user6]}
+            Dict mapping tier -> list of user_ids to send to
+            Example: {'free': [u1, u2], 'premium': [u3, u4], 'vip': [u5], 'admin': [u6]}
         """
-        score = float(signal.get('score', 0) or 0)
-        from core.tier_constants import TIER_SCORE_THRESHOLDS
+        if not session:
+            from db.session import get_session
+            session = get_session()
         
-        recipients = {
-            'free': [],
-            'premium': [],
-            'vip': [],
-            'admin': [],  # Admin always gets signals
-        }
+        from signalrank_telegram.signal_distribution import SignalDistributor
         
-        # Determine which tiers qualify
-        # NOTE: In real implementation, query users by tier from database
-        
-        # Quality gates determine who CAN receive
-        can_free = score >= float(TIER_SCORE_THRESHOLDS.get('free', 80))
-        can_premium = score >= float(TIER_SCORE_THRESHOLDS.get('premium', 75))
-        can_vip = score >= float(TIER_SCORE_THRESHOLDS.get('vip', 75))
-        
-        # Example return (would be populated from database):
-        # if can_free:
-        #     recipients['free'] = db.query_users_by_tier('free')
-        # if can_premium:
-        #     recipients['premium'] = db.query_users_by_tier('premium')
-        # if can_vip:
-        #     recipients['vip'] = db.query_users_by_tier('vip')
-        # recipients['admin'] = db.query_users_by_tier('admin')
+        distributor = SignalDistributor(session)
+        recipients = distributor.sample_users_for_signal(signal, signal_id)
         
         return recipients
     
@@ -234,6 +225,116 @@ class TierDeliveryManager:
             },
         }
         return features_by_tier.get(tier.lower(), {})
+    
+    def get_max_tp_level_for_tier(self, tier: str) -> int:
+        """Get maximum TP level user should see per tier.
+        
+        Args:
+            tier: User tier (free, premium, vip, admin, owner)
+        
+        Returns:
+            Max TP level (2 for FREE/PREMIUM, 3 for VIP/ADMIN/OWNER)
+        """
+        from core.tier_constants import TIER_SIGNAL_DEPTH
+        depth = TIER_SIGNAL_DEPTH.get(tier.lower(), {})
+        return depth.get('max_tp_level', 2)
+    
+    def should_show_upgrade_prompt(self, user_tier: str, signal: Dict, signal_count_today: int) -> bool:
+        """Determine if FREE user should see upgrade prompt.
+        
+        Strategic: show on high-quality signals and every 3rd signal.
+        
+        Args:
+            user_tier: User's tier
+            signal: Signal dict
+            signal_count_today: How many signals sent to user today
+        
+        Returns:
+            True if should show prompt
+        """
+        from core.tier_constants import UPGRADE_PROMPT_FREQUENCY_INT
+        
+        if user_tier != 'free':
+            return False
+        
+        score = float(signal.get('score', 0) or 0)
+        
+        # Show on every 3rd signal OR on high-quality signals (score >= 90)
+        show_by_count = (signal_count_today + 1) % UPGRADE_PROMPT_FREQUENCY_INT == 0
+        show_by_quality = score >= 90
+        
+        return show_by_count or show_by_quality
+    
+    def can_record_sl_outcome(
+        self,
+        signal_id: str,
+        has_tp_been_hit: bool
+    ) -> bool:
+        """Check if SL outcome can be recorded for a signal.
+        
+        Once TP is hit, SL cannot be recorded (user closed position at TP).
+        
+        Args:
+            signal_id: Signal ID
+            has_tp_been_hit: Whether any TP (TP1/TP2/TP3) has been hit
+        
+        Returns:
+            True if SL outcome can be recorded
+        """
+        return not has_tp_been_hit
+    
+    def format_outcome_for_tier(
+        self,
+        signal_id: str,
+        outcome_type: str,  # 'tp1', 'tp2', 'tp3', 'sl'
+        tp_count: Optional[int] = None,  # How many TPs hit so far (1, 2, 3)
+        user_tier: str = 'free'
+    ) -> Optional[str]:
+        """Format outcome notification per tier.
+        
+        Args:
+            signal_id: Signal ID
+            outcome_type: Type of outcome (tp1, tp2, tp3, sl)
+            tp_count: Number of TPs hit (for showing progress like '2/3 TP')
+            user_tier: User's tier
+        
+        Returns:
+            Formatted message or None if tier shouldn't see this outcome
+        """
+        max_tp = self.get_max_tp_level_for_tier(user_tier)
+        
+        # Suppress TP3 outcome for FREE/PREMIUM users
+        if outcome_type == 'tp3' and max_tp < 3:
+            return None
+        
+        # Format based on tier
+        tier_lower = user_tier.lower()
+        
+        if outcome_type.startswith('tp'):
+            tp_num = int(outcome_type[2])  # tp1 -> 1, tp2 -> 2, tp3 -> 3
+            progress = f"{tp_count}" if tp_count else "?"
+            
+            if tier_lower in ('free', 'premium'):
+                if tp_num > 2:
+                    return None  # Don't show TP3
+                msg = f"✅ Signal {signal_id[:8]}: TP{tp_num} hit ({progress}/2)"
+                if tier_lower == 'free':
+                    msg += "\n💡 Upgrade to Premium for full TP ladder"
+            elif tier_lower in ('vip', 'admin', 'owner'):
+                msg = f"✅ Signal {signal_id[:8]}: TP{tp_num} hit ({progress}/3)"
+            else:
+                msg = f"✅ TP{tp_num} hit"
+            
+            return msg
+        
+        elif outcome_type == 'sl':
+            if tier_lower == 'free':
+                msg = f"❌ Signal {signal_id[:8]}: SL hit\n💡 Upgrade to Premium for better signals"
+            else:
+                msg = f"❌ Signal {signal_id[:8]}: Stop Loss hit"
+            return msg
+        
+        return None
     
     def log_delivery(self, signal_id: str, user_id: str, tier: str, delivered: bool, reason: str = ''):
         """Log signal delivery for tracking.

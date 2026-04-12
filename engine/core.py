@@ -1566,6 +1566,67 @@ def main_loop(DRY_RUN: bool = False):
         if not user_ids:
             logger.warning("[engine] delivery audience is empty; no users eligible for dispatch")
 
+        def filter_non_duplicate_signals(user_id: int, signals: List[Dict], session=None) -> List[Dict]:
+            """
+            Filter out signals that were already sent to this user.
+            
+            Prevents sending the same signal multiple times to the user.
+            Uses SignalDelivery table to check (user_id, signal_id) pairs.
+            
+            Args:
+                user_id: User ID
+                signals: List of signal dicts to filter
+                session: DB session
+            
+            Returns:
+                List of signals that haven't been sent to this user yet
+            """
+            if not signals:
+                return []
+            
+            try:
+                if not session:
+                    from db.session import get_session
+                    session = get_session()
+                
+                from db.models import SignalDelivery
+                from sqlalchemy import and_
+                
+                # Get all signal IDs already sent to this user
+                already_sent = set()
+                for sig in signals:
+                    sig_id = sig.get('signal_id') or sig.get('id')
+                    if not sig_id:
+                        continue
+                    
+                    exists = session.query(SignalDelivery).filter(
+                        and_(
+                            SignalDelivery.user_id == user_id,
+                            SignalDelivery.signal_id == sig_id,
+                        )
+                    ).first()
+                    
+                    if exists:
+                        already_sent.add(sig_id)
+                
+                # Filter to only new signals
+                new_signals = [
+                    s for s in signals 
+                    if (s.get('signal_id') or s.get('id')) not in already_sent
+                ]
+                
+                if len(new_signals) < len(signals):
+                    logger.info(
+                        f"[engine] Filtered duplicate signals for user {user_id}: "
+                        f"{len(signals)} -> {len(new_signals)} (skipped {len(signals) - len(new_signals)} duplicates)"
+                    )
+                
+                return new_signals
+            except Exception as e:
+                logger.warning(f"[engine] Failed to filter duplicates for user {user_id}: {e}")
+                # Return all signals if filtering fails (better to send duplicates than fail)
+                return signals
+
         async def deliver_all():
             dispatched_count = 0
             skipped_daily_limit = 0
@@ -1792,6 +1853,13 @@ def main_loop(DRY_RUN: bool = False):
                             pass
 
                     if not user_signals:
+                        skipped_no_eligible_signals += 1
+                        continue
+
+                    # Filter out signals already sent to this user (prevent duplicates)
+                    user_signals = filter_non_duplicate_signals(user_id, user_signals, session=session)
+                    if not user_signals:
+                        logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
                         skipped_no_eligible_signals += 1
                         continue
 

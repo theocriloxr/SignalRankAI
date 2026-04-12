@@ -812,10 +812,12 @@ async def lifespan(_: FastAPI):
     startup_ops_task: asyncio.Task | None = None
     startup_maintenance_tasks: list[asyncio.Task] = []
 
-    # On Railway, wait for startup ops when AUTO_MIGRATE is enabled so
-    # background loops do not race against schema creation.
-    _auto_migrate_enabled = str(os.getenv("AUTO_MIGRATE", "0")).strip().lower() in {"1", "true", "yes", "on"}
-    if os.getenv("RAILWAY_SERVICE_NAME") and _auto_migrate_enabled:
+    # On Railway, default to strict schema-ready startup so workers/engine do
+    # not begin against partially initialized databases.
+    _strict_schema_ready = str(
+        os.getenv("STARTUP_STRICT_SCHEMA_READY", "1" if os.getenv("RAILWAY_SERVICE_NAME") else "0")
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    if os.getenv("RAILWAY_SERVICE_NAME") and _strict_schema_ready:
         _default_ops_timeout = "180"
     else:
         _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"

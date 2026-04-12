@@ -1,24 +1,98 @@
-"""Shared tier constants and limits for signal delivery."""
+"""Shared tier constants and limits for signal delivery.
+
+CANONICAL TIER & DELIVERY MODEL (2026-04-12):
+
+Tier Quality Tiers (Score-based):
+  - FREE: 85+ (highest quality only, limited detail in messages)
+  - PREMIUM: 70+ (more opportunity, medium detail)
+  - VIP: 85+ (same score gate as FREE but with deeper TP ladder)
+  - ADMIN: 85+ (all signals for monitoring)
+  - OWNER: 0+ (unlimited, receives everything)
+
+Daily Limits (PER DELIVERED SIGNALS to user):
+  - FREE: 3 signals/day (hard cap)
+  - PREMIUM: 10 signals/day (hard cap, resets at user's local midnight)
+  - VIP: 20 signals/day (quality-based soft cap, pauses after 20)
+  - OWNER: unlimited
+
+Signal Depth (TP Levels Shown):
+  - FREE: TP1, TP2, SL (TP2 is their 'max')
+  - PREMIUM: TP1, TP2, SL (same depth as FREE)
+  - VIP: TP1, TP2, TP3, SL (full ladder, TP3 is their 'max')
+  - OWNER: All TP levels + all outcomes
+
+Delivery Model:
+  - Engine generates signals in cycles
+  - Signals are RANDOMLY SAMPLED to eligible users per tier
+  - Random sampling is PURE (users can permanently miss some signals)
+  - Daily limits enforce DELIVERED signals (not eligible signals)
+  - Upgrade backfill: only signals already sampled to user (no re-delivery of missed ones)
+  - Outcome tracking is strict per (user, signal) pair
+
+Outcome Rules:
+  - Once TP is hit on a signal, no SL outcome can be recorded
+  - TP progression shows as "1/3", "2/3", "3/3"
+  - SL outcome only recorded if no TP was hit
+  - Trailing SL: track outcomes against CURRENT SL, not original SL
+"""
 
 from typing import Final
 
-# Tier daily signal limits
+# Tier daily signal limits (DELIVERED signals per user)
 TIER_DAILY_LIMITS: Final[dict[str, float]] = {
     "free": 3,
-    "premium": float('inf'),
-    "vip": float('inf'),
+    "premium": 10,
+    "vip": 20,  # Soft cap, signals pause after 20/day
     "owner": float('inf'),
     "admin": float('inf'),
 }
 
-# Tier quality score thresholds
+# Tier quality score thresholds (minimum signal score to be eligible)
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-    "free": 80,
-    "premium": 70,
-    "vip": 75,
-    "owner": 75,
-    "admin": 75,
+    "free": 85,      # Highest quality only
+    "premium": 70,   # Lower threshold = more signals
+    "vip": 85,       # Same quality as FREE but deeper TP ladder
+    "owner": 0,      # No score gate
+    "admin": 85,     # Admin-level quality
 }
+
+# Signal depth per tier (how many TP levels shown)
+TIER_SIGNAL_DEPTH: Final[dict[str, dict]] = {
+    "free": {
+        "max_tp_level": 2,  # Shows TP1, TP2
+        "show_tp3": False,
+        "show_sl": True,
+        "detail_level": "basic",  # Limited details, with upgrade prompt
+    },
+    "premium": {
+        "max_tp_level": 2,  # Shows TP1, TP2
+        "show_tp3": False,
+        "show_sl": True,
+        "detail_level": "full",
+    },
+    "vip": {
+        "max_tp_level": 3,  # Shows TP1, TP2, TP3
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "full",
+    },
+    "owner": {
+        "max_tp_level": 3,
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "full",
+    },
+    "admin": {
+        "max_tp_level": 3,
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "full",
+    },
+}
+
+# Tier upgrade prompt frequency (for FREE users)
+UPGRADE_PROMPT_FREQUENCY: Final[str] = "smart"  # Show on strategic signals to maximize conversion
+UPGRADE_PROMPT_FREQUENCY_INT: Final[int] = 3  # Every 3rd signal, or based on signal quality
 
 # Signal freshness: max age in seconds before signal is considered stale.
 # Keep this strict and centralized as the single source for freshness policy.
