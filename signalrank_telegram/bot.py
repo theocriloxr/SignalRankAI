@@ -2865,23 +2865,61 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 logger.debug(f"[dispatch] user={user_id} tier={tier} effective_tier={effective_tier} signals={len(signals_list)} limit={int(limit)} reserved={len(reserved)} reserve_failed={int(reserve_failed)}")
 
                 if reserve_failed:
+                    async def _reserve_one(_signal: dict) -> dict | None:
+                        from db.pg_features import get_or_create_signal, record_signal_delivery
+
+                        async with get_session() as session:
+                            s = await get_or_create_signal(session, _signal)
+                            ok = await record_signal_delivery(
+                                session,
+                                telegram_user_id=int(user_id),
+                                signal_id=str(s.signal_id),
+                                tier_at_send=str(effective_tier),
+                            )
+                            if not ok:
+                                await session.rollback()
+                                return None
+
+                            payload = dict(_signal)
+                            payload["signal_id"] = str(s.signal_id)
+                            payload.setdefault("asset", s.asset)
+                            payload.setdefault("timeframe", s.timeframe)
+                            payload.setdefault("direction", s.direction)
+                            payload.setdefault("entry", s.entry)
+                            payload.setdefault("stop_loss", s.stop_loss)
+                            payload.setdefault("take_profit", s.take_profit)
+                            payload.setdefault("rr_ratio", s.rr_estimate)
+                            payload.setdefault("score", s.score)
+                            payload.setdefault("regime", s.regime)
+                            await session.commit()
+                            return payload
+
                     sent = 0
                     for signal in signals_list:
                         if sent >= int(limit):
                             break
                         try:
+                            reserved_signal = run_sync(_reserve_one(signal))
+                            if not reserved_signal:
+                                logger.debug(
+                                    "[dispatch] Fallback dedupe skip: user=%s signal=%s",
+                                    user_id,
+                                    signal.get('signal_id', 'n/a'),
+                                )
+                                continue
+
                             logger.debug(f"[dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
                             if _deliver_or_update_signal_sync(
                                 bot,
                                 telegram_user_id=int(user_id),
-                                signal=signal,
+                                signal=reserved_signal,
                                 display_tier=display_tier,
                             ):
                                 sent += 1
                                 try:
                                     _auto_execute_signal_if_enabled(
                                         telegram_user_id=int(user_id),
-                                        signal=dict(signal or {}),
+                                        signal=dict(reserved_signal or {}),
                                         routing_tier=str(effective_tier),
                                     )
                                 except Exception:

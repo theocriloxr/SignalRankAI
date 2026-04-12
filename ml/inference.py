@@ -20,7 +20,24 @@ except Exception:  # pragma: no cover
 # Use absolute path relative to project root so it works both locally and on Railway
 PROJECT_ROOT = Path(__file__).parent.parent
 DEFAULT_MODEL_PATH = str(PROJECT_ROOT / "ml" / "model.json")
-MODEL_PATH = os.getenv("ML_MODEL_PATH", DEFAULT_MODEL_PATH)
+
+
+def _resolve_model_path() -> str:
+    """Resolve model path from supported env names.
+
+    Priority:
+    1) ML_MODEL_PATH (current)
+    2) XGBOOST_MODEL_PATH (legacy/compat)
+    3) default project model path
+    """
+    return (
+        os.getenv("ML_MODEL_PATH")
+        or os.getenv("XGBOOST_MODEL_PATH")
+        or DEFAULT_MODEL_PATH
+    )
+
+
+MODEL_PATH = _resolve_model_path()
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +46,18 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _ml_enabled() -> bool:
+    """ML switch with compatibility across env naming.
+
+    Supports both ENABLE_ML and ML_ENABLED; ML_ENABLED wins if both are set.
+    """
+    if os.getenv("ML_ENABLED") is not None:
+        return _env_bool("ML_ENABLED", True)
+    if os.getenv("ENABLE_ML") is not None:
+        return _env_bool("ENABLE_ML", False)
+    return True
 
 
 def _runtime_state_model_payload() -> dict | None:
@@ -72,7 +101,7 @@ class MLFilter:
     def __init__(self):
         # Opt-in ML filtering; default off to avoid blocking signals when a model
         # is missing, mis-specified, or features are not aligned.
-        if not _env_bool("ML_ENABLED", True):
+        if not _ml_enabled():
             self.active = False
             self.model = None
             self.feature_cols = None
@@ -92,7 +121,7 @@ class MLFilter:
         try:
             model_data = None
             try:
-                with open(MODEL_PATH, 'r') as f:
+                with open(_resolve_model_path(), 'r') as f:
                     model_data = normalize_model_payload(json.load(f))
             except Exception:
                 model_data = None

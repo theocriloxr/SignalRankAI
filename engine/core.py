@@ -1857,7 +1857,7 @@ def main_loop(DRY_RUN: bool = False):
                         continue
 
                     # Filter out signals already sent to this user (prevent duplicates)
-                    user_signals = filter_non_duplicate_signals(user_id, user_signals, session=session)
+                    user_signals = filter_non_duplicate_signals(user_id, user_signals)
                     if not user_signals:
                         logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
                         skipped_no_eligible_signals += 1
