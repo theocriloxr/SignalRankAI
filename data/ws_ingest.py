@@ -10,7 +10,7 @@ from typing import Optional
 from data.binance_ws import iter_events as binance_iter_events
 from data.cryptocompare_ws import iter_events as cryptocompare_iter_events
 from db.market_cache import prune_old_candles, upsert_market_candle, upsert_market_tick
-from db.session import ENGINE, get_session
+from db.session import get_session, is_db_configured
 from data.pair_discovery import get_all_trending_pairs
 from data.fetcher import is_crypto
 
@@ -186,7 +186,7 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
     if not _env_bool("CRYPTO_WS_ENABLED", False):
         return
 
-    if ENGINE is None:
+    if not is_db_configured():
         return
 
     symbols = _crypto_symbols()
