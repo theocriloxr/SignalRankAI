@@ -53,6 +53,7 @@ def run_startup_ops(run_mode: str) -> None:
     # Production hardening: runtime auto-migrate can be disabled, but we still
     # run schema bootstrap safety so fresh databases don't start half-ready.
     auto_migrate_enabled = _env_bool("AUTO_MIGRATE", False)
+    strict_schema_ready = _env_bool("STARTUP_STRICT_SCHEMA_READY", False)
 
     try:
         import psycopg2
@@ -65,6 +66,10 @@ def run_startup_ops(run_mode: str) -> None:
         max_attempts = max(1, int((os.getenv("DB_CONNECT_MAX_ATTEMPTS") or "12").strip()))
     except Exception:
         max_attempts = 12
+    if not auto_migrate_enabled and not strict_schema_ready:
+        # Default to a single attempt when startup isn't strict and migrations
+        # are disabled to avoid blocking container boot with retry backoff.
+        max_attempts = 1
     try:
         backoff_seconds = max(0.5, float((os.getenv("DB_CONNECT_BACKOFF_SECONDS") or "2").strip()))
     except Exception:

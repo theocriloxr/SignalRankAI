@@ -310,6 +310,15 @@ class RedisState:
     def has_redis_sync(self) -> bool:
         return self._get_redis_sync() is not None
 
+    def ping_sync(self) -> bool:
+        r = self._get_redis_sync()
+        if r is None:
+            return False
+        try:
+            return bool(r.ping())
+        except Exception:
+            return False
+
     def _bypass_fingerprint(self) -> Optional[str]:
         """Fingerprint the active BYPASS_KEY.
 
@@ -872,6 +881,9 @@ class RedisState:
 
     async def has_redis(self) -> bool:
         return await asyncio.to_thread(self.has_redis_sync)
+
+    async def ping(self) -> bool:
+        return await asyncio.to_thread(self.ping_sync)
 
     async def cache_get(self, key: str) -> Optional[str]:
         return await asyncio.to_thread(self.cache_get_sync, key)

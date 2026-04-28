@@ -251,6 +251,25 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
         return None
 
 
+def scored_signals_with_ml(signals: Iterable[Dict[str, Any]], threshold: float = 0.6) -> list[Dict[str, Any]]:
+    """Attach ML probability to each signal and mark pass/fail by threshold.
+
+    Fail-open: if ML is unavailable, signals are returned with ml_pass=True.
+    """
+    scored: list[Dict[str, Any]] = []
+    for sig in signals or []:
+        prob = score_signal(sig)
+        out = dict(sig)
+        if prob is None:
+            out["ml_probability"] = None
+            out["ml_pass"] = True
+        else:
+            out["ml_probability"] = float(prob)
+            out["ml_pass"] = float(prob) >= float(threshold)
+        scored.append(out)
+    return scored
+
+
 # Backward-compatible helpers (used by other modules)
 def get_strategy_weights():
     return {}

@@ -29,6 +29,7 @@ pytz>=2024.1
 pandas_market_calendars>=4.3.1
 yahoo_fin>=0.8.9
 cachetools
+redis>=5.0.7,<6
 cryptography>=42.0
 optuna>=3.6.1
 pytest-asyncio
