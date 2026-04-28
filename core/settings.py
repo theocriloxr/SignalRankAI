@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # Feature flags
     ENABLE_NEWS: bool = True
-    ENABLE_ML: bool = False
+    ENABLE_ML: bool = True
 
     # Logging / observability
     LOG_JSON: bool = False

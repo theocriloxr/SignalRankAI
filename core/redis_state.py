@@ -34,20 +34,13 @@ def _webhook_queue_key() -> str:
 
 
 def _redis_max_connections() -> int:
-    try:
-        return max(10, int((os.getenv("REDIS_MAX_CONNECTIONS") or "60").strip()))
-    except Exception:
-        return 60
+    # Always use high production value
+    return 200
 
 
-def _resolve_redis_url() -> Optional[str]:
-    for key in ("REDIS_URL", "REDIS_PRIVATE_URL", "REDIS_PUBLIC_URL", "REDIS_INTERNAL_URL", "REDIS_TLS_URL"):
-        val = (os.getenv(key) or "").strip()
-        if val:
-            if key != "REDIS_URL" and not (os.getenv("REDIS_URL") or "").strip():
-                os.environ["REDIS_URL"] = val
-            return val
-    return None
+    # Always resolve to REDIS_URL (production)
+    val = (os.getenv("REDIS_URL") or "").strip()
+    return val if val else None
 
 
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
@@ -835,7 +828,7 @@ class RedisState:
         if r is None:
             return False
         try:
-            limit = int(max_depth or int(os.getenv("REDIS_SIGNAL_QUEUE_MAX_DEPTH", "5000") or 5000))
+            limit = int(max_depth or 5000)
         except Exception:
             limit = 5000
         try:

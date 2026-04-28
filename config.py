@@ -75,14 +75,14 @@ class Config:
 		self.GIT_COMMIT_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
 
 		# Feature toggles (add more as needed)
-		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
-		self.CRYPTO_WS_ENABLED = self._env_bool("CRYPTO_WS_ENABLED", False)
-		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", True)
+		self.MARKET_MONITOR_ENABLED = True
+		self.CRYPTO_WS_ENABLED = True
+		self.ML_TRAIN_ENABLED = True
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
 
 		# Exchange scope (native execution and market connectors)
-		self.EXECUTION_EXCHANGES = self._env_csv("EXECUTION_EXCHANGES", ["binance", "bybit"])
-		self.CRYPTO_DATA_EXCHANGES = self._env_csv("CRYPTO_DATA_EXCHANGES", ["binance", "bybit"])
+		self.EXECUTION_EXCHANGES = ["binance", "bybit"]
+		self.CRYPTO_DATA_EXCHANGES = ["binance", "bybit"]
 
 		# Smart DCA profiles
 		self.DCA_PROFILE_DEFAULT = os.getenv("DCA_PROFILE_DEFAULT", "conservative_swing").strip().lower() or "conservative_swing"

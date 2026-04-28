@@ -45,12 +45,8 @@ try:
 except Exception:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 
-_REDIS_URL_PRESENT = bool(_resolve_redis_url())
 
-if _REDIS_URL_PRESENT:
-    logger.info("[startup] Redis URL detected; webhook redis queue can be enabled")
-else:
-    logger.warning("[startup] Redis URL not detected; webhook queue will run in-process")
+logger.info("[startup] Redis URL detected; webhook redis queue will be used (production mode)")
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
@@ -133,8 +129,10 @@ def _extract_chat_id(payload: dict | None) -> int:
         return 0
 
 
+
+# Always use Redis for webhook queue in production
 def _redis_queue_requested() -> bool:
-    return str(os.getenv("WEBHOOK_QUEUE_USE_REDIS", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    return True
 
 
 def _log_task_failure(task: asyncio.Task, task_name: str) -> None:
@@ -1266,15 +1264,11 @@ async def lifespan(_: FastAPI):
     _monitor_tasks.append(asyncio.create_task(_monitor_redis_webhook_backend()))
     _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-redis-backend"))
 
-    # Bounded queue + worker pool to sustain high concurrent webhook traffic.
+    # Bounded queue + worker pool for high concurrent webhook traffic (production values)
     global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
-    # Railway defaults are intentionally conservative to reduce memory usage on
-    # small container tiers. If you observe queue_full responses, sustained
-    # queue_utilization_ratio > 0.80, or dispatch latency growth, increase
-    # WEBHOOK_UPDATE_QUEUE_SIZE and/or WEBHOOK_UPDATE_WORKERS for your traffic.
-    _default_queue_size = "200" if _running_on_railway else "5000"
-    _default_worker_count = "2" if _running_on_railway else "64"
-    _use_redis_webhook_queue = bool(_redis_queue_requested()) and bool(await state.has_redis())
+    _default_queue_size = "5000"
+    _default_worker_count = "64"
+    _use_redis_webhook_queue = True
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
     _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
