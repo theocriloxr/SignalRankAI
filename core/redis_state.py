@@ -38,6 +38,7 @@ def _redis_max_connections() -> int:
     return 200
 
 
+def _resolve_redis_url() -> Optional[str]:
     # Always resolve to REDIS_URL (production)
     val = (os.getenv("REDIS_URL") or "").strip()
     return val if val else None

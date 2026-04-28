@@ -167,6 +167,15 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS successful_at TIMESTAMP",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referrer_notified_at TIMESTAMP",
+                    # outcomes (0023 migration belt-and-suspenders)
+                    "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS canonical_outcome VARCHAR(16)",
+                    "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS vip_fill_outcome VARCHAR(16)",
+                    "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
+                    # signal_deliveries (0023 migration belt-and-suspenders)
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS sent_ok BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 1",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_error TEXT",
                 ]
                 for stmt in _column_patches:
                     try:
