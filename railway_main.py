@@ -66,6 +66,7 @@ _lifespan_heartbeat_task: asyncio.Task | None = None
 _monitor_tasks: list[asyncio.Task] = []
 _use_redis_webhook_queue: bool = False
 _last_redis_backend_log_at: float = 0.0
+_db_ready_cache: bool | None = None
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -276,6 +277,20 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _is_running_on_railway() -> bool:
     return bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+
+
+def _is_db_ready() -> bool:
+    global _db_ready_cache
+    if _db_ready_cache is not None:
+        return _db_ready_cache
+    try:
+        from db.session import is_db_configured
+
+        _db_ready_cache = bool(is_db_configured())
+    except Exception as exc:
+        _db_ready_cache = False
+        logger.warning("[db] readiness check failed: %s", exc)
+    return _db_ready_cache
 
 
 def _log_railway_env_readiness() -> None:
@@ -514,15 +529,9 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     if _bot_ready and _bot_application is not None:
         return _bot_application, True
 
-    try:
-        from db.session import is_db_configured
-
-        if not is_db_configured():
-            print("[bot] webhook setup skipped: DATABASE_URL missing", flush=True)
-            logger.warning("[bot] DATABASE_URL not set; skipping webhook setup")
-            return None, False
-    except Exception as exc:
-        logger.warning("[bot] DB readiness check failed; skipping webhook setup: %s", exc)
+    if not _is_db_ready():
+        print("[bot] webhook setup skipped: DATABASE_URL missing", flush=True)
+        logger.warning("[bot] DATABASE_URL not set; skipping webhook setup")
         return None, False
 
     if _env_bool("DRY_RUN", False):
@@ -809,13 +818,7 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 async def lifespan(_: FastAPI):
     global _lifespan_heartbeat_task
     _log_railway_env_readiness()
-    try:
-        from db.session import is_db_configured
-
-        _db_ready = is_db_configured()
-    except Exception as exc:
-        _db_ready = False
-        logger.warning("[startup] DB readiness check failed: %s", exc)
+    _db_ready = _is_db_ready()
 
     if not _db_ready:
         logger.critical(
