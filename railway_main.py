@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import asyncio
 import logging
+import threading
 from collections import deque
 from contextlib import asynccontextmanager
 import time
@@ -67,6 +68,7 @@ _monitor_tasks: list[asyncio.Task] = []
 _use_redis_webhook_queue: bool = False
 _last_redis_backend_log_at: float = 0.0
 _db_ready_cache: bool | None = None
+_db_ready_lock = threading.Lock()
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -283,13 +285,16 @@ def _is_db_ready() -> bool:
     global _db_ready_cache
     if _db_ready_cache is not None:
         return _db_ready_cache
-    try:
-        from db.session import is_db_configured
+    with _db_ready_lock:
+        if _db_ready_cache is not None:
+            return _db_ready_cache
+        try:
+            from db.session import is_db_configured
 
-        _db_ready_cache = bool(is_db_configured())
-    except Exception as exc:
-        _db_ready_cache = False
-        logger.warning("[db] readiness check failed: %s", exc)
+            _db_ready_cache = bool(is_db_configured())
+        except Exception as exc:
+            _db_ready_cache = False
+            logger.warning("[db] readiness check failed: %s", exc)
     return _db_ready_cache
 
 
@@ -865,7 +870,8 @@ async def lifespan(_: FastAPI):
             )
         except Exception as exc:
             logger.error(
-                f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses"
+                "[startup] DB startup ops failed: %s; continuing anyway — web endpoints will serve degraded responses",
+                exc,
             )
     else:
         logger.warning("[startup] DB startup ops skipped: DATABASE_URL not configured")
@@ -949,7 +955,14 @@ async def lifespan(_: FastAPI):
     _run_engine = str(
         os.getenv("RUN_ENGINE_LOOP", "1")
     ).strip().lower() in {"1", "true", "yes", "on"}
-    if _run_engine and _db_ready:
+    if not _run_engine:
+        logger.info(
+            "[startup] Engine loop skipped (RUN_ENGINE_LOOP=0)%s",
+            " [Railway default]" if _running_on_railway else "",
+        )
+    elif not _db_ready:
+        logger.warning("[startup] Engine loop skipped (DATABASE_URL not configured)")
+    else:
         try:
             engine_task = _start_engine_loop_in_background()
             print("[startup] Engine loop task created", flush=True)
@@ -957,13 +970,6 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             print(f"[startup] Could not start engine loop: {exc}", flush=True)
             logger.warning(f"[startup] Could not start engine loop: {exc}")
-    elif _run_engine and (not _db_ready):
-        logger.warning("[startup] Engine loop skipped (DATABASE_URL not configured)")
-    else:
-        logger.info(
-            "[startup] Engine loop skipped (RUN_ENGINE_LOOP=0)%s",
-            " [Railway default]" if _running_on_railway else "",
-        )
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
     # Default ON in monolith so web+bot+engine+worker run in one service.
@@ -972,7 +978,14 @@ async def lifespan(_: FastAPI):
     _run_worker = str(
         os.getenv("RUN_WORKER_LOOP", "1")
     ).strip().lower() in {"1", "true", "yes", "on"}
-    if _run_worker and _db_ready:
+    if not _run_worker:
+        logger.info(
+            "[startup] Worker loop skipped (RUN_WORKER_LOOP=0)%s",
+            " [Railway default]" if _running_on_railway else "",
+        )
+    elif not _db_ready:
+        logger.warning("[startup] Worker loop skipped (DATABASE_URL not configured)")
+    else:
         try:
             worker_task = _start_worker_loop_in_background()
             print("[startup] Worker loop task created", flush=True)
@@ -980,13 +993,6 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             print(f"[startup] Could not start worker loop: {exc}", flush=True)
             logger.warning(f"[startup] Could not start worker loop: {exc}")
-    elif _run_worker and (not _db_ready):
-        logger.warning("[startup] Worker loop skipped (DATABASE_URL not configured)")
-    else:
-        logger.info(
-            "[startup] Worker loop skipped (RUN_WORKER_LOOP=0)%s",
-            " [Railway default]" if _running_on_railway else "",
-        )
 
     # ── Crash detection for background tasks ─────────────────────────────────
     async def _monitor_background_tasks():
