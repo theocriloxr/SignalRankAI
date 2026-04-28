@@ -514,6 +514,17 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     if _bot_ready and _bot_application is not None:
         return _bot_application, True
 
+    try:
+        from db.session import is_db_configured
+
+        if not is_db_configured():
+            print("[bot] webhook setup skipped: DATABASE_URL missing", flush=True)
+            logger.warning("[bot] DATABASE_URL not set; skipping webhook setup")
+            return None, False
+    except Exception as exc:
+        logger.warning("[bot] DB readiness check failed; skipping webhook setup: %s", exc)
+        return None, False
+
     if _env_bool("DRY_RUN", False):
         print("[bot] webhook setup skipped: DRY_RUN enabled", flush=True)
         logger.warning("[bot] DRY_RUN enabled; skipping webhook setup")
@@ -798,6 +809,18 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 async def lifespan(_: FastAPI):
     global _lifespan_heartbeat_task
     _log_railway_env_readiness()
+    try:
+        from db.session import is_db_configured
+
+        _db_ready = is_db_configured()
+    except Exception as exc:
+        _db_ready = False
+        logger.warning("[startup] DB readiness check failed: %s", exc)
+
+    if not _db_ready:
+        logger.critical(
+            "[startup] DATABASE_URL not configured; DB-dependent subsystems disabled (startup ops/engine/worker/bot)"
+        )
     # ── Lifespan heartbeat: confirm event loop is alive ──
     async def _lifespan_heartbeat():
         import time
@@ -823,21 +846,26 @@ async def lifespan(_: FastAPI):
         _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"
     startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", _default_ops_timeout) or 0)
 
-    try:
-        startup_ops_task = asyncio.create_task(_run_startup_ops())
-        startup_ops_task.add_done_callback(lambda t: _log_task_failure(t, "startup-ops"))
-        startup_maintenance_tasks.append(startup_ops_task)
-        if startup_ops_timeout_s > 0:
-            await asyncio.wait_for(asyncio.shield(startup_ops_task), timeout=startup_ops_timeout_s)
-        else:
-            logger.info("[startup] DB startup ops scheduled in background (non-blocking)")
-    except asyncio.TimeoutError:
-        logger.warning(
-            "[startup] DB startup ops exceeded %ss; continuing boot while ops finish in background",
-            startup_ops_timeout_s,
-        )
-    except Exception as exc:
-        logger.error(f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses")
+    if _db_ready:
+        try:
+            startup_ops_task = asyncio.create_task(_run_startup_ops())
+            startup_ops_task.add_done_callback(lambda t: _log_task_failure(t, "startup-ops"))
+            startup_maintenance_tasks.append(startup_ops_task)
+            if startup_ops_timeout_s > 0:
+                await asyncio.wait_for(asyncio.shield(startup_ops_task), timeout=startup_ops_timeout_s)
+            else:
+                logger.info("[startup] DB startup ops scheduled in background (non-blocking)")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[startup] DB startup ops exceeded %ss; continuing boot while ops finish in background",
+                startup_ops_timeout_s,
+            )
+        except Exception as exc:
+            logger.error(
+                f"[startup] DB startup ops failed: {exc}; continuing anyway — web endpoints will serve degraded responses"
+            )
+    else:
+        logger.warning("[startup] DB startup ops skipped: DATABASE_URL not configured")
 
     async def _run_post_startup_maintenance() -> None:
         """Run maintenance in strict order once startup ops are done.
@@ -889,21 +917,24 @@ async def lifespan(_: FastAPI):
     maintenance_timeout_s = int(
         os.getenv("STARTUP_MAINTENANCE_TIMEOUT_SECONDS", _default_maintenance_timeout) or 0
     )
-    try:
-        maintenance_task = asyncio.create_task(_run_post_startup_maintenance())
-        maintenance_task.add_done_callback(lambda t: _log_task_failure(t, "startup-maintenance"))
-        startup_maintenance_tasks.append(maintenance_task)
-        if maintenance_timeout_s > 0:
-            await asyncio.wait_for(asyncio.shield(maintenance_task), timeout=maintenance_timeout_s)
-        else:
-            logger.info("[startup] post-startup maintenance scheduled in background (non-blocking)")
-    except asyncio.TimeoutError:
-        logger.warning(
-            "[startup] post-startup maintenance exceeded %ss; continuing in background",
-            maintenance_timeout_s,
-        )
-    except Exception as exc:
-        logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
+    if _db_ready:
+        try:
+            maintenance_task = asyncio.create_task(_run_post_startup_maintenance())
+            maintenance_task.add_done_callback(lambda t: _log_task_failure(t, "startup-maintenance"))
+            startup_maintenance_tasks.append(maintenance_task)
+            if maintenance_timeout_s > 0:
+                await asyncio.wait_for(asyncio.shield(maintenance_task), timeout=maintenance_timeout_s)
+            else:
+                logger.info("[startup] post-startup maintenance scheduled in background (non-blocking)")
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[startup] post-startup maintenance exceeded %ss; continuing in background",
+                maintenance_timeout_s,
+            )
+        except Exception as exc:
+            logger.warning(f"[startup] could not schedule post-startup maintenance: {exc}")
+    else:
+        logger.warning("[startup] post-startup maintenance skipped: DATABASE_URL not configured")
 
 
     _running_on_railway = _is_running_on_railway()
@@ -915,7 +946,7 @@ async def lifespan(_: FastAPI):
     _run_engine = str(
         os.getenv("RUN_ENGINE_LOOP", "1")
     ).strip().lower() in {"1", "true", "yes", "on"}
-    if _run_engine:
+    if _run_engine and _db_ready:
         try:
             engine_task = _start_engine_loop_in_background()
             print("[startup] Engine loop task created", flush=True)
@@ -923,6 +954,8 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             print(f"[startup] Could not start engine loop: {exc}", flush=True)
             logger.warning(f"[startup] Could not start engine loop: {exc}")
+    elif _run_engine and (not _db_ready):
+        logger.warning("[startup] Engine loop skipped (DATABASE_URL not configured)")
     else:
         logger.info(
             "[startup] Engine loop skipped (RUN_ENGINE_LOOP=0)%s",
@@ -936,7 +969,7 @@ async def lifespan(_: FastAPI):
     _run_worker = str(
         os.getenv("RUN_WORKER_LOOP", "1")
     ).strip().lower() in {"1", "true", "yes", "on"}
-    if _run_worker:
+    if _run_worker and _db_ready:
         try:
             worker_task = _start_worker_loop_in_background()
             print("[startup] Worker loop task created", flush=True)
@@ -944,6 +977,8 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             print(f"[startup] Could not start worker loop: {exc}", flush=True)
             logger.warning(f"[startup] Could not start worker loop: {exc}")
+    elif _run_worker and (not _db_ready):
+        logger.warning("[startup] Worker loop skipped (DATABASE_URL not configured)")
     else:
         logger.info(
             "[startup] Worker loop skipped (RUN_WORKER_LOOP=0)%s",
@@ -1274,6 +1309,9 @@ async def lifespan(_: FastAPI):
 
     async def _start_bot_bg() -> None:
         nonlocal application, bot_started
+        if not _db_ready:
+            logger.warning("[startup] Telegram bot disabled: DATABASE_URL not configured")
+            return
         backoff_seconds = 5
         attempt_no = 0
         discover_timeout_s = int(os.getenv("BOT_APP_DISCOVERY_TIMEOUT_SECONDS", "90") or 90)
@@ -1335,13 +1373,16 @@ async def lifespan(_: FastAPI):
                 pass
             backoff_seconds = min(backoff_seconds * 2, 60)
 
-    try:
-        bot_start_task = asyncio.create_task(_start_bot_bg())
-        bot_start_task.add_done_callback(lambda t: _log_task_failure(t, "bot-start"))
-        print("[startup] Telegram webhook setup scheduled in background", flush=True)
-    except Exception as exc:
-        print(f"[startup] Could not schedule Telegram webhook setup: {exc}", flush=True)
-        logger.warning(f"[startup] Could not schedule Telegram webhook setup: {exc}")
+    if _db_ready:
+        try:
+            bot_start_task = asyncio.create_task(_start_bot_bg())
+            bot_start_task.add_done_callback(lambda t: _log_task_failure(t, "bot-start"))
+            print("[startup] Telegram webhook setup scheduled in background", flush=True)
+        except Exception as exc:
+            print(f"[startup] Could not schedule Telegram webhook setup: {exc}", flush=True)
+            logger.warning(f"[startup] Could not schedule Telegram webhook setup: {exc}")
+    else:
+        logger.warning("[startup] Telegram webhook setup skipped: DATABASE_URL not configured")
 
     logger.info(
         f"[startup] complete — engine={'ok' if engine_task else 'skipped'} "
@@ -1355,6 +1396,7 @@ async def lifespan(_: FastAPI):
     # operators can immediately verify the single-service deployment is healthy.
     _worker_outcome_enabled = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
     _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    _bot_state = "DISABLED" if not _db_ready else ("ENABLED" if bot_started else "INITIALIZING")
     _subsystem_summary = (
         "[startup] subsystem summary | "
         f"signal_engine={'ENABLED' if engine_task else 'DISABLED'} | "
@@ -1362,7 +1404,7 @@ async def lifespan(_: FastAPI):
         f"worker_outcome_tracker={'ENABLED' if (worker_task and _worker_outcome_enabled) else 'DISABLED'} | "
         f"engine_outcome_tracker={'ENABLED' if _engine_outcome_enabled else 'DISABLED'} | "
         f"scheduler={'ENABLED' if scheduler else 'DISABLED'} | "
-        f"bot={'ENABLED' if bot_started else 'INITIALIZING'}"
+        f"bot={_bot_state}"
     )
     print(_subsystem_summary, flush=True)
     logger.info(_subsystem_summary)
