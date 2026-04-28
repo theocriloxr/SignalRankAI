@@ -3,7 +3,7 @@
 CANONICAL TIER & DELIVERY MODEL (2026-04-12):
 
 Tier Quality Tiers (Score-based):
-  - FREE: 80+ (highest quality only, limited detail in messages)
+  - FREE: 80+ (most restrictive quality gate, limited detail in messages)
   - PREMIUM: 70+ (more opportunity, medium detail)
   - VIP: 75+ (quality filter with deeper TP ladder)
   - ADMIN: 0+ (all signals for monitoring)

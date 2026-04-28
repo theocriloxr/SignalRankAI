@@ -67,6 +67,8 @@ def run_startup_ops(run_mode: str) -> None:
     except Exception:
         max_attempts = 12
     if not auto_migrate_enabled and not strict_schema_ready:
+        # Default to a single attempt when startup isn't strict and migrations
+        # are disabled to avoid blocking container boot with retry backoff.
         max_attempts = 1
     try:
         backoff_seconds = max(0.5, float((os.getenv("DB_CONNECT_BACKOFF_SECONDS") or "2").strip()))
