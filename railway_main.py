@@ -1468,7 +1468,7 @@ app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/telegram/webhook")
-async def _telegram_webhook_route(req: Request) -> Response:
+async def _telegram_webhook_route(req: Request) -> dict:
     """Receive Telegram updates and dispatch them to the bot application.
 
     Telegram POSTs to this URL for every incoming message or command.
@@ -1492,11 +1492,17 @@ async def _telegram_webhook_route(req: Request) -> Response:
                 "[webhook] bot_not_ready — update queued size=%d",
                 len(_pending_webhook_updates),
             )
-            return Response(status_code=200)
+            return {
+                "ok": True,
+                "queued": True,
+                "bot_ready": False,
+                "queue_backend": "pending",
+                "queue_size": len(_pending_webhook_updates),
+            }
         except Exception:
             # Keep Telegram delivery path healthy even during transient startup.
             logger.warning("[webhook] bot_not_ready and payload parse failed; acknowledging")
-            return Response(status_code=200)
+            return {"ok": False, "error": "invalid_payload", "bot_ready": False}
     try:
         data = await req.json()
         update_id = (data or {}).get("update_id", "?")
@@ -1508,24 +1514,63 @@ async def _telegram_webhook_route(req: Request) -> Response:
         if _webhook_dispatch_queue is None:
             _pending_webhook_updates.append(data)
             logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
-            return Response(status_code=200)
+            return {
+                "ok": True,
+                "queued": True,
+                "bot_ready": True,
+                "queue_backend": "pending",
+                "queue_size": len(_pending_webhook_updates),
+            }
 
         if _use_redis_webhook_queue:
-            enqueue_task = asyncio.create_task(_enqueue_webhook_update_async(data))
-            enqueue_task.add_done_callback(_log_webhook_enqueue_task_error)
-            return Response(status_code=200)
+            enqueued = False
+            try:
+                enqueued = await asyncio.wait_for(
+                    state.enqueue_webhook_update(
+                        data,
+                        max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
+                    ),
+                    timeout=2.5,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
+            except Exception as exc:
+                logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
+            if enqueued:
+                _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
+                queue_size = 0
+                try:
+                    queue_size = int(
+                        await asyncio.wait_for(state.webhook_queue_depth(), timeout=2.0)
+                    )
+                except Exception:
+                    queue_size = 0
+                return {
+                    "ok": True,
+                    "queued": True,
+                    "bot_ready": True,
+                    "queue_backend": "redis",
+                    "queue_size": queue_size,
+                }
+            logger.warning("[webhook] redis enqueue failed — falling back to in-process queue")
 
         try:
             _webhook_dispatch_queue.put_nowait(data)
             _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
-            return Response(status_code=200)
+            return {
+                "ok": True,
+                "queued": True,
+                "bot_ready": True,
+                "queue_backend": "in_process",
+                "queue_size": int(_webhook_dispatch_queue.qsize()),
+            }
         except asyncio.QueueFull:
             webhook_queue_full_total.inc()
             logger.warning("[webhook] queue_full — dropping update_id=%s", update_id)
-            return Response(status_code=200)
+            return {"ok": False, "error": "queue_full", "queue_backend": "in_process"}
     except Exception as exc:
         logger.error("[webhook] failed to process update: %s", exc)
-        return Response(status_code=200)
+        return {"ok": False, "error": "invalid_payload"}
 
 
 async def _enqueue_webhook_update_async(data: dict) -> None:

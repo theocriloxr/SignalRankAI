@@ -3,10 +3,10 @@
 CANONICAL TIER & DELIVERY MODEL (2026-04-12):
 
 Tier Quality Tiers (Score-based):
-  - FREE: 85+ (highest quality only, limited detail in messages)
+  - FREE: 80+ (highest quality only, limited detail in messages)
   - PREMIUM: 70+ (more opportunity, medium detail)
-  - VIP: 85+ (same score gate as FREE but with deeper TP ladder)
-  - ADMIN: 85+ (all signals for monitoring)
+  - VIP: 75+ (quality filter with deeper TP ladder)
+  - ADMIN: 0+ (all signals for monitoring)
   - OWNER: 0+ (unlimited, receives everything)
 
 Daily Limits (PER DELIVERED SIGNALS to user):
@@ -49,11 +49,11 @@ TIER_DAILY_LIMITS: Final[dict[str, float]] = {
 
 # Tier quality score thresholds (minimum signal score to be eligible)
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-    "free": 85,      # Highest quality only
+    "free": 80,      # Highest quality only
     "premium": 70,   # Lower threshold = more signals
-    "vip": 85,       # Same quality as FREE but deeper TP ladder
+    "vip": 75,       # Quality filter with deeper TP ladder
     "owner": 0,      # No score gate
-    "admin": 85,     # Admin-level quality
+    "admin": 0,      # Admin receives all signals
 }
 
 # Signal depth per tier (how many TP levels shown)

@@ -337,8 +337,8 @@ railway env add FX_PAIRS "EURUSD,GBPUSD"
 ### 2. Configure Signal Thresholds
 ```bash
 railway env add MIN_SCORE_FREE 80
-railway env add MIN_SCORE_PREMIUM 75
-railway env add MIN_SCORE_VIP 70
+railway env add MIN_SCORE_PREMIUM 70
+railway env add MIN_SCORE_VIP 75
 ```
 
 ### 3. Enable Payments (Optional)
@@ -402,4 +402,3 @@ You've done it right if:
 - ✅ Daily signal count > 0 (after 1 hour)
 
 Good luck! 🚀
-

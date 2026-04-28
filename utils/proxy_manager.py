@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+import asyncio
 from typing import Optional
 
 from sqlalchemy import select
@@ -155,6 +156,12 @@ async def _fetch_active_proxies_from_db() -> list[str]:
 
 
 def refresh_active_proxy_pool_sync() -> list[str]:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        return []
     try:
         active = run_sync(_fetch_active_proxies_from_db())
     except Exception:
