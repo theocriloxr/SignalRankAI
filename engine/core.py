@@ -805,13 +805,14 @@ def main_loop(DRY_RUN: bool = False):
                 # Check data age for each timeframe
                 # Data is considered stale if older than 2x the timeframe interval
                 # (e.g., 1h candles stale after 2 hours, allows for provider delays)
+                from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
                 _TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
                 stale_data = False
                 for tf, tf_data in market_data.items():
                     if isinstance(tf_data, dict):
                         data_age = tf_data.get("data_age_seconds")
                         tf_interval = _TF_SECONDS.get(tf, 3600)
-                        max_age = tf_interval * 2  # Allow 2x interval for provider delays
+                        max_age = tf_interval * CANDLE_STALENESS_MULTIPLIER
                         if data_age is not None and data_age > max_age:
                             logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
                             stale_data = True
@@ -861,15 +862,16 @@ def main_loop(DRY_RUN: bool = False):
                     normalized = strategy_signals
                 pipeline_stats["normalized"] += len(normalized)
 
-                # Consensus filter
+                # Consensus filter - NO FALLBACK IN PROD
                 try:
                     consensus_signals = apply_consensus_filter(normalized)
-                except Exception:
-                    consensus_signals = normalized
-                # Fallback: if consensus is too strict, keep normalized signals to avoid zero output
-                if not consensus_signals:
-                    _log_decision("skipped", {"asset": asset, "timeframe": "*"}, reason="consensus_empty_fallback")
-                    consensus_signals = normalized
+                    if not consensus_signals and _env_bool("PROD_MODE", True):
+                        logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
+                        continue  # Skip asset entirely
+                except Exception as e:
+                    logger.error(f"Consensus failed for {asset}: {e}")
+                    consensus_signals = []
+                pipeline_stats["consensus"] += len(consensus_signals)
                 pipeline_stats["consensus"] += len(consensus_signals)
 
                 # Pick best direction per pair/timeframe
@@ -1305,10 +1307,16 @@ def main_loop(DRY_RUN: bool = False):
                         except Exception:
                             pass
 
-                        # final gating by score threshold
+                        # Final gates: score + expectancy
                         if sig.get('score', 0) < MIN_SCORE_THRESHOLD:
                             sig['rejection_reason'] = f"score {sig.get('score',0)} < {MIN_SCORE_THRESHOLD}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
+                            continue
+                        # Expectancy gate (Phase 3 full impl)
+                        live_exp = float(sig.get('live_expectancy', 0.15))
+                        if live_exp < 0.15:
+                            sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
+                            _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
 
                         # attach regime & expiration (30-minute hard cap per product requirement)

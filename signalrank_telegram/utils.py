@@ -5,7 +5,7 @@ from functools import lru_cache
 from datetime import datetime, timedelta
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from core.redis_state import state
-from core.tier_constants import TIER_SCORE_THRESHOLDS, tier_rank
+from core.tier_constants import TIER_SCORE_THRESHOLDS
 from core.command_limits import PUBLIC_COMMAND_RATE_LIMIT, REQUIRE_TIER_RATE_LIMIT
 from config import ADMIN_IDS, OWNER_IDS, config
 

@@ -68,17 +68,17 @@ def validate_signal(signal: dict) -> tuple[bool, Optional[str]]:
             return False, "Risk (entry-SL distance) must be positive"
         
         rr_ratio = reward / risk
-        if rr_ratio < 0.5:
-            return False, f"Poor RR ratio: {rr_ratio:.2f} (minimum 0.5)"
+        if rr_ratio < 1.5:
+            return False, f"Poor RR ratio: {rr_ratio:.2f} (minimum 1.5)"
         
         # Check for extremely wide SL (>20% for crypto, >10% for stocks)
         sl_pct = (risk / entry) * 100.0
         asset = str(signal.get("asset", "")).upper()
         is_crypto = asset.endswith("USDT") or asset.endswith("USDC") or asset.endswith("BUSD")
         
-        max_sl_pct = 20.0 if is_crypto else 10.0
+        max_sl_pct = 8.0 if is_crypto else 5.0
         if sl_pct > max_sl_pct:
-            return False, f"SL too wide: {sl_pct:.1f}% (max {max_sl_pct}%)"
+            return False, f"SL too wide: {sl_pct:.1f}% (max {max_sl_pct}% for { 'crypto' if is_crypto else 'traditional' } )"
         
         return True, None
         

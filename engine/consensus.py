@@ -39,7 +39,7 @@ def consensus_filter(signals, min_score=None):
         min_groups = int((os.getenv("CONSENSUS_MIN_GROUPS") or "1").strip())
     except Exception:
         min_groups = 1
-    min_groups = max(1, int(min_groups))
+        min_groups = max(3, int(min_groups))
 
     grouped_score: dict[tuple[str, str, str], float] = {}
     grouped_groups: dict[tuple[str, str, str], set[str]] = {}
@@ -87,7 +87,7 @@ def consensus_filter(signals, min_score=None):
         grouped_signals[key].append(s)
 
     approved: list[dict] = []
-    strict_groups = _env_bool("CONSENSUS_STRICT_GROUPS", False)
+    strict_groups = _env_bool("CONSENSUS_STRICT_GROUPS", True) if _env_bool("PROD_MODE", True) else _env_bool("CONSENSUS_STRICT_GROUPS", False)
     required_groups = ["momentum", "trend", "structure", "volatility", "volume"]
     for key, sigs in grouped_signals.items():
         # Only approve if total confidence and group count pass thresholds

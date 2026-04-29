@@ -10,10 +10,9 @@ from sqlalchemy import select, func, text
 from db.session import get_engine_for_event_loop, get_session
 from db.models import Signal, Outcome, SignalDelivery, User
 from engine.price_validator import enrich_signal_with_live_price, is_signal_fresh, get_asset_type
-from core.tier_constants import MAX_SIGNAL_AGE_SECONDS, TIER_SCORE_THRESHOLDS, FREE_MIN_SCORE, FREE_SIGNAL_DAILY_LIMIT
-from .utils import _public_guard, tier_rank, _effective_tier
+from core.tier_constants import MAX_SIGNAL_AGE_SECONDS, TIER_SCORE_THRESHOLDS, FREE_MIN_SCORE, FREE_SIGNAL_DAILY_LIMIT, FREE_PROOF_FEED_LIMIT
+from .utils import _public_guard, tier_rank, _effective_tier, _build_signal_action_keyboard
 from .formatter import format_signal, format_signal_free_new, format_signal_free_limited
-from . import _build_signal_action_keyboard
 from engine.signal_calculations import calculate_profit_loss_pct
 from core.redis_state import state
 from data.fetcher import async_get_candles, get_asset_type as _get_asset_type
