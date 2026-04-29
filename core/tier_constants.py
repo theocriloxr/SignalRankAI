@@ -120,3 +120,8 @@ STRONG_SENTIMENT_THRESHOLD = 2
 
 # Active signal monitoring
 ACTIVE_SIGNAL_LOOKBACK_HOURS = 24
+
+# FREE tier specific constants
+FREE_MIN_SCORE: Final[int] = 80  # Minimum signal score for FREE tier eligibility
+FREE_SIGNAL_DAILY_LIMIT: Final[int] = 3  # Daily signal limit for FREE users
+FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed

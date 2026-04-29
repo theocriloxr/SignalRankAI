@@ -36,6 +36,7 @@ from db.models import ApiToken, User, Signal
 from sqlalchemy import select
 from core.redis_state import state
 from core.redis_cache import cache_stats
+from core.tier_constants import TIER_SCORE_THRESHOLDS
 from signalrank_telegram.utils import tier_rank, _effective_tier
 from payments.paystack import verify_payment
 

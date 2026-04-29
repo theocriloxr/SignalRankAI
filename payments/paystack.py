@@ -2,8 +2,10 @@ import hmac
 import hashlib
 import os
 import json
+import httpx
 
 PAYSTACK_SECRET = os.getenv("PAYSTACK_SECRET_KEY")
+PAYSTACK_BASE_URL = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
 
 def verify_signature(payload, signature):
     computed = hmac.new(
@@ -101,4 +103,54 @@ async def process_event(event):
         pass
     
     return {"processed": True, "tier": tier, "days": duration_days}
+
+async def verify_payment(reference: str, amount_paid: float) -> bool:
+    """Verify a Paystack payment by reference and activate subscription.
+    
+    Args:
+        reference: Paystack transaction reference
+        amount_paid: Amount paid in NGN (for validation)
+    
+    Returns:
+        True if payment is verified and valid, False otherwise
+    """
+    secret = os.getenv("PAYSTACK_SECRET_KEY")
+    if not secret:
+        return False
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {secret}",
+            "Content-Type": "application/json"
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{PAYSTACK_BASE_URL}/transaction/verify/{reference}",
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                return False
+            
+            data = response.json()
+            if not data.get("status"):
+                return False
+            
+            tx_data = data.get("data", {})
+            tx_status = tx_data.get("status")
+            tx_amount = tx_data.get("amount", 0) / 100  # kobo to NGN
+            
+            # Verify transaction was successful
+            if tx_status != "success":
+                return False
+            
+            # Verify amount matches (allow small variance for fees)
+            if abs(tx_amount - amount_paid) > 1.0:  # Allow 1 NGN variance
+                return False
+            
+            return True
+            
+    except Exception as e:
+        return False
 
