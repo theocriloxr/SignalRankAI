@@ -1,16 +1,47 @@
-# SignalRankAI ImportError Fix - Import tier_rank from correct module
+# SignalRankAI - Import Errors Fixed
 
-## Plan Status
-✅ **Approved**: Fix web/app.py import (tier_rank from utils, not tier_constants)
+## Status: ✅ COMPLETED
 
-## Steps to Complete
-- [x] 1. Create TODO.md (this file)
-- [x] 2. Edit web/app.py - Fix import line 39
-- [x] 3. Test locally: `python railway_main.py` (should import without error) ✅ ImportError fixed (starts but interrupted)
-- [x] 4. Update TODO.md with test results
-- [ ] 5. Deploy to Railway / verify logs
-- [ ] 6. Mark complete: `attempt_completion`
+### Issues Fixed
 
-## Current Progress
-Completed: Planning + TODO creation  
-Pending: Code edit → Local test → Deploy
+1. **ImportError: cannot import name 'tier_rank' from 'core.tier_constants'**
+   - Root cause: `tier_rank` is defined in `signalrank_telegram/utils.py`, not in `core/tier_constants.py`
+   - The deployed version had an incorrect import statement
+   - Local code was already correct
+
+2. **Missing constants in core/tier_constants.py**
+   - Added `FREE_MIN_SCORE = 80`
+   - Added `FREE_SIGNAL_DAILY_LIMIT = 3`
+   - Added `FREE_PROOF_FEED_LIMIT = 5`
+
+3. **ImportError: cannot import name 'verify_payment' from 'payments.paystack'**
+   - Added `verify_payment()` async function to `payments/paystack.py`
+   - Function verifies Paystack transactions via API
+
+4. **ImportError: cannot import name '_build_signal_action_keyboard' from 'signalrank_telegram'**
+   - Fixed import in `signalrank_telegram/signal_commands.py`
+   - Changed from `from . import _build_signal_action_keyboard` to `from .utils import _build_signal_action_keyboard`
+
+### Verification
+
+All imports now work correctly:
+```
+core.tier_constants: OK
+signalrank_telegram.utils: OK
+signalrank_telegram.signal_commands: OK
+payments.paystack: OK
+web.app: OK
+railway_main: OK
+```
+
+### Files Modified
+
+1. `core/tier_constants.py` - Added FREE tier constants
+2. `payments/paystack.py` - Added `verify_payment()` function
+3. `signalrank_telegram/signal_commands.py` - Fixed imports
+
+### Next Steps
+
+- Deploy to Railway
+- Monitor logs for any remaining issues
+- The application should now start without ImportError
