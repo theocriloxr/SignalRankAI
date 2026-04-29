@@ -31,29 +31,34 @@ Delivery Model:
 
 Outcome Rules:
   - Once TP is hit on a signal, no SL outcome can be recorded
-  - TP progression shows as "1/3", "2/3", "3/3"
+  - TP progression shows as \"1/3\", \"2/3\", \"3/3\"
   - SL outcome only recorded if no TP was hit
   - Trailing SL: track outcomes against CURRENT SL, not original SL
+
+NEW PRODUCTION UPGRADES (2024):
+  - EXPECTANCY_MIN=0.15 (live block below this)
+  - DD_SOFT_THROTTLE=0.06, DD_HARD=0.12
+  - CANDLE_STALENESS_MULTIPLIER=1.5 (stricter freshness)
 """
 
 from typing import Final
 
 # Tier daily signal limits (DELIVERED signals per user)
 TIER_DAILY_LIMITS: Final[dict[str, float]] = {
-    "free": 3,
-    "premium": 10,
-    "vip": 20,  # Soft cap, signals pause after 20/day
+    "free": 3.0,
+    "premium": 10.0,
+    "vip": 20.0,  # Soft cap, signals pause after 20/day
     "owner": float('inf'),
     "admin": float('inf'),
 }
 
 # Tier quality score thresholds (minimum signal score to be eligible)
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-    "free": 80,      # Highest quality only
-    "premium": 70,   # Lower threshold = more signals
-    "vip": 75,       # Quality filter with deeper TP ladder
-    "owner": 0,      # No score gate
-    "admin": 0,      # Admin receives all signals
+    "free": 80.0,      # Highest quality only
+    "premium": 70.0,   # Lower threshold = more signals
+    "vip": 75.0,       # Quality filter with deeper TP ladder
+    "owner": 0.0,      # No score gate
+    "admin": 0.0,      # Admin receives all signals
 }
 
 # Signal depth per tier (how many TP levels shown)
@@ -96,7 +101,7 @@ UPGRADE_PROMPT_FREQUENCY_INT: Final[int] = 3  # Every 3rd signal, or based on si
 
 # Signal freshness: max age in seconds before signal is considered stale.
 # Keep this strict and centralized as the single source for freshness policy.
-MAX_SIGNAL_AGE_SECONDS = {
+MAX_SIGNAL_AGE_SECONDS: Final[dict[str, int]] = {
     "crypto":    300,    # 5 min
     "fx":        900,    # 15 min
     "stock":     900,    # 15 min
@@ -105,7 +110,7 @@ MAX_SIGNAL_AGE_SECONDS = {
 
 # Price drift tolerance: max fractional deviation from entry price (not %).
 # These mirror the % values in engine/stale_signal_validator._CLASS_THRESHOLDS.
-PRICE_DRIFT_TOLERANCE = {
+PRICE_DRIFT_TOLERANCE: Final[dict[str, float]] = {
     "crypto":    0.020,  # 2.0 % — volatile 24/7 market; full cycle can take 30-120 s
     "fx":        0.003,  # 0.3 % — tight spreads; FX moves slowly relative to crypto
     "stock":     0.010,  # 1.0 % — intraday moves justify 1 % tolerance
@@ -113,15 +118,21 @@ PRICE_DRIFT_TOLERANCE = {
 }
 
 # Candle staleness multiplier: max age = timeframe * this value
-CANDLE_STALENESS_MULTIPLIER = 2
+CANDLE_STALENESS_MULTIPLIER: Final[float] = 1.5
+
+# NEW PRODUCTION RISK CONSTANTS
+EXPECTANCY_MIN: Final[float] = 0.15  # Block signals from assets/strategies with expectancy < 0.15
+DD_SOFT_THROTTLE: Final[float] = 0.06  # Throttle signals at 6% drawdown
+DD_HARD_LIMIT: Final[float] = 0.12  # Hard stop at 12% drawdown
 
 # News sentiment threshold for conflict detection
-STRONG_SENTIMENT_THRESHOLD = 2
+STRONG_SENTIMENT_THRESHOLD: Final[int] = 2
 
 # Active signal monitoring
-ACTIVE_SIGNAL_LOOKBACK_HOURS = 24
+ACTIVE_SIGNAL_LOOKBACK_HOURS: Final[int] = 24
 
 # FREE tier specific constants
 FREE_MIN_SCORE: Final[int] = 80  # Minimum signal score for FREE tier eligibility
 FREE_SIGNAL_DAILY_LIMIT: Final[int] = 3  # Daily signal limit for FREE users
 FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
+
