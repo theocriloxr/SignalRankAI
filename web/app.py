@@ -72,7 +72,7 @@ class MetricsResponse(BaseModel):
     signals_delivered_1h: int
     subscriptions_active: int
 
-def verify_api_key(token: str = Depends(security)) -> int:
+async def verify_api_key(token: str = Depends(security)) -> int:
     """Verify API token → return user_id or raise 401."""
     raw_token = token.credentials
     if not raw_token:
@@ -129,6 +129,7 @@ async def health():
     """Liveness + readiness probe."""
     uptime = time.time() - float(os.getenv("START_TS", str(time.time())))
     
+    active_signals = -1
     try:
         async with get_session() as session:
             # Count active (non-expired/archived) signals
@@ -140,6 +141,7 @@ async def health():
     except Exception:
         active_signals = -1
     
+    hit_rate = 0.0
     try:
         cache = await cache_stats()
         hit_rate = float(cache.get("hit_rate", 0))
@@ -159,17 +161,20 @@ async def metrics(user_id: int = Depends(verify_api_key)):
     if not await _is_admin_user(user_id):
         raise HTTPException(403, "Admin access required")
     
+    cache_stats_data = {}
     try:
         cache_stats_data = await cache_stats()
     except Exception:
         cache_stats_data = {}
     
+    subs = 0
     try:
         async with get_session() as session:
             subs = await count_active_subscriptions(session)
     except Exception:
         subs = 0
     
+    signals_1h = delivered_1h = 0
     try:
         signals_1h = int(await state.get_sync("metrics:signals_generated_1h") or 0)
         delivered_1h = int(await state.get_sync("metrics:signals_delivered_1h") or 0)
@@ -246,6 +251,7 @@ async def get_signals(
 
 async def _is_admin_user(user_id: int) -> bool:
     """Check if user is admin/owner."""
+    from core.settings import OWNER_IDS, ADMIN_IDS
     return user_id in OWNER_IDS or user_id in ADMIN_IDS
 
 @app.post("/paystack/webhook")
