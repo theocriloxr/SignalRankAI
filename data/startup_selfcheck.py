@@ -26,16 +26,19 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return val.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def _log(msg: str) -> None:
-    print(msg, flush=True)
+    logger.info(msg)
 
 
 def _warn(msg: str) -> None:
-    _log(f"[WARN] {msg}")
+    logger.warning(msg)
 
 
 def _info(msg: str) -> None:
-    _log(f"[boot] {msg}")
+    logger.info(msg)
 
 
 def _binance_symbol_rest(asset: str) -> str:

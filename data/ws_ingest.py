@@ -13,6 +13,8 @@ from db.market_cache import prune_old_candles, upsert_market_candle, upsert_mark
 from db.session import get_session, is_db_configured
 from data.pair_discovery import get_all_trending_pairs
 from data.fetcher import is_crypto
+import logging
+logger = logging.getLogger(__name__)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -206,7 +208,7 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
     async def _consume_provider(provider: str) -> bool:
         """Return True if running, False if stalled (no events)."""
 
-        print(f"[ws_ingest] provider_start={provider} symbols={len(symbols)} intervals={len(intervals)}", flush=True)
+        logger.info(f"[ws_ingest] provider_start={provider} symbols={len(symbols)} intervals={len(intervals)}")
 
         q: asyncio.Queue[dict] = asyncio.Queue(maxsize=max(100, flush_every * 10))
         stop = asyncio.Event()
@@ -281,7 +283,7 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                     ev = await asyncio.wait_for(q.get(), timeout=max(5.0, stale_seconds))
                 except asyncio.TimeoutError:
                     # stall
-                    print(f"[ws_ingest] provider_stalled={provider} stale_seconds={stale_seconds}", flush=True)
+                    logger.warning(f"[ws_ingest] provider_stalled={provider} stale_seconds={stale_seconds}")
                     stop.set()
                     feeder_task.cancel()
                     await _flush()
@@ -337,7 +339,7 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
             if stop_event is not None and stop_event.is_set():
                 return
             try:
-                print(f"[ws_ingest] provider_try={p}", flush=True)
+                logger.info(f"[ws_ingest] provider_try={p}")
                 ok = await _consume_provider(p)
             except Exception:
                 ok = False
@@ -345,5 +347,5 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                 # Normal shutdown requested.
                 return
             # If stalled, try the other provider.
-            print(f"[ws_ingest] provider_switch_from={p}", flush=True)
+            logger.info(f"[ws_ingest] provider_switch_from={p}")
         await asyncio.sleep(2.0)
