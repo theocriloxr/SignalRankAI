@@ -25,6 +25,23 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+async def count_active_subscriptions(
+    session: AsyncSession,
+) -> int:
+    """Count ALL active subscriptions across all tiers."""
+    now = datetime.utcnow()
+    q = (
+        select(func.count(Subscription.id))
+        .where(
+            Subscription.status == "active",
+            Subscription.expires_at.is_not(None),
+            Subscription.expires_at > now,
+        )
+    )
+    res = await session.execute(q)
+    return int(res.scalar() or 0)
+
+
 async def get_active_subscription(
     session: AsyncSession,
     telegram_user_id: int,
@@ -430,3 +447,4 @@ async def mark_webhook_event_processed(
     except IntegrityError:
         await session.rollback()
         return False
+

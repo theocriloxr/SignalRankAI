@@ -31,7 +31,7 @@ from pydantic import BaseModel
 import uvicorn
 
 from db.session import get_session
-from db.repository import get_latest_active_api_token, count_active_subscriptions
+from db.repository import get_api_token_owner, count_active_subscriptions
 from db.models import ApiToken, User, Signal
 from sqlalchemy import select
 from core.redis_state import state
@@ -80,7 +80,7 @@ async def verify_api_key(token: str = Depends(security)) -> int:
     
     try:
         async with get_session() as session:
-            user_id = await get_latest_active_api_token(session, raw_token=raw_token)
+            user_id = await get_api_token_owner(session, raw_token=raw_token)
             if not user_id:
                 raise HTTPException(401, "Invalid or expired API key")
             return int(user_id)
