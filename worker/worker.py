@@ -92,10 +92,8 @@ class Worker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
                 _register_task("outcome_tracker", lambda: outcome_tracker.start(), restart_on_failure=True)
-                print("[worker] RealtimeOutcomeTracker started", flush=True)
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
-                print(f"[worker] Failed to start outcome tracker: {e}", flush=True)
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
         else:
             logger.info("[worker] RealtimeOutcomeTracker disabled for this worker instance")
@@ -106,7 +104,7 @@ class Worker:
                 from worker.market_monitor import start_market_monitor
                 _register_task("market_monitor", lambda: start_market_monitor(), restart_on_failure=True)
             except Exception as e:
-                print(f"[worker] Failed to start market monitor: {e}", flush=True)
+                logger.warning("[worker] Failed to start market monitor: %s", e)
 
         if config.CRYPTO_WS_ENABLED:
             try:
@@ -120,14 +118,14 @@ class Worker:
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
             except Exception as e:
-                print(f"[worker] Failed to start ML train loop: {e}", flush=True)
+                logger.warning("[worker] Failed to start ML train loop: %s", e)
 
         # Data drift monitor loop (enabled by default).
         if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
-                print(f"[worker] Failed to start drift monitor loop: {e}", flush=True)
+                logger.warning("[worker] Failed to start drift monitor loop: %s", e)
         import time
         last_heartbeat = time.time()
         try:
@@ -193,7 +191,7 @@ class Worker:
         try:
             from ml import train_model as ml_train
         except Exception as exc:  # pragma: no cover
-            print(f"[worker] ML train loop disabled (import failed): {exc}", flush=True)
+            logger.warning("[worker] ML train loop disabled (import failed): %s", exc)
             return
 
         interval = max(3600, int(getattr(config, "ML_TRAIN_INTERVAL_SECONDS", 86400) or 86400))
@@ -202,11 +200,11 @@ class Worker:
             try:
                 ok = await ml_train.main()
                 if ok:
-                    print("[worker] ML model retrained successfully", flush=True)
+                    logger.info("[worker] ML model retrained successfully")
                 else:
-                    print("[worker] ML model retrain skipped/failed (insufficient data)", flush=True)
+                    logger.info("[worker] ML model retrain skipped/failed (insufficient data)")
             except Exception as exc:  # pragma: no cover
-                print(f"[worker] ML train loop error: {exc}", flush=True)
+                logger.error("[worker] ML train loop error: %s", exc)
 
             # Sleep until next window or until stop requested
             try:

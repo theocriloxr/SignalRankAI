@@ -15,8 +15,11 @@ def get_trending_commodity_tickers(top_n=10):
     default_commodities = ["XAUUSD", "XAGUSD", "WTI", "BRENT"]
     return default_commodities[:top_n]
 
+import logging
 import threading
 import time
+
+logger = logging.getLogger(__name__)
 
 
 def get_trending_crypto_pairs(top_n=20):
@@ -71,7 +74,7 @@ def _asset_universe_auto_refresh_thread():
         try:
             _refresh_asset_universe()
         except Exception as e:
-            print(f"[pair_discovery] Asset universe auto-refresh failed: {e}")
+            logger.warning("[pair_discovery] Asset universe auto-refresh failed: %s", e)
         time.sleep(_ASSET_UNIVERSE_REFRESH_INTERVAL)
 
 # Start auto-refresh thread at import time
@@ -200,7 +203,7 @@ def get_trending_crypto_pairs(top_n=20):
             # to avoid spamming logs.
             if "restricted location" in msg_s.lower():
                 _BINANCE_DISABLED_REASON = msg_s
-                print(f"[WARN] Binance pairs disabled: {msg_s}")
+                logger.warning("[pair_discovery] Binance pairs disabled: %s", msg_s)
                 return _cryptocompare_top_crypto_pairs(top_n)
             raise RuntimeError(f"Binance API error: code={code} msg={msg}")
         if not isinstance(data, list):
@@ -208,9 +211,9 @@ def get_trending_crypto_pairs(top_n=20):
         # Sort by quoteVolume (trending)
         sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
         return _filter_blacklisted([x['symbol'] for x in sorted_pairs[:top_n]])
-    except Exception as e:
-        print(f"[WARN] Could not fetch Binance pairs: {e}")
-        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
+        except Exception as e:
+            logger.warning("[pair_discovery] Could not fetch Binance pairs: %s", e)
+            return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
 
 def get_trending_fx_pairs():
     """Return configured FX pairs.
@@ -316,7 +319,7 @@ def get_trending_stock_tickers(top_n=20):
                             combined.append(ticker)
                     return combined[:top_n]
         except Exception as e:
-            print(f"[WARN] Polygon stocks fetch failed: {e}")
+            logger.warning("[pair_discovery] Polygon stocks fetch failed: %s", e)
     
     # Fallback to hardcoded list
     return sp500_liquid[:top_n]

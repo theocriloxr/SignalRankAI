@@ -251,7 +251,7 @@ def fetch_market_data(asset, timeframes):
                 'candle_age_seconds': candle_age
             }
         except Exception as e:
-            print(f"[WARN] Skipping {asset} {tf} due to error: {e}")
+            logger.warning(f"[fetcher] Skipping {asset} {tf} due to error: {e}")
             continue
     return data
 
@@ -878,10 +878,7 @@ def get_crypto_candles(asset, timeframe):
                 msg_l = (msg or "").lower()
                 if resp.status_code in {451, 403} or "restricted location" in msg_l:
                     _BINANCE_BLOCKED_REASON = msg or f"HTTP {resp.status_code}"
-                    print(
-                        f"[WARN] Binance appears geo-blocked (HTTP {resp.status_code}). Falling back to CryptoCompare for candles.",
-                        flush=True,
-                    )
+                    logger.warning(f"[fetcher] Binance geo-blocked (HTTP {resp.status_code}). Falling back to CryptoCompare")
                     candles = _cryptocompare_candles(sym, interval)
                     return candles or []
                 raise RuntimeError(f"Binance klines HTTP {resp.status_code}")
@@ -897,10 +894,7 @@ def get_crypto_candles(asset, timeframe):
                 msg_l = (msg or "").lower()
                 if "restricted location" in msg_l:
                     _BINANCE_BLOCKED_REASON = msg
-                    print(
-                        "[WARN] Binance appears geo-blocked (restricted location). Falling back to CryptoCompare for candles.",
-                        flush=True,
-                    )
+                    logger.warning("[fetcher] Binance geo-blocked (restricted location). Falling back to CryptoCompare")
                     candles = _cryptocompare_candles(sym, interval)
                     return candles or []
                 raise RuntimeError(f"Unexpected Binance klines payload: {payload}")
@@ -928,7 +922,7 @@ def get_crypto_candles(asset, timeframe):
             opened = _binance_breaker.record_failure()
             if opened:
                 _alert_provider_flip("binance", "bybit", "repeated_failures")
-            print(f"[WARN] Binance candle fetch failed for {sym} {interval} (attempt {attempt}/{max_retries}): {e}")
+            logger.warning(f"[fetcher] Binance fetch failed {sym} {interval} (attempt {attempt}/{max_retries}): {e}")
             time.sleep(1)
 
     # Final fallback
