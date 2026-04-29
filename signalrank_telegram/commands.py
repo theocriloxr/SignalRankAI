@@ -17,6 +17,12 @@ from core.command_limits import (
 	FREE_MIN_SCORE,
 	FREE_SIGNAL_DAILY_LIMIT,
 )
+from .admin_commands import admin_dashboard, admin_top_assets_command
+from .user_commands import start_command, status_command, account_command
+from .signal_commands import signals_command, proof_command, signal_command
+from .account_commands import performance_command, history_command, apikey_command
+from .mt5_commands import mt5_link_command, mt5_status_command
+from .utils import tier_rank, _effective_tier, _public_guard
 
 TIER_RANKS: dict[str, int] = {
 	"FREE": 0,
@@ -26,9 +32,6 @@ TIER_RANKS: dict[str, int] = {
 	"OWNER": 3,
 }
 FREE_PROOF_FEED_LIMIT = 5
-
-def tier_rank(tier) -> int:
-	return TIER_RANKS.get((tier or "").strip().upper(), 0)
 
 
 def _railway_env_hint(feature: str, missing: list[str]) -> str:
