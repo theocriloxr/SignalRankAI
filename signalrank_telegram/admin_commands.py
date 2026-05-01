@@ -230,7 +230,6 @@ async def selfcheck_command(update, context) -> None:
         checks.append("✅ Redis: connected")
     except Exception:
         checks.append("❌ Redis: not connected")
-+
     # Railway env readiness check
     if running_on_railway:
         checks.append("✅ Railway: detected")

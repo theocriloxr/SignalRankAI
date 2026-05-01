@@ -552,8 +552,13 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         from signalrank_telegram.bot import run_bot
     except Exception as exc:
         print(f"[bot] webhook setup import error: {exc}", flush=True)
-        logger.warning(f"[bot] Could not import run_bot: {exc}; skipping webhook setup")
-        return None, False
+        logger.error(
+            "[bot] Fatal import error — cannot start Telegram bot. "
+            "Fix the syntax/import error and redeploy. Details: %s",
+            exc,
+            exc_info=True,
+        )
+        raise
 
     # Signal webhook mode before calling run_bot()
     os.environ["TELEGRAM_USE_WEBHOOK"] = "1"

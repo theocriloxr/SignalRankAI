@@ -53,7 +53,7 @@ class Outcome(Base):
     signal_id: Mapped[PGUUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("signals.signal_id"), index=True)
     status: Mapped[str] = mapped_column(String(32))
     r_multiple: Mapped[float] = mapped_column(Float)
-    pnl_pct: Mapped[float] = mapped_column(Float)
+    pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     signal: Mapped['Signal'] = relationship(back_populates="outcomes")
 
 class DecisionLog(Base):
