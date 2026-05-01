@@ -71,7 +71,7 @@ def test_risk_check_low_expectancy(sample_signal, account_state_normal):
 def test_risk_check_high_vol(sample_signal, account_state_normal):
     # atr_rel is read before volatility in the or-chain, so set the field
     # that risk_check actually evaluates first.
-    sample_signal['atr_rel'] = 0.15  # high vol → above MAX_SIGNAL_VOLATILITY default 0.12
+    sample_signal['atr_rel'] = 0.15  # high vol -> above MAX_SIGNAL_VOLATILITY default 0.12
     assert risk_check(sample_signal, account_state_normal) == False
 
 def test_calculate_dynamic_risk(sample_signal):
