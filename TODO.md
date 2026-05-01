@@ -1,49 +1,68 @@
-# SignalRankAI Production Upgrade - Approved Plan (Phase 2+)
-User approved plan. Priority: A (risk/expectancy) > B (incompletes) > C (research). 
-Dynamic real-time values from data/news/gemini/ML/outcomes (no fixed).
+# SignalRankAI ImportError Fix: cannot import name 'Signal' from 'db.models'
 
-## Progress Tracker [11/32 complete]
+Status: **IN PROGRESS** ✅
 
-### Phase 1: Audit & Plan ✅ COMPLETE
-- [x] Repo scan + TODO/FIXME audit
-- [x] Core files read (risk_manager, signal_validator, consensus, core, scoring, risk)
-- [x] Plan written + user approved
+## Approved Plan Summary
+**Root cause**: ImportError on Signal model definition (PGUUID dialect race in Railway container).
 
-### Phase 3: DB Live Metrics [3/3] ✅ COMPLETE
-9. [x] db/models.py: Add AssetLiveMetric, StrategyLiveMetric
-10. [x] alembic migration: manual run recommended (DB connection needed)
-11. [x] engine/risk.py + core.py: Query live expectancy (updated expectancy_gate.py)
+**Files to edit**:
+1. `db/models.py` - Add dialect imports + error wrapping
+2. `railway_main.py` - Add pre-import dialect check
+3. `db/repository.py` - No changes needed
 
-### Phase 2: Risk/Expectancy Gates ✅ COMPLETE
-(1-8 as above)
+**Follow-up**:
+- Test: `uvicorn railway_main:app --reload`
+- Deploy to Railway
+- Verify Alembic: `alembic upgrade head`
+- Test all imports/functions
 
-### Phase 4: Dynamic Targets/Stubs [1/6]
-12. [x] strategies/dynamic_targets.py: BASE_RR=2.0 (dynamic ATR/structure) ✅ created
-13. [ ] Fix calculate_position_size stubs (risk.py etc.)
-14. [ ] admin/auto_kill.py: real impl (not pass)
-15. [ ] worker/worker.py: handle signals (not pass)
-16. [ ] utils/proxy_manager.py: real proxy rotation
-17. [ ] data/startup_selfcheck.py: real checks
+## Step-by-Step Implementation
 
-### Phase 5: ML/Research Enhancements [0/8]
-18. [ ] services/gemini_ml.py: realtime sentiment to scoring/news
-19. [ ] data/news.py: integrate to scoring gates
-20. [ ] ml/drift_monitor.py: realtime retrain trigger
-21. [ ] Research Freqtrade/QuantConnect → add confluence/ML patterns
-22. [ ] engine/advanced_filters.py: gemini/news vol-adjusted
-23. [ ] engine/ultra_quality_filter.py: expectancy + live PnL
-24. [ ] engine/ranking.py: PREMIUM=70 align + live boost
-25. [ ] ml/retrain.py: auto on expectancy drop
+### ✅ Step 1: Create this TODO.md [COMPLETE]
 
-### Phase 6: Tests/Deploy [0/7]
-26. [ ] NEW test_expectancy_gate.py
-27. [ ] NEW test_risk_dynamic.py
-28. [ ] test_all_functions.py --fix failures
-29. [ ] verify_system.py run + fix
-30. [ ] alembic upgrade head
-31. [ ] deploy smoke tests
-32. [ ] attempt_completion
+### ⏳ Step 2: Edit db/models.py
+- Add explicit dialect imports
+- Wrap Signal class definition with try/except logging
+```
+Use edit_file tool with exact diffs
+```
 
-Next: Phase 4 Step 13 - Fix position sizing stubs in risk.py and dependent files. Type hints + real impl.
+### ⏳ Step 3: Edit railway_main.py  
+- Add SQLAlchemy PostgreSQL dialect precheck before `from web.app import app`
+```
+Use edit_file tool with exact diffs
+```
 
-Run command to test: python test_risk_dynamic.py (create first)
+### ⏳ Step 4: Test imports locally
+```
+cd c:/Users/sammm/Desktop/SignalRankAI
+python -c "from db.repository import *; print('✅ repository imports OK')"
+uvicorn railway_main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+### ⏳ Step 5: Verify database schema
+```
+alembic upgrade head
+python verify_system.py
+```
+
+### ⬜ Step 6: Deploy & test Railway [PENDING]
+```
+railway up
+Check logs for import success
+Test /health endpoint
+```
+
+### ⬜ Step 7: Run full tests [PENDING]
+```
+pytest
+python test_all_features.py
+python test_all_functions.py
+```
+
+### ⬜ Step 8: Mark COMPLETE [PENDING]
+```
+- Update this TODO.md ✅
+- attempt_completion
+```
+

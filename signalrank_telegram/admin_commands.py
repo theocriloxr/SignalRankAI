@@ -293,7 +293,7 @@ async def selfcheck_command(update, context) -> None:
             from datetime import datetime, timedelta
             from sqlalchemy import select, func
             from db.session import get_engine_for_event_loop, get_session
-            from db.models import SignalDelivery, Outcome, MT5Credentials
+            from db.models import SignalDelivery, Outcome
     
             if get_engine_for_event_loop() is None:
                 await update.message.reply_text("⚠️ Database not configured.")

@@ -211,9 +211,9 @@ def get_trending_crypto_pairs(top_n=20):
         # Sort by quoteVolume (trending)
         sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
         return _filter_blacklisted([x['symbol'] for x in sorted_pairs[:top_n]])
-        except Exception as e:
-            logger.warning("[pair_discovery] Could not fetch Binance pairs: %s", e)
-            return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
+    except Exception as e:
+        logger.warning("[pair_discovery] Could not fetch Binance pairs: %s", e)
+        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
 
 def get_trending_fx_pairs():
     """Return configured FX pairs.

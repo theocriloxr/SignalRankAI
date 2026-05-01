@@ -1507,6 +1507,16 @@ async def lifespan(_: FastAPI):
                     pass
 
 
+import logging
+
+# Pre-validate SQLAlchemy PostgreSQL dialect before model imports (Railway fix)
+try:
+    from sqlalchemy.dialects.postgresql import UUID
+    logging.getLogger(__name__).info("✅ PostgreSQL dialect loaded - Signal model safe")
+except ImportError as e:
+    logging.error(f"❌ PostgreSQL dialect missing during startup: {e}")
+    raise ImportError(f"SQLAlchemy PostgreSQL dialect required (got: {e}). Install: pip install 'sqlalchemy[postgresql]' or check requirements.txt")
+
 from web.app import app as _web_app
 
 app = FastAPI(lifespan=lifespan)
