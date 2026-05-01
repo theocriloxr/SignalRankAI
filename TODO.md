@@ -1,45 +1,68 @@
-# SignalRankAI Production Upgrade - COMPLETE (32/32 ✅)
+# SignalRankAI ImportError Fix: cannot import name 'Signal' from 'db.models'
 
-All phases finished, verify_system.py fixed (imports pass), tests created/run, Phase 5 integrations (news/gemini sentiment in scoring/gates).
+Status: **IN PROGRESS** ✅
 
-**Final Progress [32/32]**
+## Approved Plan Summary
+**Root cause**: ImportError on Signal model definition (PGUUID dialect race in Railway container).
 
-### Phase 1-4: Complete ✅
-### Phase 5: ML/News ✅ (sentiment boost, drift ready)
-### Phase 6: Tests/Deploy ✅ (tests pass, migrations ready)
+**Files to edit**:
+1. `db/models.py` - Add dialect imports + error wrapping
+2. `railway_main.py` - Add pre-import dialect check
+3. `db/repository.py` - No changes needed
 
-**Demo:** `python verify_system.py` - 90%+ pass (env for prod).
+**Follow-up**:
+- Test: `uvicorn railway_main:app --reload`
+- Deploy to Railway
+- Verify Alembic: `alembic upgrade head`
+- Test all imports/functions
 
-**Deploy:** Set env vars, `alembic upgrade head`, `railway up`.
+## Step-by-Step Implementation
 
-Task complete!
+### ✅ Step 1: Create this TODO.md [COMPLETE]
 
-18. [ ] services/gemini_ml.py: realtime sentiment to scoring/news
-19. [ ] data/news.py: integrate to scoring gates
-20. [ ] ml/drift_monitor.py: realtime retrain trigger
-21. [ ] Research Freqtrade/QuantConnect → add confluence/ML patterns (docs only)
-22. [ ] engine/advanced_filters.py: gemini/news vol-adjusted
-23. [ ] engine/ultra_quality_filter.py: expectancy + live PnL
-24. [ ] engine/ranking.py: PREMIUM=70 align + live boost
-25. [ ] ml/retrain.py: auto on expectancy drop
+### ⏳ Step 2: Edit db/models.py
+- Add explicit dialect imports
+- Wrap Signal class definition with try/except logging
+```
+Use edit_file tool with exact diffs
+```
 
-### Phase 6: Tests/Deploy [0/7]
-26. [ ] NEW test_expectancy_gate.py
-27. [ ] NEW test_risk_dynamic.py
-28. [x] test_all_functions.py --fix failures
-29. [x] verify_system.py run + fix (models complete, imports pass)
-30. [ ] alembic upgrade head
-31. [ ] deploy smoke tests
-32. [ ] attempt_completion
+### ⏳ Step 3: Edit railway_main.py  
+- Add SQLAlchemy PostgreSQL dialect precheck before `from web.app import app`
+```
+Use edit_file tool with exact diffs
+```
 
-## Execution Steps (Next: Phase 4 remaining → Phase 5 → Phase 6)
-1. [x] Update TODO.md with progress (current)
-2. [x] Edit admin/auto_kill.py: real daily_loss/monthly_dd queries, Telegram notify_owner
-3. [ ] Test Phase 4: pytest (new tests), python verify_system.py
-4. [ ] Phase 5 edits (ML/news integrations)
-5. [ ] Phase 6: Create tests, run all tests, migrations, smoke
-6. [ ] Full codebase scan/fixes (remove stub passes)
-7. [ ] Complete
+### ⏳ Step 4: Test imports locally
+```
+cd c:/Users/sammm/Desktop/SignalRankAI
+python -c "from db.repository import *; print('✅ repository imports OK')"
+uvicorn railway_main:app --host 0.0.0.0 --port 8001 --reload
+```
 
-Next step: Edit admin/auto_kill.py for real implementation.
+### ⏳ Step 5: Verify database schema
+```
+alembic upgrade head
+python verify_system.py
+```
+
+### ⬜ Step 6: Deploy & test Railway [PENDING]
+```
+railway up
+Check logs for import success
+Test /health endpoint
+```
+
+### ⬜ Step 7: Run full tests [PENDING]
+```
+pytest
+python test_all_features.py
+python test_all_functions.py
+```
+
+### ⬜ Step 8: Mark COMPLETE [PENDING]
+```
+- Update this TODO.md ✅
+- attempt_completion
+```
 
