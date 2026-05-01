@@ -12,9 +12,6 @@ logger = logging.getLogger(__name__)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-try:
-    # Pre-validate PostgreSQL dialect availability
-
 class Base(DeclarativeBase):
     pass
 
@@ -38,21 +35,16 @@ class Subscription(Base):
     user: Mapped['User'] = relationship(back_populates="subscriptions")
 User.subscriptions = relationship("Subscription", back_populates="user")
 
-    class Signal(Base):
-        __tablename__ = "signals"
-        signal_id: Mapped[PGUUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
-        asset: Mapped[str] = mapped_column(String(32), index=True)
-        timeframe: Mapped[str] = mapped_column(String(8), index=True)
-        direction: Mapped[str] = mapped_column(String(16))
-        score: Mapped[float] = mapped_column(Float)
-        created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
-        outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
-except ImportError as e:
-    logger.error(f"❌ Failed to define Signal model - PostgreSQL dialect issue: {e}")
-    logger.error(f"PGUUID availability check: {PGUUID}")
-    raise
-    class SignalFallback:  # Emergency fallback
-        pass
+class Signal(Base):
+    __tablename__ = "signals"
+    signal_id: Mapped[PGUUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    asset: Mapped[str] = mapped_column(String(32), index=True)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True)
+    direction: Mapped[str] = mapped_column(String(16))
+    score: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
+
 logger.info("✅ Signal model defined successfully")
 
 class Outcome(Base):
