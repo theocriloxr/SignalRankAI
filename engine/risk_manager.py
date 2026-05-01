@@ -1,9 +1,9 @@
-\"\"\"
+"""
 Risk Management Module - PRODUCTION UPGRADE
 - Dynamic realtime risk % (0.25-1.25%) from ML/regime/news/gemini
-- 0.5% base → throttle at DD_SOFT=6%, stop at DD_HARD=12%
+- 0.5% base -> throttle at DD_SOFT=6%, stop at DD_HARD=12%
 - Enhanced ATR stops, correlation, trailing
-\"\"\"
+"""
 
 import os
 import logging
@@ -17,38 +17,37 @@ from engine.risk import get_max_volatility, soft_throttle_active, hard_stop_acti
 logger = logging.getLogger(__name__)
 
 # Realtime dynamic config (no fixed values beyond env defaults)
-BASE_RISK_PCT = float(os.getenv(\"RISK_PER_TRADE_PCT\", \"0.5\"))  # 0.5% base
-MAX_ACTIVE_TRADES = int(os.getenv(\"MAX_ACTIVE_TRADES\", \"3\"))  # Reduced for safety
-TRADE_COOLDOWN_MINUTES = int(os.getenv(\"TRADE_COOLDOWN_MINUTES\", \"15\"))
-MAX_LEVERAGE = float(os.getenv(\"MAX_LEVERAGE\", \"3.0\"))  # Reduced
-MIN_RR_RATIO = float(os.getenv(\"MIN_RR_RATIO\", \"1.5\"))
-
+BASE_RISK_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.5"))  # 0.5% base
+MAX_ACTIVE_TRADES = int(os.getenv("MAX_ACTIVE_TRADES", "3"))  # Reduced for safety
+TRADE_COOLDOWN_MINUTES = int(os.getenv("TRADE_COOLDOWN_MINUTES", "15"))
+MAX_LEVERAGE = float(os.getenv("MAX_LEVERAGE", "3.0"))  # Reduced
+MIN_RR_RATIO = float(os.getenv("MIN_RR_RATIO", "1.5"))
 
 class RiskManager:
-    \"\"\"Enhanced dynamic risk manager using realtime data sources.\"\"\"
+    """Enhanced dynamic risk manager using realtime data sources."""
     
     def __init__(self, account_equity: float):
         self.account_equity = account_equity
         self.correlation_manager = CorrelationManager()
     
-    def get_dynamic_risk_pct(self, signal: Dict, account_state: Optional[any] = None) -> float:
-        \"\"\"Realtime risk % from ML + regime + sentiment + expectancy (0.25-1.25%).\"\"\"
-        ml_prob = float(signal.get(\"ml_probability\", 0.5))
-        regime = signal.get(\"regime\", \"neutral\")
-        news_sent = float(signal.get(\"news_sentiment\", 0) or signal.get(\"gemini_score\", 0))
-        live_exp = float(signal.get(\"live_expectancy\", 0.15))
+    def get_dynamic_risk_pct(self, signal: Dict, account_state: Optional[Any] = None) -> float:
+        """Realtime risk % from ML + regime + sentiment + expectancy (0.25-1.25%)."""
+        ml_prob = float(signal.get("ml_probability", 0.5))
+        regime = signal.get("regime", "neutral")
+        news_sent = float(signal.get("news_sentiment", 0) or signal.get("gemini_score", 0))
+        live_exp = float(signal.get("live_expectancy", 0.15))
         
         # ML base (0.5-1.0)
         ml_risk = 0.5 + (ml_prob * 0.5)
         
         # Regime mult
-        regime_mult = 1.2 if regime == \"trending\" else 0.8 if regime == \"ranging\" else 1.0
+        regime_mult = 1.2 if regime == "trending" else 0.8 if regime == "ranging" else 1.0
         
         # Sentiment (block/nerf conflict)
-        sentiment_mult = 0.7 if abs(news_sent) > 2 else (1.1 if news_sent * (1 if signal.get(\"direction\") == \"long\" else -1) > 1 else 1.0)
+        sentiment_mult = 0.7 if abs(news_sent) > 2 else (1.1 if news_sent * (1 if signal.get("direction") == "long" else -1) > 1 else 1.0)
         
         # Expectancy nerf
-        exp_mult = min(1.5, live_exp / EXPECTANCY_MIN) if live_exp > 0 else 0.5
+        exp_mult = min(1.5, live_exp / DD_SOFT_THROTTLE) if live_exp > 0 else 0.5
         
         risk_pct = BASE_RISK_PCT * ml_risk * regime_mult * sentiment_mult * exp_mult
         
@@ -67,9 +66,9 @@ class RiskManager:
         account_equity: float,
         **kwargs
     ) -> float:
-        \"\"\"Enhanced: equity * dynamic_pct / risk_distance.\"\"\"
-        entry = float(signal.get(\"entry\", 0))
-        stop = float(signal.get(\"stop_loss\", 0))
+        """Enhanced: equity * dynamic_pct / risk_distance."""
+        entry = float(signal.get("entry", 0))
+        stop = float(signal.get("stop_loss", 0))
         risk_dist = abs(entry - stop)
         
         if risk_dist <= 0:
@@ -81,8 +80,8 @@ class RiskManager:
         
         # Bounds + vol adjust
         size = max(0.01, min(size, account_equity * 0.1))
-        vol_regime = signal.get(\"vol_regime\", \"medium\")
-        if vol_regime == \"high\":
+        vol_regime = signal.get("vol_regime", "medium")
+        if vol_regime == "high":
             size *= 0.7
         
         return max(0.0, size)
@@ -106,7 +105,7 @@ class RiskManager:
         return {
             'stop_loss': stop_loss,
             'take_profit': take_profit,
-            'rr_ratio': max(1.5, rr_ratio),  # Enforce min RR
+            'rr_ratio': max(1.5, rr_ratio),
             'risk_distance': abs(current_price - stop_loss),
             'reward_distance': abs(take_profit - current_price),
         }
@@ -180,9 +179,8 @@ class RiskManager:
                 'label': f'TP{i}'
             } for i in range(1, num_levels + 1)]
 
-
 class CorrelationManager:
-    \"\"\"Realtime correlation avoidance.\"\"\"
+    """Realtime correlation avoidance."""
     
     def __init__(self):
         self.correlation_matrix = {}
