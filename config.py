@@ -20,7 +20,7 @@ class Config:
 	"""
 	def __init__(self):
 		# Database and cache
-		self.DATABASE_URL = os.getenv("DATABASE_URL", "")
+		self.DATABASE_URL = self._first_env("DATABASE_PUBLIC_URL", "DATABASE_URL")
 		self.REDIS_URL = self._first_env(
 			"REDIS_URL",
 			"REDIS_PRIVATE_URL",

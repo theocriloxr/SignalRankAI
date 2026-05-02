@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 try:
     # pydantic v2 separates settings into pydantic_settings
     from pydantic_settings import BaseSettings
@@ -59,6 +61,10 @@ def get_settings() -> Settings:
     global _settings
     if _settings is None:
         _settings = Settings()
+    if not _settings.DATABASE_URL:
+        public_url = (os.getenv("DATABASE_PUBLIC_URL") or "").strip()
+        if public_url:
+            _settings.DATABASE_URL = public_url
     return _settings
 
 
