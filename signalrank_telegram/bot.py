@@ -1,5 +1,6 @@
 from utils.async_runner import run_sync
 import threading
+from core.redis_state import state, mark_signal_delivered_sync
 
 
 def resend_unsent_signals_job():
@@ -578,7 +579,6 @@ application.add_handler(CommandHandler("notify", _audit_handler("notify", notify
 application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
 application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
 
-from core.redis_state import state, mark_signal_delivered_sync
 from .owner_commands import (
     unlock,
     dev_pause,

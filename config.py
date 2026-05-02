@@ -235,8 +235,7 @@ def _build_pg_dsn_from_parts(*, async_driver: bool) -> str | None:
 	if sslmode:
 		separator = "&" if "?" in dsn else "?"
 		try:
-			from urllib.parse import quote_plus as _qp
-			sslmode = _qp(sslmode)
+			sslmode = quote_plus(sslmode)
 		except Exception:
 			sslmode = str(sslmode)
 		dsn = f"{dsn}{separator}sslmode={sslmode}"
