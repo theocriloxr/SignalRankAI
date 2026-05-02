@@ -580,3 +580,16 @@ class OutcomeNotification(Base):
     last_error: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class DecisionLog(Base):
+    __tablename__ = "decision_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    signal_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
+    asset: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    timeframe: Mapped[Optional[str]] = mapped_column(String(8), index=True)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    reason: Mapped[Optional[str]] = mapped_column(Text)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
