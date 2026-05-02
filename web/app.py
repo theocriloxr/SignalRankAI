@@ -114,7 +114,7 @@ async def rate_limit(request: Request, user_id: int):
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Global rate limiting middleware."""
-    if request.url.path in ["/health", "/metrics"]:
+    if request.url.path in ["/health", "/healthz", "/metrics"]:
         response = await call_next(request)
         return response
     
@@ -126,6 +126,7 @@ async def rate_limit_middleware(request: Request, call_next):
     return response
 
 @app.get("/health", response_model=HealthResponse)
+@app.get("/healthz", response_model=HealthResponse)
 async def health():
     """Liveness + readiness probe."""
     uptime = time.time() - float(os.getenv("START_TS", str(time.time())))
