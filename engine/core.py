@@ -844,6 +844,16 @@ def main_loop(DRY_RUN: bool = False):
 # Run strategies -> returns list of signals (each is a dict)
                 try:
                     strategy_signals = run_all_strategies(asset, market_data, regime) or []
+                    if not strategy_signals:
+                        # Debug: log why no signals (indicator values that failed)
+                        ind = (market_data.get(list(market_data.keys())[0]) or {}).get('indicators', {}) if market_data else {}
+                        logger.debug(
+                            f"[engine] No strategy signals for {asset}. "
+                            f"regime={regime}, ema_fast={ind.get('ema_fast')}, ema_slow={ind.get('ema_slow')}, "
+                            f"rsi={ind.get('rsi')}, adx={ind.get('adx')}, "
+                            f"supertrend={ind.get('supertrend_signal')}, "
+                            f"close={ind.get('close_price')}, sma_20={ind.get('sma_20')}"
+                        )
                 except Exception:
                     logger.exception(f"Strategies failed for {asset}")
                     strategy_signals = []

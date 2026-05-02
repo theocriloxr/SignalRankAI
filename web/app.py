@@ -13,6 +13,7 @@ Security:
 - Paystack signature verification
 - CORS protection
 """
+import asyncio
 import os
 import time
 import logging
@@ -128,19 +129,41 @@ async def rate_limit_middleware(request: Request, call_next):
 @app.get("/health", response_model=HealthResponse)
 @app.get("/healthz", response_model=HealthResponse)
 async def health():
-    """Liveness + readiness probe."""
+    """Liveness + readiness probe.
+    
+    Railway healthcheck - should return quickly even if DB is slow/unavailable.
+    Uses a deadline to avoid blocking Railway's healthcheck.
+    """
     uptime = time.time() - float(os.getenv("START_TS", str(time.time())))
     
+    # Use a deadline to avoid blocking Railway healthcheck
+    # If DB is slow/unavailable, still return healthy (status="degraded")
     active_signals = -1
+    deadline = time.time() + 3.0  # 3 second deadline
+    
     try:
+        if time.time() >= deadline:
+            raise TimeoutError("Health check deadline exceeded")
+            
+        from sqlalchemy import select
         async with get_session() as session:
-            # Count active (non-expired/archived) signals
+            # Check deadline before executing query
+            if time.time() >= deadline:
+                raise TimeoutError("Health check deadline exceeded before DB query")
+            
             count_stmt = select(Signal.signal_id).where(
                 Signal.archived == False,
                 Signal.expired == False
             )
-            active_signals = (await session.execute(count_stmt)).scalar() or 0
-    except Exception:
+            result = await session.execute(count_stmt)
+            active_signals = result.scalar() or 0
+    except (TimeoutError, asyncio.TimeoutError) as e:
+        # DB query took too long - still healthy but degraded
+        logger.warning(f"[healthz] DB query timeout: {e}, returning degraded status")
+        active_signals = -1
+    except Exception as e:
+        # DB unavailable or other error - still healthy
+        logger.warning(f"[healthz] DB query failed: {e}, returning degraded status")
         active_signals = -1
     
     hit_rate = 0.0
@@ -153,7 +176,7 @@ async def health():
     return HealthResponse(
         status="healthy" if active_signals >= 0 else "degraded",
         uptime=uptime,
-        signals_active=int(active_signals),
+        signals_active=int(active_signals) if active_signals >= 0 else 0,
         cache_hit_rate=hit_rate
     )
 

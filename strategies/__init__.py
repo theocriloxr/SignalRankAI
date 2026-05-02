@@ -1,4 +1,7 @@
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -13,6 +16,16 @@ from .trend import trend_strategies
 from .momentum import momentum_strategies
 from .volatility import volatility_strategies
 from .structure import structure_strategy
+
+
+# Import fallback strategies - these run when main strategies produce no signals
+try:
+    from .fallback import fallback_strategies
+    FALLBACK_AVAILABLE = True
+except ImportError:
+    FALLBACK_AVAILABLE = False
+    fallback_strategies = None
+    logger.debug("Fallback strategies not available")
 
 
 # Optional TradingView integration
@@ -50,6 +63,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         htf_bias = 'SHORT'
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
+    use_fallback = _env_bool("USE_FALLBACK_STRATEGIES", True)
     from .stock import stock_strategies
 
     # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or
@@ -96,6 +110,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
                 signals.append(sig)
 
+        # Run main strategy groups
         if "trend" in groups:
             for sig in trend_strategies(asset, timeframe, data):
                 _add(sig)
@@ -117,9 +132,38 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     _add(sig)
             except Exception as e:
                 try:
-                    import logging
                     logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
                 except Exception:
                     pass
-
+    
+    # === FALLBACK STRATEGIES ===
+    # If no signals generated from main strategies and fallback is enabled, try fallback strategies
+    # This ensures the engine produces signals even when market conditions don't align with strict strategies
+    if use_fallback and FALLBACK_AVAILABLE and not signals:
+        logger.debug(f"[strategies] No main strategy signals for {asset}, running fallback strategies")
+        try:
+            # Get a single timeframe data for fallback (use first available)
+            tf_data = None
+            for tf in ["1h", "4h", "1d"]:
+                if tf in market_data:
+                    tf_data = market_data[tf]
+                    break
+            
+            if tf_data is None:
+                # Use first available timeframe
+                tf_data = list(market_data.values())[0] if market_data else {}
+            
+            if tf_data and isinstance(tf_data, dict):
+                fallback_sigs = fallback_strategies(asset, timeframe, tf_data)
+                for sig in fallback_sigs:
+                    sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
+                    sig['is_fallback'] = True  # Mark as fallback
+                    signals.append(sig)
+                
+                if fallback_sigs:
+                    logger.info(f"[strategies] Fallback generated {len(fallback_sigs)} signals for {asset}")
+        except Exception as e:
+            logger.debug(f"[strategies] Fallback strategies error: {e}")
+            pass
+    
     return signals

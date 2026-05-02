@@ -1,41 +1,44 @@
-# SignalRankAI Fix Plan
+# SignalRankAI - Signal Generation Issue Fix
 
-## Task: Fix NameError import issues in production logs
+## Issue
+Engine running but generating 0 signals across all cycles despite having 19 assets and market data.
 
-### Issues to Fix:
-1. **Error 1**: `name 'Any' is not defined` - during engine loop start
-2. **Error 2**: `name 'require_tier' is not defined` - during Telegram webhook setup
+## Root Cause Analysis
+1. Existing strategies (EMA Trend, Supertrend, ADX, RSI Momentum) require strict conditions
+2. Debug logging level not capturing WHY signals fail
+3. No fallback strategies for weak/mixed market conditions
 
-### Plan:
+## Implementation Plan
 
-#### Step 1: Fix require_tier import issue
-- [x] Analyze where require_tier is defined and used
-- Actions:
-  - commands.py line 52 defines require_tier locally
-  - utils.py line 67 has another version exported in __all__
-  - Need to ensure commands.py properly imports or defines require_tier BEFORE decorators use it
+### Step 1: Add Simple Fallback Strategy (COMPLETE)
+- Create `strategies/fallback.py` with relaxed conditions
+- Works with basic price action + trend detection
+- Generates signals when other strategies fail
 
-#### Step 2: Fix Any type error in engine
-- [x] Analyze typing imports in engine modules
-- Actions:
-  - Check engine/core.py typing imports (line 4 shows `from typing import Any`)
-  - The error occurs during import from railway_main trying to start engine loop
-  - Need to ensure the import is properly accessible
+### Step 2: Update Strategy Runner to Use Fallback (COMPLETE)
+- Modify `strategies/__init__.py` to run fallback strategies
+- Fallback runs when main strategy groups produce no signals
 
-### Dependent Files:
-- signalrank_telegram/commands.py
-- signalrank_telegram/utils.py  
-- signalrank_telegram/bot.py
-- engine/core.py
-- railway_main.py
+### Step 3: Enhance Debug Logging (COMPLETE)
+- Add logging when no signals generated
+- Log indicator values that failed conditions
+- Log regime and market data summary
 
-### Execution Steps:
-1. First, fix require_tier by ensuring proper import ordering in bot.py
-2. Then verify typing imports work correctly across modules
+### Step 4: Test & Verify (PENDING)
+- Run engine and verify signals generated
+- Check logs for debug output
 
-### Testing:
-- Run deploy and check logs for absence of the two NameErrors
-- Confirm Telegram bot webhook setup succeeds without require_tier errors
-- Confirm engine loop starts properly
+---
+## Implementation Details
 
-Status: ANALYSIS COMPLETE - Ready to implement fixes
+### Files Modified:
+1. `strategies/fallback.py` - NEW (Simple price action strategies)
+2. `strategies/__init__.py` - Updated to use fallback
+3. `engine/core.py` - Enhanced debug logging around line 848
+
+### Strategy Conditions:
+**Fallback strategies use:**
+- Simple price vs SMA comparison (price > sma_20 = LONG)
+- Candle direction (green candle = potential LONG)
+- Volume confirmation (volume > 20-period average)
+- No complex multi-indicator requirements
