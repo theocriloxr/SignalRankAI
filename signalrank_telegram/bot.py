@@ -26,11 +26,11 @@ def resend_unsent_signals_job():
         # runs across multiple Railway instances when Redis is unavailable.
         import os
         import psycopg2
-        _dsn = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or "").strip()
-        if _dsn.startswith("postgresql+asyncpg://"):
-            _dsn = _dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-        elif _dsn.startswith("postgres://"):
-            _dsn = _dsn.replace("postgres://", "postgresql://", 1)
+        try:
+            from config import resolve_database_url
+            _dsn = resolve_database_url(async_driver=False) or ""
+        except Exception:
+            _dsn = ""
 
         if _dsn:
             _lock_id = int(os.getenv("RESEND_JOB_LOCK_ID", "739206"))
@@ -384,7 +384,7 @@ async def _resend_unsent_signals_async():
 
 
 import os
-from config import config
+from config import config, resolve_database_url
 from telegram.ext import Application, CommandHandler
 from signalrank_telegram.httpx_config import httpx_client
 
@@ -1161,7 +1161,7 @@ def _deliver_or_update_signal_sync(
     display_tier: str,
 ) -> bool:
     try:
-        return bool(
+        ok = bool(
             run_sync(
                 _deliver_or_update_signal_async(
                     bot=bot,
@@ -1171,6 +1171,14 @@ def _deliver_or_update_signal_sync(
                 )
             )
         )
+        if ok:
+            try:
+                sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
+                if sig_id:
+                    mark_signal_delivered_sync(int(telegram_user_id), sig_id)
+            except Exception as redis_err:
+                logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {redis_err}")
+        return ok
     except Exception as exc:
         logger.debug(f"[dispatch] deliver_or_update failed: {exc}")
         return False
@@ -3516,7 +3524,7 @@ def run_bot() -> None:
     # created.  If it is missing, raise immediately so Railway shows a clear
     # crash message rather than hundreds of "password authentication failed
     # for user 'postgres'" errors from asyncpg falling back to local auth.
-    _db_raw = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or "").strip()
+    _db_raw = (resolve_database_url(async_driver=True) or "").strip()
     if not _db_raw:
         raise ValueError(
             "[FATAL] DATABASE_URL is not set. "
@@ -6403,9 +6411,7 @@ def run_bot() -> None:
     # to silently fall back to  postgresql://postgres@localhost  — which Railway
     # always rejects with "password authentication failed for user postgres".
     # Strip the async driver prefix before creating the job store.
-    _sched_raw = (
-        os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or ""
-    ).strip()
+    _sched_raw = (resolve_database_url(async_driver=False) or "").strip()
     _sched_sync_url: str | None = None
     if _sched_raw:
         _sched_sync_url = _sched_raw

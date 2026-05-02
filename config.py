@@ -20,7 +20,11 @@ class Config:
 	"""
 	def __init__(self):
 		# Database and cache
-		self.DATABASE_URL = self._first_env("DATABASE_PUBLIC_URL", "DATABASE_URL")
+		self.DATABASE_URL = self._first_env(
+			"DATABASE_URL",
+			"DATABASE_PRIVATE_URL",
+			"DATABASE_PUBLIC_URL",
+		)
 		self.REDIS_URL = self._first_env(
 			"REDIS_URL",
 			"REDIS_PRIVATE_URL",
@@ -185,6 +189,115 @@ class Config:
 
 # Global config instance
 config = Config()
+# Database URL helpers (shared across runtime modules).
+def _normalize_database_url(raw: str, *, async_driver: bool) -> str:
+	raw = str(raw or "").strip()
+	if not raw:
+		return ""
+	if raw.startswith("postgresql+asyncpg://"):
+		return raw if async_driver else raw.replace("postgresql+asyncpg://", "postgresql://", 1)
+	if raw.startswith("postgres://"):
+		return raw.replace("postgres://", "postgresql+asyncpg://" if async_driver else "postgresql://", 1)
+	if raw.startswith("postgresql://"):
+		return raw if not async_driver else raw.replace("postgresql://", "postgresql+asyncpg://", 1)
+	return raw
+
+
+def _build_pg_dsn_from_parts(*, async_driver: bool) -> str | None:
+	host = (
+		(os.getenv("PGHOST") or os.getenv("POSTGRES_HOST") or os.getenv("DATABASE_HOST") or "").strip()
+	)
+	user = (
+		(os.getenv("PGUSER") or os.getenv("POSTGRES_USER") or os.getenv("DATABASE_USER") or "").strip()
+	)
+	password = (
+		(os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD") or os.getenv("DATABASE_PASSWORD") or "").strip()
+	)
+	database = (
+		(os.getenv("PGDATABASE") or os.getenv("POSTGRES_DB") or os.getenv("DATABASE_NAME") or "").strip()
+	)
+	port = (os.getenv("PGPORT") or os.getenv("POSTGRES_PORT") or os.getenv("DATABASE_PORT") or "").strip()
+	if not host or not user or not database:
+		return None
+	try:
+		from urllib.parse import quote_plus
+	except Exception:
+		def quote_plus(val: str) -> str:
+			return val
+	scheme = "postgresql+asyncpg" if async_driver else "postgresql"
+	user_enc = quote_plus(user)
+	auth = user_enc
+	if password:
+		auth = f"{user_enc}:{quote_plus(password)}"
+	netloc = f"{auth}@{host}"
+	if port:
+		netloc = f"{netloc}:{port}"
+	dsn = f"{scheme}://{netloc}/{database}"
+	sslmode = (
+		(os.getenv("PGSSLMODE") or os.getenv("DATABASE_SSLMODE") or os.getenv("DB_SSLMODE") or "").strip()
+	)
+	if sslmode:
+		separator = "&" if "?" in dsn else "?"
+		try:
+			from urllib.parse import quote_plus as _qp
+			sslmode = _qp(sslmode)
+		except Exception:
+			sslmode = str(sslmode)
+		dsn = f"{dsn}{separator}sslmode={sslmode}"
+	return dsn
+
+
+def database_url_candidates(*, async_driver: bool = True) -> list[str]:
+	candidates: list[str] = []
+	for key in (
+		"DATABASE_URL",
+		"DATABASE_PRIVATE_URL",
+		"DATABASE_PUBLIC_URL",
+		"POSTGRES_URL",
+		"POSTGRESQL_URL",
+	):
+		raw = (os.getenv(key) or "").strip()
+		if raw:
+			candidates.append(raw)
+	if config.DATABASE_URL:
+		candidates.append(config.DATABASE_URL)
+	built = _build_pg_dsn_from_parts(async_driver=async_driver)
+	if built:
+		candidates.append(built)
+	normalized: list[str] = []
+	for raw in candidates:
+		url = _normalize_database_url(raw, async_driver=async_driver)
+		if url and url not in normalized:
+			normalized.append(url)
+	return normalized
+
+
+def prefer_ipv4_database_url(url: str) -> str:
+	try:
+		import socket as _socket
+		from sqlalchemy.engine.url import make_url
+		sa_url = make_url(url)
+		host = sa_url.host
+		if not host:
+			return url
+		host = str(host)
+		if ":" in host or all(c in "0123456789." for c in host):
+			return url
+		port = int(sa_url.port or 5432)
+		infos = _socket.getaddrinfo(host, port, _socket.AF_INET, _socket.SOCK_STREAM)
+		if not infos:
+			return url
+		ipv4 = str(infos[0][4][0])
+		return sa_url.set(host=ipv4).render_as_string(hide_password=False)
+	except Exception:
+		return url
+
+
+def resolve_database_url(*, async_driver: bool = True) -> str | None:
+	candidates = database_url_candidates(async_driver=async_driver)
+	if not candidates:
+		return None
+	return prefer_ipv4_database_url(candidates[0])
 # Backwards-compatible top-level exports for modules that import names directly from `config`
 from typing import Set
 

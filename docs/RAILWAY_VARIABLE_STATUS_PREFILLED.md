@@ -2,7 +2,7 @@
 
 Generated from the current .env.production.template and local process environment.
 
-- Generated at: 2026-04-09T19:07:11.238068+00:00
+- Generated at: 2026-05-02T21:17:21.078502+00:00
 - Template source: .env.production.template
 
 ## Core Matrix
@@ -14,8 +14,9 @@ Generated from the current .env.production.template and local process environmen
 | GEMINI_API_KEY | yes | MISSING | missing | - | AI runtime readiness gate |
 | META_API_TOKEN | yes | MISSING | missing | - | Execution integration readiness gate |
 | ENCRYPTION_KEY | yes | MISSING | missing | - | Encrypted secret/state protection |
-| DATABASE_PUBLIC_URL | yes | MISSING | missing | - | Primary DB connection URL on Railway |
-| DATABASE_URL | no | MISSING | missing | - | Fallback DB connection URL |
+| DATABASE_URL | no | MISSING | missing | - | Primary DB connection URL (private/internal preferred) |
+| DATABASE_PRIVATE_URL | no | MISSING | missing | - | Explicit private DB connection URL override |
+| DATABASE_PUBLIC_URL | no | MISSING | missing | - | Public DB proxy fallback URL |
 | REDIS_URL | yes | MISSING | missing | - | Queue/cache backend |
 | APP_BASE_URL | no | MISSING | missing | - | Webhook base URL fallback |
 | WEBHOOK_URL | no | MISSING | missing | - | Webhook base URL source |
@@ -40,7 +41,7 @@ Generated from the current .env.production.template and local process environmen
 - Owner identity set: no
 - Public webhook domain source set: no
 - Database URL source set: no
-- Missing required keys: 8
+- Missing required keys: 7
 
 ## Next Step
 

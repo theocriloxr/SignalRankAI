@@ -63,17 +63,13 @@ def _ml_enabled() -> bool:
 def _runtime_state_model_payload() -> dict | None:
     if psycopg2 is None:
         return None
-    dsn = (
-        os.getenv("DATABASE_PUBLIC_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    ).strip()
+    try:
+        from config import resolve_database_url
+        dsn = resolve_database_url(async_driver=False) or ""
+    except Exception:
+        dsn = ""
     if not dsn:
         return None
-    if dsn.startswith("postgresql+asyncpg://"):
-        dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-    elif dsn.startswith("postgres://"):
-        dsn = dsn.replace("postgres://", "postgresql://", 1)
     key = (os.getenv("ML_MODEL_RUNTIME_STATE_KEY") or "ml:model:primary").strip() or "ml:model:primary"
     try:
         conn = psycopg2.connect(dsn, connect_timeout=3)

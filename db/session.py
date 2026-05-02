@@ -11,7 +11,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from config import config
+from config import config, resolve_database_url, prefer_ipv4_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -36,39 +36,17 @@ def _engine_connect_args() -> dict[str, Any]:
 
 
 def _prefer_ipv4_url(url: str) -> str:
-    try:
-        from sqlalchemy.engine.url import make_url
-
-        sa_url = make_url(url)
-        host = sa_url.host
-        if not host:
-            return url
-        host = str(host)
-        if ":" in host or all(c in "0123456789." for c in host):
-            return url
-        port = int(sa_url.port or 5432)
-        infos = _socket.getaddrinfo(host, port, _socket.AF_INET, _socket.SOCK_STREAM)
-        if not infos:
-            return url
-        ipv4 = str(infos[0][4][0])
-        return sa_url.set(host=ipv4).render_as_string(hide_password=False)
-    except Exception:
-        return url
+    return prefer_ipv4_database_url(url)
 
 
 def get_database_url() -> Optional[str]:
-    raw = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or config.DATABASE_URL or "").strip()
-    if not raw:
+    url = resolve_database_url(async_driver=True)
+    if not url:
         raise ValueError(
-            "DATABASE_URL is not set. Set DATABASE_URL (or DATABASE_PUBLIC_URL) as an environment variable."
+            "DATABASE_URL is not set. Set DATABASE_URL (or DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL) "
+            "as an environment variable."
         )
-    if raw.startswith("postgresql+asyncpg://"):
-        return _prefer_ipv4_url(raw)
-    if raw.startswith("postgres://"):
-        return _prefer_ipv4_url(raw.replace("postgres://", "postgresql+asyncpg://", 1))
-    if raw.startswith("postgresql://"):
-        return _prefer_ipv4_url(raw.replace("postgresql://", "postgresql+asyncpg://", 1))
-    return _prefer_ipv4_url(raw)
+    return _prefer_ipv4_url(url)
 
 
 def get_database_url_or_none() -> Optional[str]:

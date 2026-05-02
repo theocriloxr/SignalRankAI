@@ -15,7 +15,7 @@ This checklist is for rolling out SignalRankAI safely on Railway with Redis-back
    - GEMINI_API_KEY
    - META_API_TOKEN
    - ENCRYPTION_KEY
-   - DATABASE_PUBLIC_URL (or DATABASE_URL)
+   - DATABASE_URL (or DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL)
    - REDIS_URL
    - One public base URL source: APP_BASE_URL or WEBHOOK_URL or RAILWAY_PUBLIC_DOMAIN
 
