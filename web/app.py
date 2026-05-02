@@ -140,31 +140,52 @@ async def health():
     # If DB is slow/unavailable, still return healthy (status="degraded")
     active_signals = -1
     deadline = time.time() + 3.0  # 3 second deadline
+    db_configured = False
     
+    # First check if DB is configured
     try:
-        if time.time() >= deadline:
-            raise TimeoutError("Health check deadline exceeded")
-            
-        from sqlalchemy import select
-        async with get_session() as session:
-            # Check deadline before executing query
-            if time.time() >= deadline:
-                raise TimeoutError("Health check deadline exceeded before DB query")
-            
-            count_stmt = select(Signal.signal_id).where(
-                Signal.archived == False,
-                Signal.expired == False
-            )
-            result = await session.execute(count_stmt)
-            active_signals = result.scalar() or 0
-    except (TimeoutError, asyncio.TimeoutError) as e:
-        # DB query took too long - still healthy but degraded
-        logger.warning(f"[healthz] DB query timeout: {e}, returning degraded status")
-        active_signals = -1
+        from db.session import is_db_configured
+        db_configured = is_db_configured()
     except Exception as e:
-        # DB unavailable or other error - still healthy
-        logger.warning(f"[healthz] DB query failed: {e}, returning degraded status")
+        logger.warning(f"[healthz] DB config check failed: {e}")
+        db_configured = False
+    
+    if not db_configured:
+        logger.warning("[healthz] DB not configured, returning degraded status")
         active_signals = -1
+    else:
+        try:
+            if time.time() >= deadline:
+                raise TimeoutError("Health check deadline exceeded")
+                
+            from sqlalchemy import select
+            async with get_session() as session:
+                # Check deadline before executing query
+                if time.time() >= deadline:
+                    raise TimeoutError("Health check deadline exceeded before DB query")
+                
+                # Try with fallback columns - check if archived/expired exist
+                try:
+                    count_stmt = select(Signal.signal_id).where(
+                        Signal.archived == False,
+                        Signal.expired == False
+                    )
+                    result = await session.execute(count_stmt)
+                    active_signals = result.scalar() or 0
+                except Exception as col_err:
+                    # Fallback: count all signals if columns don't exist
+                    logger.warning(f"[healthz] Column check failed, trying fallback: {col_err}")
+                    count_stmt = select(Signal.signal_id)
+                    result = await session.execute(count_stmt)
+                    active_signals = result.scalar() or 0
+        except (TimeoutError, asyncio.TimeoutError) as e:
+            # DB query took too long - still healthy but degraded
+            logger.warning(f"[healthz] DB query timeout: {e}, returning degraded status")
+            active_signals = -1
+        except Exception as e:
+            # DB unavailable or other error - still healthy
+            logger.warning(f"[healthz] DB query failed: {e}, returning degraded status")
+            active_signals = -1
     
     hit_rate = 0.0
     try:
