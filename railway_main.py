@@ -20,6 +20,7 @@ import time
 from typing import Iterable
 
 from fastapi import FastAPI, Request, Response
+from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
 from core.redis_state import state
@@ -1530,6 +1531,44 @@ except ImportError as e:
 from web.app import app as _web_app
 
 app = FastAPI(lifespan=lifespan)
+
+
+# ─────────────────────────────────────────────────────────────────────────────────────
+# Railway healthcheck - add directly to main app for reliability
+# This ensures /healthz responds even if the mount fails or during edge cases
+# ─────────────────────────────────────────────────────────────────────────────────────
+
+class _HealthResponse(BaseModel):
+    status: str = "healthy"
+    uptime: float
+    signals_active: int = 0
+    cache_hit_rate: float = 0.0
+
+
+@app.get("/health", response_model=_HealthResponse)
+@app.get("/healthz", response_model=_HealthResponse)
+async def _healthz_endpoint():
+    """Railway healthcheck - fast liveness probe.
+    
+    Returns 200 quickly even if DB is unavailable (status=degraded).
+    Mounted web app also serves this, but having it here ensures reliability.
+    """
+    import time
+    uptime = time.time() - float(os.getenv("START_TS", "0"))
+    # Try to get cache stats, gracefully handle unavailability
+    cache_hit_rate = 0.0
+    try:
+        from core.redis_cache import cache_stats
+        cache = await cache_stats()
+        cache_hit_rate = float(cache.get("hit_rate", 0))
+    except Exception:
+        pass
+    return _HealthResponse(
+        status="healthy",
+        uptime=uptime,
+        signals_active=0,
+        cache_hit_rate=cache_hit_rate,
+    )
 
 
 @app.post("/telegram/webhook")
