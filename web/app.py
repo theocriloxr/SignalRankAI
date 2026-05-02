@@ -348,6 +348,28 @@ async def paystack_charge_create(user_id: int = Depends(verify_api_key)):
     # Implementation stub - use client-side Paystack popup instead
     raise HTTPException(501, "Use client-side Paystack integration")
 
+
+# === Stub scheduler jobs (referenced by railway_main.py) ===
+async def _check_waitlist_capacity_job() -> None:
+    """Check if VIP seats are available and notify admins.
+    
+    Stub implementation - VIP waitlist functionality not yet fully implemented.
+    Kept here for railway_main.py scheduler compatibility.
+    """
+    logger.debug("[waitlist] capacity check job ran (stub)")
+    pass
+
+
+async def _monitor_expired_invites_job() -> None:
+    """Monitor and process expired VIP invites.
+    
+    Stub implementation - VIP waitlist functionality not yet fully implemented.
+    Kept here for railway_main.py scheduler compatibility.
+    """
+    logger.debug("[waitlist] expired invites job ran (stub)")
+    pass
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "app:app",
