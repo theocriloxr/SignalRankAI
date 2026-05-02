@@ -1,16 +1,11 @@
-def best_stock_strategies(asset, market_data, regime):
-    # Use the best available stock strategies (example: SMA crossover)
-    return stock_strategies(asset, '1h', market_data)
-from .base import BaseStrategy
-
 def stock_trend_strategy(asset, timeframe, market_data):
     ind = market_data.get('indicators', {})
     candles = market_data.get('candles', [])
     if not candles:
         return None
-    # Example: Simple moving average crossover
-    sma_fast = ind.get('sma_fast', 0)
-    sma_slow = ind.get('sma_slow', 0)
+    # Use sma_20 (fast) and sma_50 (slow) - these exist in indicators.py
+    sma_fast = ind.get('sma_20', ind.get('sma_fast', 0))
+    sma_slow = ind.get('sma_50', ind.get('sma_slow', 0))
     if sma_fast > sma_slow:
         entry = candles[-1]['close']
         stop = candles[-1]['low']
@@ -37,6 +32,7 @@ def stock_trend_strategy(asset, timeframe, market_data):
         }
     return None
 
+
 def stock_strategies(asset, timeframe, market_data):
     strategies = [stock_trend_strategy]
     signals = []
@@ -51,3 +47,8 @@ def stock_strategies(asset, timeframe, market_data):
             sig['strength'] = float(sig.get('confidence', 0) or 0)
             signals.append(sig)
     return signals
+
+
+def best_stock_strategies(asset, market_data, regime):
+    # Use the best available stock strategies (example: SMA crossover)
+    return stock_strategies(asset, '1h', market_data)
