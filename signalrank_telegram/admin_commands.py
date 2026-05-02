@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from .utils import require_tier
 from sqlalchemy import select, func, desc, text
 from telegram import Update
 from telegram.ext import ContextTypes
