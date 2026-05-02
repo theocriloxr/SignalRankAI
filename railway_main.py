@@ -849,15 +849,9 @@ async def lifespan(_: FastAPI):
     startup_ops_task: asyncio.Task | None = None
     startup_maintenance_tasks: list[asyncio.Task] = []
 
-    # On Railway, default to strict schema-ready startup so workers/engine do
-    # not begin against partially initialized databases.
-    _strict_schema_ready = str(
-        os.getenv("STARTUP_STRICT_SCHEMA_READY", "1" if os.getenv("RAILWAY_SERVICE_NAME") else "0")
-    ).strip().lower() in {"1", "true", "yes", "on"}
-    if os.getenv("RAILWAY_SERVICE_NAME") and _strict_schema_ready:
-        _default_ops_timeout = "180"
-    else:
-        _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"
+    # On Railway, default to non-blocking startup so healthchecks can connect
+    # immediately; operators can opt in to waiting by setting STARTUP_OPS_TIMEOUT_SECONDS.
+    _default_ops_timeout = "0" if os.getenv("RAILWAY_SERVICE_NAME") else "35"
     startup_ops_timeout_s = int(os.getenv("STARTUP_OPS_TIMEOUT_SECONDS", _default_ops_timeout) or 0)
 
     if _db_ready:
