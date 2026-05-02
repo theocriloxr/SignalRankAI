@@ -24,8 +24,9 @@ SPECS: list[VarSpec] = [
     VarSpec("GEMINI_API_KEY", True, "AI runtime readiness gate"),
     VarSpec("META_API_TOKEN", True, "Execution integration readiness gate"),
     VarSpec("ENCRYPTION_KEY", True, "Encrypted secret/state protection"),
-    VarSpec("DATABASE_PUBLIC_URL", True, "Primary DB connection URL on Railway"),
-    VarSpec("DATABASE_URL", False, "Fallback DB connection URL"),
+    VarSpec("DATABASE_URL", False, "Primary DB connection URL (private/internal preferred)"),
+    VarSpec("DATABASE_PRIVATE_URL", False, "Explicit private DB connection URL override"),
+    VarSpec("DATABASE_PUBLIC_URL", False, "Public DB proxy fallback URL"),
     VarSpec("REDIS_URL", True, "Queue/cache backend"),
     VarSpec("APP_BASE_URL", False, "Webhook base URL fallback"),
     VarSpec("WEBHOOK_URL", False, "Webhook base URL source"),
@@ -127,7 +128,10 @@ def main() -> int:
         _present(file_values.get(k, "")) or _present(os.getenv(k, ""))
         for k in ("APP_BASE_URL", "WEBHOOK_URL", "RAILWAY_PUBLIC_DOMAIN")
     )
-    db_ok = _present(file_values.get("DATABASE_PUBLIC_URL", "")) or _present(file_values.get("DATABASE_URL", "")) or _present(os.getenv("DATABASE_PUBLIC_URL", "")) or _present(os.getenv("DATABASE_URL", ""))
+    db_ok = any(
+        _present(file_values.get(k, "")) or _present(os.getenv(k, ""))
+        for k in ("DATABASE_URL", "DATABASE_PRIVATE_URL", "DATABASE_PUBLIC_URL")
+    )
 
     lines.append(f"- Owner identity set: {'yes' if owner_ok else 'no'}")
     lines.append(f"- Public webhook domain source set: {'yes' if domain_ok else 'no'}")

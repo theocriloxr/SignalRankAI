@@ -17,7 +17,7 @@ Source of truth used for this matrix:
 | GEMINI_API_KEY | Required by AI analysis/runtime readiness policy | [railway_main.py](railway_main.py#L247) | Valid Gemini API key | Engine/Bot/All |
 | META_API_TOKEN | Required for execution integrations/runtime readiness policy | [railway_main.py](railway_main.py#L248) | Valid Meta API token | Engine/Bot/All |
 | ENCRYPTION_KEY | Required for encrypted secrets and secure state | [railway_main.py](railway_main.py#L249) | 32+ char random secret | All runtime services |
-| DATABASE_PUBLIC_URL or DATABASE_URL | DB sessions, migrations, repositories | [db/session.py](db/session.py#L60) | Prefer DATABASE_PUBLIC_URL on Railway | All runtime services |
+| DATABASE_URL (or DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL) | DB sessions, migrations, repositories | [db/session.py](db/session.py#L60) | Prefer DATABASE_URL/private; public URL as fallback | All runtime services |
 | REDIS_URL | Queue/cache/state backend for production behavior | [core/redis_state.py](core/redis_state.py#L42) | Railway Redis URL | Web/Bot/Worker/All |
 | APP_BASE_URL or WEBHOOK_URL or RAILWAY_PUBLIC_DOMAIN | Required to derive Telegram webhook URL | [railway_main.py](railway_main.py#L217) | Public HTTPS base URL | Web/All |
 | BYPASS_KEY | Protects admin unlock path and guardrails | [core/redis_state.py](core/redis_state.py#L305) | Long random secret | Bot/All |
@@ -65,7 +65,7 @@ Use this as the exact checklist during deploy. Replace status with Yes/No.
 | GEMINI_API_KEY | No | all | - |
 | META_API_TOKEN | No | all | - |
 | ENCRYPTION_KEY | No | all | - |
-| DATABASE_PUBLIC_URL or DATABASE_URL | No | all | - |
+| DATABASE_URL (or DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL) | No | all | - |
 | REDIS_URL | No | all | - |
 | APP_BASE_URL or WEBHOOK_URL or RAILWAY_PUBLIC_DOMAIN | No | web/all | - |
 | BYPASS_KEY | No | all | - |

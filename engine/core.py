@@ -1592,7 +1592,7 @@ def main_loop(DRY_RUN: bool = False):
         if not user_ids:
             logger.warning("[engine] delivery audience is empty; no users eligible for dispatch")
 
-        def filter_non_duplicate_signals(user_id: int, signals: List[Dict], session=None) -> List[Dict]:
+        async def filter_non_duplicate_signals(user_id: int, signals: List[Dict]) -> List[Dict]:
             """
             Filter out signals that were already sent to this user.
             
@@ -1610,46 +1610,61 @@ def main_loop(DRY_RUN: bool = False):
             if not signals:
                 return []
             
+            signal_ids = [
+                str(sig.get("signal_id") or sig.get("id") or "").strip()
+                for sig in (signals or [])
+                if (sig.get("signal_id") or sig.get("id"))
+            ]
+            if not signal_ids:
+                return list(signals or [])
+
             try:
-                if not session:
-                    from db.session import get_session
-                    session = get_session()
-                
+                from db.session import get_session, is_db_configured
+                if not is_db_configured():
+                    raise RuntimeError("DB not configured")
                 from db.models import SignalDelivery
-                from sqlalchemy import and_
-                
-                # Get all signal IDs already sent to this user
-                already_sent = set()
-                for sig in signals:
-                    sig_id = sig.get('signal_id') or sig.get('id')
-                    if not sig_id:
-                        continue
-                    
-                    exists = session.query(SignalDelivery).filter(
-                        and_(
-                            SignalDelivery.user_id == user_id,
-                            SignalDelivery.signal_id == sig_id,
+                from sqlalchemy import select
+
+                async with get_session() as session:
+                    result = await session.execute(
+                        select(SignalDelivery.signal_id).where(
+                            SignalDelivery.user_id == int(user_id),
+                            SignalDelivery.signal_id.in_(signal_ids),
                         )
-                    ).first()
-                    
-                    if exists:
-                        already_sent.add(sig_id)
-                
-                # Filter to only new signals
-                new_signals = [
-                    s for s in signals 
-                    if (s.get('signal_id') or s.get('id')) not in already_sent
-                ]
-                
+                    )
+                    already_sent = {str(row[0]) for row in (result.fetchall() or []) if row and row[0]}
+
+                if already_sent:
+                    new_signals = [
+                        s for s in signals
+                        if str(s.get("signal_id") or s.get("id") or "").strip() not in already_sent
+                    ]
+                else:
+                    new_signals = list(signals or [])
+
                 if len(new_signals) < len(signals):
                     logger.info(
-                        f"[engine] Filtered duplicate signals for user {user_id}: "
-                        f"{len(signals)} -> {len(new_signals)} (skipped {len(signals) - len(new_signals)} duplicates)"
+                        "[engine] Filtered duplicate signals for user %s: %s -> %s (skipped %s duplicates)",
+                        user_id,
+                        len(signals),
+                        len(new_signals),
+                        len(signals) - len(new_signals),
                     )
-                
                 return new_signals
             except Exception as e:
                 logger.warning(f"[engine] Failed to filter duplicates for user {user_id}: {e}")
+                # Redis fallback: use best-effort in-memory/redis delivery cache.
+                try:
+                    from core.redis_state import get_delivered_signals_sync
+                    delivered = await asyncio.to_thread(get_delivered_signals_sync, int(user_id))
+                    delivered = {str(x) for x in (delivered or set()) if x}
+                    if delivered:
+                        return [
+                            s for s in (signals or [])
+                            if str(s.get("signal_id") or s.get("id") or "").strip() not in delivered
+                        ]
+                except Exception as redis_err:
+                    logger.debug("[engine] Redis fallback dedupe failed for user %s: %s", user_id, redis_err)
                 # Return all signals if filtering fails (better to send duplicates than fail)
                 return signals
 
@@ -1883,7 +1898,7 @@ def main_loop(DRY_RUN: bool = False):
                         continue
 
                     # Filter out signals already sent to this user (prevent duplicates)
-                    user_signals = filter_non_duplicate_signals(user_id, user_signals)
+                    user_signals = await filter_non_duplicate_signals(user_id, user_signals)
                     if not user_signals:
                         logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
                         skipped_no_eligible_signals += 1

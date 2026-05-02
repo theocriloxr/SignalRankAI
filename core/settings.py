@@ -62,9 +62,13 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
     if not _settings.DATABASE_URL:
-        public_url = (os.getenv("DATABASE_PUBLIC_URL") or "").strip()
-        if public_url:
-            _settings.DATABASE_URL = public_url
+        try:
+            from config import resolve_database_url
+            resolved = resolve_database_url(async_driver=True)
+        except Exception:
+            resolved = None
+        if resolved:
+            _settings.DATABASE_URL = resolved
     return _settings
 
 
