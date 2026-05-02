@@ -19,7 +19,7 @@ from core.command_limits import (
 )
 from .admin_commands import admin_dashboard, admin_top_assets_command
 from .user_commands import start_command, status_command, account_command
-from .signal_commands import signals_command, proof_command, signal_command
+from .signal_commands import signals_command, proof_command
 from .account_commands import performance_command, history_command, apikey_command
 from .mt5_commands import mt5_link_command, mt5_status_command
 from .utils import tier_rank, _effective_tier, _public_guard

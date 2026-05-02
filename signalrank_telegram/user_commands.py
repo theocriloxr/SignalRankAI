@@ -2,8 +2,7 @@ import os
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from signalrank_telegram.access import resolve_user_tier
-from signalrank_telegram.utils import _effective_tier, _public_guard, tier_rank
-from . import _build_dynamic_menu, _build_signal_action_keyboard, _build_main_menu_keyboard
+from signalrank_telegram.utils import _effective_tier, _public_guard, tier_rank, _build_dynamic_menu
 
 async def start_command(update, context):
     # Diagnostic entry log
