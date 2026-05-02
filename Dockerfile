@@ -24,7 +24,7 @@ COPY . .
 # setup happens when the container starts (not during image build).
 RUN chmod +x ./start.sh || true
 
-EXPOSE 8000
+EXPOSE 8080
 
 # Use the start script which runs migrations and then starts the appropriate service
 ENTRYPOINT ["/bin/bash", "./start.sh"]

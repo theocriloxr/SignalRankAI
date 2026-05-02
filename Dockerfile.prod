@@ -41,7 +41,7 @@ COPY --from=builder /app /app
 # Ensure the start script is executable and expose default port
 RUN chmod +x ./start.sh || true
 
-EXPOSE 8000
+EXPOSE 8080
 
 # Keep existing start entrypoint (start.sh handles migrations + server start)
 CMD ["./start.sh"]
