@@ -551,11 +551,14 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     try:
         from signalrank_telegram.bot import run_bot
     except Exception as exc:
-        print(f"[bot] webhook setup import error: {exc}", flush=True)
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[bot] webhook setup import error: {exc}\nTraceback:\n{tb[:1000]}", flush=True)
         logger.error(
             "[bot] Fatal import error — cannot start Telegram bot. "
-            "Fix the syntax/import error and redeploy. Details: %s",
+            "Fix the syntax/import error and redeploy. Details: %s\nTraceback:\n%s",
             exc,
+            tb[:1000],
             exc_info=True,
         )
         raise
@@ -971,8 +974,16 @@ async def lifespan(_: FastAPI):
             print("[startup] Engine loop task created", flush=True)
             logger.info("[startup] Engine loop task created")
         except Exception as exc:
-            print(f"[startup] Could not start engine loop: {exc}", flush=True)
-            logger.warning(f"[startup] Could not start engine loop: {exc}")
+            # Provide better error context for debugging
+            import traceback
+            tb = traceback.format_exc()
+            exc_msg = f"{type(exc).__name__}: {exc}"
+            if "is not defined" in str(exc):
+                # This is typically a masked ImportError - provide the full traceback
+                print(f"[startup] Could not start engine loop: {exc_msg}\nTraceback:\n{tb[:500]}", flush=True)
+            else:
+                print(f"[startup] Could not start engine loop: {exc_msg}", flush=True)
+            logger.warning(f"[startup] Could not start engine loop: {exc_msg}\nTraceback:\n{tb[:500]}")
 
     # ── 2b) Worker loop (long-running background task) ───────────────────────
     # Default ON in monolith so web+bot+engine+worker run in one service.
