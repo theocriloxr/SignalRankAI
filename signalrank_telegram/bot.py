@@ -625,6 +625,25 @@ def _log_once(key: str, message: str) -> None:
         pass
 
 
+def _mask_db_url_host(url: str) -> str:
+    try:
+        from sqlalchemy.engine.url import make_url
+        parsed = make_url(url)
+        host = str(parsed.host or "").strip()
+        port = parsed.port
+        db = str(parsed.database or "").strip()
+        if not host:
+            return "<masked>"
+        out = host
+        if port:
+            out = f"{out}:{port}"
+        if db:
+            out = f"{out}/{db}"
+        return out
+    except Exception:
+        return "<masked>"
+
+
 def _normalized_delivery_tier(tier: str | None) -> str:
     t = str(tier or "free").strip().lower()
     if t in ("owner", "admin"):
@@ -3532,8 +3551,7 @@ def run_bot() -> None:
         )
     # Safe log: print only the host portion, never the password.
     try:
-        _db_host_part = _db_raw.split("@")[-1]  # e.g. 'monorail.proxy.rlwy.net:54321/railway'
-        print(f"[boot] Connecting to DB at: {_db_host_part}", flush=True)
+        print(f"[boot] Connecting to DB at: {_mask_db_url_host(_db_raw)}", flush=True)
     except Exception:
         print("[boot] DATABASE_URL is set (host masked)", flush=True)
     # Force the global async engine to re-initialise using the fresh env value.
@@ -6433,7 +6451,7 @@ def run_bot() -> None:
             _jobstores["persistent"] = _SAJobStore(url=_sched_sync_url)
             logger.info(
                 "[sched] SQLAlchemyJobStore ready → %s",
-                _sched_sync_url.split("@")[-1],
+                _mask_db_url_host(_sched_sync_url),
             )
         except Exception as _sa_err:
             logger.warning(

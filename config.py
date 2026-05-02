@@ -219,11 +219,7 @@ def _build_pg_dsn_from_parts(*, async_driver: bool) -> str | None:
 	port = (os.getenv("PGPORT") or os.getenv("POSTGRES_PORT") or os.getenv("DATABASE_PORT") or "").strip()
 	if not host or not user or not database:
 		return None
-	try:
-		from urllib.parse import quote_plus
-	except Exception:
-		def quote_plus(val: str) -> str:
-			return val
+	from urllib.parse import quote_plus
 	scheme = "postgresql+asyncpg" if async_driver else "postgresql"
 	user_enc = quote_plus(user)
 	auth = user_enc
