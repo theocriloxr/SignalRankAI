@@ -841,7 +841,7 @@ def main_loop(DRY_RUN: bool = False):
                 except Exception:
                     market_data['news_sentiment'] = None
 
-                # Run strategies -> returns list of signals (each is a dict)
+# Run strategies -> returns list of signals (each is a dict)
                 try:
                     strategy_signals = run_all_strategies(asset, market_data, regime) or []
                 except Exception:
@@ -850,8 +850,16 @@ def main_loop(DRY_RUN: bool = False):
 
                 pipeline_stats["strategy_signals"] += len(strategy_signals)
                 if not strategy_signals:
-                    logger.debug(f"[engine] No strategy signals for {asset}")
+                    # DEBUG: Log what's happening - regime, available TFs, indicators keys
+                    _tf_list = list(market_data.keys()) if market_data else []
+                    _ind_keys = list(market_data.get(list(market_data.keys())[0], {}).get('indicators', {}).keys()) if market_data else []
+                    logger.info(f"[engine] No strategy signals for {asset} regime={regime} tfs={_tf_list} ind_sample={_ind_keys[:5]}")
                     continue
+
+                # DEBUG: Log strategy signal details
+                logger.info(f"[engine] strategy_signals generated for {asset}: count={len(strategy_signals)}")
+                for _si, _sig in enumerate(strategy_signals[:3]):  # Log first 3
+                    logger.info(f"[engine]   sig[{_si}]: {_sig.get('strategy_name')} dir={_sig.get('direction')} conf={_sig.get('confidence')}")
 
                 # Normalize & dedupe (using SignalController if available)
                 try:

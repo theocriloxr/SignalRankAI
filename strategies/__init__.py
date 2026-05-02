@@ -8,10 +8,12 @@ def _env_bool(name: str, default: bool) -> bool:
     except Exception:
         return default
 
+
 from .trend import trend_strategies
 from .momentum import momentum_strategies
 from .volatility import volatility_strategies
 from .structure import structure_strategy
+
 
 # Optional TradingView integration
 try:
@@ -21,8 +23,10 @@ except ImportError:
     TRADINGVIEW_AVAILABLE = False
     tradingview_strategies = None
 
+
 def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime_strategies=None):
     signals = []
+
     # Multi-timeframe bias: get higher timeframe (HTF) bias for each asset
     def get_htf_bias(market_data):
         # Use 4h or 1d as HTF, fallback to None
@@ -59,10 +63,11 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             continue
 
         # Only allow lower timeframe trades in direction of HTF bias
-        if timeframe in ["5m", "15m", "1h"] and htf_bias:
-            allowed_direction = htf_bias
-        else:
-            allowed_direction = None
+        # TEMPORARILY relaxed - was causing signals to be filtered when HTF bias doesn't match
+        # if timeframe in ["5m", "15m", "1h"] and htf_bias:
+        #     allowed_direction = htf_bias
+        # else:
+        allowed_direction = None
 
         # Determine which groups to run.
         # Default: run ALL strategy groups, then let consensus + scoring pick the winner.
@@ -116,5 +121,5 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                     logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
                 except Exception:
                     pass
-    
+
     return signals
