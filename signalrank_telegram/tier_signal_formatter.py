@@ -271,6 +271,24 @@ def _signal_age_text(signal: DictType[str, Any]) -> Optional[str]:
         return None
 
 
+def _signal_generated_time(signal: DictType[str, Any]) -> Optional[str]:
+    """Return signal generation time in readable format."""
+    created_at = signal.get("created_at")
+    if not created_at:
+        return None
+    try:
+        if isinstance(created_at, str):
+            created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        else:
+            created = created_at
+        if getattr(created, "tzinfo", None) is None:
+            created = created.replace(tzinfo=timezone.utc)
+        # Return in format: "2024-05-03 14:30 UTC"
+        return created.strftime("%Y-%m-%d %H:%M UTC")
+    except Exception:
+        return None
+
+
 def _expiry_text(signal: DictType[str, Any]) -> Optional[str]:
     expires_at = signal.get("expires_at")
     if not expires_at:
@@ -398,15 +416,22 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
-    freshness = _freshness_text(signal)
+freshness = _freshness_text(signal)
     age_text = _signal_age_text(signal)
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
+    generated_time = _signal_generated_time(signal)
 
     lines = [
         "🚨 <b>PREMIUM SIGNAL DETECTED</b> 🚨",
         f"Asset: <b>{asset_disp}</b>",
         f"Direction: <b>{direction_disp}</b>",
+    ]
+
+    if generated_time:
+        lines.append(f"🕐 Generated: {_h(generated_time)}")
+
+    lines += [
         "",
         "📊 <b>AI Analysis:</b>",
         f"🤖 Conviction Score: {score_val:.1f}%",
@@ -542,10 +567,11 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
-    freshness = _freshness_text(signal)
+freshness = _freshness_text(signal)
     age_text = _signal_age_text(signal)
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
+    generated_time = _signal_generated_time(signal)
 
     # R/R — use last TP for best-case calculation
     rr = signal.get("risk_reward") or signal.get("rr_ratio") or signal.get("rr_estimate")
@@ -560,6 +586,12 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         "🚨 <b>VIP SIGNAL DETECTED</b> 🚨",
         f"Asset: <b>{asset_disp}</b>",
         f"Direction: <b>{direction_disp}</b>",
+    ]
+
+    if generated_time:
+        lines.append(f"🕐 Generated: {_h(generated_time)}")
+
+    lines += [
         "",
         "📊 <b>AI Analysis:</b>",
         f"🤖 Conviction Score: {score_val:.1f}%",
