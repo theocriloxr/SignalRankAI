@@ -1331,6 +1331,11 @@ async def lifespan(_: FastAPI):
             logger.warning("[startup] Scheduler failed to start: %s", exc)
             return None
 
+    if _db_ready:
+        _start_scheduler_once()
+    else:
+        logger.warning("[startup] Scheduler skipped: DATABASE_URL not configured")
+
     async def _start_bot_bg() -> None:
         nonlocal application, bot_started
         if not _db_ready:
