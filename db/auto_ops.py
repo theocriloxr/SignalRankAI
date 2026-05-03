@@ -137,7 +137,7 @@ def run_startup_ops(run_mode: str) -> None:
         if _env_bool("FRESH_START", False) and run_mode in {"web", "all"}:
             _fresh_start_if_needed(conn)
 
-        # 3) Belt-and-suspenders column patches — safe ADD COLUMN IF NOT EXISTS for
+# 3) Belt-and-suspenders column patches — safe ADD COLUMN IF NOT EXISTS for
         #    all columns that 0010_consolidate_full_schema migration covers, in case
         #    Alembic is skipped or the DB was bootstrapped outside of migrations.
         try:
@@ -158,6 +158,8 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auto_renew BOOLEAN NOT NULL DEFAULT TRUE",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS dca_profile VARCHAR(32)",
                     # subscriptions
                     "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
                     # signals
