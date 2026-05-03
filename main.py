@@ -29,12 +29,29 @@ def _infer_run_mode() -> str:
     return "engine"
 
 
+def _check_database_configured() -> bool:
+    """Check if database is properly configured at startup."""
+    try:
+        from db.session import is_db_configured
+        from config import resolve_database_url
+        
+        # First try resolve_database_url which checks multiple env vars
+        url = resolve_database_url(async_driver=False)
+        if url:
+            return True
+            
+        # Fallback to session check
+        return is_db_configured()
+    except Exception as e:
+        print(f"[startup] DB config check failed: {e}", flush=True)
+        return False
+
 
 def main() -> None:
     # Configure logging early so modules can log during init
     try:
         from utils.logging_config import setup_logging
-        from core.settings import validate_required_settings, get_settings
+        from core.settings import validate_required_settings
         import os
         json_logs = str(os.getenv("LOG_JSON") or "0").strip().lower() in {"1", "true", "yes"}
         setup_logging(json=json_logs)
@@ -46,11 +63,18 @@ def main() -> None:
             raise
     except Exception:
         pass
-    """Unified entrypoint with strict RUN_MODE separation and robust lifecycle.
-    - Only one instance of each service (web, worker, bot, engine) per process.
-    - RUN_MODE=all: runs each in a dedicated thread, with clear logs and error handling.
-    - Prevents duplicate schedulers/jobs and ensures explicit lifecycle.
-    """
+    
+    # Early database configuration check
+    db_configured = _check_database_configured()
+    if not db_configured:
+        print("[startup] WARNING: Database not configured - some features may not work", flush=True)
+    else:
+        print("[startup] Database configured successfully", flush=True)
+
+    # Unified entrypoint with strict RUN_MODE separation and robust lifecycle.
+    # Only one instance of each service (web, worker, bot, engine) per process.
+    # RUN_MODE=all: runs each in a dedicated thread, with clear logs and error handling.
+    # Prevents duplicate schedulers/jobs and ensures explicit lifecycle.
     mode = _infer_run_mode()
     print(
         "[boot] starting | "

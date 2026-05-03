@@ -48,7 +48,10 @@ def run_startup_ops(run_mode: str) -> None:
 
     db_url = _sync_database_url()
     if not db_url:
+        print("[auto_ops] No database URL configured, skipping startup ops", flush=True)
         return
+    
+    print(f"[auto_ops] Database configured, running startup ops for mode={run_mode}", flush=True)
 
     # Production hardening: runtime auto-migrate can be disabled, but we still
     # run schema bootstrap safety so fresh databases don't start half-ready.
