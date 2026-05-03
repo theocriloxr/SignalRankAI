@@ -5,7 +5,10 @@ import os
 from config import config, resolve_database_url
 import time
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import psycopg2
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -288,7 +291,7 @@ def run_startup_ops(run_mode: str) -> None:
                 pass
 
 
-def _fresh_start_if_needed(conn) -> None:
+def _fresh_start_if_needed(conn: "psycopg2.extensions.connection") -> None:
     """Wipe application data once, then set a DB flag so it won't repeat."""
 
     with conn.cursor() as cur:
