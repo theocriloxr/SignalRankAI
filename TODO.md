@@ -1,43 +1,33 @@
-# TODO: SignalRankAI Improvements
+# TODO: SignalRankAI Implementation Tasks
 
-## Task Summary
-1. Fix SQLAlchemy import error on Railway (KeyError: 'sqlalchemy')
-2. Auto-adjust confidence thresholds via Gemini/ML over time  
-3. Ensure consistent signal generation
+## ✅ COMPLETED
+- [x] Fix KeyError: 'sqlalchemy' startup crash - moved SQLAlchemy import to first line in railway_main.py
 
-## Analysis
+## 🔄 IN PROGRESS
+- [ ] Auto-adjusted confidence thresholds by Gemini/ML
+- [ ] Generate signals consistently - not stop after one signal
 
-### Issue 1: SQLAlchemy KeyError
-- railway_main.py has fix at top (try import of PostgreSQL dialect)
-- Error shows line 1525 but file is shorter - may be cached old version
-- Fix should work - verify deployment has latest code
+## 📋 BACKLOG
+- [ ] Integrate ML-driven confidence threshold adjustments
+- [ ] Continuous signal generation (not one-shot)
+- [ ] Performance metrics tracking (win rate, ROI, risk:reward ratio)
 
-### Issue 2: Auto-Adjust Thresholds
-- FOUND: threshold_optimizer.py already exists with full implementation!
-- AdaptiveThresholdOptimizer class adjusts based on win rate, avg R, signal volume
-- Need to integrate into engine/core.py and gemini_ml.py
-- Need to call analyze_and_adjust() in the main loop periodically
+## Plan
 
-### Issue 3: Consistent Signal Generation  
-- engine/core.py main_loop already runs while True 
-- Need to ensure it's generating signals every cycle
-- Add logging to show signal counts per cycle
+### 1. Auto-adjusted Confidence Thresholds
+- Create a new module in `engine/` or update `services/gemini_ml.py` to:
+  - Analyze outcome data after each cycle
+  - Calculate performance metrics (win rate, ROI, risk:reward)
+  - Adjust ML_PROB_THRESHOLD dynamically
+  - Persist thresholds in runtime_state
 
-## Implementation Plan
+### 2. Continuous Signal Generation  
+- Modify `engine/core.py` or `engine/loop.py`:
+  - Ensure complete cycle runs for all assets
+  - Don't exit after first signal found
+  - Process entire asset batch each cycle
 
-### Step 1: Verify railway_main.py SQLAlchemy fix 
-- Already in place - verify deployment
-
-### Step 2: Integrate threshold_optimizer into engine
-- Import and use threshold_optimizer in engine/core.py
-- Call refresh_thresholds() periodically in main_loop
-- Use get_current_threshold() when scoring signals
-
-### Step 3: Add signal generation logging
-- Show signals generated per cycle in heartbeat
-- Verify it's not stopping after one signal
-
-## Status
-- [ ] Step 1: Verify SQLAlchemy fix deployed
-- [ ] Step 2: Integrate threshold_optimizer  
-- [ ] Step 3: Add signal generation logging
+### 3. Performance Metrics Integration
+- Track in `services/gemini_ml.py` or create new tracking jobs
+- Store in runtime_state
+- Use for threshold adjustment

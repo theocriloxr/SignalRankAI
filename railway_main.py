@@ -10,6 +10,15 @@ This keeps existing main.py intact.
 
 from __future__ import annotations
 
+# CRITICAL: Pre-validate SQLAlchemy PostgreSQL dialect BEFORE any other imports
+# that might trigger db.models or web.app (Railway fix for KeyError: 'sqlalchemy')
+# This MUST be the first import to prevent KeyError: 'sqlalchemy' errors
+try:
+    from sqlalchemy.dialects.postgresql import UUID
+    _SQLALCHEMY_POSTGRES_DIALECT_LOADED = True
+except ImportError as _e:
+    raise ImportError(f"SQLAlchemy PostgreSQL dialect required. Install: pip install 'sqlalchemy[postgresql]' (got: {_e})")
+
 import os
 import asyncio
 import logging
@@ -23,14 +32,6 @@ from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
-
-# CRITICAL: Pre-validate SQLAlchemy PostgreSQL dialect BEFORE any other imports
-# that might trigger db.models or web.app (Railway fix for KeyError: 'sqlalchemy')
-try:
-    from sqlalchemy.dialects.postgresql import UUID
-    _SQLALCHEMY_POSTGRES_DIALECT_LOADED = True
-except ImportError as _e:
-    raise ImportError(f"SQLAlchemy PostgreSQL dialect required. Install: pip install 'sqlalchemy[postgresql]' (got: {_e})")
 
 from core.redis_state import state
 
