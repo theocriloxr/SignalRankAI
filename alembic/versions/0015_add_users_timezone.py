@@ -1,27 +1,34 @@
-"""Add users.timezone column
+"""Add users.timezone and dca_profile columns
 
-Revision ID: 0015_add_users_timezone
-Revises: 0014_decision_log_and_ml_rejected
+Revision ID: 0024_add_users_timezone_and_dca_profile
+Revises: 0023_outcome_truth_and_delivery_state
 Create Date: 2026-05-02
 
 """
 from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
 
 # revision identifiers
-revision: str = '0015_add_users_timezone'
-down_revision: Union[str, None] = '0014_decision_log_and_ml_rejected'
+revision: str = '0024_add_users_timezone_and_dca_profile'
+down_revision: Union[str, None] = '0023_outcome_truth_and_delivery_state'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column('timezone', sa.String(64), nullable=True))
-    op.add_column('users', sa.Column('dca_profile', sa.String(32), nullable=True))
+    # Add timezone column if it doesn't exist
+    op.execute("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)
+    """)
+    # Add dca_profile column if it doesn't exist
+    op.execute("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS dca_profile VARCHAR(32)
+    """)
 
 
 def downgrade() -> None:
-    op.drop_column('users', 'dca_profile')
-    op.drop_column('users', 'timezone')
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS dca_profile")
+    op.execute("ALTER TABLE users DROP COLUMN IF EXISTS timezone")
