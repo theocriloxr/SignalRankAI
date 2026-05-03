@@ -19,6 +19,8 @@ from collections import Counter
 from typing import Any, Dict, List
 from datetime import datetime, timedelta as _timedelta
 
+logger = logging.getLogger(__name__)
+
 # Core engine pieces (ensure these exist in your repo or adapt names)
 from signalrank_telegram.tier_delivery import TierDeliveryManager
 from engine.signal_analytics import signal_analytics
@@ -139,10 +141,25 @@ _threshold_optimizer = None
 try:
     from engine.threshold_optimizer import get_threshold_optimizer, refresh_thresholds
     _threshold_optimizer = get_threshold_optimizer()
-except Exception:
-    def _threshold_optimizer_fallback():
-        return None
-    _threshold_optimizer = type('ThresholdOptimizer', (), {'get_threshold': lambda self: float(os.getenv('ML_PROB_THRESHOLD', '0.55') or 0.55), 'analyze_and_adjust': lambda self, force=False: None})()</# Track threshold refresh intervals
+except Exception as e:
+    logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
+    # Fallback threshold optimizer that uses env var
+    class _FallbackThresholdOptimizer:
+        def get_threshold(self) -> float:
+            return float(os.getenv('ML_PROB_THRESHOLD', '0.55') or 0.55)
+        async def analyze_and_adjust(self, force: bool = False):
+            return None
+        def get_config(self):
+            from datetime import datetime
+            return type('Config', (), {
+                'ml_prob_threshold': self.get_threshold(),
+                'min_score_threshold': 70.0,
+                'confluence_min': 0.0,
+                'last_updated': datetime.utcnow(),
+                'source': 'env',
+            })()
+    _threshold_optimizer = _FallbackThresholdOptimizer()</
+# Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
 
