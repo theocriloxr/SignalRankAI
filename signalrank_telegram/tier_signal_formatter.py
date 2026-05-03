@@ -416,7 +416,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     rr_calc = _compute_rr(entry, sl, tp_levels[-1] if tp_levels else None)
     expected_profit = _expected_move_pct(entry, tp_levels[-1] if tp_levels else None, signal.get("direction", "long"))
     expected_loss = _expected_move_pct(entry, sl, "short" if str(signal.get("direction", "long")).lower() in ("long", "buy") else "long")
-freshness = _freshness_text(signal)
+    freshness = _freshness_text(signal)
     age_text = _signal_age_text(signal)
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
