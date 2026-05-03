@@ -2,6 +2,13 @@ from engine.tier_notifications import TierNotificationManager
 from datetime import datetime, timezone
 import os
 from core.tier_constants import TIER_SCORE_THRESHOLDS
+from engine.signal_metrics import (
+	resolve_confidence_ratio,
+	resolve_confluence_percent,
+	resolve_confluence_total,
+	resolve_ml_probability,
+	resolve_score_percent,
+)
 
 # Initialize tier notification manager
 _tier_notifier = TierNotificationManager()
@@ -37,37 +44,57 @@ def _should_send_signal_for_tier(user_tier: str, score: float) -> bool:
 
 def _risk_suggestion(score: float | int | None) -> str:
 	try:
-		s = float(score or 0)
+		s = float(score) if score is not None else None
 	except Exception:
-		s = 0.0
-	# Very simple mapping; keep conservative.
-	if s >= 92:
-		return "2.0%"
-	if s >= 85:
-		return "1.5%"
-	if s >= 75:
-		return "1.0%"
-	return "0.5%"
+		s = None
+	if s is not None and s <= 1.0:
+		s *= 100.0
+	base_pct = float(os.getenv("RISK_PER_TRADE_PCT", "0.5"))
+	strong_threshold = max(
+		float(TIER_SCORE_THRESHOLDS.get("free", 80.0) or 80.0),
+		float(TIER_SCORE_THRESHOLDS.get("vip", 75.0) or 75.0),
+	)
+	mid_threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0)
+	if s is None:
+		return f"{base_pct:.2f}%"
+	if s >= strong_threshold:
+		mult = float(os.getenv("RISK_SUGGESTION_STRONG_MULT", "2.0"))
+	elif s >= mid_threshold:
+		mult = float(os.getenv("RISK_SUGGESTION_MODERATE_MULT", "1.5"))
+	else:
+		mult = float(os.getenv("RISK_SUGGESTION_BASE_MULT", "1.0"))
+	return f"{base_pct * mult:.2f}%"
 
 def _confidence_tag(score: float | int | None) -> str:
 	"""Return confidence strength emoji tag based on score."""
 	try:
-		s = float(score or 0)
+		s = float(score) if score is not None else None
 	except Exception:
-		s = 0.0
-	
-	if s >= 80:
-		return "🔥 STRONG"
-	elif s >= 65:
-		return "✅ MODERATE"
-	else:
+		s = None
+	if s is not None and s <= 1.0:
+		s *= 100.0
+	strong_threshold = max(
+		float(TIER_SCORE_THRESHOLDS.get("vip", 75.0) or 75.0),
+		float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0),
+	)
+	mid_threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0)
+	if s is None:
 		return "⚠️ WEAK"
+	if s >= strong_threshold:
+		return "🔥 STRONG"
+	if s >= mid_threshold:
+		return "✅ MODERATE"
+	return "⚠️ WEAK"
 
 def _confluence_display(confluence_count: int | None, confluence_total: int | None) -> str:
 	"""Return confluence check marks display."""
-	count = confluence_count or 0
-	total = confluence_total or 5
-	
+	count = int(confluence_count or 0)
+	total = confluence_total or int(os.getenv("CONFLUENCE_TOTAL", "0") or 0)
+	if total <= 0:
+		total = max(count, 0)
+	if total <= 0:
+		return "—"
+	total = max(total, count)
 	# Display as ✅ for each confirmation, ⭕ for remaining
 	checks = "✅" * count + "⭕" * (total - count)
 	return f"{checks} ({count}/{total})"
@@ -145,8 +172,14 @@ def _star_rating(confluence_count: int | None, score: float | int | None) -> str
 		return "⭐" * 3
 	
 	# 5-star scale: confluence (0-5) counts for 3 stars, score for 2 stars
-	conf_stars = min(conf, 5) / 5 * 3  # 0-3 stars from confluence
-	score_stars = 2 if scr >= 80 else (1.5 if scr >= 65 else 1)  # 1-2 stars from score
+	max_conf = int(os.getenv("CONFLUENCE_TOTAL", "5") or 5)
+	conf_stars = min(conf, max_conf) / max(max_conf, 1) * 3  # 0-3 stars from confluence
+	strong_threshold = max(
+		float(TIER_SCORE_THRESHOLDS.get("vip", 75.0) or 75.0),
+		float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0),
+	)
+	mid_threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0)
+	score_stars = 2 if scr >= strong_threshold else (1.5 if scr >= mid_threshold else 1)  # 1-2 stars from score
 	
 	total_stars = int(conf_stars + score_stars)
 	total_stars = max(1, min(5, total_stars))  # Clamp to 1-5
@@ -273,11 +306,11 @@ def format_signal_vip(signal) -> str:
 	ref_short = html.escape(str(ref)[:8]) if ref else "N/A"
 
 	tp_levels = signal.get('tp_levels', [])
-	score = signal.get('score', 0)
+	score = resolve_score_percent(signal) or 0.0
 	session = html.escape(str(signal.get('session', '')))
 	regime = html.escape(str(signal.get('regime', '')))
-	confluence_count = signal.get('confluence_count', 0)
-	confluence_total = signal.get('confluence_total', 5)
+	confluence_count = signal.get('confluence_count')
+	confluence_total = resolve_confluence_total(signal)
 	rr_ratio = signal.get('rr_ratio', 0)
 	strategy = html.escape(str(signal.get('strategy_name') or signal.get('strategy') or ''))
 
@@ -308,9 +341,13 @@ def format_signal_vip(signal) -> str:
 		msg += f"TP: {html.escape(str(signal.get('take_profit', '')))}\n"
 
 	# Full score breakdown
+	confluence_pct = resolve_confluence_percent(signal)
+	confidence_tag = _confidence_tag(score)
+	if confluence_pct is None:
+		confluence_pct = score
 	msg += f"""
-	📊 Confluence Score: {int(score)} / 100
-	🔥 Confidence: {'VERY HIGH' if score >= 80 else ('HIGH' if score >= 65 else 'MEDIUM')}
+	📊 Confluence Score: {int(confluence_pct)} / 100
+	🔥 Confidence: {confidence_tag}
 	"""
 
 	# HTF Bias
@@ -357,9 +394,9 @@ def format_signal_admin(signal) -> str:
 	admin_info = f"""
 
 ═══ ADMIN INFO ═══
-Score: {signal.get('score')}/100
-ML Prob: {signal.get('ml_probability', 'N/A')}
-Confluence: {signal.get('confluence_count', 0)}/{signal.get('confluence_total', 5)}
+Score: {resolve_score_percent(signal) or signal.get('score')}/100
+ML Prob: {resolve_ml_probability(signal) or signal.get('ml_probability', 'N/A')}
+Confluence: {signal.get('confluence_count', 0)}/{resolve_confluence_total(signal) or signal.get('confluence_total', 0)}
 Contributors: {', '.join(signal.get('contributors', [])[:3])}
 Created: {signal.get('created_at', 'N/A')}
 """
@@ -435,7 +472,7 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 		user_tier = display_tier
 	
 	tier = _get_user_tier(user_tier)
-	score = float(signal.get('score', 0) or 0)
+	score = resolve_score_percent(signal) or 0.0
 	
 	# Check if signal should be sent to this tier (quality gate)
 	if not _should_send_signal_for_tier(tier, score):
@@ -652,51 +689,16 @@ def _parse_tp_list(tp_raw) -> list:
 		return []
 
 def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 3) -> str:
-	"""Format signal for FREE tier with locked fields."""
-	asset = signal.get('asset', 'UNKNOWN')
-	direction = signal.get('direction', 'LONG').upper()
-	timeframe = signal.get('timeframe', 'N/A')
-	entry = signal.get('entry', 'N/A')
-	confidence = int(signal.get('score', 0))
-	remaining = max(0, int(daily_limit) - int(signals_sent_today))
-	
-	direction_emoji = "⬆️" if direction == "LONG" else "⬇️"
-	
-	# Signal age indicator
-	age_indicator = _get_signal_age_indicator(signal)
-	
-	lines = [
-		"┏━━━━━━━━━━ SIGNAL ALERT ━━━━━━━━━━┓",
-		"┃ TIER: FREE",
-	]
-	if age_indicator:
-		lines.append(f"┃ {age_indicator}")
-	lines += [
-		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
-		f"┃ Asset: {asset}",
-		f"┃ Direction: {direction} {direction_emoji}",
-		f"┃ Timeframe: {timeframe}",
-		f"┃ Entry: {_format_price(entry, asset)}",
-		f"┃ Confidence: {confidence}/100",
-		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
-		"┃ Target: 🔒 Premium",
-		"┃ Stop Loss: 🔒 Premium",
-		"┃ R/R: 🔒 Premium",
-		"┃ Risk: 🔒 Premium",
-		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
-		f"┃ Signals left today: {remaining}/{daily_limit}",
-		"┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛",
-		"/upgrade to unlock full details",
-	]
-	return "\n".join(lines)
-def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limit: int = 3) -> str:
 	"""Format signal for FREE tier with locked fields — HTML parse_mode."""
 	from signalrank_telegram.tier_signal_formatter import (
 		_asset_display, _direction_display, _h, _fmt_price_clean
 	)
 
 	asset = signal.get('asset', 'UNKNOWN')
-	score = float(signal.get('score', 0) or 0)
+	score = resolve_score_percent(signal)
+	if score is None:
+		conf_ratio = resolve_confidence_ratio(signal)
+		score = conf_ratio * 100.0 if conf_ratio is not None else 0.0
 	entry = signal.get('entry')
 	stop_loss = signal.get('stop_loss')
 	tp_levels = _parse_tp_list(signal.get('tp_levels') or signal.get('take_profit'))
@@ -869,9 +871,13 @@ def format_signal_premium_new(signal: dict) -> str:
 
 	# 🧠 AI Confluence block (injected when available from confluence engine)
 	_cv  = signal.get('confluence_vote_count')
-	_ct  = signal.get('confluence_total') or 15
+	_ct  = resolve_confluence_total(signal)
+	if _ct is None:
+		_ct = signal.get('confluence_total')
+	if _ct is None and _cv is not None:
+		_ct = _cv
 	_cdr = signal.get('confluence_drivers') or []
-	if _cv is not None:
+	if _cv is not None and _ct is not None:
 		lines.append(f"┃ AI Confluence: {int(_cv)}/{int(_ct)} agree")
 		if _cdr:
 			lines.append(f"┃ Drivers: {', '.join(str(d) for d in _cdr[:3])}")
@@ -909,9 +915,13 @@ def format_signal_vip_new(signal: dict) -> str:
 		rr_ratio = signal.get('rr_estimate')
 		if rr_ratio in (0, 0.0, "0", "0.0"):
 			rr_ratio = None
-	confidence = int(signal.get('score', 0))
-	ml_probability = signal.get('ml_probability', None)
-	confluence = signal.get('confluence_count', 0) or signal.get('confluence', 0)
+	score_pct = resolve_score_percent(signal)
+	if score_pct is None:
+		conf_ratio = resolve_confidence_ratio(signal)
+		score_pct = conf_ratio * 100.0 if conf_ratio is not None else 0.0
+	confidence = int(score_pct)
+	ml_probability = resolve_ml_probability(signal)
+	confluence = resolve_confluence_percent(signal)
 	strategy = signal.get('strategy_name') or signal.get('strategy', 'Multi-Strategy')
 	regime = signal.get('regime', 'N/A')
 	expires_at = signal.get('expires_at')
@@ -1036,7 +1046,18 @@ def format_signal_vip_new(signal: dict) -> str:
 	
 	# Add suggested position size
 	if suggested_position:
-		lines.append(f"┃ Suggested Size: {suggested_position:.2f} units (1% risk)")
+		risk_pct = None
+		try:
+			if isinstance(signal.get("risk_profile"), dict):
+				risk_pct = signal.get("risk_profile", {}).get("risk_pct")
+			if risk_pct is None:
+				risk_pct = signal.get("risk_pct")
+		except Exception:
+			risk_pct = None
+		if risk_pct is not None:
+			lines.append(f"┃ Suggested Size: {suggested_position:.2f} units ({float(risk_pct):.2f}% risk)")
+		else:
+			lines.append(f"┃ Suggested Size: {suggested_position:.2f} units")
 	
 	lines += [
 		"┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫",
@@ -1049,12 +1070,15 @@ def format_signal_vip_new(signal: dict) -> str:
 
 	# 🧠 AI Confluence block (injected when available from confluence engine)
 	_cv  = signal.get('confluence_vote_count')
-	_ct  = signal.get('confluence_total') or 15
+	_ct  = resolve_confluence_total(signal) or signal.get('confluence_total')
 	_cdr = signal.get('confluence_drivers') or []
-	if _cv is not None:
+	if _cv is not None and _ct is not None:
 		_cv_int = int(_cv)
 		_ct_int = int(_ct)
-		_strength = "Strong" if _cv_int >= 12 else ("Moderate" if _cv_int >= 10 else "Weak")
+		ratio = (_cv_int / _ct_int) if _ct_int > 0 else 0.0
+		strong_ratio = float(os.getenv("CONFLUENCE_STRONG_RATIO", "0.8"))
+		moderate_ratio = float(os.getenv("CONFLUENCE_MODERATE_RATIO", "0.65"))
+		_strength = "Strong" if ratio >= strong_ratio else ("Moderate" if ratio >= moderate_ratio else "Weak")
 		lines.append(f"┃ AI Confluence: {_cv_int}/{_ct_int} ({_strength})")
 		if _cdr:
 			lines.append(f"┃ Drivers: {', '.join(str(d) for d in _cdr[:3])}")

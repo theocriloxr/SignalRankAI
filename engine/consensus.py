@@ -1,5 +1,12 @@
 import os
 
+from engine.signal_metrics import (
+    resolve_confidence_ratio,
+    resolve_confluence_percent,
+    resolve_ml_probability,
+    resolve_score_percent,
+)
+
 
 def _env_float(name: str, default: float) -> float:
     try:
@@ -62,21 +69,28 @@ def consensus_filter(signals, min_score=None):
         grouped_groups.setdefault(key, set())
         grouped_signals.setdefault(key, [])
         try:
-            conf = s.get("confidence")
+            conf = resolve_confidence_ratio(s)
             if conf is None:
-                conf = s.get("strength")
+                score_pct = resolve_score_percent(s)
+                if score_pct is not None:
+                    conf = max(0.0, min(score_pct / 100.0, 1.0))
             if conf is None:
-                score = s.get("score")
-                conf = (float(score) / 100.0) if score is not None else None
+                conf = resolve_ml_probability(s)
             if conf is None:
-                conf = 0.3
+                conf = resolve_confluence_percent(s)
+                if conf is not None:
+                    conf = max(0.0, min(conf / 100.0, 1.0))
+            if conf is None:
+                continue
             w = s.get("weight")
             if w is None:
                 w = 1.0
             # ML adjustment: if ml_probability is present, use as a multiplier (advisory only)
-            ml_prob = s.get("ml_probability")
-            if ml_prob is not None and isinstance(ml_prob, (float, int)):
-                conf = float(conf or 0.0) * (0.8 + 0.4 * float(ml_prob))  # 0.8-1.2x boost
+            ml_prob = resolve_ml_probability(s)
+            if ml_prob is not None:
+                boost_min = _env_float("CONSENSUS_ML_BOOST_MIN", 0.8)
+                boost_range = _env_float("CONSENSUS_ML_BOOST_RANGE", 0.4)
+                conf = float(conf or 0.0) * (boost_min + (boost_range * float(ml_prob)))
             grouped_score[key] += float(conf or 0.0) * float(w or 1.0)
         except Exception:
             pass
@@ -135,14 +149,42 @@ def group_by_asset_and_direction(signals):
 
 def unique_strategy_groups(group):
     # Return unique strategy groups in group
-    return set()
+    groups = set()
+    for sig in group or []:
+        try:
+            g = str(sig.get("strategy_group") or sig.get("strategy") or "").strip().lower()
+            if g:
+                groups.add(g)
+        except Exception:
+            continue
+    return groups
 
 
 def contains_required_groups(strategies_used):
     # Check for required groups
-    return True
+    required_raw = str(os.getenv("CONSENSUS_REQUIRED_GROUPS") or "").strip()
+    if required_raw:
+        required = {g.strip().lower() for g in required_raw.split(",") if g.strip()}
+    else:
+        required = {"momentum", "trend", "structure", "volatility", "volume"}
+    used = {str(s).strip().lower() for s in (strategies_used or []) if str(s).strip()}
+    if not required:
+        return True
+    return bool(required & used)
 
 
 def best_signal_in_group(group):
     # Return best signal in group
-    return group[0] if group else None
+    if not group:
+        return None
+
+    def _rank(sig):
+        score = resolve_score_percent(sig) or 0.0
+        ml = resolve_ml_probability(sig) or 0.0
+        conf = resolve_confidence_ratio(sig) or 0.0
+        return (score, ml, conf)
+
+    try:
+        return max(group, key=_rank)
+    except Exception:
+        return group[0]

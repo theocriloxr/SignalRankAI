@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 
 from core.tier_constants import EXPECTANCY_MIN, DD_SOFT_THROTTLE, DD_HARD_LIMIT, CANDLE_STALENESS_MULTIPLIER
+from engine.signal_metrics import resolve_confidence_ratio, resolve_ml_probability, resolve_score_percent
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +62,19 @@ def calculate_dynamic_risk(signal: Dict[str, Any], regime: Optional[str] = None,
     regime_mult = 0.8 if regime == "ranging" else 1.2 if regime == "trending" else 1.0
     
     # ML expectancy boost
-    ml_prob = float(signal.get("ml_probability", 0.5))
-    expectancy_boost = 0.5 + (ml_prob * 0.5)  # 0.5-1.0
+    ml_prob = resolve_ml_probability(signal)
+    if ml_prob is None:
+        score_pct = resolve_score_percent(signal)
+        if score_pct is not None:
+            ml_prob = max(0.0, min(score_pct / 100.0, 1.0))
+    if ml_prob is None:
+        ml_prob = resolve_confidence_ratio(signal)
+    if ml_prob is not None:
+        exp_base = _env_float("EXPECTANCY_BOOST_BASE", 0.5)
+        exp_range = _env_float("EXPECTANCY_BOOST_RANGE", 0.5)
+        expectancy_boost = exp_base + (ml_prob * exp_range)
+    else:
+        expectancy_boost = 1.0
     
     # Base risk 0.5% dynamic
     base_risk_pct = _env_float("RISK_PER_TRADE_PCT", 0.5)
@@ -150,4 +162,3 @@ def calculate_position_size(signal: Dict[str, Any], account_balance: float, risk
     except Exception as e:
         logger.warning(f"[position] Calculation failed: {e}")
         return None
-

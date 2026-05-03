@@ -975,12 +975,15 @@ def main_loop(DRY_RUN: bool = False):
                             sig['rejection_reason'] = 'risk/volatility'
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
-                        # confluence
+                        # confluence (only enforce if threshold configured or score available)
                         conf = calculate_confluence(sig)
-                        if conf < 20:  # relaxed here; tune via env
-                            sig['rejection_reason'] = f'confluence {conf:.1f}%'
-                            _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
-                            continue
+                        if conf is not None:
+                            conf_raw = str(os.getenv("CONFLUENCE_GATE_MIN") or "").strip()
+                            conf_min = float(conf_raw) if conf_raw else None
+                            if conf_min is not None and conf < conf_min:
+                                sig['rejection_reason'] = f'confluence {conf:.1f}%'
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
+                                continue
                         # News confirmation gate (all supported classes: FX/crypto/commodities/stocks).
                         # Strong opposing sentiment blocks signal; aligned sentiment gets a light confidence bonus.
                         try:
@@ -1023,7 +1026,9 @@ def main_loop(DRY_RUN: bool = False):
                     if ml_filter and getattr(ml_filter, 'active', False):
                         try:
                             features = extract_features(sig, market_data)
-                            approved, prob = ml_filter.ml_filter(features, threshold=float(os.getenv('ML_PROB_THRESHOLD', '0.72')))
+                            threshold_raw = str(os.getenv('ML_PROB_THRESHOLD') or '').strip()
+                            threshold = float(threshold_raw) if threshold_raw else None
+                            approved, prob = ml_filter.ml_filter(features, threshold=threshold)
                         except Exception:
                             approved, prob = True, None
                     if not approved:

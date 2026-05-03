@@ -6298,7 +6298,8 @@ def run_bot() -> None:
                 logger.info("[ML] Model not loaded — scan skipped (train first)")
                 return
 
-            threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.65"))
+            threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
+            threshold = float(threshold_raw) if threshold_raw else None
 
             async def _scan():
                 from db.session import get_session
@@ -6336,10 +6337,11 @@ def run_bot() -> None:
                 return len(signals), approved, rejected, errors
 
             total, approved, rejected, errors = run_sync(_scan())
+            threshold_label = f"{threshold:.2f}" if threshold is not None else "auto"
             logger.info(
                 "🤖 [ML] Scan done — signals=%d  approved=%d  rejected=%d  "
-                "errors=%d  threshold=%.2f",
-                total, approved, rejected, errors, threshold,
+                "errors=%d  threshold=%s",
+                total, approved, rejected, errors, threshold_label,
             )
         except Exception as exc:
             logger.error("[ML] ml_market_analysis_job failed: %s", exc, exc_info=True)

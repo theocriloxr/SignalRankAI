@@ -7,7 +7,9 @@ Multi-Timeframe Analysis Module
 """
 
 import logging
+import os
 from typing import Dict, List, Optional, Tuple
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -57,8 +59,10 @@ class MultiTimeframeAnalyzer:
         df = pd.DataFrame(htf_candles)
         
         # EMA 50/200 trend
-        ema_50 = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
-        ema_200 = df['close'].ewm(span=200, adjust=False).mean().iloc[-1]
+        ema_50_series = df['close'].ewm(span=50, adjust=False).mean()
+        ema_200_series = df['close'].ewm(span=200, adjust=False).mean()
+        ema_50 = ema_50_series.iloc[-1]
+        ema_200 = ema_200_series.iloc[-1]
         close = df['close'].iloc[-1]
         
         # Market structure (HH/LL)
@@ -67,23 +71,31 @@ class MultiTimeframeAnalyzer:
         
         higher_highs = self._detect_higher_highs(highs)
         lower_lows = self._detect_lower_lows(lows)
+        structure_score = max(
+            self._trend_ratio(highs, direction="up"),
+            self._trend_ratio(lows, direction="down"),
+        )
         
         # Determine bias
         bias = 'neutral'
-        confidence = 0
-        
+        confidence = 0.0
+
+        spread_series = (ema_50_series - ema_200_series).abs() / df['close'].replace(0, np.nan)
+        spread_series = spread_series.replace([np.inf, -np.inf], np.nan).dropna()
+        spread_median = float(spread_series.median()) if not spread_series.empty else 0.0
+        current_spread = float(spread_series.iloc[-1]) if not spread_series.empty else 0.0
+        spread_ratio = (current_spread / spread_median) if spread_median > 0 else 0.0
+        trend_score = min(max(spread_ratio, 0.0), 2.0) / 2.0
+        confidence = round(((trend_score + structure_score) / 2.0) * 100.0, 2)
+
         if close > ema_50 > ema_200 and higher_highs:
             bias = 'bullish'
-            confidence = 80
         elif close < ema_50 < ema_200 and lower_lows:
             bias = 'bearish'
-            confidence = 80
         elif close > ema_50:
             bias = 'bullish'
-            confidence = 50
         elif close < ema_50:
             bias = 'bearish'
-            confidence = 50
         
         return {
             'bias': bias,
@@ -107,15 +119,18 @@ class MultiTimeframeAnalyzer:
         if htf_bias['bias'] == 'neutral':
             return True, "HTF neutral - signal allowed"
         
-        # Strong HTF bias (confidence > 70)
-        if htf_bias['confidence'] > 70:
+        strong_threshold = float(os.getenv("HTF_STRONG_CONFIDENCE", "70"))
+        weak_threshold = float(os.getenv("HTF_WEAK_CONFIDENCE", "50"))
+
+        # Strong HTF bias
+        if htf_bias['confidence'] > strong_threshold:
             if signal_direction == 'long' and htf_bias['bias'] == 'bearish':
                 return False, f"Signal LONG but HTF {htf_bias['tf']} is BEARISH (conf {htf_bias['confidence']}%)"
             elif signal_direction == 'short' and htf_bias['bias'] == 'bullish':
                 return False, f"Signal SHORT but HTF {htf_bias['tf']} is BULLISH (conf {htf_bias['confidence']}%)"
         
         # Weak HTF bias (allow counter-trend with caution)
-        elif htf_bias['confidence'] > 50:
+        elif htf_bias['confidence'] > weak_threshold:
             if signal_direction == 'long' and htf_bias['bias'] == 'bearish':
                 return True, f"Weak HTF BEARISH bias (conf {htf_bias['confidence']}%) - allow with caution"
             elif signal_direction == 'short' and htf_bias['bias'] == 'bullish':
@@ -138,7 +153,7 @@ class MultiTimeframeAnalyzer:
                           key=lambda x: self.TF_HIERARCHY.get(x, 99))
         
         if len(timeframes) < 3:
-            return {'score': 50, 'aligned_tfs': [], 'conflicting_tfs': []}
+            return {'score': None, 'aligned_tfs': [], 'conflicting_tfs': []}
         
         aligned = []
         conflicting = []
@@ -161,7 +176,7 @@ class MultiTimeframeAnalyzer:
                 conflicting.append(tf)
         
         total_tfs = len(aligned) + len(conflicting)
-        confluence_score = (len(aligned) / total_tfs * 100) if total_tfs > 0 else 0
+        confluence_score = (len(aligned) / total_tfs * 100) if total_tfs > 0 else None
         
         return {
             'score': confluence_score,
@@ -181,6 +196,18 @@ class MultiTimeframeAnalyzer:
         if len(lows) < 3:
             return False
         return lows[-1] < lows[-2] and lows[-2] < lows[-3]
+
+    def _trend_ratio(self, series, direction: str = "up") -> float:
+        if series is None or len(series) < 2:
+            return 0.0
+        moves = 0
+        total = len(series) - 1
+        for i in range(1, len(series)):
+            if direction == "up" and series[i] > series[i - 1]:
+                moves += 1
+            elif direction == "down" and series[i] < series[i - 1]:
+                moves += 1
+        return moves / total if total > 0 else 0.0
 
 
 def detect_htf_bias_flip(

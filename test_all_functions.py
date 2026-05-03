@@ -57,8 +57,8 @@ class TestAllFunctions(unittest.TestCase):
 
     def test_ml_functions(self):
         self.assertIsNone(ml.adjust_weight_based_on_performance(None))
-        self.assertIsNone(ml.disable_strategies_with_drawdown())
-        self.assertIsNone(ml.weekly_job())
+        self.assertIsInstance(ml.disable_strategies_with_drawdown(), list)
+        self.assertIsInstance(ml.weekly_job(), bool)
 
     def test_core_functions(self):
         self.assertIsInstance(core.load_tradable_assets(), list)

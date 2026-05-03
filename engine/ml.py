@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import os
 import logging
+import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -251,10 +252,11 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
         return None
 
 
-def scored_signals_with_ml(signals: Iterable[Dict[str, Any]], threshold: float = 0.6) -> list[Dict[str, Any]]:
+def scored_signals_with_ml(signals: Iterable[Dict[str, Any]], threshold: float | None = None) -> list[Dict[str, Any]]:
     """Attach ML probability to each signal and mark pass/fail by threshold.
 
     Fail-open: if ML is unavailable, signals are returned with ml_pass=True.
+    If threshold is None, ML results are advisory only (ml_pass=True).
     """
     scored: list[Dict[str, Any]] = []
     for sig in signals or []:
@@ -265,22 +267,62 @@ def scored_signals_with_ml(signals: Iterable[Dict[str, Any]], threshold: float =
             out["ml_pass"] = True
         else:
             out["ml_probability"] = float(prob)
-            out["ml_pass"] = float(prob) >= float(threshold)
+            if threshold is None:
+                out["ml_pass"] = True
+            else:
+                out["ml_pass"] = float(prob) >= float(threshold)
         scored.append(out)
     return scored
 
 
 # Backward-compatible helpers (used by other modules)
-def get_strategy_weights():
-    return {}
+def get_strategy_weights() -> Dict[str, float]:
+    raw = (os.getenv("STRATEGY_WEIGHTS_JSON") or os.getenv("STRATEGY_WEIGHTS") or "").strip()
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+        return {str(k): float(v) for k, v in (payload or {}).items()}
+    except Exception:
+        weights = {}
+        for item in raw.split(","):
+            if ":" not in item:
+                continue
+            name, val = item.split(":", 1)
+            try:
+                weights[name.strip()] = float(val)
+            except Exception:
+                continue
+        return weights
 
 
-def get_regime_strategies():
-    return {}
+def get_regime_strategies() -> Dict[str, list[str]]:
+    raw = (os.getenv("REGIME_STRATEGIES_JSON") or os.getenv("REGIME_STRATEGIES") or "").strip()
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+        return {str(k): list(v or []) for k, v in (payload or {}).items()}
+    except Exception:
+        mapping: Dict[str, list[str]] = {}
+        for item in raw.split(";"):
+            if ":" not in item:
+                continue
+            regime, strategies = item.split(":", 1)
+            mapping[str(regime).strip()] = [s.strip() for s in strategies.split(",") if s.strip()]
+        return mapping
 
 
-def weekly_job():
-    return
+def weekly_job() -> bool:
+    """Run weekly ML retrain job if enabled."""
+    if str(os.getenv("ML_WEEKLY_RETRAIN_ENABLED", "0")).strip().lower() not in {"1", "true", "yes", "on"}:
+        return False
+    try:
+        from ml.retrain import retrain_model
+        from utils.async_runner import run_sync
+        return bool(run_sync(retrain_model(), timeout=1200.0))
+    except Exception:
+        return False
 
 
 def adjust_weight_based_on_performance(perf: Optional[Dict[str, Any]]) -> Optional[float]:
@@ -295,10 +337,13 @@ def adjust_weight_based_on_performance(perf: Optional[Dict[str, Any]]) -> Option
     return None
 
 
-def disable_strategies_with_drawdown() -> list:
-    """Disable strategies when drawdown thresholds exceeded (currently no-op).
+def disable_strategies_with_drawdown() -> list[str]:
+    """Disable strategies when drawdown thresholds exceeded.
 
-    Returns an empty list for now; real implementation will inspect
-    portfolio/strategy metrics and return strategy names to disable.
+    Reads STRATEGY_DRAWDOWN_DISABLE_LIST (comma-separated) to allow ops-driven
+    disables without code changes. Returns an empty list when nothing is set.
     """
-    return None
+    raw = (os.getenv("STRATEGY_DRAWDOWN_DISABLE_LIST") or "").strip()
+    if not raw:
+        return []
+    return [s.strip() for s in raw.split(",") if s.strip()]
