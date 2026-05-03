@@ -158,7 +158,7 @@ except Exception as e:
                 'last_updated': datetime.utcnow(),
                 'source': 'env',
             })()
-    _threshold_optimizer = _FallbackThresholdOptimizer()</
+    _threshold_optimizer = _FallbackThresholdOptimizer()
 # Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
