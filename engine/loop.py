@@ -31,17 +31,37 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             return signals
         candles = tf_data.get("candles", [])
         indicators = tf_data.get("indicators", {})
-        ml_prob = tf_data.get("ml_score", 0.7)
+        ml_prob = tf_data.get("ml_score") or tf_data.get("ml_probability")
         if len(candles) < 50:
             return signals
         market_data = {"candles": candles, "indicators": indicators, "ml_probability": ml_prob}
         strategy_signals = signal_gen.generate_signals(asset, timeframe, market_data)
+        threshold_raw = str(os.getenv("ML_REJECTION_THRESHOLD") or "").strip()
+        ml_threshold = float(threshold_raw) if threshold_raw else None
         for sig in strategy_signals:
             is_dup = await dedup.is_duplicate(asset, timeframe, sig.direction, sig.entry)
             if is_dup:
                 logger.debug("Duplicate signal skipped: %s %s %s", asset, timeframe, sig.direction)
                 continue
-            if include_ml and ml_prob < 0.7:
+            ml_prob_value = ml_prob
+            if ml_prob_value is None and include_ml:
+                try:
+                    from engine.ml import score_signal as _score_signal
+                    ml_prob_value = _score_signal({
+                        "asset": asset,
+                        "timeframe": timeframe,
+                        "direction": sig.direction,
+                        "entry": sig.entry,
+                        "stop_loss": sig.stop_loss,
+                        "take_profit": sig.take_profit,
+                        "score": sig.score,
+                        "strategy_name": sig.strategy_name,
+                        "strategy_group": sig.strategy_group,
+                        "confidence": sig.confidence,
+                    })
+                except Exception:
+                    ml_prob_value = None
+            if include_ml and ml_threshold is not None and ml_prob_value is not None and ml_prob_value < ml_threshold:
                 await ml_tracker.persist_rejection(
                     asset=asset,
                     timeframe=timeframe,
@@ -49,7 +69,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     entry_price=sig.entry,
                     stop_loss=sig.stop_loss,
                     take_profit_levels=sig.take_profit,
-                    ml_probability=ml_prob,
+                    ml_probability=ml_prob_value,
                     rejection_reason="low_ml_score",
                     features=sig.ml_features,
                 )
@@ -58,8 +78,8 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     asset,
                     timeframe,
                     "rejected",
-                    reason=f"ML score {ml_prob:.2f} < 0.70",
-                    meta={"ml_probability": ml_prob},
+                    reason=f"ML score {ml_prob_value:.2f} < {ml_threshold:.2f}",
+                    meta={"ml_probability": ml_prob_value, "ml_threshold": ml_threshold},
                 )
                 continue
             try:
@@ -73,7 +93,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     "score": sig.score,
                     "strategy_name": sig.strategy_name,
                     "strategy_group": sig.strategy_group,
-                    "ml_probability": ml_prob,
+                    "ml_probability": ml_prob_value,
                     "confidence": sig.confidence,
                 }
                 signal_obj = await persist_signal(signal_data)

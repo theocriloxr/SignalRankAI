@@ -63,17 +63,13 @@ def _ml_enabled() -> bool:
 def _runtime_state_model_payload() -> dict | None:
     if psycopg2 is None:
         return None
-    dsn = (
-        os.getenv("DATABASE_PUBLIC_URL")
-        or os.getenv("DATABASE_URL")
-        or ""
-    ).strip()
+    try:
+        from config import resolve_database_url
+        dsn = resolve_database_url(async_driver=False) or ""
+    except Exception:
+        dsn = ""
     if not dsn:
         return None
-    if dsn.startswith("postgresql+asyncpg://"):
-        dsn = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-    elif dsn.startswith("postgres://"):
-        dsn = dsn.replace("postgres://", "postgresql://", 1)
     key = (os.getenv("ML_MODEL_RUNTIME_STATE_KEY") or "ml:model:primary").strip() or "ml:model:primary"
     try:
         conn = psycopg2.connect(dsn, connect_timeout=3)
@@ -161,13 +157,13 @@ class MLFilter:
             self.feature_cols = None
             logger.warning("[ml] inference model init failed; fail-open mode active: %s", e)
 
-    def ml_filter(self, features, threshold=0.6):
+    def ml_filter(self, features, threshold: float | None = None):
         """
         Filter signals through ML model.
         
         Args:
             features: dict of feature_name -> value
-            threshold: confidence threshold (default 0.6)
+            threshold: optional confidence threshold (None = advisory only)
         
         Returns:
             (approved: bool, probability: float | None)
@@ -188,7 +184,15 @@ class MLFilter:
             import numpy as np
             dmatrix = xgb.DMatrix(np.array([feature_vector]))
             prob = self.model.predict(dmatrix)[0]
-            approved = prob >= float(threshold)
+            if threshold is None:
+                return True, float(prob)
+            try:
+                thresh_val = float(threshold)
+            except Exception:
+                thresh_val = None
+            if thresh_val is None:
+                return True, float(prob)
+            approved = prob >= thresh_val
             return approved, float(prob)
         except Exception:
             return True, None

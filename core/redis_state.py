@@ -168,22 +168,17 @@ class RedisState:
         if self._pg_dsn is not None:
             return self._pg_dsn
         # Read fresh from env on every first call — never use a stale import-time
-        # snapshot from config.DATABASE_URL. Prefer DATABASE_PUBLIC_URL (Railway's
-        # external IPv4 proxy) to avoid IPv6 ECONNREFUSED.
-        url = (
-            os.getenv("DATABASE_PUBLIC_URL")
-            or os.getenv("DATABASE_URL")
-            or (getattr(config, "DATABASE_URL", None) or "")
-        ).strip()
+        # snapshot from config.DATABASE_URL. Prefer internal/private URL first.
+        from config import resolve_database_url
+        url = resolve_database_url(async_driver=False)
+        if not url:
+            url = (getattr(config, "DATABASE_URL", None) or "").strip()
+            if url.startswith("postgresql+asyncpg://"):
+                url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
+            elif url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
         if not url:
             return None
-        # psycopg2 expects a sync URL — strip asyncpg dialect and normalise scheme.
-        if url.startswith("postgresql+asyncpg://"):
-            url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
-        elif url.startswith("postgres://"):
-            # Some providers emit the short 'postgres://' scheme; psycopg2 ≥ 2.9
-            # handles it but older versions don't — normalise to be safe.
-            url = url.replace("postgres://", "postgresql://", 1)
         self._pg_dsn = url
         return self._pg_dsn
 

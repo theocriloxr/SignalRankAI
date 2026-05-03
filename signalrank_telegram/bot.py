@@ -1,5 +1,6 @@
 from utils.async_runner import run_sync
 import threading
+from core.redis_state import state, mark_signal_delivered_sync
 
 
 def resend_unsent_signals_job():
@@ -26,11 +27,11 @@ def resend_unsent_signals_job():
         # runs across multiple Railway instances when Redis is unavailable.
         import os
         import psycopg2
-        _dsn = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or "").strip()
-        if _dsn.startswith("postgresql+asyncpg://"):
-            _dsn = _dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
-        elif _dsn.startswith("postgres://"):
-            _dsn = _dsn.replace("postgres://", "postgresql://", 1)
+        try:
+            from config import resolve_database_url
+            _dsn = resolve_database_url(async_driver=False) or ""
+        except Exception:
+            _dsn = ""
 
         if _dsn:
             _lock_id = int(os.getenv("RESEND_JOB_LOCK_ID", "739206"))
@@ -384,7 +385,7 @@ async def _resend_unsent_signals_async():
 
 
 import os
-from config import config
+from config import config, resolve_database_url
 from telegram.ext import Application, CommandHandler
 from signalrank_telegram.httpx_config import httpx_client
 
@@ -578,7 +579,6 @@ application.add_handler(CommandHandler("notify", _audit_handler("notify", notify
 application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
 application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
 
-from core.redis_state import state, mark_signal_delivered_sync
 from .owner_commands import (
     unlock,
     dev_pause,
@@ -623,6 +623,25 @@ def _log_once(key: str, message: str) -> None:
     except Exception as e:
         logger.debug(f"[log_once] Failed to print log message: {e}")
         pass
+
+
+def _mask_db_url_host(url: str) -> str:
+    try:
+        from sqlalchemy.engine.url import make_url
+        parsed = make_url(url)
+        host = str(parsed.host or "").strip()
+        port = parsed.port
+        db = str(parsed.database or "").strip()
+        if not host:
+            return "<masked>"
+        out = host
+        if port:
+            out = f"{out}:{port}"
+        if db:
+            out = f"{out}/{db}"
+        return out
+    except Exception:
+        return "<masked>"
 
 
 def _normalized_delivery_tier(tier: str | None) -> str:
@@ -1161,7 +1180,7 @@ def _deliver_or_update_signal_sync(
     display_tier: str,
 ) -> bool:
     try:
-        return bool(
+        ok = bool(
             run_sync(
                 _deliver_or_update_signal_async(
                     bot=bot,
@@ -1171,6 +1190,14 @@ def _deliver_or_update_signal_sync(
                 )
             )
         )
+        if ok:
+            try:
+                sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
+                if sig_id:
+                    mark_signal_delivered_sync(int(telegram_user_id), sig_id)
+            except Exception as redis_err:
+                logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {redis_err}")
+        return ok
     except Exception as exc:
         logger.debug(f"[dispatch] deliver_or_update failed: {exc}")
         return False
@@ -3516,7 +3543,7 @@ def run_bot() -> None:
     # created.  If it is missing, raise immediately so Railway shows a clear
     # crash message rather than hundreds of "password authentication failed
     # for user 'postgres'" errors from asyncpg falling back to local auth.
-    _db_raw = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or "").strip()
+    _db_raw = (resolve_database_url(async_driver=True) or "").strip()
     if not _db_raw:
         raise ValueError(
             "[FATAL] DATABASE_URL is not set. "
@@ -3524,8 +3551,7 @@ def run_bot() -> None:
         )
     # Safe log: print only the host portion, never the password.
     try:
-        _db_host_part = _db_raw.split("@")[-1]  # e.g. 'monorail.proxy.rlwy.net:54321/railway'
-        print(f"[boot] Connecting to DB at: {_db_host_part}", flush=True)
+        print(f"[boot] Connecting to DB at: {_mask_db_url_host(_db_raw)}", flush=True)
     except Exception:
         print("[boot] DATABASE_URL is set (host masked)", flush=True)
     # Force the global async engine to re-initialise using the fresh env value.
@@ -6272,7 +6298,8 @@ def run_bot() -> None:
                 logger.info("[ML] Model not loaded — scan skipped (train first)")
                 return
 
-            threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.65"))
+            threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
+            threshold = float(threshold_raw) if threshold_raw else None
 
             async def _scan():
                 from db.session import get_session
@@ -6310,10 +6337,11 @@ def run_bot() -> None:
                 return len(signals), approved, rejected, errors
 
             total, approved, rejected, errors = run_sync(_scan())
+            threshold_label = f"{threshold:.2f}" if threshold is not None else "auto"
             logger.info(
                 "🤖 [ML] Scan done — signals=%d  approved=%d  rejected=%d  "
-                "errors=%d  threshold=%.2f",
-                total, approved, rejected, errors, threshold,
+                "errors=%d  threshold=%s",
+                total, approved, rejected, errors, threshold_label,
             )
         except Exception as exc:
             logger.error("[ML] ml_market_analysis_job failed: %s", exc, exc_info=True)
@@ -6403,9 +6431,7 @@ def run_bot() -> None:
     # to silently fall back to  postgresql://postgres@localhost  — which Railway
     # always rejects with "password authentication failed for user postgres".
     # Strip the async driver prefix before creating the job store.
-    _sched_raw = (
-        os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL") or ""
-    ).strip()
+    _sched_raw = (resolve_database_url(async_driver=False) or "").strip()
     _sched_sync_url: str | None = None
     if _sched_raw:
         _sched_sync_url = _sched_raw
@@ -6427,7 +6453,7 @@ def run_bot() -> None:
             _jobstores["persistent"] = _SAJobStore(url=_sched_sync_url)
             logger.info(
                 "[sched] SQLAlchemyJobStore ready → %s",
-                _sched_sync_url.split("@")[-1],
+                _mask_db_url_host(_sched_sync_url),
             )
         except Exception as _sa_err:
             logger.warning(

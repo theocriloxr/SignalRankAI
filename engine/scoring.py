@@ -14,6 +14,12 @@ def _direction_sign(direction_val) -> float:
 
 import os
 
+from engine.signal_metrics import (
+    resolve_confidence_ratio,
+    resolve_confluence_percent,
+    resolve_ml_probability,
+)
+
 
 def _env_float(name: str, default: float) -> float:
     try:
@@ -36,17 +42,20 @@ def score_signal(signal):
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
     confluence_min = _env_float("CONFLUENCE_MIN", 25.0)
-    confluence_score = calculate_confluence(signal)
-    if confluence_score < confluence_min:
+    confluence_score = resolve_confluence_percent(signal)
+    if confluence_score is None:
+        confluence_score = calculate_confluence(signal)
+    if confluence_score is not None and confluence_score < confluence_min:
         return 0.0
     
     # Target: 0..100 score
-    confidence = float(signal.get("confidence", 0) or 0)
-    confidence = min(max(confidence, 0.0), 1.0)
+    confidence = resolve_confidence_ratio(signal)
+    if confidence is None:
+        confidence = resolve_ml_probability(signal)
     
     # ULTRA-STRICT QUALITY GATE: Only trade-worthy setups
     confidence_min = _env_float("CONFIDENCE_MIN", 0.35)
-    if confidence < confidence_min:
+    if confidence is not None and confidence < confidence_min:
         return 0.0
 
     entry = signal.get("entry")
@@ -58,7 +67,24 @@ def score_signal(signal):
     vol_component = volatility_quality_score(signal)
     
     # Base score: weighted components
-    score = (confidence * 30.0) + (rr_component * 30.0) + (vol_component * 20.0) + (confluence_score * 0.2)
+    weight_conf = _env_float("SCORE_WEIGHT_CONFIDENCE", 0.3)
+    weight_rr = _env_float("SCORE_WEIGHT_RR", 0.3)
+    weight_vol = _env_float("SCORE_WEIGHT_VOL", 0.2)
+    weight_confli = _env_float("SCORE_WEIGHT_CONFLUENCE", 0.2)
+
+    components: dict[str, tuple[float, float]] = {
+        "rr": (rr_component, weight_rr),
+        "vol": (vol_component, weight_vol),
+    }
+    if confidence is not None:
+        components["confidence"] = (confidence, weight_conf)
+    if confluence_score is not None:
+        components["confluence"] = (min(max(confluence_score / 100.0, 0.0), 1.0), weight_confli)
+
+    total_weight = sum(weight for _, weight in components.values()) if components else 0.0
+    if total_weight <= 0:
+        return 0.0
+    score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
     min_rr = _env_float("MIN_RR", 1.5)
     # Hard rejection for poor R/R
@@ -66,22 +92,26 @@ def score_signal(signal):
         return 0.0
     
     # REGIME ALIGNMENT BONUS
-    regime_fit = signal.get("regime_fit") or signal.get("htf_alignment") or 0.5
+    regime_fit = signal.get("regime_fit") or signal.get("htf_alignment")
     try:
-        regime_fit = float(regime_fit)
-        regime_fit = min(max(regime_fit, 0.0), 1.0)
-        regime_bonus = 1.0 + (regime_fit * 0.2)
-        score = score * regime_bonus
+        if regime_fit is not None:
+            regime_fit = float(regime_fit)
+            regime_fit = min(max(regime_fit, 0.0), 1.0)
+            bonus_base = _env_float("REGIME_SCORE_BONUS_BASE", 1.0)
+            bonus_scale = _env_float("REGIME_SCORE_BONUS_SCALE", 0.2)
+            regime_bonus = bonus_base + (regime_fit * bonus_scale)
+            score = score * regime_bonus
     except Exception:
         pass
     
     # ML PROBABILITY BOOST
-    ml_prob = signal.get("ml_probability")
-    if ml_prob is not None:
+    ml_val = resolve_ml_probability(signal)
+    if ml_val is not None:
         try:
-            ml_val = float(ml_prob)
-            ml_val = min(max(ml_val, 0.0), 1.0)
-            ml_boost = 0.8 + (ml_val * 0.4)
+            ml_val = min(max(float(ml_val), 0.0), 1.0)
+            ml_boost_min = _env_float("ML_SCORE_BOOST_MIN", 0.8)
+            ml_boost_range = _env_float("ML_SCORE_BOOST_RANGE", 0.4)
+            ml_boost = ml_boost_min + (ml_val * ml_boost_range)
             score = score * ml_boost
         except Exception:
             pass
@@ -100,7 +130,7 @@ def calculate_signal_score(signal, risk_profile=None, regime=None):
     return score_signal(signal)
 
 
-def calculate_confluence(signal: dict) -> float:
+def calculate_confluence(signal: dict) -> float | None:
     """Calculate confluence score (0-100) based on multiple signal confirmations.
     
     Checks:
@@ -173,7 +203,7 @@ def calculate_confluence(signal: dict) -> float:
     
     # Calculate percentage
     if total_checks <= 0:
-        return 50.0
+        return None
     confluence_pct = (confirmations / total_checks) * 100
     return confluence_pct
 

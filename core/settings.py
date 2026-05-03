@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 try:
     # pydantic v2 separates settings into pydantic_settings
     from pydantic_settings import BaseSettings
@@ -59,6 +61,14 @@ def get_settings() -> Settings:
     global _settings
     if _settings is None:
         _settings = Settings()
+    if not _settings.DATABASE_URL:
+        try:
+            from config import resolve_database_url
+            resolved = resolve_database_url(async_driver=True)
+        except Exception:
+            resolved = None
+        if resolved:
+            _settings.DATABASE_URL = resolved
     return _settings
 
 

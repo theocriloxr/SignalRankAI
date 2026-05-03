@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 import os
-from config import config
+from config import config, resolve_database_url
 import time
 from datetime import datetime
 from typing import Optional
@@ -17,19 +17,19 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def _sync_database_url() -> Optional[str]:
     # Read fresh from environment each call — never use a stale import-time value.
-    # Prefer DATABASE_PUBLIC_URL (Railway's external IPv4 proxy) to avoid IPv6 issues.
-    url = (
-        os.getenv("DATABASE_PUBLIC_URL")
-        or os.getenv("DATABASE_URL")
-        or (getattr(config, "DATABASE_URL", None) or "")
-    ).strip()
-    if not url:
+    # Prefer internal/private URLs first; fall back to public/PG* parts when needed.
+    url = resolve_database_url(async_driver=False)
+    if url:
+        return url
+    # Last-resort fallback to config snapshot (legacy).
+    legacy = (getattr(config, "DATABASE_URL", None) or "").strip()
+    if not legacy:
         return None
-    if url.startswith("postgresql+asyncpg://"):
-        return url.replace("postgresql+asyncpg://", "postgresql://", 1)
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
-    return url
+    if legacy.startswith("postgresql+asyncpg://"):
+        return legacy.replace("postgresql+asyncpg://", "postgresql://", 1)
+    if legacy.startswith("postgres://"):
+        return legacy.replace("postgres://", "postgresql://", 1)
+    return legacy
 
 
 def _advisory_lock_id() -> int:

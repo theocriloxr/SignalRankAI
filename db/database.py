@@ -5,8 +5,9 @@ This module re-exports the key helpers so any code that imports from
 db.database continues to work without crashing the process.
 
 The DATABASE_URL is read from the environment at connection time:
-  1. DATABASE_PUBLIC_URL  (Railway external IPv4 proxy — preferred)
-  2. DATABASE_URL         (standard env var)
+  1. DATABASE_URL         (Railway internal/private URL when available)
+  2. DATABASE_PRIVATE_URL (explicit private override, if provided)
+  3. DATABASE_PUBLIC_URL  (external proxy fallback)
 Never hard-codes credentials or falls back to a local postgres user.
 """
 from __future__ import annotations
@@ -28,4 +29,3 @@ __all__ = [
     "is_db_configured",
     "get_engine_for_event_loop",
 ]
-

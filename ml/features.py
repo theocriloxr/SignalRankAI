@@ -1,3 +1,6 @@
+import os
+
+
 def timeframe_to_int(tf):
     mapping = {"5m": 1, "15m": 2, "1h": 3, "4h": 4, "1d": 5}
     return mapping.get(tf, 0)
@@ -107,8 +110,14 @@ def extract_features(signal, market_data):
         rel_vol = (vols[-1] / ma20v) if ma20v > 0 else 0.0
 
     confluence_score = _safe_float(signal.get("confluence_vote_count") or signal.get("confluence_score"), 0.0)
-    confluence_total = _safe_float(signal.get("confluence_total"), 15.0)
-    confluence_norm = (confluence_score / confluence_total) if confluence_total > 0 else 0.0
+    confluence_total = _safe_float(signal.get("confluence_total"))
+    if confluence_total is None:
+        confluence_total = _safe_float(os.getenv("CONFLUENCE_TOTAL"))
+    if confluence_total is None:
+        drivers = signal.get("confluence_drivers") or signal.get("drivers") or []
+        if isinstance(drivers, (list, tuple)) and drivers:
+            confluence_total = float(len(drivers))
+    confluence_norm = (confluence_score / confluence_total) if confluence_total and confluence_total > 0 else 0.0
 
     return {
         "rsi": float(signal.get("rsi") if signal.get("rsi") is not None else (ind.get("rsi") or 0)),
