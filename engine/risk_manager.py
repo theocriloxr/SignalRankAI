@@ -13,6 +13,7 @@ import numpy as np
 
 from core.tier_constants import DD_SOFT_THROTTLE, DD_HARD_LIMIT
 from engine.risk import get_max_volatility, soft_throttle_active, hard_stop_active
+from engine.signal_metrics import resolve_confidence_ratio, resolve_ml_probability, resolve_score_percent
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +33,21 @@ class RiskManager:
     
     def get_dynamic_risk_pct(self, signal: Dict, account_state: Optional[Any] = None) -> float:
         """Realtime risk % from ML + regime + sentiment + expectancy (0.25-1.25%)."""
-        ml_prob = float(signal.get("ml_probability", 0.5))
+        ml_prob = resolve_ml_probability(signal)
+        if ml_prob is None:
+            score_pct = resolve_score_percent(signal)
+            if score_pct is not None:
+                ml_prob = max(0.0, min(score_pct / 100.0, 1.0))
+        if ml_prob is None:
+            ml_prob = resolve_confidence_ratio(signal)
         regime = signal.get("regime", "neutral")
         news_sent = float(signal.get("news_sentiment", 0) or signal.get("gemini_score", 0))
         live_exp = float(signal.get("live_expectancy", 0.15))
         
-        # ML base (0.5-1.0)
-        ml_risk = 0.5 + (ml_prob * 0.5)
+        # ML base (configurable range)
+        ml_base = float(os.getenv("ML_RISK_BASE", "0.5"))
+        ml_range = float(os.getenv("ML_RISK_RANGE", "0.5"))
+        ml_risk = ml_base + (float(ml_prob) * ml_range) if ml_prob is not None else 1.0
         
         # Regime mult
         regime_mult = 1.2 if regime == "trending" else 0.8 if regime == "ranging" else 1.0
@@ -217,4 +226,3 @@ class CorrelationManager:
             if abs(corr) > max_correlation:
                 return False, f"High correlation with {existing}: {corr:.2f}"
         return True, "OK"
-

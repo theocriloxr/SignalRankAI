@@ -23,7 +23,9 @@ def score_signal(probe: Dict[str, Any]) -> float | None:
     try:
         features = probe or {}
         if _ml is not None and getattr(_ml, "active", False):
-            approved, prob = _ml.ml_filter(features, threshold=float( (features.get('threshold') or 0.6) ))
+            threshold_raw = features.get("threshold")
+            threshold = float(threshold_raw) if threshold_raw is not None else None
+            approved, prob = _ml.ml_filter(features, threshold=threshold)
             return float(prob) if prob is not None else None
 
         # Fallback heuristic: higher score when entry farther from stop loss

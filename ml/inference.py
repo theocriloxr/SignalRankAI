@@ -157,13 +157,13 @@ class MLFilter:
             self.feature_cols = None
             logger.warning("[ml] inference model init failed; fail-open mode active: %s", e)
 
-    def ml_filter(self, features, threshold=0.6):
+    def ml_filter(self, features, threshold: float | None = None):
         """
         Filter signals through ML model.
         
         Args:
             features: dict of feature_name -> value
-            threshold: confidence threshold (default 0.6)
+            threshold: optional confidence threshold (None = advisory only)
         
         Returns:
             (approved: bool, probability: float | None)
@@ -184,7 +184,15 @@ class MLFilter:
             import numpy as np
             dmatrix = xgb.DMatrix(np.array([feature_vector]))
             prob = self.model.predict(dmatrix)[0]
-            approved = prob >= float(threshold)
+            if threshold is None:
+                return True, float(prob)
+            try:
+                thresh_val = float(threshold)
+            except Exception:
+                thresh_val = None
+            if thresh_val is None:
+                return True, float(prob)
+            approved = prob >= thresh_val
             return approved, float(prob)
         except Exception:
             return True, None

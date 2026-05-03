@@ -133,9 +133,9 @@ class SignalController:
                 if ml_prob is not None:
                     try:
                         ml_prob_val = float(ml_prob)
-                        # ML confidence ranges 0-1; scale to multiply base confidence
-                        # E.g., ML of 0.7 boosts by 20%, ML of 0.5 reduces by 20%
-                        ml_factor = 0.5 + ml_prob_val  # Range [0.5, 1.5]
+                        base = float(os.getenv("ML_CONFIDENCE_FACTOR_BASE", "0.5"))
+                        scale = float(os.getenv("ML_CONFIDENCE_FACTOR_SCALE", "1.0"))
+                        ml_factor = base + (ml_prob_val * scale)
                         base_conf = base_conf * ml_factor
                     except Exception:
                         pass

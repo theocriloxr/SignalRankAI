@@ -92,7 +92,8 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
     if not getattr(ml_filter, "active", False):
         await update.message.reply_text("⚠️ ML model not loaded — train first.")
         return
-    threshold = float(os.getenv("ML_PROB_THRESHOLD", "0.65"))
+    threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
+    threshold = float(threshold_raw) if threshold_raw else None
     try:
         from db.session import get_session
         from db.models import Signal, AdminEvent
@@ -142,10 +143,11 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
     except Exception:
         await update.message.reply_text("⚠️ Scan failed. Check logs for details.")
         return
+    threshold_label = f"{threshold:.2f}" if threshold is not None else "auto"
     await update.message.reply_text(
         f"🤖 Market scan complete. Signals={len(signals)} | "
         f"approved={approved} | rejected={rejected} | errors={errors} | "
-        f"threshold={threshold:.2f}"
+        f"threshold={threshold_label}"
     )
 
 async def admin_top_assets_command(update, context) -> None:

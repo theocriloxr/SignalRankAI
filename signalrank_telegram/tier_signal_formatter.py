@@ -8,6 +8,14 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict as DictType, List, Optional
 
+from core.tier_constants import TIER_SCORE_THRESHOLDS
+from engine.signal_metrics import (
+    resolve_confidence_ratio,
+    resolve_confluence_percent,
+    resolve_ml_probability,
+    resolve_score_percent,
+)
+
 
 # ---------------------------------------------------------------------------
 # HTML helpers
@@ -299,21 +307,24 @@ def _freshness_text(signal: DictType[str, Any]) -> str:
 
 
 def _score_blurb(signal: DictType[str, Any]) -> str:
-    score = _safe_float(signal.get("score") or signal.get("confidence")) or 0.0
-    ml_prob = _safe_float(signal.get("ml_probability"))
-    confluence = _safe_float(signal.get("confluence") or signal.get("confluence_count"))
+    score = resolve_score_percent(signal) or 0.0
+    ml_prob = resolve_ml_probability(signal)
+    confluence = resolve_confluence_percent(signal)
     parts: List[str] = []
-    if score >= 85:
+    strong_threshold = max(
+        float(TIER_SCORE_THRESHOLDS.get("vip", 75.0) or 75.0),
+        float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0),
+    )
+    mid_threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 70.0) or 70.0)
+    if score >= strong_threshold:
         parts.append("high-conviction")
-    elif score >= 70:
+    elif score >= mid_threshold:
         parts.append("strong setup")
     else:
         parts.append("qualified setup")
     if ml_prob is not None:
-        if ml_prob <= 1.0:
-            ml_prob *= 100.0
-        parts.append(f"ML {ml_prob:.0f}%")
-    if confluence:
+        parts.append(f"ML {ml_prob * 100.0:.0f}%")
+    if confluence is not None:
         parts.append(f"confluence {int(confluence)}")
     return " • ".join(parts)
 
@@ -329,10 +340,17 @@ def _suggested_size_text(signal: DictType[str, Any]) -> Optional[str]:
     risk_distance = abs(entry - stop_loss)
     if risk_distance <= 0:
         return None
-    size = 100.0 / risk_distance
+    equity = _safe_float(signal.get("account_balance") or signal.get("equity") or signal.get("balance"))
+    risk_pct = _safe_float(
+        (signal.get("risk_profile") or {}).get("risk_pct") if isinstance(signal.get("risk_profile"), dict) else signal.get("risk_pct")
+    )
+    if equity is None or risk_pct is None:
+        return None
+    risk_amount = equity * (risk_pct / 100.0)
+    size = risk_amount / risk_distance
     if size <= 0:
         return None
-    return f"{size:.2f} units (1% risk proxy)"
+    return f"{size:.2f} units ({risk_pct:.2f}% risk)"
 
 
 # ---------------------------------------------------------------------------
@@ -367,11 +385,10 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     asset_disp = _h(_asset_display(asset))
     direction_disp = _h(direction_text)
 
-    score = signal.get("score") or signal.get("confidence", 0)
-    try:
-        score_val = float(score)
-    except Exception:
-        score_val = 0.0
+    score_val = resolve_score_percent(signal)
+    if score_val is None:
+        conf_ratio = resolve_confidence_ratio(signal)
+        score_val = conf_ratio * 100.0 if conf_ratio is not None else 0.0
 
     volatility = _h(_volatility_label(signal))
     entry = signal.get("entry")
@@ -397,15 +414,9 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     ]
 
     # Optional: ML probability
-    ml_prob = signal.get("ml_probability")
+    ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
-        try:
-            ml_val = float(ml_prob)
-            if ml_val <= 1.0:
-                ml_val *= 100
-            lines.append(f"🧠 ML Probability: {ml_val:.1f}%")
-        except Exception:
-            pass
+        lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
 
     lines += [
         "",
@@ -516,11 +527,10 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     asset_disp = _h(_asset_display(asset))
     direction_disp = _h(direction_text)
 
-    score = signal.get("score") or signal.get("confidence", 0)
-    try:
-        score_val = float(score)
-    except Exception:
-        score_val = 0.0
+    score_val = resolve_score_percent(signal)
+    if score_val is None:
+        conf_ratio = resolve_confidence_ratio(signal)
+        score_val = conf_ratio * 100.0 if conf_ratio is not None else 0.0
 
     volatility = _volatility_label(signal)
     order_block = _order_block_text(signal)
@@ -575,15 +585,9 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     lines.append(vol_line)
 
     # ML probability
-    ml_prob = signal.get("ml_probability")
+    ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
-        try:
-            ml_val = float(ml_prob)
-            if ml_val <= 1.0:
-                ml_val *= 100
-            lines.append(f"🧠 ML Probability: {ml_val:.1f}%")
-        except Exception:
-            pass
+        lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
 
     # HTF Bias
     htf_bias = signal.get("htf_bias") or signal.get("higher_timeframe_bias")
@@ -596,12 +600,9 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
             lines.append(f"📈 HTF Bias: {_h(htf_val)}")
 
     # Confluence
-    confluence = signal.get("confluence") or signal.get("confluence_count")
-    if confluence:
-        try:
-            lines.append(f"📊 Confluence: {int(float(confluence))}%")
-        except Exception:
-            pass
+    confluence = resolve_confluence_percent(signal)
+    if confluence is not None:
+        lines.append(f"📊 Confluence: {int(confluence)}%")
 
     lines += [
         "",
