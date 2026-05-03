@@ -137,7 +137,7 @@ def run_startup_ops(run_mode: str) -> None:
         if _env_bool("FRESH_START", False) and run_mode in {"web", "all"}:
             _fresh_start_if_needed(conn)
 
-# 3) Belt-and-suspenders column patches — safe ADD COLUMN IF NOT EXISTS for
+        # 3) Belt-and-suspenders column patches — safe ADD COLUMN IF NOT EXISTS for
         #    all columns that 0010_consolidate_full_schema migration covers, in case
         #    Alembic is skipped or the DB was bootstrapped outside of migrations.
         try:
