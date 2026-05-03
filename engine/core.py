@@ -134,6 +134,18 @@ except Exception:
 
 _ml_rejection_tracker = MLRejectionTracker()
 
+# Threshold optimizer for auto-adjusting ML confidence thresholds
+_threshold_optimizer = None
+try:
+    from engine.threshold_optimizer import get_threshold_optimizer, refresh_thresholds
+    _threshold_optimizer = get_threshold_optimizer()
+except Exception:
+    def _threshold_optimizer_fallback():
+        return None
+    _threshold_optimizer = type('ThresholdOptimizer', (), {'get_threshold': lambda self: float(os.getenv('ML_PROB_THRESHOLD', '0.55') or 0.55), 'analyze_and_adjust': lambda self, force=False: None})()</# Track threshold refresh intervals
+_last_threshold_refresh: datetime | None = None
+_threshold_refresh_interval_hours: int = 6
+
 
 def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
     try:

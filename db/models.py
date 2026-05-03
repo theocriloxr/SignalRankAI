@@ -19,7 +19,11 @@ from sqlalchemy import (
     JSON,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
+# Lazy-load PostgreSQL UUID dialect to avoid Railway startup crashes
+try:
+    from sqlalchemy.dialects.postgresql import UUID as PGUUID
+except ImportError:
+    PGUUID = None
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 logger = logging.getLogger(__name__)

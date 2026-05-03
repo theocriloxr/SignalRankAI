@@ -1,44 +1,43 @@
-# SignalRankAI - Signal Generation Issue Fix
+# TODO: SignalRankAI Improvements
 
-## Issue
-Engine running but generating 0 signals across all cycles despite having 19 assets and market data.
+## Task Summary
+1. Fix SQLAlchemy import error on Railway (KeyError: 'sqlalchemy')
+2. Auto-adjust confidence thresholds via Gemini/ML over time  
+3. Ensure consistent signal generation
 
-## Root Cause Analysis
-1. Existing strategies (EMA Trend, Supertrend, ADX, RSI Momentum) require strict conditions
-2. Debug logging level not capturing WHY signals fail
-3. No fallback strategies for weak/mixed market conditions
+## Analysis
+
+### Issue 1: SQLAlchemy KeyError
+- railway_main.py has fix at top (try import of PostgreSQL dialect)
+- Error shows line 1525 but file is shorter - may be cached old version
+- Fix should work - verify deployment has latest code
+
+### Issue 2: Auto-Adjust Thresholds
+- FOUND: threshold_optimizer.py already exists with full implementation!
+- AdaptiveThresholdOptimizer class adjusts based on win rate, avg R, signal volume
+- Need to integrate into engine/core.py and gemini_ml.py
+- Need to call analyze_and_adjust() in the main loop periodically
+
+### Issue 3: Consistent Signal Generation  
+- engine/core.py main_loop already runs while True 
+- Need to ensure it's generating signals every cycle
+- Add logging to show signal counts per cycle
 
 ## Implementation Plan
 
-### Step 1: Add Simple Fallback Strategy (COMPLETE)
-- Create `strategies/fallback.py` with relaxed conditions
-- Works with basic price action + trend detection
-- Generates signals when other strategies fail
+### Step 1: Verify railway_main.py SQLAlchemy fix 
+- Already in place - verify deployment
 
-### Step 2: Update Strategy Runner to Use Fallback (COMPLETE)
-- Modify `strategies/__init__.py` to run fallback strategies
-- Fallback runs when main strategy groups produce no signals
+### Step 2: Integrate threshold_optimizer into engine
+- Import and use threshold_optimizer in engine/core.py
+- Call refresh_thresholds() periodically in main_loop
+- Use get_current_threshold() when scoring signals
 
-### Step 3: Enhance Debug Logging (COMPLETE)
-- Add logging when no signals generated
-- Log indicator values that failed conditions
-- Log regime and market data summary
+### Step 3: Add signal generation logging
+- Show signals generated per cycle in heartbeat
+- Verify it's not stopping after one signal
 
-### Step 4: Test & Verify (PENDING)
-- Run engine and verify signals generated
-- Check logs for debug output
-
----
-## Implementation Details
-
-### Files Modified:
-1. `strategies/fallback.py` - NEW (Simple price action strategies)
-2. `strategies/__init__.py` - Updated to use fallback
-3. `engine/core.py` - Enhanced debug logging around line 848
-
-### Strategy Conditions:
-**Fallback strategies use:**
-- Simple price vs SMA comparison (price > sma_20 = LONG)
-- Candle direction (green candle = potential LONG)
-- Volume confirmation (volume > 20-period average)
-- No complex multi-indicator requirements
+## Status
+- [ ] Step 1: Verify SQLAlchemy fix deployed
+- [ ] Step 2: Integrate threshold_optimizer  
+- [ ] Step 3: Add signal generation logging

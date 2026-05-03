@@ -23,6 +23,15 @@ from fastapi import FastAPI, Request, Response
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
+
+# CRITICAL: Pre-validate SQLAlchemy PostgreSQL dialect BEFORE any other imports
+# that might trigger db.models or web.app (Railway fix for KeyError: 'sqlalchemy')
+try:
+    from sqlalchemy.dialects.postgresql import UUID
+    _SQLALCHEMY_POSTGRES_DIALECT_LOADED = True
+except ImportError as _e:
+    raise ImportError(f"SQLAlchemy PostgreSQL dialect required. Install: pip install 'sqlalchemy[postgresql]' (got: {_e})")
+
 from core.redis_state import state
 
 
@@ -1520,14 +1529,7 @@ async def lifespan(_: FastAPI):
 
 import logging
 
-# Pre-validate SQLAlchemy PostgreSQL dialect before model imports (Railway fix)
-try:
-    from sqlalchemy.dialects.postgresql import UUID
-    logging.getLogger(__name__).info("✅ PostgreSQL dialect loaded - Signal model safe")
-except ImportError as e:
-    logging.error(f"❌ PostgreSQL dialect missing during startup: {e}")
-    raise ImportError(f"SQLAlchemy PostgreSQL dialect required (got: {e}). Install: pip install 'sqlalchemy[postgresql]' or check requirements.txt")
-
+# Web app import - SQLAlchemy PostgreSQL dialect is already pre-validated at module load time (top of file)
 from web.app import app as _web_app
 
 app = FastAPI(lifespan=lifespan)
