@@ -545,11 +545,27 @@ def main_loop(DRY_RUN: bool = False):
         if _tf == "24h":
             return "1d"
         return _tf
-    _allowed_tfs = {"1h", "4h", "1d"}
-    crypto_timeframes = [_norm_tf(tf) for tf in (os.getenv('CRYPTO_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
-    fx_timeframes = [_norm_tf(tf) for tf in (os.getenv('FX_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
-    stock_timeframes = [_norm_tf(tf) for tf in (os.getenv('STOCK_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
-    commodity_timeframes = [_norm_tf(tf) for tf in (os.getenv('COMMODITY_TIMEFRAMES', _tf_default).split(',')) if _norm_tf(tf) in _allowed_tfs]
+    _allowed_tfs = {"1m", "5m", "15m", "1h", "4h", "1d"}
+    def _normalize_tf_list(raw: str | None) -> list[str]:
+        out: list[str] = []
+        for tf in (raw or "").split(','):
+            norm = _norm_tf(tf)
+            if norm:
+                out.append(norm)
+        return out
+    def _resolve_timeframes(env_key: str) -> list[str]:
+        raw = os.getenv(env_key, _tf_default)
+        parsed = _normalize_tf_list(raw)
+        filtered = [tf for tf in parsed if tf in _allowed_tfs]
+        if filtered:
+            return filtered
+        if parsed:
+            logger.warning("[engine] %s=%s filtered out by allowlist; falling back to %s", env_key, raw, _tf_default)
+        return [tf for tf in _normalize_tf_list(_tf_default) if tf in _allowed_tfs]
+    crypto_timeframes = _resolve_timeframes('CRYPTO_TIMEFRAMES')
+    fx_timeframes = _resolve_timeframes('FX_TIMEFRAMES')
+    stock_timeframes = _resolve_timeframes('STOCK_TIMEFRAMES')
+    commodity_timeframes = _resolve_timeframes('COMMODITY_TIMEFRAMES')
 
     cycle_no = 0
 
