@@ -1126,7 +1126,7 @@ def get_tradingview_candles(asset: str, timeframe: str) -> list[dict]:
     candles = []
     
     # Check if TradingView is enabled
-    if not _env_bool("TRADINGVIEW_ENABLED", False):
+    if not _env_bool("TRADINGVIEW_ENABLED", True):
         return candles
     
     try:
@@ -1221,7 +1221,7 @@ def discover_tradingview_symbols(exchange: str = "BINANCE") -> list[str]:
     """
     symbols = []
     
-    if not _env_bool("TRADINGVIEW_ENABLED", False):
+    if not _env_bool("TRADINGVIEW_ENABLED", True):
         return symbols
     
     try:
