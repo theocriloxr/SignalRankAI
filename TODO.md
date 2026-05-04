@@ -1,33 +1,46 @@
-# TODO: SignalRankAI Implementation Tasks
+# SignalRankAI - Multi-Provider Data & Signal Generation Fixes
 
-## ✅ COMPLETED
-- [x] Fix KeyError: 'sqlalchemy' startup crash - moved SQLAlchemy import to first line in railway_main.py
+## Task Summary
+Fix the SignalRankAI system to:
+1. Use data from ANY provider (not specific ones)
+2. Normalize data format from all providers  
+3. Generate signals for open markets only (crypto, FX, stocks, commodities)
+4. Auto-send signals/outcomes to owner/admin
 
-## 🔄 IN PROGRESS
-- [ ] Auto-adjusted confidence thresholds by Gemini/ML
-- [ ] Generate signals consistently - not stop after one signal
-
-## 📋 BACKLOG
-- [ ] Integrate ML-driven confidence threshold adjustments
-- [ ] Continuous signal generation (not one-shot)
-- [ ] Performance metrics tracking (win rate, ROI, risk:reward ratio)
+## Log Issues Identified
+- SyntaxError in engine/core.py line 161 (_FallbackThresholdOptimizer)
+- Provider rate limits: TwelveData 429, Polygon 429, Gemini quota exceeded
+- Symbols failing: USDTIDR, BTCIDR, BTCJPY, ETHIDR, DOGEIDR, MANTAIDR, USDTARS
+- Working: Yahoo Finance (some FX), CryptoCompare (crypto)
 
 ## Plan
 
-### 1. Auto-adjusted Confidence Thresholds
-- Create a new module in `engine/` or update `services/gemini_ml.py` to:
-  - Analyze outcome data after each cycle
-  - Calculate performance metrics (win rate, ROI, risk:reward)
-  - Adjust ML_PROB_THRESHOLD dynamically
-  - Persist thresholds in runtime_state
+### 1. Fix SyntaxError (engine/core.py ~line 161)
+- Verify `_FallbackThresholdOptimizer` class is properly defined before instantiation
 
-### 2. Continuous Signal Generation  
-- Modify `engine/core.py` or `engine/loop.py`:
-  - Ensure complete cycle runs for all assets
-  - Don't exit after first signal found
-  - Process entire asset batch each cycle
+### 2. Improve Provider Fallback (data/fetcher.py)
+- Add Yahoo Finance as crypto fallback when Binance/Bybit/CryptoCompare fail
+- Add more FX providers as fallbacks
+- Implement circuit breaker (track/deprioritize dead providers)
 
-### 3. Performance Metrics Integration
-- Track in `services/gemini_ml.py` or create new tracking jobs
-- Store in runtime_state
-- Use for threshold adjustment
+### 3. Normalize Data Format (data/connectors/)
+- Standardize candle format: timestamp, open, high, low, close, volume
+
+### 4. Market Hours Check (data/market_hours.py)
+- Already implemented in `market_closed_reason()`
+- Use for all asset classes: crypto (24/7), FX, stocks, commodities
+
+### 5. Signal Auto-Delivery
+- Already implemented in `engine/core.py` main_loop()
+- Owner/admin receive all signals that meet their requirements
+
+## Files to Modify
+- engine/core.py
+- data/fetcher.py  
+- data/connector_registry.py
+- data/connectors/*.py
+
+## Testing
+- Deploy to Railway and verify logs
+- Check provider fallback behavior
+- Verify signals generate for open markets only
