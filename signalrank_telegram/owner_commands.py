@@ -387,7 +387,13 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     for asset in candidate_assets:
         for timeframe in candidate_timeframes:
             try:
-                market_state = await get_market_state_async(asset, [timeframe], include_ml=True)
+                import asyncio
+                import os
+                timeout_s = float(os.getenv("FORCE_SIGNAL_FETCH_TIMEOUT_SECONDS", "8") or 8)
+                market_state = await asyncio.wait_for(
+                    get_market_state_async(asset, [timeframe], include_ml=True),
+                    timeout=max(2.0, timeout_s),
+                )
                 tf_data = (market_state.get("timeframes") or {}).get(timeframe) or {}
                 candles = tf_data.get("candles") or []
                 indicators = tf_data.get("indicators") or {}

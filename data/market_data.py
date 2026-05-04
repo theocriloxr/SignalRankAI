@@ -17,6 +17,92 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+_YF_COOLDOWN_UNTIL = 0.0
+
+
+def _yf_timeout_seconds() -> float:
+    try:
+        return float((os.getenv("YFINANCE_TIMEOUT_SECONDS") or "6").strip())
+    except Exception:
+        return 6.0
+
+
+def _yf_cooldown_seconds() -> float:
+    try:
+        return float((os.getenv("YFINANCE_COOLDOWN_SECONDS") or "120").strip())
+    except Exception:
+        return 120.0
+
+
+def _yf_available() -> bool:
+    return time.time() >= float(_YF_COOLDOWN_UNTIL or 0.0)
+
+
+def _set_yf_cooldown(reason: str) -> None:
+    global _YF_COOLDOWN_UNTIL
+    _YF_COOLDOWN_UNTIL = time.time() + _yf_cooldown_seconds()
+    logger.warning("[market_data] yfinance cooldown set: %s", reason)
+
+
+async def _fetch_yfinance_with_timeout(asset: str, tf: str, limit: int) -> list:
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_via_yfinance, asset, tf, limit),
+            timeout=_yf_timeout_seconds(),
+        )
+    except asyncio.TimeoutError:
+        _set_yf_cooldown("timeout")
+        return []
+    except Exception as exc:
+        _set_yf_cooldown(str(exc))
+        return []
+
+
+async def _tradingview_indicators(asset: str, tf: str) -> dict:
+    if not _env_bool("TRADINGVIEW_ENABLED", False):
+        return {}
+    try:
+        from tradingview_ta import TA_Handler, Interval
+    except Exception:
+        return {}
+
+    tf_map = {
+        "1m": Interval.INTERVAL_1_MINUTE,
+        "5m": Interval.INTERVAL_5_MINUTES,
+        "15m": Interval.INTERVAL_15_MINUTES,
+        "1h": Interval.INTERVAL_1_HOUR,
+        "4h": Interval.INTERVAL_4_HOURS,
+        "1d": Interval.INTERVAL_1_DAY,
+    }
+    tv_tf = tf_map.get(str(tf).lower().strip())
+    if tv_tf is None:
+        return {}
+
+    try:
+        asset_upper = str(asset or "").upper().strip()
+        if asset_upper.endswith(("USDT", "BUSD", "USDC", "BTC", "ETH")):
+            exchange = "BINANCE"
+            screener = "crypto"
+            symbol = asset_upper
+        else:
+            exchange = "FX_IDC"
+            screener = "forex"
+            symbol = asset_upper
+
+        handler = TA_Handler(
+            symbol=symbol,
+            screener=screener,
+            exchange=exchange,
+            interval=tv_tf,
+        )
+        analysis = handler.get_analysis()
+        indicators = getattr(analysis, "indicators", None)
+        if isinstance(indicators, dict):
+            return indicators
+    except Exception:
+        return {}
+    return {}
+
 # yfinance can emit noisy symbol-level errors during fallback; keep app logs readable.
 try:
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
@@ -541,10 +627,10 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     out: dict = {}
     
     # 1. Try yfinance first (primary source)
-    if use_yfinance:
+    if use_yfinance and _yf_available():
         for tf in tfs:
             try:
-                yf_candles = await asyncio.to_thread(_fetch_via_yfinance, asset, tf, limit)
+                yf_candles = await _fetch_yfinance_with_timeout(asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
                     yf_candles = _sanitize_ohlcv(yf_candles)
                     # Add data age calculation
@@ -564,6 +650,8 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     logger.warning(f"yfinance failed/insufficient for {asset} {tf}, falling back to cache/REST")
             except Exception as e:
                 logger.warning(f"yfinance exception for {asset} {tf}: {e}")
+    elif use_yfinance and not _yf_available():
+        logger.warning("[market_data] yfinance skipped due to cooldown")
 
     # 2. Try cache for missing timeframes
     missing_after_yf = [tf for tf in tfs if tf not in out]
@@ -720,6 +808,24 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 if candles:
                     payload["indicators"] = calculate_indicators(candles)
                     out[tf] = payload
+    except Exception:
+        pass
+
+    # TradingView enrichment (indicator-only overlay).
+    try:
+        for tf in list(out.keys()):
+            payload = out.get(tf) or {}
+            candles = payload.get("candles") or []
+            if not candles:
+                continue
+            tv_ind = await _tradingview_indicators(asset, tf)
+            if tv_ind:
+                ind = payload.get("indicators") or {}
+                for k, v in tv_ind.items():
+                    ind[f"tv_{k}"] = v
+                payload["indicators"] = ind
+                payload["tradingview_enriched"] = True
+                out[tf] = payload
     except Exception:
         pass
 

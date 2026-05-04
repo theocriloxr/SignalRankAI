@@ -349,9 +349,19 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     
     _rate_limit("yahoo", 0.5)  # Yahoo is pretty lenient
     
-    try:
+    def _fetch_history() -> "pd.DataFrame":
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period=period, interval=interval)
+        return ticker.history(period=period, interval=interval)
+
+    async def _fetch_with_timeout() -> "pd.DataFrame":
+        timeout_s = float(os.getenv("YFINANCE_TIMEOUT_SECONDS", "6") or 6)
+        return await asyncio.wait_for(
+            asyncio.to_thread(_fetch_history),
+            timeout=max(1.0, timeout_s),
+        )
+
+    try:
+        hist = run_sync(_fetch_with_timeout())
         
         if hist.empty:
             return []
@@ -373,6 +383,10 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
         logger.info(f"[yahoo] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
         return candles
     
+    except asyncio.TimeoutError:
+        logger.warning(f"[yahoo] timeout symbol={symbol} tf={timeframe}")
+        _set_cooldown("yahoo", 60.0)
+        return []
     except Exception as e:
         logger.error(f"[yahoo] error symbol={symbol} err={e}")
         if "429" in str(e):

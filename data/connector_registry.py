@@ -68,6 +68,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
             ("binance_connector", getattr(c, "binance_get_candles", None)),
             ("bybit_connector", getattr(c, "bybit_get_candles", None)),
             ("cryptocompare_connector", getattr(c, "cryptocompare_get_candles", None)),
+            ("coingecko_connector", getattr(c, "coingecko_get_candles", None)),
         ]
     else:
         # Traditional assets: prefer premium feeds first, then yfinance safety net.
@@ -75,6 +76,8 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
             ("polygon_connector", getattr(c, "polygon_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
         ]
 
     for name, fn in ordered:
@@ -84,12 +87,20 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     # Final legacy safety net in same priority shape.
     try:
         from data import providers as legacy
-        if kind != "crypto":
+        if kind == "crypto":
+            providers.extend(
+                [
+                    ("coingecko_legacy", _wrap_callable(legacy.fetch_coingecko_candles)),
+                ]
+            )
+        else:
             providers.extend(
                 [
                     ("polygon_legacy", _wrap_callable(legacy.fetch_polygon_candles)),
                     ("twelvedata_legacy", _wrap_callable(legacy.fetch_twelvedata_candles)),
+                    ("alphavantage_legacy", _wrap_callable(legacy.fetch_alphavantage_candles)),
                     ("yahoo_legacy", _wrap_callable(legacy.fetch_yahoo_candles)),
+                    ("tradingview_legacy", _wrap_callable(legacy.fetch_tradingview_candles)),
                 ]
             )
     except Exception:
@@ -123,6 +134,7 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
                 getattr(c, "cryptocompare_get_candles_async", None)
                 or getattr(c, "cryptocompare_get_candles", None),
             ),
+            ("coingecko_connector", getattr(c, "coingecko_get_candles", None)),
         ]
     else:
         # Traditional assets: premium feeds first, then yfinance fallback.
@@ -130,10 +142,34 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
             ("polygon_connector", getattr(c, "polygon_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
         ]
 
     for name, fn in ordered:
         if fn is not None:
             providers.append((name, _wrap_to_async(fn)))
+
+    # Add legacy fallbacks for async callers.
+    try:
+        from data import providers as legacy
+        if kind == "crypto":
+            providers.extend(
+                [
+                    ("coingecko_legacy", _wrap_to_async(legacy.fetch_coingecko_candles)),
+                ]
+            )
+        else:
+            providers.extend(
+                [
+                    ("polygon_legacy", _wrap_to_async(legacy.fetch_polygon_candles)),
+                    ("twelvedata_legacy", _wrap_to_async(legacy.fetch_twelvedata_candles)),
+                    ("alphavantage_legacy", _wrap_to_async(legacy.fetch_alphavantage_candles)),
+                    ("yahoo_legacy", _wrap_to_async(legacy.fetch_yahoo_candles)),
+                    ("tradingview_legacy", _wrap_to_async(legacy.fetch_tradingview_candles)),
+                ]
+            )
+    except Exception:
+        pass
 
     return providers

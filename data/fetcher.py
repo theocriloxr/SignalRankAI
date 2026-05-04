@@ -375,7 +375,7 @@ def _fetch_crypto_multi_provider(asset, timeframe):
 
 def _fetch_fx_multi_provider(asset, timeframe):
     """Try multiple FX providers in order."""
-    from .providers import fetch_oanda_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles
+    from .providers import fetch_oanda_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles, fetch_tradingview_candles
     
     # Convert to formats needed by different providers
     oanda_format = asset.replace("/", "_").replace("-", "_").upper()
@@ -389,6 +389,7 @@ def _fetch_fx_multi_provider(asset, timeframe):
         ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_format, timeframe)),
         ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
         ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "forex")),
+        ("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="FX_IDC")),
     ]
     if alpha_enabled:
         providers.append(("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)))
@@ -413,7 +414,7 @@ def _fetch_fx_multi_provider(asset, timeframe):
 
 def _fetch_stock_multi_provider(asset, timeframe):
     """Try multiple stock providers in order."""
-    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles
+    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
     
     from data.connector_registry import get_providers_for_asset
 
@@ -421,6 +422,7 @@ def _fetch_stock_multi_provider(asset, timeframe):
     providers = []
     for name, fn in provs:
         providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
+    providers.append(("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="NYSE")))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
