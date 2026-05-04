@@ -59,7 +59,7 @@ async def _fetch_yfinance_with_timeout(asset: str, tf: str, limit: int) -> list:
 
 
 async def _tradingview_indicators(asset: str, tf: str) -> dict:
-    if not _env_bool("TRADINGVIEW_ENABLED", False):
+    if not _env_bool("TRADINGVIEW_ENABLED", True):
         return {}
     try:
         from tradingview_ta import TA_Handler, Interval

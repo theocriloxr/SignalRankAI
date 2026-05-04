@@ -453,7 +453,15 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
     async def _one(asset: str, tfs: List[str]):
         async with sem:
             try:
-                data = await asyncio.wait_for(fetch_market_data_cached(asset, tfs), timeout=max(5.0, per_asset_timeout))
+                started = time.time()
+                data = await fetch_market_data_cached(asset, tfs)
+                elapsed = time.time() - started
+                if elapsed > max(5.0, per_asset_timeout):
+                    logger.warning(
+                        "[engine] candle_fetch asset=%s status=slow elapsed=%.2fs",
+                        asset,
+                        elapsed,
+                    )
                 if not data or not any(data.values()):
                     logger.warning("[WARN] All providers failed for %s, skipping...", asset)
                     return asset, {}
@@ -466,9 +474,6 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                     except Exception:
                         logger.exception("indicator calc failed")
                 return asset, (data or {})
-            except asyncio.TimeoutError:
-                logger.warning(f"[engine] candle_fetch asset={asset} status=timeout")
-                return asset, {}
             except Exception:
                 logger.exception(f"[engine] candle_fetch failed for {asset}")
                 return asset, {}

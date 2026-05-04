@@ -497,6 +497,8 @@ def fetch_tradingview_candles(symbol: str, timeframe: str, exchange: str = "BINA
     - tradingview-scraper library or similar
     - Or use TradingView's chart data API (unofficial)
     """
+    if not _env_bool("TRADINGVIEW_OHLCV_ENABLED", False):
+        return []
     logger.warning("[tradingview] OHLCV fetching not yet implemented - use other providers")
     return []
 
