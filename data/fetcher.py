@@ -14,8 +14,10 @@ _CANDLE_CACHE_LOCK = threading.Lock()
 _CANDLE_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 
 # Outage tracking for automated alerts
-_PROVIDER_OUTAGE_ALERTED = {}
-_PROVIDER_OUTAGE_MINUTES = 10  # Alert if down for more than X minutes
+_PROVIDER_OUTAGE_ALERTED: dict[str, bool] = {}
+_PROVIDER_OUTAGE_LAST_ALERT: dict[str, float] = {}
+_PROVIDER_OUTAGE_MINUTES = 10  # Default alert threshold (minutes)
+_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 360  # Default alert interval (minutes)
 
 def mark_provider_result(provider_name, ok):
     now = time.time()
@@ -26,6 +28,7 @@ def mark_provider_result(provider_name, ok):
             entry["failures"] = []
             # Reset outage alert state
             _PROVIDER_OUTAGE_ALERTED[provider_name] = False
+            _PROVIDER_OUTAGE_LAST_ALERT.pop(provider_name, None)
         else:
             entry["failures"].append(now)
             # Keep only recent failures
@@ -73,9 +76,38 @@ def _write_cached_candles(key: tuple[str, str], candles: list) -> None:
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
+def _outage_threshold_minutes() -> float:
+    try:
+        return float(os.getenv("PROVIDER_OUTAGE_MINUTES", str(_PROVIDER_OUTAGE_MINUTES)) or _PROVIDER_OUTAGE_MINUTES)
+    except Exception:
+        return float(_PROVIDER_OUTAGE_MINUTES)
+
+
+def _outage_alert_interval_minutes() -> float:
+    try:
+        return float(os.getenv("PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES", str(_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES)) or _PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES)
+    except Exception:
+        return float(_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES)
+
+
+def should_alert_provider_outage(provider_name: str, minutes_down: float) -> bool:
+    min_minutes = _outage_threshold_minutes()
+    if minutes_down < float(min_minutes):
+        return False
+    now = time.time()
+    last_alert = _PROVIDER_OUTAGE_LAST_ALERT.get(provider_name)
+    interval_s = max(60.0, _outage_alert_interval_minutes() * 60.0)
+    if _PROVIDER_OUTAGE_ALERTED.get(provider_name) and last_alert is not None:
+        if (now - last_alert) < interval_s:
+            return False
+    _PROVIDER_OUTAGE_ALERTED[provider_name] = True
+    _PROVIDER_OUTAGE_LAST_ALERT[provider_name] = now
+    return True
+
+
 def get_unhealthy_providers(min_minutes=None):
     now = time.time()
-    min_minutes = min_minutes or _PROVIDER_OUTAGE_MINUTES
+    min_minutes = min_minutes or _outage_threshold_minutes()
     unhealthy = []
     with _PROVIDER_HEALTH_LOCK:
         for name, entry in _PROVIDER_HEALTH.items():

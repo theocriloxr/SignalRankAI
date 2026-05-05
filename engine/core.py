@@ -295,7 +295,10 @@ def start_outage_alert_job():
                 except Exception:
                     unhealthy = []
                 if unhealthy and bot_token:
+                    from data.fetcher import should_alert_provider_outage
                     for name, mins in unhealthy:
+                        if not should_alert_provider_outage(name, mins):
+                            continue
                         msg = f"🚨 Provider outage: {name} has been down for {mins:.1f} minutes."
                         for admin_id in (OWNER_IDS or []):
                             try:
