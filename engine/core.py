@@ -51,7 +51,7 @@ from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from db.repository import persist_decision_log
 from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
-from signalrank_telegram.bot import dispatch_signals, _send_message_sync
+from signalrank_telegram.bot import dispatch_signals_async
 from core.redis_state import state
 from config import OWNER_IDS, ADMIN_IDS
 
@@ -1948,30 +1948,23 @@ def main_loop(DRY_RUN: bool = False):
                             logger.warning(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                             pass
 
-                    if not user_signals:
-                        skipped_no_eligible_signals += 1
-                        continue
+                        if not user_signals:
+                            skipped_no_eligible_signals += 1
+                            continue
 
-                    # Filter out signals already sent to this user (prevent duplicates)
-                    user_signals = await filter_non_duplicate_signals(user_id, user_signals)
-                    if not user_signals:
-                        logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
-                        skipped_no_eligible_signals += 1
-                        continue
+                        # Filter out signals already sent to this user (prevent duplicates)
+                        user_signals = await filter_non_duplicate_signals(user_id, user_signals)
+                        if not user_signals:
+                            logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
+                            skipped_no_eligible_signals += 1
+                            continue
 
-                    if DRY_RUN:
-                        for msg in user_signals:
-                            print(f"[DRY RUN][{user_tier}] {msg}")
-                        dispatched_count += 1
-                    else:
-                        _dispatched_ok = False
-                        try:
-                            dispatch_signals(user_signals, user_id=user_id)
-                            _dispatched_ok = True
-                        except Exception as e:
-                            logger.warning(f"[engine] Failed to dispatch signals: {e}")
-                            logger.exception("dispatch_signals failed")
-                        if _dispatched_ok:
+                        if DRY_RUN:
+                            for msg in user_signals:
+                                print(f"[DRY RUN][{user_tier}] {msg}")
+                            dispatched_count += 1
+                        else:
+                            await dispatch_signals_async(user_signals, user_id=user_id)
                             dispatched_count += 1
                 except Exception:
                     logger.exception("deliver_all per-user failed")

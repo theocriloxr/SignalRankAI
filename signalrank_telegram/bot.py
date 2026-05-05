@@ -2585,7 +2585,7 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
         return 0
 
 
-def dispatch_signals(strategy_signals, user_id, regime=None):
+async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     """Dispatch signals to user based on their tier.
     
     Tier-based Limits & Score Filtering:
@@ -2874,7 +2874,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                     return to_send
 
                 try:
-                    reserved = run_sync(_reserve())
+                    reserved = await _reserve()
                     reserve_failed = False
                 except Exception as e:
                     reserved = []
@@ -2926,7 +2926,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         if sent >= int(limit):
                             break
                         try:
-                            reserved_signal = run_sync(_reserve_one(signal))
+                            reserved_signal = await _reserve_one(signal)
                             if not reserved_signal:
                                 logger.debug(
                                     "[dispatch] Fallback dedupe skip: user=%s signal=%s",
@@ -2936,7 +2936,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                 continue
 
                             logger.debug(f"[dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                            if _deliver_or_update_signal_sync(
+                            if await _deliver_or_update_signal_async(
                                 bot,
                                 telegram_user_id=int(user_id),
                                 signal=reserved_signal,
@@ -2965,7 +2965,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         logger.debug(f"[dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                        _ok_send = _deliver_or_update_signal_sync(
+                        _ok_send = await _deliver_or_update_signal_async(
                             bot,
                             telegram_user_id=int(user_id),
                             signal=signal,
@@ -3061,7 +3061,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                                     from signalrank_telegram.access import resolve_user_tier
                                     user_tier = resolve_user_tier(user_id).lower()
                                     signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'premium'
-                                    if _deliver_or_update_signal_sync(
+                                    if await _deliver_or_update_signal_async(
                                         bot,
                                         telegram_user_id=int(user_id),
                                         signal=sig_dict,
@@ -3076,7 +3076,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                         return sent_count
                 
                 try:
-                    run_sync(_get_best_signal())
+                    await _get_best_signal()
                 except Exception as e:
                     _log_once(
                         "extra_signal_failed",
@@ -3227,7 +3227,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             # randomized and prevent burst/spam behavior from engine dispatch loops.
             if str(os.getenv("FREE_DIRECT_DISPATCH", "1")).strip().lower() in {"1", "true", "yes"}:
                 try:
-                    run_sync(_send_random_signals_immediately())
+                    await _send_random_signals_immediately()
                     return
                 except Exception as e:
                     _log_once(
@@ -3267,7 +3267,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
             if sent >= limit:
                 break
             try:
-                if not _deliver_or_update_signal_sync(
+                if not await _deliver_or_update_signal_async(
                     bot,
                     telegram_user_id=int(user_id),
                     signal=signal,
@@ -3318,7 +3318,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
                 await session.commit()
 
         try:
-            run_sync(_queue())
+            await _queue()
         except Exception as e:
             _log_once(
                 "queue_free_legacy_failed",
@@ -3328,10 +3328,14 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
         # As a last resort, send the limited preview
         try:
             bot = Bot(token=_require_telegram_token())
-            _send_message_sync(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
+            await _send_message_async(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
         except Exception as e:
             logger.warning(f"[dispatch] Failed to send free preview to user {user_id}: {e}")
             pass
+
+
+def dispatch_signals(strategy_signals, user_id, regime=None):
+    return run_sync(dispatch_signals_async(strategy_signals, user_id, regime=regime))
 
 
 def downgrade_expired_subscriptions_job():
