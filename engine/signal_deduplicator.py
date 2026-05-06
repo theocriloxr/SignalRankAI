@@ -68,6 +68,7 @@ class MLRejectionTracker:
             1,
             int(os.getenv("REJECT_OUTCOME_MIN_TRACK_AGE_MINUTES", "5") or 5),
         )
+        self._min_track_age_hours = max(1, int(self._min_track_age_minutes // 60) or 1)
         self._move_pct_threshold = max(
             0.01,
             float(os.getenv("REJECT_OUTCOME_MOVE_PCT", "1.0") or 1.0),
@@ -220,7 +221,6 @@ class MLRejectionTracker:
 
                 session.add(rejection)
                 await session.flush()
-                await session.commit()
                 logger.info("Rejection stored: %s %s %s", asset, timeframe, direction)
         except Exception as e:
             logger.error("Failed to persist rejection: %s", e)
@@ -735,15 +735,13 @@ class MLRejectionTracker:
                 
                 if tracked_count > 0:
                     await session.flush()
-                    await session.commit()
                     logger.info(f"Tracked {tracked_count} rejection outcomes")
                     await self._notify_rejection_outcomes(summary)
-                else:
-                    await session.commit()
 
             if tracked_count > 0 or backfilled > 0:
                 await self._run_adaptive_learning_if_due()
-            return tracked_count + backfilled
+                
+                return tracked_count + backfilled
         except Exception as e:
             logger.error(f"Failed to track rejection outcomes: {e}")
             return 0

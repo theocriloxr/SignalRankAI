@@ -79,17 +79,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     timeframe,
                     "rejected",
                     reason=f"ML score {ml_prob_value:.2f} < {ml_threshold:.2f}",
-                    meta={
-                        "ml_probability": ml_prob_value,
-                        "ml_threshold": ml_threshold,
-                        "direction": sig.direction,
-                        "entry": sig.entry,
-                        "stop_loss": sig.stop_loss,
-                        "take_profit": sig.take_profit,
-                        "score": sig.score,
-                        "strategy_name": sig.strategy_name,
-                        "strategy_group": sig.strategy_group,
-                    },
+                    meta={"ml_probability": ml_prob_value, "ml_threshold": ml_threshold},
                 )
                 continue
             try:
