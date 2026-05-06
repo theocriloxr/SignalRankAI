@@ -1961,24 +1961,30 @@ def main_loop(DRY_RUN: bool = False):
                             logger.warning(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                             pass
 
-                        if not user_signals:
-                            skipped_no_eligible_signals += 1
-                            continue
+                    # ── Dispatch block (OUTSIDE the per-signal loop) ───────────────────
+                    # Collect ALL eligible signals first, then dispatch once per user.
+                    # Previously this block was inside the for-sig loop which caused:
+                    #   1. dispatch called once per eligible signal (not once per user)
+                    #   2. daily-limit counter never updated between dispatches
+                    #   3. `continue` skipped to next sig instead of next user
+                    if not user_signals:
+                        skipped_no_eligible_signals += 1
+                        continue
 
-                        # Filter out signals already sent to this user (prevent duplicates)
-                        user_signals = await filter_non_duplicate_signals(user_id, user_signals)
-                        if not user_signals:
-                            logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
-                            skipped_no_eligible_signals += 1
-                            continue
+                    # Filter out signals already sent to this user (prevent duplicates)
+                    user_signals = await filter_non_duplicate_signals(user_id, user_signals)
+                    if not user_signals:
+                        logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
+                        skipped_no_eligible_signals += 1
+                        continue
 
-                        if DRY_RUN:
-                            for msg in user_signals:
-                                print(f"[DRY RUN][{user_tier}] {msg}")
-                            dispatched_count += 1
-                        else:
-                            await dispatch_signals_async(user_signals, user_id=user_id)
-                            dispatched_count += 1
+                    if DRY_RUN:
+                        for msg in user_signals:
+                            print(f"[DRY RUN][{user_tier}] {msg}")
+                        dispatched_count += 1
+                    else:
+                        await dispatch_signals_async(user_signals, user_id=user_id)
+                        dispatched_count += 1
                 except Exception:
                     logger.exception("deliver_all per-user failed")
             logger.info(
