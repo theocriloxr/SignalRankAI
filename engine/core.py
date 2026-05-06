@@ -166,6 +166,16 @@ _threshold_refresh_interval_hours: int = 6
 
 def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
     try:
+        _meta = dict(meta or {})
+        # Persist enough signal context for downstream rejected-signal outcome tracking.
+        _meta.setdefault("direction", sig.get("direction"))
+        _meta.setdefault("entry", sig.get("entry"))
+        _meta.setdefault("stop_loss", sig.get("stop_loss") or sig.get("stop"))
+        _meta.setdefault("take_profit", sig.get("take_profit") or sig.get("targets"))
+        _meta.setdefault("score", sig.get("score"))
+        _meta.setdefault("ml_probability", sig.get("ml_probability"))
+        _meta.setdefault("strategy_name", sig.get("strategy_name"))
+        _meta.setdefault("strategy_group", sig.get("strategy_group"))
         run_sync(
             persist_decision_log(
                 sig.get("signal_id"),
@@ -173,7 +183,7 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                 sig.get("timeframe"),
                 decision,
                 reason=reason,
-                meta=meta or {},
+                meta=_meta,
             )
         )
     except Exception as e:
