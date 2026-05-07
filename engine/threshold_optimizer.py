@@ -31,6 +31,12 @@ TARGET_WIN_RATE = float(os.getenv("TARGET_WIN_RATE", "0.60"))  # 60% win rate ta
 TARGET_AVG_R = float(os.getenv("TARGET_AVG_R", "1.5"))  # 1.5R average profit
 MIN_SIGNALS_PER_CYCLE = int(os.getenv("MIN_SIGNALS_PER_CYCLE", "3"))
 
+# Dynamic gate bounds (safety rails to avoid over-tight/over-loose behavior)
+MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "65.0"))
+MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "90.0"))
+CONFLUENCE_MIN_FLOOR = float(os.getenv("CONFLUENCE_MIN_FLOOR", "0.0"))
+CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
+
 
 @dataclass
 class ThresholdConfig:
@@ -199,6 +205,11 @@ class AdaptiveThresholdOptimizer:
                 )
                 gemini_value = gemini_row.first()
                 raw_gemini_data = gemini_value[0] if gemini_value else None
+                if raw_gemini_data is not None and not isinstance(raw_gemini_data, dict):
+                    logger.debug(
+                        "[threshold_optimizer] Unexpected gemini_ml_last_run type: %s",
+                        type(raw_gemini_data).__name__,
+                    )
                 gemini_data = raw_gemini_data if isinstance(raw_gemini_data, dict) else {}
                 gemini_signal = "neutral"
                 received = dict(gemini_data.get("received", {}) or {})
@@ -342,8 +353,11 @@ class AdaptiveThresholdOptimizer:
             score_delta -= 1.0
             confluence_delta -= 0.5
 
-        new_min_score = max(65.0, min(90.0, current_min_score + score_delta))
-        new_confluence = max(0.0, min(40.0, current_confluence + confluence_delta))
+        new_min_score = max(MIN_SCORE_FLOOR, min(MIN_SCORE_CEILING, current_min_score + score_delta))
+        new_confluence = max(
+            CONFLUENCE_MIN_FLOOR,
+            min(CONFLUENCE_MIN_CEILING, current_confluence + confluence_delta),
+        )
         return new_min_score, new_confluence
         
     async def analyze_and_adjust(self, force: bool = False) -> ThresholdConfig:

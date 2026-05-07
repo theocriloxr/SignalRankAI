@@ -19,6 +19,7 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +258,7 @@ def get_trending_crypto_pairs(top_n=20):
         return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
 
     # Default and "all": aggregate providers in parallel, fail-open.
-    all_enabled = _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True) or provider in {"all", "auto", ""}
+    all_enabled = provider in {"all", "auto", ""} and _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
     if all_enabled:
         provider_jobs = {
             "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
@@ -325,10 +326,10 @@ def get_all_trending_pairs():
     stock_top_n = max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20")))
     with ThreadPoolExecutor(max_workers=4) as ex:
         futures = {
-            "crypto": ex.submit(lambda: get_trending_crypto_pairs(top_n=max(1, top_n))),
+            "crypto": ex.submit(partial(get_trending_crypto_pairs, top_n=max(1, top_n))),
             "fx": ex.submit(get_trending_fx_pairs),
-            "stocks": ex.submit(lambda: get_trending_stock_tickers(top_n=stock_top_n)),
-            "commodities": ex.submit(lambda: get_trending_commodity_tickers(10)),
+            "stocks": ex.submit(partial(get_trending_stock_tickers, top_n=stock_top_n)),
+            "commodities": ex.submit(partial(get_trending_commodity_tickers, 10)),
         }
         out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "commodities": []}
         for k, fut in futures.items():
