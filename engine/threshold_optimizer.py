@@ -31,6 +31,12 @@ TARGET_WIN_RATE = float(os.getenv("TARGET_WIN_RATE", "0.60"))  # 60% win rate ta
 TARGET_AVG_R = float(os.getenv("TARGET_AVG_R", "1.5"))  # 1.5R average profit
 MIN_SIGNALS_PER_CYCLE = int(os.getenv("MIN_SIGNALS_PER_CYCLE", "3"))
 
+# Dynamic gate bounds (safety rails to avoid over-tight/over-loose behavior)
+MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "65.0"))
+MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "90.0"))
+CONFLUENCE_MIN_FLOOR = float(os.getenv("CONFLUENCE_MIN_FLOOR", "0.0"))
+CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
+
 
 @dataclass
 class ThresholdConfig:
@@ -85,6 +91,12 @@ class AdaptiveThresholdOptimizer:
                 self._current.min_score_threshold = float(min_score_raw)
             except ValueError:
                 pass
+        confluence_raw = os.getenv("CONFLUENCE_GATE_MIN", "").strip()
+        if confluence_raw:
+            try:
+                self._current.confluence_min = float(confluence_raw)
+            except ValueError:
+                pass
                 
     async def _load_from_db(self) -> bool:
         """Load saved thresholds from runtime_state"""
@@ -102,6 +114,12 @@ class AdaptiveThresholdOptimizer:
                     if isinstance(data, dict):
                         self._current.ml_prob_threshold = float(
                             data.get("ml_prob_threshold", DEFAULT_ML_THRESHOLD_DEFAULT)
+                        )
+                        self._current.min_score_threshold = float(
+                            data.get("min_score_threshold", self._current.min_score_threshold)
+                        )
+                        self._current.confluence_min = float(
+                            data.get("confluence_min", self._current.confluence_min)
                         )
                         self._current.source = data.get("source", "db")
                         self._initialized = True
@@ -166,7 +184,44 @@ class AdaptiveThresholdOptimizer:
                 net_r = float(result[3] or 0.0) if result and result[3] else 0.0
                 
                 win_rate = wins / max(1, total)
-                
+
+                rejected_count = int(
+                    (
+                        await session.execute(
+                            text(
+                                """
+                                SELECT COUNT(*) FROM ml_rejected_signals
+                                WHERE created_at >= :since
+                                """
+                            ),
+                            {"since": since},
+                        )
+                    ).scalar()
+                    or 0
+                )
+
+                gemini_row = await session.execute(
+                    text("SELECT value FROM runtime_state WHERE key = 'gemini_ml_last_run'")
+                )
+                gemini_value = gemini_row.first()
+                raw_gemini_data = gemini_value[0] if gemini_value else None
+                if raw_gemini_data is not None and not isinstance(raw_gemini_data, dict):
+                    logger.debug(
+                        "[threshold_optimizer] Unexpected gemini_ml_last_run type: %s",
+                        type(raw_gemini_data).__name__,
+                    )
+                gemini_data = raw_gemini_data if isinstance(raw_gemini_data, dict) else {}
+                gemini_signal = "neutral"
+                received = dict(gemini_data.get("received", {}) or {})
+                gemini_ok = bool(gemini_data.get("ok"))
+                rejected_or_skipped = int(received.get("rejected_or_skipped") or 0)
+                issued = int(received.get("issued") or 0)
+                if gemini_ok:
+                    if rejected_or_skipped > max(issued, 1):
+                        gemini_signal = "tighten"
+                    elif issued > 0 and rejected_or_skipped <= max(1, issued // 3):
+                        gemini_signal = "loosen"
+
                 return {
                     "total_outcomes": total,
                     "wins": wins,
@@ -174,6 +229,9 @@ class AdaptiveThresholdOptimizer:
                     "win_rate": win_rate,
                     "avg_r": avg_r,
                     "net_r": net_r,
+                    "rejected_count": rejected_count,
+                    "rejected_ratio": rejected_count / max(1, total + rejected_count),
+                    "gemini_signal": gemini_signal,
                 }
         except Exception as e:
             logger.warning(f"[threshold_optimizer] Performance analysis failed: {e}")
@@ -220,6 +278,18 @@ class AdaptiveThresholdOptimizer:
             score += 0.2
         elif total_signals < MIN_SIGNALS_PER_CYCLE:
             score -= 0.1
+
+        rejected_ratio = float(perf.get("rejected_ratio", 0.0) or 0.0)
+        if rejected_ratio >= 0.60:
+            score -= 0.1
+        elif rejected_ratio <= 0.25:
+            score += 0.05
+
+        gemini_signal = str(perf.get("gemini_signal") or "neutral").lower().strip()
+        if gemini_signal == "tighten":
+            score -= 0.1
+        elif gemini_signal == "loosen":
+            score += 0.1
             
         # Adjust threshold based on score
         adjustment = 0.0
@@ -251,6 +321,44 @@ class AdaptiveThresholdOptimizer:
         )
         
         return new_threshold, reason
+
+    def _calculate_gate_thresholds(
+        self,
+        perf: Dict[str, Any],
+        current_min_score: float,
+        current_confluence: float,
+    ) -> Tuple[float, float]:
+        """Adjust score/confluence gates using ML outcomes plus Gemini signal."""
+        if not perf or perf.get("total_outcomes", 0) < self._min_samples_for_analysis:
+            return current_min_score, current_confluence
+
+        win_rate = float(perf.get("win_rate", 0.5) or 0.5)
+        avg_r = float(perf.get("avg_r", 0.0) or 0.0)
+        gemini_signal = str(perf.get("gemini_signal") or "neutral").lower().strip()
+
+        score_delta = 0.0
+        confluence_delta = 0.0
+
+        if win_rate < TARGET_WIN_RATE - 0.10 or avg_r < TARGET_AVG_R - 0.5:
+            score_delta += 2.0
+            confluence_delta += 1.0
+        elif win_rate > TARGET_WIN_RATE + 0.05 and avg_r > TARGET_AVG_R:
+            score_delta -= 1.0
+            confluence_delta -= 0.5
+
+        if gemini_signal == "tighten":
+            score_delta += 1.0
+            confluence_delta += 0.5
+        elif gemini_signal == "loosen":
+            score_delta -= 1.0
+            confluence_delta -= 0.5
+
+        new_min_score = max(MIN_SCORE_FLOOR, min(MIN_SCORE_CEILING, current_min_score + score_delta))
+        new_confluence = max(
+            CONFLUENCE_MIN_FLOOR,
+            min(CONFLUENCE_MIN_CEILING, current_confluence + confluence_delta),
+        )
+        return new_min_score, new_confluence
         
     async def analyze_and_adjust(self, force: bool = False) -> ThresholdConfig:
         """
@@ -284,18 +392,37 @@ class AdaptiveThresholdOptimizer:
                 perf, 
                 self._current.ml_prob_threshold
             )
-            
-            if reason != "insufficient_data" and reason != "maintain":
-                change = abs(new_thresh - self._current.ml_prob_threshold)
-                if change >= 0.01:  # Only save if significant change
-                    self._current.ml_prob_threshold = new_thresh
-                    self._current.last_updated = now
-                    self._current.source = "adaptive"
-                    await self._save_to_db()
-                    logger.info(
-                        f"[threshold_optimizer] Adjusted threshold: {new_thresh:.3f} "
-                        f"(win_rate={perf.get('win_rate',0):.1%}, avg_r={perf.get('avg_r',0):.2f}, reason={reason})"
-                    )
+            new_min_score, new_confluence = self._calculate_gate_thresholds(
+                perf,
+                self._current.min_score_threshold,
+                self._current.confluence_min,
+            )
+
+            ml_change = abs(new_thresh - self._current.ml_prob_threshold)
+            score_change = abs(new_min_score - self._current.min_score_threshold)
+            conf_change = abs(new_confluence - self._current.confluence_min)
+            changed = ml_change >= 0.01 or score_change >= 0.5 or conf_change >= 0.5
+
+            if reason != "insufficient_data" and changed:
+                self._current.ml_prob_threshold = new_thresh
+                self._current.min_score_threshold = new_min_score
+                self._current.confluence_min = new_confluence
+                self._current.last_updated = now
+                gemini_signal = str(perf.get("gemini_signal") or "neutral").lower().strip()
+                self._current.source = "adaptive_gemini" if gemini_signal in {"tighten", "loosen"} else "adaptive"
+                await self._save_to_db()
+                logger.info(
+                    "[threshold_optimizer] Adjusted thresholds: ml=%.3f score=%.1f confluence=%.1f "
+                    "(win_rate=%.1f%% avg_r=%.2f rejected_ratio=%.1f%% gemini=%s reason=%s)",
+                    self._current.ml_prob_threshold,
+                    self._current.min_score_threshold,
+                    self._current.confluence_min,
+                    float(perf.get("win_rate", 0.0) or 0.0) * 100.0,
+                    float(perf.get("avg_r", 0.0) or 0.0),
+                    float(perf.get("rejected_ratio", 0.0) or 0.0) * 100.0,
+                    gemini_signal,
+                    reason,
+                )
                     
         self._last_analysis = now
         return self._current

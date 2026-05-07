@@ -58,7 +58,7 @@ async def load_training_data():
     try:
         from db.session import get_session
 
-        from db.models import Signal, Outcome, MarketCandle
+        from db.models import Signal, Outcome, MarketCandle, MLRejectedSignal
         from sqlalchemy import select, desc
 
         def _parse_tp(raw_tp):
@@ -422,6 +422,100 @@ async def load_training_data():
                 })
         except Exception as _archive_err:
             logger.warning(f"Failed to load archive training rows: {_archive_err}")
+
+        # Include threshold-rejected/non-issued signals that were later outcome-tracked.
+        # This lets the model learn from decisions that did not pass issuance gates.
+        try:
+            from sqlalchemy import and_
+
+            async with get_session() as session:
+                rejected_rows = (
+                    await session.execute(
+                        select(MLRejectedSignal).where(
+                            and_(
+                                MLRejectedSignal.created_at >= cutoff,
+                                MLRejectedSignal.outcome_tracked_at.is_not(None),
+                            )
+                        )
+                    )
+                ).scalars().all()
+
+            for rj in rejected_rows:
+                outcome = str(getattr(rj, "actual_outcome", "") or "").lower().strip()
+                if outcome not in {"win", "loss"}:
+                    continue
+
+                feat = getattr(rj, "features", None) or {}
+                if not isinstance(feat, dict):
+                    feat = {}
+
+                tp_progress = 0
+                for key in ("tp_progress", "max_tp_hit", "tp_hit_count", "highest_tp_reached"):
+                    try:
+                        tp_progress = max(tp_progress, int(feat.get(key) or 0))
+                    except Exception:
+                        continue
+
+                false_breakout = 0
+                for k in ("false_breakout", "volatility_stopout", "sl_then_tp1", "post_sl_reversal_to_tp1"):
+                    try:
+                        if bool(feat.get(k)):
+                            false_breakout = 1
+                            break
+                    except Exception:
+                        continue
+
+                barrier = "upper" if outcome == "win" else "lower"
+                target = 1 if barrier == "upper" else 0
+                sample_weight = 1.0 if target == 1 else 0.9
+                if false_breakout:
+                    sample_weight *= 0.75
+
+                rr_raw = _safe_float(feat.get("rr_ratio"))
+                if rr_raw <= 0:
+                    rr_raw = _safe_float(feat.get("rr_estimate", 0))
+                rr_eff = min(4.0, max(0.5, rr_raw)) if rr_raw > 0 else 1.0
+                sample_weight *= (0.75 + (rr_eff / 4.0))
+
+                data.append(
+                    {
+                        "signal_id": f"rejected_{int(getattr(rj, 'id', 0))}",
+                        "asset": getattr(rj, "asset", "UNKNOWN") or "UNKNOWN",
+                        "timeframe": getattr(rj, "timeframe", "1h") or "1h",
+                        "direction": getattr(rj, "direction", "long") or "long",
+                        "score": _safe_float(feat.get("score", 0)),
+                        "entry": _safe_float(getattr(rj, "entry", 0)),
+                        "stop_loss": _safe_float(getattr(rj, "stop_loss", 0)),
+                        "take_profit": _parse_tp(getattr(rj, "take_profit", 0)),
+                        "rr_ratio": rr_raw,
+                        "strategy_name": str(feat.get("strategy_name") or "rejected"),
+                        "regime": str(feat.get("regime") or "unknown"),
+                        "strength": _safe_float(feat.get("strength", 0)),
+                        "ml_probability": _safe_float(getattr(rj, "ml_probability", 0)),
+                        "price_velocity_3": _safe_float(feat.get("price_velocity_3", 0.0)),
+                        "price_velocity_5": _safe_float(feat.get("price_velocity_5", 0.0)),
+                        "price_velocity_10": _safe_float(feat.get("price_velocity_10", 0.0)),
+                        "price_acceleration_3_10": _safe_float(feat.get("price_acceleration_3_10", 0.0)),
+                        "atr_rel": _safe_float(feat.get("atr_rel", 0.0)),
+                        "atr_regime": _safe_float(feat.get("atr_regime", 0.0)),
+                        "relative_volume": _safe_float(feat.get("relative_volume", 0.0)),
+                        "mtf_4h_trend": _safe_float(feat.get("mtf_4h_trend", 0.0)),
+                        "mtf_1d_trend": _safe_float(feat.get("mtf_1d_trend", 0.0)),
+                        "funding_rate": _safe_float(feat.get("funding_rate", 0.0)),
+                        "open_interest_change": _safe_float(feat.get("open_interest_change", 0.0)),
+                        "dxy_trend": _safe_float(feat.get("dxy_trend", 0.0)),
+                        "spx_trend": _safe_float(feat.get("spx_trend", 0.0)),
+                        "btc_corr": _safe_float(feat.get("btc_corr", 0.0)),
+                        "partial_tp_progress": float(tp_progress),
+                        "false_breakout": int(false_breakout),
+                        "barrier_type": barrier,
+                        "sample_weight": float(sample_weight),
+                        "created_at": getattr(rj, "created_at", None) or datetime.utcnow(),
+                        "target": target,
+                    }
+                )
+        except Exception as rejected_err:
+            logger.warning(f"Failed to load rejected-signal training rows: {rejected_err}")
 
         df = pd.DataFrame(data)
         logger.info(f"Loaded {len(df)} signals with outcomes")

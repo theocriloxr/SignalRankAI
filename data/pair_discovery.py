@@ -18,38 +18,10 @@ def get_trending_commodity_tickers(top_n=10):
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
 
 logger = logging.getLogger(__name__)
-
-
-def get_trending_crypto_pairs(top_n=20):
-    # ...existing code...
-    pass
-
-def get_trending_fx_pairs():
-    # ...existing code...
-    pass
-
-def get_trending_stock_tickers(top_n=20):
-    # ...existing code...
-    pass
-
-def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
-    """
-    Get all tradable assets (crypto + FX + stocks).
-    Returns:
-        dict with keys: crypto, fx, stocks
-    """
-    crypto = get_trending_crypto_pairs(crypto_limit)
-    fx = get_trending_fx_pairs()
-    stocks = get_trending_stock_tickers(stock_limit)
-    commodities = get_trending_commodity_tickers(10)
-    return {
-        "crypto": crypto,
-        "fx": fx,
-        "stocks": stocks,
-        "commodities": commodities,
-    }
 
 # Global cache for auto-refreshed asset universe
 _ASSET_UNIVERSE_CACHE = None
@@ -77,10 +49,6 @@ def _asset_universe_auto_refresh_thread():
             logger.warning("[pair_discovery] Asset universe auto-refresh failed: %s", e)
         time.sleep(_ASSET_UNIVERSE_REFRESH_INTERVAL)
 
-# Start auto-refresh thread at import time
-_t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
-_t.start()
-import os
 import requests
 from utils import proxy_manager
 
@@ -122,6 +90,72 @@ def _filter_blacklisted(pairs: list[str]) -> list[str]:
             continue
         out.append(sym)
     return out
+
+
+def _dedupe_limit(items: list[str], limit: int) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    max_n = max(1, int(limit))
+    for raw in items or []:
+        sym = str(raw or "").upper().strip()
+        if not sym or sym in seen:
+            continue
+        seen.add(sym)
+        out.append(sym)
+        if len(out) >= max_n:
+            break
+    return out
+
+
+def _is_true(raw: str | None, default: bool = False) -> bool:
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _merge_provider_results(provider_results: list[list[str]], limit: int) -> list[str]:
+    """Merge provider lists in round-robin order for diversification."""
+    merged: list[str] = []
+    max_n = max(1, int(limit))
+    idx = 0
+    while len(merged) < max_n:
+        progressed = False
+        for arr in provider_results:
+            if idx < len(arr):
+                merged.append(arr[idx])
+                progressed = True
+                if len(merged) >= max_n:
+                    break
+        if not progressed:
+            break
+        idx += 1
+    return _dedupe_limit(merged, max_n)
+
+
+def _binance_top_crypto_pairs(top_n: int) -> list[str]:
+    global _BINANCE_DISABLED_REASON
+    if _BINANCE_DISABLED_REASON is not None:
+        return []
+    try:
+        px = proxy_manager.ccxt_proxy_config_sync().get("proxies") or None
+        resp = requests.get(BINANCE_API, timeout=5, proxies=px)
+        data = resp.json()
+        if isinstance(data, dict):
+            code = data.get("code")
+            msg = data.get("msg")
+            msg_s = str(msg or "")
+            if "restricted location" in msg_s.lower():
+                _BINANCE_DISABLED_REASON = msg_s
+                logger.warning("[pair_discovery] Binance pairs disabled: %s", msg_s)
+                return []
+            raise RuntimeError(f"Binance API error: code={code} msg={msg}")
+        if not isinstance(data, list):
+            raise RuntimeError(f"Unexpected Binance API response type: {type(data).__name__}")
+        sorted_pairs = sorted(data, key=lambda x: float(x["quoteVolume"]), reverse=True)
+        return _filter_blacklisted([x["symbol"] for x in sorted_pairs[: max(1, int(top_n))]])
+    except Exception as e:
+        logger.warning("[pair_discovery] Binance provider failed: %s", e)
+        return []
 
 
 def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
@@ -173,7 +207,7 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
-    provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "binance").strip().lower()
+    provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "").strip().lower()
     EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
     def exclude_pairs(pairs):
         out = []
@@ -183,37 +217,44 @@ def get_trending_crypto_pairs(top_n=20):
                 continue
             out.append(sym)
         return out
+    # Explicit provider override remains supported.
     if provider == "cryptocompare":
         return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
-    if _BINANCE_DISABLED_REASON is not None:
-        # Fallback universe when Binance is blocked.
+    if provider == "binance":
+        binance_only = _binance_top_crypto_pairs(top_n)
+        if binance_only:
+            return exclude_pairs(binance_only)
         return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
-    try:
-        px = proxy_manager.ccxt_proxy_config_sync().get("proxies") or None
-        resp = requests.get(BINANCE_API, timeout=5, proxies=px)
-        data = resp.json()
 
-        # Binance normally returns a list[dict]. If we get a dict, it's usually an
-        # error payload (e.g. rate limit) or an unexpected response shape.
-        if isinstance(data, dict):
-            code = data.get("code")
-            msg = data.get("msg")
-            msg_s = str(msg or "")
-            # Railway regions can be blocked by Binance; disable further attempts
-            # to avoid spamming logs.
-            if "restricted location" in msg_s.lower():
-                _BINANCE_DISABLED_REASON = msg_s
-                logger.warning("[pair_discovery] Binance pairs disabled: %s", msg_s)
-                return _cryptocompare_top_crypto_pairs(top_n)
-            raise RuntimeError(f"Binance API error: code={code} msg={msg}")
-        if not isinstance(data, list):
-            raise RuntimeError(f"Unexpected Binance API response type: {type(data).__name__}")
-        # Sort by quoteVolume (trending)
-        sorted_pairs = sorted(data, key=lambda x: float(x['quoteVolume']), reverse=True)
-        return _filter_blacklisted([x['symbol'] for x in sorted_pairs[:top_n]])
-    except Exception as e:
-        logger.warning("[pair_discovery] Could not fetch Binance pairs: %s", e)
-        return _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n))
+    # Default and "all": aggregate providers in parallel, fail-open.
+    all_enabled = provider in {"all", "auto", ""} and _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
+    if all_enabled:
+        provider_jobs = {
+            "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
+            "cryptocompare": lambda: _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n=max(1, int(top_n)))),
+        }
+        results: dict[str, list[str]] = {}
+        with ThreadPoolExecutor(max_workers=len(provider_jobs)) as ex:
+            fut_map = {ex.submit(fn): name for name, fn in provider_jobs.items()}
+            for fut in as_completed(fut_map):
+                name = fut_map[fut]
+                try:
+                    results[name] = list(fut.result() or [])
+                except Exception as e:
+                    logger.warning("[pair_discovery] crypto provider %s failed: %s", name, e)
+                    results[name] = []
+        merged = _merge_provider_results(
+            [results.get("binance", []), results.get("cryptocompare", [])],
+            limit=max(1, int(top_n)),
+        )
+        if merged:
+            return exclude_pairs(merged)
+
+    # Final fail-open fallback
+    fallback = _binance_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(fallback)
+    return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
 
 def get_trending_fx_pairs():
     """Return configured FX pairs.
@@ -251,10 +292,25 @@ def get_all_trending_pairs():
         top_n = int((os.getenv("CRYPTO_TRENDING_TOP_N") or os.getenv("CRYPTO_UNIVERSE_TOP_N") or "30").strip())
     except Exception:
         top_n = 30
-    crypto = get_trending_crypto_pairs(top_n=max(1, top_n))
-    fx = get_trending_fx_pairs()
-    stocks = get_trending_stock_tickers(top_n=max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20"))))
-    commodities = get_trending_commodity_tickers(10)
+    stock_top_n = max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20")))
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        futures = {
+            "crypto": ex.submit(partial(get_trending_crypto_pairs, top_n=max(1, top_n))),
+            "fx": ex.submit(get_trending_fx_pairs),
+            "stocks": ex.submit(partial(get_trending_stock_tickers, top_n=stock_top_n)),
+            "commodities": ex.submit(partial(get_trending_commodity_tickers, 10)),
+        }
+        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "commodities": []}
+        for k, fut in futures.items():
+            try:
+                out[k] = list(fut.result() or [])
+            except Exception as e:
+                logger.warning("[pair_discovery] %s discovery failed: %s", k, e)
+                out[k] = []
+    crypto = out["crypto"]
+    fx = out["fx"]
+    stocks = out["stocks"]
+    commodities = out["commodities"]
     return crypto + fx + stocks + commodities
 
 
@@ -293,35 +349,51 @@ def get_trending_stock_tickers(top_n=20):
         "T", "VZ", "CMCSA",
     ]
     
-    # 3. Polygon.io trending (if API key available)
-    polygon_key = os.getenv("POLYGON_API_KEY", "").strip()
-    if polygon_key:
+    def _polygon_provider() -> list[str]:
+        polygon_key = os.getenv("POLYGON_API_KEY", "").strip()
+        if not polygon_key:
+            return []
         try:
-            # Polygon snapshot endpoint for top gainers/losers/actives
             url = "https://api.polygon.io/v2/snapshot/locale/us/markets/stocks/tickers"
             params = {"apiKey": polygon_key}
             resp = requests.get(url, params=params, timeout=10)
-            if resp.ok:
-                data = resp.json()
-                tickers_data = data.get("tickers", [])
-                if tickers_data:
-                    # Sort by volume
-                    sorted_tickers = sorted(
-                        tickers_data,
-                        key=lambda x: x.get("day", {}).get("v", 0),
-                        reverse=True
-                    )
-                    polygon_tickers = [t["ticker"] for t in sorted_tickers[:top_n * 2]]
-                    # Merge with hardcoded list
-                    combined = []
-                    for ticker in polygon_tickers + sp500_liquid:
-                        if ticker not in combined:
-                            combined.append(ticker)
-                    return combined[:top_n]
+            if not resp.ok:
+                return []
+            data = resp.json()
+            tickers_data = data.get("tickers", [])
+            if not tickers_data:
+                return []
+            sorted_tickers = sorted(
+                tickers_data,
+                key=lambda x: x.get("day", {}).get("v", 0),
+                reverse=True
+            )
+            return [str(t.get("ticker") or "").upper().strip() for t in sorted_tickers[: max(1, int(top_n)) * 2]]
         except Exception as e:
             logger.warning("[pair_discovery] Polygon stocks fetch failed: %s", e)
-    
-    # Fallback to hardcoded list
+            return []
+
+    all_enabled = _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
+    if all_enabled:
+        provider_results: list[list[str]] = []
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            futures = [
+                ex.submit(_polygon_provider),
+                ex.submit(lambda: list(sp500_liquid)),
+            ]
+            for fut in futures:
+                try:
+                    provider_results.append(list(fut.result() or []))
+                except Exception as e:
+                    logger.warning("[pair_discovery] stock provider failed: %s", e)
+                    provider_results.append([])
+        merged = _merge_provider_results(provider_results, limit=max(1, int(top_n)))
+        if merged:
+            return merged
+
+    polygon_only = _polygon_provider()
+    if polygon_only:
+        return _dedupe_limit(polygon_only + sp500_liquid, max(1, int(top_n)))
     return sp500_liquid[:top_n]
 
 
@@ -347,3 +419,7 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
 # Example usage:
 # pairs = get_all_trending_pairs()
 # print(pairs)
+
+# Start auto-refresh thread at import time (after concrete discovery functions exist).
+_t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
+_t.start()

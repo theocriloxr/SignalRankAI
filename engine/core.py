@@ -15,6 +15,7 @@ import time
 import asyncio
 import logging
 import threading
+import inspect
 from collections import Counter
 from typing import Any, Dict, List
 from datetime import datetime, timedelta as _timedelta
@@ -513,7 +514,52 @@ async def _maybe_await(func, *a, **k):
 # signal can reach at least one tier.  Signals scored 65-69 waste cooldown
 # slots and DB space while being unreachable by any tier; raising this to 70
 # prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+_runtime_min_score_threshold = float(DEFAULT_MIN_SCORE_THRESHOLD)
+_runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
+
+
+def _refresh_runtime_thresholds(force: bool = False) -> None:
+    """Refresh runtime thresholds from adaptive optimizer with env fallback."""
+    global _last_threshold_refresh, _runtime_min_score_threshold, _runtime_confluence_min
+    now_dt = datetime.utcnow()
+    if not force and _last_threshold_refresh is not None:
+        elapsed_h = (now_dt - _last_threshold_refresh).total_seconds() / 3600.0
+        if elapsed_h < float(_threshold_refresh_interval_hours):
+            return
+    try:
+        cfg = None
+        refresh_fn = globals().get("refresh_thresholds")
+        if callable(refresh_fn):
+            _run_sync_sig = inspect.signature(run_sync)
+            if "timeout" in _run_sync_sig.parameters:
+                cfg = run_sync(refresh_fn(force=force), timeout=20.0)
+            else:
+                cfg = run_sync(refresh_fn(force=force))
+
+        if cfg is not None:
+            _runtime_min_score_threshold = float(
+                getattr(cfg, "min_score_threshold", _runtime_min_score_threshold) or _runtime_min_score_threshold
+            )
+            _runtime_confluence_min = float(
+                getattr(cfg, "confluence_min", _runtime_confluence_min) or _runtime_confluence_min
+            )
+            os.environ["PREMIUM_SCORE_THRESHOLD"] = str(_runtime_min_score_threshold)
+            os.environ["CONFLUENCE_GATE_MIN"] = str(_runtime_confluence_min)
+            os.environ["ML_PROB_THRESHOLD"] = str(
+                float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55)
+            )
+        else:
+            _runtime_min_score_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
+            _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", _runtime_confluence_min)
+
+        _last_threshold_refresh = now_dt
+    except Exception as e:
+        logger.debug(f"[engine] runtime threshold refresh failed: {e}")
+
+
+def _current_min_score_threshold() -> float:
+    return _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
 
 
 def load_tradable_assets() -> List[str]:
@@ -613,6 +659,9 @@ def main_loop(DRY_RUN: bool = False):
             logger.info(f"[engine] heartbeat: cycle={cycle_no} running")
             print(f"[engine] heartbeat: cycle={cycle_no} running", flush=True)
             last_heartbeat = now
+
+        # Pull dynamic thresholds from adaptive ML/Gemini optimizer on schedule.
+        _refresh_runtime_thresholds(force=(cycle_no == 1))
 
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets
         # with DB-managed assets and discovered trending pairs so nothing pinned is missed.
@@ -1394,8 +1443,9 @@ def main_loop(DRY_RUN: bool = False):
                             pass
 
                         # Final gates: score + expectancy
-                        if sig.get('score', 0) < MIN_SCORE_THRESHOLD:
-                            sig['rejection_reason'] = f"score {sig.get('score',0)} < {MIN_SCORE_THRESHOLD}"
+                        min_score_threshold = _current_min_score_threshold()
+                        if sig.get('score', 0) < min_score_threshold:
+                            sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
                         # Expectancy gate (Phase 3 full impl)
@@ -1961,24 +2011,30 @@ def main_loop(DRY_RUN: bool = False):
                             logger.warning(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                             pass
 
-                        if not user_signals:
-                            skipped_no_eligible_signals += 1
-                            continue
+                    # ── Dispatch block (OUTSIDE the per-signal loop) ───────────────────
+                    # Collect ALL eligible signals first, then dispatch once per user.
+                    # Previously this block was inside the for-sig loop which caused:
+                    #   1. dispatch called once per eligible signal (not once per user)
+                    #   2. daily-limit counter never updated between dispatches
+                    #   3. `continue` skipped to next sig instead of next user
+                    if not user_signals:
+                        skipped_no_eligible_signals += 1
+                        continue
 
-                        # Filter out signals already sent to this user (prevent duplicates)
-                        user_signals = await filter_non_duplicate_signals(user_id, user_signals)
-                        if not user_signals:
-                            logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
-                            skipped_no_eligible_signals += 1
-                            continue
+                    # Filter out signals already sent to this user (prevent duplicates)
+                    user_signals = await filter_non_duplicate_signals(user_id, user_signals)
+                    if not user_signals:
+                        logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
+                        skipped_no_eligible_signals += 1
+                        continue
 
-                        if DRY_RUN:
-                            for msg in user_signals:
-                                print(f"[DRY RUN][{user_tier}] {msg}")
-                            dispatched_count += 1
-                        else:
-                            await dispatch_signals_async(user_signals, user_id=user_id)
-                            dispatched_count += 1
+                    if DRY_RUN:
+                        for msg in user_signals:
+                            print(f"[DRY RUN][{user_tier}] {msg}")
+                        dispatched_count += 1
+                    else:
+                        await dispatch_signals_async(user_signals, user_id=user_id)
+                        dispatched_count += 1
                 except Exception:
                     logger.exception("deliver_all per-user failed")
             logger.info(

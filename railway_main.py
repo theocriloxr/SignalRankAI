@@ -1424,7 +1424,7 @@ async def lifespan(_: FastAPI):
     # Emit a single consolidated log line showing which subsystems are active so
     # operators can immediately verify the single-service deployment is healthy.
     _worker_outcome_enabled = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
-    _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
     _bot_state = "DISABLED" if not _db_ready else ("ENABLED" if bot_started else "INITIALIZING")
     _subsystem_summary = (
         "[startup] subsystem summary | "
