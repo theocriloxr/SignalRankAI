@@ -1092,11 +1092,12 @@ async def queue_free_signal_summary(
     daily_limit: Optional[int] = None,
 ) -> bool:
     if delay_minutes is None:
-        delay_minutes = _env_int("FREE_DELAY_MINUTES", 30)
+        # Default to immediate dispatch for FREE tier while still enforcing daily cap.
+        delay_minutes = _env_int("FREE_DELAY_MINUTES", 0)
     if daily_limit is None:
         daily_limit = _env_int("FREE_DAILY_LIMIT", 3)
 
-    # Product rule: Free tier gets at most 3 delayed signals per day.
+    # Product rule: Free tier gets at most 3 random signals per day.
     try:
         daily_limit = min(int(daily_limit), 3)
     except Exception:
@@ -1836,9 +1837,9 @@ async def queue_random_free_signals_for_all_users(
             session, user.telegram_user_id, limit=needed
         )
         
-        # Queue them
-        min_delay_minutes: int = max(5, _env_int("FREE_MIN_DELAY_MINUTES", 20))
-        max_delay_minutes: int = max(min_delay_minutes, _env_int("FREE_MAX_DELAY_MINUTES", 480))
+        # Queue them (default: immediate, env can still add delay if needed)
+        min_delay_minutes: int = max(0, _env_int("FREE_MIN_DELAY_MINUTES", 0))
+        max_delay_minutes: int = max(min_delay_minutes, _env_int("FREE_MAX_DELAY_MINUTES", 0))
         max_window_delay = max(
             min_delay_minutes,
             int(max(0, (window_end - now).total_seconds()) // 60) - 5,

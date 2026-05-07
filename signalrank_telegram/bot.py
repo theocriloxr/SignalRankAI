@@ -2593,7 +2593,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     - ADMIN: VIP-equivalent stream (30/day, same selection as VIP)
     - VIP: 30 signals/day (score >= 72 only, real-time)
     - PREMIUM: 10 signals/day (score 55-80, real-time)
-    - FREE: 3 random signals/day (delayed queue, bot picks any from global pool)
+    - FREE: 3 random signals/day (no default delay, bot picks any from global pool)
     - EXTRA: 1 signal per purchase (highest scoring available, real-time)
     
     FREE tier: Bot queues ALL generated signals to global pool, then randomly 
