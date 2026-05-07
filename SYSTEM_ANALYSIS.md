@@ -1,266 +1,256 @@
-# SignalRankAI - Comprehensive System Analysis
+# SignalRankAI - Codebase Analysis Document
 
 ## Executive Summary
 
-Based on analysis of the codebase and the provided logs, SignalRankAI is a sophisticated Telegram-based trading signal generation and delivery system deployed on Railway. The system generates signals for:
-
-- **Crypto** (BTC, ETH, SOL, etc.)
-- **FX** (USD/JPY, EUR/USD, etc.)
-- **Stocks** (AAPL, TSLA, etc.)
-- **Commodities** (BRENT, GOLD, SILVER, WTI, etc.)
-
-Signals are delivered to users via Telegram bot with tiered access (FREE/PREMIUM/VIP/OWNER).
-
-**Current Issue**: The logs show `final_signals=0 stored=0` - no signals are being generated despite strategy signals being created (120 signals at consensus stage).
-
----
+This document provides a comprehensive analysis of the SignalRankAI codebase based on the provided logs and source code examination. The system is a trading signal generation platform that uses multiple data providers, technical indicators, and ML models to generate and deliver trading signals to users via Telegram.
 
 ## System Architecture
 
-### 1. Monolith Deployment (Railway)
-The entire system runs as a monolith via `railway_main.py`:
-- **FastAPI** web server (port 8080)
-- **APScheduler** for background jobs
-- **Telegram Bot** in webhook mode
-- **Engine Loop** - signal generation
-- **Worker Loop** - outcome tracking
+### Entry Points
+1. **main.py** - Universal entry point with RUN_MODE detection (web/worker/engine/bot/all)
+2. **railway_main.py** - Railway monolithic entry point (FastAPI + APScheduler + Telegram bot)
+3. **web/app.py** - FastAPI application endpoints
+4. **worker/worker.py** - Background worker for outcome tracking
+5. **engine/core.py** - Signal generation engine
 
-### 2. Run Modes
-| Mode | Description |
-|------|------------|
-| `all` | Full monolith (web+engine+worker+bot) |
-| `web` | FastAPI only |
-| `worker` | Outcome tracking loop |
-| `bot` | Telegram polling |
-| `engine` | Signal generation loop (default) |
+### Core Components
 
----
+#### 1. Data Layer (data/)
+- **fetcher.py** - Multi-provider market data fetching with fallback
+- **providers.py** - Individual data provider implementations
+- **pair_discovery.py** - Asset discovery (trending pairs, stocks)
+- **indicators.py** - Technical indicator calculations
+- **market_hours.py** - Market open/closed checks
+- **ws_ingest.py** - WebSocket real-time data ingestion
 
-## Signal Pipeline (Engine Core)
+#### 2. Engine Layer (engine/)
+- **core.py** - Main signal generation loop
+- **scoring.py** - Signal scoring algorithms
+- **consensus.py** - Multi-strategy consensus filtering
+- **risk_manager.py** - Risk management
+- **filters.py** - Signal quality filters
+- **threshold_optimizer.py** - Adaptive ML threshold optimization
 
-The signal generation pipeline in `engine/core.py` runs through multiple stages:
+#### 3. Delivery Layer (signalrank_telegram/)
+- Bot handlers for Telegram commands
+- Signal delivery with tier-based limits
+- Outcome notifications
 
+#### 4. Data Models (db/models.py)
+- User, Subscription, Signal, Outcome models
+- Trading and referral tracking tables
+
+## Identified Issues from Logs
+
+### Issue 1: Zero Signals Generated
+**Evidence from logs:**
 ```
-1. fetch_market_data → 2. run_strategies → 3. normalize/dedupe
-4. consensus_filter → 5. pick_best_direction → 6. compute_fingerprint
-7. validate_structure → 8. risk_check → 9. confluence_check
-10. ML_filter → 11. score → 12. advanced_filters
-13. ultra_quality → 14. calculate_stops → 15. score_gate
-16. expectancy_gate → 17. store → 18. deliver
-```
-
-### Key Gates That Block Signals
-
-Based on code analysis, here are all gates that can reject signals:
-
-| Gate | Location | Threshold | Rejection Message |
-|------|----------|-----------|------------------|
-| Duplicate fingerprint | core.py | N/A | `duplicate_fingerprint` |
-| Validation structure | signal_validator.py | N/A | `validation:{reason}` |
-| Risk check | risk.py | N/A | `risk/volatility` |
-| Confluence | core.py | CONFLUENCE_GATE_MIN (default 0) | `confluence {value}%` |
-| News conflict | core.py | STRONG_SENTIMENT_THRESHOLD=2 | `news_conflict` |
-| ML filter soft | ml/inference.py | ML_PROB_THRESHOLD (default 0.55) | `filtered_by_ml` |
-| ML filter hard | core.py | ML_HARD_FILTER_MIN=0.55 | `filtered_by_ml_hard_threshold` |
-| Score threshold | core.py | PREMIUM_SCORE_THRESHOLD (default 70) | `score {value} < {threshold}` |
-| **Expectancy gate** | **core.py** | **EXPECTANCY_MIN=0.15** | **`low expectancy {value}`** |
-| Invalid TP structure | core.py | N/A | `invalid_tp_structure` |
-| Confluence direction | core.py | N/A | Signal direction != confluence direction |
-
----
-
-## The Expectancy Gate Issue
-
-From logs and code analysis, the **EXPECTANCY_MIN=0.15** gate is likely blocking all signals. Here's why:
-
-### Current Logic (engine/core.py ~line 2160):
-```python
-# Expectancy gate (Phase 3 full impl)
-live_exp = float(sig.get('live_expectancy', 0.15))
-if live_exp < 0.15:
-    sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
-    _log_decision("skipped", sig, reason=sig['rejection_reason'])
-    continue
+[engine] cycle=1 assets=20 generated_signals=0 max_score=62.68 ... final_signals=0 stored=0
 ```
 
-### Problem
-1. **Default value is 0.15** - signals default to exactly the threshold
-2. **No live expectancy data exists yet** for new assets
-3. **get_live_expectancy()** queries outcomes from DB but likely returns 0.15 (fail-safe default) for most assets
+**Root Cause Analysis:**
 
-### How Expectancy Works (engine/expectancy_gate.py):
-```python
-async def get_live_expectancy(asset, strategy, lookback_hours=168):
-    # Query outcomes from last 7 days
-    # Calculate: (Win% × AvgWinR) - (Loss% × AvgLossR)
-    # If no data: return EXPECTANCY_MIN (0.15)
+The engine has multiple strict gating layers that filter out all signals:
+
+1. **Score Threshold Gate** (PREMIUM_SCORE_THRESHOLD):
+   - Default: 70.0
+   - Requires signals to score >= 70
+   - Log shows max_score_pre_threshold=62.68, meaning NO signals pass this gate
+
+2. **Confluence Gate** (CONFLUENCE_GATE_MIN):
+   - Default: 0.0 (disabled)
+   - Only enforced if configured
+
+3. **Live Expectancy Gate** (Phase 3 implementation):
+   - Code shows: `live_exp = float(sig.get('live_expectancy', 0.0))`
+   - Requires live_exp >= 0.15
+   - ISSUE: live_expectancy field is NOT being populated before scoring
+
+4. **Consensus Filter** (PROD_MODE=True):
+   - If consensus empty, asset is skipped entirely
+   - Strict policy blocks entire asset if no consensus
+
+**Fix Required:**
+- Lower PREMIUM_SCORE_THRESHOLD from 70 to 55 to match the max observed score
+- Ensure live_expectancy is calculated/filled before scoring check
+
+### Issue 2: Provider Rate Limits
+**Evidence:**
+```
+[data.providers] [twelvedata] fetch_failed symbol=BRENT msg=You have run out of API credits...
+[data.providers] [polygon] fetch_failed symbol=BRENT status=429
 ```
 
----
+**Root Cause:**
+- TwelveData API credits exhausted
+- Polygon API rate limited (429)
 
-## Log Analysis
+**Impact:**
+- Some symbols fail to fetch (BRENT and others)
+- May cause cascade failures in signal generation
 
-### Key Log Entries:
+### Issue 3: Binance Geographic Restriction
+**Evidence:**
 ```
-2026-05-07T13:21:55.737580171Z [inf]  [engine] cycle=1 assets=20 generated_signals=0 max_score=62.68 
-max_score_pre_threshold=62.68 strategy_signals=120 normalized=120 consensus=64 selected=29 
-unique=29 strict_candidates=26 risk_passed=26 final_signals=0 stored=0
-```
-
-### Pipeline Breakdown:
-| Stage | Count | Notes |
-|-------|-------|-------|
-| strategy_signals | 120 | Strategies generating signals ✓ |
-| normalized | 120 | Deduplication passed ✓ |
-| consensus | 64 | Down from 120 - some filtered ✓ |
-| selected | 29 | Direction selection passed ✓ |
-| unique | 29 | Fingerprint dedupe passed ✓ |
-| strict_candidates | 26 | Validation gates passed ✓ |
-| risk_passed | 26 | Risk checks passed ✓ |
-| **final_signals** | **0** | **ALL REJECTED HERE** ✗ |
-| stored | 0 | Nothing stored ✗ |
-
-### Score Analysis:
-- `max_score=62.68` - Below 70 threshold for PREMIUM
-- `max_score_pre_threshold=62.68` - Same as after threshold (no adjustment)
-
----
-
-## Files to Modify (Fixes)
-
-### Fix 1: Lower EXPECTANCY_MIN Threshold
-**File**: `core/tier_constants.py`
-```python
-# Change from:
-EXPECTANCY_MIN: Final[float] = 0.15
-
-# To (temporary for testing):
-EXPECTANCY_MIN: Final[float] = 0.10
-# Or disable entirely with env var
+[pair_discovery] Binance pairs disabled: Service unavailable from a restricted location...
 ```
 
-### Fix 2: Add Debug Logging for Gate Rejections
-**File**: `engine/core.py` - Add detailed logging around line 2160:
-```python
-# Before expectancy check, add:
-logger.warning(
-    f"[engine] expectancy_check: asset={sig.get('asset')} "
-    f"live_exp={live_exp:.3f} threshold={EXPECTANCY_MIN} "
-    f"pass={'YES' if live_exp >= EXPECTANCY_MIN else 'BLOCKED'}"
-)
+**Root Cause:**
+- Binance service unavailable from Railway's deployment region
+- Geographic restriction based on Terms of Service
+
+### Issue 4: Database Connection Warning
+**Evidence:**
+```
+SAWarning: The garbage collector is trying to clean up non-checked-in connection...
 ```
 
-### Fix 3: Fix Default Expectancy Value
-**File**: `engine/core.py` - Change default from 0.15 to 0.0:
-```python
-# Change from:
-live_exp = float(sig.get('live_expectancy', 0.15))
+**Root Cause:**
+- SQLAlchemy connection not properly returned to pool
+- Need to ensure connection context managers are used correctly
 
-# To:
-live_exp = float(sig.get('live_expectancy', 0.0))
-# This allows signals without history to pass
+### Issue 5: Stale Data Detection
+**Evidence:**
+```
+[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s
 ```
 
-### Fix 4: Score Threshold
-**File**: Add env override
+**Root Cause:**
+- Data older than 2x timeframe interval
+- Provider delays causing stale data
+
+## Signal Pipeline Flow
+
 ```
-PREMIUM_SCORE_THRESHOLD=60
+1. Load Assets
+   ├── Managed assets (DB)
+   ├── Saved assets (TRADABLE_ASSETS env)
+   └── Discovered assets (trending APIs)
+
+2. Filter by Market Status
+   ├── Check market_closed_reason()
+   └── Skip closed markets
+
+3. Fetch Market Data
+   ├── Multi-provider fetch with fallback
+   └── Calculate indicators
+
+4. Run Strategies
+   ├── run_all_strategies(asset, market_data, regime)
+   └── Returns list of strategy signals
+
+5. Normalize & Dedupe
+   ├── SignalController.normalize_signals()
+   └── Remove duplicates
+
+6. Consensus Filter
+   ├── apply_consensus_filter()
+   └── BLOCKS if empty (PROD policy)
+
+7. Select Best Direction
+   ├── pick_best_direction_per_pair()
+   └── One signal per asset/TF
+
+8. Compute Fingerprints
+   ├── compute_signal_fingerprint()
+   └── Dedupe by fingerprint
+
+9. Strict Validation
+   ├── validate_signal()
+   ├── risk_check()
+   ├── confluence gate
+   └── news sentiment gate
+
+10. ML Advisory
+    ├── MLFilter.ml_filter()
+    └── Hard threshold filter
+
+11. Scoring
+    ├── calculate_signal_score()
+    ├── Advanced filters
+    └── Ultra quality filter
+
+12. Final Gates
+    ├── Score >= PREMIUM_SCORE_THRESHOLD
+    ├── Expectancy >= 0.15
+    └── Valid TP structure
+
+13. Store & Deliver
+    ├── store_signal_compat()
+    └── dispatch_signals_async()
 ```
 
----
+## Configuration Requirements
 
-## Tier System
+### Critical Environment Variables
 
-### User Tiers (from db/models.py):
-| Tier | Score Required | Daily Limit |
-|------|---------------|-------------|
-| FREE | 80+ | 3 |
-| PREMIUM | 70+ | 10 |
-| VIP | 75+ | 20 |
-| OWNER | 0 | Unlimited |
-| ADMIN | 0 | Unlimited |
-
-### Score Thresholds (core/tier_constants.py):
-- FREE: 80
-- PREMIUM: 70
-- VIP: 75
-- OWNER/ADMIN: 0
-
----
-
-## Data Providers
-
-### Working Providers (from logs):
-- **CryptoCompare** - Working for crypto
-- **Yahoo Finance** - Some FX working
-- **Twelvedata** - Rate limited (429 errors)
-- **Polygon** - Rate limited (429 errors)
-- **Binance** - Disabled ("restricted location")
-
-### Provider Fallback Chain:
-1. Binance → 2. Bybit → 3. CryptoCompare → 4. Yahoo Finance → 5. Twelvedata
-
----
-
-## Database Schema (Key Tables)
-
-### signals (db/models.py):
-- Signal model with asset, timeframe, direction, entry, stop_loss, take_profit
-- score, strength, strategy_name, regime, ml_probability
-- fingerprint (for deduplication)
-- expires_at, expired, archived flags
-
-### outcomes (db/models.py):
-- Tracks signal results: tp, tp1, tp2, tp3, sl, expired, timeout
-- r_multiple, percent, duration_seconds
-- Used for expectancy calculations
-
-### users (db/models.py):
-- telegram_user_id, username, tier
-- subscription management
-- referral tracking
-
----
-
-## Immediate Actions to Fix
-
-1. **Lower EXPECTANCY_MIN to 0.10** or disable via env
-2. **Set PREMIUM_SCORE_THRESHOLD=60** in env
-3. **Enable ENGINE_CYCLE_LOG=true** for detailed debugging
-4. **Deploy and check new logs for rejection reasons**
-
----
-
-## Configuration Variables (Key)
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| ENGINE_CYCLE_SLEEP_SECONDS | 30 | Engine loop sleep |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| PREMIUM_SCORE_THRESHOLD | 70 | Min score to store signals |
+| CONFLUENCE_GATE_MIN | 0.0 | Min confluence (0=disabled) |
+| ML_PROB_THRESHOLD | 0.55 | ML probability threshold |
 | ENGINE_UNIVERSE_CAP | 20 | Max assets per cycle |
-| PREMIUM_SCORE_THRESHOLD | 70 | Min score to deliver |
-| ML_PROB_THRESHOLD | 0.55 | ML confidence threshold |
-| EXPECTANCY_MIN | 0.15 | Live expectancy minimum |
-| DRY_RUN | false | Test without sending |
-| ENGINE_CYCLE_LOG | true | Log each cycle |
+| CYCLE_BATCH_SIZE | 20 | Assets per batch |
+| ENGINE_CYCLE_SLEEP_SECONDS | 30 | Cycle sleep time |
+| DRY_RUN | false | Dry run mode |
+
+### Data Providers
+
+| Provider | Status | Notes |
+|----------|--------|-------|
+| CryptoCompare | Working | Primary crypto data |
+| Yahoo Finance | Working | FX and some crypto |
+| TwelveData | Limited | API credits exhausted |
+| Polygon | Limited | Rate limited (429) |
+| Binance | Disabled | Geographic restriction |
+
+## Tier-Based Delivery Limits
+
+From core/tier_constants.py:
+- FREE: 3 signals/day
+- STARTER: 10 signals/day  
+- PREMIUM: 50 signals/day
+- VIP: Unlimited
+
+## Files to Modify for Fixes
+
+### Fix 1: Lower Score Threshold
+**Files:** engine/core.py
+**Location:** DEFAULT_MIN_SCORE_THRESHOLD = 70 → 55
+
+### Fix 2: Populate Live Expectancy
+**Files:** engine/scoring.py, engine/core.py
+**Action:** Calculate and set live_expectancy before scoring
+
+### Fix 3: Provider Fallback Improvement
+**Files:** data/fetcher.py, data/providers.py  
+**Action:** Add more fallbacks, implement circuit breaker
+
+### Fix 4: DB Connection Handling
+**Files:** db/session.py, engine/core.py  
+**Action:** Ensure proper connection pool management
+
+### Fix 5: Enable More Assets
+**Files:** data/pair_discovery.py
+**Action:** Add more FX/stock providers
+
+## Testing Checklist
+
+- [ ] Run engine with DRY_RUN=true
+- [ ] Verify signals are generated
+- [ ] Check provider fallback behavior
+- [ ] Test Telegram bot commands
+- [ ] Verify outcome notifications work
+- [ ] Test tier-based delivery limits
+
+## Next Steps
+
+1. Lower PREMIUM_SCORE_THRESHOLD to 55 to allow current signals through
+2. Add live_expectancy calculation before gating
+3. Add more provider fallbacks
+4. Implement circuit breaker for failed providers
+5. Run in DRY_RUN mode to verify before production
 
 ---
-
-## Contact & Owner System
-
-- **OWNER_IDS**: Telegram IDs that receive ALL signals
-- **ADMIN_IDS**: Admin users with elevated access
-- Tiers resolved from User.tier field in database
-
----
-
-## Summary
-
-The system is well-architected but has strict gates designed for production that are blocking signals in the current state. The main culprits are:
-1. **EXPECTANCY_MIN=0.15** - blocks signals without outcome history
-2. **PREMIUM_SCORE_THRESHOLD=70** - max_score was only 62.68
-
-Recommendations:
-1. Temporarily lower EXPECTANCY_MIN to 0.0 or 0.05
-2. Lower PREMIUM_SCORE_THRESHOLD to 60
-3. Add detailed rejection logging
-4. Monitor logs after changes
+*Document generated from code analysis*
+*Analysis date: 2026-05-07*
