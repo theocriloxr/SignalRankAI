@@ -514,7 +514,8 @@ async def _maybe_await(func, *a, **k):
 # signal can reach at least one tier.  Signals scored 65-69 waste cooldown
 # slots and DB space while being unreachable by any tier; raising this to 70
 # prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
-DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+# LOWERED from 70 to 60 to allow more signals through - can be overridden via env var
+DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 60)
 _runtime_min_score_threshold = float(DEFAULT_MIN_SCORE_THRESHOLD)
 _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
 
