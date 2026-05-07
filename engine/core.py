@@ -513,7 +513,51 @@ async def _maybe_await(func, *a, **k):
 # signal can reach at least one tier.  Signals scored 65-69 waste cooldown
 # slots and DB space while being unreachable by any tier; raising this to 70
 # prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
-MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 70)
+_runtime_min_score_threshold = float(DEFAULT_MIN_SCORE_THRESHOLD)
+_runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
+
+
+def _refresh_runtime_thresholds(force: bool = False) -> None:
+    """Refresh runtime thresholds from adaptive optimizer with env fallback."""
+    global _last_threshold_refresh, _runtime_min_score_threshold, _runtime_confluence_min
+    now_dt = datetime.utcnow()
+    if not force and _last_threshold_refresh is not None:
+        elapsed_h = (now_dt - _last_threshold_refresh).total_seconds() / 3600.0
+        if elapsed_h < float(_threshold_refresh_interval_hours):
+            return
+    try:
+        cfg = None
+        refresh_fn = globals().get("refresh_thresholds")
+        if callable(refresh_fn):
+            try:
+                cfg = run_sync(refresh_fn(force=force), timeout=20.0)
+            except TypeError:
+                cfg = run_sync(refresh_fn(force=force))
+
+        if cfg is not None:
+            _runtime_min_score_threshold = float(
+                getattr(cfg, "min_score_threshold", _runtime_min_score_threshold) or _runtime_min_score_threshold
+            )
+            _runtime_confluence_min = float(
+                getattr(cfg, "confluence_min", _runtime_confluence_min) or _runtime_confluence_min
+            )
+            os.environ["PREMIUM_SCORE_THRESHOLD"] = str(_runtime_min_score_threshold)
+            os.environ["CONFLUENCE_GATE_MIN"] = str(_runtime_confluence_min)
+            os.environ["ML_PROB_THRESHOLD"] = str(
+                float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55)
+            )
+        else:
+            _runtime_min_score_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
+            _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", _runtime_confluence_min)
+
+        _last_threshold_refresh = now_dt
+    except Exception as e:
+        logger.debug(f"[engine] runtime threshold refresh failed: {e}")
+
+
+def _current_min_score_threshold() -> float:
+    return _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
 
 
 def load_tradable_assets() -> List[str]:
@@ -613,6 +657,9 @@ def main_loop(DRY_RUN: bool = False):
             logger.info(f"[engine] heartbeat: cycle={cycle_no} running")
             print(f"[engine] heartbeat: cycle={cycle_no} running", flush=True)
             last_heartbeat = now
+
+        # Pull dynamic thresholds from adaptive ML/Gemini optimizer on schedule.
+        _refresh_runtime_thresholds(force=(cycle_no == 1))
 
         # Acquire assets list — ALWAYS merge manually-configured (saved) assets
         # with DB-managed assets and discovered trending pairs so nothing pinned is missed.
@@ -1394,8 +1441,9 @@ def main_loop(DRY_RUN: bool = False):
                             pass
 
                         # Final gates: score + expectancy
-                        if sig.get('score', 0) < MIN_SCORE_THRESHOLD:
-                            sig['rejection_reason'] = f"score {sig.get('score',0)} < {MIN_SCORE_THRESHOLD}"
+                        min_score_threshold = _current_min_score_threshold()
+                        if sig.get('score', 0) < min_score_threshold:
+                            sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
                         # Expectancy gate (Phase 3 full impl)
