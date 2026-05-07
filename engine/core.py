@@ -1449,9 +1449,10 @@ def main_loop(DRY_RUN: bool = False):
                             sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
-                        # Expectancy gate (Phase 3 full impl)
-                        live_exp = float(sig.get('live_expectancy', 0.15))
-                        if live_exp < 0.15:
+# Expectancy gate (Phase 3 full impl)
+                        # Use 0.0 as default to allow new assets without history to pass
+                        live_exp = float(sig.get('live_expectancy', 0.0))
+                        if live_exp < 0.0:
                             sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue

@@ -2,7 +2,14 @@
 
 ## Executive Summary
 
-Based on analysis of the codebase and the provided logs, SignalRankAI is a sophisticated Telegram-based trading signal generation and delivery system deployed on Railway. The system generates signals for crypto, FX, stocks, and commodities, then delivers them to users via Telegram bot with tiered access (FREE/PREMIUM/VIP/OWNER).
+Based on analysis of the codebase and the provided logs, SignalRankAI is a sophisticated Telegram-based trading signal generation and delivery system deployed on Railway. The system generates signals for:
+
+- **Crypto** (BTC, ETH, SOL, etc.)
+- **FX** (USD/JPY, EUR/USD, etc.)
+- **Stocks** (AAPL, TSLA, etc.)
+- **Commodities** (BRENT, GOLD, SILVER, WTI, etc.)
+
+Signals are delivered to users via Telegram bot with tiered access (FREE/PREMIUM/VIP/OWNER).
 
 **Current Issue**: The logs show `final_signals=0 stored=0` - no signals are being generated despite strategy signals being created (120 signals at consensus stage).
 
@@ -79,7 +86,7 @@ if live_exp < 0.15:
 ### Problem
 1. **Default value is 0.15** - signals default to exactly the threshold
 2. **No live expectancy data exists yet** for new assets
-3. **get_live_expectancy()** queries outcomes from DB but likely returns 0 for most assets
+3. **get_live_expectancy()** queries outcomes from DB but likely returns 0.15 (fail-safe default) for most assets
 
 ### How Expectancy Works (engine/expectancy_gate.py):
 ```python
