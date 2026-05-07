@@ -23,36 +23,6 @@ from functools import partial
 
 logger = logging.getLogger(__name__)
 
-
-def get_trending_crypto_pairs(top_n=20):
-    # ...existing code...
-    pass
-
-def get_trending_fx_pairs():
-    # ...existing code...
-    pass
-
-def get_trending_stock_tickers(top_n=20):
-    # ...existing code...
-    pass
-
-def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
-    """
-    Get all tradable assets (crypto + FX + stocks).
-    Returns:
-        dict with keys: crypto, fx, stocks
-    """
-    crypto = get_trending_crypto_pairs(crypto_limit)
-    fx = get_trending_fx_pairs()
-    stocks = get_trending_stock_tickers(stock_limit)
-    commodities = get_trending_commodity_tickers(10)
-    return {
-        "crypto": crypto,
-        "fx": fx,
-        "stocks": stocks,
-        "commodities": commodities,
-    }
-
 # Global cache for auto-refreshed asset universe
 _ASSET_UNIVERSE_CACHE = None
 _ASSET_UNIVERSE_LAST_REFRESH = 0
@@ -79,7 +49,6 @@ def _asset_universe_auto_refresh_thread():
             logger.warning("[pair_discovery] Asset universe auto-refresh failed: %s", e)
         time.sleep(_ASSET_UNIVERSE_REFRESH_INTERVAL)
 
-import os
 import requests
 from utils import proxy_manager
 
