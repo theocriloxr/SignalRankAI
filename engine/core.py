@@ -15,6 +15,7 @@ import time
 import asyncio
 import logging
 import threading
+import inspect
 from collections import Counter
 from typing import Any, Dict, List
 from datetime import datetime, timedelta as _timedelta
@@ -530,9 +531,10 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
         cfg = None
         refresh_fn = globals().get("refresh_thresholds")
         if callable(refresh_fn):
-            try:
+            _run_sync_sig = inspect.signature(run_sync)
+            if "timeout" in _run_sync_sig.parameters:
                 cfg = run_sync(refresh_fn(force=force), timeout=20.0)
-            except TypeError:
+            else:
                 cfg = run_sync(refresh_fn(force=force))
 
         if cfg is not None:

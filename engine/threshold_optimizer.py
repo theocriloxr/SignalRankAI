@@ -198,18 +198,18 @@ class AdaptiveThresholdOptimizer:
                     text("SELECT value FROM runtime_state WHERE key = 'gemini_ml_last_run'")
                 )
                 gemini_value = gemini_row.first()
-                gemini_data = gemini_value[0] if gemini_value and gemini_value[0] else {}
+                raw_gemini_data = gemini_value[0] if gemini_value else None
+                gemini_data = raw_gemini_data if isinstance(raw_gemini_data, dict) else {}
                 gemini_signal = "neutral"
-                if isinstance(gemini_data, dict):
-                    received = dict(gemini_data.get("received", {}) or {})
-                    gemini_ok = bool(gemini_data.get("ok"))
-                    rejected_or_skipped = int(received.get("rejected_or_skipped") or 0)
-                    issued = int(received.get("issued") or 0)
-                    if gemini_ok:
-                        if rejected_or_skipped > max(issued, 1):
-                            gemini_signal = "tighten"
-                        elif issued > 0 and rejected_or_skipped <= max(1, issued // 3):
-                            gemini_signal = "loosen"
+                received = dict(gemini_data.get("received", {}) or {})
+                gemini_ok = bool(gemini_data.get("ok"))
+                rejected_or_skipped = int(received.get("rejected_or_skipped") or 0)
+                issued = int(received.get("issued") or 0)
+                if gemini_ok:
+                    if rejected_or_skipped > max(issued, 1):
+                        gemini_signal = "tighten"
+                    elif issued > 0 and rejected_or_skipped <= max(1, issued // 3):
+                        gemini_signal = "loosen"
 
                 return {
                     "total_outcomes": total,

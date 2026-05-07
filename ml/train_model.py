@@ -439,7 +439,6 @@ async def load_training_data():
                         )
                     )
                 ).scalars().all()
-                await session.commit()
 
             for rj in rejected_rows:
                 outcome = str(getattr(rj, "actual_outcome", "") or "").lower().strip()
@@ -472,13 +471,15 @@ async def load_training_data():
                 if false_breakout:
                     sample_weight *= 0.75
 
-                rr_raw = _safe_float(feat.get("rr_ratio", feat.get("rr_estimate", 0)))
+                rr_raw = _safe_float(feat.get("rr_ratio"))
+                if rr_raw <= 0:
+                    rr_raw = _safe_float(feat.get("rr_estimate", 0))
                 rr_eff = min(4.0, max(0.5, rr_raw)) if rr_raw > 0 else 1.0
                 sample_weight *= (0.75 + (rr_eff / 4.0))
 
                 data.append(
                     {
-                        "signal_id": f"rejected_{int(getattr(rj, 'id', 0) or 0)}",
+                        "signal_id": f"rejected_{int(getattr(rj, 'id', 0))}",
                         "asset": getattr(rj, "asset", "UNKNOWN") or "UNKNOWN",
                         "timeframe": getattr(rj, "timeframe", "1h") or "1h",
                         "direction": getattr(rj, "direction", "long") or "long",
