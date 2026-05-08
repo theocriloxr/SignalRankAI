@@ -2685,25 +2685,29 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         return
 
     # --- FRESHNESS FILTERING ---
-    # Filter out stale signals before delivery
+    # Keep this path non-blocking (avoid sync HTTP calls in async dispatch loop).
     try:
-        from engine.price_validator import is_signal_stale, enrich_signal_with_live_price
-        
+        from engine.stale_signal_validator import validate_signal_freshness
+
         fresh_signals = []
         for sig in signals_list:
-            # Enrich with current price and age info
             try:
-                sig = enrich_signal_with_live_price(sig)
-            except Exception as e:
-                logger.debug(f"[dispatch] Failed to enrich signal {sig.get('signal_id')}: {e}")
-            
-            # Check if stale
-            if is_signal_stale(sig):
+                _cached_price = sig.get("current_price")
+                _cached_price = float(_cached_price) if _cached_price is not None else None
+            except Exception:
+                _cached_price = None
+
+            is_fresh, reason, live_price = await validate_signal_freshness(
+                sig,
+                cached_live_price=_cached_price,
+            )
+            if not is_fresh:
                 sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
                 asset = sig.get('asset', 'unknown')
-                age_seconds = sig.get('signal_age_seconds', 'unknown')
-                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: age={age_seconds}s asset={asset}")
+                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: asset={asset} reason={reason}")
             else:
+                if live_price is not None:
+                    sig["current_price"] = float(live_price)
                 fresh_signals.append(sig)
         
         signals_list = fresh_signals
