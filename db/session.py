@@ -76,8 +76,8 @@ def create_engine() -> Optional[AsyncEngine]:
         return None
     return create_async_engine(
         url,
-        pool_size=_pool_int("DB_POOL_SIZE", 15, minimum=1),
-        max_overflow=_pool_int("DB_MAX_OVERFLOW", 5, minimum=0),
+        pool_size=_pool_int("DB_POOL_SIZE", 5, minimum=1),
+        max_overflow=_pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
         pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
         pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
         pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
@@ -125,8 +125,8 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
 
         engine = create_async_engine(
             url,
-            pool_size=_pool_int("DB_POOL_SIZE", 15, minimum=1),
-            max_overflow=_pool_int("DB_MAX_OVERFLOW", 5, minimum=0),
+            pool_size=_pool_int("DB_POOL_SIZE", 5, minimum=1),
+            max_overflow=_pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
             pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
             pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
             pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
@@ -145,8 +145,8 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
             "[db] async engine initialised loop=%s url=%s pool_size=%s max_overflow=%s",
             loop_id,
             _masked,
-            _pool_int("DB_POOL_SIZE", 15, minimum=1),
-            _pool_int("DB_MAX_OVERFLOW", 5, minimum=0),
+            _pool_int("DB_POOL_SIZE", 5, minimum=1),
+            _pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
         )
         return engine
 
