@@ -41,7 +41,22 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
             e2 = dbs.get_engine_for_event_loop()
             self.assertIs(e1, e2)
 
+    def test_db_pool_defaults_are_hardened(self):
+        import db.session as dbs
+
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
+        with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
+             patch.dict(os.environ, {}, clear=False), \
+             patch("db.session.create_async_engine") as mocked_create_engine:
+            os.environ.pop("DB_POOL_SIZE", None)
+            os.environ.pop("DB_MAX_OVERFLOW", None)
+            dbs.get_engine_for_event_loop()
+
+        kwargs = mocked_create_engine.call_args.kwargs
+        self.assertEqual(kwargs.get("pool_size"), 5)
+        self.assertEqual(kwargs.get("max_overflow"), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
-
