@@ -97,9 +97,14 @@ def run_sync(coro, timeout: float | None = None) -> Any:
         helper.start()
         if not done.wait(timeout=wait_timeout):
             raise TimeoutError("run_sync timed out while executing in helper loop")
-        if not error_queue.empty():
+        try:
             raise error_queue.get_nowait()
-        return result_queue.get_nowait() if not result_queue.empty() else None
+        except queue.Empty:
+            pass
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:
+            return None
 
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
