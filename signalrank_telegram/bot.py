@@ -3062,9 +3062,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 }
                                 try:
                                     # Determine display tier: VIP for owner/admin, PREMIUM otherwise
-                                    from signalrank_telegram.access import resolve_user_tier
-                                    user_tier = resolve_user_tier(user_id).lower()
-                                    signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'premium'
+                                    signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'premium'
                                     if await _deliver_or_update_signal_async(
                                         bot,
                                         telegram_user_id=int(user_id),
@@ -3122,19 +3120,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     
                     # Check how many signals user already received today from DB
                     from core.tier_constants import TIER_DAILY_LIMITS
-                    from signalrank_telegram.access import resolve_user_tier
                     from db.pg_features import count_signals_sent_today
                     
                     signals_sent_today = int(
                         await count_signals_sent_today(session, int(user_id))
                     )
                     
-                    # Get user's actual tier for accurate logging
-                    user_tier_actual = 'free'
-                    try:
-                        user_tier_actual = resolve_user_tier(user_id).lower()
-                    except Exception:
-                        user_tier_actual = 'free'
+                    # Use resolved tier from function entry to avoid sync lookup in async path.
+                    user_tier_actual = str(tier or "free").lower()
                     
                     # Get tier limit from constants
                     daily_limit = TIER_DAILY_LIMITS.get(
@@ -3210,10 +3203,8 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             }
                             try:
                                 # Determine display tier: VIP for owner/admin, FREE for others
-                                from signalrank_telegram.access import resolve_user_tier
-                                user_tier = resolve_user_tier(user_id).lower()
-                                signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'free'
-                                if not _deliver_or_update_signal_sync(
+                                signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'free'
+                                if not await _deliver_or_update_signal_async(
                                     bot,
                                     telegram_user_id=int(user_id),
                                     signal=sig_dict,

@@ -64,6 +64,41 @@ def run_sync(coro, timeout: float | None = None) -> Any:
     """
     # Execute on a dedicated, long-lived background loop and block for result.
     bg_loop = _ensure_background_loop()
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    # Important deadlock guard:
+    # If run_sync() is invoked from within the same background loop thread,
+    # run_coroutine_threadsafe(...).result() would block the very loop needed
+    # to execute the coroutine. Execute on a fresh helper thread/loop instead.
+    if current_loop is bg_loop:
+        result_holder: dict[str, Any] = {}
+        error_holder: dict[str, BaseException] = {}
+        done = threading.Event()
+
+        def _run_on_helper_loop() -> None:
+            try:
+                result_holder["value"] = asyncio.run(coro)
+            except BaseException as exc:
+                error_holder["error"] = exc
+            finally:
+                done.set()
+
+        helper = threading.Thread(
+            target=_run_on_helper_loop,
+            name="signalrank-run-sync-fallback",
+            daemon=True,
+        )
+        helper.start()
+        wait_timeout = None if timeout is None or float(timeout) <= 0 else float(timeout)
+        if not done.wait(timeout=wait_timeout):
+            raise TimeoutError("run_sync timed out while executing in helper loop")
+        if "error" in error_holder:
+            raise error_holder["error"]
+        return result_holder.get("value")
+
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
         if timeout is None or float(timeout) <= 0:
