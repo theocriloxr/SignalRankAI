@@ -44,9 +44,22 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
 
     async def _impl() -> str:
         from db.pg_features import get_or_create_signal
+        import os
+
+        dedup_hours = signal.get("dedup_hours", signal.get("_dedup_hours"))
+        if dedup_hours is None:
+            try:
+                dedup_hours = int((os.getenv("SIGNAL_DEDUP_HOURS") or "24").strip())
+            except Exception:
+                dedup_hours = 24
+        else:
+            try:
+                dedup_hours = int(dedup_hours)
+            except Exception:
+                dedup_hours = 24
 
         async with get_session() as session:
-            s = await get_or_create_signal(session, signal)
+            s = await get_or_create_signal(session, signal, dedup_hours=dedup_hours)
             await session.commit()
             return s.signal_id
 

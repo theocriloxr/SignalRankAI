@@ -119,10 +119,16 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
 async def get_or_create_signal(
     session: AsyncSession,
     signal: Dict[str, Any],
-    dedup_hours: int = 24,
+    dedup_hours: int | None = None,
 ) -> Signal:
     now: datetime = _utcnow().replace(tzinfo=None)
-    cutoff: datetime = now - timedelta(hours=max(1, int(dedup_hours)))
+    try:
+        if dedup_hours is None:
+            dedup_hours = int((os.getenv("SIGNAL_DEDUP_HOURS") or "24").strip())
+        dedup_hours = max(0, int(dedup_hours))
+    except Exception:
+        dedup_hours = 24
+    cutoff: datetime | None = (now - timedelta(hours=int(dedup_hours))) if int(dedup_hours) > 0 else None
 
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()[:32]
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()[:8]
@@ -197,24 +203,28 @@ async def get_or_create_signal(
     )
 
 
-    # Strict deduplication: match by fingerprint AND all key fields (asset, timeframe, direction, entry, stop_loss, take_profit, strategy_group, strategy_name)
-    res: Result[Tuple[Signal]] = await session.execute(
-        select(Signal).where(
-            and_(
-                Signal.fingerprint == fingerprint,
-                Signal.asset == asset,
-                Signal.timeframe == timeframe,
-                Signal.direction == direction,
-                Signal.entry == entry,
-                Signal.stop_loss == stop_loss,
-                Signal.take_profit == tp_str,
-                Signal.strategy_group == strategy_group,
-                Signal.strategy_name == strategy_name,
-                Signal.created_at >= cutoff
+    existing: Signal | None = None
+    # Strict deduplication: match by fingerprint AND all key fields
+    # (asset, timeframe, direction, entry, stop_loss, take_profit, strategy_group, strategy_name).
+    # When dedup_hours=0, skip dedupe and always insert a new signal row.
+    if cutoff is not None:
+        res: Result[Tuple[Signal]] = await session.execute(
+            select(Signal).where(
+                and_(
+                    Signal.fingerprint == fingerprint,
+                    Signal.asset == asset,
+                    Signal.timeframe == timeframe,
+                    Signal.direction == direction,
+                    Signal.entry == entry,
+                    Signal.stop_loss == stop_loss,
+                    Signal.take_profit == tp_str,
+                    Signal.strategy_group == strategy_group,
+                    Signal.strategy_name == strategy_name,
+                    Signal.created_at >= cutoff
+                )
             )
         )
-    )
-    existing: Signal | None = res.scalars().first()
+        existing = res.scalars().first()
     if existing is not None:
         # Best-effort update score/strength (keep newest info)
         try:
@@ -406,13 +416,25 @@ async def record_signal_delivery(
                     is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
 
                     is_upgrade_delivery = _tier_rank(tier_s) > _tier_rank(str(prev_tier_at_send or "free"))
-                    should_block_asset = (age_hours < float(asset_cooldown_hours)) or (not is_resolved)
+                    try:
+                        unresolved_block_hours = float(
+                            (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or str(asset_cooldown_hours)).strip()
+                        )
+                    except Exception:
+                        unresolved_block_hours = float(asset_cooldown_hours)
+                    unresolved_block_hours = max(0.0, float(unresolved_block_hours))
+
+                    should_block_asset = (
+                        (age_hours < float(asset_cooldown_hours))
+                        or ((not is_resolved) and (age_hours < unresolved_block_hours))
+                    )
                     if should_block_asset and not is_upgrade_delivery:
                         try:
                             import logging
                             logging.getLogger(__name__).info(
                                 f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
-                                f"age_h={age_hours:.2f} resolved={is_resolved}"
+                                f"age_h={age_hours:.2f} resolved={is_resolved} "
+                                f"cooldown_h={float(asset_cooldown_hours):.2f} unresolved_block_h={float(unresolved_block_hours):.2f}"
                             )
                         except Exception:
                             pass
