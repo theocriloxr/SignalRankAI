@@ -326,13 +326,15 @@ async def paystack_webhook(request: Request):
         logger.warning("PAYSTACK_WEBHOOK_SECRET not set; falling back to PAYSTACK_SECRET_KEY for webhook signature checks")
 
     raw_body = await request.body()
+    if not raw_body:
+        raise HTTPException(400, "Empty payload")
     expected_sig = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
     if not hmac.compare_digest(signature, expected_sig):
         logger.warning("Paystack signature mismatch")
         raise HTTPException(401, "Invalid signature")
 
     try:
-        payload: Dict[str, Any] = json.loads((raw_body or b"{}").decode("utf-8"))
+        payload: Dict[str, Any] = json.loads(raw_body.decode("utf-8"))
     except Exception as exc:
         logger.warning("Invalid Paystack webhook JSON payload: %s", exc)
         raise HTTPException(400, "Invalid JSON payload")
@@ -355,7 +357,7 @@ async def paystack_webhook(request: Request):
                     event_type=event or "unknown",
                     reference=reference or None,
                     payload_hash=payload_hash,
-                    meta={"route": "/webhooks/paystack"},
+                    meta={"route": str(request.url.path)},
                 )
                 await session.commit()
             if not is_new:
