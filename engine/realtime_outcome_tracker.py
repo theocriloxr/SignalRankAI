@@ -841,14 +841,18 @@ class RealtimeOutcomeTracker:
         async def wrapped_check_signal(sig):
             try:
                 await self._check_signal(sig)
-                # Find all users who received this signal
+                # Find all telegram_user_id recipients who received this signal
                 from db.session import get_session
-                from db.models import SignalDelivery
+                from db.models import SignalDelivery, User
                 from sqlalchemy import select
                 async with get_session() as session:
-                    rows = await session.execute(select(SignalDelivery.user_id).where(SignalDelivery.signal_id == sig["signal_id"]))
-                    for (user_id,) in rows.all():
-                        updated_users.add(user_id)
+                    rows = await session.execute(
+                        select(User.telegram_user_id)
+                        .join(SignalDelivery, SignalDelivery.user_id == User.id)
+                        .where(SignalDelivery.signal_id == sig["signal_id"])
+                    )
+                    for (telegram_user_id,) in rows.all():
+                        updated_users.add(int(telegram_user_id))
             except Exception as exc:
                 logger.warning(f"[outcome_tracker] Error updating user performance for signal {sig.get('signal_id')}: {exc}")
 

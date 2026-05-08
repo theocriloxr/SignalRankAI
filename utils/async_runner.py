@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import queue
 from typing import Any
 
 
@@ -76,15 +77,15 @@ def run_sync(coro, timeout: float | None = None) -> Any:
     # run_coroutine_threadsafe(...).result() would block the very loop needed
     # to execute the coroutine. Execute on a fresh helper thread/loop instead.
     if current_loop is bg_loop:
-        result_holder: list[Any] = []
-        error_holder: list[BaseException] = []
+        result_queue: "queue.Queue[Any]" = queue.Queue(maxsize=1)
+        error_queue: "queue.Queue[BaseException]" = queue.Queue(maxsize=1)
         done = threading.Event()
 
         def _run_on_helper_loop() -> None:
             try:
-                result_holder.append(asyncio.run(coro))
+                result_queue.put_nowait(asyncio.run(coro))
             except BaseException as exc:
-                error_holder.append(exc)
+                error_queue.put_nowait(exc)
             finally:
                 done.set()
 
@@ -96,9 +97,9 @@ def run_sync(coro, timeout: float | None = None) -> Any:
         helper.start()
         if not done.wait(timeout=wait_timeout):
             raise TimeoutError("run_sync timed out while executing in helper loop")
-        if error_holder:
-            raise error_holder[0]
-        return result_holder[0] if result_holder else None
+        if not error_queue.empty():
+            raise error_queue.get_nowait()
+        return result_queue.get_nowait() if not result_queue.empty() else None
 
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
