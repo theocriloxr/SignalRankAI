@@ -62,6 +62,8 @@ def run_sync(coro, timeout: float | None = None) -> Any:
     refactoring callers to be async-aware, but reduces immediate runtime
     failures.
     """
+    wait_timeout = None if timeout is None or float(timeout) <= 0 else float(timeout)
+
     # Execute on a dedicated, long-lived background loop and block for result.
     bg_loop = _ensure_background_loop()
     try:
@@ -74,15 +76,15 @@ def run_sync(coro, timeout: float | None = None) -> Any:
     # run_coroutine_threadsafe(...).result() would block the very loop needed
     # to execute the coroutine. Execute on a fresh helper thread/loop instead.
     if current_loop is bg_loop:
-        result_holder: dict[str, Any] = {}
-        error_holder: dict[str, BaseException] = {}
+        result_holder: list[Any] = []
+        error_holder: list[BaseException] = []
         done = threading.Event()
 
         def _run_on_helper_loop() -> None:
             try:
-                result_holder["value"] = asyncio.run(coro)
+                result_holder.append(asyncio.run(coro))
             except BaseException as exc:
-                error_holder["error"] = exc
+                error_holder.append(exc)
             finally:
                 done.set()
 
@@ -92,18 +94,17 @@ def run_sync(coro, timeout: float | None = None) -> Any:
             daemon=True,
         )
         helper.start()
-        wait_timeout = None if timeout is None or float(timeout) <= 0 else float(timeout)
         if not done.wait(timeout=wait_timeout):
             raise TimeoutError("run_sync timed out while executing in helper loop")
-        if "error" in error_holder:
-            raise error_holder["error"]
-        return result_holder.get("value")
+        if error_holder:
+            raise error_holder[0]
+        return result_holder[0] if result_holder else None
 
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
-        if timeout is None or float(timeout) <= 0:
+        if wait_timeout is None:
             return fut.result()
-        return fut.result(timeout=float(timeout))
+        return fut.result(timeout=wait_timeout)
     except Exception:
         # Best effort cancellation on timeout/error.
         try:
