@@ -317,10 +317,13 @@ async def paystack_webhook(request: Request):
     if not signature:
         raise HTTPException(400, "Missing Paystack signature")
 
-    secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    webhook_secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or "").strip()
+    secret = webhook_secret or (os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
     if not secret:
         logger.error("PAYSTACK webhook secret not configured")
         raise HTTPException(500, "Webhook configuration error")
+    if not webhook_secret:
+        logger.warning("PAYSTACK_WEBHOOK_SECRET not set; falling back to PAYSTACK_SECRET_KEY for webhook signature checks")
 
     raw_body = await request.body()
     expected_sig = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
@@ -330,7 +333,8 @@ async def paystack_webhook(request: Request):
 
     try:
         payload: Dict[str, Any] = json.loads((raw_body or b"{}").decode("utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning("Invalid Paystack webhook JSON payload: %s", exc)
         raise HTTPException(400, "Invalid JSON payload")
 
     event = str(payload.get("event") or "").strip()
