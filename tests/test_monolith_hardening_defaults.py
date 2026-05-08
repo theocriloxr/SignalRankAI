@@ -54,7 +54,7 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
             dbs.get_engine_for_event_loop()
 
         mocked_create_engine.assert_called_once()
-        kwargs = mocked_create_engine.call_args.kwargs or mocked_create_engine.call_args[1]
+        kwargs = mocked_create_engine.call_args.kwargs
         self.assertEqual(kwargs.get("pool_size"), 5)
         self.assertEqual(kwargs.get("max_overflow"), 3)
 
