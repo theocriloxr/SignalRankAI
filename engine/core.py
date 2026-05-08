@@ -995,7 +995,11 @@ def main_loop(DRY_RUN: bool = False):
                 # Consensus filter - NO FALLBACK IN PROD
                 try:
                     consensus_signals = apply_consensus_filter(normalized)
-                    if not consensus_signals and _env_bool("PROD_MODE", False):
+                    _block_on_empty_consensus = _env_bool(
+                        "CONSENSUS_BLOCK_ON_EMPTY",
+                        _env_bool("PROD_MODE", False),
+                    )
+                    if not consensus_signals and _block_on_empty_consensus:
                         logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
                         continue  # Skip asset entirely
                 except Exception as e:
