@@ -6449,10 +6449,22 @@ def run_bot() -> None:
     if _sched_sync_url:
         try:
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore as _SAJobStore
-            _jobstores["persistent"] = _SAJobStore(url=_sched_sync_url)
+            _jobstore_engine_options = {
+                "pool_size": max(1, _env_int("BOT_SCHEDULER_DB_POOL_SIZE", 1)),
+                "max_overflow": max(0, _env_int("BOT_SCHEDULER_DB_MAX_OVERFLOW", 0)),
+                "pool_timeout": max(1, _env_int("BOT_SCHEDULER_DB_POOL_TIMEOUT_SECONDS", 30)),
+                "pool_recycle": max(30, _env_int("BOT_SCHEDULER_DB_POOL_RECYCLE_SECONDS", 1800)),
+                "pool_pre_ping": True,
+            }
+            _jobstores["persistent"] = _SAJobStore(
+                url=_sched_sync_url,
+                engine_options=_jobstore_engine_options,
+            )
             logger.info(
-                "[sched] SQLAlchemyJobStore ready → %s",
+                "[sched] SQLAlchemyJobStore ready → %s (pool_size=%s max_overflow=%s)",
                 _mask_db_url_host(_sched_sync_url),
+                _jobstore_engine_options["pool_size"],
+                _jobstore_engine_options["max_overflow"],
             )
         except Exception as _sa_err:
             logger.warning(
