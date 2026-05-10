@@ -997,13 +997,16 @@ def main_loop(DRY_RUN: bool = False):
                 # Consensus filter - NO FALLBACK IN PROD
                 try:
                     consensus_signals = apply_consensus_filter(normalized)
-                    if not consensus_signals and _env_bool("PROD_MODE", True):
+                    _block_on_empty_consensus = _env_bool(
+                        "CONSENSUS_BLOCK_ON_EMPTY",
+                        _env_bool("PROD_MODE", False),
+                    )
+                    if not consensus_signals and _block_on_empty_consensus:
                         logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
                         continue  # Skip asset entirely
                 except Exception as e:
                     logger.error(f"Consensus failed for {asset}: {e}")
                     consensus_signals = []
-                pipeline_stats["consensus"] += len(consensus_signals)
                 pipeline_stats["consensus"] += len(consensus_signals)
 
                 # Pick best direction per pair/timeframe
@@ -1502,7 +1505,7 @@ def main_loop(DRY_RUN: bool = False):
                             )).fetchall()
                             return {f"{r[0]}_{r[1]}" for r in rows}
 
-                    _cooled_down_pairs = run_sync(_batch_cooldown_check())
+                    _cooled_down_pairs = run_sync(_batch_cooldown_check(), timeout=15.0)
                 except Exception as _bcd_err:
                     logger.debug(f"[engine] batch cooldown pre-check failed, falling back to per-signal: {_bcd_err}")
 
@@ -1963,8 +1966,7 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             from engine.price_validator import (
                                 is_signal_fresh, validate_price_drift,
-                                check_sl_tp_hit, get_current_price,
-                                enrich_signal_with_live_price
+                                check_sl_tp_hit,
                             )
 
                             # Check signal freshness
@@ -1973,15 +1975,19 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.info(f"[engine] Skipping stale signal for {sig.get('asset')}: {fresh_reason}")
                                 continue
 
-                            # Get current market price
+                            # Use pre-fetched cycle cache only (no blocking HTTP calls here)
                             asset = sig.get('asset')
-                            current_price = get_current_price(asset)
+                            current_price = _live_price_cache.get(str(asset or ""))
+                            if current_price is None:
+                                try:
+                                    current_price = float(sig.get("current_price")) if sig.get("current_price") is not None else None
+                                except Exception:
+                                    current_price = None
 
                             if current_price is None:
-                                logger.warning(f"[engine] Failed to fetch current price for {asset}, using signal as-is")
-                                # Still deliver if we can't fetch price - enrich with age at least
-                                sig = enrich_signal_with_live_price(sig)
+                                logger.debug(f"[engine] No cached current price for {asset}, using signal as-is")
                             else:
+                                current_price = float(current_price)
                                 # Check if SL/TP already hit
                                 should_skip, skip_reason = check_sl_tp_hit(sig, current_price)
                                 if should_skip:
@@ -1993,13 +1999,10 @@ def main_loop(DRY_RUN: bool = False):
                                 if updated_sig:
                                     logger.info(f"[engine] Updated signal prices for {asset}: {drift_reason}")
                                     sig = updated_sig
-                                    # Enrich with current price and age
-                                    sig = enrich_signal_with_live_price(sig)
                                     sig['price_updated'] = True
                                 else:
-                                    # Enrich with current price and age
-                                    sig = enrich_signal_with_live_price(sig)
                                     sig['price_updated'] = False
+                                sig['current_price'] = current_price
                         except Exception as e:
                             logger.warning(f"[engine] Price validation failed for signal: {e}")
                             # Continue with signal delivery even if validation fails
@@ -2050,7 +2053,7 @@ def main_loop(DRY_RUN: bool = False):
             return dispatched_count
 
         try:
-            dispatched = run_sync(deliver_all())
+            dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 180.0)))
         except Exception:
             logger.exception("deliver_all failed")
             dispatched = 0

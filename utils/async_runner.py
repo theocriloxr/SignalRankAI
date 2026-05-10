@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import queue
 from typing import Any
 
 
@@ -62,13 +63,54 @@ def run_sync(coro, timeout: float | None = None) -> Any:
     refactoring callers to be async-aware, but reduces immediate runtime
     failures.
     """
+    wait_timeout = None if timeout is None or float(timeout) <= 0 else float(timeout)
+
     # Execute on a dedicated, long-lived background loop and block for result.
     bg_loop = _ensure_background_loop()
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    # Important deadlock guard:
+    # If run_sync() is invoked from within the same background loop thread,
+    # run_coroutine_threadsafe(...).result() would block the very loop needed
+    # to execute the coroutine. Execute on a fresh helper thread/loop instead.
+    if current_loop is bg_loop:
+        result_queue: "queue.Queue[Any]" = queue.Queue(maxsize=1)
+        error_queue: "queue.Queue[BaseException]" = queue.Queue(maxsize=1)
+        done = threading.Event()
+
+        def _run_on_helper_loop() -> None:
+            try:
+                result_queue.put_nowait(asyncio.run(coro))
+            except BaseException as exc:
+                error_queue.put_nowait(exc)
+            finally:
+                done.set()
+
+        helper = threading.Thread(
+            target=_run_on_helper_loop,
+            name="signalrank-run-sync-fallback",
+            daemon=True,
+        )
+        helper.start()
+        if not done.wait(timeout=wait_timeout):
+            raise TimeoutError("run_sync timed out while executing in helper loop")
+        try:
+            raise error_queue.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:
+            return None
+
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
     try:
-        if timeout is None or float(timeout) <= 0:
+        if wait_timeout is None:
             return fut.result()
-        return fut.result(timeout=float(timeout))
+        return fut.result(timeout=wait_timeout)
     except Exception:
         # Best effort cancellation on timeout/error.
         try:

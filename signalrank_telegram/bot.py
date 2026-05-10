@@ -2685,25 +2685,29 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         return
 
     # --- FRESHNESS FILTERING ---
-    # Filter out stale signals before delivery
+    # Keep this path non-blocking (avoid sync HTTP calls in async dispatch loop).
     try:
-        from engine.price_validator import is_signal_stale, enrich_signal_with_live_price
-        
+        from engine.stale_signal_validator import validate_signal_freshness
+
         fresh_signals = []
         for sig in signals_list:
-            # Enrich with current price and age info
             try:
-                sig = enrich_signal_with_live_price(sig)
-            except Exception as e:
-                logger.debug(f"[dispatch] Failed to enrich signal {sig.get('signal_id')}: {e}")
-            
-            # Check if stale
-            if is_signal_stale(sig):
+                _cached_price = sig.get("current_price")
+                _cached_price = float(_cached_price) if _cached_price is not None else None
+            except Exception:
+                _cached_price = None
+
+            is_fresh, reason, live_price = await validate_signal_freshness(
+                sig,
+                cached_live_price=_cached_price,
+            )
+            if not is_fresh:
                 sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
                 asset = sig.get('asset', 'unknown')
-                age_seconds = sig.get('signal_age_seconds', 'unknown')
-                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: age={age_seconds}s asset={asset}")
+                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: asset={asset} reason={reason}")
             else:
+                if live_price is not None:
+                    sig["current_price"] = float(live_price)
                 fresh_signals.append(sig)
         
         signals_list = fresh_signals
@@ -3058,9 +3062,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 }
                                 try:
                                     # Determine display tier: VIP for owner/admin, PREMIUM otherwise
-                                    from signalrank_telegram.access import resolve_user_tier
-                                    user_tier = resolve_user_tier(user_id).lower()
-                                    signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'premium'
+                                    signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'premium'
                                     if await _deliver_or_update_signal_async(
                                         bot,
                                         telegram_user_id=int(user_id),
@@ -3118,19 +3120,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     
                     # Check how many signals user already received today from DB
                     from core.tier_constants import TIER_DAILY_LIMITS
-                    from signalrank_telegram.access import resolve_user_tier
                     from db.pg_features import count_signals_sent_today
                     
                     signals_sent_today = int(
                         await count_signals_sent_today(session, int(user_id))
                     )
                     
-                    # Get user's actual tier for accurate logging
-                    user_tier_actual = 'free'
-                    try:
-                        user_tier_actual = resolve_user_tier(user_id).lower()
-                    except Exception:
-                        user_tier_actual = 'free'
+                    # Use resolved tier from function entry to avoid sync lookup in async path.
+                    user_tier_actual = str(tier or "free").lower()
                     
                     # Get tier limit from constants
                     daily_limit = TIER_DAILY_LIMITS.get(
@@ -3206,10 +3203,8 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             }
                             try:
                                 # Determine display tier: VIP for owner/admin, FREE for others
-                                from signalrank_telegram.access import resolve_user_tier
-                                user_tier = resolve_user_tier(user_id).lower()
-                                signal_display_tier = 'vip' if user_tier in ('owner', 'admin') else 'free'
-                                if not _deliver_or_update_signal_sync(
+                                signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'free'
+                                if not await _deliver_or_update_signal_async(
                                     bot,
                                     telegram_user_id=int(user_id),
                                     signal=sig_dict,
@@ -6454,10 +6449,22 @@ def run_bot() -> None:
     if _sched_sync_url:
         try:
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore as _SAJobStore
-            _jobstores["persistent"] = _SAJobStore(url=_sched_sync_url)
+            _jobstore_engine_options = {
+                "pool_size": max(1, _env_int("BOT_SCHEDULER_DB_POOL_SIZE", 1)),
+                "max_overflow": max(0, _env_int("BOT_SCHEDULER_DB_MAX_OVERFLOW", 0)),
+                "pool_timeout": max(1, _env_int("BOT_SCHEDULER_DB_POOL_TIMEOUT_SECONDS", 30)),
+                "pool_recycle": max(30, _env_int("BOT_SCHEDULER_DB_POOL_RECYCLE_SECONDS", 1800)),
+                "pool_pre_ping": True,
+            }
+            _jobstores["persistent"] = _SAJobStore(
+                url=_sched_sync_url,
+                engine_options=_jobstore_engine_options,
+            )
             logger.info(
-                "[sched] SQLAlchemyJobStore ready → %s",
+                "[sched] SQLAlchemyJobStore ready → %s (pool_size=%s max_overflow=%s)",
                 _mask_db_url_host(_sched_sync_url),
+                _jobstore_engine_options["pool_size"],
+                _jobstore_engine_options["max_overflow"],
             )
         except Exception as _sa_err:
             logger.warning(

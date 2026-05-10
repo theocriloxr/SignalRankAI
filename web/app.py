@@ -32,14 +32,19 @@ from pydantic import BaseModel
 import uvicorn
 
 from db.session import get_session
-from db.repository import get_api_token_owner, count_active_subscriptions
+from db.repository import (
+    get_api_token_owner,
+    count_active_subscriptions,
+    paystack_event_identity,
+    mark_webhook_event_processed,
+)
 from db.models import ApiToken, User, Signal
 from sqlalchemy import select
 from core.redis_state import state
 from core.redis_cache import cache_stats
 from core.tier_constants import TIER_SCORE_THRESHOLDS
 from signalrank_telegram.utils import tier_rank, _effective_tier
-from payments.paystack import verify_payment
+from payments.paystack import process_event as process_paystack_event
 
 logger = logging.getLogger(__name__)
 
@@ -300,68 +305,80 @@ async def _is_admin_user(user_id: int) -> bool:
     from core.settings import OWNER_IDS, ADMIN_IDS
     return user_id in OWNER_IDS or user_id in ADMIN_IDS
 
+def _payments_enabled() -> bool:
+    return str(os.getenv("PAYMENTS_ENABLED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 @app.post("/paystack/webhook")
-async def paystack_webhook(request: Request, payload: Dict[str, Any]):
-    """Paystack webhook handler."""
-    
-    # Verify webhook signature
+@app.post("/webhooks/paystack")
+async def paystack_webhook(request: Request):
+    """Paystack webhook handler (supports both legacy and canonical routes)."""
     signature = request.headers.get("x-paystack-signature")
     if not signature:
         raise HTTPException(400, "Missing Paystack signature")
-    
-    secret = os.getenv("PAYSTACK_SECRET_KEY")
+
+    webhook_secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or "").strip()
+    secret = webhook_secret or (os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
     if not secret:
-        logger.error("PAYSTACK_SECRET_KEY not configured")
+        logger.error("PAYSTACK webhook secret not configured")
         raise HTTPException(500, "Webhook configuration error")
-    
+    if not webhook_secret:
+        logger.warning("PAYSTACK_WEBHOOK_SECRET not set; falling back to PAYSTACK_SECRET_KEY for webhook signature checks")
+
+    raw_body = await request.body()
+    if not raw_body:
+        raise HTTPException(400, "Empty payload")
+    expected_sig = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
+    if not hmac.compare_digest(signature, expected_sig):
+        logger.warning("Paystack signature mismatch")
+        raise HTTPException(401, "Invalid signature")
+
     try:
-        expected_sig = hmac.new(
-            secret.encode(), 
-            request.body(),
-            hashlib.sha512
-        ).hexdigest()
-        
-        if not hmac.compare_digest(signature, expected_sig):
-            logger.warning("Paystack signature mismatch")
-            raise HTTPException(401, "Invalid signature")
-    except Exception:
-        logger.error("Paystack signature verification failed")
-        raise HTTPException(400, "Signature verification failed")
-    
-    event = payload.get("event")
-    data = payload.get("data", {})
-    
-    if event == "charge.success":
-        # Payment succeeded
-        ref = data.get("reference")
-        amount_paid = data.get("amount") / 100  # kobo → NGN
-        customer_email = data.get("customer", {}).get("email")
-        
-        logger.info(f"Paystack charge.success ref={ref} amount={amount_paid} email={customer_email}")
-        
-        # Verify and activate subscription
-        success = await verify_payment(ref, amount_paid)
-        if success:
-            logger.info(f"Subscription activated ref={ref}")
-            return {"status": "success", "message": "Subscription activated"}
-        else:
-            logger.error(f"Payment verification failed ref={ref}")
-            return {"status": "failed", "message": "Verification failed"}
-    
-    elif event == "subscription.disable":
-        # Subscription cancelled
-        sub_id = data.get("subscription_id")
-        logger.info(f"Subscription disabled sub_id={sub_id}")
-        # Handle downgrade
-        return {"status": "success", "message": "Downgrade processed"}
-    
-    elif event == "subscription.renewal.success":
-        # Auto-renewal succeeded
-        logger.info(f"Subscription renewed {data}")
-        return {"status": "success", "message": "Renewal processed"}
-    
-    logger.info(f"Unhandled Paystack event: {event}")
-    return {"status": "ignored", "event": event}
+        payload: Dict[str, Any] = json.loads(raw_body.decode("utf-8"))
+    except Exception as exc:
+        logger.warning("Invalid Paystack webhook JSON payload: %s", exc)
+        raise HTTPException(400, "Invalid JSON payload")
+
+    event = str(payload.get("event") or "").strip()
+    data = payload.get("data") or {}
+    reference = str(data.get("reference") or "").strip()
+
+    # Best-effort idempotency tracking for duplicate webhook deliveries.
+    idempotent = False
+    try:
+        from db.session import is_db_configured
+        if is_db_configured():
+            event_id, payload_hash = paystack_event_identity(payload, raw_body)
+            async with get_session() as session:
+                is_new = await mark_webhook_event_processed(
+                    session,
+                    provider="paystack",
+                    event_id=event_id,
+                    event_type=event or "unknown",
+                    reference=reference or None,
+                    payload_hash=payload_hash,
+                    meta={"route": str(request.url.path)},
+                )
+                await session.commit()
+            if not is_new:
+                return {"received": True, "verified": False, "idempotent": True, "event": event}
+    except Exception as exc:
+        logger.warning("Paystack idempotency tracking failed: %s", exc)
+
+    # Support maintenance/test mode without contacting external providers.
+    if not _payments_enabled():
+        return {"received": True, "verified": False, "idempotent": idempotent, "event": event}
+
+    # Process payment event and trigger auto-upgrade/credits where applicable.
+    result = await process_paystack_event(payload)
+    verified = bool((result or {}).get("processed"))
+    return {
+        "received": True,
+        "verified": verified,
+        "idempotent": idempotent,
+        "event": event,
+        "result": result or {},
+    }
 
 @app.post("/paystack/charge")
 async def paystack_charge_create(user_id: int = Depends(verify_api_key)):

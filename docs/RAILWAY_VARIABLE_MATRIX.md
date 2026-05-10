@@ -29,8 +29,8 @@ Source of truth used for this matrix:
 | RUN_MODE | Explicit process behavior per service | [main.py](main.py#L12) | all (single service) or web/bot/engine/worker |
 | TELEGRAM_USE_WEBHOOK | Enforces webhook mode in Railway | [railway_main.py](railway_main.py#L667) | 1 |
 | WEBHOOK_QUEUE_USE_REDIS | Enables Redis-backed webhook queue | [railway_main.py](railway_main.py#L1075) | 1 |
-| DB_POOL_SIZE | Prevents DB starvation under load | [db/session.py](db/session.py#L101) | 15 |
-| DB_MAX_OVERFLOW | Controls burst connection headroom | [db/session.py](db/session.py#L102) | 5 |
+| DB_POOL_SIZE | Prevents DB starvation under load | [db/session.py](db/session.py#L101) | 5 |
+| DB_MAX_OVERFLOW | Controls burst connection headroom | [db/session.py](db/session.py#L102) | 3 |
 | DB_POOL_TIMEOUT_SECONDS | Backpressure behavior on saturation | [db/session.py](db/session.py#L103) | 30 |
 | DB_POOL_RECYCLE_SECONDS | Avoid stale pooled connections | [db/session.py](db/session.py#L104) | 1800 |
 | REDIS_MAX_CONNECTIONS | Redis pool protection | [core/redis_state.py](core/redis_state.py#L34) | 60 |
