@@ -1,256 +1,145 @@
-# SignalRankAI - Codebase Analysis Document
+# SignalRankAI System Analysis
 
-## Executive Summary
+## Overview
+SignalRankAI is a trading signal generation and delivery system that:
+1. Fetches market data from multiple providers (Binance, CryptoCompare, TwelveData, Polygon, Yahoo Finance)
+2. Runs trading strategies to generate signals
+3. Validates/deduplicates/scores signals
+4. Delivers signals to users via Telegram with tier-based access control
 
-This document provides a comprehensive analysis of the SignalRankAI codebase based on the provided logs and source code examination. The system is a trading signal generation platform that uses multiple data providers, technical indicators, and ML models to generate and deliver trading signals to users via Telegram.
-
-## System Architecture
+## Architecture
 
 ### Entry Points
-1. **main.py** - Universal entry point with RUN_MODE detection (web/worker/engine/bot/all)
-2. **railway_main.py** - Railway monolithic entry point (FastAPI + APScheduler + Telegram bot)
-3. **web/app.py** - FastAPI application endpoints
-4. **worker/worker.py** - Background worker for outcome tracking
-5. **engine/core.py** - Signal generation engine
+- **main.py**: Determines RUN_MODE (all/web/bot/worker/engine) from Railway service name
+- **railway_main.py**: FastAPI app with `/telegram/webhook` endpoint for Telegram bot updates
 
 ### Core Components
+1. **Engine Loop** (`engine/core.py`): Generates signals every ~30 seconds
+2. **Worker Loop** (`worker/worker.py`): Tracks trade outcomes
+3. **Telegram Bot** (`signalrank_telegram/bot.py`): Handles user commands
+4. **Web Server** (`web/app.py`): API endpoints
 
-#### 1. Data Layer (data/)
-- **fetcher.py** - Multi-provider market data fetching with fallback
-- **providers.py** - Individual data provider implementations
-- **pair_discovery.py** - Asset discovery (trending pairs, stocks)
-- **indicators.py** - Technical indicator calculations
-- **market_hours.py** - Market open/closed checks
-- **ws_ingest.py** - WebSocket real-time data ingestion
-
-#### 2. Engine Layer (engine/)
-- **core.py** - Main signal generation loop
-- **scoring.py** - Signal scoring algorithms
-- **consensus.py** - Multi-strategy consensus filtering
-- **risk_manager.py** - Risk management
-- **filters.py** - Signal quality filters
-- **threshold_optimizer.py** - Adaptive ML threshold optimization
-
-#### 3. Delivery Layer (signalrank_telegram/)
-- Bot handlers for Telegram commands
-- Signal delivery with tier-based limits
-- Outcome notifications
-
-#### 4. Data Models (db/models.py)
-- User, Subscription, Signal, Outcome models
-- Trading and referral tracking tables
-
-## Identified Issues from Logs
-
-### Issue 1: Zero Signals Generated
-**Evidence from logs:**
+### Data Flow
 ```
-[engine] cycle=1 assets=20 generated_signals=0 max_score=62.68 ... final_signals=0 stored=0
+Market Data Providers → Strategies → Normalize/Dedupe → Consensus → 
+Risk/ML → Scoring → Advanced Filters → Store → Delivery
 ```
 
-**Root Cause Analysis:**
+## Issues Identified from Logs
 
-The engine has multiple strict gating layers that filter out all signals:
-
-1. **Score Threshold Gate** (PREMIUM_SCORE_THRESHOLD):
-   - Default: 70.0
-   - Requires signals to score >= 70
-   - Log shows max_score_pre_threshold=62.68, meaning NO signals pass this gate
-
-2. **Confluence Gate** (CONFLUENCE_GATE_MIN):
-   - Default: 0.0 (disabled)
-   - Only enforced if configured
-
-3. **Live Expectancy Gate** (Phase 3 implementation):
-   - Code shows: `live_exp = float(sig.get('live_expectancy', 0.0))`
-   - Requires live_exp >= 0.15
-   - ISSUE: live_expectancy field is NOT being populated before scoring
-
-4. **Consensus Filter** (PROD_MODE=True):
-   - If consensus empty, asset is skipped entirely
-   - Strict policy blocks entire asset if no consensus
-
-**Fix Required:**
-- Lower PREMIUM_SCORE_THRESHOLD from 70 to 55 to match the max observed score
-- Ensure live_expectancy is calculated/filled before scoring check
-
-### Issue 2: Provider Rate Limits
-**Evidence:**
+### 1. Engine Generates 0 Final Signals
 ```
-[data.providers] [twelvedata] fetch_failed symbol=BRENT msg=You have run out of API credits...
+engine] cycle=1 assets=20 generated_signals=0 max_score=62.68 
+max_score_pre_threshold=62.68 strategy_signals=120 normalized=120 
+consensus=64 selected=29 unique=29 strict_candidates=26 risk_passed=26 
+final_signals=0 stored=0
+```
+
+**Analysis**: 
+- 120 strategy signals generated → 120 normalized → 64 after consensus
+- But final_signals=0 - signals dropped somewhere in scoring/filtering
+- This can happen if:
+  - Score threshold too high (PREMIUM_SCORE_THRESHOLD=70)
+  - Confluence gate blocking
+  - ML hard filter threshold
+  - Expectancy gate (< 0.15)
+
+**Likely Causes**:
+1. Score threshold blocking: min_score_threshold=70 in `_current_min_score_threshold()`
+2. Expectancy gate: `live_exp < 0.15` causes rejection
+3. The max_score=62.68 is below the 70 threshold!
+
+### 2. Binance Pairs Disabled
+```
+[data.pair_discovery] Binance pairs disabled: Service unavailable from 
+a restricted location according to 'b. Eligibility' in 
+https://www.binance.com/en/terms.
+```
+- Cannot use Binance for data (location restriction)
+
+### 3. Data Provider Rate Limits
+```
+[data.providers] [twelvedata] fetch_failed symbol=BRENT msg=You 
+have run out of API credits for the current minute
 [data.providers] [polygon] fetch_failed symbol=BRENT status=429
 ```
+- TwelveData quota exceeded
+- Polygon rate limited
 
-**Root Cause:**
-- TwelveData API credits exhausted
-- Polygon API rate limited (429)
-
-**Impact:**
-- Some symbols fail to fetch (BRENT and others)
-- May cause cascade failures in signal generation
-
-### Issue 3: Binance Geographic Restriction
-**Evidence:**
+### 4. SAWarning - Connection Not Returned to Pool
 ```
-[pair_discovery] Binance pairs disabled: Service unavailable from a restricted location...
+SAWarning: The garbage collector is trying to clean up non-checked-in 
+connection <AdaptedConnection <asyncpg.connection.Connection object>>
+Please ensure that SQLAlchemy pooled connections are returned to the pool 
+explicitly, either by calling `close()` or by using appropriate 
+context managers.
 ```
+- Connection leak in engine/core.py around line 2160
 
-**Root Cause:**
-- Binance service unavailable from Railway's deployment region
-- Geographic restriction based on Terms of Service
+### 5. Zero Final Signals Issue
+The max_score_pre_threshold=62.68 is BELOW the default threshold of 70!
 
-### Issue 4: Database Connection Warning
-**Evidence:**
-```
-SAWarning: The garbage collector is trying to clean up non-checked-in connection...
-```
+**Root Cause**: Engine generates signals but they're scored around 62.68 max, which is below the 70 threshold, so all get filtered out.
 
-**Root Cause:**
-- SQLAlchemy connection not properly returned to pool
-- Need to ensure connection context managers are used correctly
+## Solutions
 
-### Issue 5: Stale Data Detection
-**Evidence:**
-```
-[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s
-```
+### Priority 1: Fix Signal Generation to Meet Threshold
+1. Lower `PREMIUM_SCORE_THRESHOLD` to ~60 or calculate dynamically
+2. Adjust scoring algorithm to produce scores in 70+ range
+3. Or adjust threshold based on average signal quality
 
-**Root Cause:**
-- Data older than 2x timeframe interval
-- Provider delays causing stale data
+### Priority 2: Fix DB Connection Leak
+Ensure all DB operations use context managers or explicit close()
 
-## Signal Pipeline Flow
+### Priority 3: Provider Fallbacks
+Ensure CryptoCompare/Yahoo Finance work when Binance unavailable
 
-```
-1. Load Assets
-   ├── Managed assets (DB)
-   ├── Saved assets (TRADABLE_ASSETS env)
-   └── Discovered assets (trending APIs)
+### Priority 4: Data Provider Rate Limits
+- Upgrade TwelveData plan or use more providers
+- Cache data more aggressively
+- Reduce BRENT/commodity queries
 
-2. Filter by Market Status
-   ├── Check market_closed_reason()
-   └── Skip closed markets
-
-3. Fetch Market Data
-   ├── Multi-provider fetch with fallback
-   └── Calculate indicators
-
-4. Run Strategies
-   ├── run_all_strategies(asset, market_data, regime)
-   └── Returns list of strategy signals
-
-5. Normalize & Dedupe
-   ├── SignalController.normalize_signals()
-   └── Remove duplicates
-
-6. Consensus Filter
-   ├── apply_consensus_filter()
-   └── BLOCKS if empty (PROD policy)
-
-7. Select Best Direction
-   ├── pick_best_direction_per_pair()
-   └── One signal per asset/TF
-
-8. Compute Fingerprints
-   ├── compute_signal_fingerprint()
-   └── Dedupe by fingerprint
-
-9. Strict Validation
-   ├── validate_signal()
-   ├── risk_check()
-   ├── confluence gate
-   └── news sentiment gate
-
-10. ML Advisory
-    ├── MLFilter.ml_filter()
-    └── Hard threshold filter
-
-11. Scoring
-    ├── calculate_signal_score()
-    ├── Advanced filters
-    └── Ultra quality filter
-
-12. Final Gates
-    ├── Score >= PREMIUM_SCORE_THRESHOLD
-    ├── Expectancy >= 0.15
-    └── Valid TP structure
-
-13. Store & Deliver
-    ├── store_signal_compat()
-    └── dispatch_signals_async()
-```
-
-## Configuration Requirements
+## Configuration
 
 ### Critical Environment Variables
+```
+TELEGRAM_BOT_TOKEN - Telegram bot token
+DATABASE_URL - PostgreSQL connection
+REDIS_URL - Redis connection
+OWNER_IDS - Admin user IDs
+PREMIUM_SCORE_THRESHOLD - Min score (default 70)
+ML_PROB_THRESHOLD - ML confidence threshold (default 0.55)
+TRADABLE_ASSETS - Comma-separated asset list
+ENGINE_CYCLE_SLEEP_SECONDS - Cycle interval (default 30)
+ENGINE_UNIVERSE_CAP - Max assets per cycle (default 20)
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| PREMIUM_SCORE_THRESHOLD | 70 | Min score to store signals |
-| CONFLUENCE_GATE_MIN | 0.0 | Min confluence (0=disabled) |
-| ML_PROB_THRESHOLD | 0.55 | ML probability threshold |
-| ENGINE_UNIVERSE_CAP | 20 | Max assets per cycle |
-| CYCLE_BATCH_SIZE | 20 | Assets per batch |
-| ENGINE_CYCLE_SLEEP_SECONDS | 30 | Cycle sleep time |
-| DRY_RUN | false | Dry run mode |
+## Tier System
+- **free**: 3 signals/day
+- **silver**: 10 signals/day  
+- **gold**: 25 signals/day
+- **platinum/premium**: Unlimited
 
-### Data Providers
+## Telegram Bot Commands
+- `/start` - Register user
+- `/signals` - Get recent signals
+- `/status` - Account status
+- `/price <symbol>` - Current price
+- `/subscribe <tier>` - Change subscription
+- `/help` - Show commands
 
-| Provider | Status | Notes |
-|----------|--------|-------|
-| CryptoCompare | Working | Primary crypto data |
-| Yahoo Finance | Working | FX and some crypto |
-| TwelveData | Limited | API credits exhausted |
-| Polygon | Limited | Rate limited (429) |
-| Binance | Disabled | Geographic restriction |
+## Database Models
 
-## Tier-Based Delivery Limits
+### Core Tables
+- **users**: Telegram user records with tier
+- **signals**: Generated trading signals
+- **outcomes**: Signal resolution (TP/SL)
+- **subscriptions**: User tier subscriptions
+- **signal_deliveries**: Sent signal tracking
+- **mt5_executions**: MetaTrader execution records
+- **decision_log**: Engine decision tracking
+- **ml_rejected_signals**: ML-filtered signals for training
 
-From core/tier_constants.py:
-- FREE: 3 signals/day
-- STARTER: 10 signals/day  
-- PREMIUM: 50 signals/day
-- VIP: Unlimited
-
-## Files to Modify for Fixes
-
-### Fix 1: Lower Score Threshold
-**Files:** engine/core.py
-**Location:** DEFAULT_MIN_SCORE_THRESHOLD = 70 → 55
-
-### Fix 2: Populate Live Expectancy
-**Files:** engine/scoring.py, engine/core.py
-**Action:** Calculate and set live_expectancy before scoring
-
-### Fix 3: Provider Fallback Improvement
-**Files:** data/fetcher.py, data/providers.py  
-**Action:** Add more fallbacks, implement circuit breaker
-
-### Fix 4: DB Connection Handling
-**Files:** db/session.py, engine/core.py  
-**Action:** Ensure proper connection pool management
-
-### Fix 5: Enable More Assets
-**Files:** data/pair_discovery.py
-**Action:** Add more FX/stock providers
-
-## Testing Checklist
-
-- [ ] Run engine with DRY_RUN=true
-- [ ] Verify signals are generated
-- [ ] Check provider fallback behavior
-- [ ] Test Telegram bot commands
-- [ ] Verify outcome notifications work
-- [ ] Test tier-based delivery limits
-
-## Next Steps
-
-1. Lower PREMIUM_SCORE_THRESHOLD to 55 to allow current signals through
-2. Add live_expectancy calculation before gating
-3. Add more provider fallbacks
-4. Implement circuit breaker for failed providers
-5. Run in DRY_RUN mode to verify before production
-
----
-*Document generated from code analysis*
-*Analysis date: 2026-05-07*
+## Health Checks
+- `/healthz` - Fast liveness probe
+- `/telegram/webhook_status` - Bot diagnostics
