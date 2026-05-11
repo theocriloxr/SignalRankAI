@@ -43,6 +43,18 @@ class TradeRecord:
 
 open_trades_list = []
 
+
+def _trade_key(signal: dict) -> tuple:
+    signal_id = signal.get("id") or signal.get("signal_id")
+    if signal_id:
+        return ("signal_id", str(signal_id))
+    symbol = str(signal.get("symbol") or signal.get("asset") or "").upper().strip()
+    direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
+    timeframe = str(signal.get("timeframe") or signal.get("tf") or "").lower().strip()
+    entry = signal.get("entry") or signal.get("price") or signal.get("entry_price")
+    stop = signal.get("stop") or signal.get("stop_loss") or signal.get("stopLoss")
+    return ("fallback", symbol, direction, timeframe, str(entry), str(stop))
+
 def open_trades():
     return list(open_trades_list)
 
@@ -195,6 +207,12 @@ def close_trade(trade: TradeRecord, outcome: str):
 
 def add_trade(signal: dict):
     """Add a new trade to track."""
+    key = _trade_key(signal)
+    for existing in open_trades_list:
+        if _trade_key(existing.signal) == key:
+            logger.debug(f"Skipping duplicate open trade for {existing.symbol} {existing.direction} key={key}")
+            return existing
+
     trade = TradeRecord(signal)
     open_trades_list.append(trade)
     logger.info(f"Trade opened: {trade.symbol} {trade.direction} entry={trade.entry}")

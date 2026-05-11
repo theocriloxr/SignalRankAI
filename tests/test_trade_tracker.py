@@ -77,6 +77,24 @@ class TestTradeTracker(unittest.TestCase):
         self.assertEqual(len(open_trades_list), 1)
         self.assertEqual(open_trades_list[0].signal_id, "sig_789")
 
+    def test_add_trade_deduplicates_signal_id(self):
+        """Duplicate signal IDs should not create duplicate open trades."""
+        signal = {
+            "id": "sig_dup",
+            "symbol": "BTCUSDT",
+            "direction": "long",
+            "entry": 50000.0,
+            "stop_loss": 49000.0,
+            "take_profit": 52000.0,
+            "timestamp": _utcnow_naive_iso(),
+        }
+
+        first = add_trade(signal)
+        second = add_trade(dict(signal))
+
+        self.assertIs(first, second)
+        self.assertEqual(len(open_trades_list), 1)
+
     @patch('core.trade_tracker._get_current_price')
     def test_price_hit_tp_long(self, mock_price):
         """Test TP hit detection for long position."""

@@ -2046,6 +2046,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				total_signals = (await session.execute(
 					select(func.count(SignalDelivery.id)).where(
 						SignalDelivery.user_id == db_user_id,
+						SignalDelivery.sent_ok.is_(True),
 						SignalDelivery.delivered_at >= cutoff,
 					)
 				)).scalar() or 0

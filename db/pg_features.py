@@ -496,6 +496,29 @@ async def record_signal_delivery(
             # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
             pass
 
+    existing_delivery_res = await session.execute(
+        select(SignalDelivery)
+        .where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.signal_id == str(signal_id),
+        )
+        .order_by(SignalDelivery.id.desc())
+        .limit(1)
+    )
+    existing_delivery = existing_delivery_res.scalar_one_or_none()
+    if existing_delivery is not None:
+        if bool(getattr(existing_delivery, "sent_ok", False)):
+            return False
+        existing_delivery.tier_at_send = tier_s
+        existing_delivery.last_attempt_at = _utcnow()
+        try:
+            existing_delivery.attempt_count = int(getattr(existing_delivery, "attempt_count", 0) or 0) + 1
+        except Exception:
+            existing_delivery.attempt_count = 1
+        existing_delivery.last_error = None
+        await session.flush()
+        return True
+
 
     before: int = len(session.new)
     delivery = SignalDelivery(
@@ -540,7 +563,11 @@ async def list_signals_sent_today(
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= start)
+        .where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.delivered_at >= start,
+        )
         .order_by(SignalDelivery.delivered_at.desc())
     )
     res2: Result[Tuple[Signal]] = await session.execute(q)
@@ -1598,6 +1625,7 @@ async def list_unresolved_signals_for_user(
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(
             SignalDelivery.user_id == user.id,
+            SignalDelivery.sent_ok.is_(True),
             Signal.archived == False,
             Signal.expired == False,
             Signal.created_at >= cutoff,

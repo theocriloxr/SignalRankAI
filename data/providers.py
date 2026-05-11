@@ -67,6 +67,27 @@ def _set_cooldown(provider: str, seconds: float) -> None:
     _PROVIDER_COOLDOWN[provider] = time.monotonic() + seconds
 
 
+def _rate_limit_cooldown_seconds(provider: str, *, status_code: int | None = None, message: str = "") -> float | None:
+    msg = (message or "").lower()
+    if provider == "twelvedata":
+        if status_code == 429 or any(term in msg for term in ("run out of api credits", "daily limit", "credit limit", "rate limit")):
+            return _env_float("TWELVEDATA_RATE_LIMIT_COOLDOWN_SECONDS", 12 * 60 * 60)
+    elif provider == "polygon":
+        if status_code == 429 or any(term in msg for term in ("rate limit", "too many requests", "throttle")):
+            return _env_float("POLYGON_RATE_LIMIT_COOLDOWN_SECONDS", 60 * 60)
+    elif status_code == 429:
+        return _env_float(f"{provider.upper()}_RATE_LIMIT_COOLDOWN_SECONDS", 60.0)
+    return None
+
+
+def _maybe_apply_rate_limit_cooldown(provider: str, *, status_code: int | None = None, message: str = "") -> bool:
+    cooldown_seconds = _rate_limit_cooldown_seconds(provider, status_code=status_code, message=message)
+    if cooldown_seconds is None:
+        return False
+    _set_cooldown(provider, cooldown_seconds)
+    return True
+
+
 def _normalize_binance_symbol(symbol: str) -> str:
     sym = (symbol or "").upper().strip().replace("/", "").replace("-", "")
     if sym.endswith("USD") and not sym.endswith("USDT"):
@@ -196,8 +217,7 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
         
         if not resp.ok:
             logger.warning(f"[polygon] fetch_failed symbol={symbol} status={resp.status_code}")
-            if resp.status_code == 429:
-                _set_cooldown("polygon", 60.0)
+            _maybe_apply_rate_limit_cooldown("polygon", status_code=resp.status_code)
             return []
         
         results = data.get("results", [])
@@ -262,8 +282,11 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
         
         if not resp.ok or data.get("status") == "error":
             logger.warning(f"[twelvedata] fetch_failed symbol={symbol} msg={data.get('message', '')}")
-            if "API rate limit" in str(data.get("message", "")):
-                _set_cooldown("twelvedata", 60.0)
+            _maybe_apply_rate_limit_cooldown(
+                "twelvedata",
+                status_code=resp.status_code,
+                message=str(data.get("message", "")),
+            )
             return []
         
         values = data.get("values", [])

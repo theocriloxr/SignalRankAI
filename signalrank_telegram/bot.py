@@ -204,7 +204,10 @@ async def _resend_unsent_signals_async():
                         _q = (
                             select(User.telegram_user_id)
                             .join(SignalDelivery, SignalDelivery.user_id == User.id)
-                            .where(SignalDelivery.signal_id == signal_id)
+                            .where(
+                                SignalDelivery.signal_id == signal_id,
+                                SignalDelivery.sent_ok.is_(True),
+                            )
                         )
                         _rows = await _deliv_s.execute(_q)
                         delivered_user_ids = {

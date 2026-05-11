@@ -56,6 +56,34 @@ class TestProviderAdapters(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_twelvedata_cooldown_on_quota_message(self):
+        class _QuotaResp:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "status": "error",
+                    "message": "You have run out of API credits for the day."
+                }
+
+            @property
+            def ok(self):
+                return True
+
+        import data.providers as providers
+
+        providers._PROVIDER_LAST_CALL.clear()
+        providers._PROVIDER_COOLDOWN.clear()
+
+        with patch("data.providers.requests.get", return_value=_QuotaResp()) as mock_get:
+            with patch.dict("os.environ", {"TWELVEDATA_API_KEY": "fake", "TWELVEDATA_RATE_LIMIT_COOLDOWN_SECONDS": "3600"}, clear=False):
+                first = providers.fetch_twelvedata_candles("TEST", "1h")
+                second = providers.fetch_twelvedata_candles("TEST", "1h")
+
+        self.assertEqual(first, [])
+        self.assertEqual(second, [])
+        self.assertEqual(mock_get.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

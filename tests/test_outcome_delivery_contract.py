@@ -25,3 +25,17 @@ def test_realtime_tracker_queues_and_delivers_from_db_state() -> None:
     assert "queue_outcome_notifications_for_outcome" in source
     assert "OutcomeNotification.delivery_state.in_([\"pending\", \"failed\"])" in source
     assert "mark_outcome_notification_delivered" in source
+
+
+def test_signal_delivery_contract_requires_successful_delivery_rows() -> None:
+    pg_path = ROOT / "db" / "pg_features.py"
+    bot_path = ROOT / "signalrank_telegram" / "bot.py"
+    commands_path = ROOT / "signalrank_telegram" / "commands.py"
+
+    pg_source = pg_path.read_text(encoding="utf-8")
+    bot_source = bot_path.read_text(encoding="utf-8")
+    commands_source = commands_path.read_text(encoding="utf-8")
+
+    assert "SignalDelivery.sent_ok.is_(True)" in pg_source
+    assert "SignalDelivery.sent_ok.is_(True)" in bot_source
+    assert "SignalDelivery.sent_ok.is_(True)" in commands_source

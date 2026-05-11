@@ -2159,13 +2159,14 @@ def main_loop(DRY_RUN: bool = False):
             except Exception as _promote_err:
                 logger.debug("[engine] auto-promotion skipped: %s", _promote_err)
 
-        # Explicit per-cycle garbage collection to keep memory stable on long
-        # running Railway workers.
-        try:
-            import gc as _gc
-            _gc.collect()
-        except Exception:
-            pass
+        # Avoid forced GC here; it surfaces asyncpg/SQLAlchemy finalizers while
+        # connections are still in-flight and adds noisy SAWarnings in production.
+        if _env_bool("ENGINE_FORCE_GC", False):
+            try:
+                import gc as _gc
+                _gc.collect()
+            except Exception:
+                pass
 
         time.sleep(max(5, cycle_sleep_seconds))
 
