@@ -27,7 +27,6 @@ COMMAND_TIERS = {
     "policy":              "FREE",
     "refunds":             "FREE",
     "recap":               "FREE",
-    "buy_extra_signals":   "FREE",
     "language":            "FREE",
     "referral_leaderboard":"FREE",
     "referral_rewards":    "FREE",

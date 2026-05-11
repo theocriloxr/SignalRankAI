@@ -240,9 +240,9 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 
 def _vip_plan_line(*, MarkdownV2: bool, seats_left: int, sold_out: bool) -> str:
 	if sold_out:
-		return "💎 VIP Monthly — ₦40,000 | 🔴 VIP Sold Out"
+		return "💎 VIP Monthly — ₦40,000 \\| 🔴 VIP Sold Out" if MarkdownV2 else "💎 VIP Monthly — ₦40,000 | 🔴 VIP Sold Out"
 	if MarkdownV2:
-		return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
+		return f"💎 VIP Monthly — ₦40,000 \\| 🟢 {seats_left} seats left"
 	return f"💎 VIP Monthly — ₦40,000 | 🟢 {seats_left} seats left"
 
 
@@ -2369,31 +2369,39 @@ async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			async with get_session() as session:
-				recent_rows = (
-					await session.execute(
-						select(Signal.asset, Signal.timeframe, Outcome.status)
-						.join(Outcome, Outcome.signal_id == Signal.signal_id)
-						.where(Signal.created_at >= cutoff)
-						.where(func.lower(Outcome.status).in_(tp_statuses.union(loss_statuses)))
-						.order_by(Signal.created_at.desc())
-						.limit(5)
-					)
-				).all()
-				summary_rows = (
-					await session.execute(
-						select(Outcome.status, func.count(Outcome.id))
-						.join(Signal, Signal.signal_id == Outcome.signal_id)
-						.where(Signal.created_at >= cutoff)
-						.where(func.lower(Outcome.status).in_(tp_statuses.union(loss_statuses)))
-						.group_by(Outcome.status)
-					)
-				).all()
-				for status, count in summary_rows:
-					st = str(status or "").lower()
-					if st in tp_statuses:
-						wins += int(count or 0)
-					elif st in loss_statuses:
-						losses += int(count or 0)
+				try:
+					recent_rows = (
+						await session.execute(
+							select(Signal.asset, Signal.timeframe, Outcome.status)
+							.join(Outcome, Outcome.signal_id == Signal.signal_id)
+							.where(Signal.created_at >= cutoff)
+							.where(func.lower(Outcome.status).in_(tp_statuses.union(loss_statuses)))
+							.order_by(Signal.created_at.desc())
+							.limit(5)
+						)
+					).all()
+				except Exception as _recent_err:
+					logger.debug(f"[proof] recent rows query failed: {_recent_err}")
+					recent_rows = []
+
+				try:
+					summary_rows = (
+						await session.execute(
+							select(Outcome.status, func.count(Outcome.id))
+							.join(Signal, Signal.signal_id == Outcome.signal_id)
+							.where(Signal.created_at >= cutoff)
+							.where(func.lower(Outcome.status).in_(tp_statuses.union(loss_statuses)))
+							.group_by(Outcome.status)
+						)
+					).all()
+					for status, count in summary_rows:
+						st = str(status or "").lower()
+						if st in tp_statuses:
+							wins += int(count or 0)
+						elif st in loss_statuses:
+							losses += int(count or 0)
+				except Exception as _summary_err:
+					logger.debug(f"[proof] summary query failed: {_summary_err}")
 
 		total = wins + losses
 		win_rate = (wins / total * 100.0) if total > 0 else 0.0
@@ -3142,12 +3150,12 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		except Exception:
 			code = str(user_id)
 
-	bot_username = None
+	bot_username: str | None = None
 	try:
-		me: User = await context.bot.get_me()
-		bot_username: os.Any | None = getattr(me, "username", None)
+		me = await context.bot.get_me()
+		bot_username = str(getattr(me, "username", None) or "").strip() or None
 	except Exception:
-		bot_username: str | None = os.getenv("BOT_USERNAME")
+		bot_username = (os.getenv("BOT_USERNAME") or "").strip() or None
 	progress_line: str = ""
 	if progress:
 		need = int(progress.get("needed_for_next", 0) or 0)
@@ -5813,8 +5821,8 @@ async def tiers_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 	if update.effective_user is None or update.message is None:
 		return
 
-	premium_price = int(os.getenv("PREMIUM_PRICE_NGN", "15000"))
-	vip_price = int(os.getenv("VIP_PRICE_NGN", "30000"))
+	premium_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", os.getenv("PREMIUM_PRICE_NGN", "24000")))
+	vip_price = int(os.getenv("VIP_MONTHLY_PRICE_NGN", os.getenv("VIP_PRICE_NGN", "40000")))
 	vip_limit = int(os.getenv("VIP_SEAT_LIMIT", "15"))
 
 	msg = (
