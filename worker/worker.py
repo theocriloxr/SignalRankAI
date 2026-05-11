@@ -91,7 +91,7 @@ class Worker:
         if _enable_worker_tracker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
-                _register_task("outcome_tracker", lambda: outcome_tracker.start(), restart_on_failure=True)
+                _register_task("outcome_tracker", lambda: self._outcome_tracker_loop(outcome_tracker), restart_on_failure=True)
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
@@ -247,6 +247,28 @@ class Worker:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 continue
+
+    async def _outcome_tracker_loop(self, outcome_tracker) -> None:
+        await outcome_tracker.start()
+        try:
+            while not self._stop.is_set():
+                task = getattr(outcome_tracker, "_task", None)
+                if isinstance(task, asyncio.Task) and task.done():
+                    exc = None
+                    try:
+                        exc = task.exception()
+                    except Exception:
+                        exc = None
+                    if exc is not None:
+                        raise exc
+                    break
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            with contextlib.suppress(Exception):
+                await outcome_tracker.stop()
 
     async def _notify_admin_drift(self, result: dict) -> None:
         token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()

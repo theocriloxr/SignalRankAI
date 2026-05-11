@@ -58,6 +58,21 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
         self.assertEqual(kwargs.get("pool_size"), 5)
         self.assertEqual(kwargs.get("max_overflow"), 3)
 
+    def test_db_pool_is_capped_on_railway(self):
+        import db.session as dbs
+
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
+        with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
+             patch.dict(os.environ, {"RAILWAY_SERVICE_NAME": "signalrankai", "DB_POOL_SIZE": "15", "DB_MAX_OVERFLOW": "5"}, clear=False), \
+             patch("db.session.create_async_engine") as mocked_create_engine:
+            dbs.get_engine_for_event_loop()
+
+        mocked_create_engine.assert_called_once()
+        kwargs = mocked_create_engine.call_args.kwargs
+        self.assertLessEqual(kwargs.get("pool_size"), 3)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

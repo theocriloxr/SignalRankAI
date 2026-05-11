@@ -800,6 +800,10 @@ class RealtimeOutcomeTracker:
         self.running = True
         self._task = asyncio.create_task(self._loop(), name="outcome_tracker")
         logger.info("[outcome_tracker] Started (interval=%ds)", _check_interval())
+        try:
+            await self._task
+        finally:
+            self.running = False
 
     async def stop(self) -> None:
         self.running = False
@@ -837,24 +841,27 @@ class RealtimeOutcomeTracker:
 
         # Track which users had outcomes updated
         updated_users = set()
+        max_concurrency = max(1, int(os.getenv("OUTCOME_TRACKER_MAX_CONCURRENCY", "4") or 4))
+        signal_semaphore = asyncio.Semaphore(max_concurrency)
 
         async def wrapped_check_signal(sig):
-            try:
-                await self._check_signal(sig)
-                # Find all telegram_user_id recipients who received this signal
-                from db.session import get_session
-                from db.models import SignalDelivery, User
-                from sqlalchemy import select
-                async with get_session() as session:
-                    rows = await session.execute(
-                        select(User.telegram_user_id)
-                        .join(SignalDelivery, SignalDelivery.user_id == User.id)
-                        .where(SignalDelivery.signal_id == sig["signal_id"])
-                    )
-                    for (telegram_user_id,) in rows.all():
-                        updated_users.add(int(telegram_user_id))
-            except Exception as exc:
-                logger.warning(f"[outcome_tracker] Error updating user performance for signal {sig.get('signal_id')}: {exc}")
+            async with signal_semaphore:
+                try:
+                    await self._check_signal(sig)
+                    # Find all telegram_user_id recipients who received this signal
+                    from db.session import get_session
+                    from db.models import SignalDelivery, User
+                    from sqlalchemy import select
+                    async with get_session() as session:
+                        rows = await session.execute(
+                            select(User.telegram_user_id)
+                            .join(SignalDelivery, SignalDelivery.user_id == User.id)
+                            .where(SignalDelivery.signal_id == sig["signal_id"])
+                        )
+                        for (telegram_user_id,) in rows.all():
+                            updated_users.add(int(telegram_user_id))
+                except Exception as exc:
+                    logger.warning(f"[outcome_tracker] Error updating user performance for signal {sig.get('signal_id')}: {exc}")
 
         tasks = [wrapped_check_signal(sig) for sig in signals]
         await asyncio.gather(*tasks, return_exceptions=True)

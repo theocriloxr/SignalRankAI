@@ -70,14 +70,32 @@ def _pool_bool(name: str, default: bool = True) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _is_railway_runtime() -> bool:
+    return bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+
+
+def _effective_pool_settings() -> tuple[int, int]:
+    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
+
+    if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
+        railway_pool_cap = _pool_int("DB_POOL_RAILWAY_CAP", 3, minimum=1)
+        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_CAP", 0, minimum=0)
+        pool_size = min(pool_size, railway_pool_cap)
+        max_overflow = min(max_overflow, railway_overflow_cap)
+
+    return pool_size, max_overflow
+
+
 def create_engine() -> Optional[AsyncEngine]:
     url = get_database_url_or_none()
     if not url:
         return None
+    pool_size, max_overflow = _effective_pool_settings()
     return create_async_engine(
         url,
-        pool_size=_pool_int("DB_POOL_SIZE", 5, minimum=1),
-        max_overflow=_pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
+        pool_size=pool_size,
+        max_overflow=max_overflow,
         pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
         pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
         pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
@@ -123,10 +141,12 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
             logger.critical("[db] DATABASE_URL is not configured: %s", exc)
             return None
 
+        pool_size, max_overflow = _effective_pool_settings()
+
         engine = create_async_engine(
             url,
-            pool_size=_pool_int("DB_POOL_SIZE", 5, minimum=1),
-            max_overflow=_pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
+            pool_size=pool_size,
+            max_overflow=max_overflow,
             pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
             pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
             pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
@@ -145,8 +165,8 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
             "[db] async engine initialised loop=%s url=%s pool_size=%s max_overflow=%s",
             loop_id,
             _masked,
-            _pool_int("DB_POOL_SIZE", 5, minimum=1),
-            _pool_int("DB_MAX_OVERFLOW", 3, minimum=0),
+            pool_size,
+            max_overflow,
         )
         return engine
 

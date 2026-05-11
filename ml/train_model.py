@@ -87,24 +87,25 @@ async def load_training_data():
                 except Exception:
                     return 0.0
 
-        async def _load_candles(session, symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
+        async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
                 return []
             cutoff_ms = int(created_at.timestamp() * 1000)
-            q = (
-                select(MarketCandle)
-                .where(
-                    MarketCandle.symbol == str(symbol),
-                    MarketCandle.timeframe == str(timeframe),
-                    MarketCandle.open_time_ms <= cutoff_ms,
+            async with get_session() as candle_session:
+                q = (
+                    select(MarketCandle)
+                    .where(
+                        MarketCandle.symbol == str(symbol),
+                        MarketCandle.timeframe == str(timeframe),
+                        MarketCandle.open_time_ms <= cutoff_ms,
+                    )
+                    .order_by(desc(MarketCandle.open_time_ms))
+                    .limit(limit)
                 )
-                .order_by(desc(MarketCandle.open_time_ms))
-                .limit(limit)
-            )
-            res = await session.execute(q)
-            rows = list(res.scalars().all())
-            rows.reverse()
-            return rows
+                res = await candle_session.execute(q)
+                rows = list(res.scalars().all())
+                rows.reverse()
+                return rows
 
         def _atr(highs, lows, closes, period=14):
             if len(closes) < period + 1:
@@ -164,7 +165,6 @@ async def load_training_data():
 
             created_at = getattr(sig, 'created_at', None) or datetime.utcnow()
             candles = await _load_candles(
-                session,
                 str(getattr(sig, 'asset', '') or ''),
                 str(getattr(sig, 'timeframe', '') or ''),
                 created_at,
@@ -187,9 +187,9 @@ async def load_training_data():
                 ma20v = sum(vols[-21:-1]) / 20.0
                 rel_vol = (vols[-1] / ma20v) if ma20v > 0 else 0.0
 
-            candles_4h = await _load_candles(session, str(getattr(sig, 'asset', '') or ''), '4h', created_at, limit=60)
+            candles_4h = await _load_candles(str(getattr(sig, 'asset', '') or ''), '4h', created_at, limit=60)
             closes_4h = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_4h]
-            candles_1d = await _load_candles(session, str(getattr(sig, 'asset', '') or ''), '1d', created_at, limit=60)
+            candles_1d = await _load_candles(str(getattr(sig, 'asset', '') or ''), '1d', created_at, limit=60)
             closes_1d = [float(getattr(c, 'close', 0.0) or 0.0) for c in candles_1d]
             mtf_4h_trend = _trend_from_closes(closes_4h)
             mtf_1d_trend = _trend_from_closes(closes_1d)
