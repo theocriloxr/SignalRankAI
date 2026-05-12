@@ -103,3 +103,23 @@ def test_imp_blocks_fx_outside_overlap(monkeypatch):
 
     out = institutional_momentum_pulse_strategies("GBPUSD", market_data)
     assert out == []
+
+
+def test_imp_allows_london_session_when_configured(monkeypatch):
+    monkeypatch.setenv("IMP_FX_OVERLAP_ONLY", "0")
+    monkeypatch.setenv("IMP_FX_ALLOWED_SESSIONS", "london")
+    monkeypatch.setattr("strategies.imp._utc_hour_now", lambda: 9)
+
+    market_data = {
+        "4h": {
+            "candles": _build_h4_uptrend(),
+            "indicators": {"ema_200": 118.0},
+        },
+        "1h": {
+            "candles": _build_h1_imp_long_setup(),
+            "indicators": {"ema_50": 128.05, "atr": 0.28, "rsi": 53.0},
+        },
+    }
+
+    out = institutional_momentum_pulse_strategies("GBPUSD", market_data)
+    assert out

@@ -129,9 +129,10 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     if created_age > (int(signal.get("timeframe_minutes", 60)) * tf_mult):
         return False
     
-    # Expectancy placeholder (Phase 3: query live metrics)
+    # Expectancy gate is optional. Default behavior is down-weight-first in
+    # scoring, with hard blocking only when explicitly enabled.
     live_expectancy = float(signal.get("live_expectancy", EXPECTANCY_MIN))
-    if live_expectancy < EXPECTANCY_MIN:
+    if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_expectancy < EXPECTANCY_MIN:
         return False
     
     return True

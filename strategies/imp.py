@@ -48,6 +48,29 @@ def _is_london_ny_overlap() -> bool:
     return 13 <= hour < 17
 
 
+def _is_london_session() -> bool:
+    hour = _utc_hour_now()
+    return 7 <= hour < 16
+
+
+def _is_new_york_session() -> bool:
+    hour = _utc_hour_now()
+    return 13 <= hour < 22
+
+
+def _fx_session_allowed() -> bool:
+    allowed_raw = str(os.getenv("IMP_FX_ALLOWED_SESSIONS") or "london,newyork,overlap").strip().lower()
+    allowed = {s.strip() for s in allowed_raw.split(",") if s.strip()}
+    checks = {
+        "london": _is_london_session(),
+        "newyork": _is_new_york_session(),
+        "new_york": _is_new_york_session(),
+        "ny": _is_new_york_session(),
+        "overlap": _is_london_ny_overlap(),
+    }
+    return any(checks.get(name, False) for name in allowed)
+
+
 def _rsi_series(closes: list[float], period: int = 14) -> list[float]:
     if len(closes) < period + 1:
         return []
@@ -200,9 +223,13 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
         return []
 
     symbol = str(asset or "").upper().strip()
-    if _is_fx(symbol) and _env_bool("IMP_FX_OVERLAP_ONLY", True):
-        if not _is_london_ny_overlap():
-            return []
+    if _is_fx(symbol):
+        if _env_bool("IMP_FX_OVERLAP_ONLY", False):
+            if not _is_london_ny_overlap():
+                return []
+        elif _env_bool("IMP_FX_SESSION_FILTER_ENABLED", True):
+            if not _fx_session_allowed():
+                return []
 
     h4_close = _safe_float(h4_candles[-1].get("close"))
     h4_ema200 = _safe_float(h4_ind.get("ema_200"))

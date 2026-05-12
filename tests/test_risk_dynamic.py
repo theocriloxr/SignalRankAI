@@ -66,6 +66,12 @@ def test_risk_check_good(sample_signal, account_state_normal):
 
 def test_risk_check_low_expectancy(sample_signal, account_state_normal):
     sample_signal['live_expectancy'] = 0.10  # < EXPECTANCY_MIN
+    assert risk_check(sample_signal, account_state_normal) == True
+
+
+def test_risk_check_low_expectancy_hard_block(monkeypatch, sample_signal, account_state_normal):
+    monkeypatch.setenv("EXPECTANCY_HARD_BLOCK_ENABLED", "1")
+    sample_signal['live_expectancy'] = 0.10  # < EXPECTANCY_MIN
     assert risk_check(sample_signal, account_state_normal) == False
 
 def test_risk_check_high_vol(sample_signal, account_state_normal):

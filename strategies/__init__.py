@@ -64,7 +64,7 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         htf_bias = 'SHORT'
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
-    use_fallback = _env_bool("USE_FALLBACK_STRATEGIES", False)
+    use_fallback = _env_bool("USE_FALLBACK_STRATEGIES", True)
     imp_enabled = _env_bool("IMP_STRATEGY_ENABLED", True)
     imp_only_mode = _env_bool("IMP_ONLY_MODE", False)
     from .stock import stock_strategies

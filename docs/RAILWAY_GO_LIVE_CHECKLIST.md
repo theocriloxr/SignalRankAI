@@ -53,6 +53,18 @@ Recommended:
 - HELP_MENU_CACHE_TTL_SECONDS=300
 - ML_MODEL_RUNTIME_STATE_KEY=ml:model:primary
 
+Signal quality profile (requested production defaults):
+
+- IMP_STRATEGY_ENABLED=1
+- IMP_ONLY_MODE=0
+- RUN_ALL_STRATEGIES=1
+- USE_FALLBACK_STRATEGIES=1
+- IMP_FX_SESSION_FILTER_ENABLED=1
+- IMP_FX_ALLOWED_SESSIONS=london,newyork,overlap
+- EXPECTANCY_HARD_BLOCK_ENABLED=0
+- OPEN_SIGNALS_MAX_PER_ASSET=20
+- OPEN_SIGNALS_MAX_PER_CLASS=20
+
 ## 4. Smoke Tests (immediately after deploy)
 
 Run one command first:

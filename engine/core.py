@@ -266,6 +266,19 @@ def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:
     return asset, direction
 
 
+def _asset_class_key(asset: str) -> str:
+    sym = str(asset or "").upper().strip()
+    if is_crypto(sym):
+        return "crypto"
+    if is_fx(sym):
+        return "fx"
+    if is_commodity(sym):
+        return "commodity"
+    if is_stock(sym):
+        return "stock"
+    return "other"
+
+
 def _collapse_signal_variants(signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Keep only the strongest variant per asset+direction to avoid spammy micro-updates."""
     best_by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
@@ -904,6 +917,37 @@ def main_loop(DRY_RUN: bool = False):
             "stored": 0,
         }
 
+        open_limit_per_asset = max(1, _env_int("OPEN_SIGNALS_MAX_PER_ASSET", 20))
+        open_limit_per_class = max(1, _env_int("OPEN_SIGNALS_MAX_PER_CLASS", 20))
+        open_counts_by_asset: dict[str, int] = {}
+        open_counts_by_class: dict[str, int] = {}
+        try:
+            from db.session import get_session as _get_s_open
+            from db.models import Signal as _OpenSig
+            from sqlalchemy import select as _sel_open, func as _func_open
+
+            async def _load_open_signal_counts() -> list[tuple[str, int]]:
+                async with _get_s_open() as _os:
+                    rows = (await _os.execute(
+                        _sel_open(_OpenSig.asset, _func_open.count(_OpenSig.signal_id))
+                        .where(
+                            _OpenSig.expired.is_(False),
+                            _OpenSig.archived.is_(False),
+                        )
+                        .group_by(_OpenSig.asset)
+                    )).fetchall()
+                    return [(str(r[0] or "").upper().strip(), int(r[1] or 0)) for r in rows]
+
+            _open_rows = run_sync(_load_open_signal_counts(), timeout=20.0)
+            for _asset_name, _count in _open_rows:
+                if not _asset_name:
+                    continue
+                open_counts_by_asset[_asset_name] = int(_count)
+                _cls = _asset_class_key(_asset_name)
+                open_counts_by_class[_cls] = int(open_counts_by_class.get(_cls, 0) + int(_count))
+        except Exception as _open_count_err:
+            logger.debug(f"[engine] open signal count preload failed: {_open_count_err}")
+
         # Per-asset pipeline
         for asset in assets:
             logger.info(f"[engine] pipeline: starting asset={asset}")
@@ -1448,15 +1492,28 @@ def main_loop(DRY_RUN: bool = False):
                             pass
 
                         # Final gates: score + expectancy
+                        live_exp = float(sig.get('live_expectancy', 0.0) or 0.0)
+                        if live_exp < 0.0:
+                            # Down-weight underperforming setups first; hard-block can be re-enabled by env.
+                            decay_floor = max(0.35, min(_env_float("EXPECTANCY_NEGATIVE_DECAY_FLOOR", 0.60), 1.0))
+                            decay_span = max(0.01, _env_float("EXPECTANCY_NEGATIVE_DECAY_SPAN", 0.30))
+                            severity = min(1.0, abs(live_exp) / decay_span)
+                            mult = 1.0 - ((1.0 - decay_floor) * severity)
+                            sig['expectancy_weight'] = float(mult)
+                            sig['score'] = float(sig.get('score') or 0.0) * float(mult)
+                            try:
+                                sig['confidence'] = max(0.01, min(1.0, float(sig.get('confidence') or 0.0) * float(mult)))
+                            except Exception:
+                                pass
+
                         min_score_threshold = _current_min_score_threshold()
                         if sig.get('score', 0) < min_score_threshold:
                             sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
-# Expectancy gate (Phase 3 full impl)
-                        # Use 0.0 as default to allow new assets without history to pass
-                        live_exp = float(sig.get('live_expectancy', 0.0))
-                        if live_exp < 0.0:
+
+                        # Optional hard block remains available via env toggle.
+                        if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_exp < 0.0:
                             sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
@@ -1526,6 +1583,21 @@ def main_loop(DRY_RUN: bool = False):
 
                 for sig in final_signals:
                     try:
+                        _asset_name = str(sig.get('asset') or sig.get('symbol') or '').upper().strip()
+                        _asset_cls = _asset_class_key(_asset_name)
+                        if int(open_counts_by_asset.get(_asset_name, 0)) >= int(open_limit_per_asset):
+                            logger.info(
+                                f"[engine] open-limit(asset): skipping {_asset_name} "
+                                f"count={open_counts_by_asset.get(_asset_name, 0)} limit={open_limit_per_asset}"
+                            )
+                            continue
+                        if int(open_counts_by_class.get(_asset_cls, 0)) >= int(open_limit_per_class):
+                            logger.info(
+                                f"[engine] open-limit(class): skipping {_asset_name} class={_asset_cls} "
+                                f"count={open_counts_by_class.get(_asset_cls, 0)} limit={open_limit_per_class}"
+                            )
+                            continue
+
                         _asset_tf_key = f"{sig.get('asset')}_{sig.get('timeframe')}"
 
                         # Fix 2: cycle-level dedup (same asset+TF already queued this batch)
@@ -1574,6 +1646,9 @@ def main_loop(DRY_RUN: bool = False):
                         stored_signal_id = store_signal_compat(sig)
                         if stored_signal_id:
                             sig["signal_id"] = str(stored_signal_id)
+                        if _asset_name:
+                            open_counts_by_asset[_asset_name] = int(open_counts_by_asset.get(_asset_name, 0) + 1)
+                            open_counts_by_class[_asset_cls] = int(open_counts_by_class.get(_asset_cls, 0) + 1)
                         scored_signals_all.append(sig)
                         _cycle_cooldown.add(_asset_tf_key)
                         pipeline_stats["stored"] += 1

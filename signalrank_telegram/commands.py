@@ -2042,6 +2042,53 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			total_signals = 0
 			wins = 0
 			losses = 0
+			open_limit_per_asset = 20
+			open_limit_per_class = 20
+			class_usage_txt = "N/A"
+			asset_usage_txt = "N/A"
+			try:
+				open_limit_per_asset = max(1, int((os.getenv("OPEN_SIGNALS_MAX_PER_ASSET", "20") or "20").strip()))
+				open_limit_per_class = max(1, int((os.getenv("OPEN_SIGNALS_MAX_PER_CLASS", "20") or "20").strip()))
+			except Exception:
+				open_limit_per_asset = 20
+				open_limit_per_class = 20
+
+			def _asset_class(sym: str) -> str:
+				s = str(sym or "").upper().strip()
+				if s.endswith(("USDT", "BUSD", "USDC", "BTC", "ETH")):
+					return "crypto"
+				if len(s) == 6 and s.isalpha():
+					return "fx"
+				if s in {"XAUUSD", "XAGUSD", "WTI", "BRENT", "CL=F", "GC=F", "SI=F"}:
+					return "commodity"
+				return "stock"
+
+			asset_open_rows = (await session.execute(
+				select(Signal.asset, func.count(Signal.signal_id))
+				.where(
+					Signal.expired.is_(False),
+					Signal.archived.is_(False),
+				)
+				.group_by(Signal.asset)
+			)).fetchall()
+
+			asset_open_counts: dict[str, int] = {}
+			class_open_counts: dict[str, int] = {"crypto": 0, "fx": 0, "commodity": 0, "stock": 0}
+			for _asset, _count in asset_open_rows:
+				_asset_key = str(_asset or "").upper().strip()
+				_count_i = int(_count or 0)
+				if not _asset_key:
+					continue
+				asset_open_counts[_asset_key] = _count_i
+				_cls = _asset_class(_asset_key)
+				class_open_counts[_cls] = int(class_open_counts.get(_cls, 0) + _count_i)
+
+			class_usage_txt = (
+				f"CR {class_open_counts.get('crypto', 0)}/{open_limit_per_class} | "
+				f"FX {class_open_counts.get('fx', 0)}/{open_limit_per_class} | "
+				f"CM {class_open_counts.get('commodity', 0)}/{open_limit_per_class} | "
+				f"ST {class_open_counts.get('stock', 0)}/{open_limit_per_class}"
+			)
 			if db_user_id:
 				total_signals = (await session.execute(
 					select(func.count(SignalDelivery.id)).where(
@@ -2064,6 +2111,29 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				)).scalars().all()
 				wins = sum(1 for o in oc_rows if str(o.status or "").startswith("tp"))
 				losses = sum(1 for o in oc_rows if o.status == "sl")
+
+				user_asset_rows = (await session.execute(
+					select(Signal.asset)
+					.distinct()
+					.join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+					.where(
+						SignalDelivery.user_id == db_user_id,
+						SignalDelivery.sent_ok.is_(True),
+						SignalDelivery.delivered_at >= cutoff,
+					)
+				)).fetchall()
+				user_assets = [str(r[0] or "").upper().strip() for r in user_asset_rows if str(r[0] or "").strip()]
+				if user_assets:
+					parts = []
+					for _a in user_assets[:4]:
+						parts.append(f"{_a} {int(asset_open_counts.get(_a, 0))}/{open_limit_per_asset}")
+					asset_usage_txt = " | ".join(parts)
+				elif asset_open_counts:
+					top_open = sorted(asset_open_counts.items(), key=lambda kv: kv[1], reverse=True)[:4]
+					asset_usage_txt = " | ".join([f"{a} {c}/{open_limit_per_asset}" for a, c in top_open])
+			elif asset_open_counts:
+				top_open = sorted(asset_open_counts.items(), key=lambda kv: kv[1], reverse=True)[:4]
+				asset_usage_txt = " | ".join([f"{a} {c}/{open_limit_per_asset}" for a, c in top_open])
 			await session.commit()
 
 		win_rate = wins / (wins + losses) * 100 if (wins + losses) > 0 else 0.0
@@ -2083,6 +2153,9 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			f"🎯 Signals (30d): <b>{total_signals}</b>\n"
 			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
 			f"📈 Win rate: <b>{win_rate:.1f}%</b>\n"
+			f"🧱 Open caps: <b>Asset {open_limit_per_asset}</b> | <b>Class {open_limit_per_class}</b>\n"
+			f"📦 Class usage: <b>{class_usage_txt}</b>\n"
+			f"🧭 Asset usage: <b>{asset_usage_txt}</b>\n"
 			f"⚙️ Execution mode: <b>{exec_mode}</b>"
 			f"{expiry_txt}\n\n"
 			"<b>Quick commands:</b>\n"
