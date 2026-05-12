@@ -2053,9 +2053,12 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 				oc_rows = (await session.execute(
 					select(Outcome)
+					.distinct(Outcome.id)
 					.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
 					.where(
 						SignalDelivery.user_id == db_user_id,
+						SignalDelivery.sent_ok.is_(True),
+						SignalDelivery.delivered_at >= cutoff,
 						Outcome.closed_at >= cutoff,
 					)
 				)).scalars().all()

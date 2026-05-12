@@ -1461,12 +1461,27 @@ def main_loop(DRY_RUN: bool = False):
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
 
-                        # attach regime & expiration (30-minute hard cap per product requirement)
-                        # rationale: reduce stale-signal risk in fast markets and keep lifecycle aligned with
-                        # the short monitoring/tracking window used by outcome delivery and expiry jobs.
+                        # Attach regime + timeframe-aware expiration so higher-timeframe
+                        # setups are not invalidated too early.
                         sig['regime'] = regime
-                        from datetime import timedelta as _timedelta
-                        sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=30)
+                        _sig_tf = str(sig.get('timeframe') or '1h').strip().lower()
+                        _expiry_candles = max(1, _env_int('SIGNAL_EXPIRY_CANDLES', 2))
+                        try:
+                            sig['expires_at'] = signal_context.calculate_signal_expiration(
+                                _sig_tf,
+                                candles_validity=_expiry_candles,
+                            )
+                        except Exception:
+                            from datetime import timedelta as _timedelta
+                            _fallback_minutes = {
+                                '1m': 30,
+                                '5m': 90,
+                                '15m': 180,
+                                '1h': 720,
+                                '4h': 2880,
+                                '1d': 4320,
+                            }.get(_sig_tf, 720)
+                            sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
 
                         final_signals.append(sig)
                     except Exception:

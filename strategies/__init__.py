@@ -16,6 +16,7 @@ from .trend import trend_strategies
 from .momentum import momentum_strategies
 from .volatility import volatility_strategies
 from .structure import structure_strategy
+from .imp import institutional_momentum_pulse_strategies
 
 
 # Import fallback strategies - these run when main strategies produce no signals
@@ -63,12 +64,29 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         htf_bias = 'SHORT'
 
     run_all = _env_bool("RUN_ALL_STRATEGIES", True)
-    use_fallback = _env_bool("USE_FALLBACK_STRATEGIES", True)
+    use_fallback = _env_bool("USE_FALLBACK_STRATEGIES", False)
+    imp_enabled = _env_bool("IMP_STRATEGY_ENABLED", True)
+    imp_only_mode = _env_bool("IMP_ONLY_MODE", False)
     from .stock import stock_strategies
 
     # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or
     # 'LONG'/'SHORT' (new). Normalize to 'LONG'/'SHORT'.
     _DIR_MAP = {'BUY': 'LONG', 'SELL': 'SHORT', 'LONG': 'LONG', 'SHORT': 'SHORT'}
+
+    if imp_enabled:
+        try:
+            for sig in institutional_momentum_pulse_strategies(asset, market_data):
+                sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
+                sig['weight'] = strategy_weights.get(sig.get('strategy_name', 'Institutional Momentum Pulse'), 1) if strategy_weights else 1
+                signals.append(sig)
+        except Exception as e:
+            try:
+                logging.getLogger(__name__).error(f"IMP strategy error: {e}")
+            except Exception:
+                pass
+
+    if imp_only_mode:
+        return signals
 
     for timeframe, data in market_data.items():
         if not isinstance(data, dict):
