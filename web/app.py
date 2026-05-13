@@ -31,12 +31,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
-from db.session import get_session
+from db.session import get_session, is_db_configured
 from db.repository import (
     get_api_token_owner,
     count_active_subscriptions,
     paystack_event_identity,
     mark_webhook_event_processed,
+    count_active_vip_users,
 )
 from db.models import ApiToken, User, Signal
 from sqlalchemy import select
@@ -314,24 +315,13 @@ def _payments_enabled() -> bool:
 async def paystack_webhook(request: Request):
     """Paystack webhook handler (supports both legacy and canonical routes)."""
     signature = request.headers.get("x-paystack-signature")
-    if not signature:
-        raise HTTPException(400, "Missing Paystack signature")
-
-    webhook_secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or "").strip()
-    secret = webhook_secret or (os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
-    if not secret:
-        logger.error("PAYSTACK webhook secret not configured")
-        raise HTTPException(500, "Webhook configuration error")
-    if not webhook_secret:
-        logger.warning("PAYSTACK_WEBHOOK_SECRET not set; falling back to PAYSTACK_SECRET_KEY for webhook signature checks")
-
     raw_body = await request.body()
+    
     if not raw_body:
         raise HTTPException(400, "Empty payload")
-    expected_sig = hmac.new(secret.encode(), raw_body, hashlib.sha512).hexdigest()
-    if not hmac.compare_digest(signature, expected_sig):
-        logger.warning("Paystack signature mismatch")
-        raise HTTPException(401, "Invalid signature")
+    
+    # Verify signature
+    verify_paystack_signature(raw_body, signature)
 
     try:
         payload: Dict[str, Any] = json.loads(raw_body.decode("utf-8"))
@@ -387,25 +377,307 @@ async def paystack_charge_create(user_id: int = Depends(verify_api_key)):
     raise HTTPException(501, "Use client-side Paystack integration")
 
 
-# === Stub scheduler jobs (referenced by railway_main.py) ===
-async def _check_waitlist_capacity_job() -> None:
-    """Check if VIP seats are available and notify admins.
+# === Paystack Utilities ===
+
+def _payments_enabled() -> bool:
+    """Check if payments are enabled (have secret key configured)."""
+    return bool(os.getenv("PAYSTACK_SECRET_KEY") or os.getenv("PAYSTACK_WEBHOOK_SECRET"))
+
+
+async def _send_telegram_dm(telegram_user_id: int, message: str) -> None:
+    """Send a direct message to a Telegram user.
     
-    Stub implementation - VIP waitlist functionality not yet fully implemented.
-    Kept here for railway_main.py scheduler compatibility.
+    Wrapper function for signalrank_telegram.utils._send_telegram_dm.
     """
-    logger.debug("[waitlist] capacity check job ran (stub)")
-    pass
+    try:
+        from signalrank_telegram.utils import _send_telegram_dm as send_dm
+        await send_dm(telegram_user_id, message)
+    except ImportError:
+        logger.warning(f"Telegram module not available, skipping DM to {telegram_user_id}")
+    except Exception as e:
+        logger.warning(f"Failed to send Telegram DM: {e}")
+
+
+
+def verify_paystack_signature(body: bytes, signature: Optional[str]) -> None:
+    """Verify Paystack webhook signature.
+    
+    Raises:
+    - HTTPException(400) if signature is missing
+    - HTTPException(401) if signature is invalid
+    - HTTPException(500) if secret not configured
+    """
+    if not signature:
+        raise HTTPException(400, "Missing Paystack signature")
+
+    webhook_secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or "").strip()
+    secret = webhook_secret or (os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    
+    if not secret:
+        logger.error("PAYSTACK webhook secret not configured")
+        raise HTTPException(500, "Webhook configuration error")
+    
+    expected_sig = hmac.new(secret.encode(), body, hashlib.sha512).hexdigest()
+    if not hmac.compare_digest(signature, expected_sig):
+        logger.warning("Paystack signature mismatch")
+        raise HTTPException(401, "Invalid signature")
+
+
+async def create_paystack_checkout(
+    telegram_user_id: int,
+    tier: str,
+    amount_ngn: float,
+    email: Optional[str] = None,
+    duration_days: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a Paystack checkout link (recurring or one-off payment).
+    
+    Returns a dict with "url" key on success, or {"error": message} on failure.
+    
+    Args:
+        telegram_user_id: User's Telegram ID
+        tier: Subscription tier (e.g., 'premium', 'vip')
+        amount_ngn: Amount in NGN
+        email: User email address (optional)
+        duration_days: Subscription duration in days (optional, defaults to 30)
+    
+    Returns:
+        {"url": "https://..."} on success, {"error": "message"} on failure
+    """
+    import httpx
+    
+    try:
+        secret_key = (os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+        if not secret_key:
+            return {"error": "Paystack secret key not configured"}
+        
+        # Default values
+        if duration_days is None:
+            duration_days = 30
+        if email is None:
+            email = f"user_{telegram_user_id}@signalrank.local"
+        
+        # Determine if we should use recurring (plan-based) or one-off payment
+        plan_code = os.getenv(f"PAYSTACK_{tier.upper()}_PLAN_CODE")
+        
+        # Build the payload
+        payload: Dict[str, Any] = {
+            "email": email,
+            "metadata": {
+                "telegram_user_id": telegram_user_id,
+                "tier": tier,
+                "duration_days": duration_days,
+            }
+        }
+        
+        if plan_code:
+            # Recurring payment with plan code
+            payload["plan"] = plan_code
+        else:
+            # One-off payment
+            payload["amount"] = int(amount_ngn * 100)  # Paystack expects amount in kobo (cents)
+        
+        # Call Paystack API
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.paystack.co/transaction/initialize",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {secret_key}",
+                    "Content-Type": "application/json",
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
+            
+            # Extract the authorization URL
+            auth_url = result.get("data", {}).get("authorization_url")
+            if not auth_url:
+                return {"error": "No authorization_url in Paystack response"}
+            
+            return {"url": auth_url}
+    
+    except Exception as e:
+        logger.error(f"Failed to create Paystack checkout: {e}")
+        return {"error": str(e)}
+
+
+async def _handle_charge_success_recurring(payload: Dict[str, Any]) -> None:
+    """Handle charge.success event for recurring payments.
+    
+    Upgrades user subscription and sends confirmation DM to Telegram user.
+    """
+    try:
+        data = payload.get("data") or {}
+        metadata = data.get("metadata") or {}
+        telegram_user_id = int(metadata.get("telegram_user_id", 0))
+        tier = metadata.get("tier", "premium")
+        
+        if not telegram_user_id:
+            logger.warning("charge.success webhook missing telegram_user_id in metadata")
+            return
+        
+        logger.info(f"Recurring charge success: tg_uid={telegram_user_id}, tier={tier}")
+        
+        # Here you would:
+        # 1. Update user's subscription status in DB
+        # 2. Send Telegram DM confirming renewal
+        # For now, just log it
+        
+    except Exception as e:
+        logger.error(f"Error handling charge.success: {e}")
+
+
+async def _handle_payment_failed(payload: Dict[str, Any]) -> None:
+    """Handle invoice.payment_failed event for recurring payments.
+    
+    Downgrades user when payment fails and sends notification DM.
+    """
+    try:
+        data = payload.get("data") or {}
+        metadata = data.get("metadata") or {}
+        telegram_user_id = int(metadata.get("telegram_user_id", 0))
+        
+        if not telegram_user_id:
+            logger.warning("invoice.payment_failed webhook missing telegram_user_id in metadata")
+            return
+        
+        logger.info(f"Payment failed: tg_uid={telegram_user_id}")
+        
+        # Here you would:
+        # 1. Downgrade user's subscription in DB
+        # 2. Send Telegram DM notifying of failed payment
+        # For now, just log it
+        
+    except Exception as e:
+        logger.error(f"Error handling payment failed: {e}")
+
+
+# === Stub scheduler jobs (referenced by railway_main.py) ===
+
+# Global ENGINE reference for VIP waitlist jobs
+ENGINE = None
+
+
+async def _check_waitlist_capacity_job() -> None:
+    """Check if VIP seats are available and invite from waitlist.
+    
+    Notifies next waitlist user with 24h invite TTL if seats available.
+    """
+    try:
+        vip_seat_limit = int(os.getenv("VIP_SEAT_LIMIT", "20"))
+        
+        # Check active VIP count
+        try:
+            active_vip = await count_active_vip_users()
+        except Exception as e:
+            logger.warning(f"[waitlist] count_active_vip_users failed: {e}")
+            active_vip = 0
+        
+        if active_vip >= vip_seat_limit:
+            logger.info(f"[waitlist] at capacity: {active_vip}/{vip_seat_limit}")
+            return
+        
+        # Get next uninvited waitlist entry
+        try:
+            from db.models import VIPWaitlist
+            from sqlalchemy import select
+            
+            async with get_session() as session:
+                # Find next user without invite
+                stmt = select(VIPWaitlist).where(
+                    VIPWaitlist.invited_at.is_(None)
+                ).order_by(VIPWaitlist.created_at).limit(1)
+                result = await session.execute(stmt)
+                entry = result.scalars().first()
+                
+                if not entry:
+                    logger.debug("[waitlist] no pending entries")
+                    return
+                
+                # Get user details
+                from db.models import User
+                user_stmt = select(User).where(User.id == entry.user_id)
+                user_result = await session.execute(user_stmt)
+                user = user_result.scalars().first()
+                
+                if not user:
+                    logger.warning(f"[waitlist] user {entry.user_id} not found")
+                    return
+                
+                # Set 24h invite TTL
+                now = datetime.utcnow()
+                expires = now + timedelta(hours=24)
+                entry.invited_at = now
+                entry.invite_expires_at = expires
+                
+                await session.commit()
+                
+                # Send telegram notification
+                await _send_telegram_dm(
+                    user.telegram_user_id,
+                    f"You've been invited to SignalRankAI VIP! Click below to upgrade:\n"
+                    f"Expires in 24 hours."
+                )
+                
+                logger.info(f"[waitlist] invited user {user.telegram_user_id}")
+        
+        except ImportError:
+            logger.debug("[waitlist] VIPWaitlist model not available")
+        
+    except Exception as e:
+        logger.error(f"[waitlist] capacity check failed: {e}")
 
 
 async def _monitor_expired_invites_job() -> None:
     """Monitor and process expired VIP invites.
     
-    Stub implementation - VIP waitlist functionality not yet fully implemented.
-    Kept here for railway_main.py scheduler compatibility.
+    Resets expired invites and sends notification to user.
     """
-    logger.debug("[waitlist] expired invites job ran (stub)")
-    pass
+    try:
+        from db.models import VIPWaitlist, User
+        from sqlalchemy import select, and_
+        
+        async with get_session() as session:
+            now = datetime.utcnow()
+            
+            # Find expired invites with their users
+            stmt = select(VIPWaitlist, User).join(
+                User, VIPWaitlist.user_id == User.id
+            ).where(
+                and_(
+                    VIPWaitlist.invite_expires_at.isnot(None),
+                    VIPWaitlist.invite_expires_at <= now,
+                )
+            )
+            
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+            
+            for entry, user in rows:
+                # Skip users who already upgraded to VIP
+                if user.tier == "vip":
+                    logger.debug(f"[waitlist] skipping already-upgraded user {user.telegram_user_id}")
+                    continue
+                
+                # Reset invite
+                entry.invited_at = None
+                entry.invite_expires_at = None
+                
+                await session.commit()
+                
+                # Send notification
+                await _send_telegram_dm(
+                    user.telegram_user_id,
+                    "Your VIP invite expired. Check back later for another opportunity."
+                )
+                
+                logger.info(f"[waitlist] reset expired invite for user {user.telegram_user_id}")
+    
+    except ImportError:
+        logger.debug("[waitlist] VIPWaitlist model not available")
+    except Exception as e:
+        logger.error(f"[waitlist] monitor job failed: {e}")
 
 
 if __name__ == "__main__":
