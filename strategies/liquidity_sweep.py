@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from engine.signal_analytics import calculate_volume_delta
+import logging
 
 
 @dataclass(slots=True, frozen=True)
@@ -246,6 +248,12 @@ def liquidity_sweep_strategies(asset: str, market_data: dict[str, Any]) -> list[
         base_signals = detect_liquidity_sweep_fvg(candles, htf_candles)
         out: list[dict[str, Any]] = []
         for sig in base_signals:
+            # SmartVolume grading
+            vol_stats = calculate_volume_delta(df_1m, window=20)
+            rvol = float(vol_stats.get("rvol") or 0.0)
+            grade = "B"
+            if rvol >= 1.5:
+                grade = "A"
             sig.update({
                 "asset": symbol,
                 "symbol": symbol,
@@ -255,7 +263,8 @@ def liquidity_sweep_strategies(asset: str, market_data: dict[str, Any]) -> list[
                 "reasoning": (
                     f"Sweep + MSS + FVG detected on {exec_tf}; entry in gap, stop below sweep, RR 1:{_SweepConfig.rr_ratio:.1f}."
                 ),
-                "strength": float(sig.get("confidence") or 0.0),
+                "strength": float(sig.get("confidence") or 0.0) + (0.06 if grade == "A" else 0.0),
+                "grade": grade,
                 "volatility": float(atr_val / max(1e-9, float(closes[-1]))),
                 "market_open_confirmed": True,
                 "rr_ratio": _SweepConfig.rr_ratio,

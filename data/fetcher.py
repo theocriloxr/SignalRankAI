@@ -195,6 +195,7 @@ logger = logging.getLogger(__name__)
 _ALPHA_LAST_CALL_TS = 0.0
 _ALPHA_COOLDOWN_UNTIL = 0.0
 _BINANCE_BLOCKED_REASON: str | None = None
+_LAST_PROVIDER_USED: dict[tuple[str, str], str] = {}
 
 
 def is_binance_blocked() -> bool:
@@ -223,6 +224,22 @@ def _alphavantage_rate_limit() -> None:
     if wait > 0:
         time.sleep(wait)
     _ALPHA_LAST_CALL_TS = time.monotonic()
+
+
+def _set_last_provider_used(asset: str, timeframe: str, provider_name: str) -> None:
+    try:
+        key = (str(asset or "").upper().strip(), str(timeframe or "").lower().strip())
+        _LAST_PROVIDER_USED[key] = str(provider_name or "").lower().strip()
+    except Exception:
+        pass
+
+
+def _get_last_provider_used(asset: str, timeframe: str) -> str | None:
+    try:
+        key = (str(asset or "").upper().strip(), str(timeframe or "").lower().strip())
+        return _LAST_PROVIDER_USED.get(key)
+    except Exception:
+        return None
 
 def fetch_market_data(asset, timeframes):
     """Fetch live market data with validation and freshness checks."""
@@ -278,21 +295,34 @@ def fetch_market_data(asset, timeframes):
             max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
             candle_age = (current_time - latest_ts_sec) if latest_ts_sec else float('inf')
             
+            stale_but_acceptable = False
             if candle_age > max_age:
-                logger.warning(f"[fetcher] Candle data for {asset} {tf} is stale: {candle_age:.0f}s old (max: {max_age:.0f}s)")
-                # Still use the data but log the warning
+                # Allow a small grace window for some providers (yfinance/tradingview)
+                grace = float((os.getenv("YFINANCE_STALENESS_GRACE_SECONDS") or "120").strip())
+                provider_name = _get_last_provider_used(_asset_norm, _tf_norm) or ""
+                if provider_name in {"yahoo", "yfinance", "tradingview", "tradingview_connector", "tradingview_legacy"} and candle_age <= (max_age + grace):
+                    # mark as lower confidence but accept
+                    logger.info(f"[fetcher] Stale-but-acceptable data for {asset} {tf} provider={provider_name} age={candle_age:.0f}s (max+grace={max_age+grace:.0f}s)")
+                    stale_but_acceptable = True
+                else:
+                    logger.warning(f"[fetcher] Candle data for {asset} {tf} is stale: {candle_age:.0f}s old (max: {max_age:.0f}s)")
+                    stale_but_acceptable = False
             
             # Calculate indicators from real candle data
             indicators = calculate_indicators(candles)
             if not indicators:
                 continue  # Indicator calculation failed
             
+            provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
+            provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
             data[tf] = {
                 'candles': candles,
                 'indicators': indicators,
                 'fetched_at': current_time,
                 'latest_candle_timestamp': latest_ts_sec,
-                'candle_age_seconds': candle_age
+                'candle_age_seconds': candle_age,
+                'source': provider_name or 'unknown',
+                'stale_but_acceptable': bool(globals().get('stale_but_acceptable', False)),
             }
         except Exception as e:
             logger.warning(f"[fetcher] Skipping {asset} {tf} due to error: {e}")
@@ -405,6 +435,7 @@ def _fetch_crypto_multi_provider(asset, timeframe):
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
+                _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
             else:
@@ -444,6 +475,7 @@ def _fetch_fx_multi_provider(asset, timeframe):
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
+                _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
             else:
@@ -474,6 +506,7 @@ def _fetch_stock_multi_provider(asset, timeframe):
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
+                _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
             else:
@@ -851,6 +884,7 @@ def get_crypto_candles(asset, timeframe):
                 conn_out = connector_binance(sym, interval, limit=200)  # type: ignore
                 if conn_out:
                     _binance_breaker.record_success()
+                    _set_last_provider_used(sym, interval, "binance_connector")
                     logger.info(f"[data] crypto_connector=binance symbol={sym} tf={interval} candles={len(conn_out)}")
                     return conn_out
                 opened = _binance_breaker.record_failure()
@@ -874,6 +908,7 @@ def get_crypto_candles(asset, timeframe):
         candles = _cryptocompare_candles(sym, interval) if _cc_breaker.allow() else []
         if candles:
             _cc_breaker.record_success()
+            _set_last_provider_used(sym, interval, "cryptocompare")
         else:
             _cc_breaker.record_failure()
         if candles:
@@ -963,6 +998,7 @@ def get_crypto_candles(asset, timeframe):
                     continue
             logger.info(f"[data] crypto_primary=binance symbol={sym} tf={interval} candles={len(candles)}")
             _binance_breaker.record_success()
+            _set_last_provider_used(sym, interval, "binance")
             return candles
         except Exception as e:
             opened = _binance_breaker.record_failure()

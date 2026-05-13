@@ -5,6 +5,9 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
+from engine.signal_analytics import calculate_volume_delta
+import os
+import logging
 
 
 @dataclass(slots=True, frozen=True)
@@ -160,8 +163,13 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
         if swing_high <= swing_low:
             return []
 
-        fib_long = swing_high - ((swing_high - swing_low) * cfg.fib_level)
-        fib_short = swing_low + ((swing_high - swing_low) * cfg.fib_level)
+        # Golden Pocket zone: 0.618 - 0.786 retracement
+        pocket_low_ratio = 0.618
+        pocket_high_ratio = 0.786
+        fib_long = swing_high - ((swing_high - swing_low) * pocket_low_ratio)
+        fib_long_upper = swing_high - ((swing_high - swing_low) * pocket_high_ratio)
+        fib_short = swing_low + ((swing_high - swing_low) * pocket_low_ratio)
+        fib_short_upper = swing_low + ((swing_high - swing_low) * pocket_high_ratio)
         last_close = float(closes[-1])
         last_rsi = float(rsi[-1])
         rr = cfg.rr_ratio
@@ -183,67 +191,110 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
         fresh_demand = bool(low_idx) and abs(last_close - float(lows[low_idx[-1]])) <= max(atr_val * cfg.atr_tolerance_mult, last_close * 0.0015)
         fresh_supply = bool(high_idx) and abs(last_close - float(highs[high_idx[-1]])) <= max(atr_val * cfg.atr_tolerance_mult, last_close * 0.0015)
 
-        if bias == "LONG" and bullish_div and fresh_demand and abs(last_close - fib_long) <= max(atr_val * cfg.atr_tolerance_mult, last_close * 0.0015):
+        # Tolerance buffer (e.g., 0.01% default) to count boundary touches as inside
+        try:
+            tol_pct = float((os.getenv("FIB_TOUCH_TOLERANCE_PCT") or "0.0001").strip())
+        except Exception:
+            tol_pct = 0.0001
+
+        def _inside_zone(price: float, low: float, high: float) -> bool:
+            if price >= min(low, high) and price <= max(low, high):
+                return True
+            # within tolerance of boundaries
+            if abs(price - low) <= max(abs(price) * tol_pct, 1e-9):
+                return True
+            if abs(price - high) <= max(abs(price) * tol_pct, 1e-9):
+                return True
+            return False
+
+        # Determine if trigger candle closes back inside Golden Pocket (5m strict)
+        prev_close = float(closes[-2]) if closes.size >= 2 else float(closes[-1])
+        last_close_price = float(last_close)
+
+        long_zone_low = float(fib_long_upper)
+        long_zone_high = float(fib_long)
+
+        short_zone_low = float(fib_short)
+        short_zone_high = float(fib_short_upper)
+
+        # Check volume grading
+        vol_stats = calculate_volume_delta(candles[-(cfg.lookback + 5):], window=20)
+        rvol = float(vol_stats.get("rvol") or 0.0)
+
+        if bias == "LONG" and bullish_div and fresh_demand and _inside_zone(last_close_price, long_zone_low, long_zone_high):
+            # If running on 5m, require the candle to have closed back inside the pocket (prev outside -> last inside)
+            if exec_tf == "5m":
+                prev_outside = not _inside_zone(prev_close, long_zone_low, long_zone_high)
+                if not prev_outside:
+                    return []
             stop = swing_low - (atr_val * 0.5)
             risk = abs(last_close - stop)
             if risk > 0:
-                out.append({
+                sig = {
                     "asset": symbol,
                     "symbol": symbol,
                     "timeframe": exec_tf,
                     "direction": "LONG",
-                    "entry": float(fib_long),
+                    "entry": float((long_zone_low + long_zone_high) / 2.0),
                     "stop_loss": float(stop),
-                    "take_profit": float(fib_long + (risk * rr)),
-                    "confidence": 0.86,
+                    "take_profit": float(((long_zone_low + long_zone_high) / 2.0) + (risk * rr)),
+                    "confidence": 0.86 + (0.06 if rvol >= 1.5 else 0.0),
+                    "grade": ("A" if rvol >= 1.5 else "B"),
                     "rr_ratio": rr,
                     "strategy_name": "Fibonacci Confluence",
                     "strategy_group": "fibonacci",
                     "reasoning": (
-                        "0.618 retracement aligned with fresh demand, bullish RSI divergence, and HTF long bias."
+                        "Golden Pocket (0.618-0.786) aligned with fresh demand, bullish RSI divergence, and HTF long bias."
                     ),
                     "swing_high": float(swing_high),
                     "swing_low": float(swing_low),
-                    "fib_618": float(fib_long),
+                    "fib_618": float((long_zone_low + long_zone_high) / 2.0),
                     "rsi_last": float(last_rsi),
                     "htf_bias_close": float(htf_close),
                     "htf_bias_ema200": float(htf_ema200),
-                    "strength": 0.86,
+                    "strength": 0.86 + (0.06 if rvol >= 1.5 else 0.0),
                     "market_open_confirmed": True,
                     "source": "fibonacci_confluence",
                     "created_at": datetime.utcnow(),
-                })
+                }
+                out.append(sig)
 
-        if bias == "SHORT" and bearish_div and fresh_supply and abs(last_close - fib_short) <= max(atr_val * cfg.atr_tolerance_mult, last_close * 0.0015):
+        if bias == "SHORT" and bearish_div and fresh_supply and _inside_zone(last_close_price, short_zone_low, short_zone_high):
+            if exec_tf == "5m":
+                prev_outside = not _inside_zone(prev_close, short_zone_low, short_zone_high)
+                if not prev_outside:
+                    return []
             stop = swing_high + (atr_val * 0.5)
             risk = abs(stop - last_close)
             if risk > 0:
-                out.append({
+                sig = {
                     "asset": symbol,
                     "symbol": symbol,
                     "timeframe": exec_tf,
                     "direction": "SHORT",
-                    "entry": float(fib_short),
+                    "entry": float((short_zone_low + short_zone_high) / 2.0),
                     "stop_loss": float(stop),
-                    "take_profit": float(fib_short - (risk * rr)),
-                    "confidence": 0.86,
+                    "take_profit": float(((short_zone_low + short_zone_high) / 2.0) - (risk * rr)),
+                    "confidence": 0.86 + (0.06 if rvol >= 1.5 else 0.0),
+                    "grade": ("A" if rvol >= 1.5 else "B"),
                     "rr_ratio": rr,
                     "strategy_name": "Fibonacci Confluence",
                     "strategy_group": "fibonacci",
                     "reasoning": (
-                        "0.618 retracement aligned with fresh supply, bearish RSI divergence, and HTF short bias."
+                        "Golden Pocket (0.618-0.786) aligned with fresh supply, bearish RSI divergence, and HTF short bias."
                     ),
                     "swing_high": float(swing_high),
                     "swing_low": float(swing_low),
-                    "fib_618": float(fib_short),
+                    "fib_618": float((short_zone_low + short_zone_high) / 2.0),
                     "rsi_last": float(last_rsi),
                     "htf_bias_close": float(htf_close),
                     "htf_bias_ema200": float(htf_ema200),
-                    "strength": 0.86,
+                    "strength": 0.86 + (0.06 if rvol >= 1.5 else 0.0),
                     "market_open_confirmed": True,
                     "source": "fibonacci_confluence",
                     "created_at": datetime.utcnow(),
-                })
+                }
+                out.append(sig)
 
         return out
     except Exception:
