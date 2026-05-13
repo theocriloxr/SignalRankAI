@@ -85,6 +85,7 @@ Railway templates and the go-live checklist in `docs/` were updated to document 
 5. Data ingestion and indicator pipeline
 ---------------------------------------
 - `data/fetcher.py` and `data/market_data.py` manage fetching candles and normalizing into a per-asset, per-timeframe structure used by strategies.
+- Candle memoization is short-lived and is pruned proactively to keep the in-process cache light on hobby-tier hosting.
 - Indicators are computed in `data/indicators.py` and stored in `market_data[timeframe]['indicators']` for each timeframe.
 - `data/pair_discovery.py` discovers candidate universe (e.g., trending pairs) used by the round-robin cycle in `engine/core.py`.
 - WebSocket adapters (Binance, CryptoCompare) are under `data/` connectors to support low-latency ingestion.
@@ -100,12 +101,12 @@ Strategy orchestration (in `strategies/__init__.py`):
 - Env flags control behavior: `RUN_ALL_STRATEGIES`, `USE_FALLBACK_STRATEGIES`, `IMP_STRATEGY_ENABLED`, `IMP_ONLY_MODE`.
 - If `IMP_ENABLED`, IMP signals run first and normalized to canonical fields.
 - If `IMP_ONLY_MODE` is enabled (off by default) the engine returns only IMP signals.
-- When `RUN_ALL_STRATEGIES` is true, run groups: trend, momentum, volatility, structure, stock, tradingview.
+- When `RUN_ALL_STRATEGIES` is true, run groups: trend, momentum, volatility, structure, liquidity, fibonacci, stock, tradingview.
 - If no main signals and `USE_FALLBACK_STRATEGIES` true, fallback strategies run to produce lower-confidence signals.
 
 Institutional Momentum Pulse (IMP) — `strategies/imp.py`
 - Purpose: high-quality confluence entries combining HTF trend + pullback + trigger + POC value + RSI momentum.
-- Timeframes: HTF=4h (trend via EMA200), trigger and entry on 1h (EMA50 pullback + engulfing/pin-bar trigger + RSI crossing 50).
+- Timeframes: HTF=1d/4h directional bias, trigger and entry on 1h (EMA50 pullback + engulfing/pin-bar trigger + RSI crossing 50).
 - Filters:
   - Require H4 close >/< EMA200 for direction LONG/SHORT.
   - H1 must touch EMA50 within a tolerance derived from ATR.
@@ -115,6 +116,14 @@ Institutional Momentum Pulse (IMP) — `strategies/imp.py`
 - Session gating for FX:
   - Several environment knobs: `IMP_FX_OVERLAP_ONLY` (strict overlap mode), and `IMP_FX_SESSION_FILTER_ENABLED` with `IMP_FX_ALLOWED_SESSIONS` string to allow `london`, `newyork`, and/or `overlap`. This supports allowing London and New York sessions separately as requested.
 - Output: normalized signal dict with `strategy_name: "Institutional Momentum Pulse"`, `strategy_group: "impulse"`.
+
+Liquidity Sweep + FVG — `strategies/liquidity_sweep.py`
+- Purpose: detect stop-run/liquidity sweep setups followed by market-structure shift and fair-value-gap continuation.
+- Behavior: uses higher-timeframe prior high/low, short-timeframe sweep confirmation, ATR-based risk, and a 1:3 RR target model.
+
+Fibonacci Confluence — `strategies/fibonacci_confluence.py`
+- Purpose: detect 0.618 retracement entries aligned with higher-timeframe bias, momentum, and nearby demand/supply confluence.
+- Behavior: combines 1d/4h bias, execution-timeframe retracement structure, RSI confirmation, and ATR-aware stops.
 
 7. Engine pipeline, gates and scoring
 ------------------------------------
@@ -129,9 +138,11 @@ Overview (`engine/core.py`) — per-cycle operations:
   - Apply consensus filter (`engine/consensus.py`).
   - Deduplicate and compute fingerprints (`db/pg_features.compute_signal_fingerprint`).
   - Strict candidate gating (signal structure validation, risk checks via `engine/risk.py`, confluence checks, news-sentiment gate).
+  - Strict candidate gating (signal structure validation, risk checks via `engine/risk.py`, confluence checks, news-sentiment gate, 60-minute high-impact macro no-trade gate).
   - ML advisory (non-blocking) and optional ML hard filter.
   - Scoring via `engine/scoring.calculate_signal_score`.
   - Advanced filters and ultra-quality filters (optional global quality lock).
+  - Gemini signal review can veto a signal before it is stored or delivered when `GEMINI_API_KEY` is configured and signal review is enabled.
   - Attach timeframe-aware expiry via `signal_context.calculate_signal_expiration` with fallback map for minutes per timeframe.
   - Collapse variants to one best signal per asset+direction using `_collapse_signal_variants`.
   - Final store in DB via `store_signal_compat` and add to trade tracker.
@@ -139,6 +150,7 @@ Overview (`engine/core.py`) — per-cycle operations:
 Key gates and behavior:
 - Freshness/staleness thresholds based on `CANDLE_STALENESS_MULTIPLIER`.
 - Risk gate checks RR >= 1.5 and ATR volatility limits.
+- Trailing-stop management uses a configurable ATR multiplier and defaults to `0.5x ATR` to lock profits earlier.
 - Expectancy gating updated in this pass: default is dynamic down-weight-first, with optional hard-block via `EXPECTANCY_HARD_BLOCK_ENABLED`.
 - Open-signal concurrency caps (defaults applied): `OPEN_SIGNALS_MAX_PER_ASSET=20` and `OPEN_SIGNALS_MAX_PER_CLASS=20`. Engine preloads current open counts and prevents adding signals exceeding caps.
 

@@ -197,6 +197,20 @@ def _volume_profile_poc(candles: list[dict], bins: int = 24) -> float | None:
     return float(min_p + ((max_idx + 0.5) * step))
 
 
+def _ema_bias(candles: list[dict], indicators: dict, ema_key: str = "ema_200") -> str | None:
+    if not candles or not isinstance(indicators, dict):
+        return None
+    close = _safe_float(candles[-1].get("close"))
+    ema_value = _safe_float(indicators.get(ema_key))
+    if close <= 0 or ema_value <= 0:
+        return None
+    if close > ema_value:
+        return "LONG"
+    if close < ema_value:
+        return "SHORT"
+    return None
+
+
 def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> list[dict]:
     """Institutional Momentum Pulse (IMP).
 
@@ -231,16 +245,20 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
             if not _fx_session_allowed():
                 return []
 
+    h4_bias = _ema_bias(h4_candles, h4_ind, "ema_200")
+    if h4_bias is None:
+        return []
+
+    direction = h4_bias
+
+    d1 = market_data.get("1d") or {}
+    if isinstance(d1, dict):
+        d1_bias = _ema_bias(list(d1.get("candles") or []), dict(d1.get("indicators") or {}), "ema_200")
+        if d1_bias is not None and d1_bias != direction:
+            return []
     h4_close = _safe_float(h4_candles[-1].get("close"))
     h4_ema200 = _safe_float(h4_ind.get("ema_200"))
     if h4_ema200 <= 0 or h4_close <= 0:
-        return []
-
-    if h4_close > h4_ema200:
-        direction = "LONG"
-    elif h4_close < h4_ema200:
-        direction = "SHORT"
-    else:
         return []
 
     # Asset-class adaptation: optional stock relative-strength filter
@@ -340,7 +358,7 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
 
     strategy_name = "Institutional Momentum Pulse"
     reasoning = (
-        f"IMP {direction}: H4 trend aligned with EMA200, H1 pullback to EMA50, "
+        f"IMP {direction}: 1D/4H bias aligned with EMA200, H1 pullback to EMA50, "
         f"POC support/resistance check passed, candle trigger confirmed, RSI crossed 50."
     )
 

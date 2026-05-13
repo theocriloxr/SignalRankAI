@@ -70,9 +70,21 @@ def _read_cached_candles(key: tuple[str, str], ttl_seconds: float) -> list | Non
         return [dict(c) if isinstance(c, dict) else c for c in (candles or [])]
 
 
+def _prune_candle_cache(max_age_seconds: float) -> None:
+    cutoff = time.time() - max(0.0, float(max_age_seconds))
+    with _CANDLE_CACHE_LOCK:
+        stale_keys = [key for key, (ts, _) in _CANDLE_CACHE.items() if ts < cutoff]
+        for key in stale_keys:
+            _CANDLE_CACHE.pop(key, None)
+
+
 def _write_cached_candles(key: tuple[str, str], candles: list) -> None:
     with _CANDLE_CACHE_LOCK:
         _CANDLE_CACHE[key] = (time.time(), list(candles or []))
+    try:
+        _prune_candle_cache(float(os.getenv("CANDLE_CACHE_PRUNE_SECONDS", "900") or 900))
+    except Exception:
+        pass
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold

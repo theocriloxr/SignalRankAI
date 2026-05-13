@@ -16,6 +16,9 @@ import asyncio
 import logging
 import threading
 import inspect
+import json
+import urllib.error
+import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
@@ -211,6 +214,89 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
     )
     _diagnostic_state.empty_cycles[asset_key] = 0
     _diagnostic_state.gate_counts[asset_key] = Counter()
+
+
+async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        return True, None, "gemini_disabled_no_key"
+    if _env_bool("GEMINI_SIGNAL_REVIEW_ENABLED", True) is False:
+        return True, None, "gemini_disabled"
+
+    model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
+    payload = {
+        "prompt": "Review this trade. Is this a high-probability institutional move or a retail trap? Rate 1-10. Only approve if > 8.",
+        "technical_signal": {
+            "asset": signal.get("asset"),
+            "timeframe": signal.get("timeframe"),
+            "direction": signal.get("direction"),
+            "strategy_name": signal.get("strategy_name"),
+            "strategy_group": signal.get("strategy_group"),
+            "entry": signal.get("entry"),
+            "stop_loss": signal.get("stop_loss"),
+            "take_profit": signal.get("take_profit"),
+            "score": signal.get("score"),
+            "confidence": signal.get("confidence"),
+            "rr_ratio": signal.get("rr_ratio"),
+            "regime": signal.get("regime"),
+            "news_sentiment": news_sentiment,
+        },
+        "recent_ohlcv": candles[-50:],
+        "indicators": {
+            k: signal.get(k)
+            for k in (
+                "rsi", "macd_trend", "macd_hist", "trend_ema", "trend_sma",
+                "adx_trend", "volume_ratio", "atr_rel", "atr_regime", "relative_volume",
+                "mtf_4h_trend", "mtf_1d_trend", "imp_poc", "imp_h4_ema200", "imp_h1_ema50",
+            )
+        },
+    }
+    body = json.dumps({
+        "contents": [{"parts": [{"text": json.dumps(payload)}]}],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 160},
+    }).encode("utf-8")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+    def _do_request() -> tuple[bool, float | None, str]:
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", "application/json")
+        try:
+            timeout_s = max(3, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "10") or 10))
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                raw = resp.read().decode("utf-8", errors="ignore")
+            lower = raw.lower()
+            score: float | None = None
+            for token in ("\"score\":", "score:", "rating:"):
+                if token in lower:
+                    try:
+                        after = lower.split(token, 1)[1]
+                        num = ""
+                        for ch in after:
+                            if ch.isdigit() or ch == ".":
+                                num += ch
+                            elif num:
+                                break
+                        if num:
+                            score = float(num)
+                            break
+                    except Exception:
+                        pass
+            if score is None:
+                for digit in range(10, 0, -1):
+                    if f"{digit}" in lower:
+                        score = float(digit)
+                        break
+            if score is None:
+                return True, None, "gemini_unparsed_allow"
+            return (score > 8.0), score, "gemini_ok"
+        except urllib.error.HTTPError as exc:
+            logger.warning("[engine] gemini review http_error=%s", getattr(exc, "code", "?"))
+            return True, None, f"gemini_http_{getattr(exc, 'code', 'error')}"
+        except Exception as exc:
+            logger.debug("[engine] gemini review failed: %s", exc)
+            return True, None, "gemini_failed_allow"
+
+    return await asyncio.to_thread(_do_request)
 
 
 def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
@@ -1036,10 +1122,10 @@ def main_loop(DRY_RUN: bool = False):
                 if stale_data:
                     continue
 
-                # Economic calendar no-trade-zone gate (30-min buffer around high-impact events)
+                # Economic calendar no-trade-zone gate (60-min buffer around high-impact events)
                 try:
-                    if _is_no_trade_zone_sync(asset):
-                        logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 30 min)")
+                    if _is_no_trade_zone_sync(asset, buffer_minutes=60):
+                        logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 60 min)")
                         continue
                 except Exception:
                     pass
@@ -1608,6 +1694,25 @@ def main_loop(DRY_RUN: bool = False):
                                 '1d': 4320,
                             }.get(_sig_tf, 720)
                             sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
+
+                        try:
+                            gemini_ok, gemini_score, gemini_reason = run_sync(
+                                _gemini_review_signal(
+                                    sig,
+                                    candles if isinstance(candles, list) else [],
+                                    float(sig.get('news_sentiment') or 0.0) if sig.get('news_sentiment') is not None else None,
+                                ),
+                                timeout=20.0,
+                            )
+                            sig['gemini_review_score'] = gemini_score
+                            sig['gemini_review_reason'] = gemini_reason
+                            if not gemini_ok:
+                                sig['rejection_reason'] = f"gemini:{gemini_reason}"
+                                _record_gate_failure(asset, "gemini", sig['rejection_reason'])
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"gemini_score": gemini_score})
+                                continue
+                        except Exception:
+                            pass
 
                         final_signals.append(sig)
                     except Exception:

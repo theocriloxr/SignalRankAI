@@ -154,15 +154,17 @@ class RiskManager:
         atr: float,
         direction: int = 1
     ) -> Optional[float]:
+        trail_mult = float(os.getenv("TRAILING_STOP_ATR_MULT", "0.5") or 0.5)
+        trail_mult = max(0.1, min(trail_mult, 2.0))
         if direction == 1:  # Long
             if current_price <= entry_price:
                 return entry_price - (2 * atr)
-            trailing_stop = current_price - (1.5 * atr)
+            trailing_stop = current_price - (trail_mult * atr)
             return max(trailing_stop, entry_price - (2 * atr))
         else:  # Short
             if current_price >= entry_price:
                 return entry_price + (2 * atr)
-            trailing_stop = current_price + (1.5 * atr)
+            trailing_stop = current_price + (trail_mult * atr)
             return min(trailing_stop, entry_price + (2 * atr))
     
     # Partial exits
