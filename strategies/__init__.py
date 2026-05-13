@@ -17,6 +17,8 @@ from .momentum import momentum_strategies
 from .volatility import volatility_strategies
 from .structure import structure_strategy
 from .imp import institutional_momentum_pulse_strategies
+from .liquidity_sweep import liquidity_sweep_strategies
+from .fibonacci_confluence import fibonacci_confluence_strategies
 
 
 # Import fallback strategies - these run when main strategies produce no signals
@@ -104,20 +106,20 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         # Determine which groups to run.
         # Default: run ALL strategy groups, then let consensus + scoring pick the winner.
         if run_all:
-            groups = ["trend", "momentum", "volatility", "structure", "stock", "tradingview"]
+            groups = ["trend", "momentum", "volatility", "structure", "liquidity", "fibonacci", "stock", "tradingview"]
         else:
             groups = []
             if regime_strategies and regime in regime_strategies:
                 groups = regime_strategies[regime]
             else:
                 if regime == "TRENDING":
-                    groups = ["trend", "structure", "tradingview"]
+                    groups = ["trend", "structure", "liquidity", "fibonacci", "tradingview"]
                 elif regime == "RANGING":
-                    groups = ["momentum", "structure", "tradingview"]
+                    groups = ["momentum", "structure", "liquidity", "tradingview"]
                 elif regime == "VOLATILE":
-                    groups = ["volatility", "structure", "tradingview"]
+                    groups = ["volatility", "liquidity", "fibonacci", "tradingview"]
                 else:
-                    groups = ["structure", "tradingview"]
+                    groups = ["structure", "liquidity", "fibonacci", "tradingview"]
 
         def _add(sig):
             """Normalize direction, apply HTF filter and weight, then append."""
@@ -143,6 +145,12 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 _add(sig)
         if "structure" in groups:
             for sig in structure_strategy(asset, timeframe, data):
+                _add(sig)
+        if "liquidity" in groups:
+            for sig in liquidity_sweep_strategies(asset, market_data):
+                _add(sig)
+        if "fibonacci" in groups:
+            for sig in fibonacci_confluence_strategies(asset, market_data):
                 _add(sig)
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
             try:

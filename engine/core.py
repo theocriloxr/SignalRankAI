@@ -17,6 +17,7 @@ import logging
 import threading
 import inspect
 from collections import Counter
+from dataclasses import dataclass, field
 from typing import Any, Dict, List
 from datetime import datetime, timedelta as _timedelta
 
@@ -163,6 +164,53 @@ except Exception as e:
 # Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
+
+
+@dataclass(slots=True)
+class _GateHeatmapState:
+    empty_cycles: dict[str, int] = field(default_factory=dict)
+    gate_counts: dict[str, Counter[str]] = field(default_factory=dict)
+
+
+_diagnostic_state = _GateHeatmapState()
+
+
+def _provider_source_name(tf_data: dict[str, Any] | None) -> str:
+    source = str((tf_data or {}).get("source") or "").strip().lower()
+    if source in {"yfinance", "tradingview", "tradingview_connector", "tradingview_legacy"}:
+        return source
+    return source
+
+
+def _record_gate_failure(asset: str, gate: str, reason: str | None = None) -> None:
+    asset_key = str(asset or "").upper().strip() or "UNKNOWN"
+    gate_key = str(gate or "unknown").strip().lower() or "unknown"
+    bucket = _diagnostic_state.gate_counts.setdefault(asset_key, Counter())
+    bucket[gate_key] += 1
+    if reason:
+        bucket[f"{gate_key}:{reason[:48]}"] += 1
+
+
+def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> None:
+    asset_key = str(asset or "").upper().strip() or "UNKNOWN"
+    if signals_generated > 0:
+        _diagnostic_state.empty_cycles[asset_key] = 0
+        return
+    empty_cycles = int(_diagnostic_state.empty_cycles.get(asset_key, 0) + 1)
+    _diagnostic_state.empty_cycles[asset_key] = empty_cycles
+    if empty_cycles < 3:
+        return
+    gates = _diagnostic_state.gate_counts.get(asset_key) or Counter()
+    heatmap = {gate: count for gate, count in gates.most_common(12)}
+    logger.warning(
+        "[engine][diagnostic_heatmap] asset=%s cycle=%s empty_cycles=%s heatmap=%s",
+        asset_key,
+        cycle_no,
+        empty_cycles,
+        heatmap,
+    )
+    _diagnostic_state.empty_cycles[asset_key] = 0
+    _diagnostic_state.gate_counts[asset_key] = Counter()
 
 
 def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None, meta: Dict[str, Any] | None = None) -> None:
@@ -971,7 +1019,17 @@ def main_loop(DRY_RUN: bool = False):
                         data_age = tf_data.get("data_age_seconds")
                         tf_interval = _TF_SECONDS.get(tf, 3600)
                         max_age = tf_interval * CANDLE_STALENESS_MULTIPLIER
-                        if data_age is not None and data_age > max_age:
+                        source_name = _provider_source_name(tf_data)
+                        if data_age is not None and data_age > 60 and source_name in {"yfinance", "tradingview", "tradingview_connector", "tradingview_legacy"}:
+                            logger.warning(
+                                "[engine] latency_warning asset=%s tf=%s source=%s age=%ss threshold=60s action=warn_only",
+                                asset,
+                                tf,
+                                source_name,
+                                data_age,
+                            )
+                            tf_data["latency_warning"] = True
+                        elif data_age is not None and data_age > max_age:
                             logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
                             stale_data = True
                             break
@@ -1022,6 +1080,8 @@ def main_loop(DRY_RUN: bool = False):
                     _tf_list = list(market_data.keys()) if market_data else []
                     _ind_keys = list(market_data.get(list(market_data.keys())[0], {}).get('indicators', {}).keys()) if market_data else []
                     logger.info(f"[engine] No strategy signals for {asset} regime={regime} tfs={_tf_list} ind_sample={_ind_keys[:5]}")
+                    _record_gate_failure(asset, "strategy_generation", "no_strategy_signals")
+                    _maybe_log_heatmap(asset, cycle_no, 0)
                     continue
 
                 # DEBUG: Log strategy signal details
@@ -1128,12 +1188,14 @@ def main_loop(DRY_RUN: bool = False):
                         ok, reason = validate_signal(sig)
                         if not ok:
                             sig['rejection_reason'] = f"validation:{reason}"
+                            _record_gate_failure(asset, "trend", reason)
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
                         # risk gate
                         account_state = type('AccountState', (), {'drawdown': 0.0})()
                         if not risk_check(sig, account_state):
                             sig['rejection_reason'] = 'risk/volatility'
+                            _record_gate_failure(asset, "risk", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
                         # confluence (only enforce if threshold configured or score available)
@@ -1143,6 +1205,7 @@ def main_loop(DRY_RUN: bool = False):
                             conf_min = float(conf_raw) if conf_raw else None
                             if conf_min is not None and conf < conf_min:
                                 sig['rejection_reason'] = f'confluence {conf:.1f}%'
+                                _record_gate_failure(asset, "trend", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
                                 continue
                         # News confirmation gate (all supported classes: FX/crypto/commodities/stocks).
@@ -1155,6 +1218,7 @@ def main_loop(DRY_RUN: bool = False):
                             _oppose = (_news >= _thr and _dir == 'short') or (_news <= -_thr and _dir == 'long')
                             if _oppose:
                                 sig['rejection_reason'] = f"news_conflict sentiment={_news:.2f}"
+                                _record_gate_failure(asset, "news", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"news_sentiment": _news})
                                 continue
                             if ((_news >= _thr and _dir == 'long') or (_news <= -_thr and _dir == 'short')):
@@ -1345,6 +1409,7 @@ def main_loop(DRY_RUN: bool = False):
                         passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, None)
                         if not passed_filters:
                             sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
+                            _record_gate_failure(asset, "structure", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
 
@@ -1353,6 +1418,7 @@ def main_loop(DRY_RUN: bool = False):
                             should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
                             if not should_trade:
                                 sig['rejection_reason'] = f'ultra:{rejection}'
+                                _record_gate_failure(asset, "ultra", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
 
@@ -1464,6 +1530,7 @@ def main_loop(DRY_RUN: bool = False):
 
                         if not tp:
                             sig['rejection_reason'] = 'invalid_tp_structure'
+                            _record_gate_failure(asset, "structure", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
 
@@ -1509,12 +1576,14 @@ def main_loop(DRY_RUN: bool = False):
                         min_score_threshold = _current_min_score_threshold()
                         if sig.get('score', 0) < min_score_threshold:
                             sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
+                            _record_gate_failure(asset, "score", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                             continue
 
                         # Optional hard block remains available via env toggle.
                         if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_exp < 0.0:
                             sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
+                            _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
                             continue
 
@@ -1654,6 +1723,11 @@ def main_loop(DRY_RUN: bool = False):
                         pipeline_stats["stored"] += 1
                     except Exception as e:
                         logger.exception("store_signal failed")
+
+                        if not final_signals:
+                            _maybe_log_heatmap(asset, cycle_no, 0)
+                        else:
+                            _maybe_log_heatmap(asset, cycle_no, len(final_signals))
 
                 # Track new signals as open trades
                 from core.trade_tracker import add_trade, update_trade_outcomes
