@@ -85,7 +85,13 @@ def calculate_volume_delta(candles: list[dict], window: int = 20) -> dict:
             o = float(opens[i])
             c = float(closes[i])
             total += v
-            signed += v if c > o else -v
+            if c > o:
+                signed += v
+            elif c < o:
+                signed -= v
+            else:
+                # neutral candle: no sign
+                signed += 0.0
 
         delta_ratio = float(signed / total) if total > 0 else 0.0
         return {"rvol": float(rvol), "delta_ratio": float(delta_ratio), "avg_volume": float(avg_prev)}

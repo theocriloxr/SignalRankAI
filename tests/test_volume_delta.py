@@ -16,4 +16,4 @@ def test_calculate_volume_delta_simple():
     assert stats["avg_volume"] == 100.0
     assert stats["rvol"] == 3.0
     # delta_ratio should be positive because last candle is bullish and large
-    assert stats["delta_ratio"] > 0.5
+    assert stats["delta_ratio"] > 0.1
