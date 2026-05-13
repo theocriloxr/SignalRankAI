@@ -81,7 +81,10 @@ class Config:
 		# Feature toggles (add more as needed)
 		self.MARKET_MONITOR_ENABLED = True
 		self.CRYPTO_WS_ENABLED = True
-		self.ML_TRAIN_ENABLED = True
+		# Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
+		is_railway = bool(self.RAILWAY_SERVICE_NAME or self.RAILWAY_ENVIRONMENT)
+		ml_train_default = not is_railway  # Default False on Railway (Hobby plan constraint)
+		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", ml_train_default)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
 
 		# Exchange scope (native execution and market connectors)

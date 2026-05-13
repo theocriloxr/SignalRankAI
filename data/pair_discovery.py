@@ -147,6 +147,10 @@ def _binance_top_crypto_pairs(top_n: int) -> list[str]:
             if "restricted location" in msg_s.lower():
                 _BINANCE_DISABLED_REASON = msg_s
                 logger.warning("[pair_discovery] Binance pairs disabled: %s", msg_s)
+                # Auto-switch crypto data provider to yahoo/tradingview to bypass geoblock
+                if not os.getenv("CRYPTO_DATA_PROVIDER"):
+                    os.environ["CRYPTO_DATA_PROVIDER"] = "yahoo"
+                    logger.info("[pair_discovery] Switched crypto data provider to yahoo to bypass Binance geoblock")
                 return []
             raise RuntimeError(f"Binance API error: code={code} msg={msg}")
         if not isinstance(data, list):

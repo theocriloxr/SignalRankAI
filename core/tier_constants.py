@@ -118,7 +118,10 @@ PRICE_DRIFT_TOLERANCE: Final[dict[str, float]] = {
 }
 
 # Candle staleness multiplier: max age = timeframe * this value
-CANDLE_STALENESS_MULTIPLIER: Final[float] = 1.5
+# For Railway Hobby tier, use 24x to allow signals even if data is hours behind
+import os as _os
+_is_railway = bool((_os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (_os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+CANDLE_STALENESS_MULTIPLIER: Final[float] = float(_os.getenv("CANDLE_STALENESS_MULTIPLIER", "24.0" if _is_railway else "1.5"))
 
 # NEW PRODUCTION RISK CONSTANTS
 EXPECTANCY_MIN: Final[float] = 0.15  # Block signals from assets/strategies with expectancy < 0.15

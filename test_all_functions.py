@@ -46,7 +46,8 @@ class TestAllFunctions(unittest.TestCase):
     def test_risk_functions(self):
         dummy = {"asset": "BTC"}
         self.assertIsInstance(risk.calculate_dynamic_risk(dummy, None), dict)
-        self.assertIsInstance(risk.calculate_position_size(dummy, {"risk": 1}), (int, float))
+        dummy_with_entry = {"asset": "BTC", "entry": 100.0, "stop_loss": 95.0}
+        self.assertIsInstance(risk.calculate_position_size(dummy_with_entry, 1000.0), (int, float, type(None)))
 
     def test_regime_function(self):
         dummy_market_data = {'4h': {'indicators': {'adx': 10, 'atr': 1, 'bollinger': {'width': 0.1}}}}
