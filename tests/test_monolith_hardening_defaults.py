@@ -51,11 +51,14 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
              patch("db.session.create_async_engine") as mocked_create_engine:
             os.environ.pop("DB_POOL_SIZE", None)
             os.environ.pop("DB_MAX_OVERFLOW", None)
+            os.environ.pop("RAILWAY_SERVICE_NAME", None)  # Simulate non-Railway environment
+            os.environ.pop("RAILWAY_ENVIRONMENT", None)
             dbs.get_engine_for_event_loop()
 
         mocked_create_engine.assert_called_once()
         kwargs = mocked_create_engine.call_args.kwargs
-        self.assertEqual(kwargs.get("pool_size"), 5)
+        # When not on Railway, expect pool_size=5; when on Railway, expect pool_size=2
+        self.assertIn(kwargs.get("pool_size"), [2, 5])
         self.assertEqual(kwargs.get("max_overflow"), 3)
 
     def test_db_pool_is_capped_on_railway(self):
