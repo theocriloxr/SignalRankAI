@@ -8,6 +8,7 @@ import numpy as np
 from engine.signal_analytics import calculate_volume_delta
 import os
 import logging
+from .fibonacci_helpers import is_price_in_golden_pocket
 
 
 @dataclass(slots=True, frozen=True)

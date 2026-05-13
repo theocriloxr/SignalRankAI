@@ -24,6 +24,9 @@ for route in app.routes:
     if hasattr(route, 'app'):
         mounted = route.app
         print(f"  Mount: {getattr(mounted, 'title', 'unknown')}")
-        for r in mounted.routes:
-            if hasattr(r, 'path'):
-                print(f"    {r.path}")
+        if hasattr(mounted, 'routes'):
+            for r in mounted.routes:
+                if hasattr(r, 'path'):
+                    print(f"    {r.path}")
+        else:
+            print(f"    mounted app has no routes (type={type(mounted)})")

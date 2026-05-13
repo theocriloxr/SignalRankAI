@@ -428,6 +428,21 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     # Wrap provider callables to accept timeout kw param used by retry_with_backoff
     for name, fn in provs:
         providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
+
+    # Allow explicit preferred provider via env var (e.g., CRYPTO_PREFERRED_PROVIDER=binance)
+    preferred = (os.getenv("CRYPTO_PREFERRED_PROVIDER") or "").strip().lower()
+    if preferred:
+        # move preferred provider to front if present
+        providers_sorted = []
+        pref_added = False
+        for name, fn in providers:
+            if name.lower() == preferred and not pref_added:
+                providers_sorted.insert(0, (name, fn))
+                pref_added = True
+            else:
+                providers_sorted.append((name, fn))
+        providers = providers_sorted
+
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
@@ -468,6 +483,20 @@ def _fetch_fx_multi_provider(asset, timeframe):
     ]
     if alpha_enabled:
         providers.append(("alphavantage", lambda timeout=10: get_fx_candles(asset, timeframe)))
+
+    # Allow explicit FX preferred provider via env var (e.g., FX_PREFERRED_PROVIDER=alphavantage)
+    fx_pref = (os.getenv("FX_PREFERRED_PROVIDER") or "").strip().lower()
+    if fx_pref:
+        providers_sorted = []
+        pref_added = False
+        for name, fn in providers:
+            if name.lower() == fx_pref and not pref_added:
+                providers_sorted.insert(0, (name, fn))
+                pref_added = True
+            else:
+                providers_sorted.append((name, fn))
+        providers = providers_sorted
+
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
