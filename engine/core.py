@@ -1092,6 +1092,8 @@ def main_loop(DRY_RUN: bool = False):
                 has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
                 if not has_candles:
                     logger.warning(f"[engine] No market data for asset={asset}")
+                    _record_gate_failure(asset, "market_data", "no_candles")
+                    _maybe_log_heatmap(asset, cycle_no, 0)
                     continue
 
                 # Check data age for each timeframe
@@ -1117,6 +1119,8 @@ def main_loop(DRY_RUN: bool = False):
                             tf_data["latency_warning"] = True
                         elif data_age is not None and data_age > max_age:
                             logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
+                            _record_gate_failure(asset, "stale_data", f"{tf}:{data_age:.0f}s>{max_age:.0f}s")
+                            _maybe_log_heatmap(asset, cycle_no, 0)
                             stale_data = True
                             break
                 if stale_data:
@@ -1126,6 +1130,8 @@ def main_loop(DRY_RUN: bool = False):
                 try:
                     if _is_no_trade_zone_sync(asset, buffer_minutes=60):
                         logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 60 min)")
+                        _record_gate_failure(asset, "macro", "no_trade_zone_60m")
+                        _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
                 except Exception:
                     pass
