@@ -198,6 +198,54 @@ async def is_no_trade_zone(
     return False
 
 
+async def get_macro_news_context(now: Optional[datetime] = None) -> dict[str, object]:
+    """Return macro-news timing features for ML and gating.
+
+    Exposes the latest and next high-impact USD event in minutes, plus a
+    normalized pressure score that can be fed into score calibration and ML.
+    """
+    ref_now = now or datetime.now(tz=timezone.utc)
+    events = await fetch_economic_events()
+    closest_past: Optional[dict] = None
+    closest_future: Optional[dict] = None
+    past_delta_min: Optional[float] = None
+    future_delta_min: Optional[float] = None
+
+    for event in events:
+        if event.get("currency") != "USD" or event.get("impact") != "high":
+            continue
+        event_time: Optional[datetime] = event.get("event_time")
+        if event_time is None:
+            continue
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        delta_min = (ref_now - event_time).total_seconds() / 60.0
+        if delta_min >= 0:
+            if past_delta_min is None or delta_min < past_delta_min:
+                past_delta_min = delta_min
+                closest_past = event
+        else:
+            future_min = abs(delta_min)
+            if future_delta_min is None or future_min < future_delta_min:
+                future_delta_min = future_min
+                closest_future = event
+
+    buffer_min = max(1.0, float(NO_TRADE_BUFFER_MINUTES))
+    pressure = 0.0
+    if future_delta_min is not None:
+        pressure = max(pressure, max(0.0, 1.0 - (future_delta_min / buffer_min)))
+    if past_delta_min is not None:
+        pressure = max(pressure, max(0.0, 1.0 - (past_delta_min / buffer_min)))
+
+    return {
+        "minutes_since_high_impact_news": float(past_delta_min) if past_delta_min is not None else None,
+        "minutes_until_high_impact_news": float(future_delta_min) if future_delta_min is not None else None,
+        "last_high_impact_news_title": str((closest_past or {}).get("title") or "") if closest_past else "",
+        "next_high_impact_news_title": str((closest_future or {}).get("title") or "") if closest_future else "",
+        "news_event_impact_score": float(max(0.0, min(1.0, pressure))),
+    }
+
+
 def is_no_trade_zone_sync(
     symbol: str,
     dt: Optional[datetime] = None,

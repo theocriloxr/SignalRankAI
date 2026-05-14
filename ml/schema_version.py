@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 
-CURRENT_SCHEMA_VERSION = 1
-MODEL_FORMAT_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
+MODEL_FORMAT_VERSION = 2
 
 FEATURE_COLUMNS_V1 = [
     "rr_estimate",
@@ -19,6 +19,14 @@ FEATURE_COLUMNS_V1 = [
     "news_sentiment",
     "nearest_support_dist",
     "nearest_resistance_dist",
+    "asset_class_enc",
+    "dxy_trend",
+    "vix_trend",
+    "us10y_trend",
+    "yield_spread",
+    "minutes_since_high_impact_news",
+    "minutes_until_high_impact_news",
+    "news_event_impact_score",
 ]
 
 

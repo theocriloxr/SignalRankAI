@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import xgboost as xgb
+from sklearn.isotonic import IsotonicRegression
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import roc_auc_score, accuracy_score, confusion_matrix, classification_report
 
@@ -162,6 +163,7 @@ async def load_training_data():
             meta = getattr(outcome, 'meta', None) or {}
             if not isinstance(meta, dict):
                 meta = {}
+            macro = dict(meta.get('macro') or {})
 
             created_at = getattr(sig, 'created_at', None) or datetime.utcnow()
             candles = await _load_candles(
@@ -271,9 +273,16 @@ async def load_training_data():
                 'mtf_1d_trend': float(mtf_1d_trend),
                 'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
                 'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
-                'dxy_trend': _safe_float(meta.get('dxy_trend', 0.0)),
-                'spx_trend': _safe_float(meta.get('spx_trend', 0.0)),
-                'btc_corr': _safe_float(meta.get('btc_corr', 0.0)),
+                'asset_class_enc': _safe_float(meta.get('asset_class_enc', 0.0)),
+                'dxy_trend': _safe_float(macro.get('dxy_trend', meta.get('dxy_trend', 0.0))),
+                'vix_trend': _safe_float(macro.get('vix_trend', meta.get('vix_trend', 0.0))),
+                'us10y_trend': _safe_float(macro.get('us10y_trend', meta.get('us10y_trend', 0.0))),
+                'yield_spread': _safe_float(macro.get('yield_spread', meta.get('yield_spread', 0.0))),
+                'minutes_since_high_impact_news': _safe_float(macro.get('minutes_since_high_impact_news', meta.get('minutes_since_high_impact_news', 0.0))),
+                'minutes_until_high_impact_news': _safe_float(macro.get('minutes_until_high_impact_news', meta.get('minutes_until_high_impact_news', 0.0))),
+                'news_event_impact_score': _safe_float(macro.get('news_event_impact_score', meta.get('news_event_impact_score', 0.0))),
+                'spx_trend': _safe_float(macro.get('spx_trend', meta.get('spx_trend', 0.0))),
+                'btc_corr': _safe_float(macro.get('btc_corr', meta.get('btc_corr', 0.0))),
                 'partial_tp_progress': float(tp_progress),
                 'false_breakout': int(false_breakout),
                 'barrier_type': barrier,
@@ -331,6 +340,7 @@ async def load_training_data():
                 meta = getattr(a, 'outcome_meta', None) or {}
                 if not isinstance(meta, dict):
                     meta = {}
+                macro = dict(meta.get('macro') or {})
 
                 tp_progress = 0
                 for key in ("tp_progress", "max_tp_hit", "tp_hit_count", "highest_tp_reached"):
@@ -410,9 +420,16 @@ async def load_training_data():
                     'mtf_1d_trend': _safe_float(meta.get('mtf_1d_trend', 0.0)),
                     'funding_rate': _safe_float(meta.get('funding_rate', 0.0)),
                     'open_interest_change': _safe_float(meta.get('open_interest_change', 0.0)),
-                    'dxy_trend': _safe_float(meta.get('dxy_trend', 0.0)),
-                    'spx_trend': _safe_float(meta.get('spx_trend', 0.0)),
-                    'btc_corr': _safe_float(meta.get('btc_corr', 0.0)),
+                    'asset_class_enc': _safe_float(meta.get('asset_class_enc', 0.0)),
+                    'dxy_trend': _safe_float(macro.get('dxy_trend', meta.get('dxy_trend', 0.0))),
+                    'vix_trend': _safe_float(macro.get('vix_trend', meta.get('vix_trend', 0.0))),
+                    'us10y_trend': _safe_float(macro.get('us10y_trend', meta.get('us10y_trend', 0.0))),
+                    'yield_spread': _safe_float(macro.get('yield_spread', meta.get('yield_spread', 0.0))),
+                    'minutes_since_high_impact_news': _safe_float(macro.get('minutes_since_high_impact_news', meta.get('minutes_since_high_impact_news', 0.0))),
+                    'minutes_until_high_impact_news': _safe_float(macro.get('minutes_until_high_impact_news', meta.get('minutes_until_high_impact_news', 0.0))),
+                    'news_event_impact_score': _safe_float(macro.get('news_event_impact_score', meta.get('news_event_impact_score', 0.0))),
+                    'spx_trend': _safe_float(macro.get('spx_trend', meta.get('spx_trend', 0.0))),
+                    'btc_corr': _safe_float(macro.get('btc_corr', meta.get('btc_corr', 0.0))),
                     'partial_tp_progress': float(tp_progress),
                     'false_breakout': int(false_breakout),
                     'barrier_type': barrier,
@@ -568,13 +585,13 @@ def engineer_features(df):
     feature_cols = [
         'score_normalized', 'risk_reward_ratio', 'price_range', 'risk_amount',
         'spread_ratio', 'strength_normalized', 'direction_enc', 'regime_enc',
-        'strategy_enc', 'high_score', 'medium_score', 'is_long',
+        'strategy_enc', 'high_score', 'medium_score', 'is_long', 'asset_class_enc',
         'partial_tp_progress_norm',
         'price_velocity_3', 'price_velocity_5', 'price_velocity_10',
         'price_acceleration_3_10', 'velocity_abs_3', 'velocity_abs_10',
         'atr_rel', 'atr_regime_clamped', 'relative_volume_clamped',
         'mtf_4h_trend', 'mtf_1d_trend',
-        'funding_rate', 'open_interest_change', 'dxy_trend', 'spx_trend', 'btc_corr',
+        'funding_rate', 'open_interest_change', 'dxy_trend', 'vix_trend', 'us10y_trend', 'yield_spread', 'minutes_since_high_impact_news', 'minutes_until_high_impact_news', 'news_event_impact_score', 'spx_trend', 'btc_corr',
     ]
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
@@ -639,6 +656,16 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     # Evaluate
     y_pred = model.predict(X_te)
     y_proba = model.predict_proba(X_te)[:, 1]
+    calibration_x = []
+    calibration_y = []
+    try:
+        if len(np.unique(y_proba)) >= 2 and len(np.unique(y_te)) >= 2:
+            calibrator = IsotonicRegression(out_of_bounds='clip')
+            calibrator.fit(y_proba, y_te)
+            calibration_x = [float(x) for x in getattr(calibrator, 'X_thresholds_', [])]
+            calibration_y = [float(y) for y in getattr(calibrator, 'y_thresholds_', [])]
+    except Exception as exc:
+        logger.warning("Calibration fitting skipped: %s", exc)
 
     acc = accuracy_score(y_te, y_pred)
     try:
@@ -670,6 +697,98 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         means = {k: float(v) for k, v in X_train.mean().items()}
         drifted = []
         for k, v in means.items():
+        # Add tracked rejected candidates so the model learns from false negatives.
+        try:
+            async with get_session() as session:
+                rejected_rows = (
+                    await session.execute(
+                        select(MLRejectedSignal).where(
+                            MLRejectedSignal.outcome_tracked_at.is_not(None),
+                            MLRejectedSignal.created_at >= cutoff,
+                        )
+                    )
+                ).scalars().all()
+
+            for rj in rejected_rows:
+                feat = getattr(rj, 'features', None) or {}
+                if not isinstance(feat, dict):
+                    feat = {}
+                macro = dict(feat.get('macro') or {})
+
+                outcome = str(getattr(rj, 'actual_outcome', '') or '').lower().strip()
+                if outcome not in {'win', 'loss'}:
+                    continue
+
+                tp_progress = 0
+                for key in ('tp_progress', 'max_tp_hit', 'tp_hit_count', 'highest_tp_reached'):
+                    try:
+                        tp_progress = max(tp_progress, int(feat.get(key) or 0))
+                    except Exception:
+                        continue
+
+                false_breakout = 0
+                for k in ('false_breakout', 'volatility_stopout', 'sl_then_tp1', 'post_sl_reversal_to_tp1'):
+                    try:
+                        if bool(feat.get(k)):
+                            false_breakout = 1
+                            break
+                    except Exception:
+                        continue
+
+                barrier = 'upper' if outcome == 'win' else 'lower'
+                target = 1 if barrier == 'upper' else 0
+                sample_weight = 2.0 if target == 1 else 0.5
+                if false_breakout:
+                    sample_weight *= 0.75
+
+                rr_raw = _safe_float(getattr(rj, 'ml_probability', 0))
+                rr_eff = min(4.0, max(0.5, rr_raw if rr_raw > 0 else 1.0))
+                sample_weight *= (0.75 + (rr_eff / 4.0))
+
+                data.append({
+                    'signal_id': f"rejected_{int(getattr(rj, 'id', 0) or 0)}",
+                    'asset': getattr(rj, 'asset', 'UNKNOWN') or 'UNKNOWN',
+                    'timeframe': getattr(rj, 'timeframe', '1h') or '1h',
+                    'direction': getattr(rj, 'direction', 'long') or 'long',
+                    'score': _safe_float(feat.get('score', 0)),
+                    'entry': _safe_float(getattr(rj, 'entry', 0)),
+                    'stop_loss': _safe_float(getattr(rj, 'stop_loss', 0)),
+                    'take_profit': _parse_tp(getattr(rj, 'take_profit', 0)),
+                    'rr_ratio': _safe_float(feat.get('rr_ratio', feat.get('rr_estimate', 0))),
+                    'strategy_name': str(feat.get('strategy_name') or 'rejected'),
+                    'regime': str(feat.get('regime') or 'unknown'),
+                    'strength': _safe_float(feat.get('strength', 0)),
+                    'ml_probability': _safe_float(getattr(rj, 'ml_probability', 0)),
+                    'price_velocity_3': _safe_float(feat.get('price_velocity_3', 0.0)),
+                    'price_velocity_5': _safe_float(feat.get('price_velocity_5', 0.0)),
+                    'price_velocity_10': _safe_float(feat.get('price_velocity_10', 0.0)),
+                    'price_acceleration_3_10': _safe_float(feat.get('price_acceleration_3_10', 0.0)),
+                    'atr_rel': _safe_float(feat.get('atr_rel', 0.0)),
+                    'atr_regime': _safe_float(feat.get('atr_regime', 0.0)),
+                    'relative_volume': _safe_float(feat.get('relative_volume', 0.0)),
+                    'mtf_4h_trend': _safe_float(feat.get('mtf_4h_trend', 0.0)),
+                    'mtf_1d_trend': _safe_float(feat.get('mtf_1d_trend', 0.0)),
+                    'funding_rate': _safe_float(feat.get('funding_rate', 0.0)),
+                    'open_interest_change': _safe_float(feat.get('open_interest_change', 0.0)),
+                    'asset_class_enc': _safe_float(feat.get('asset_class_enc', 0.0)),
+                    'dxy_trend': _safe_float(macro.get('dxy_trend', feat.get('dxy_trend', 0.0))),
+                    'vix_trend': _safe_float(macro.get('vix_trend', feat.get('vix_trend', 0.0))),
+                    'us10y_trend': _safe_float(macro.get('us10y_trend', feat.get('us10y_trend', 0.0))),
+                    'yield_spread': _safe_float(macro.get('yield_spread', feat.get('yield_spread', 0.0))),
+                    'minutes_since_high_impact_news': _safe_float(macro.get('minutes_since_high_impact_news', feat.get('minutes_since_high_impact_news', 0.0))),
+                    'minutes_until_high_impact_news': _safe_float(macro.get('minutes_until_high_impact_news', feat.get('minutes_until_high_impact_news', 0.0))),
+                    'news_event_impact_score': _safe_float(macro.get('news_event_impact_score', feat.get('news_event_impact_score', 0.0))),
+                    'spx_trend': _safe_float(macro.get('spx_trend', feat.get('spx_trend', 0.0))),
+                    'btc_corr': _safe_float(macro.get('btc_corr', feat.get('btc_corr', 0.0))),
+                    'partial_tp_progress': float(tp_progress),
+                    'false_breakout': int(false_breakout),
+                    'barrier_type': barrier,
+                    'sample_weight': float(sample_weight),
+                    'created_at': getattr(rj, 'created_at', None) or datetime.utcnow(),
+                    'target': target,
+                })
+        except Exception as _rejected_err:
+            logger.warning(f"Failed to load rejected training rows: {_rejected_err}")
             prev = float(prev_means.get(k, v))
             if abs(v - prev) > 0.1 * (abs(prev) + 1e-6):
                 drifted.append(k)
@@ -686,10 +805,10 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     importance = dict(zip(feature_cols, model.feature_importances_))
     logger.info(f"Top features: {sorted(importance.items(), key=lambda x: x[1], reverse=True)[:5]}")
 
-    return model, feature_cols
+    return model, feature_cols, calibration_x, calibration_y
 
 
-def save_model(model, feature_cols):
+def save_model(model, feature_cols, calibration_x=None, calibration_y=None):
     """Save model to JSON."""
     model_path = Path(__file__).parent / "model.json"
     
@@ -707,6 +826,9 @@ def save_model(model, feature_cols):
         "trained_at": datetime.utcnow().isoformat(),
         "xgboost_version": getattr(xgb, "__version__", ""),
         "artifact_hash_sha256": artifact_hash_sha256,
+        "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",
+        "calibration_x": calibration_x or [],
+        "calibration_y": calibration_y or [],
     }
 
     with open(model_path, 'w') as f:
@@ -731,7 +853,7 @@ async def main():
     logger.info(f"Training set shape: {X_train.shape}")
 
     # Train model
-    model, feature_cols = train_model(
+    model, feature_cols, calibration_x, calibration_y = train_model(
         X_train,
         y_train,
         feature_cols,
@@ -740,7 +862,7 @@ async def main():
     )
 
     # Save model
-    save_model(model, feature_cols)
+    save_model(model, feature_cols, calibration_x=calibration_x, calibration_y=calibration_y)
 
     logger.info("✅ Model training complete!")
     return True

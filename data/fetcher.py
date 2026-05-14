@@ -56,18 +56,22 @@ def _get_candle_key_lock(key: tuple[str, str]) -> threading.Lock:
         return lock
 
 
-def _read_cached_candles(key: tuple[str, str], ttl_seconds: float) -> list | None:
+def _read_cached_candles(key: tuple[str, str], ttl_seconds: float, *, allow_stale: bool = False) -> list | None:
     now = time.time()
     with _CANDLE_CACHE_LOCK:
         entry = _CANDLE_CACHE.get(key)
         if not entry:
             return None
         ts, candles = entry
-        if (now - ts) > max(0.0, float(ttl_seconds)):
+        if (now - ts) > max(0.0, float(ttl_seconds)) and not allow_stale:
             _CANDLE_CACHE.pop(key, None)
             return None
         # Return a shallow structural copy to avoid accidental mutation by callers.
         return [dict(c) if isinstance(c, dict) else c for c in (candles or [])]
+
+
+def _read_stale_cached_candles(key: tuple[str, str], max_age_seconds: float) -> list | None:
+    return _read_cached_candles(key, max_age_seconds, allow_stale=True)
 
 
 def _prune_candle_cache(max_age_seconds: float) -> None:
@@ -85,6 +89,13 @@ def _write_cached_candles(key: tuple[str, str], candles: list) -> None:
         _prune_candle_cache(float(os.getenv("CANDLE_CACHE_PRUNE_SECONDS", "900") or 900))
     except Exception:
         pass
+
+
+def _get_forward_fill_ttl_seconds() -> float:
+    try:
+        return float((os.getenv("CANDLE_FORWARD_FILL_TTL_SECONDS") or "300").strip())
+    except Exception:
+        return 300.0
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
@@ -244,7 +255,9 @@ def _get_last_provider_used(asset: str, timeframe: str) -> str | None:
 def fetch_market_data(asset, timeframes):
     """Fetch live market data with validation and freshness checks."""
     data = {}
+    _asset_norm = str(asset or "").upper().strip()
     for tf in timeframes:
+        _tf_norm = str(tf or "").lower().strip()
         try:
             candles = get_candles(asset, tf)
             # Validate candles: must be non-empty and have required fields
@@ -314,7 +327,6 @@ def fetch_market_data(asset, timeframes):
                 continue  # Indicator calculation failed
             
             provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
-            provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
             data[tf] = {
                 'candles': candles,
                 'indicators': indicators,
@@ -322,7 +334,7 @@ def fetch_market_data(asset, timeframes):
                 'latest_candle_timestamp': latest_ts_sec,
                 'candle_age_seconds': candle_age,
                 'source': provider_name or 'unknown',
-                'stale_but_acceptable': bool(globals().get('stale_but_acceptable', False)),
+                'stale_but_acceptable': bool(stale_but_acceptable),
             }
         except Exception as e:
             logger.warning(f"[fetcher] Skipping {asset} {tf} due to error: {e}")
@@ -405,6 +417,19 @@ def get_candles(asset, timeframe):
                 candles = _fetch_fx_multi_provider(asset, timeframe)
             else:  # stock
                 candles = _fetch_stock_multi_provider(asset, timeframe)
+
+            if (not candles) or len(candles) < 20:
+                ff_ttl = _get_forward_fill_ttl_seconds()
+                stale_cached = _read_stale_cached_candles(_cache_key, ff_ttl)
+                if stale_cached is not None and len(stale_cached) >= 20:
+                    logger.warning(
+                        "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss",
+                        asset,
+                        timeframe,
+                        ff_ttl,
+                    )
+                    _set_last_provider_used(asset, timeframe, "cache_forward_fill")
+                    return stale_cached
 
             _write_cached_candles(_cache_key, candles or [])
             return candles or []

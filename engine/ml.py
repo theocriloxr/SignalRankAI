@@ -4,8 +4,9 @@ import gc
 import os
 import logging
 import json
+import base64
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, cast
 
 import numpy as np
 
@@ -30,6 +31,25 @@ logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
 
 
+def _asset_class_to_int(asset: str) -> float:
+    a = str(asset or "").upper().strip()
+    if a.endswith(("USDT", "USDC", "BUSD")) or (a.endswith("USD") and len(a) > 6):
+        return 0.0
+    clean = a.replace("/", "").replace("-", "")
+    if len(clean) == 6:
+        return 1.0
+    if any(k in a for k in ("XAU", "XAG", "XPT", "XPD", "WTI", "BRENT", "OIL", "GOLD", "SILVER", "COPPER")):
+        return 2.0
+    return 3.0
+
+
+def _num(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(default if value is None else value)
+    except Exception:
+        return float(default)
+
+
 def _model_path() -> Path:
     raw = os.getenv("ML_MODEL_PATH")
     if raw:
@@ -45,6 +65,7 @@ def _load_model() -> None:
     if xgb is None:
         _MODEL_CACHE["error"] = "xgboost_not_installed"
         return
+    assert xgb is not None
 
     path = _model_path()
     if not path.exists():
@@ -57,7 +78,7 @@ def _load_model() -> None:
             _MODEL_CACHE["error"] = err
             return
         # Memory-optimised config for Railway 500 MB tier
-        booster.set_param("nthread", int(os.getenv("XGB_NTHREAD", "2")))
+        booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
         gc.collect()  # free any cyclic garbage from model initialisation
 
         _MODEL_CACHE["feature_cols"] = feature_cols
@@ -75,6 +96,7 @@ def _load_shadow_model() -> None:
     shadow_path = os.getenv("ML_CANDIDATE_MODEL_PATH", str(Path(__file__).parent.parent / "ml" / "model_candidate.json"))
     if xgb is None:
         return
+    assert xgb is not None
     p = Path(shadow_path)
     if not p.exists():
         return
@@ -86,7 +108,7 @@ def _load_shadow_model() -> None:
             return
         raw_bytes = base64.b64decode(model_bytes_b64)
         booster = xgb.Booster()
-        booster.set_param("nthread", int(os.getenv("XGB_NTHREAD", "2")))
+        booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
         booster.load_model(bytearray(raw_bytes))
         _SHADOW_CACHE["booster"] = booster
         _SHADOW_CACHE["feature_cols"] = feature_cols
@@ -132,22 +154,23 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
         strategy = str(signal.get("strategy_name") or "unknown").lower()
         asset = str(signal.get("asset") or "unknown").upper()
         timeframe = str(signal.get("timeframe") or "1d").lower()
+        macro = dict(signal.get("_macro") or {})
         strength = float(signal.get("strength") or 0.0)
-        partial_tp_progress = float(signal.get("partial_tp_progress") or 0.0)
-        price_velocity_3 = float(signal.get("price_velocity_3") or 0.0)
-        price_velocity_5 = float(signal.get("price_velocity_5") or 0.0)
-        price_velocity_10 = float(signal.get("price_velocity_10") or 0.0)
-        price_acceleration_3_10 = float(signal.get("price_acceleration_3_10") or (price_velocity_3 - price_velocity_10))
-        atr_rel = float(signal.get("atr_rel") or 0.0)
-        atr_regime = float(signal.get("atr_regime") or 0.0)
-        relative_volume = float(signal.get("relative_volume") or 0.0)
-        mtf_4h_trend = float(signal.get("mtf_4h_trend") or 0.0)
-        mtf_1d_trend = float(signal.get("mtf_1d_trend") or 0.0)
-        funding_rate = float(signal.get("funding_rate") or 0.0)
-        open_interest_change = float(signal.get("open_interest_change") or 0.0)
-        dxy_trend = float(signal.get("dxy_trend") or 0.0)
-        spx_trend = float(signal.get("spx_trend") or 0.0)
-        btc_corr = float(signal.get("btc_corr") or 0.0)
+        partial_tp_progress = _num(signal.get("partial_tp_progress"), 0.0)
+        price_velocity_3 = _num(signal.get("price_velocity_3"), 0.0)
+        price_velocity_5 = _num(signal.get("price_velocity_5"), 0.0)
+        price_velocity_10 = _num(signal.get("price_velocity_10"), 0.0)
+        price_acceleration_3_10 = _num(signal.get("price_acceleration_3_10"), price_velocity_3 - price_velocity_10)
+        atr_rel = _num(signal.get("atr_rel"), 0.0)
+        atr_regime = _num(signal.get("atr_regime"), 0.0)
+        relative_volume = _num(signal.get("relative_volume"), 0.0)
+        mtf_4h_trend = _num(signal.get("mtf_4h_trend"), 0.0)
+        mtf_1d_trend = _num(signal.get("mtf_1d_trend"), 0.0)
+        funding_rate = _num(signal.get("funding_rate"), 0.0)
+        open_interest_change = _num(signal.get("open_interest_change"), 0.0)
+        dxy_trend = _num(signal.get("dxy_trend"), 0.0)
+        spx_trend = _num(signal.get("spx_trend"), 0.0)
+        btc_corr = _num(signal.get("btc_corr"), 0.0)
 
         price_range = abs(tp - entry) / (entry + 1e-6)
         risk_amount = abs(entry - sl) / (entry + 1e-6)
@@ -173,6 +196,7 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             "strategy_enc": _hash_bucket(strategy),
             "asset_enc": _hash_bucket(asset),
             "timeframe_enc": _hash_bucket(timeframe),
+            "asset_class_enc": _num(signal.get("asset_class_enc"), _asset_class_to_int(asset)),
             "high_score": high_score,
             "medium_score": medium_score,
             "is_long": is_long,
@@ -190,9 +214,15 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             "mtf_1d_trend": mtf_1d_trend,
             "funding_rate": funding_rate,
             "open_interest_change": open_interest_change,
-            "dxy_trend": dxy_trend,
-            "spx_trend": spx_trend,
-            "btc_corr": btc_corr,
+            "dxy_trend": _num(signal.get("dxy_trend"), _num(macro.get("dxy_trend"), dxy_trend)),
+            "vix_trend": _num(signal.get("vix_trend"), _num(macro.get("vix_trend"), 0.0)),
+            "us10y_trend": _num(signal.get("us10y_trend"), _num(macro.get("us10y_trend"), 0.0)),
+            "yield_spread": _num(signal.get("yield_spread"), _num(macro.get("yield_spread"), 0.0)),
+            "minutes_since_high_impact_news": _num(signal.get("minutes_since_high_impact_news"), _num(macro.get("minutes_since_high_impact_news"), 0.0)),
+            "minutes_until_high_impact_news": _num(signal.get("minutes_until_high_impact_news"), _num(macro.get("minutes_until_high_impact_news"), 0.0)),
+            "news_event_impact_score": _num(signal.get("news_event_impact_score"), _num(macro.get("news_event_impact_score"), 0.0)),
+            "spx_trend": _num(signal.get("spx_trend"), _num(macro.get("spx_trend"), spx_trend)),
+            "btc_corr": _num(signal.get("btc_corr"), _num(macro.get("btc_corr"), btc_corr)),
         }
 
         missing = [col for col in feature_cols if col not in values]
@@ -222,6 +252,7 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
         return None
 
     try:
+        assert xgb is not None
         dm = xgb.DMatrix(x, feature_names=feature_cols)
         preds = booster.predict(dm)
         del dm  # release DMatrix immediately
@@ -241,6 +272,7 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
                     x_shadow = _feature_vector(signal, sh_cols)
                     schema_ok = x_shadow is not None
                     if x_shadow is not None:
+                        assert xgb is not None
                         dm_shadow = xgb.DMatrix(x_shadow, feature_names=sh_cols)
                         sh_preds = sh_booster.predict(dm_shadow)
                         if sh_preds is not None and len(sh_preds) > 0:
@@ -282,7 +314,8 @@ def get_strategy_weights() -> Dict[str, float]:
         return {}
     try:
         payload = json.loads(raw)
-        return {str(k): float(v) for k, v in (payload or {}).items()}
+        typed_payload = cast(Dict[str, Any], payload if isinstance(payload, dict) else {})
+        return {str(k): float(v) for k, v in typed_payload.items()}
     except Exception:
         weights = {}
         for item in raw.split(","):
@@ -302,7 +335,8 @@ def get_regime_strategies() -> Dict[str, list[str]]:
         return {}
     try:
         payload = json.loads(raw)
-        return {str(k): list(v or []) for k, v in (payload or {}).items()}
+        typed_payload = cast(Dict[str, Any], payload if isinstance(payload, dict) else {})
+        return {str(k): list(v or []) for k, v in typed_payload.items()}
     except Exception:
         mapping: Dict[str, list[str]] = {}
         for item in raw.split(";"):

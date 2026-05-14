@@ -68,10 +68,12 @@ except Exception:
         return False
 
 try:
-    from services.economic_calendar import is_no_trade_zone_sync as _is_no_trade_zone_sync
+    from services.economic_calendar import is_no_trade_zone_sync as _is_no_trade_zone_sync, get_macro_news_context
 except Exception:
     def _is_no_trade_zone_sync(symbol: str, buffer_minutes: int = 30) -> bool:  # type: ignore
         return False
+    async def get_macro_news_context(now=None):  # type: ignore
+        return {}
 
 try:
     from engine.mtf_analysis import MultiTimeframeAnalyzer
@@ -158,7 +160,7 @@ except Exception as e:
             from datetime import datetime
             return type('Config', (), {
                 'ml_prob_threshold': self.get_threshold(),
-                'min_score_threshold': 70.0,
+                'min_score_threshold': 60.0,
                 'confluence_min': 0.0,
                 'last_updated': datetime.utcnow(),
                 'source': 'env',
@@ -766,6 +768,51 @@ def main_loop(DRY_RUN: bool = False):
             if norm:
                 out.append(norm)
         return out
+
+
+    async def _fetch_macro_snapshot() -> Dict[str, float]:
+        """Fetch macro context once per cycle for all assets."""
+        macro: Dict[str, float] = {}
+        try:
+            from services.economic_calendar import get_macro_news_context
+            news_ctx = await get_macro_news_context()
+            macro.update({
+                "minutes_since_high_impact_news": float(news_ctx.get("minutes_since_high_impact_news") or 0.0) if news_ctx.get("minutes_since_high_impact_news") is not None else 0.0,
+                "minutes_until_high_impact_news": float(news_ctx.get("minutes_until_high_impact_news") or 0.0) if news_ctx.get("minutes_until_high_impact_news") is not None else 0.0,
+                "news_event_impact_score": float(news_ctx.get("news_event_impact_score") or 0.0),
+            })
+        except Exception:
+            pass
+
+        async def _macro_tf(asset: str, timeframe: str = "1d") -> Dict[str, Any]:
+            try:
+                data = await fetch_market_data_cached(asset, [timeframe])
+                tf_data = (data or {}).get(timeframe) or {}
+                candles = tf_data.get("candles") or []
+                closes = [float(c.get("close") or 0.0) for c in candles if isinstance(c, dict)]
+                if len(closes) < 2:
+                    return {}
+                first = closes[0]
+                last = closes[-1]
+                trend = ((last - first) / first) if first else 0.0
+                return {"trend": float(trend), "last": float(last), "source": tf_data.get("source") or ""}
+            except Exception:
+                return {}
+
+        dxy = await _macro_tf("DXY", "1d")
+        vix = await _macro_tf("VIX", "1d")
+        us10 = await _macro_tf("US10Y", "1d")
+        us02 = await _macro_tf("US02Y", "1d")
+
+        macro.update({
+            "dxy_trend": float(dxy.get("trend") or 0.0),
+            "vix_trend": float(vix.get("trend") or 0.0),
+            "us10y_trend": float(us10.get("trend") or 0.0),
+            "yield_spread": float((float(us10.get("last") or 0.0) - float(us02.get("last") or 0.0)) if us10.get("last") is not None and us02.get("last") is not None else 0.0),
+            "btc_corr": 0.0,
+            "spx_trend": 0.0,
+        })
+        return macro
     def _resolve_timeframes(env_key: str) -> list[str]:
         raw = os.getenv(env_key, _tf_default)
         parsed = _normalize_tf_list(raw)
@@ -1035,6 +1082,11 @@ def main_loop(DRY_RUN: bool = False):
             logger.exception("Market data fetch failed or timed out")
             all_market_data = {}
 
+        try:
+            macro_snapshot = run_sync(_fetch_macro_snapshot(), timeout=30.0)
+        except Exception:
+            macro_snapshot = {}
+
         scored_signals_all: List[Dict] = []
         max_candidate_score = None
         # Fix 2: cycle-level set prevents duplicate asset+timeframe signals in the same batch
@@ -1087,6 +1139,8 @@ def main_loop(DRY_RUN: bool = False):
             logger.info(f"[engine] pipeline: starting asset={asset}")
             try:
                 market_data = all_market_data.get(asset, {})
+                if isinstance(market_data, dict):
+                    market_data["_macro"] = dict(macro_snapshot or {})
 
                 # Basic safety: ensure we have at least one TF with candles
                 has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
@@ -1264,6 +1318,14 @@ def main_loop(DRY_RUN: bool = False):
                         sig['market_open_confirmed'] = True
                         sig['strategy_coverage_count'] = int(len(strategy_signals or []))
                         sig['news_sentiment'] = market_data.get('news_sentiment')
+                        sig['asset_class_enc'] = 0.0 if _asset_class(asset) == 'crypto' else 1.0 if _asset_class(asset) == 'fx' else 2.0 if _asset_class(asset) == 'commodity' else 3.0
+                        sig['dxy_trend'] = (market_data.get('_macro') or {}).get('dxy_trend', 0.0)
+                        sig['vix_trend'] = (market_data.get('_macro') or {}).get('vix_trend', 0.0)
+                        sig['us10y_trend'] = (market_data.get('_macro') or {}).get('us10y_trend', 0.0)
+                        sig['yield_spread'] = (market_data.get('_macro') or {}).get('yield_spread', 0.0)
+                        sig['minutes_since_high_impact_news'] = (market_data.get('_macro') or {}).get('minutes_since_high_impact_news', 0.0)
+                        sig['minutes_until_high_impact_news'] = (market_data.get('_macro') or {}).get('minutes_until_high_impact_news', 0.0)
+                        sig['news_event_impact_score'] = (market_data.get('_macro') or {}).get('news_event_impact_score', 0.0)
 
                         # preview score (even if it doesn't pass validation/gates)
                         try:
@@ -1670,6 +1732,23 @@ def main_loop(DRY_RUN: bool = False):
                             sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                             _record_gate_failure(asset, "score", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
+                            try:
+                                run_sync(
+                                    _ml_rejection_tracker.persist_rejection(
+                                        asset=str(sig.get("asset") or ""),
+                                        timeframe=str(sig.get("timeframe") or ""),
+                                        direction=str(sig.get("direction") or ""),
+                                        entry_price=float(sig.get("entry") or 0),
+                                        stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
+                                        take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
+                                        ml_probability=float(sig.get("ml_probability") or 0.0),
+                                        rejection_reason=str(sig['rejection_reason']),
+                                        features=dict(sig),
+                                        rejection_type="final_score_gate",
+                                    )
+                                )
+                            except Exception as e:
+                                logger.debug(f"[engine] Failed to record score rejection: {e}")
                             continue
 
                         # Optional hard block remains available via env toggle.
@@ -1677,6 +1756,23 @@ def main_loop(DRY_RUN: bool = False):
                             sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
                             _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
                             _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                            try:
+                                run_sync(
+                                    _ml_rejection_tracker.persist_rejection(
+                                        asset=str(sig.get("asset") or ""),
+                                        timeframe=str(sig.get("timeframe") or ""),
+                                        direction=str(sig.get("direction") or ""),
+                                        entry_price=float(sig.get("entry") or 0),
+                                        stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
+                                        take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
+                                        ml_probability=float(sig.get("ml_probability") or 0.0),
+                                        rejection_reason=str(sig['rejection_reason']),
+                                        features=dict(sig),
+                                        rejection_type="expectancy_gate",
+                                    )
+                                )
+                            except Exception as e:
+                                logger.debug(f"[engine] Failed to record expectancy rejection: {e}")
                             continue
 
                         # Attach regime + timeframe-aware expiration so higher-timeframe
@@ -1716,6 +1812,23 @@ def main_loop(DRY_RUN: bool = False):
                                 sig['rejection_reason'] = f"gemini:{gemini_reason}"
                                 _record_gate_failure(asset, "gemini", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"gemini_score": gemini_score})
+                                try:
+                                    run_sync(
+                                        _ml_rejection_tracker.persist_rejection(
+                                            asset=str(sig.get("asset") or ""),
+                                            timeframe=str(sig.get("timeframe") or ""),
+                                            direction=str(sig.get("direction") or ""),
+                                            entry_price=float(sig.get("entry") or 0),
+                                            stop_loss=float(sig.get("stop_loss") or sig.get("stop") or 0),
+                                            take_profit_levels=sig.get("take_profit") or sig.get("targets") or [],
+                                            ml_probability=float(sig.get("ml_probability") or 0.0),
+                                            rejection_reason=str(sig['rejection_reason']),
+                                            features=dict(sig),
+                                            rejection_type="gemini_gate",
+                                        )
+                                    )
+                                except Exception as e:
+                                    logger.debug(f"[engine] Failed to record gemini rejection: {e}")
                                 continue
                         except Exception:
                             pass

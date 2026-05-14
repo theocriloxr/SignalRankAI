@@ -32,7 +32,7 @@ TARGET_AVG_R = float(os.getenv("TARGET_AVG_R", "1.5"))  # 1.5R average profit
 MIN_SIGNALS_PER_CYCLE = int(os.getenv("MIN_SIGNALS_PER_CYCLE", "3"))
 
 # Dynamic gate bounds (safety rails to avoid over-tight/over-loose behavior)
-MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "65.0"))
+MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "55.0"))
 MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "90.0"))
 CONFLUENCE_MIN_FLOOR = float(os.getenv("CONFLUENCE_MIN_FLOOR", "0.0"))
 CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
@@ -42,7 +42,7 @@ CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
 class ThresholdConfig:
     """Current threshold configuration"""
     ml_prob_threshold: float = DEFAULT_ML_THRESHOLD_DEFAULT
-    min_score_threshold: float = 70.0
+    min_score_threshold: float = 60.0
     confluence_min: float = 0.0
     last_updated: datetime = field(default_factory=datetime.utcnow)
     source: str = "default"  # "default", "adaptive", "gemini"
@@ -200,6 +200,37 @@ class AdaptiveThresholdOptimizer:
                     or 0
                 )
 
+                recent_score_row = await session.execute(
+                    text(
+                        """
+                        WITH scored AS (
+                            SELECT (meta->>'score')::double precision AS score
+                            FROM decision_log
+                            WHERE created_at >= :since
+                              AND meta ? 'score'
+                              AND (meta->>'score') ~ '^-?[0-9]+(\\.[0-9]+)?$'
+                            UNION ALL
+                            SELECT score::double precision AS score
+                            FROM signals
+                            WHERE created_at >= :since
+                              AND score IS NOT NULL
+                        )
+                        SELECT
+                            COUNT(*) AS total,
+                            AVG(score) AS avg_score,
+                            STDDEV_POP(score) AS std_score,
+                            PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY score) AS p75_score
+                        FROM scored
+                        """
+                    ),
+                    {"since": since},
+                )
+                recent_score_stats = recent_score_row.first()
+                recent_score_total = int(recent_score_stats[0] or 0) if recent_score_stats else 0
+                recent_score_mean = float(recent_score_stats[1] or 0.0) if recent_score_stats else 0.0
+                recent_score_std = float(recent_score_stats[2] or 0.0) if recent_score_stats and recent_score_stats[2] is not None else 0.0
+                recent_score_p75 = float(recent_score_stats[3] or 0.0) if recent_score_stats and recent_score_stats[3] is not None else 0.0
+
                 gemini_row = await session.execute(
                     text("SELECT value FROM runtime_state WHERE key = 'gemini_ml_last_run'")
                 )
@@ -231,6 +262,10 @@ class AdaptiveThresholdOptimizer:
                     "net_r": net_r,
                     "rejected_count": rejected_count,
                     "rejected_ratio": rejected_count / max(1, total + rejected_count),
+                    "recent_score_total": recent_score_total,
+                    "recent_score_mean": recent_score_mean,
+                    "recent_score_std": recent_score_std,
+                    "recent_score_p75": recent_score_p75,
                     "gemini_signal": gemini_signal,
                 }
         except Exception as e:
@@ -336,8 +371,20 @@ class AdaptiveThresholdOptimizer:
         avg_r = float(perf.get("avg_r", 0.0) or 0.0)
         gemini_signal = str(perf.get("gemini_signal") or "neutral").lower().strip()
 
+        recent_score_total = int(perf.get("recent_score_total", 0) or 0)
+        recent_score_mean = float(perf.get("recent_score_mean", 0.0) or 0.0)
+        recent_score_std = float(perf.get("recent_score_std", 0.0) or 0.0)
+        recent_score_p75 = float(perf.get("recent_score_p75", 0.0) or 0.0)
+
         score_delta = 0.0
         confluence_delta = 0.0
+
+        if recent_score_total >= self._min_samples_for_analysis:
+            # Rolling adaptive gate: mean + 1.5 * std, bounded by safety rails.
+            rolling_threshold = recent_score_mean + (1.5 * recent_score_std)
+            if recent_score_p75 > 0:
+                rolling_threshold = max(rolling_threshold, recent_score_p75)
+            current_min_score = rolling_threshold
 
         if win_rate < TARGET_WIN_RATE - 0.10 or avg_r < TARGET_AVG_R - 0.5:
             score_delta += 2.0

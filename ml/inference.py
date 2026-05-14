@@ -5,6 +5,8 @@ import tempfile
 from pathlib import Path
 import logging
 
+import numpy as np
+
 try:
     import psycopg2
 except Exception:  # pragma: no cover
@@ -114,6 +116,9 @@ class MLFilter:
         self.feature_cols = None
         self.schema_version = None
         self.model_format_version = None
+        self.calibration_x = None
+        self.calibration_y = None
+        self.calibration_kind = None
         try:
             model_data = None
             try:
@@ -136,6 +141,9 @@ class MLFilter:
             self.feature_cols = model_data.get("feature_cols", [])
             self.schema_version = model_data.get("schema_version")
             self.model_format_version = model_data.get("model_format_version")
+            self.calibration_kind = str(model_data.get("calibration_kind") or "")
+            self.calibration_x = model_data.get("calibration_x") or []
+            self.calibration_y = model_data.get("calibration_y") or []
             
             if not model_b64:
                 self.active = False
@@ -156,6 +164,16 @@ class MLFilter:
             self.model = None
             self.feature_cols = None
             logger.warning("[ml] inference model init failed; fail-open mode active: %s", e)
+
+    def _apply_calibration(self, probability: float) -> float:
+        try:
+            xs = [float(x) for x in (self.calibration_x or [])]
+            ys = [float(y) for y in (self.calibration_y or [])]
+            if len(xs) >= 2 and len(xs) == len(ys):
+                return float(np.interp(float(probability), xs, ys, left=ys[0], right=ys[-1]))
+        except Exception:
+            pass
+        return float(probability)
 
     def ml_filter(self, features, threshold: float | None = None):
         """
@@ -184,6 +202,7 @@ class MLFilter:
             import numpy as np
             dmatrix = xgb.DMatrix(np.array([feature_vector]))
             prob = self.model.predict(dmatrix)[0]
+            prob = self._apply_calibration(float(prob))
             if threshold is None:
                 return True, float(prob)
             try:

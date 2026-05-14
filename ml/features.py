@@ -70,11 +70,23 @@ def _mtf_trend(market_data, tf: str) -> float:
     except Exception:
         return 0.0
 
+
+def _asset_class_to_int(asset: str) -> int:
+    a = (asset or "").upper().strip()
+    if a.endswith(("USDT", "USDC", "BUSD")) or len(a) > 6 and a.endswith("USD"):
+        return 0
+    if len(a.replace("/", "").replace("-", "")) == 6:
+        return 1
+    if any(k in a for k in ("XAU", "XAG", "XPT", "XPD", "WTI", "BRENT", "OIL", "GOLD", "SILVER", "COPPER")):
+        return 2
+    return 3
+
 def extract_features(signal, market_data):
     tf = signal.get("timeframe")
     tf_data = (market_data or {}).get(tf) or {}
     ind = (tf_data or {}).get("indicators") or {}
     bb = (ind or {}).get("bollinger") or {}
+    macro = (market_data or {}).get("_macro") or {}
 
     candles = (tf_data or {}).get("candles") or []
     closes = [
@@ -129,6 +141,7 @@ def extract_features(signal, market_data):
         "strategy_id": strategy_to_int(signal.get("strategy") or signal.get("strategy_name") or ""),
         "regime": regime_to_int(signal.get("regime", "")),
         "news_sentiment": float(market_data.get("news_sentiment", 0.0)),
+        "asset_class_enc": float(signal.get("asset_class_enc") if signal.get("asset_class_enc") is not None else _asset_class_to_int(str(signal.get("asset") or ""))),
         # Candle-derived momentum context
         "price_velocity_3": float(signal.get("price_velocity_3") if signal.get("price_velocity_3") is not None else vel3),
         "price_velocity_5": float(signal.get("price_velocity_5") if signal.get("price_velocity_5") is not None else vel5),
@@ -149,7 +162,13 @@ def extract_features(signal, market_data):
         # Optional alpha generators (if upstream providers inject values)
         "funding_rate": float(signal.get("funding_rate") or 0.0),
         "open_interest_change": float(signal.get("open_interest_change") or 0.0),
-        "dxy_trend": float(signal.get("dxy_trend") or 0.0),
-        "spx_trend": float(signal.get("spx_trend") or 0.0),
-        "btc_corr": float(signal.get("btc_corr") or 0.0),
+        "dxy_trend": float(signal.get("dxy_trend") if signal.get("dxy_trend") is not None else macro.get("dxy_trend") or 0.0),
+        "vix_trend": float(signal.get("vix_trend") if signal.get("vix_trend") is not None else macro.get("vix_trend") or 0.0),
+        "us10y_trend": float(signal.get("us10y_trend") if signal.get("us10y_trend") is not None else macro.get("us10y_trend") or 0.0),
+        "yield_spread": float(signal.get("yield_spread") if signal.get("yield_spread") is not None else macro.get("yield_spread") or 0.0),
+        "minutes_since_high_impact_news": float(signal.get("minutes_since_high_impact_news") if signal.get("minutes_since_high_impact_news") is not None else macro.get("minutes_since_high_impact_news") or 0.0),
+        "minutes_until_high_impact_news": float(signal.get("minutes_until_high_impact_news") if signal.get("minutes_until_high_impact_news") is not None else macro.get("minutes_until_high_impact_news") or 0.0),
+        "news_event_impact_score": float(signal.get("news_event_impact_score") if signal.get("news_event_impact_score") is not None else macro.get("news_event_impact_score") or 0.0),
+        "spx_trend": float(signal.get("spx_trend") if signal.get("spx_trend") is not None else macro.get("spx_trend") or 0.0),
+        "btc_corr": float(signal.get("btc_corr") if signal.get("btc_corr") is not None else macro.get("btc_corr") or 0.0),
     }
