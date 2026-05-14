@@ -78,7 +78,8 @@ def _load_model() -> None:
             _MODEL_CACHE["error"] = err
             return
         # Memory-optimised config for Railway 500 MB tier
-        booster.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
+            booster_any: Any = booster
+            booster_any.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
         gc.collect()  # free any cyclic garbage from model initialisation
 
         _MODEL_CACHE["feature_cols"] = feature_cols
@@ -314,8 +315,14 @@ def get_strategy_weights() -> Dict[str, float]:
         return {}
     try:
         payload = json.loads(raw)
-        typed_payload = cast(Dict[str, Any], payload if isinstance(payload, dict) else {})
-        return {str(k): float(v) for k, v in typed_payload.items()}
+            weights: Dict[str, float] = {}
+            if isinstance(payload, dict):
+                for key, value in payload.items():
+                    try:
+                        weights[str(key)] = float(value)
+                    except Exception:
+                        continue
+            return weights
     except Exception:
         weights = {}
         for item in raw.split(","):
@@ -335,8 +342,14 @@ def get_regime_strategies() -> Dict[str, list[str]]:
         return {}
     try:
         payload = json.loads(raw)
-        typed_payload = cast(Dict[str, Any], payload if isinstance(payload, dict) else {})
-        return {str(k): list(v or []) for k, v in typed_payload.items()}
+            mapping: Dict[str, list[str]] = {}
+            if isinstance(payload, dict):
+                for key, value in payload.items():
+                    try:
+                        mapping[str(key)] = [str(item).strip() for item in (value or []) if str(item).strip()]
+                    except Exception:
+                        continue
+            return mapping
     except Exception:
         mapping: Dict[str, list[str]] = {}
         for item in raw.split(";"):
@@ -353,7 +366,7 @@ def weekly_job() -> bool:
         return False
     try:
         from ml.retrain import retrain_model
-        from utils.async_runner import run_sync
+            from utils.async_runner import run_sync  # type: ignore[import-untyped]
         return bool(run_sync(retrain_model(), timeout=1200.0))
     except Exception:
         return False
