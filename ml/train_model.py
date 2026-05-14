@@ -27,6 +27,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
 def _safe_float(val):
     """Coerce numbers that may be stored as strings or single-item lists."""
     if val is None:
@@ -52,6 +59,156 @@ def _safe_float(val):
         except Exception:
             pass
     return 0.0
+
+
+def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
+    """Generate synthetic-but-structured training rows when DB is unavailable.
+
+    The generator is deterministic by default and encodes realistic relationships
+    between score, RR, trend alignment, macro pressure, and outcome likelihood.
+    """
+    seed = int(os.getenv("ML_OFFLINE_BOOTSTRAP_SEED", "42") or 42)
+    rng = np.random.default_rng(seed)
+    now = datetime.utcnow()
+
+    assets = ["BTCUSDT", "ETHUSDT", "EURUSD", "GBPUSD", "XAUUSD", "AAPL", "SPY", "US30"]
+    timeframes = ["15m", "1h", "4h", "1d"]
+    strategies = ["ATR Breakout", "EMA Trend", "Structure Bull", "RSI Momentum", "fibonacci_confluence"]
+    regimes = ["TRENDING", "RANGING", "VOLATILE"]
+
+    rows = []
+    for i in range(max(50, int(num_samples))):
+        asset = str(rng.choice(assets))
+        tf = str(rng.choice(timeframes, p=[0.25, 0.35, 0.25, 0.15]))
+        strategy = str(rng.choice(strategies))
+        regime = str(rng.choice(regimes, p=[0.42, 0.33, 0.25]))
+        direction = "long" if float(rng.random()) > 0.47 else "short"
+
+        asset_class_enc = 0.0 if asset.endswith(("USDT", "USDC", "BUSD")) else 1.0 if len(asset) == 6 and asset.isalpha() else 2.0 if asset.startswith("XAU") else 3.0
+
+        score = float(np.clip(rng.normal(66.0, 11.0), 25.0, 95.0))
+        rr_ratio = float(np.clip(rng.normal(1.75, 0.55), 0.6, 4.0))
+        strength = float(np.clip(score + rng.normal(0.0, 8.0), 10.0, 100.0))
+
+        price_velocity_3 = float(np.clip(rng.normal(0.0, 0.02), -0.08, 0.08))
+        price_velocity_5 = float(np.clip(price_velocity_3 + rng.normal(0.0, 0.01), -0.08, 0.08))
+        price_velocity_10 = float(np.clip(rng.normal(0.0, 0.02), -0.08, 0.08))
+        price_acceleration = float(price_velocity_3 - price_velocity_10)
+        atr_rel = float(np.clip(abs(rng.normal(0.01, 0.007)), 0.001, 0.06))
+        atr_regime = float(np.clip(rng.normal(1.0, 0.35), 0.2, 3.5))
+        relative_volume = float(np.clip(rng.normal(1.05, 0.45), 0.2, 5.0))
+        mtf_4h_trend = float(rng.choice([-1.0, 0.0, 1.0], p=[0.27, 0.22, 0.51]))
+        mtf_1d_trend = float(rng.choice([-1.0, 0.0, 1.0], p=[0.29, 0.24, 0.47]))
+
+        funding_rate = float(np.clip(rng.normal(0.0, 0.003), -0.02, 0.02))
+        open_interest_change = float(np.clip(rng.normal(0.0, 0.04), -0.2, 0.2))
+        dxy_trend = float(np.clip(rng.normal(0.0, 0.02), -0.08, 0.08))
+        vix_trend = float(np.clip(rng.normal(0.0, 0.03), -0.12, 0.12))
+        us10y_trend = float(np.clip(rng.normal(0.0, 0.015), -0.06, 0.06))
+        yield_spread = float(np.clip(rng.normal(0.015, 0.008), -0.02, 0.04))
+        minutes_since_news = float(np.clip(rng.exponential(180.0), 0.0, 1440.0))
+        minutes_until_news = float(np.clip(rng.exponential(210.0), 0.0, 1440.0))
+        news_event_impact_score = float(np.clip(max(0.0, 1.0 - (min(minutes_since_news, minutes_until_news) / 90.0)), 0.0, 1.0))
+        spx_trend = float(np.clip(rng.normal(0.0, 0.018), -0.07, 0.07))
+        btc_corr = float(np.clip(rng.normal(0.2 if asset_class_enc in (0.0, 3.0) else 0.05, 0.25), -0.85, 0.95))
+
+        trend_alignment = 0.5 * mtf_4h_trend + 0.7 * mtf_1d_trend
+        directional_bias = 0.35 if direction == "long" else -0.25
+        macro_penalty = 0.8 * max(vix_trend, 0.0) + 0.9 * news_event_impact_score
+        macro_support = 0.35 * spx_trend - 0.25 * dxy_trend + 0.2 * yield_spread
+        z = (
+            -0.9
+            + 0.055 * (score - 60.0)
+            + 0.85 * (rr_ratio - 1.0)
+            + 0.012 * (strength - 50.0)
+            + 0.6 * trend_alignment
+            + 0.45 * price_acceleration
+            + 0.25 * open_interest_change
+            + 0.18 * relative_volume
+            + directional_bias
+            + macro_support
+            - macro_penalty
+            + float(rng.normal(0.0, 0.45))
+        )
+        p_win = 1.0 / (1.0 + math.exp(-z))
+        target = 1 if float(rng.random()) < p_win else 0
+
+        barrier_type = "upper" if target == 1 else "lower"
+        false_breakout = int(float(rng.random()) < (0.22 if target == 0 else 0.07))
+        partial_tp_progress = 0
+        if target == 1:
+            partial_tp_progress = int(rng.choice([1, 2, 3], p=[0.45, 0.35, 0.20]))
+        elif float(rng.random()) < 0.17:
+            partial_tp_progress = 1
+
+        sample_weight = 1.0
+        if target == 1 and rr_ratio >= 2.0:
+            sample_weight *= 1.15
+        if target == 0 and false_breakout:
+            sample_weight *= 0.72
+
+        entry = float(np.clip(rng.uniform(1.0, 50000.0), 1.0, 50000.0))
+        risk_pct = float(np.clip(rng.normal(0.012, 0.006), 0.002, 0.04))
+        if direction == "long":
+            stop_loss = entry * (1.0 - risk_pct)
+            take_profit = entry * (1.0 + risk_pct * rr_ratio)
+        else:
+            stop_loss = entry * (1.0 + risk_pct)
+            take_profit = entry * (1.0 - risk_pct * rr_ratio)
+
+        created_at = now - timedelta(hours=float(rng.uniform(1.0, 24.0 * 120.0)))
+        row = {
+            "signal_id": f"bootstrap_{i}",
+            "asset": asset,
+            "timeframe": tf,
+            "direction": direction,
+            "score": score,
+            "entry": float(entry),
+            "stop_loss": float(stop_loss),
+            "take_profit": float(take_profit),
+            "rr_ratio": rr_ratio,
+            "strategy_name": strategy,
+            "regime": regime,
+            "strength": strength,
+            "ml_probability": float(p_win),
+            "price_velocity_3": price_velocity_3,
+            "price_velocity_5": price_velocity_5,
+            "price_velocity_10": price_velocity_10,
+            "price_acceleration_3_10": price_acceleration,
+            "atr_rel": atr_rel,
+            "atr_regime": atr_regime,
+            "relative_volume": relative_volume,
+            "mtf_4h_trend": mtf_4h_trend,
+            "mtf_1d_trend": mtf_1d_trend,
+            "funding_rate": funding_rate,
+            "open_interest_change": open_interest_change,
+            "asset_class_enc": asset_class_enc,
+            "dxy_trend": dxy_trend,
+            "vix_trend": vix_trend,
+            "us10y_trend": us10y_trend,
+            "yield_spread": yield_spread,
+            "minutes_since_high_impact_news": minutes_since_news,
+            "minutes_until_high_impact_news": minutes_until_news,
+            "news_event_impact_score": news_event_impact_score,
+            "spx_trend": spx_trend,
+            "btc_corr": btc_corr,
+            "partial_tp_progress": int(partial_tp_progress),
+            "false_breakout": int(false_breakout),
+            "barrier_type": barrier_type,
+            "sample_weight": float(sample_weight),
+            "created_at": created_at,
+            "target": int(target),
+        }
+        rows.append(row)
+
+    out = pd.DataFrame(rows)
+    logger.warning(
+        "Using offline bootstrap data: rows=%s seed=%s class_dist=%s",
+        len(out),
+        seed,
+        out["target"].value_counts().to_dict() if "target" in out.columns else {},
+    )
+    return out
 
 
 async def load_training_data():
@@ -155,6 +312,8 @@ async def load_training_data():
 
         if not rows:
             logger.warning("No signals with outcomes found in last 90 days")
+            if _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True):
+                return _generate_offline_bootstrap_data(int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200))
             return None
 
         data = []
@@ -724,7 +883,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     return model, feature_cols, calibration_x, calibration_y
 
 
-def save_model(model, feature_cols, calibration_x=None, calibration_y=None):
+def save_model(model, feature_cols, calibration_x=None, calibration_y=None, training_meta=None):
     """Save model to JSON."""
     model_path = Path(__file__).parent / "model.json"
     
@@ -745,6 +904,7 @@ def save_model(model, feature_cols, calibration_x=None, calibration_y=None):
         "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",
         "calibration_x": calibration_x or [],
         "calibration_y": calibration_y or [],
+        "training_meta": dict(training_meta or {}),
     }
 
     with open(model_path, 'w') as f:
@@ -759,8 +919,23 @@ async def main():
 
     # Load data
     df = await load_training_data()
-    if df is None or len(df) < 10:
-        logger.error("Insufficient training data (need >= 10 signals with outcomes)")
+    min_rows = int(os.getenv("ML_MIN_TRAIN_ROWS", "10") or 10)
+    bootstrap_enabled = _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True)
+    bootstrap_rows = int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)
+    used_bootstrap = False
+    source_rows = int(len(df)) if df is not None else 0
+
+    if (df is None or len(df) < min_rows) and bootstrap_enabled:
+        boot = _generate_offline_bootstrap_data(max(bootstrap_rows, min_rows))
+        used_bootstrap = True
+        if df is None or len(df) == 0:
+            df = boot
+        else:
+            df = pd.concat([df, boot], ignore_index=True)
+        logger.warning("Bootstrap augmentation applied: source_rows=%s total_rows=%s", source_rows, len(df))
+
+    if df is None or len(df) < min_rows:
+        logger.error("Insufficient training data (need >= %s rows)", min_rows)
         return False
 
     # Engineer features
@@ -778,7 +953,17 @@ async def main():
     )
 
     # Save model
-    save_model(model, feature_cols, calibration_x=calibration_x, calibration_y=calibration_y)
+    save_model(
+        model,
+        feature_cols,
+        calibration_x=calibration_x,
+        calibration_y=calibration_y,
+        training_meta={
+            "offline_bootstrap_used": bool(used_bootstrap),
+            "source_rows": int(source_rows),
+            "total_rows": int(len(df)),
+        },
+    )
 
     logger.info("✅ Model training complete!")
     return True

@@ -315,14 +315,14 @@ def get_strategy_weights() -> Dict[str, float]:
         return {}
     try:
         payload = json.loads(raw)
-            weights: Dict[str, float] = {}
-            if isinstance(payload, dict):
-                for key, value in payload.items():
-                    try:
-                        weights[str(key)] = float(value)
-                    except Exception:
-                        continue
-            return weights
+        weights: Dict[str, float] = {}
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                try:
+                    weights[str(key)] = float(value)
+                except Exception:
+                    continue
+        return weights
     except Exception:
         weights = {}
         for item in raw.split(","):
