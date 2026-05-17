@@ -342,14 +342,14 @@ def get_regime_strategies() -> Dict[str, list[str]]:
         return {}
     try:
         payload = json.loads(raw)
-            mapping: Dict[str, list[str]] = {}
-            if isinstance(payload, dict):
-                for key, value in payload.items():
-                    try:
-                        mapping[str(key)] = [str(item).strip() for item in (value or []) if str(item).strip()]
-                    except Exception:
-                        continue
-            return mapping
+        mapping: Dict[str, list[str]] = {}
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                try:
+                    mapping[str(key)] = [str(item).strip() for item in (value or []) if str(item).strip()]
+                except Exception:
+                    continue
+        return mapping
     except Exception:
         mapping: Dict[str, list[str]] = {}
         for item in raw.split(";"):
@@ -366,7 +366,7 @@ def weekly_job() -> bool:
         return False
     try:
         from ml.retrain import retrain_model
-            from utils.async_runner import run_sync  # type: ignore[import-untyped]
+        from utils.async_runner import run_sync  # type: ignore[import-untyped]
         return bool(run_sync(retrain_model(), timeout=1200.0))
     except Exception:
         return False
