@@ -17,6 +17,7 @@ import logging
 import threading
 import inspect
 import json
+import pathlib
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -216,6 +217,23 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
     )
     _diagnostic_state.empty_cycles[asset_key] = 0
     _diagnostic_state.gate_counts[asset_key] = Counter()
+
+    # Persist a compact diagnostic record for post-mortem aggregation.
+    try:
+        diag_dir = pathlib.Path(os.getenv('ENGINE_DIAGNOSTIC_DIR', '.diagnostics'))
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        out_file = diag_dir / 'heatmap_log.jsonl'
+        record = {
+            'ts': datetime.utcnow().isoformat(),
+            'asset': asset_key,
+            'cycle': cycle_no,
+            'empty_cycles': empty_cycles,
+            'heatmap': heatmap,
+        }
+        with out_file.open('a', encoding='utf-8') as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        logger.debug('[engine] failed to persist diagnostic heatmap')
 
 
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
