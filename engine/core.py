@@ -707,17 +707,24 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
                 cfg = run_sync(refresh_fn(force=force))
 
         if cfg is not None:
-            _runtime_min_score_threshold = float(
-                getattr(cfg, "min_score_threshold", _runtime_min_score_threshold) or _runtime_min_score_threshold
-            )
-            _runtime_confluence_min = float(
-                getattr(cfg, "confluence_min", _runtime_confluence_min) or _runtime_confluence_min
-            )
-            os.environ["PREMIUM_SCORE_THRESHOLD"] = str(_runtime_min_score_threshold)
-            os.environ["CONFLUENCE_GATE_MIN"] = str(_runtime_confluence_min)
-            os.environ["ML_PROB_THRESHOLD"] = str(
-                float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55)
-            )
+            # Allow an explicit env-var override to take precedence over DB-driven thresholds.
+            # Set PREVIOUS_RUNTIME_OVERRIDE=1 to prevent DB from overwriting runtime env values.
+            _force_env_override = bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip())
+
+            if not _force_env_override:
+                _runtime_min_score_threshold = float(
+                    getattr(cfg, "min_score_threshold", _runtime_min_score_threshold) or _runtime_min_score_threshold
+                )
+                _runtime_confluence_min = float(
+                    getattr(cfg, "confluence_min", _runtime_confluence_min) or _runtime_confluence_min
+                )
+                os.environ["PREMIUM_SCORE_THRESHOLD"] = str(_runtime_min_score_threshold)
+                os.environ["CONFLUENCE_GATE_MIN"] = str(_runtime_confluence_min)
+                os.environ["ML_PROB_THRESHOLD"] = str(
+                    float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55)
+                )
+            else:
+                logger.info("[engine] PREMIUM_SCORE_THRESHOLD_FORCE set; preserving env vars over DB thresholds")
         else:
             _runtime_min_score_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
             _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", _runtime_confluence_min)
