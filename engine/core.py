@@ -1942,17 +1942,20 @@ def main_loop(DRY_RUN: bool = False):
                                 sig['confluence_drivers']    = _conf_result['drivers']
                                 sig['long_votes']            = _conf_result['long_votes']
                                 sig['short_votes']           = _conf_result['short_votes']
-                                # Gate: skip if confluence direction contradicts the signal
+                                # Gate: skip if confluence direction contradicts the signal only when explicitly enabled.
+                                # By default this is advisory so a single directional disagreement does not starve signals.
                                 _conf_dir  = _conf_result['direction']
                                 _sig_dir   = str(sig.get('direction') or 'LONG').upper()
                                 _norm_sdir = 'LONG' if _sig_dir in ('LONG', 'BUY') else 'SHORT'
+                                _conf_hard_block = _env_bool('CONFLUENCE_DIRECTION_HARD_BLOCK_ENABLED', False)
                                 if _conf_dir != 'NEUTRAL' and _conf_dir != _norm_sdir:
                                     logger.info(
                                         f"[engine] confluence mismatch: signal={_norm_sdir} "
                                         f"confluence={_conf_dir} ({_conf_result['score']}/{_conf_result['total']}) "
-                                        f"— skipping {sig.get('asset')}"
+                                        f"— {'skipping' if _conf_hard_block else 'allowing'} {sig.get('asset')}"
                                     )
-                                    continue
+                                    if _conf_hard_block:
+                                        continue
                         except Exception as _ce:
                             logger.debug(f"[engine] confluence engine error: {_ce}")
 
