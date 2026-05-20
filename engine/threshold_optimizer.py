@@ -32,8 +32,9 @@ TARGET_AVG_R = float(os.getenv("TARGET_AVG_R", "1.5"))  # 1.5R average profit
 MIN_SIGNALS_PER_CYCLE = int(os.getenv("MIN_SIGNALS_PER_CYCLE", "3"))
 
 # Dynamic gate bounds (safety rails to avoid over-tight/over-loose behavior)
-MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "55.0"))
-MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "90.0"))
+# Keep the floor lower so the optimizer cannot starve the bot during weak regimes.
+MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "40.0"))
+MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "75.0"))
 CONFLUENCE_MIN_FLOOR = float(os.getenv("CONFLUENCE_MIN_FLOOR", "0.0"))
 CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
 
@@ -42,7 +43,7 @@ CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
 class ThresholdConfig:
     """Current threshold configuration"""
     ml_prob_threshold: float = DEFAULT_ML_THRESHOLD_DEFAULT
-    min_score_threshold: float = 60.0
+    min_score_threshold: float = 55.0
     confluence_min: float = 0.0
     last_updated: datetime = field(default_factory=datetime.utcnow)
     source: str = "default"  # "default", "adaptive", "gemini"
@@ -380,8 +381,9 @@ class AdaptiveThresholdOptimizer:
         confluence_delta = 0.0
 
         if recent_score_total >= self._min_samples_for_analysis:
-            # Rolling adaptive gate: mean + 1.5 * std, bounded by safety rails.
-            rolling_threshold = recent_score_mean + (1.5 * recent_score_std)
+            # Rolling adaptive gate: mean + 1.0 * std, bounded by safety rails.
+            # This is intentionally less aggressive to avoid locking the engine out.
+            rolling_threshold = recent_score_mean + (1.0 * recent_score_std)
             if recent_score_p75 > 0:
                 rolling_threshold = max(rolling_threshold, recent_score_p75)
             current_min_score = rolling_threshold

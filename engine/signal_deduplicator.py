@@ -577,14 +577,20 @@ class MLRejectionTracker:
 
                 cfg = await refresh_thresholds(force=True)
                 if cfg is not None:
+                    _force_env_override = bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip())
                     os.environ["ML_PROB_THRESHOLD"] = str(float(getattr(cfg, "ml_prob_threshold", 0.55) or 0.55))
-                    os.environ["PREMIUM_SCORE_THRESHOLD"] = str(float(getattr(cfg, "min_score_threshold", 70.0) or 70.0))
+                    if not _force_env_override:
+                        os.environ["PREMIUM_SCORE_THRESHOLD"] = str(
+                            float(getattr(cfg, "min_score_threshold", 70.0) or 70.0)
+                        )
                     os.environ["CONFLUENCE_GATE_MIN"] = str(float(getattr(cfg, "confluence_min", 0.0) or 0.0))
                     threshold_info = (
                         f"ml={float(getattr(cfg, 'ml_prob_threshold', 0.55) or 0.55):.3f}, "
                         f"score={float(getattr(cfg, 'min_score_threshold', 70.0) or 70.0):.1f}, "
                         f"confluence={float(getattr(cfg, 'confluence_min', 0.0) or 0.0):.1f}"
                     )
+                    if _force_env_override:
+                        threshold_info += " (score env override preserved)"
             except Exception as e:
                 logger.warning("Adaptive threshold refresh failed: %s", e)
 
