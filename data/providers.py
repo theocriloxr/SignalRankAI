@@ -33,6 +33,37 @@ except Exception:
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
 
+# Simple in-memory candles cache used as fallback when providers are rate-limited
+_CANDLES_CACHE: dict[str, dict] = {}
+
+
+def _cache_key(symbol: str, timeframe: str) -> str:
+    return f"{(symbol or '').upper()}::{(timeframe or '')}"
+
+
+def _set_candles_cache(symbol: str, timeframe: str, candles: list[dict]):
+    try:
+        key = _cache_key(symbol, timeframe)
+        _CANDLES_CACHE[key] = {
+            "ts": time.time(),
+            "candles": candles,
+        }
+    except Exception:
+        pass
+
+
+def _get_candles_cache(symbol: str, timeframe: str, max_age_s: float = 300.0):
+    try:
+        key = _cache_key(symbol, timeframe)
+        rec = _CANDLES_CACHE.get(key)
+        if not rec:
+            return None
+        if (time.time() - rec.get("ts", 0)) > float(os.getenv("CANDLES_CACHE_TTL", max_age_s)):
+            return None
+        return rec.get("candles")
+    except Exception:
+        return None
+
 
 def _env_float(name: str, default: float) -> float:
     try:
@@ -153,7 +184,10 @@ def fetch_binance_ccxt_candles(symbol: str, timeframe: str, limit: int = 200) ->
         )
 
     try:
-        return run_sync(_call())
+        res = run_sync(_call())
+        if res:
+            _set_candles_cache(symbol, timeframe, res)
+        return res
     except Exception:
         return []
 
@@ -239,6 +273,7 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
                 continue
         
         logger.info(f"[polygon] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
+        _set_candles_cache(symbol, timeframe, candles)
         return candles
     
     except Exception as e:
@@ -310,6 +345,7 @@ def fetch_twelvedata_candles(symbol: str, timeframe: str, asset_type: str = "sto
                 continue
 
         logger.info(f"[twelvedata] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
+        _set_candles_cache(symbol, timeframe, candles)
         return candles
     
     except Exception as e:
@@ -404,6 +440,7 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
                 continue
         
         logger.info(f"[yahoo] fetched symbol={symbol} tf={timeframe} candles={len(candles)}")
+        _set_candles_cache(symbol, timeframe, candles)
         return candles
     
     except asyncio.TimeoutError:
@@ -498,6 +535,7 @@ def fetch_oanda_candles(instrument: str, timeframe: str) -> List[Dict]:
                 continue
         
         logger.info(f"[oanda] fetched instrument={instrument} tf={timeframe} candles={len(candles)}")
+        _set_candles_cache(instrument, timeframe, candles)
         return candles
     
     except Exception as e:
@@ -583,7 +621,8 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
                 })
             except Exception:
                 continue
-        logger.info("[coingecko] fetched id=%s tf=%s candles=%d", cg_id, timeframe, len(candles))
+            logger.info(f"[coingecko] fetched id=%s tf=%s candles=%d", cg_id, timeframe, len(candles))
+            _set_candles_cache(symbol, timeframe, candles)
         return candles
     except Exception as exc:
         logger.error("[coingecko] error id=%s err=%s", cg_id, exc)
@@ -647,7 +686,8 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
             except Exception:
                 continue
         candles.sort(key=lambda c: c["timestamp"])
-        logger.info("[alphavantage] fetched symbol=%s tf=%s candles=%d", symbol, timeframe, len(candles))
+            logger.info(f"[alphavantage] fetched symbol=%s tf=%s candles=%d", symbol, timeframe, len(candles))
+            _set_candles_cache(symbol, timeframe, candles)
         return candles
     except Exception as exc:
         logger.error("[alphavantage] error symbol=%s: %s", symbol, exc)
@@ -674,6 +714,15 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
     except Exception:
         cls = "unknown"
 
+    def _final_or_cache(sym: str, tf: str, res: list[dict]):
+        if res:
+            return res[-limit:]
+        cached = _get_candles_cache(sym, tf)
+        if cached:
+            logger.info(f"[providers] using cached candles for {sym} {tf} age_ok=True")
+            return cached[-limit:]
+        return []
+
     # --- Crypto waterfall ---
     if cls == "crypto":
         # 0. CCXT Binance with explicit proxy injection
@@ -695,7 +744,7 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
         # 3. Yahoo Finance
         yf_sym = map_symbol(symbol, "yfinance") if cls else symbol
         result = fetch_yahoo_candles(yf_sym or symbol, timeframe)
-        return result[-limit:] if result else []
+        return _final_or_cache(yf_sym or symbol, timeframe, result)
 
     # --- Forex waterfall ---
     if cls == "forex":
@@ -717,7 +766,7 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
         # 4. Yahoo Finance
         yf_sym = map_symbol(symbol, "yfinance") or symbol
         result = fetch_yahoo_candles(yf_sym, timeframe)
-        return result[-limit:] if result else []
+        return _final_or_cache(yf_sym, timeframe, result)
 
     # --- Commodity waterfall ---
     if cls == "commodity":
@@ -731,7 +780,7 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
             return result[-limit:]
         td_sym = map_symbol(symbol, "twelvedata") or symbol
         result = fetch_twelvedata_candles(td_sym, timeframe)
-        return result[-limit:] if result else []
+        return _final_or_cache(td_sym, timeframe, result)
 
     # --- Stock waterfall ---
     # 1. AlphaVantage
@@ -743,9 +792,9 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
     if result and len(result) >= 5:
         return result[-limit:]
     # 3. Twelve Data
-    result = fetch_twelvedata_candles(symbol, timeframe)
+        result = fetch_twelvedata_candles(symbol, timeframe)
     if result and len(result) >= 5:
         return result[-limit:]
     # 4. Yahoo Finance
     result = fetch_yahoo_candles(symbol, timeframe)
-    return result[-limit:] if result else []
+    return _final_or_cache(symbol, timeframe, result)

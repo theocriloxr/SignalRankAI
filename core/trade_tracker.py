@@ -5,6 +5,36 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+# Simple in-memory price cache: symbol -> {ts: float, price: float}
+_PRICE_CACHE: dict[str, dict] = {}
+
+
+def _set_price_cache(symbol: str, price: float):
+    try:
+        _PRICE_CACHE[(symbol or "").upper()] = {"ts": datetime.now(timezone.utc).timestamp(), "price": float(price)}
+    except Exception:
+        pass
+
+
+def _get_price_cache(symbol: str, max_age_s: float = 120.0):
+    try:
+        rec = _PRICE_CACHE.get((symbol or "").upper())
+        if not rec:
+            return None
+        if (datetime.now(timezone.utc).timestamp() - float(rec.get("ts", 0))) > float(_env_get("PRICE_CACHE_TTL", max_age_s)):
+            return None
+        return rec.get("price")
+    except Exception:
+        return None
+
+
+def _env_get(name: str, default):
+    import os
+    try:
+        return os.getenv(name) or default
+    except Exception:
+        return default
+
 
 def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
@@ -76,6 +106,14 @@ def _get_current_price(symbol):
     Primary: yfinance fast_info
     Fallback: Binance REST API for crypto
     """
+    # Try price cache first
+    try:
+        cached = _get_price_cache(symbol)
+        if cached is not None:
+            logger.debug(f"Using cached price for {symbol}: {cached}")
+            return float(cached)
+    except Exception:
+        pass
     # Try yfinance first
     try:
         yf_symbol = _convert_symbol_for_yfinance(symbol)
@@ -104,10 +142,32 @@ def _get_current_price(symbol):
                 data = response.json()
                 price = float(data["price"])
                 logger.debug(f"Got price for {symbol} from Binance: {price}")
+                try:
+                    _set_price_cache(symbol, price)
+                except Exception:
+                    pass
                 return price
         except Exception as e:
             logger.debug(f"Binance API failed for {symbol}: {e}")
     
+    # Last-resort: try unified providers waterfall for recent candles
+    try:
+        from data.providers import fetch_candles_waterfall
+        candles = fetch_candles_waterfall(symbol, "1h", limit=5)
+        if candles:
+            # Use the last close
+            last = candles[-1]
+            price = float(last.get("close") or last.get("c") or 0)
+            if price and price > 0:
+                try:
+                    _set_price_cache(symbol, price)
+                except Exception:
+                    pass
+                logger.debug(f"Got price for {symbol} from providers.waterfall: {price}")
+                return price
+    except Exception:
+        pass
+
     logger.warning(f"Could not fetch price for {symbol}")
     return None
 
