@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import sys
 sys.path.insert(0, '../../')
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env", override=False)
+    load_dotenv(".env.local", override=True)
+except Exception:
+    pass
 from config import config as app_config
 from logging.config import fileConfig
 

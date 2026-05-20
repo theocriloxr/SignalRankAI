@@ -1,5 +1,13 @@
 import os
 
+# Load local environment overrides if present.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env", override=False)
+    load_dotenv(".env.local", override=True)
+except Exception:
+    pass
+
 
 def _infer_run_mode() -> str:
     """Derive a sensible default RUN_MODE from Railway service naming.

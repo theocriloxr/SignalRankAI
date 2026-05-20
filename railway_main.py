@@ -19,6 +19,14 @@ try:
 except ImportError as _e:
     raise ImportError(f"SQLAlchemy PostgreSQL dialect required. Install: pip install 'sqlalchemy[postgresql]' (got: {_e})")
 
+# Load local environment overrides if present.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env", override=False)
+    load_dotenv(".env.local", override=True)
+except Exception:
+    pass
+
 import os
 import asyncio
 import logging
