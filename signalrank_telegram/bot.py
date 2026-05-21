@@ -492,24 +492,6 @@ else:
     except Exception as e:
         _logger.warning(f"[bot] Failed to initialize Telegram bot token: {e}")
         pass
-from .commands import reports_command
-application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
-from .commands import filter_command
-application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
-from .commands import apikey_command
-application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
-from .commands import language_command
-application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
-from .commands import referral_leaderboard_command, referral_rewards_command
-# Register referral leaderboard and rewards commands
-application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
-application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
-from .commands import admin_top_assets_command, admin_top_strategies_command, admin_user_engagement_command, assets_command
-# Register admin analytics commands
-application.add_handler(CommandHandler("admin_top_assets", _audit_handler("admin_top_assets", admin_top_assets_command)))
-application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
-application.add_handler(CommandHandler("admin_top_strategies", _audit_handler("admin_top_strategies", admin_top_strategies_command)))
-application.add_handler(CommandHandler("admin_user_engagement", _audit_handler("admin_user_engagement", admin_user_engagement_command)))
 import os
 import asyncio
 import socket
@@ -571,16 +553,6 @@ from .commands import (
     vip_waitlist_join_callback,
     blast_terms_command,
 )
-
-# Register new commands
-application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
-application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
-application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
-application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
-application.add_handler(CommandHandler("ops_health", _audit_handler("ops_health", ops_health_command)))
-application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
-application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
-application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
 
 from .owner_commands import (
     unlock,
@@ -3968,6 +3940,39 @@ def run_bot() -> None:
 
     # NOTE: Commands are intentionally registered once above. Avoid duplicate
     # add_handler calls, which can execute the same command twice per update.
+
+    # Lightweight command registry audit to catch missing handlers.
+    try:
+        from telegram.ext import CommandHandler as _CH, ConversationHandler as _Conv
+        from signalrank_telegram.command_access import COMMAND_TIERS
+
+        def _extract_commands(_handler) -> list[str]:
+            if isinstance(_handler, _CH):
+                return [str(c).lstrip("/") for c in (_handler.commands or [])]
+            if isinstance(_handler, _Conv):
+                cmds: list[str] = []
+                for _ep in (_handler.entry_points or []):
+                    if isinstance(_ep, _CH):
+                        cmds.extend([str(c).lstrip("/") for c in (_ep.commands or [])])
+                return cmds
+            return []
+
+        _registered: set[str] = set()
+        _handlers_map = getattr(application, "handlers", {}) or {}
+        if isinstance(_handlers_map, dict):
+            for _lst in _handlers_map.values():
+                for _h in (_lst or []):
+                    _registered.update(_extract_commands(_h))
+
+        _expected = set(COMMAND_TIERS.keys())
+        _missing = sorted(_expected - _registered)
+        _extras = sorted(_registered - _expected)
+        if _missing:
+            logger.warning("[bot] command registry mismatch: missing=%s", _missing)
+        if _extras:
+            logger.info("[bot] command registry extras=%s", _extras)
+    except Exception as _cmd_audit_err:
+        logger.debug("[bot] command registry audit skipped: %s", _cmd_audit_err)
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
