@@ -2,8 +2,10 @@
 Multi-provider data fetching with automatic waterfall fallbacks.
 
 Waterfall order:
-  Crypto:      MT5 (MetaApi) -> Binance -> CoinGecko
-  Traditional: MT5 (MetaApi) -> FMP/AlphaVantage -> yfinance
+    Crypto:      Yahoo Finance -> Binance -> CoinGecko
+    Forex:       Yahoo Finance -> OANDA -> Twelve Data -> Polygon
+    Commodity:   Yahoo Finance -> AlphaVantage -> Twelve Data
+    Stock:       Yahoo Finance -> AlphaVantage -> Polygon -> Twelve Data
 
 Supports: Polygon.io, Twelve Data, Yahoo Finance, OANDA, TradingView.
 """
@@ -32,72 +34,88 @@ except Exception:
 # Rate limiting state
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
-
-# Simple in-memory candles cache used as fallback when providers are rate-limited
-_CANDLES_CACHE: dict[str, dict] = {}
-
-
-def _cache_key(symbol: str, timeframe: str) -> str:
-    return f"{(symbol or '').upper()}::{(timeframe or '')}"
-
-
-def _set_candles_cache(symbol: str, timeframe: str, candles: list[dict]):
-    try:
-        key = _cache_key(symbol, timeframe)
-        _CANDLES_CACHE[key] = {
-            "ts": time.time(),
-            "candles": candles,
-        }
-    except Exception:
-        pass
-
-
+        # 0. Yahoo Finance (preferred when available)
+        yf_sym = map_symbol(symbol, "yfinance") if cls else symbol
+        result = fetch_yahoo_candles(yf_sym or symbol, timeframe)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 1. CCXT Binance with explicit proxy injection
+        result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 2. Binance (async adapter; call sync shim via fetcher.get_candles which handles this)
+        try:
+            from data.connectors.binance_adapter import get_candles as binance_get
+            result = binance_get(symbol, timeframe, limit=limit)
+            if result and len(result) >= 10:
+                return result
+        except Exception:
+            pass
+        # 3. CoinGecko
+        result = fetch_coingecko_candles(symbol, timeframe)
+        if result and len(result) >= 5:
+            return result[-limit:]
+        # 4. Yahoo Finance fallback (cache aware)
+        return _final_or_cache(yf_sym or symbol, timeframe, result)
 def _get_candles_cache(symbol: str, timeframe: str, max_age_s: float = 300.0):
     try:
         key = _cache_key(symbol, timeframe)
-        rec = _CANDLES_CACHE.get(key)
-        if not rec:
-            return None
-        if (time.time() - rec.get("ts", 0)) > float(os.getenv("CANDLES_CACHE_TTL", max_age_s)):
-            return None
-        return rec.get("candles")
-    except Exception:
-        return None
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float((os.getenv(name) or str(default)).strip())
-    except Exception:
-        return float(default)
-
-
-def _rate_limit(provider: str, min_seconds: float = 1.0) -> None:
-    """Global rate limiter per provider."""
-    global _PROVIDER_LAST_CALL
-    if min_seconds <= 0:
-        return
-    last = _PROVIDER_LAST_CALL.get(provider, 0.0)
-    now = time.monotonic()
-    wait = (last + min_seconds) - now
-    if wait > 0:
+        # 1. Yahoo Finance
+        yf_sym = map_symbol(symbol, "yfinance") or symbol
+        result = fetch_yahoo_candles(yf_sym, timeframe)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 2. OANDA
+        oanda_sym = map_symbol(symbol, "oanda") or symbol
+        result = fetch_oanda_candles(oanda_sym, timeframe)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 3. Twelve Data
+        td_sym = map_symbol(symbol, "twelvedata") or symbol
+        result = fetch_twelvedata_candles(td_sym, timeframe)
+        if result and len(result) >= 5:
+            return result[-limit:]
+        # 4. Polygon
+        poly_sym = map_symbol(symbol, "polygon") or symbol
+        result = fetch_polygon_candles(poly_sym, timeframe, asset_type="forex")
+        if result and len(result) >= 5:
+            return result[-limit:]
+        # 5. Yahoo Finance fallback (cache aware)
+        return _final_or_cache(yf_sym, timeframe, result)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+        yf_sym = map_symbol(symbol, "yfinance") or symbol
+        result = fetch_yahoo_candles(yf_sym, timeframe)
+        if result and len(result) >= 5:
+            return result[-limit:]
+        av_sym = map_symbol(symbol, "alphavantage") or symbol
+        result = fetch_alphavantage_candles(av_sym, timeframe)
+        if result:
+            return result[-limit:]
+        td_sym = map_symbol(symbol, "twelvedata") or symbol
+        result = fetch_twelvedata_candles(td_sym, timeframe)
+        return _final_or_cache(td_sym, timeframe, result)
         time.sleep(wait)
     _PROVIDER_LAST_CALL[provider] = time.monotonic()
 
-
-def _is_cooldown_active(provider: str) -> bool:
-    """Check if provider is in cooldown due to rate limit."""
-    global _PROVIDER_COOLDOWN
-    cooldown_until = _PROVIDER_COOLDOWN.get(provider, 0.0)
-    return time.monotonic() < cooldown_until
-
-
-def _set_cooldown(provider: str, seconds: float) -> None:
-    """Set provider cooldown."""
-    global _PROVIDER_COOLDOWN
-    _PROVIDER_COOLDOWN[provider] = time.monotonic() + seconds
-
-
+    # 1. Yahoo Finance
+    result = fetch_yahoo_candles(symbol, timeframe)
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 2. AlphaVantage
+    result = fetch_alphavantage_candles(symbol, timeframe)
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 3. Polygon
+    result = fetch_polygon_candles(symbol, timeframe, asset_type="stocks")
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 4. Twelve Data
+    result = fetch_twelvedata_candles(symbol, timeframe)
+    if result and len(result) >= 5:
+        return result[-limit:]
+    return _final_or_cache(symbol, timeframe, result)
 def _rate_limit_cooldown_seconds(provider: str, *, status_code: int | None = None, message: str = "") -> float | None:
     msg = (message or "").lower()
     if provider == "twelvedata":
@@ -558,7 +576,7 @@ def fetch_tradingview_candles(symbol: str, timeframe: str, exchange: str = "BINA
     - tradingview-scraper library or similar
     - Or use TradingView's chart data API (unofficial)
     """
-    if not _env_bool("TRADINGVIEW_OHLCV_ENABLED", True):
+    if not _env_bool("TRADINGVIEW_OHLCV_ENABLED", False):
         return []
     logger.warning("[tradingview] OHLCV fetching not yet implemented - use other providers")
     return []
@@ -621,7 +639,8 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
                 })
             except Exception:
                 continue
-            logger.info(f"[coingecko] fetched id=%s tf=%s candles=%d", cg_id, timeframe, len(candles))
+        logger.info("[coingecko] fetched id=%s tf=%s candles=%d", cg_id, timeframe, len(candles))
+        if candles:
             _set_candles_cache(symbol, timeframe, candles)
         return candles
     except Exception as exc:
@@ -686,7 +705,8 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
             except Exception:
                 continue
         candles.sort(key=lambda c: c["timestamp"])
-            logger.info(f"[alphavantage] fetched symbol=%s tf=%s candles=%d", symbol, timeframe, len(candles))
+        logger.info("[alphavantage] fetched symbol=%s tf=%s candles=%d", symbol, timeframe, len(candles))
+        if candles:
             _set_candles_cache(symbol, timeframe, candles)
         return candles
     except Exception as exc:
@@ -701,10 +721,10 @@ def fetch_alphavantage_candles(symbol: str, timeframe: str) -> List[Dict]:
 def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
     """Fetch OHLCV with automatic provider waterfall.
 
-    Crypto:      Binance -> CoinGecko -> Yahoo Finance
-    Forex:       OANDA -> Twelve Data -> Polygon -> Yahoo Finance
+    Crypto:      Yahoo Finance -> Binance -> CoinGecko
+    Forex:       Yahoo Finance -> OANDA -> Twelve Data -> Polygon
     Commodity:   Yahoo Finance -> AlphaVantage -> Twelve Data
-    Stock:       AlphaVantage -> Polygon -> Twelve Data -> Yahoo Finance
+    Stock:       Yahoo Finance -> AlphaVantage -> Polygon -> Twelve Data
     MT5 (if configured) is tried first for all asset classes when
     META_API_TOKEN is set (via the async mt5_client; sync fallback skips it).
     """
@@ -725,11 +745,16 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
 
     # --- Crypto waterfall ---
     if cls == "crypto":
-        # 0. CCXT Binance with explicit proxy injection
+        # 0. Yahoo Finance (preferred when available)
+        yf_sym = map_symbol(symbol, "yfinance") if cls else symbol
+        result = fetch_yahoo_candles(yf_sym or symbol, timeframe)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 1. CCXT Binance with explicit proxy injection
         result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
         if result and len(result) >= 10:
             return result[-limit:]
-        # 1. Binance (async adapter; call sync shim via fetcher.get_candles which handles this)
+        # 2. Binance (async adapter; call sync shim via fetcher.get_candles which handles this)
         try:
             from data.connectors.binance_adapter import get_candles as binance_get
             result = binance_get(symbol, timeframe, limit=limit)
@@ -737,35 +762,36 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
                 return result
         except Exception:
             pass
-        # 2. CoinGecko
+        # 3. CoinGecko
         result = fetch_coingecko_candles(symbol, timeframe)
         if result and len(result) >= 5:
             return result[-limit:]
-        # 3. Yahoo Finance
-        yf_sym = map_symbol(symbol, "yfinance") if cls else symbol
-        result = fetch_yahoo_candles(yf_sym or symbol, timeframe)
+        # 4. Yahoo Finance fallback (cache aware)
         return _final_or_cache(yf_sym or symbol, timeframe, result)
 
     # --- Forex waterfall ---
     if cls == "forex":
-        # 1. OANDA
+        # 1. Yahoo Finance
+        yf_sym = map_symbol(symbol, "yfinance") or symbol
+        result = fetch_yahoo_candles(yf_sym, timeframe)
+        if result and len(result) >= 10:
+            return result[-limit:]
+        # 2. OANDA
         oanda_sym = map_symbol(symbol, "oanda") or symbol
         result = fetch_oanda_candles(oanda_sym, timeframe)
         if result and len(result) >= 10:
             return result[-limit:]
-        # 2. Twelve Data
+        # 3. Twelve Data
         td_sym = map_symbol(symbol, "twelvedata") or symbol
         result = fetch_twelvedata_candles(td_sym, timeframe)
         if result and len(result) >= 5:
             return result[-limit:]
-        # 3. Polygon
+        # 4. Polygon
         poly_sym = map_symbol(symbol, "polygon") or symbol
         result = fetch_polygon_candles(poly_sym, timeframe, asset_type="forex")
         if result and len(result) >= 5:
             return result[-limit:]
-        # 4. Yahoo Finance
-        yf_sym = map_symbol(symbol, "yfinance") or symbol
-        result = fetch_yahoo_candles(yf_sym, timeframe)
+        # 5. Yahoo Finance fallback (cache aware)
         return _final_or_cache(yf_sym, timeframe, result)
 
     # --- Commodity waterfall ---
@@ -783,18 +809,20 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
         return _final_or_cache(td_sym, timeframe, result)
 
     # --- Stock waterfall ---
-    # 1. AlphaVantage
+    # 1. Yahoo Finance
+    result = fetch_yahoo_candles(symbol, timeframe)
+    if result and len(result) >= 5:
+        return result[-limit:]
+    # 2. AlphaVantage
     result = fetch_alphavantage_candles(symbol, timeframe)
     if result and len(result) >= 5:
         return result[-limit:]
-    # 2. Polygon
+    # 3. Polygon
     result = fetch_polygon_candles(symbol, timeframe, asset_type="stocks")
     if result and len(result) >= 5:
         return result[-limit:]
-    # 3. Twelve Data
-        result = fetch_twelvedata_candles(symbol, timeframe)
+    # 4. Twelve Data
+    result = fetch_twelvedata_candles(symbol, timeframe)
     if result and len(result) >= 5:
         return result[-limit:]
-    # 4. Yahoo Finance
-    result = fetch_yahoo_candles(symbol, timeframe)
     return _final_or_cache(symbol, timeframe, result)
