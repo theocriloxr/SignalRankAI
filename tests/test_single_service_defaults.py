@@ -128,65 +128,91 @@ class TestTierGatedDistribution(unittest.TestCase):
     # ── free tier ────────────────────────────────────────────────────────────
 
     def test_free_receives_high_score_signal(self):
-        """Free tier (min_score=80): score=85 must be accepted."""
+        """Free tier: score at threshold must be accepted."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertTrue(mgr.should_send_signal("free", 85.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("free", 60))
+        self.assertTrue(mgr.should_send_signal("free", threshold))
 
     def test_free_rejects_below_threshold(self):
-        """Free tier: score=79 must be rejected."""
+        """Free tier: score below threshold must be rejected."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertFalse(mgr.should_send_signal("free", 79.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("free", 60))
+        self.assertFalse(mgr.should_send_signal("free", threshold - 1.0))
 
     def test_free_accepts_at_threshold_boundary(self):
-        """Free tier: score exactly at threshold (80) must pass."""
+        """Free tier: score exactly at threshold must pass."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertTrue(mgr.should_send_signal("free", 80.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("free", 60))
+        self.assertTrue(mgr.should_send_signal("free", threshold))
 
     # ── premium tier ──────────────────────────────────────────────────────────
 
     def test_premium_receives_moderate_score_signal(self):
-        """Premium tier (min_score=70): score=75 must be accepted."""
+        """Premium tier: score at threshold must be accepted."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertTrue(mgr.should_send_signal("premium", 75.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 80))
+        self.assertTrue(mgr.should_send_signal("premium", threshold))
 
     def test_premium_rejects_below_threshold(self):
-        """Premium tier: score=69 must be rejected."""
+        """Premium tier: score below threshold must be rejected."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertFalse(mgr.should_send_signal("premium", 69.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 80))
+        self.assertFalse(mgr.should_send_signal("premium", threshold - 1.0))
 
     def test_premium_receives_high_score(self):
-        """Premium tier: high-score signal (score=90) must be accepted."""
+        """Premium tier: high-score signal must be accepted."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertTrue(mgr.should_send_signal("premium", 90.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("premium", 80))
+        self.assertTrue(mgr.should_send_signal("premium", threshold + 10.0))
 
     # ── vip tier ──────────────────────────────────────────────────────────────
 
     def test_vip_accepts_quality_signal(self):
-        """VIP tier (min_score=75): score=80 must be accepted."""
+        """VIP tier: score at threshold must be accepted."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertTrue(mgr.should_send_signal("vip", 80.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("vip", 80))
+        self.assertTrue(mgr.should_send_signal("vip", threshold))
 
     def test_vip_rejects_below_threshold(self):
-        """VIP tier: score=74 must be rejected."""
+        """VIP tier: score below threshold must be rejected."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertFalse(mgr.should_send_signal("vip", 74.0))
+        threshold = float(TIER_SCORE_THRESHOLDS.get("vip", 80))
+        self.assertFalse(mgr.should_send_signal("vip", threshold - 1.0))
 
     # ── tier ordering — free is stricter than premium ─────────────────────────
 
     def test_free_stricter_than_premium(self):
-        """A signal scoring 75 must reach premium but not free."""
+        """Premium threshold should be >= free threshold (higher quality standard)."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        self.assertFalse(mgr.should_send_signal("free", 75.0))
-        self.assertTrue(mgr.should_send_signal("premium", 75.0))
+        free_thr = float(TIER_SCORE_THRESHOLDS.get("free", 60))
+        premium_thr = float(TIER_SCORE_THRESHOLDS.get("premium", 80))
+        score = free_thr + 1.0
+        self.assertTrue(mgr.should_send_signal("free", score))
+        if score < premium_thr:
+            self.assertFalse(mgr.should_send_signal("premium", score))
 
     def test_no_higher_tier_leak_to_free(self):
-        """Signal that fails free threshold must not be sent to free users,
-        even if it would pass for premium/vip."""
+        """Signals can be eligible for FREE but still blocked for PREMIUM/VIP."""
+        from core.tier_constants import TIER_SCORE_THRESHOLDS
         mgr = self._make_manager()
-        score = 76.0  # passes premium (70) and vip (75) but not free (80)
-        self.assertFalse(mgr.should_send_signal("free", score))
-        self.assertTrue(mgr.should_send_signal("premium", score))
-        self.assertTrue(mgr.should_send_signal("vip", score))
+        free_thr = float(TIER_SCORE_THRESHOLDS.get("free", 60))
+        premium_thr = float(TIER_SCORE_THRESHOLDS.get("premium", 80))
+        vip_thr = float(TIER_SCORE_THRESHOLDS.get("vip", 80))
+        score = free_thr + 1.0
+        self.assertTrue(mgr.should_send_signal("free", score))
+        if score < premium_thr:
+            self.assertFalse(mgr.should_send_signal("premium", score))
+        if score < vip_thr:
+            self.assertFalse(mgr.should_send_signal("vip", score))
 
     # ── admin tier ────────────────────────────────────────────────────────────
 

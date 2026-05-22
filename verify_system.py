@@ -22,6 +22,14 @@ import logging
 from typing import Dict, List, Tuple
 from datetime import datetime
 
+# Load env files for local verification runs.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(".env", override=False)
+    load_dotenv(".env.local", override=True)
+except Exception:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format='[%(levelname)s] %(message)s'
@@ -117,11 +125,11 @@ class SystemVerifier:
                        "" if has_config else "DATABASE_URL not set")
             
             if has_config:
+                from sqlalchemy import text
                 async with get_session() as session:
-                    result = await session.execute("SELECT 1")
-                    self.check("Database connection (SELECT 1)", 
-                               result is not None,
-                               "")
+                    result = await session.execute(text("SELECT 1"))
+                    ok = result.scalar_one() == 1
+                    self.check("Database connection (SELECT 1)", ok, "")
         except Exception as e:
             self.check("Database connection", False,
                        f"CRITICAL - {str(e)}")
@@ -215,12 +223,13 @@ class SystemVerifier:
             
             # Check for schema
             from db.session import get_session
+            from sqlalchemy import text
             async with get_session() as session:
                 # Check signals table exists
                 result = await session.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='signals'"
+                    text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name='signals'")
                 )
-                has_table = (await result.scalar_one()) > 0
+                has_table = result.scalar_one() > 0
                 self.check("Signals table exists", has_table,
                            "" if has_table else "CRITICAL - Run migrations")
         except Exception as e:

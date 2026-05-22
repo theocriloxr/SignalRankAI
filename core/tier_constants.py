@@ -3,9 +3,9 @@
 CANONICAL TIER & DELIVERY MODEL (2026-04-12):
 
 Tier Quality Tiers (Score-based):
-  - FREE: 80+ (most restrictive quality gate, limited detail in messages)
-  - PREMIUM: 70+ (more opportunity, medium detail)
-  - VIP: 75+ (quality filter with deeper TP ladder)
+  - FREE: 60+ (broad access)
+  - PREMIUM: 80+ (higher quality standard)
+  - VIP: 80+ (highest quality standard)
   - ADMIN: 0+ (all signals for monitoring)
   - OWNER: 0+ (unlimited, receives everything)
 
@@ -54,9 +54,9 @@ TIER_DAILY_LIMITS: Final[dict[str, float]] = {
 
 # Tier quality score thresholds (minimum signal score to be eligible)
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-    "free": 80.0,      # Highest quality only
-    "premium": 70.0,   # Lower threshold = more signals
-    "vip": 75.0,       # Quality filter with deeper TP ladder
+  "free": 60.0,      # Broad access
+  "premium": 80.0,   # Higher quality standard
+  "vip": 80.0,       # Highest quality standard
     "owner": 0.0,      # No score gate
     "admin": 0.0,      # Admin receives all signals
 }
@@ -103,9 +103,9 @@ UPGRADE_PROMPT_FREQUENCY_INT: Final[int] = 3  # Every 3rd signal, or based on si
 # Keep this strict and centralized as the single source for freshness policy.
 MAX_SIGNAL_AGE_SECONDS: Final[dict[str, int]] = {
     "crypto":    300,    # 5 min
-    "fx":        900,    # 15 min
-    "stock":     900,    # 15 min
-    "commodity": 900,    # 15 min
+  "fx":        300,    # 5 min
+  "stock":     300,    # 5 min
+  "commodity": 300,    # 5 min
 }
 
 # Price drift tolerance: max fractional deviation from entry price (not %).
@@ -135,7 +135,7 @@ STRONG_SENTIMENT_THRESHOLD: Final[int] = 2
 ACTIVE_SIGNAL_LOOKBACK_HOURS: Final[int] = 24
 
 # FREE tier specific constants
-FREE_MIN_SCORE: Final[int] = 80  # Minimum signal score for FREE tier eligibility
+FREE_MIN_SCORE: Final[int] = 60  # Minimum signal score for FREE tier eligibility
 FREE_SIGNAL_DAILY_LIMIT: Final[int] = 3  # Daily signal limit for FREE users
 FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
 
