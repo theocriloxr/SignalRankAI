@@ -564,6 +564,7 @@ from .owner_commands import (
     owner_revenue,
     correct_signal,
     provider_status_command,
+    qa_report_command,
     broadcast_command,
 )
 
@@ -3671,6 +3672,7 @@ def run_bot() -> None:
             ("owner_users", "Owner: user list"),
             ("owner_revenue", "Owner: revenue"),
             ("provider_status", "Owner: provider health"),
+            ("qa_report", "Owner: QA report"),
         ]
         try:
             from telegram import BotCommandScopeChat
@@ -3871,6 +3873,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("owner_revenue", _audit_handler("owner_revenue", owner_revenue)))
     application.add_handler(CommandHandler("correct_signal", _audit_handler("correct_signal", correct_signal)))
     application.add_handler(CommandHandler("provider_status", _audit_handler("provider_status", provider_status_command)))
+    application.add_handler(CommandHandler("qa_report", _audit_handler("qa_report", qa_report_command)))
     application.add_handler(CommandHandler("broadcast", _audit_handler("broadcast", broadcast_command)))
     from .commands import version_command
     application.add_handler(CommandHandler("version", _audit_handler("version", version_command)))

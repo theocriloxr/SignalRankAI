@@ -55,3 +55,26 @@ def provider_breaker(name: str) -> CircuitBreaker:
     if key not in _provider_breakers:
         _provider_breakers[key] = CircuitBreaker()
     return _provider_breakers[key]
+
+
+def get_provider_breaker_snapshot() -> dict[str, dict[str, float | int | bool]]:
+    now_ts = time.time()
+    snapshot: dict[str, dict[str, float | int | bool]] = {}
+    for name, breaker in _provider_breakers.items():
+        try:
+            open_until = float(getattr(breaker, "_open_until", 0.0) or 0.0)
+            failures = list(getattr(breaker, "_failures", []) or [])
+        except Exception:
+            open_until = 0.0
+            failures = []
+        open_remaining = max(0.0, open_until - now_ts) if open_until else 0.0
+        cfg = getattr(breaker, "config", None)
+        snapshot[str(name)] = {
+            "open": bool(open_remaining > 0.0),
+            "open_remaining_s": float(open_remaining),
+            "failures": int(len(failures)),
+            "failure_threshold": int(getattr(cfg, "failure_threshold", 0) or 0),
+            "window_seconds": float(getattr(cfg, "window_seconds", 0.0) or 0.0),
+            "open_seconds": float(getattr(cfg, "open_seconds", 0.0) or 0.0),
+        }
+    return snapshot

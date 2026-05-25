@@ -889,11 +889,21 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
         return
     
     try:
-        from data.fetcher import get_unhealthy_providers, _PROVIDER_HEALTH
+        import os
+        import time
+        from data.fetcher import (
+            get_unhealthy_providers,
+            _PROVIDER_HEALTH,
+            _PROVIDER_FAIL_THRESHOLD,
+            _PROVIDER_FAIL_WINDOW,
+            _PROVIDER_OUTAGE_MINUTES,
+            _PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES,
+        )
+        from core.circuit_breaker import get_provider_breaker_snapshot
         from datetime import datetime
         
         # Get unhealthy providers
-        unhealthy = get_unhealthy_providers(min_minutes=5)
+        unhealthy = get_unhealthy_providers(min_minutes=_PROVIDER_OUTAGE_MINUTES)
         
         message = "📊 **Data Provider Status**\n\n"
         
@@ -905,7 +915,6 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
                 last_success = health_info.get('last_success', 0)
                 
                 if last_success > 0:
-                    import time
                     minutes_since_success = int((time.time() - last_success) / 60)
                     success_str = f"{minutes_since_success}m ago"
                 else:
@@ -934,6 +943,38 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
                 message += f"🔴 {provider}: Down for {minutes_down:.0f} minutes\n"
         else:
             message += "\n✅ All providers healthy (or not yet tracked)\n"
+
+        # Circuit breaker snapshot
+        breaker_snapshot = get_provider_breaker_snapshot()
+        if breaker_snapshot:
+            message += "\n**Circuit Breakers:**\n"
+            for name, info in sorted(breaker_snapshot.items(), key=lambda kv: kv[0]):
+                open_flag = bool(info.get("open"))
+                open_remaining = float(info.get("open_remaining_s") or 0.0)
+                failures = int(info.get("failures") or 0)
+                failure_threshold = int(info.get("failure_threshold") or 0)
+                if open_flag:
+                    remaining_s = max(0.0, open_remaining)
+                    message += f"🔴 {name}: OPEN {remaining_s:.0f}s (fails {failures}/{failure_threshold})\n"
+                else:
+                    message += f"🟢 {name}: closed (fails {failures}/{failure_threshold})\n"
+
+        # Backoff tuning snapshot
+        def _env_value(key: str, default: str) -> str:
+            raw = os.getenv(key)
+            return (raw.strip() if raw is not None and str(raw).strip() else str(default))
+
+        message += "\n**Backoff Settings:**\n"
+        message += f"- health fail threshold: {_PROVIDER_FAIL_THRESHOLD} in {_PROVIDER_FAIL_WINDOW}s\n"
+        message += f"- outage alert: min {_PROVIDER_OUTAGE_MINUTES}m, repeat {_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES}m\n"
+        message += "- min seconds between calls:\n"
+        message += f"  polygon={_env_value('POLYGON_MIN_SECONDS_BETWEEN_CALLS', '12')}s, "
+        message += f"twelvedata={_env_value('TWELVEDATA_MIN_SECONDS_BETWEEN_CALLS', '1')}s, "
+        message += f"alphavantage={_env_value('ALPHAVANTAGE_MIN_SECONDS_BETWEEN_CALLS', '20')}s\n"
+        message += "- rate limit cooldowns:\n"
+        message += f"  polygon={_env_value('POLYGON_RATE_LIMIT_COOLDOWN_SECONDS', str(60 * 60))}s, "
+        message += f"twelvedata={_env_value('TWELVEDATA_RATE_LIMIT_COOLDOWN_SECONDS', str(12 * 60 * 60))}s, "
+        message += f"alphavantage={_env_value('ALPHAVANTAGE_RATE_LIMIT_COOLDOWN_SECONDS', '60')}s\n"
         
         # Add timestamp
         timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -943,4 +984,131 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
     
     except Exception as e:
         await update.message.reply_text(f"Error checking provider status: {str(e)}")
+
+
+async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Admin/Owner command: QA report with win rate by tier and asset class."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_admin_or_owner(update.effective_user.id):
+        await update.message.reply_text("⚠️ Admin access required.")
+        return
+
+    days = 30
+    min_tracked = 0
+    for arg in (context.args or []):
+        arg_s = str(arg).strip().lower()
+        if arg_s.isdigit():
+            days = int(arg_s)
+        elif arg_s.startswith("min="):
+            try:
+                min_tracked = int(arg_s.split("=", 1)[-1])
+            except Exception:
+                pass
+
+    if days <= 0:
+        await update.message.reply_text("Usage: /qa_report [days] [min=N]")
+        return
+
+    from datetime import datetime, timedelta
+    from sqlalchemy import select, func
+    from db.models import SignalDelivery, Signal, Outcome
+    from data.fetcher import get_asset_type
+
+    cutoff = datetime.utcnow() - timedelta(days=int(days))
+
+    win_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp"}
+    loss_statuses = {"sl"}
+
+    stats: dict[tuple[str, str], dict[str, int]] = {}
+    total_delivered = 0
+
+    async with get_session() as session:
+        totals_res = await session.execute(
+            select(
+                SignalDelivery.tier_at_send,
+                Signal.asset,
+                func.count(SignalDelivery.id),
+            )
+            .select_from(SignalDelivery)
+            .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+            .where(SignalDelivery.delivered_at >= cutoff, SignalDelivery.sent_ok.is_(True))
+            .group_by(SignalDelivery.tier_at_send, Signal.asset)
+        )
+        totals_rows = totals_res.all() or []
+        for tier_at_send, asset, count in totals_rows:
+            tier = str(tier_at_send or "free").split("_", 1)[0].strip().upper()
+            asset_class = str(get_asset_type(asset)).lower()
+            key = (tier, asset_class)
+            stats.setdefault(key, {"signals": 0, "wins": 0, "losses": 0})
+            stats[key]["signals"] += int(count or 0)
+            total_delivered += int(count or 0)
+
+        outcomes_res = await session.execute(
+            select(
+                SignalDelivery.tier_at_send,
+                Signal.asset,
+                Outcome.status,
+                func.count(Outcome.id),
+            )
+            .select_from(SignalDelivery)
+            .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+            .join(Outcome, Outcome.signal_id == Signal.signal_id)
+            .where(SignalDelivery.delivered_at >= cutoff, SignalDelivery.sent_ok.is_(True))
+            .group_by(SignalDelivery.tier_at_send, Signal.asset, Outcome.status)
+        )
+        outcomes_rows = outcomes_res.all() or []
+        for tier_at_send, asset, status, count in outcomes_rows:
+            tier = str(tier_at_send or "free").split("_", 1)[0].strip().upper()
+            asset_class = str(get_asset_type(asset)).lower()
+            key = (tier, asset_class)
+            stats.setdefault(key, {"signals": 0, "wins": 0, "losses": 0})
+            status_l = str(status or "").strip().lower()
+            if status_l in win_statuses:
+                stats[key]["wins"] += int(count or 0)
+            elif status_l in loss_statuses:
+                stats[key]["losses"] += int(count or 0)
+
+    if not stats:
+        await update.message.reply_text(f"QA report: no deliveries in last {days} days.")
+        return
+
+    total_tracked = sum((v.get("wins", 0) + v.get("losses", 0)) for v in stats.values())
+    tier_order = {"FREE": 0, "PREMIUM": 1, "VIP": 2, "ADMIN": 3, "OWNER": 4}
+    asset_order = {"crypto": 0, "fx": 1, "stock": 2, "commodity": 3}
+
+    tiers_present = sorted({k[0] for k in stats.keys()}, key=lambda t: tier_order.get(t, 99))
+    lines = [f"QA report (last {days}d)", f"Delivered: {total_delivered}, tracked: {total_tracked}"]
+
+    for tier in tiers_present:
+        tier_lines = []
+        for (t, asset_class), data in sorted(
+            stats.items(), key=lambda kv: (tier_order.get(kv[0][0], 99), asset_order.get(kv[0][1], 99))
+        ):
+            if t != tier:
+                continue
+            wins = int(data.get("wins") or 0)
+            losses = int(data.get("losses") or 0)
+            signals = int(data.get("signals") or 0)
+            tracked = wins + losses
+            if tracked < int(min_tracked or 0) and tracked > 0:
+                continue
+            if tracked == 0 and signals == 0:
+                continue
+            if tracked == 0:
+                tier_lines.append(f"- {asset_class}: {signals} delivered, outcomes pending")
+            else:
+                win_rate = (wins / tracked) * 100.0 if tracked > 0 else 0.0
+                tier_lines.append(
+                    f"- {asset_class}: win {win_rate:.1f}% ({wins}W/{losses}L), tracked={tracked}, delivered={signals}"
+                )
+
+        if tier_lines:
+            lines.append("")
+            lines.append(f"{tier}:")
+            lines.extend(tier_lines)
+
+    lines.append("")
+    lines.append("Notes: wins=tp/tp1/tp2/tp3/partial_tp; losses=sl")
+    await update.message.reply_text("\n".join(lines))
 

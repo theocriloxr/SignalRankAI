@@ -87,6 +87,7 @@ COMMAND_TIERS = {
     "admin_top_assets":    "ADMIN",
     "admin_top_strategies":"ADMIN",
     "admin_user_engagement":"ADMIN",
+    "qa_report":           "ADMIN",
     "selfcheck":           "ADMIN",
     "ops_health":          "ADMIN",
     "blast_terms":         "ADMIN",
@@ -348,6 +349,7 @@ COMMAND_HELP = {
             ("admin_top_assets",       "Top performing assets"),
             ("admin_top_strategies",   "Top performing strategies"),
             ("admin_user_engagement",  "User engagement analytics"),
+            ("qa_report",              "QA report by tier and asset class"),
             ("broadcast",              "Owner broadcast (via owner_commands)"),
             ("assets",                 "Manage pinned asset universe"),
             ("selfcheck",              "System self-check"),
@@ -367,8 +369,59 @@ COMMAND_HELP = {
 }
 
 
+COMMAND_DESCRIPTIONS = {
+    "qa_report": "QA report by tier and asset class",
+}
+
+
+def _normalize_command_name(command: str) -> str:
+    return str(command or "").strip().lstrip("/").lower()
+
+
+def _help_tier_bucket(required_tier: str) -> str:
+    tier = str(required_tier or "FREE").strip().upper()
+    if tier in {"ADMIN", "OWNER"}:
+        return "OWNER"
+    if tier in {"VIP", "PREMIUM", "FREE"}:
+        return tier
+    return "FREE"
+
+
+def sync_command_help() -> None:
+    """Ensure COMMAND_HELP includes all commands from COMMAND_TIERS."""
+    desc_lookup: dict[str, str] = {}
+    for _tier, _info in (COMMAND_HELP or {}).items():
+        for _cmd, _desc in (_info.get("commands") or []):
+            cmd_key = _normalize_command_name(_cmd)
+            if cmd_key and cmd_key not in desc_lookup:
+                desc_lookup[cmd_key] = str(_desc or "").strip()
+    for k, v in (COMMAND_DESCRIPTIONS or {}).items():
+        if k:
+            desc_lookup[_normalize_command_name(k)] = str(v or "").strip()
+
+    existing: dict[str, set[str]] = {}
+    for tier_name, info in (COMMAND_HELP or {}).items():
+        existing[tier_name] = {
+            _normalize_command_name(cmd)
+            for cmd, _desc in (info.get("commands") or [])
+            if _normalize_command_name(cmd)
+        }
+
+    for cmd, required_tier in (COMMAND_TIERS or {}).items():
+        cmd_key = _normalize_command_name(cmd)
+        if not cmd_key:
+            continue
+        bucket = _help_tier_bucket(required_tier)
+        if cmd_key in existing.get(bucket, set()):
+            continue
+        desc = desc_lookup.get(cmd_key) or "Command"
+        COMMAND_HELP.setdefault(bucket, {}).setdefault("commands", []).append((cmd_key, desc))
+        existing.setdefault(bucket, set()).add(cmd_key)
+
+
 def get_accessible_commands(tier: str) -> list[tuple[str, str]]:
     """Return list of (command, description) for a given tier."""
+    sync_command_help()
     tier = str(tier or "FREE").strip().upper()
     
     # Admin and Owner get all commands
@@ -384,6 +437,7 @@ def get_accessible_commands(tier: str) -> list[tuple[str, str]]:
 
 def get_help_message(tier: str) -> str:
     """Build dynamic help message based on user's current tier. Returns HTML-formatted text."""
+    sync_command_help()
     tier = str(tier or "FREE").strip().upper()
     
     # Admin and Owner get OWNER help
@@ -531,8 +585,12 @@ __all__ = [
     "COMMAND_TIERS",
     "TIER_RANKS",
     "COMMAND_HELP",
+    "COMMAND_DESCRIPTIONS",
+    "sync_command_help",
     "get_accessible_commands",
     "get_help_message",
     "check_command_access",
     "tier_rank",
 ]
+
+sync_command_help()
