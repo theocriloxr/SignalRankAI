@@ -1126,6 +1126,12 @@ def main_loop(DRY_RUN: bool = False):
             "risk_passed": 0,
             "final_signals": 0,
             "stored": 0,
+            "skipped_open_limit_asset": 0,
+            "skipped_open_limit_class": 0,
+            "skipped_cycle_cooldown": 0,
+            "skipped_db_cooldown": 0,
+            "skipped_confluence_block": 0,
+            "store_failed": 0,
         }
 
         open_limit_per_asset = max(1, _env_int("OPEN_SIGNALS_MAX_PER_ASSET", 20))
@@ -1899,17 +1905,20 @@ def main_loop(DRY_RUN: bool = False):
                 except Exception as _bcd_err:
                     logger.debug(f"[engine] batch cooldown pre-check failed, falling back to per-signal: {_bcd_err}")
 
+                stored_signals: list[dict] = []
                 for sig in final_signals:
                     try:
                         _asset_name = str(sig.get('asset') or sig.get('symbol') or '').upper().strip()
                         _asset_cls = _asset_class_key(_asset_name)
                         if int(open_counts_by_asset.get(_asset_name, 0)) >= int(open_limit_per_asset):
+                            pipeline_stats["skipped_open_limit_asset"] += 1
                             logger.info(
                                 f"[engine] open-limit(asset): skipping {_asset_name} "
                                 f"count={open_counts_by_asset.get(_asset_name, 0)} limit={open_limit_per_asset}"
                             )
                             continue
                         if int(open_counts_by_class.get(_asset_cls, 0)) >= int(open_limit_per_class):
+                            pipeline_stats["skipped_open_limit_class"] += 1
                             logger.info(
                                 f"[engine] open-limit(class): skipping {_asset_name} class={_asset_cls} "
                                 f"count={open_counts_by_class.get(_asset_cls, 0)} limit={open_limit_per_class}"
@@ -1920,11 +1929,13 @@ def main_loop(DRY_RUN: bool = False):
 
                         # Fix 2: cycle-level dedup (same asset+TF already queued this batch)
                         if _asset_tf_key in _cycle_cooldown:
+                            pipeline_stats["skipped_cycle_cooldown"] += 1
                             logger.info(f"[engine] cooldown(cycle): skipping duplicate {_asset_tf_key}")
                             continue
 
                         # DB cooldown — use pre-computed batch result (O(1) lookup)
                         if _asset_tf_key in _cooled_down_pairs:
+                            pipeline_stats["skipped_db_cooldown"] += 1
                             logger.info(f"[engine] cooldown(db): active signal exists for {_asset_tf_key}, skipping")
                             continue
 
@@ -1955,6 +1966,7 @@ def main_loop(DRY_RUN: bool = False):
                                         f"— {'skipping' if _conf_hard_block else 'allowing'} {sig.get('asset')}"
                                     )
                                     if _conf_hard_block:
+                                        pipeline_stats["skipped_confluence_block"] += 1
                                         continue
                         except Exception as _ce:
                             logger.debug(f"[engine] confluence engine error: {_ce}")
@@ -1967,13 +1979,17 @@ def main_loop(DRY_RUN: bool = False):
                         stored_signal_id = store_signal_compat(sig)
                         if stored_signal_id:
                             sig["signal_id"] = str(stored_signal_id)
-                        if _asset_name:
-                            open_counts_by_asset[_asset_name] = int(open_counts_by_asset.get(_asset_name, 0) + 1)
-                            open_counts_by_class[_asset_cls] = int(open_counts_by_class.get(_asset_cls, 0) + 1)
-                        scored_signals_all.append(sig)
-                        _cycle_cooldown.add(_asset_tf_key)
-                        pipeline_stats["stored"] += 1
+                            if _asset_name:
+                                open_counts_by_asset[_asset_name] = int(open_counts_by_asset.get(_asset_name, 0) + 1)
+                                open_counts_by_class[_asset_cls] = int(open_counts_by_class.get(_asset_cls, 0) + 1)
+                            scored_signals_all.append(sig)
+                            stored_signals.append(sig)
+                            _cycle_cooldown.add(_asset_tf_key)
+                            pipeline_stats["stored"] += 1
+                        else:
+                            pipeline_stats["store_failed"] += 1
                     except Exception as e:
+                        pipeline_stats["store_failed"] += 1
                         logger.exception("store_signal failed")
 
                         if not final_signals:
@@ -1983,7 +1999,7 @@ def main_loop(DRY_RUN: bool = False):
 
                 # Track new signals as open trades
                 from core.trade_tracker import add_trade, update_trade_outcomes
-                for sig in final_signals:
+                for sig in stored_signals:
                     try:
                         add_trade(sig)
                     except Exception:
