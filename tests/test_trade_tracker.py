@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from core.trade_tracker import (
     TradeRecord,
     add_trade,
+    _PRICE_FAILURE_STATE,
     price_hit_tp,
     price_hit_sl,
     update_trade_outcomes,
@@ -20,6 +21,7 @@ class TestTradeTracker(unittest.TestCase):
     def setUp(self):
         """Clear open trades before each test."""
         open_trades_list.clear()
+        _PRICE_FAILURE_STATE.clear()
 
     def test_trade_record_creation_basic(self):
         """Test basic trade record creation."""
@@ -281,6 +283,49 @@ class TestTradeTracker(unittest.TestCase):
 
         self.assertEqual(len(closed), 0)
         self.assertEqual(len(open_trades_list), 1)
+
+    @patch('core.trade_tracker._market_closed_reason')
+    @patch('core.trade_tracker.yf.Ticker')
+    def test_get_current_price_skips_when_market_closed(self, mock_ticker, mock_market_closed):
+        from core.trade_tracker import _get_current_price
+
+        mock_market_closed.return_value = "US stock market closed (holiday: 2026-05-27)"
+
+        price = _get_current_price("GOOGL")
+
+        self.assertIsNone(price)
+        mock_ticker.assert_not_called()
+
+    @patch('core.trade_tracker.yf.Ticker')
+    @patch('core.trade_tracker.requests.get')
+    def test_get_current_price_backoff_after_failure(self, mock_get, mock_ticker):
+        from core.trade_tracker import _get_current_price
+
+        mock_ticker.side_effect = RuntimeError("yfinance unavailable")
+        mock_get.side_effect = RuntimeError("binance unavailable")
+
+        first = _get_current_price("BTCUSDT")
+        second = _get_current_price("BTCUSDT")
+
+        self.assertIsNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(mock_ticker.call_count, 1)
+        self.assertEqual(mock_get.call_count, 1)
+
+    def test_price_hit_tp_uses_batched_market_data(self):
+        signal = {
+            "id": "sig_batch",
+            "symbol": "BTCUSDT",
+            "direction": "long",
+            "entry": 50000.0,
+            "stop_loss": 49000.0,
+            "take_profit": 52000.0,
+            "timestamp": _utcnow_naive_iso(),
+        }
+        trade = TradeRecord(signal)
+
+        with patch('core.trade_tracker._get_current_price', side_effect=AssertionError("should not fetch live price")):
+            self.assertTrue(price_hit_tp(trade, market_data={"BTCUSDT": 52000.0}))
 
 
 if __name__ == '__main__':

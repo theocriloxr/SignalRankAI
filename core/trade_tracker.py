@@ -3,10 +3,13 @@ from datetime import datetime, timezone
 import yfinance as yf
 import requests
 
+from services.asset_mapper import classify_asset
+
 logger = logging.getLogger(__name__)
 
 # Simple in-memory price cache: symbol -> {ts: float, price: float}
 _PRICE_CACHE: dict[str, dict] = {}
+_PRICE_FAILURE_STATE: dict[str, dict] = {}
 
 
 def _set_price_cache(symbol: str, price: float):
@@ -26,6 +29,79 @@ def _get_price_cache(symbol: str, max_age_s: float = 120.0):
         return rec.get("price")
     except Exception:
         return None
+
+
+def _get_backoff_base_seconds() -> float:
+    try:
+        return float(_env_get("PRICE_FETCH_BACKOFF_BASE_SECONDS", 30.0))
+    except Exception:
+        return 30.0
+
+
+def _get_backoff_max_seconds() -> float:
+    try:
+        return float(_env_get("PRICE_FETCH_BACKOFF_MAX_SECONDS", 300.0))
+    except Exception:
+        return 300.0
+
+
+def _backoff_key(symbol: str) -> str:
+    return (symbol or "").upper().strip()
+
+
+def _get_backoff_state(symbol: str):
+    return _PRICE_FAILURE_STATE.get(_backoff_key(symbol)) or {}
+
+
+def _next_backoff_delay(failure_count: int) -> float:
+    base = max(1.0, _get_backoff_base_seconds())
+    maximum = max(base, _get_backoff_max_seconds())
+    delay = base * (2 ** max(0, failure_count - 1))
+    return min(maximum, delay)
+
+
+def _record_price_failure(symbol: str) -> float:
+    key = _backoff_key(symbol)
+    now = datetime.now(timezone.utc).timestamp()
+    state = dict(_PRICE_FAILURE_STATE.get(key) or {})
+    failure_count = int(state.get("failures", 0)) + 1
+    delay = _next_backoff_delay(failure_count)
+    next_retry = now + delay
+    _PRICE_FAILURE_STATE[key] = {
+        "failures": failure_count,
+        "last_failure_ts": now,
+        "next_retry_ts": next_retry,
+        "backoff_s": delay,
+    }
+    return next_retry
+
+
+def _record_price_success(symbol: str):
+    _PRICE_FAILURE_STATE.pop(_backoff_key(symbol), None)
+
+
+def _market_closed_reason(symbol: str) -> str | None:
+    try:
+        asset_class = classify_asset(symbol)
+    except Exception:
+        asset_class = "unknown"
+
+    try:
+        from data.market_hours import is_fx_holiday, is_stock_holiday, is_commodity_holiday, is_fx_low_liquidity
+        now = datetime.now(timezone.utc)
+        if asset_class == "stock":
+            return is_stock_holiday(now)
+        if asset_class == "commodity":
+            return is_commodity_holiday(now)
+        if asset_class == "forex":
+            holiday = is_fx_holiday(now)
+            if holiday:
+                return holiday
+            if is_fx_low_liquidity(now):
+                return "FX market low-liquidity window"
+    except Exception:
+        return None
+    return None
 
 
 def _env_get(name: str, default):
@@ -114,6 +190,26 @@ def _get_current_price(symbol):
             return float(cached)
     except Exception:
         pass
+
+    # Respect asset-specific market closures to avoid noisy lookups when markets are shut.
+    closed_reason = _market_closed_reason(symbol)
+    if closed_reason:
+        logger.debug("Skipping live price fetch for %s: %s", symbol, closed_reason)
+        return None
+
+    now_ts = datetime.now(timezone.utc).timestamp()
+    backoff_state = _get_backoff_state(symbol)
+    next_retry_ts = float(backoff_state.get("next_retry_ts", 0.0) or 0.0)
+    if next_retry_ts and now_ts < next_retry_ts:
+        logger.debug(
+            "Skipping live price fetch for %s until %.0f (backoff=%ss, failures=%s)",
+            symbol,
+            next_retry_ts,
+            backoff_state.get("backoff_s"),
+            backoff_state.get("failures"),
+        )
+        return None
+
     # Try yfinance first
     try:
         yf_symbol = _convert_symbol_for_yfinance(symbol)
@@ -122,12 +218,14 @@ def _get_current_price(symbol):
         price = fast_info.get('lastPrice') or fast_info.get('last_price') or fast_info.get('regularMarketPrice')
         if price and price > 0:
             logger.debug(f"Got price for {symbol} ({yf_symbol}) from yfinance: {price}")
+            _record_price_success(symbol)
             return float(price)
         history = ticker.history(period="2d", interval="1m", auto_adjust=False)
         if history is not None and not history.empty:
             last_close = float(history["Close"].dropna().iloc[-1])
             if last_close > 0:
                 logger.debug(f"Got price for {symbol} ({yf_symbol}) from yfinance history: {last_close}")
+                _record_price_success(symbol)
                 return last_close
     except Exception as e:
         logger.debug(f"yfinance failed for {symbol}: {e}")
@@ -146,6 +244,7 @@ def _get_current_price(symbol):
                     _set_price_cache(symbol, price)
                 except Exception:
                     pass
+                _record_price_success(symbol)
                 return price
         except Exception as e:
             logger.debug(f"Binance API failed for {symbol}: {e}")
@@ -164,11 +263,49 @@ def _get_current_price(symbol):
                 except Exception:
                     pass
                 logger.debug(f"Got price for {symbol} from providers.waterfall: {price}")
+                _record_price_success(symbol)
                 return price
     except Exception:
         pass
 
-    logger.warning(f"Could not fetch price for {symbol}")
+    next_retry_ts = _record_price_failure(symbol)
+    state = _get_backoff_state(symbol)
+    if int(state.get("failures", 0)) <= 1:
+        logger.warning(
+            "Could not fetch price for %s; retrying after %.0fs",
+            symbol,
+            float(state.get("backoff_s", 0.0) or 0.0),
+        )
+    else:
+        logger.debug(
+            "Could not fetch price for %s; backoff active until %.0f (failures=%s)",
+            symbol,
+            next_retry_ts,
+            state.get("failures"),
+        )
+    return None
+
+
+def _resolve_market_price(symbol: str, market_data=None):
+    if not market_data:
+        return None
+
+    if isinstance(market_data, dict):
+        symbol_key = (symbol or "").upper()
+        if symbol_key in market_data:
+            value = market_data.get(symbol_key)
+        elif symbol in market_data:
+            value = market_data.get(symbol)
+        else:
+            value = market_data.get("price")
+
+        if isinstance(value, dict):
+            for key in ("price", "close", "last", "lastPrice", "last_price", "c"):
+                if value.get(key) is not None:
+                    return value.get(key)
+            return None
+        return value
+
     return None
 
 def price_hit_tp(trade, market_data=None):
@@ -179,9 +316,8 @@ def price_hit_tp(trade, market_data=None):
     """
     # Get current price from market_data or fetch it
     current_price = None
-    if market_data and isinstance(market_data, dict) and "price" in market_data:
-        current_price = market_data["price"]
-    else:
+    current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
+    if current_price is None:
         current_price = _get_current_price(trade.symbol)
     
     if current_price is None:
@@ -227,9 +363,8 @@ def price_hit_sl(trade, market_data=None):
     """
     # Get current price from market_data or fetch it
     current_price = None
-    if market_data and isinstance(market_data, dict) and "price" in market_data:
-        current_price = market_data["price"]
-    else:
+    current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
+    if current_price is None:
         current_price = _get_current_price(trade.symbol)
     
     if current_price is None:
@@ -283,6 +418,12 @@ def update_trade_outcomes(market_data=None):
     Update trade outcomes based on current market data.
     Closes trades that hit TP/SL and removes them from open_trades_list.
     """
+    if market_data is None and len(open_trades_list) > 1:
+        try:
+            market_data = _batch_price_snapshot([trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)])
+        except Exception:
+            market_data = None
+
     trades_to_remove = []
 
     for trade in open_trades():
@@ -305,3 +446,72 @@ def update_trade_outcomes(market_data=None):
         closed.append(trade)
 
     return closed
+
+
+def _batch_price_snapshot(symbols):
+    unique_symbols = []
+    seen = set()
+    for symbol in symbols or []:
+        key = (symbol or "").upper().strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        unique_symbols.append(key)
+
+    if len(unique_symbols) < 2:
+        return {}
+
+    try:
+        yf_symbols = [_convert_symbol_for_yfinance(symbol) for symbol in unique_symbols]
+        raw = yf.download(
+            tickers=yf_symbols,
+            period="1d",
+            interval="1m",
+            group_by="ticker",
+            auto_adjust=False,
+            threads=False,
+            progress=False,
+        )
+    except Exception as exc:
+        logger.debug("Batch price snapshot failed: %s", exc)
+        return {}
+
+    if raw is None or getattr(raw, "empty", True):
+        return {}
+
+    prices = {}
+
+    def _extract_price(frame):
+        try:
+            if frame is None or getattr(frame, "empty", True):
+                return None
+            close = frame.get("Close")
+            if close is not None:
+                close = close.dropna()
+                if len(close) > 0:
+                    return float(close.iloc[-1])
+        except Exception:
+            return None
+        return None
+
+    if hasattr(raw, "columns") and getattr(raw.columns, "nlevels", 1) > 1:
+        for symbol, yf_symbol in zip(unique_symbols, yf_symbols):
+            try:
+                frame = raw[yf_symbol]
+            except Exception:
+                frame = None
+            price = _extract_price(frame)
+            if price and price > 0:
+                prices[symbol] = price
+                _set_price_cache(symbol, price)
+                _record_price_success(symbol)
+    else:
+        # Single-ticker style dataframe or flat download response.
+        price = _extract_price(raw)
+        if price and price > 0 and unique_symbols:
+            symbol = unique_symbols[0]
+            prices[symbol] = price
+            _set_price_cache(symbol, price)
+            _record_price_success(symbol)
+
+    return prices

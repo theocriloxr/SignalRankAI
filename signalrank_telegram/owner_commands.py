@@ -327,6 +327,68 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Owner/admin command: show provider health and circuit-breaker snapshot.
+
+    Returns a short report listing unhealthy providers (down > threshold),
+    a small provider-health summary from the in-process cache, and the
+    provider circuit breaker snapshot from `core.circuit_breaker`.
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    if not await _is_admin_or_owner(update.effective_user.id):
+        await update.message.reply_text("⛔ Access Denied.")
+        return
+
+    try:
+        from data import fetcher
+        from core.circuit_breaker import get_provider_breaker_snapshot
+
+        parts: list[str] = []
+
+        unhealthy = []
+        try:
+            unhealthy = fetcher.get_unhealthy_providers()
+        except Exception:
+            unhealthy = []
+
+        if unhealthy:
+            parts.append("Unhealthy providers (down minutes):")
+            for name, mins in unhealthy:
+                parts.append(f"- {name}: {mins:.1f} min")
+        else:
+            parts.append("No unhealthy providers detected.")
+
+        # Provider health summary (best-effort, internal structure)
+        try:
+            ph = getattr(fetcher, "_PROVIDER_HEALTH", {}) or {}
+            if ph:
+                parts.append("\nProvider health summary:")
+                for name, entry in sorted(ph.items()):
+                    failures = len(entry.get("failures", []))
+                    last_success = int(entry.get("last_success", 0) or 0)
+                    parts.append(f"- {name}: failures={failures}, last_success={last_success}")
+        except Exception:
+            pass
+
+        # Circuit breaker snapshot
+        try:
+            snap = get_provider_breaker_snapshot()
+            if snap:
+                parts.append("\nCircuit breaker snapshot:")
+                for name, info in sorted(snap.items()):
+                    state = "OPEN" if info.get("open") else "closed"
+                    rem = int(info.get("open_remaining_s", 0) or 0)
+                    failures = int(info.get("failures", 0) or 0)
+                    parts.append(f"- {name}: {state}, open_remaining={rem}s, failures={failures}")
+        except Exception:
+            pass
+
+        await update.message.reply_text("\n".join(parts) or "No provider data available.")
+    except Exception as e:
+        await update.message.reply_text(f"Failed to get provider status: {e}")
+
+
 async def dev_pause(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_user is None or update.message is None:
         return
