@@ -13,6 +13,7 @@ from db.market_cache import prune_old_candles, upsert_market_candle, upsert_mark
 from db.session import get_session, is_db_configured
 from data.pair_discovery import get_all_trending_pairs
 from data.fetcher import is_crypto
+from core.redis_state import state
 import logging
 logger = logging.getLogger(__name__)
 
@@ -292,11 +293,17 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                 # Normalize and buffer
                 et_ms = ev.get("event_time_ms")
                 if ev.get("type") == "tick":
-                    tick_buf[str(ev.get("symbol") or "").upper().strip()] = {
+                    sym = str(ev.get("symbol") or "").upper().strip()
+                    tick = {
                         "symbol": str(ev.get("symbol") or "").upper().strip(),
                         "price": float(ev.get("price") or 0.0),
                         "event_time_ms": et_ms,
                     }
+                    tick_buf[sym] = tick
+                    try:
+                        state.set_latest_tick_sync(sym, float(tick["price"]), event_time_ms=et_ms, source=provider)
+                    except Exception:
+                        pass
                 elif ev.get("type") == "kline":
                     candle_buf.append(ev)
                 elif provider == "cryptocompare" and ev.get("type") in {"trade", "tick"}:
@@ -306,6 +313,10 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                     vol = float(ev.get("volume") or 0.0) if ev.get("type") == "trade" else 0.0
                     now_ms = int(time.time() * 1000)
                     ts_ms = int(et_ms or now_ms)
+                    try:
+                        state.set_latest_tick_sync(sym, price, event_time_ms=ts_ms, source=provider)
+                    except Exception:
+                        pass
                     for c in cc_builder.update(symbol=sym, price=price, volume=vol, event_time_ms=ts_ms):
                         candle_buf.append(c)
 

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import yfinance as yf
 import requests
 
+from core.redis_state import state
 from services.asset_mapper import classify_asset
 
 logger = logging.getLogger(__name__)
@@ -10,6 +11,7 @@ logger = logging.getLogger(__name__)
 # Simple in-memory price cache: symbol -> {ts: float, price: float}
 _PRICE_CACHE: dict[str, dict] = {}
 _PRICE_FAILURE_STATE: dict[str, dict] = {}
+_ACTIVE_TRADES_LOADED = False
 
 
 def _set_price_cache(symbol: str, price: float):
@@ -104,6 +106,88 @@ def _market_closed_reason(symbol: str) -> str | None:
     return None
 
 
+def _allow_external_price_fallback() -> bool:
+    raw = str(_env_get("TRADE_TRACKER_ALLOW_EXTERNAL_FALLBACK", "1")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _latest_tick_price(symbol: str):
+    try:
+        payload = state.get_latest_tick_sync(symbol)
+        if isinstance(payload, dict):
+            price = payload.get("price")
+            if price is not None:
+                price = float(price)
+                if price > 0:
+                    _set_price_cache(symbol, price)
+                    return price
+    except Exception:
+        pass
+    return None
+
+
+def _trade_state_payload(trade) -> dict:
+    return {
+        "signal_id": trade.signal_id,
+        "symbol": trade.symbol,
+        "entry": trade.entry,
+        "stop": trade.stop,
+        "targets": list(getattr(trade, "targets", []) or []),
+        "direction": trade.direction,
+        "open_time": trade.open_time,
+        "targets_hit": list(getattr(trade, "targets_hit", []) or []),
+        "signal": dict(getattr(trade, "signal", {}) or {}),
+    }
+
+
+def _load_open_trades_from_state(force: bool = False) -> None:
+    global _ACTIVE_TRADES_LOADED
+    if _ACTIVE_TRADES_LOADED and not force:
+        return
+    try:
+        payloads = state.get_active_trades_sync() or {}
+    except Exception:
+        payloads = {}
+
+    if not isinstance(payloads, dict):
+        _ACTIVE_TRADES_LOADED = True
+        return
+
+    existing_keys = {_trade_key(trade.signal) for trade in open_trades_list}
+    for trade_id, payload in payloads.items():
+        try:
+            raw_signal = payload.get("signal") if isinstance(payload, dict) else None
+            signal = dict(raw_signal or payload or {})
+            signal.setdefault("signal_id", trade_id)
+            key = _trade_key(signal)
+            if key in existing_keys:
+                continue
+            trade = TradeRecord(signal)
+            targets_hit = payload.get("targets_hit") if isinstance(payload, dict) else None
+            if isinstance(targets_hit, list):
+                trade.targets_hit = list(targets_hit)
+            open_trades_list.append(trade)
+            existing_keys.add(key)
+        except Exception:
+            continue
+
+    _ACTIVE_TRADES_LOADED = True
+
+
+def _persist_trade_state(trade) -> None:
+    try:
+        state.set_active_trade_sync(str(trade.signal_id or trade.symbol or id(trade)), _trade_state_payload(trade))
+    except Exception:
+        pass
+
+
+def _remove_trade_state(trade) -> None:
+    try:
+        state.remove_active_trade_sync(str(trade.signal_id or trade.symbol or id(trade)))
+    except Exception:
+        pass
+
+
 def _env_get(name: str, default):
     import os
     try:
@@ -162,6 +246,8 @@ def _trade_key(signal: dict) -> tuple:
     return ("fallback", symbol, direction, timeframe, str(entry), str(stop))
 
 def open_trades():
+    if not open_trades_list:
+        _load_open_trades_from_state()
     return list(open_trades_list)
 
 def _convert_symbol_for_yfinance(symbol):
@@ -182,6 +268,15 @@ def _get_current_price(symbol):
     Primary: yfinance fast_info
     Fallback: Binance REST API for crypto
     """
+    # Prefer Redis-fed ticks first so live tracking stays event-driven.
+    try:
+        latest = _latest_tick_price(symbol)
+        if latest is not None:
+            logger.debug(f"Using latest tick for {symbol}: {latest}")
+            return float(latest)
+    except Exception:
+        pass
+
     # Try price cache first
     try:
         cached = _get_price_cache(symbol)
@@ -190,12 +285,6 @@ def _get_current_price(symbol):
             return float(cached)
     except Exception:
         pass
-
-    # Respect asset-specific market closures to avoid noisy lookups when markets are shut.
-    closed_reason = _market_closed_reason(symbol)
-    if closed_reason:
-        logger.debug("Skipping live price fetch for %s: %s", symbol, closed_reason)
-        return None
 
     now_ts = datetime.now(timezone.utc).timestamp()
     backoff_state = _get_backoff_state(symbol)
@@ -208,6 +297,16 @@ def _get_current_price(symbol):
             backoff_state.get("backoff_s"),
             backoff_state.get("failures"),
         )
+        return None
+
+    # Respect asset-specific market closures to avoid noisy lookups when markets are shut.
+    closed_reason = _market_closed_reason(symbol)
+    if closed_reason:
+        logger.debug("Skipping live price fetch for %s: %s", symbol, closed_reason)
+        return None
+
+    if not _allow_external_price_fallback():
+        logger.debug("Skipping external price fallback for %s because TRADE_TRACKER_ALLOW_EXTERNAL_FALLBACK is disabled", symbol)
         return None
 
     # Try yfinance first
@@ -315,7 +414,6 @@ def price_hit_tp(trade, market_data=None):
     For SHORT: TP hit when current price <= target
     """
     # Get current price from market_data or fetch it
-    current_price = None
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
     if current_price is None:
         current_price = _get_current_price(trade.symbol)
@@ -362,7 +460,6 @@ def price_hit_sl(trade, market_data=None):
     For SHORT: SL hit when current price >= stop
     """
     # Get current price from market_data or fetch it
-    current_price = None
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
     if current_price is None:
         current_price = _get_current_price(trade.symbol)
@@ -402,6 +499,7 @@ def close_trade(trade: TradeRecord, outcome: str):
 
 def add_trade(signal: dict):
     """Add a new trade to track."""
+    _load_open_trades_from_state()
     key = _trade_key(signal)
     for existing in open_trades_list:
         if _trade_key(existing.signal) == key:
@@ -410,6 +508,7 @@ def add_trade(signal: dict):
 
     trade = TradeRecord(signal)
     open_trades_list.append(trade)
+    _persist_trade_state(trade)
     logger.info(f"Trade opened: {trade.symbol} {trade.direction} entry={trade.entry}")
     return trade
 
@@ -419,6 +518,12 @@ def update_trade_outcomes(market_data=None):
     Closes trades that hit TP/SL and removes them from open_trades_list.
     """
     if market_data is None and len(open_trades_list) > 1:
+        try:
+            market_data = state.get_latest_tick_snapshot_sync([trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)])
+        except Exception:
+            market_data = None
+
+    if market_data is None and len(open_trades_list) > 1 and _allow_external_price_fallback():
         try:
             market_data = _batch_price_snapshot([trade.symbol for trade in open_trades_list if getattr(trade, "symbol", None)])
         except Exception:
@@ -442,6 +547,7 @@ def update_trade_outcomes(market_data=None):
                 open_trades_list.remove(trade)
             except ValueError:
                 pass
+            _remove_trade_state(trade)
             logger.info(f"Removed closed trade {trade.signal_id} ({trade.outcome}) from open_trades_list")
         closed.append(trade)
 

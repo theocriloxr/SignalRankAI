@@ -27,6 +27,9 @@ _EXTRA_SIGNALS_PREFIX = "signalrankai:extra_signals:"
 _DELIVERED_SIGNAL_PREFIX = "signalrankai:delivered_signal:"
 _WEBHOOK_QUEUE_KEY = "telegram_updates_queue"
 _SIGNAL_DISPATCH_QUEUE_KEY = "signalrankai:signal_dispatch:queue"
+_ACTIVE_TRADES_KEY = "signalrankai:trades:active"
+_LATEST_TICK_KEY = "signalrankai:market:last_tick"
+_MARKET_TICK_CHANNEL_PREFIX = "signalrankai:tick:"
 
 
 def _webhook_queue_key() -> str:
@@ -852,6 +855,143 @@ class RedisState:
         except Exception:
             return None
 
+    def publish_sync(self, channel: str, payload: Dict[str, Any]) -> bool:
+        r = self._get_redis_sync()
+        if r is None:
+            return False
+        try:
+            r.publish(str(channel), json.dumps(payload or {}))
+            return True
+        except Exception:
+            return False
+
+    def set_latest_tick_sync(
+        self,
+        symbol: str,
+        price: float,
+        event_time_ms: Optional[int] = None,
+        *,
+        source: str = "ws",
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        sym = str(symbol or "").upper().strip()
+        if not sym:
+            return False
+        payload = {
+            "symbol": sym,
+            "price": float(price),
+            "event_time_ms": int(event_time_ms) if event_time_ms is not None else None,
+            "source": str(source or "ws"),
+            "updated_at": time.time(),
+        }
+        if extra:
+            payload.update({k: v for k, v in dict(extra).items() if k not in payload})
+
+        r = self._get_redis_sync()
+        if r is None:
+            self._memory.setdefault(_LATEST_TICK_KEY, {})[sym] = payload
+            return True
+
+        try:
+            r.hset(_LATEST_TICK_KEY, mapping={sym: json.dumps(payload)})
+            r.publish(f"{_MARKET_TICK_CHANNEL_PREFIX}{sym}", json.dumps(payload))
+            r.publish(_MARKET_TICK_CHANNEL_PREFIX + "all", json.dumps(payload))
+            return True
+        except Exception:
+            return False
+
+    def get_latest_tick_sync(self, symbol: str) -> Optional[Dict[str, Any]]:
+        sym = str(symbol or "").upper().strip()
+        if not sym:
+            return None
+
+        r = self._get_redis_sync()
+        if r is None:
+            cached = self._memory.get(_LATEST_TICK_KEY, {})
+            if isinstance(cached, dict):
+                data = cached.get(sym)
+                return dict(data) if isinstance(data, dict) else None
+            return None
+
+        try:
+            raw = r.hget(_LATEST_TICK_KEY, sym)
+            if not raw:
+                return None
+            data = json.loads(raw) if isinstance(raw, str) else raw
+            return dict(data) if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    def get_latest_tick_snapshot_sync(self, symbols: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        out: Dict[str, Dict[str, Any]] = {}
+        for symbol in symbols or []:
+            data = self.get_latest_tick_sync(symbol)
+            if data:
+                out[str(symbol or "").upper().strip()] = data
+        return out
+
+    def set_active_trade_sync(self, signal_id: str, payload: Dict[str, Any]) -> bool:
+        trade_id = str(signal_id or "").strip()
+        if not trade_id:
+            return False
+        try:
+            data = dict(payload or {})
+            data["signal_id"] = trade_id
+            data["updated_at"] = time.time()
+        except Exception:
+            return False
+
+        r = self._get_redis_sync()
+        if r is None:
+            trades = self._memory.setdefault(_ACTIVE_TRADES_KEY, {})
+            if isinstance(trades, dict):
+                trades[trade_id] = data
+            return True
+
+        try:
+            r.hset(_ACTIVE_TRADES_KEY, trade_id, json.dumps(data))
+            return True
+        except Exception:
+            return False
+
+    def remove_active_trade_sync(self, signal_id: str) -> bool:
+        trade_id = str(signal_id or "").strip()
+        if not trade_id:
+            return False
+        r = self._get_redis_sync()
+        if r is None:
+            trades = self._memory.get(_ACTIVE_TRADES_KEY, {})
+            if isinstance(trades, dict):
+                trades.pop(trade_id, None)
+            return True
+        try:
+            r.hdel(_ACTIVE_TRADES_KEY, trade_id)
+            return True
+        except Exception:
+            return False
+
+    def get_active_trades_sync(self) -> Dict[str, Dict[str, Any]]:
+        r = self._get_redis_sync()
+        if r is None:
+            trades = self._memory.get(_ACTIVE_TRADES_KEY, {})
+            if isinstance(trades, dict):
+                return {str(k): dict(v) for k, v in trades.items() if isinstance(v, dict)}
+            return {}
+
+        try:
+            raw = r.hgetall(_ACTIVE_TRADES_KEY) or {}
+            out: Dict[str, Dict[str, Any]] = {}
+            for key, value in raw.items():
+                try:
+                    data = json.loads(value) if isinstance(value, str) else value
+                    if isinstance(data, dict):
+                        out[str(key)] = data
+                except Exception:
+                    continue
+            return out
+        except Exception:
+            return {}
+
     # -------- Async API (FastAPI/worker) --------
     async def get_killswitch(self) -> KillSwitchState:
         return await asyncio.to_thread(self.get_killswitch_sync)
@@ -894,6 +1034,35 @@ class RedisState:
 
     async def dequeue_signal_dispatch(self, timeout_seconds: int = 1) -> Optional[Dict[str, Any]]:
         return await asyncio.to_thread(self.dequeue_signal_dispatch_sync, timeout_seconds)
+
+    async def publish(self, channel: str, payload: Dict[str, Any]) -> bool:
+        return await asyncio.to_thread(self.publish_sync, channel, payload)
+
+    async def set_latest_tick(
+        self,
+        symbol: str,
+        price: float,
+        event_time_ms: Optional[int] = None,
+        *,
+        source: str = "ws",
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        return await asyncio.to_thread(self.set_latest_tick_sync, symbol, price, event_time_ms, source=source, extra=extra)
+
+    async def get_latest_tick(self, symbol: str) -> Optional[Dict[str, Any]]:
+        return await asyncio.to_thread(self.get_latest_tick_sync, symbol)
+
+    async def get_latest_tick_snapshot(self, symbols: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        return await asyncio.to_thread(self.get_latest_tick_snapshot_sync, symbols)
+
+    async def set_active_trade(self, signal_id: str, payload: Dict[str, Any]) -> bool:
+        return await asyncio.to_thread(self.set_active_trade_sync, signal_id, payload)
+
+    async def remove_active_trade(self, signal_id: str) -> bool:
+        return await asyncio.to_thread(self.remove_active_trade_sync, signal_id)
+
+    async def get_active_trades(self) -> Dict[str, Dict[str, Any]]:
+        return await asyncio.to_thread(self.get_active_trades_sync)
 
 
 state = RedisState()
