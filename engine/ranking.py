@@ -1,6 +1,6 @@
 import os
 
-from engine.ml import score_signal
+from engine.ml import score_signal, get_live_strategy_weight
 
 
 def _env_float(name: str, default: float) -> float:
@@ -21,10 +21,14 @@ def rank_signals(signals):
         base_score = float(signal.get('score', 0) or 0)
         ml_prob = score_signal(signal)
         ml_score = (ml_prob or 0.0) * 100.0
-        final_score = (0.6 * base_score) + (0.4 * ml_score) if ml_prob is not None else base_score
+        strategy_name = str(signal.get("strategy_name") or signal.get("strategy") or signal.get("name") or "").strip()
+        live_weight = get_live_strategy_weight(strategy_name, default=1.0) if strategy_name else 1.0
+        weighted_base = base_score * live_weight
+        final_score = (0.6 * weighted_base) + (0.4 * ml_score) if ml_prob is not None else weighted_base
         # Persist blended score for downstream consumers
         signal['score_final'] = final_score
         signal['score_ml'] = ml_score if ml_prob is not None else None
+        signal['strategy_weight'] = live_weight
 
         if final_score >= vip_threshold:
             vip.append(signal)

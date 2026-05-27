@@ -5,6 +5,7 @@ import os
 import logging
 import json
 import base64
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, cast
 
@@ -29,6 +30,7 @@ _MODEL_CACHE: dict[str, Any] = {
 }
 logger = logging.getLogger(__name__)
 _SHADOW_CACHE: dict[str, Any] = {"loaded": False, "booster": None, "feature_cols": [], "name": "xgb_candidate", "version": None}
+_STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updated_at": None}
 
 
 def _asset_class_to_int(asset: str) -> float:
@@ -394,3 +396,119 @@ def disable_strategies_with_drawdown() -> list[str]:
     if not raw:
         return []
     return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _strategy_perf_key(name: str) -> str:
+    return f"ml:strategy_perf:{str(name or '').strip().lower()}"
+
+
+def _strategy_weight_key(name: str) -> str:
+    return f"ml:strategy_weight:{str(name or '').strip().lower()}"
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value if value is not None else default)
+    except Exception:
+        return float(default)
+
+
+def _weight_from_performance(perf: Dict[str, Any]) -> float:
+    """Convert rolling performance into a normalized weight.
+
+    The formula intentionally rewards a mix of win rate, expectancy, and
+    signal frequency. This avoids overfitting to one lucky large winner.
+    """
+
+    if not perf:
+        return 1.0
+    win_rate = max(0.0, min(1.0, _safe_float(perf.get("win_rate"), 0.5)))
+    expectancy = _safe_float(perf.get("expectancy"), 0.0)
+    avg_rr = max(0.0, _safe_float(perf.get("avg_rr"), 1.0))
+    trades = max(0.0, _safe_float(perf.get("trades"), 0.0))
+    recent_trades = max(0.0, _safe_float(perf.get("recent_trades"), trades))
+    if trades <= 0:
+        return 1.0
+
+    trade_confidence = min(1.0, recent_trades / 50.0)
+    expectancy_term = 1.0 + max(-0.4, min(0.6, expectancy / 10.0))
+    rr_term = 0.8 + min(0.4, avg_rr / 10.0)
+    base = (0.45 * win_rate) + (0.25 * trade_confidence) + (0.15 * expectancy_term) + (0.15 * rr_term)
+    return max(0.25, min(2.0, base * 1.25))
+
+
+async def update_strategy_weight(strategy_name: str, perf: Optional[Dict[str, Any]]) -> float:
+    """Persist a rolling strategy weight derived from live performance.
+
+    The cache is stored in Postgres-backed runtime state when available, and is
+    also mirrored in-process so the ranking layer can consume it cheaply.
+    """
+
+    weight = _weight_from_performance(perf or {})
+    name = str(strategy_name or "").strip()
+    if not name:
+        return weight
+    cache_key = name.lower()
+    _STRATEGY_WEIGHT_CACHE.setdefault("weights", {})[cache_key] = {
+        "weight": float(weight),
+        "updated_at": datetime.utcnow().isoformat(),
+        "name": name,
+    }
+    _STRATEGY_WEIGHT_CACHE["updated_at"] = datetime.utcnow().isoformat()
+
+    try:
+        from core.redis_state import state
+        payload = {
+            "strategy_name": name,
+            "weight": float(weight),
+            "perf": dict(perf or {}),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        state.set_sync(_strategy_weight_key(name), json.dumps(payload), ex=7 * 24 * 3600)
+    except Exception:
+        pass
+
+    return float(weight)
+
+
+def get_live_strategy_weight(strategy_name: str, default: float = 1.0) -> float:
+    name = str(strategy_name or "").strip()
+    if not name:
+        return float(default)
+    cache_key = name.lower()
+
+    cached = _STRATEGY_WEIGHT_CACHE.get("weights", {}).get(cache_key)
+    if isinstance(cached, dict):
+        try:
+            return float(cached.get("weight", default))
+        except Exception:
+            return float(default)
+
+    try:
+        from core.redis_state import state
+        raw = state.get_sync(_strategy_weight_key(name))
+        if raw:
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                weight = _safe_float(payload.get("weight"), default)
+                _STRATEGY_WEIGHT_CACHE.setdefault("weights", {})[cache_key] = {
+                    "weight": weight,
+                    "updated_at": payload.get("updated_at"),
+                    "name": name,
+                }
+                return weight
+    except Exception:
+        pass
+    return float(default)
+
+
+def get_strategy_weight_map() -> Dict[str, float]:
+    weights = {}
+    try:
+        for name, payload in (_STRATEGY_WEIGHT_CACHE.get("weights") or {}).items():
+            if isinstance(payload, dict):
+                label = str(payload.get("name") or name)
+                weights[label] = float(payload.get("weight", 1.0))
+    except Exception:
+        pass
+    return weights

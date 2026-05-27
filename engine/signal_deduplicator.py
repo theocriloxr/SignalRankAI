@@ -4,6 +4,7 @@ Signal deduplication, caching, and ML rejection tracking.
 import logging
 import os
 import json
+import math
 from typing import Optional, Dict, Set, Iterable, Any, cast
 from datetime import datetime, timedelta
 
@@ -15,32 +16,200 @@ from utils.timeutils import now_utc_naive
 logger = logging.getLogger(__name__)
 
 class SignalDeduplicator:
-    """Prevent duplicate signals within configured dedup window."""
+    """Prevent duplicate signals with semantic similarity and time decay."""
     
     def __init__(self):
         self.recent_signals: Set[str] = set()
         self._cache_ttl = timedelta(hours=1)
+        self._entry_similarity_pct = max(0.0005, float(os.getenv("SIGNAL_DEDUP_ENTRY_SIMILARITY_PCT", "0.002") or 0.002))
+        self._base_similarity_threshold = max(0.10, min(0.99, float(os.getenv("SIGNAL_DEDUP_SIMILARITY_THRESHOLD", "0.82") or 0.82)))
+        self._decay_hours = max(1.0, float(os.getenv("SIGNAL_DEDUP_DECAY_HOURS", "24") or 24))
+        self._hard_window_hours = max(0.0, float(os.getenv("SIGNAL_DEDUP_HARD_WINDOW_HOURS", "6") or 6))
     
     def make_fingerprint(self, asset: str, timeframe: str, direction: str, entry_price: float) -> str:
         """Create unique signal fingerprint."""
         return f"{asset}_{timeframe}_{direction}_{int(entry_price)}"
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value if value is not None else default)
+        except Exception:
+            return float(default)
+
+    @staticmethod
+    def _normalize_text(value: Any) -> str:
+        return str(value or "").upper().strip()
+
+    @staticmethod
+    def _first_take_profit(value: Any) -> Any:
+        if isinstance(value, (list, tuple)) and value:
+            first = value[0]
+            if isinstance(first, dict):
+                return first.get("price") or first.get("tp") or first.get("target")
+            return first
+        return value
+
+    def _entry_distance_pct(self, left: float, right: float) -> float:
+        base = max(abs(left), abs(right), 1e-9)
+        return abs(left - right) / base
+
+    def _time_decay_threshold(self, age_hours: float) -> float:
+        age_hours = max(0.0, float(age_hours))
+        decay_ratio = min(1.0, age_hours / self._decay_hours)
+        floor = max(0.35, self._base_similarity_threshold * 0.55)
+        return self._base_similarity_threshold - (self._base_similarity_threshold - floor) * decay_ratio
+
+    def _signal_similarity(self, left: Signal, right: Signal) -> float:
+        try:
+            asset_left = self._normalize_text(left.get("asset") or left.get("symbol"))
+            asset_right = self._normalize_text(right.get("asset") or right.get("symbol"))
+            if not asset_left or asset_left != asset_right:
+                return 0.0
+
+            direction_left = self._normalize_text(left.get("direction") or left.get("side") or "long")
+            direction_right = self._normalize_text(right.get("direction") or right.get("side") or "long")
+            if direction_left != direction_right:
+                return 0.0
+
+            timeframe_left = self._normalize_text(left.get("timeframe") or left.get("tf"))
+            timeframe_right = self._normalize_text(right.get("timeframe") or right.get("tf"))
+            timeframe_penalty = 0.0 if not timeframe_left or not timeframe_right or timeframe_left == timeframe_right else 0.12
+
+            entry_left = self._safe_float(left.get("entry") or left.get("entry_price") or left.get("price"), 0.0)
+            entry_right = self._safe_float(right.get("entry") or right.get("entry_price") or right.get("price"), 0.0)
+            if entry_left <= 0 or entry_right <= 0:
+                return 0.0
+
+            entry_dist_pct = self._entry_distance_pct(entry_left, entry_right)
+            entry_sim = max(0.0, 1.0 - (entry_dist_pct / self._entry_similarity_pct))
+
+            stop_left = self._safe_float(left.get("stop_loss") or left.get("stop") or left.get("stopLoss"), 0.0)
+            stop_right = self._safe_float(right.get("stop_loss") or right.get("stop") or right.get("stopLoss"), 0.0)
+            tp_left = self._safe_float(self._first_take_profit(left.get("take_profit") or left.get("take_profits") or left.get("targets")), 0.0)
+            tp_right = self._safe_float(self._first_take_profit(right.get("take_profit") or right.get("take_profits") or right.get("targets")), 0.0)
+
+            stop_sim = 1.0
+            tp_sim = 1.0
+            if stop_left > 0 and stop_right > 0:
+                stop_sim = max(0.0, 1.0 - self._entry_distance_pct(stop_left, stop_right) / max(self._entry_similarity_pct * 2.0, 1e-9))
+            if tp_left > 0 and tp_right > 0:
+                tp_sim = max(0.0, 1.0 - self._entry_distance_pct(tp_left, tp_right) / max(self._entry_similarity_pct * 2.0, 1e-9))
+
+            # Same asset + same direction should already be highly similar when
+            # entries are within the configured band. Entry proximity is the
+            # primary signal; stop/TP alignment provides secondary confirmation.
+            score = 0.78 + (0.16 * entry_sim) + (0.04 * stop_sim) + (0.02 * tp_sim) - timeframe_penalty
+            return max(0.0, min(1.0, score))
+        except Exception:
+            return 0.0
+
+    def _decayed_duplicate_threshold(self, age_hours: float) -> float:
+        return self._time_decay_threshold(age_hours)
+
+    async def get_recent_signals(self, asset: str, timeframe: str, direction: str, lookback_hours: Optional[float] = None) -> list[Signal]:
+        try:
+            lookback = self._cache_ttl if lookback_hours is None else timedelta(hours=max(0.0, float(lookback_hours)))
+            cutoff = now_utc_naive() - lookback
+            async with get_session() as session:
+                stmt = (
+                    select(Signal)
+                    .where(Signal.asset == asset)
+                    .where(Signal.timeframe == timeframe)
+                    .where(Signal.direction == direction)
+                    .where(Signal.created_at >= cutoff)
+                    .order_by(Signal.created_at.desc())
+                    .limit(250)
+                )
+                result = await session.execute(stmt)
+                rows = list(result.scalars().all())
+                return [cast(Signal, {
+                    "asset": r.asset,
+                    "timeframe": r.timeframe,
+                    "direction": r.direction,
+                    "entry": r.entry,
+                    "stop_loss": r.stop_loss,
+                    "take_profit": r.take_profit,
+                    "created_at": r.created_at,
+                    "strategy_name": getattr(r, "strategy_name", None),
+                    "strategy_group": getattr(r, "strategy_group", None),
+                    "signal_id": getattr(r, "signal_id", None),
+                }) for r in rows]
+        except Exception as e:
+            logger.warning(f"Dedup recent-signal load failed: {e}")
+            return []
+
+    async def find_semantic_duplicates(self, signal: Signal) -> list[tuple[Signal, float, float]]:
+        asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        timeframe = str(signal.get("timeframe") or signal.get("tf") or "").lower().strip()
+        direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
+        if not asset or not timeframe or direction not in {"long", "short"}:
+            return []
+
+        recent = await self.get_recent_signals(asset, timeframe, direction, lookback_hours=self._cache_ttl.total_seconds() / 3600.0)
+        now = now_utc_naive()
+        out: list[tuple[Signal, float, float]] = []
+        for candidate in recent:
+            similarity = self._signal_similarity(signal, candidate)
+            if similarity <= 0:
+                continue
+            created_at = candidate.get("created_at")
+            if isinstance(created_at, datetime):
+                age_hours = max(0.0, (now - created_at).total_seconds() / 3600.0)
+            else:
+                age_hours = float(self._cache_ttl.total_seconds() / 3600.0)
+            out.append((candidate, similarity, age_hours))
+        out.sort(key=lambda item: (item[1], -item[2]), reverse=True)
+        return out
     
     async def is_duplicate(self, asset: str, timeframe: str, direction: str, entry_price: float) -> bool:
         """Check if signal is duplicate within dedup window."""
         try:
+            asset = str(asset or "").upper().strip()
+            timeframe = str(timeframe or "").lower().strip()
+            direction = str(direction or "").lower().strip()
+            entry_price = float(entry_price or 0.0)
+            if not asset or not timeframe or direction not in {"long", "short"} or entry_price <= 0:
+                return False
+
             async with get_session() as session:
-                cutoff = now_utc_naive() - self._cache_ttl
+                hard_window = timedelta(hours=self._hard_window_hours) if self._hard_window_hours > 0 else self._cache_ttl
+                cutoff = now_utc_naive() - hard_window
                 stmt = select(Signal).where(
                     Signal.asset == asset,
                     Signal.timeframe == timeframe,
                     Signal.direction == direction,
-                    Signal.entry >= entry_price * 0.99,
-                    Signal.entry <= entry_price * 1.01,
-                    Signal.created_at >= cutoff
-                ).limit(1)
+                    Signal.created_at >= cutoff,
+                ).order_by(Signal.created_at.desc()).limit(250)
                 
                 result = await session.execute(stmt)
-                return result.scalars().first() is not None
+                rows = list(result.scalars().all())
+                if not rows:
+                    return False
+
+                probe: Signal = {"asset": asset, "timeframe": timeframe, "direction": direction, "entry": entry_price}
+                now = now_utc_naive()
+                for row in rows:
+                    candidate: Signal = {
+                        "asset": row.asset,
+                        "timeframe": row.timeframe,
+                        "direction": row.direction,
+                        "entry": row.entry,
+                        "stop_loss": row.stop_loss,
+                        "take_profit": row.take_profit,
+                        "created_at": row.created_at,
+                    }
+                    similarity = self._signal_similarity(probe, candidate)
+                    if similarity <= 0:
+                        continue
+                    created_at = row.created_at or now
+                    if isinstance(created_at, datetime):
+                        age_hours = max(0.0, (now - created_at).total_seconds() / 3600.0)
+                    else:
+                        age_hours = self._cache_ttl.total_seconds() / 3600.0
+                    if similarity >= self._decayed_duplicate_threshold(age_hours):
+                        return True
+                return False
         except Exception as e:
             logger.warning(f"Dedup check failed: {e}")
             return False
@@ -52,6 +221,37 @@ class SignalDeduplicator:
             self.recent_signals.add(fingerprint)
         except Exception as e:
             logger.warning(f"Signal registration failed: {e}")
+
+    async def dedupe_batch(self, signals: Iterable[Signal]) -> list[Signal]:
+        items = [cast(Signal, dict(s)) for s in (signals or []) if s]
+        if not items:
+            return []
+
+        clusters: list[list[Signal]] = []
+        for signal in items:
+            placed = False
+            for cluster in clusters:
+                base = cluster[0]
+                if self._signal_similarity(signal, base) <= 0:
+                    continue
+                age_hours = 0.0
+                created_at = base.get("created_at")
+                if isinstance(created_at, datetime):
+                    age_hours = max(0.0, (now_utc_naive() - created_at).total_seconds() / 3600.0)
+                if self._signal_similarity(signal, base) >= self._decayed_duplicate_threshold(age_hours):
+                    cluster.append(signal)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append([signal])
+
+        def _rank(sig: Signal) -> tuple[float, float]:
+            score = float(sig.get("score") or sig.get("strength") or 0.0)
+            created_at = sig.get("created_at")
+            recency = created_at.timestamp() if isinstance(created_at, datetime) else 0.0
+            return (score, recency)
+
+        return [max(cluster, key=_rank) for cluster in clusters]
 
 
 class MLRejectionTracker:
