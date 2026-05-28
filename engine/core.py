@@ -433,6 +433,22 @@ def _asset_class_key(asset: str) -> str:
     return "other"
 
 
+def _counts_from_active_trades(active_trades: dict[str, dict[str, Any]] | None) -> tuple[dict[str, int], dict[str, int]]:
+    asset_counts: dict[str, int] = {}
+    class_counts: dict[str, int] = {}
+    for payload in (active_trades or {}).values():
+        if not isinstance(payload, dict):
+            continue
+        signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else payload
+        asset_name = str((signal or {}).get("asset") or (signal or {}).get("symbol") or "").upper().strip()
+        if not asset_name:
+            continue
+        asset_counts[asset_name] = int(asset_counts.get(asset_name, 0) + 1)
+        asset_class = _asset_class_key(asset_name)
+        class_counts[asset_class] = int(class_counts.get(asset_class, 0) + 1)
+    return asset_counts, class_counts
+
+
 def _collapse_signal_variants(signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Keep only the strongest variant per asset+direction to avoid spammy micro-updates."""
     best_by_key: Dict[tuple[str, str], Dict[str, Any]] = {}
@@ -1164,6 +1180,44 @@ def main_loop(DRY_RUN: bool = False):
                 open_counts_by_class[_cls] = int(open_counts_by_class.get(_cls, 0) + int(_count))
         except Exception as _open_count_err:
             logger.debug(f"[engine] open signal count preload failed: {_open_count_err}")
+
+        try:
+            if state.has_redis_sync():
+                active_trades = state.get_active_trades_sync() or {}
+                if active_trades:
+                    open_counts_by_asset, open_counts_by_class = _counts_from_active_trades(active_trades)
+                    logger.info(
+                        "[engine] open counts reconciled from Redis active trades: assets=%s classes=%s",
+                        len(open_counts_by_asset),
+                        len(open_counts_by_class),
+                    )
+                elif open_counts_by_asset or open_counts_by_class:
+                    async def _expire_open_signals() -> int:
+                        from db.session import get_session as _get_s_expire
+                        from db.models import Signal as _SignalExpire
+                        from sqlalchemy import update as _update_expire
+
+                        async with _get_s_expire() as _session:
+                            result = await _session.execute(
+                                _update_expire(_SignalExpire)
+                                .where(
+                                    _SignalExpire.expired.is_(False),
+                                    _SignalExpire.archived.is_(False),
+                                )
+                                .values(expired=True)
+                            )
+                            await _session.commit()
+                            return int(getattr(result, "rowcount", 0) or 0)
+
+                    expired_rows = run_sync(_expire_open_signals(), timeout=20.0)
+                    logger.warning(
+                        "[engine] redis active trades empty; expired %s stale DB open signals before open-limit gate",
+                        expired_rows,
+                    )
+                    open_counts_by_asset.clear()
+                    open_counts_by_class.clear()
+        except Exception as _redis_reconcile_err:
+            logger.debug(f"[engine] redis/db open-signal reconciliation failed: {_redis_reconcile_err}")
 
         # Per-asset pipeline
         for asset in assets:
