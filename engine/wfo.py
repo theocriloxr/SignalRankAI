@@ -56,6 +56,7 @@ class WalkForwardOptimizer:
             asset = sig.get("asset")
             tf = sig.get("timeframe")
             df = df_map.get(f"{asset}|{tf}")
+            orderbook_df = df_map.get(f"{asset}|{tf}|orderbook")
             tick_df = df_map.get(f"{asset}|{tf}|ticks")
             if df is None:
                 continue
@@ -107,35 +108,90 @@ class WalkForwardOptimizer:
             pnl = 0.0
             win_flags = []
             # If tick data exists, prefer tick-level fill simulation
-            if tick_df is not None and 'price' in tick_df.columns:
+            # Prefer orderbook-based fills when available
+            if orderbook_df is not None and 'bids' in orderbook_df.columns and 'asks' in orderbook_df.columns:
+                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0])
+                snaps = orderbook_df[(orderbook_df['timestamp'] >= sig_ts) & (orderbook_df['timestamp'] <= pd.to_datetime(test_end))]
+                for _, srow in snaps.iterrows():
+                    asks = srow.get('asks') or []
+                    bids = srow.get('bids') or []
+                    # For market buy orders we consume asks (lowest price first)
+                    if direction == 'long':
+                        levels = sorted(asks, key=lambda x: float(x[0]))
+                    else:
+                        levels = sorted(bids, key=lambda x: -float(x[0]))
+                    remaining_at_snapshot = None
+                    for lvl in levels:
+                        level_price = float(lvl[0])
+                        level_size = float(lvl[1])
+                        if remaining_units <= 0:
+                            break
+                        fill_qty = min(remaining_units, level_size if level_size > 0 else remaining_units)
+                        if fill_qty <= 0:
+                            continue
+                        exec_price = level_price * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
+                        trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
+                        trade_pnl -= abs(trade_pnl) * commission_pct
+                        pnl += trade_pnl
+                        remaining_units -= fill_qty
+                        # reduce the level size so subsequent fills in same snapshot are aware
+                        lvl[1] = max(0.0, level_size - fill_qty) if isinstance(lvl, list) else level_size - fill_qty
+                        win_flags.append(True if fill_qty > 0 else False)
+                    if remaining_units <= 0:
+                        break
+            elif tick_df is not None and 'price' in tick_df.columns:
                 sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0])
                 ticks = tick_df[(tick_df['timestamp'] >= sig_ts) & (tick_df['timestamp'] <= pd.to_datetime(test_end))]
                 for _, trow in ticks.iterrows():
                     price = float(trow.get('price') or trow.get('price'))
-                    # check TPs first
+                    # available liquidity at this tick (try several common fields)
+                    tick_size = None
+                    for key in ('size', 'qty', 'volume'):
+                        if key in trow and trow.get(key) is not None:
+                            try:
+                                tick_size = float(trow.get(key))
+                                break
+                            except Exception:
+                                tick_size = None
+                    # default to an effectively infinite tick size if not provided
+                    if tick_size is None or tick_size <= 0:
+                        tick_size = remaining_units
+
+                    # check TP levels using available tick liquidity (may partially fill)
                     for j, tp in enumerate(tp_prices):
                         if remaining_units <= 0:
                             break
                         hit_tp = (price >= tp) if direction == 'long' else (price <= tp)
                         if hit_tp:
                             qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
-                            qty = units * qty_pct
+                            target_qty = units * qty_pct
+                            # we can only fill up to tick_size on this tick
+                            fill_qty = min(remaining_units, tick_size, target_qty)
+                            if fill_qty <= 0:
+                                continue
                             exec_price = price * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
-                            trade_pnl = (exec_price - entry) * qty if direction == 'long' else (entry - exec_price) * qty
+                            trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
-                            remaining_units -= qty
-                            win_flags.append(True)
+                            remaining_units -= fill_qty
+                            # reduce tick_size consumed
+                            tick_size -= fill_qty
+                            # if we partially filled target_qty, leave remainder for later ticks
+                            win_flags.append(True if fill_qty > 0 else False)
+                    # check SL only if still have remaining_units
                     if remaining_units > 0:
                         hit_sl = (price <= stop) if direction == 'long' else (price >= stop)
                         if hit_sl:
-                            exec_price = price * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
-                            trade_pnl = (exec_price - entry) * remaining_units if direction == 'long' else (entry - exec_price) * remaining_units
-                            trade_pnl -= abs(trade_pnl) * commission_pct
-                            pnl += trade_pnl
-                            win_flags.append(False)
-                            remaining_units = 0
-                            break
+                            fill_qty = min(remaining_units, tick_size)
+                            if fill_qty > 0:
+                                exec_price = price * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
+                                trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
+                                trade_pnl -= abs(trade_pnl) * commission_pct
+                                pnl += trade_pnl
+                                win_flags.append(False)
+                                remaining_units -= fill_qty
+                                if remaining_units <= 0:
+                                    break
                     if remaining_units <= 0:
                         break
             else:

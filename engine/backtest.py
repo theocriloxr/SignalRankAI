@@ -50,6 +50,23 @@ class BacktestRunner:
     def get_tick_df(self, asset: str, tf: str) -> Optional[pd.DataFrame]:
         return self.data_frames.get(f"{asset.upper()}|{tf}|ticks")
 
+    def register_orderbook_dataframe(self, asset: str, tf: str, df: pd.DataFrame) -> None:
+        """Register orderbook snapshot dataframe for an asset/timeframe.
+
+        The dataframe should contain at least `timestamp` and either `bids`/`asks` columns
+        where each entry is a list of [price, size] tuples describing the book snapshot.
+        Stored under key asset|tf|orderbook.
+        """
+        key = f"{asset.upper()}|{tf}|orderbook"
+        df2 = df.copy()
+        if "timestamp" in df2.columns:
+            df2["timestamp"] = pd.to_datetime(df2["timestamp"], utc=True)
+            df2 = df2.sort_values("timestamp").reset_index(drop=True)
+        self.data_frames[key] = df2
+
+    def get_orderbook_df(self, asset: str, tf: str) -> Optional[pd.DataFrame]:
+        return self.data_frames.get(f"{asset.upper()}|{tf}|orderbook")
+
     def get_df(self, asset: str, tf: str) -> Optional[pd.DataFrame]:
         return self.data_frames.get(self._key(asset, tf))
 
