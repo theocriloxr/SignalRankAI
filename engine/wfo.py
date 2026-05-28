@@ -60,7 +60,7 @@ class WalkForwardOptimizer:
             tick_df = df_map.get(f"{asset}|{tf}|ticks")
             if df is None:
                 continue
-            rows = df[(df['timestamp'] >= pd.to_datetime(test_start)) & (df['timestamp'] <= pd.to_datetime(test_end))]
+            rows = df[(df['timestamp'] >= pd.to_datetime(test_start, utc=True)) & (df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
             if rows.empty:
                 continue
             entry = float(sig.get('entry') or 0.0)
@@ -110,8 +110,8 @@ class WalkForwardOptimizer:
             # If tick data exists, prefer tick-level fill simulation
             # Prefer orderbook-based fills when available
             if orderbook_df is not None and 'bids' in orderbook_df.columns and 'asks' in orderbook_df.columns:
-                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0])
-                snaps = orderbook_df[(orderbook_df['timestamp'] >= sig_ts) & (orderbook_df['timestamp'] <= pd.to_datetime(test_end))]
+                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0], utc=True)
+                snaps = orderbook_df[(orderbook_df['timestamp'] >= sig_ts) & (orderbook_df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
                 for _, srow in snaps.iterrows():
                     asks = srow.get('asks') or []
                     bids = srow.get('bids') or []
@@ -140,8 +140,8 @@ class WalkForwardOptimizer:
                     if remaining_units <= 0:
                         break
             elif tick_df is not None and 'price' in tick_df.columns:
-                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0])
-                ticks = tick_df[(tick_df['timestamp'] >= sig_ts) & (tick_df['timestamp'] <= pd.to_datetime(test_end))]
+                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0], utc=True)
+                ticks = tick_df[(tick_df['timestamp'] >= sig_ts) & (tick_df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
                 for _, trow in ticks.iterrows():
                     price = float(trow.get('price') or trow.get('price'))
                     # available liquidity at this tick (try several common fields)
@@ -252,7 +252,9 @@ class WalkForwardOptimizer:
                 labeled[idx] = label
                 continue
             tp = float(tps[0].get('price') if isinstance(tps[0], dict) else tps[0])
-            rows = df[(df['timestamp'] >= pd.to_datetime(sig.get('timestamp') or df['timestamp'].iloc[0])) & (df['timestamp'] <= pd.to_datetime(sig.get('timestamp') or df['timestamp'].iloc[0]) + pd.Timedelta(minutes=lookahead_minutes))]
+            start_ts = pd.to_datetime(sig.get('timestamp') or df['timestamp'].iloc[0], utc=True)
+            end_ts = start_ts + pd.Timedelta(minutes=lookahead_minutes)
+            rows = df[(df['timestamp'] >= start_ts) & (df['timestamp'] <= end_ts)]
             for _, row in rows.iterrows():
                 high = float(row['high'])
                 low = float(row['low'])
