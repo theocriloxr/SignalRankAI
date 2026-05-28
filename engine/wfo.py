@@ -3,6 +3,7 @@ from typing import Iterable, Dict, Any
 import pandas as pd
 import os
 from pathlib import Path
+import re
 
 from engine.backtest import BacktestRunner
 from engine.risk_manager import RiskManager
@@ -36,6 +37,56 @@ class WalkForwardOptimizer:
 
     def __init__(self, runner: BacktestRunner):
         self.runner = runner
+
+    @staticmethod
+    def _timeframe_minutes(timeframe: str | None) -> int:
+        token = str(timeframe or "1m").strip().lower()
+        match = re.match(r"^(\d+)(m|h|d|w)?$", token)
+        if not match:
+            return 1
+        value = int(match.group(1))
+        unit = match.group(2) or "m"
+        if unit == "h":
+            return value * 60
+        if unit == "d":
+            return value * 1440
+        if unit == "w":
+            return value * 10080
+        return value
+
+    @staticmethod
+    def _average_daily_volume_notional(df: pd.DataFrame | None, timeframe: str | None, price_fallback: float = 1.0) -> float:
+        if df is None or df.empty or 'volume' not in df.columns:
+            return 0.0
+        try:
+            avg_bar_volume = float(pd.to_numeric(df['volume'], errors='coerce').dropna().tail(1000).mean() or 0.0)
+        except Exception:
+            avg_bar_volume = 0.0
+        if avg_bar_volume <= 0:
+            return 0.0
+        minutes = max(1, WalkForwardOptimizer._timeframe_minutes(timeframe))
+        bars_per_day = max(1.0, 1440.0 / float(minutes))
+        return max(0.0, avg_bar_volume * bars_per_day * max(price_fallback, 1e-9))
+
+    @staticmethod
+    def _market_impact_pct(
+        fill_qty: float,
+        price: float,
+        adv_notional: float,
+        depth_available: float,
+        spread_pct: float = 0.0,
+    ) -> float:
+        if fill_qty <= 0 or price <= 0:
+            return 0.0
+        notional = abs(fill_qty * price)
+        adv_notional = max(adv_notional, notional, 1e-9)
+        depth_available = max(depth_available, fill_qty, 1e-9)
+        adv_pressure = min(5.0, notional / adv_notional)
+        depth_pressure = min(5.0, fill_qty / depth_available)
+        spread_component = max(0.0, spread_pct) * 0.5
+        adv_component = 0.0025 * math.sqrt(max(adv_pressure, 0.0))
+        depth_component = 0.0045 * depth_pressure
+        return min(0.05, spread_component + adv_component + depth_component)
 
     def _simulate_pnl(
         self,
@@ -98,6 +149,7 @@ class WalkForwardOptimizer:
             units = risk_amount / risk_dist
             # enforce sensible bounds
             units = max(0.0, min(units, account_equity * 0.2))
+            adv_notional = self._average_daily_volume_notional(df, tf, price_fallback=entry)
 
             # simulate per-candle hits, supporting partial TPs
             tp_prices = [float(tp.get('price') if isinstance(tp, dict) else tp) for tp in tps]
@@ -113,14 +165,20 @@ class WalkForwardOptimizer:
                 sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0], utc=True)
                 snaps = orderbook_df[(orderbook_df['timestamp'] >= sig_ts) & (orderbook_df['timestamp'] <= pd.to_datetime(test_end, utc=True))]
                 for _, srow in snaps.iterrows():
-                    asks = srow.get('asks') or []
-                    bids = srow.get('bids') or []
+                    asks = [[float(level[0]), float(level[1])] for level in (srow.get('asks') or [])]
+                    bids = [[float(level[0]), float(level[1])] for level in (srow.get('bids') or [])]
+                    if not asks and not bids:
+                        continue
+                    best_ask = float(asks[0][0]) if asks else entry
+                    best_bid = float(bids[0][0]) if bids else entry
+                    mid = (best_ask + best_bid) / 2.0 if best_ask > 0 and best_bid > 0 else entry
+                    spread_pct = abs(best_ask - best_bid) / mid if mid > 0 else 0.0
+                    snapshot_depth = sum(max(0.0, float(level[1])) for level in (asks if direction == 'long' else bids))
                     # For market buy orders we consume asks (lowest price first)
                     if direction == 'long':
                         levels = sorted(asks, key=lambda x: float(x[0]))
                     else:
                         levels = sorted(bids, key=lambda x: -float(x[0]))
-                    remaining_at_snapshot = None
                     for lvl in levels:
                         level_price = float(lvl[0])
                         level_size = float(lvl[1])
@@ -129,7 +187,8 @@ class WalkForwardOptimizer:
                         fill_qty = min(remaining_units, level_size if level_size > 0 else remaining_units)
                         if fill_qty <= 0:
                             continue
-                        exec_price = level_price * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
+                        impact_pct = self._market_impact_pct(fill_qty, level_price, adv_notional, snapshot_depth, spread_pct=spread_pct)
+                        exec_price = level_price * (1 + slippage_pct + impact_pct if direction == 'long' else 1 - slippage_pct - impact_pct)
                         trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
                         trade_pnl -= abs(trade_pnl) * commission_pct
                         pnl += trade_pnl
@@ -169,7 +228,8 @@ class WalkForwardOptimizer:
                             fill_qty = min(remaining_units, tick_size, target_qty)
                             if fill_qty <= 0:
                                 continue
-                            exec_price = price * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
+                            impact_pct = self._market_impact_pct(fill_qty, price, adv_notional, tick_size, spread_pct=0.0)
+                            exec_price = price * (1 + slippage_pct + impact_pct if direction == 'long' else 1 - slippage_pct - impact_pct)
                             trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
@@ -184,7 +244,8 @@ class WalkForwardOptimizer:
                         if hit_sl:
                             fill_qty = min(remaining_units, tick_size)
                             if fill_qty > 0:
-                                exec_price = price * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
+                                impact_pct = self._market_impact_pct(fill_qty, price, adv_notional, tick_size, spread_pct=0.0)
+                                exec_price = price * (1 - slippage_pct - impact_pct if direction == 'long' else 1 + slippage_pct + impact_pct)
                                 trade_pnl = (exec_price - entry) * fill_qty if direction == 'long' else (entry - exec_price) * fill_qty
                                 trade_pnl -= abs(trade_pnl) * commission_pct
                                 pnl += trade_pnl
@@ -199,6 +260,7 @@ class WalkForwardOptimizer:
                     row = rows.loc[idx]
                     high = float(row['high'])
                     low = float(row['low'])
+                    bar_depth = max(0.0, float(row.get('volume') or 0.0))
                     # check TP levels
                     for j, tp in enumerate(tp_prices):
                         if remaining_units <= 0:
@@ -208,7 +270,8 @@ class WalkForwardOptimizer:
                             qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
                             qty = units * qty_pct
                             # apply slippage/commission
-                            exec_price = tp * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
+                            impact_pct = self._market_impact_pct(qty, tp, adv_notional, bar_depth, spread_pct=abs(high - low) / max(tp, 1e-9))
+                            exec_price = tp * (1 + slippage_pct + impact_pct if direction == 'long' else 1 - slippage_pct - impact_pct)
                             trade_pnl = (exec_price - entry) * qty if direction == 'long' else (entry - exec_price) * qty
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
@@ -218,7 +281,8 @@ class WalkForwardOptimizer:
                     if remaining_units > 0:
                         hit_sl = (low <= stop) if direction == 'long' else (high >= stop)
                         if hit_sl:
-                            exec_price = stop * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
+                            impact_pct = self._market_impact_pct(remaining_units, stop, adv_notional, bar_depth, spread_pct=abs(high - low) / max(stop, 1e-9))
+                            exec_price = stop * (1 - slippage_pct - impact_pct if direction == 'long' else 1 + slippage_pct + impact_pct)
                             trade_pnl = (exec_price - entry) * remaining_units if direction == 'long' else (entry - exec_price) * remaining_units
                             trade_pnl -= abs(trade_pnl) * commission_pct
                             pnl += trade_pnl
