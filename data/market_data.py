@@ -16,6 +16,7 @@ import requests
 import pandas as pd
 from core.redis_state import state
 import httpx
+from data.alternative_providers import fetch_onchain_context
 
 logger = logging.getLogger(__name__)
 
@@ -804,6 +805,12 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                         return {"funding_rate": 0.0, "open_interest_change": 0.0, "orderbook_imbalance": 0.0, "news_sentiment": 0.0}
 
                 macro = await _fetch_alt()
+                try:
+                    onchain = await fetch_onchain_context(sym)
+                    if isinstance(onchain, dict):
+                        macro.update(onchain)
+                except Exception:
+                    pass
                 # Attach macro into each timeframe payload for ML helpers to consume
                 for tf, payload in list(out.items()):
                     if not isinstance(payload, dict):

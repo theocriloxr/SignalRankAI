@@ -169,6 +169,12 @@ def extract_features(signal, market_data):
         "minutes_since_high_impact_news": float(signal.get("minutes_since_high_impact_news") if signal.get("minutes_since_high_impact_news") is not None else macro.get("minutes_since_high_impact_news") or 0.0),
         "minutes_until_high_impact_news": float(signal.get("minutes_until_high_impact_news") if signal.get("minutes_until_high_impact_news") is not None else macro.get("minutes_until_high_impact_news") or 0.0),
         "news_event_impact_score": float(signal.get("news_event_impact_score") if signal.get("news_event_impact_score") is not None else macro.get("news_event_impact_score") or 0.0),
+        "exchange_net_flow": float(signal.get("exchange_net_flow") if signal.get("exchange_net_flow") is not None else macro.get("exchange_net_flow") or 0.0),
+        "exchange_inflow": float(signal.get("exchange_inflow") if signal.get("exchange_inflow") is not None else macro.get("exchange_inflow") or 0.0),
+        "exchange_outflow": float(signal.get("exchange_outflow") if signal.get("exchange_outflow") is not None else macro.get("exchange_outflow") or 0.0),
+        "liquidation_heatmap_score": float(signal.get("liquidation_heatmap_score") if signal.get("liquidation_heatmap_score") is not None else macro.get("liquidation_heatmap_score") or 0.0),
+        "liquidation_heatmap_density": float(signal.get("liquidation_heatmap_density") if signal.get("liquidation_heatmap_density") is not None else macro.get("liquidation_heatmap_density") or 0.0),
+        "onchain_source_flag": float(signal.get("onchain_source_flag") if signal.get("onchain_source_flag") is not None else (1.0 if macro.get("onchain_source") not in (None, "", "none") else 0.0)),
         "spx_trend": float(signal.get("spx_trend") if signal.get("spx_trend") is not None else macro.get("spx_trend") or 0.0),
         "btc_corr": float(signal.get("btc_corr") if signal.get("btc_corr") is not None else macro.get("btc_corr") or 0.0),
     }

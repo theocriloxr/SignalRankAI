@@ -1,6 +1,7 @@
 from utils.async_runner import run_sync
 import threading
 from core.redis_state import state, mark_signal_delivered_sync
+from core.telemetry import observe_signal_dispatch
 
 
 def resend_unsent_signals_job():
@@ -629,13 +630,38 @@ def _normalized_delivery_tier(tier: str | None) -> str:
 
 
 
-async def _send_message_async(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
+async def _send_message_async(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+    telemetry_started_at: float | None = None,
+    telemetry_tier: str | None = None,
+    telemetry_regime: str | None = None,
+) -> None:
     # Global fix: escape text for Markdown/MarkdownV2 parse modes
-    if parse_mode and parse_mode.lower().startswith("markdown"):
-        from telegram.helpers import escape_markdown
-        version = 2 if "v2" in parse_mode.lower() else 1
-        text = escape_markdown(str(text), version=version)
-    await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+    try:
+        if parse_mode and parse_mode.lower().startswith("markdown"):
+            from telegram.helpers import escape_markdown
+            version = 2 if "v2" in parse_mode.lower() else 1
+            text = escape_markdown(str(text), version=version)
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        if telemetry_started_at is not None:
+            observe_signal_dispatch(
+                max(0.0, time.perf_counter() - float(telemetry_started_at)),
+                tier=str(telemetry_tier or "unknown"),
+                regime=telemetry_regime,
+                status="ok",
+            )
+    except Exception:
+        if telemetry_started_at is not None:
+            observe_signal_dispatch(
+                max(0.0, time.perf_counter() - float(telemetry_started_at)),
+                tier=str(telemetry_tier or "unknown"),
+                regime=telemetry_regime,
+                status="error",
+            )
+        raise
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -2542,11 +2568,11 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
                 try:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
-                    run_sync(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode))
+                    run_sync(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode, telemetry_started_at=time.perf_counter(), telemetry_tier=tier, telemetry_regime=regime))
                     return
                 # If we're already in an event loop, schedule it.
                 try:
-                    loop.create_task(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode))
+                    loop.create_task(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode, telemetry_started_at=time.perf_counter(), telemetry_tier=tier, telemetry_regime=regime))
                 except Exception as e:
                     logger.debug(f"[send_message] Failed to create async task for message: {e}")
                     pass

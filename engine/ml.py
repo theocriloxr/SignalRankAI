@@ -224,6 +224,12 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             "minutes_since_high_impact_news": _num(signal.get("minutes_since_high_impact_news"), _num(macro.get("minutes_since_high_impact_news"), 0.0)),
             "minutes_until_high_impact_news": _num(signal.get("minutes_until_high_impact_news"), _num(macro.get("minutes_until_high_impact_news"), 0.0)),
             "news_event_impact_score": _num(signal.get("news_event_impact_score"), _num(macro.get("news_event_impact_score"), 0.0)),
+            "exchange_net_flow": _num(signal.get("exchange_net_flow"), _num(macro.get("exchange_net_flow"), 0.0)),
+            "exchange_inflow": _num(signal.get("exchange_inflow"), _num(macro.get("exchange_inflow"), 0.0)),
+            "exchange_outflow": _num(signal.get("exchange_outflow"), _num(macro.get("exchange_outflow"), 0.0)),
+            "liquidation_heatmap_score": _num(signal.get("liquidation_heatmap_score"), _num(macro.get("liquidation_heatmap_score"), 0.0)),
+            "liquidation_heatmap_density": _num(signal.get("liquidation_heatmap_density"), _num(macro.get("liquidation_heatmap_density"), 0.0)),
+            "onchain_source_flag": _num(signal.get("onchain_source_flag"), 1.0 if macro.get("onchain_source") not in (None, "", "none") else 0.0),
             "spx_trend": _num(signal.get("spx_trend"), _num(macro.get("spx_trend"), spx_trend)),
             "btc_corr": _num(signal.get("btc_corr"), _num(macro.get("btc_corr"), btc_corr)),
         }

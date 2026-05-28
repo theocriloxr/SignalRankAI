@@ -13,6 +13,7 @@ from db.repository import persist_signal, persist_decision_log
 from db import models
 from db.session import async_session
 from datetime import datetime
+from core.telemetry import observe_engine_cycle, observe_engine_task, observe_ml_confidence, observe_signal_generated, trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +25,10 @@ ml_tracker = MLRejectionTracker()
 
 async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool = False) -> list:
     signals: list = []
+    started = time.perf_counter()
     try:
-        market_state = await get_market_state_async(asset, [timeframe], include_ml=include_ml)
+        with trace_span("engine.process_asset_timeframe", asset=asset, timeframe=timeframe, include_ml=include_ml):
+            market_state = await get_market_state_async(asset, [timeframe], include_ml=include_ml)
         tf_data = market_state.get("timeframes", {}).get(timeframe)
         if not tf_data:
             return signals
@@ -61,6 +64,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     })
                 except Exception:
                     ml_prob_value = None
+            observe_ml_confidence(ml_prob_value)
             if include_ml and ml_threshold is not None and ml_prob_value is not None and ml_prob_value < ml_threshold:
                 await ml_tracker.persist_rejection(
                     asset=asset,
@@ -99,6 +103,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                 signal_obj = await persist_signal(signal_data)
                 if signal_obj:
                     signals.append(signal_obj)
+                    observe_signal_generated(asset, timeframe)
                     await dedup.register_signal(asset, timeframe, sig.direction, sig.entry)
                     await persist_decision_log(
                         signal_obj.signal_id,
@@ -113,6 +118,8 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
     except Exception as e:
         logger.error("Error processing %s %s: %s", asset, timeframe, e)
         await persist_decision_log(None, asset, timeframe, "error", reason=str(e)[:100], meta={})
+    finally:
+        observe_engine_task(asset, timeframe, time.perf_counter() - started, outcome="ok" if signals else "empty")
     return signals
 
 
@@ -141,6 +148,7 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
                         elapsed,
                         attempt + 1,
                     )
+                    observe_engine_task(asset, timeframe, elapsed / 1000.0, outcome="ok")
                     return out
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -158,6 +166,7 @@ async def run_once(assets: Iterable[str], timeframes: Iterable[str], include_ml:
                         attempt + 1,
                         exc,
                     )
+                    observe_engine_task(asset, timeframe, timeout_seconds, outcome="error")
                 await asyncio.sleep(min(2**attempt, 30))
         return []
 
@@ -186,9 +195,11 @@ async def main_loop(assets: Iterable[str], timeframes: Iterable[str], include_ml
     
     while True:
         try:
+            cycle_started = time.perf_counter()
             res = await run_once(assets, timeframes, include_ml=include_ml)
             total_signals = sum(len(v) for v in res.values())
             logger.info(f"engine cycle completed: {total_signals} signals generated")
+            observe_engine_cycle(time.perf_counter() - cycle_started)
             
             # Track ML rejection outcomes
             try:

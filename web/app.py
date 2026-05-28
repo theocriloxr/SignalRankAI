@@ -27,7 +27,7 @@ import json
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.security import HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 import uvicorn
 
@@ -44,12 +44,19 @@ from sqlalchemy import select
 from core.redis_state import state
 from core.redis_cache import cache_stats
 from core.tier_constants import TIER_SCORE_THRESHOLDS
+from core.telemetry import (
+    init_tracer,
+    observe_http_request,
+    prometheus_content_type,
+    prometheus_metrics_text,
+)
 from signalrank_telegram.utils import tier_rank, _effective_tier
 from payments.paystack import process_event as process_paystack_event
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SignalRankAI API", version="1.0.0")
+_tracer = init_tracer("signalrankai-web")
 
 # CORS for Telegram web apps (future)
 app.add_middleware(
@@ -130,15 +137,23 @@ async def rate_limit(request: Request, user_id: int):
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Global rate limiting middleware."""
-    if request.url.path in ["/health", "/healthz", "/metrics"]:
+    if request.url.path in ["/health", "/healthz", "/metrics", "/metrics/prometheus"]:
+        started = time.perf_counter()
         response = await call_next(request)
+        route_obj = request.scope.get("route")
+        route = getattr(route_obj, "path", None) or request.url.path
+        observe_http_request(request.method, route, getattr(response, "status_code", 200), time.perf_counter() - started)
         return response
     
     try:
+        started = time.perf_counter()
         await rate_limit(request, user_id=0)  # IP-only for unauth
     except HTTPException:
         raise
     response = await call_next(request)
+    route_obj = request.scope.get("route")
+    route = getattr(route_obj, "path", None) or request.url.path
+    observe_http_request(request.method, route, getattr(response, "status_code", 200), time.perf_counter() - started)
     return response
 
 @app.get("/health", response_model=HealthResponse)
@@ -249,6 +264,12 @@ async def metrics(user_id: int = Depends(verify_api_key)):
         signals_delivered_1h=delivered_1h,
         subscriptions_active=int(subs)
     )
+
+
+@app.get("/metrics/prometheus")
+async def metrics_prometheus():
+    """Prometheus scrape endpoint for Grafana/Prometheus."""
+    return Response(content=prometheus_metrics_text(), media_type=prometheus_content_type())
 
 @app.get("/signals/{user_id}")
 async def get_signals(
