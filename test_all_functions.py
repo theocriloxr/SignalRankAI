@@ -1,5 +1,6 @@
 import unittest
 import types
+from unittest.mock import Mock, patch
 import engine.signal_controller as signal_controller
 import engine.scoring as scoring
 import engine.risk as risk
@@ -87,7 +88,16 @@ class TestAllFunctions(unittest.TestCase):
     def test_paystack_functions(self):
         self.assertIsInstance(paystack.match_amount_to_tier(10000), (str, type(None)))
         self.assertIsInstance(paystack.verify_webhook_signature(b"body", "sig"), bool)
-        self.assertIsInstance(paystack.generate_paystack_link(1, 1000, extra_count=1), str)
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.content = b'{"status": true, "data": {"authorization_url": "https://checkout.paystack.com/mock"}}'
+        mock_response.json.return_value = {
+            "status": True,
+            "data": {"authorization_url": "https://checkout.paystack.com/mock"},
+        }
+        with patch.dict("os.environ", {"PAYSTACK_SECRET_KEY": "sk_test_mock"}, clear=False):
+            with patch("paystack.paystack.requests.post", return_value=mock_response):
+                self.assertIsInstance(paystack.generate_paystack_link(1, 1000, extra_count=1), str)
         # verify_payment is not tested here due to external dependency
 
     def test_strategy_functions(self):

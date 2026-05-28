@@ -162,7 +162,9 @@ class RedisState:
         self._flush_thread: Optional[threading.Thread] = None
         self._flush_stop = threading.Event()
         self._flush_interval = max(1, int(os.getenv("STATE_FLUSH_INTERVAL_SECONDS", "3") or 3))
-        self._ensure_flush_worker()
+        self._background_workers_enabled = str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}
+        if self._background_workers_enabled:
+            self._ensure_flush_worker()
 
     def _redis_url(self) -> Optional[str]:
         return _resolve_redis_url()

@@ -424,6 +424,7 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
 # pairs = get_all_trending_pairs()
 # print(pairs)
 
-# Start auto-refresh thread at import time (after concrete discovery functions exist).
-_t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
-_t.start()
+if str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}:
+    # Start auto-refresh thread at import time (after concrete discovery functions exist).
+    _t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
+    _t.start()

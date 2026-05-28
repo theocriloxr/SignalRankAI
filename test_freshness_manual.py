@@ -7,6 +7,7 @@ Run this to see freshness checks in action.
 import sys
 import os
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,10 +45,11 @@ def test_freshness_validation():
         'stop_loss': 49000.0,
     }
     
-    is_fresh, reason = is_signal_fresh(fresh_signal)
-    print(f"  Fresh? {is_fresh}")
-    print(f"  Reason: {reason}")
-    print(f"  Stale? {is_signal_stale(fresh_signal)}")
+    with patch("engine.price_validator.get_current_price", return_value=50000.0):
+        is_fresh, reason = is_signal_fresh(fresh_signal)
+        print(f"  Fresh? {is_fresh}")
+        print(f"  Reason: {reason}")
+        print(f"  Stale? {is_signal_stale(fresh_signal)}")
     print()
     
     # Test 2: Stale crypto signal
@@ -63,10 +65,11 @@ def test_freshness_validation():
         'stop_loss': 2950.0,
     }
     
-    is_fresh, reason = is_signal_fresh(stale_signal)
-    print(f"  Fresh? {is_fresh}")
-    print(f"  Reason: {reason}")
-    print(f"  Stale? {is_signal_stale(stale_signal)}")
+    with patch("engine.price_validator.get_current_price", return_value=50000.0):
+        is_fresh, reason = is_signal_fresh(stale_signal)
+        print(f"  Fresh? {is_fresh}")
+        print(f"  Reason: {reason}")
+        print(f"  Stale? {is_signal_stale(stale_signal)}")
     print()
     
     # Test 3: Fresh FX signal
@@ -82,10 +85,11 @@ def test_freshness_validation():
         'stop_loss': 1.0820,
     }
     
-    is_fresh, reason = is_signal_fresh(fx_signal)
-    print(f"  Fresh? {is_fresh}")
-    print(f"  Reason: {reason}")
-    print(f"  Stale? {is_signal_stale(fx_signal)}")
+    with patch("engine.price_validator.get_current_price", return_value=1.0850):
+        is_fresh, reason = is_signal_fresh(fx_signal)
+        print(f"  Fresh? {is_fresh}")
+        print(f"  Reason: {reason}")
+        print(f"  Stale? {is_signal_stale(fx_signal)}")
     print()
     
     # Test 4: Filter stale signals from a list
@@ -113,9 +117,10 @@ def test_freshness_validation():
     ]
     
     print(f"  Total signals: {len(signals)}")
-    fresh_signals = filter_stale_signals(signals)
-    print(f"  Fresh signals after filtering: {len(fresh_signals)}")
-    print(f"  Fresh signal IDs: {[s['signal_id'] for s in fresh_signals]}")
+    with patch("engine.price_validator.get_current_price", return_value=50000.0):
+        fresh_signals = filter_stale_signals(signals)
+        print(f"  Fresh signals after filtering: {len(fresh_signals)}")
+        print(f"  Fresh signal IDs: {[s['signal_id'] for s in fresh_signals]}")
     print()
     
     # Test 5: Signal enrichment
@@ -131,12 +136,13 @@ def test_freshness_validation():
     }
     
     try:
-        enriched = enrich_signal_with_live_price(test_signal)
-        print(f"  Original signal keys: {list(test_signal.keys())}")
-        print(f"  Enriched signal keys: {list(enriched.keys())}")
-        print(f"  Signal age (seconds): {enriched.get('signal_age_seconds')}")
-        print(f"  Current price: {enriched.get('current_price')}")
-        print(f"  Price distance %: {enriched.get('price_distance_pct')}")
+        with patch("engine.price_validator.get_current_price", return_value=50000.0):
+            enriched = enrich_signal_with_live_price(test_signal)
+            print(f"  Original signal keys: {list(test_signal.keys())}")
+            print(f"  Enriched signal keys: {list(enriched.keys())}")
+            print(f"  Signal age (seconds): {enriched.get('signal_age_seconds')}")
+            print(f"  Current price: {enriched.get('current_price')}")
+            print(f"  Price distance %: {enriched.get('price_distance_pct')}")
     except Exception as e:
         print(f"  Enrichment failed (expected in offline mode): {e}")
     print()
