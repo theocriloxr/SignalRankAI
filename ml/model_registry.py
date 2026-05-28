@@ -138,3 +138,34 @@ def load_model_with_metadata(path: Path, xgb_module: Any) -> tuple[Any, List[str
     booster.load_model(bytearray(raw_bytes))
     feature_cols = [str(c) for c in payload.get("feature_cols", [])]
     return booster, feature_cols, extract_metadata(payload), None
+
+
+def save_model_payload(path: Path, booster: Any, feature_cols: List[str], metadata: Dict[str, Any]) -> bool:
+    """Persist a model booster and feature schema into a JSON payload compatible with load_model_with_metadata.
+
+    Returns True on success.
+    """
+    import base64
+    try:
+        # booster.save_raw() returns bytes for xgboost Booster
+        raw = booster.save_raw() if hasattr(booster, 'save_raw') else booster.save_model()
+        if raw is None:
+            # fallback: try saving to temporary buffer
+            from io import BytesIO
+            buf = BytesIO()
+            booster.save_model(buf)
+            raw = buf.getvalue()
+        model_b64 = base64.b64encode(raw).decode('ascii')
+        payload = {
+            'feature_cols': list(feature_cols or []),
+            'model_bytes_b64': model_b64,
+            'version': str(metadata.get('version') or ''),
+            'trained_at': str(metadata.get('trained_at') or ''),
+            'xgboost_version': str(metadata.get('xgboost_version') or ''),
+            'artifact_hash_sha256': str(metadata.get('artifact_hash_sha256') or ''),
+        }
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh, ensure_ascii=False)
+        return True
+    except Exception:
+        return False

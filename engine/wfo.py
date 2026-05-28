@@ -1,10 +1,21 @@
 from datetime import datetime, timedelta
 from typing import Iterable, Dict, Any
 import pandas as pd
+import os
+from pathlib import Path
 
 from engine.backtest import BacktestRunner
 from engine.risk_manager import RiskManager
 from typing import Callable, Iterable, Dict, Any
+from ml.features import extract_features
+
+try:
+    import xgboost as xgb
+except Exception:
+    xgb = None
+
+import numpy as np
+import math
 
 
 def _month_ranges(start: datetime, end: datetime):
@@ -45,6 +56,7 @@ class WalkForwardOptimizer:
             asset = sig.get("asset")
             tf = sig.get("timeframe")
             df = df_map.get(f"{asset}|{tf}")
+            tick_df = df_map.get(f"{asset}|{tf}|ticks")
             if df is None:
                 continue
             rows = df[(df['timestamp'] >= pd.to_datetime(test_start)) & (df['timestamp'] <= pd.to_datetime(test_end))]
@@ -94,43 +106,194 @@ class WalkForwardOptimizer:
             remaining_units = units
             pnl = 0.0
             win_flags = []
-            for idx in rows.index:
-                row = rows.loc[idx]
-                high = float(row['high'])
-                low = float(row['low'])
-                # check TP levels
-                for j, tp in enumerate(tp_prices):
+            # If tick data exists, prefer tick-level fill simulation
+            if tick_df is not None and 'price' in tick_df.columns:
+                sig_ts = pd.to_datetime(sig.get('timestamp') or rows['timestamp'].iloc[0])
+                ticks = tick_df[(tick_df['timestamp'] >= sig_ts) & (tick_df['timestamp'] <= pd.to_datetime(test_end))]
+                for _, trow in ticks.iterrows():
+                    price = float(trow.get('price') or trow.get('price'))
+                    # check TPs first
+                    for j, tp in enumerate(tp_prices):
+                        if remaining_units <= 0:
+                            break
+                        hit_tp = (price >= tp) if direction == 'long' else (price <= tp)
+                        if hit_tp:
+                            qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
+                            qty = units * qty_pct
+                            exec_price = price * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
+                            trade_pnl = (exec_price - entry) * qty if direction == 'long' else (entry - exec_price) * qty
+                            trade_pnl -= abs(trade_pnl) * commission_pct
+                            pnl += trade_pnl
+                            remaining_units -= qty
+                            win_flags.append(True)
+                    if remaining_units > 0:
+                        hit_sl = (price <= stop) if direction == 'long' else (price >= stop)
+                        if hit_sl:
+                            exec_price = price * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
+                            trade_pnl = (exec_price - entry) * remaining_units if direction == 'long' else (entry - exec_price) * remaining_units
+                            trade_pnl -= abs(trade_pnl) * commission_pct
+                            pnl += trade_pnl
+                            win_flags.append(False)
+                            remaining_units = 0
+                            break
                     if remaining_units <= 0:
                         break
-                    hit_tp = (high >= tp) if direction == 'long' else (low <= tp)
-                    if hit_tp:
-                        qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
-                        qty = units * qty_pct
-                        # apply slippage/commission
-                        exec_price = tp * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
-                        trade_pnl = (exec_price - entry) * qty if direction == 'long' else (entry - exec_price) * qty
-                        trade_pnl -= abs(trade_pnl) * commission_pct
-                        pnl += trade_pnl
-                        remaining_units -= qty
-                        win_flags.append(True)
-                # check SL only if still have remaining_units
-                if remaining_units > 0:
-                    hit_sl = (low <= stop) if direction == 'long' else (high >= stop)
-                    if hit_sl:
-                        exec_price = stop * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
-                        trade_pnl = (exec_price - entry) * remaining_units if direction == 'long' else (entry - exec_price) * remaining_units
-                        trade_pnl -= abs(trade_pnl) * commission_pct
-                        pnl += trade_pnl
-                        win_flags.append(False)
-                        remaining_units = 0
+            else:
+                for idx in rows.index:
+                    row = rows.loc[idx]
+                    high = float(row['high'])
+                    low = float(row['low'])
+                    # check TP levels
+                    for j, tp in enumerate(tp_prices):
+                        if remaining_units <= 0:
+                            break
+                        hit_tp = (high >= tp) if direction == 'long' else (low <= tp)
+                        if hit_tp:
+                            qty_pct = tp_alloc[j] if j < len(tp_alloc) else 1.0
+                            qty = units * qty_pct
+                            # apply slippage/commission
+                            exec_price = tp * (1 + slippage_pct if direction == 'long' else 1 - slippage_pct)
+                            trade_pnl = (exec_price - entry) * qty if direction == 'long' else (entry - exec_price) * qty
+                            trade_pnl -= abs(trade_pnl) * commission_pct
+                            pnl += trade_pnl
+                            remaining_units -= qty
+                            win_flags.append(True)
+                    # check SL only if still have remaining_units
+                    if remaining_units > 0:
+                        hit_sl = (low <= stop) if direction == 'long' else (high >= stop)
+                        if hit_sl:
+                            exec_price = stop * (1 - slippage_pct if direction == 'long' else 1 + slippage_pct)
+                            trade_pnl = (exec_price - entry) * remaining_units if direction == 'long' else (entry - exec_price) * remaining_units
+                            trade_pnl -= abs(trade_pnl) * commission_pct
+                            pnl += trade_pnl
+                            win_flags.append(False)
+                            remaining_units = 0
+                            break
+                    if remaining_units <= 0:
                         break
-                if remaining_units <= 0:
-                    break
 
             # normalize returns per-dollar-equity
             results.append({'n_trades': len(win_flags), 'pnl': pnl, 'win_count': sum(1 for w in win_flags if w), 'loss_count': sum(1 for w in win_flags if not w)})
 
         return results
+
+    # ---------------- ML training helpers ----------------
+    def _label_signals(self, signals: Iterable[Dict[str, Any]], df_map: Dict[str, pd.DataFrame], lookahead_minutes: int = 1440) -> Dict[int, int]:
+        """Label signals as win(1) or loss(0) by scanning forward for TP/SL within lookahead window."""
+        labeled = {}
+        for idx, sig in enumerate(signals):
+            asset = sig.get("asset")
+            tf = sig.get("timeframe")
+            df = df_map.get(f"{asset}|{tf}")
+            label = 0
+            if df is None:
+                labeled[idx] = label
+                continue
+            entry = float(sig.get('entry') or 0.0)
+            stop = float(sig.get('stop_loss') or 0.0)
+            tps = sig.get('take_profit') or sig.get('targets') or []
+            if not tps or entry <= 0:
+                labeled[idx] = label
+                continue
+            tp = float(tps[0].get('price') if isinstance(tps[0], dict) else tps[0])
+            rows = df[(df['timestamp'] >= pd.to_datetime(sig.get('timestamp') or df['timestamp'].iloc[0])) & (df['timestamp'] <= pd.to_datetime(sig.get('timestamp') or df['timestamp'].iloc[0]) + pd.Timedelta(minutes=lookahead_minutes))]
+            for _, row in rows.iterrows():
+                high = float(row['high'])
+                low = float(row['low'])
+                dirn = str(sig.get('direction') or 'long').lower()
+                hit_tp = (high >= tp) if dirn == 'long' else (low <= tp)
+                hit_sl = (low <= stop) if dirn == 'long' else (high >= stop)
+                if hit_tp and not hit_sl:
+                    label = 1
+                    break
+                if hit_sl and not hit_tp:
+                    label = 0
+                    break
+                if hit_tp and hit_sl:
+                    label = 0
+                    break
+            labeled[idx] = label
+        return labeled
+
+    def default_train_xgb(self, train_signals: Iterable[Dict[str, Any]], df_map: Dict[str, pd.DataFrame]):
+        """Train a lightweight XGBoost model on the provided train_signals and return a predictor(sig)->prob.
+
+        Falls back to a constant predictor when xgboost isn't available or training fails.
+        """
+        if xgb is None:
+            def _const(sig):
+                return 0.5
+            return _const
+
+        # Build labelled dataset using quick labeling
+        flat = list(train_signals or [])
+        if not flat:
+            return lambda s: 0.5
+
+        labels = self._label_signals(flat, df_map)
+        X = []
+        y = []
+        for i, sig in enumerate(flat):
+            try:
+                feat = extract_features(sig, df_map.get(f"{sig.get('asset')}|{sig.get('timeframe')}", {}))
+                if not isinstance(feat, dict):
+                    continue
+                X.append([float(v) for v in feat.values()])
+                y.append(int(labels.get(i, 0)))
+            except Exception:
+                continue
+
+        if not X or len(set(y)) < 2:
+            return lambda s: 0.5
+
+        try:
+            dtrain = xgb.DMatrix(np.array(X, dtype=np.float32), label=np.array(y, dtype=np.float32))
+            params = {"objective": "binary:logistic", "eval_metric": "logloss", "verbosity": 0}
+            bst = xgb.train(params, dtrain, num_boost_round=50)
+
+            # capture feature order
+            feat_cols = list(feat.keys())
+
+            def _predictor(sig: Dict[str, Any]) -> float:
+                try:
+                    fdict = extract_features(sig, df_map.get(f"{sig.get('asset')}|{sig.get('timeframe')}", {}))
+                    vec = [float(fdict.get(k, 0.0)) for k in feat_cols]
+                    dm = xgb.DMatrix(np.array([vec], dtype=np.float32))
+                    p = float(bst.predict(dm)[0])
+                    return max(0.0, min(1.0, p))
+                except Exception:
+                    return 0.5
+            # Persist trained model to ML_MODEL_PATH if configured
+            try:
+                from ml.model_registry import save_model_payload, compute_model_hash_from_b64
+                import base64
+                model_path = os.getenv('ML_MODEL_PATH') or (Path(__file__).parent.parent / 'ml' / 'model.json')
+                # serialize booster raw bytes
+                raw = bst.save_raw() if hasattr(bst, 'save_raw') else None
+                if raw is None:
+                    # attempt save to bytes buffer
+                    from io import BytesIO
+                    buf = BytesIO()
+                    bst.save_model(buf)
+                    raw = buf.getvalue()
+                model_b64 = base64.b64encode(raw).decode('ascii')
+                artifact_hash = compute_model_hash_from_b64(model_b64)
+                meta = {
+                    'version': os.getenv('ML_MODEL_VERSION', 'wfo-trained'),
+                    'trained_at': datetime.utcnow().isoformat(),
+                    'xgboost_version': getattr(xgb, '__version__', '') if xgb is not None else '',
+                    'artifact_hash_sha256': artifact_hash,
+                }
+                try:
+                    save_model_payload(Path(str(model_path)), bst, feat_cols, meta)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            return _predictor
+        except Exception:
+            return lambda s: 0.5
 
     def run(
         self,

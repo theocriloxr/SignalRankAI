@@ -38,6 +38,18 @@ class BacktestRunner:
     def register_dataframe(self, asset: str, tf: str, df: pd.DataFrame) -> None:
         self.data_frames[self._key(asset, tf)] = self.normalize_df(df)
 
+    def register_tick_dataframe(self, asset: str, tf: str, df: pd.DataFrame) -> None:
+        """Register tick-level dataframe for an asset/timeframe. Stored under key asset|tf|ticks."""
+        key = f"{asset.upper()}|{tf}|ticks"
+        df2 = df.copy()
+        if "timestamp" in df2.columns:
+            df2["timestamp"] = pd.to_datetime(df2["timestamp"], utc=True)
+            df2 = df2.sort_values("timestamp").reset_index(drop=True)
+        self.data_frames[key] = df2
+
+    def get_tick_df(self, asset: str, tf: str) -> Optional[pd.DataFrame]:
+        return self.data_frames.get(f"{asset.upper()}|{tf}|ticks")
+
     def get_df(self, asset: str, tf: str) -> Optional[pd.DataFrame]:
         return self.data_frames.get(self._key(asset, tf))
 
@@ -66,6 +78,7 @@ class BacktestRunner:
                             sig_dict = {
                                 "asset": asset,
                                 "timeframe": tf,
+                                "timestamp": slice_df.iloc[-1]["timestamp"],
                                 "direction": sig.direction,
                                 "entry": float(sig.entry),
                                 "stop_loss": float(sig.stop_loss),
