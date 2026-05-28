@@ -1165,49 +1165,6 @@ def main_loop(DRY_RUN: bool = False):
         except Exception as _open_count_err:
             logger.debug(f"[engine] open signal count preload failed: {_open_count_err}")
 
-        # Prefer Redis live active-trade state when available to avoid stale DB blocking
-        try:
-            from core.redis_state import state as _state
-            try:
-                _active_trades = _state.get_active_trades_sync() or {}
-            except Exception:
-                _active_trades = {}
-            if isinstance(_active_trades, dict) and _active_trades:
-                # rebuild open counts from live Redis state
-                open_counts_by_asset = {}
-                open_counts_by_class = {}
-                for _tid, _payload in _active_trades.items():
-                    try:
-                        sig = _payload.get('signal') if isinstance(_payload, dict) else {}
-                        _asset_name = str((sig or {}).get('asset') or (sig or {}).get('symbol') or '').upper().strip()
-                        if not _asset_name:
-                            continue
-                        open_counts_by_asset[_asset_name] = int(open_counts_by_asset.get(_asset_name, 0) + 1)
-                        _cls = _asset_class_key(_asset_name)
-                        open_counts_by_class[_cls] = int(open_counts_by_class.get(_cls, 0) + 1)
-                    except Exception:
-                        continue
-                logger.info(f"[engine] using Redis active-trades for open counts (assets={len(open_counts_by_asset)})")
-            else:
-                # Redis empty -> no active trades live; optionally expire DB open signals when explicitly enabled
-                try:
-                    if str(os.getenv('RECONCILE_EXPIRE_DB_ON_EMPTY_REDIS', '') or '').strip().lower() in {'1', 'true', 'yes'}:
-                        from db.session import get_session as _get_s_exp
-                        from db.pg_features import expire_all_open_signals_not_in_list
-                        async def _expire_stale():
-                            async with _get_s_exp() as s:
-                                await expire_all_open_signals_not_in_list(s, set())
-                        from utils.async_runner import run_sync
-                        try:
-                            run_sync(_expire_stale(), timeout=30.0)
-                            logger.info('[engine] expired stale DB open signals because Redis was empty and RECONCILE_EXPIRE_DB_ON_EMPTY_REDIS enabled')
-                        except Exception as _rexp:
-                            logger.debug(f"[engine] stale DB expire attempt failed: {_rexp}")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
         # Per-asset pipeline
         for asset in assets:
             logger.info(f"[engine] pipeline: starting asset={asset}")
