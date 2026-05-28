@@ -6,6 +6,7 @@ import time
 import json
 import hashlib
 import os
+import sys
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -162,7 +163,7 @@ class RedisState:
         self._flush_thread: Optional[threading.Thread] = None
         self._flush_stop = threading.Event()
         self._flush_interval = max(1, int(os.getenv("STATE_FLUSH_INTERVAL_SECONDS", "3") or 3))
-        self._background_workers_enabled = str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}
+        self._background_workers_enabled = "pytest" not in sys.modules and str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}
         if self._background_workers_enabled:
             self._ensure_flush_worker()
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import threading
 import queue
 from typing import Any
@@ -11,6 +13,11 @@ _bg_thread: threading.Thread | None = None
 _bg_ready = threading.Event()
 _bg_lock = threading.Lock()
 
+
+def _background_workers_disabled() -> bool:
+    if "pytest" in sys.modules:
+        return True
+    return str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 def _ensure_background_loop() -> asyncio.AbstractEventLoop:
     """Create (once) and return a dedicated background event loop.
@@ -64,6 +71,44 @@ def run_sync(coro, timeout: float | None = None) -> Any:
     failures.
     """
     wait_timeout = None if timeout is None or float(timeout) <= 0 else float(timeout)
+
+    if _background_workers_disabled():
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if current_loop is None:
+            return asyncio.run(coro)
+
+        result_queue: "queue.Queue[Any]" = queue.Queue(maxsize=1)
+        error_queue: "queue.Queue[BaseException]" = queue.Queue(maxsize=1)
+        done = threading.Event()
+
+        def _run_on_helper_loop() -> None:
+            try:
+                result_queue.put_nowait(asyncio.run(coro))
+            except BaseException as exc:
+                error_queue.put_nowait(exc)
+            finally:
+                done.set()
+
+        helper = threading.Thread(
+            target=_run_on_helper_loop,
+            name="signalrank-run-sync-fallback",
+            daemon=True,
+        )
+        helper.start()
+        if not done.wait(timeout=wait_timeout):
+            raise TimeoutError("run_sync timed out while executing in helper loop")
+        try:
+            raise error_queue.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:
+            return None
 
     # Execute on a dedicated, long-lived background loop and block for result.
     bg_loop = _ensure_background_loop()

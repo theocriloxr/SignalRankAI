@@ -16,6 +16,7 @@ def get_trending_commodity_tickers(top_n=10):
     return default_commodities[:top_n]
 
 import logging
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -424,7 +425,7 @@ def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
 # pairs = get_all_trending_pairs()
 # print(pairs)
 
-if str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}:
+if "pytest" not in sys.modules and str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}:
     # Start auto-refresh thread at import time (after concrete discovery functions exist).
     _t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
     _t.start()
