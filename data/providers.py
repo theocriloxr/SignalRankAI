@@ -34,6 +34,54 @@ except Exception:
 # Rate limiting state
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
+_CANDLES_CACHE: dict[str, tuple[float, list]] = {}
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, default) or default)
+    except Exception:
+        return float(default)
+
+
+def _set_cooldown(provider: str, seconds: float) -> None:
+    try:
+        _PROVIDER_COOLDOWN[provider] = time.monotonic() + max(0.0, float(seconds or 0.0))
+    except Exception:
+        _PROVIDER_COOLDOWN[provider] = time.monotonic() + float(seconds or 0.0)
+
+
+def _is_cooldown_active(provider: str) -> bool:
+    try:
+        until = float(_PROVIDER_COOLDOWN.get(provider) or 0.0)
+        return until > time.monotonic()
+    except Exception:
+        return False
+
+
+def _rate_limit(provider: str, wait: float) -> None:
+    try:
+        last = float(_PROVIDER_LAST_CALL.get(provider) or 0.0)
+        now = time.monotonic()
+        elapsed = now - last if last else None
+        if elapsed is not None and elapsed < float(wait or 0.0):
+            time.sleep(float(wait or 0.0) - elapsed)
+    except Exception:
+        pass
+    finally:
+        _PROVIDER_LAST_CALL[provider] = time.monotonic()
+
+
+def _cache_key(symbol: str, timeframe: str) -> str:
+    return f"candles:{(symbol or '').upper()}:{(timeframe or '')}"
+
+
+def _set_candles_cache(symbol: str, timeframe: str, candles: list) -> None:
+    try:
+        _CANDLES_CACHE[_cache_key(symbol, timeframe)] = (time.monotonic(), list(candles or []))
+    except Exception:
+        pass
+
 
 def get_candles(symbol: str, timeframe: str, limit: int = 200):
     """Simplified primary candle fetcher used as a safe fallback.
