@@ -14,6 +14,8 @@ from db.market_cache import get_recent_candles
 from db.session import get_session
 import requests
 import pandas as pd
+from core.redis_state import state
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -733,7 +735,95 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             
             out[tf] = payload
 
-        # Best-effort write-through into Postgres cache tables.
+            # Attach lightweight alternative-market signals (funding/open-interest/orderbook)
+            try:
+                async def _fetch_alt():
+                    try:
+                        sym = str(asset or "").upper().strip()
+                        macro: dict = {}
+                        # Only attempt for crypto perpetual-like symbols ending with USDT
+                        if sym.endswith("USDT"):
+                            bid_vol = ask_vol = 0.0
+                            try:
+                                async with httpx.AsyncClient(timeout=2.0) as client:
+                                    bin_sym = format_ticker(sym, "binance")
+                                    # Funding rate (recent)
+                                    fr_url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={bin_sym}&limit=1"
+                                    r = await client.get(fr_url)
+                                    if r.status_code == 200:
+                                        j = r.json()
+                                        if isinstance(j, list) and j:
+                                            fr = j[0].get("fundingRate")
+                                            macro["funding_rate"] = float(fr) if fr is not None else 0.0
+                                    # Open interest
+                                    oi_url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={bin_sym}"
+                                    r2 = await client.get(oi_url)
+                                    if r2.status_code == 200:
+                                        j2 = r2.json()
+                                        oi = j2.get("openInterest")
+                                        try:
+                                            current_oi = float(oi)
+                                        except Exception:
+                                            current_oi = 0.0
+                                        prev_raw = state.get_sync(f"market:open_interest:{bin_sym}")
+                                        prev = None
+                                        try:
+                                            prev = float(prev_raw) if prev_raw is not None else None
+                                        except Exception:
+                                            prev = None
+                                        if prev and prev > 0:
+                                            macro["open_interest_change"] = (current_oi - prev) / prev
+                                        else:
+                                            macro["open_interest_change"] = 0.0
+                                        try:
+                                            state.set_sync(f"market:open_interest:{bin_sym}", str(current_oi))
+                                        except Exception:
+                                            pass
+                                    # Orderbook imbalance (top levels)
+                                    depth_url = f"https://api.binance.com/api/v3/depth?symbol={bin_sym}&limit=5"
+                                    r3 = await client.get(depth_url)
+                                    if r3.status_code == 200:
+                                        j3 = r3.json()
+                                        bids = j3.get("bids") or []
+                                        asks = j3.get("asks") or []
+                                        bid_vol = sum(float(b[1]) for b in bids[:5]) if bids else 0.0
+                                        ask_vol = sum(float(a[1]) for a in asks[:5]) if asks else 0.0
+                                        if (bid_vol + ask_vol) > 0:
+                                            macro["orderbook_imbalance"] = (bid_vol - ask_vol) / (bid_vol + ask_vol)
+                                        else:
+                                            macro["orderbook_imbalance"] = 0.0
+                            except Exception:
+                                pass
+                        # Default zeros for non-crypto or failures
+                        macro.setdefault("funding_rate", 0.0)
+                        macro.setdefault("open_interest_change", 0.0)
+                        macro.setdefault("orderbook_imbalance", 0.0)
+                        macro.setdefault("news_sentiment", 0.0)
+                        return macro
+                    except Exception:
+                        return {"funding_rate": 0.0, "open_interest_change": 0.0, "orderbook_imbalance": 0.0, "news_sentiment": 0.0}
+
+                macro = await _fetch_alt()
+                # Attach macro into each timeframe payload for ML helpers to consume
+                for tf, payload in list(out.items()):
+                    if not isinstance(payload, dict):
+                        continue
+                    payload.setdefault("_macro", {})
+                    # Merge top-level macro fields without overwriting existing keys
+                    for k, v in macro.items():
+                        payload["_macro"].setdefault(k, v)
+                # Also expose a root-level _macro so callers that pass the whole
+                # market_data mapping (e.g. engine.core.extract_features) can read it.
+                try:
+                    out.setdefault("_macro", {})
+                    for k, v in macro.items():
+                        out["_macro"].setdefault(k, v)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+            # Best-effort write-through into Postgres cache tables.
         if _env_bool("MARKET_CACHE_WRITE_THROUGH", True):
             try:
                 from datetime import datetime

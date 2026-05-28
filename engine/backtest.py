@@ -1,3 +1,84 @@
+import os
+from typing import Dict, Iterable, List, Optional
+import pandas as pd
+from datetime import datetime
+
+from utils.async_runner import run_sync
+from engine.strategies.signal_generator import SignalGenerator
+from engine.signal_deduplicator import SignalDeduplicator
+from data.indicators import calculate_indicators
+
+
+class BacktestRunner:
+    """Lightweight backtest runner that replays OHLCV candles and invokes
+    the same signal generation logic used in the live engine.
+    """
+
+    def __init__(self, data_frames: Optional[Dict[str, pd.DataFrame]] = None):
+        # data_frames: mapping like {"BTCUSDT|5m": DataFrame}
+        self.data_frames = data_frames or {}
+        self.signal_gen = SignalGenerator()
+        self.dedup = SignalDeduplicator()
+
+    @staticmethod
+    def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+        df = df.copy()
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+            df = df.sort_values("timestamp").reset_index(drop=True)
+        return df
+
+    def load_from_parquet(self, path: str) -> pd.DataFrame:
+        df = pd.read_parquet(path)
+        return self.normalize_df(df)
+
+    def _key(self, asset: str, tf: str) -> str:
+        return f"{asset.upper()}|{tf}"
+
+    def register_dataframe(self, asset: str, tf: str, df: pd.DataFrame) -> None:
+        self.data_frames[self._key(asset, tf)] = self.normalize_df(df)
+
+    def get_df(self, asset: str, tf: str) -> Optional[pd.DataFrame]:
+        return self.data_frames.get(self._key(asset, tf))
+
+    def run_backtest(self, assets: Iterable[str], timeframes: Iterable[str], start: datetime, end: datetime, include_ml: bool = False) -> Dict[str, List[dict]]:
+        out: Dict[str, List[dict]] = {a: [] for a in assets}
+        for asset in assets:
+            for tf in timeframes:
+                df = self.get_df(asset, tf)
+                if df is None or df.empty:
+                    continue
+                # filter window
+                mask = (df["timestamp"] >= pd.to_datetime(start, utc=True)) & (df["timestamp"] <= pd.to_datetime(end, utc=True))
+                window = df.loc[mask]
+                if window.empty or len(window) < 60:
+                    continue
+                # iterate over rows, starting after warmup
+                for idx in range(50, len(window)):
+                    slice_df = window.iloc[: idx + 1]
+                    candles = slice_df.tail(300)[["timestamp", "open", "high", "low", "close", "volume"]].to_dict("records")
+                    indicators = calculate_indicators(slice_df)
+                    market_data = {"candles": candles, "indicators": indicators}
+                    try:
+                        signals = self.signal_gen.generate_signals(asset, tf, market_data)
+                        for sig in signals:
+                            # Map StrategySignal to dict shape similar to live flow
+                            sig_dict = {
+                                "asset": asset,
+                                "timeframe": tf,
+                                "direction": sig.direction,
+                                "entry": float(sig.entry),
+                                "stop_loss": float(sig.stop_loss),
+                                "take_profit": sig.take_profit,
+                                "score": float(sig.score),
+                                "strategy_name": sig.strategy_name,
+                                "strategy_group": sig.strategy_group,
+                                "confidence": float(sig.confidence),
+                            }
+                            out[asset].append(sig_dict)
+                    except Exception:
+                        continue
+        return out
 """
 Backtest Engine
 - Walk-forward testing
