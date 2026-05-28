@@ -390,7 +390,7 @@ async def _resend_unsent_signals_async():
 
 import os
 from config import config, resolve_database_url
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from signalrank_telegram.httpx_config import httpx_client
 
 def _audit_handler(command_name: str, handler):
@@ -3877,7 +3877,25 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("notify", _audit_handler("notify", notify_command)))
     application.add_handler(CommandHandler("feedback", _audit_handler("feedback", feedback_command)))
     application.add_handler(CommandHandler("analyze", _audit_handler("analyze", analyze_command)))
-    application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
+    try:
+        application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
+    except NameError:
+        async def _filter_placeholder(update, context):
+            try:
+                if getattr(update, "message", None) is not None:
+                    await update.message.reply_text("This command is currently unavailable.")
+            except Exception:
+                pass
+        application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_placeholder)))
+
+    # Unknown command handler: capture any /unknown_command and respond gracefully
+    async def _handle_unknown_command(update, context):
+        try:
+            if getattr(update, "message", None) is not None:
+                await update.message.reply_text("Unknown command. Send /help for available commands.")
+        except Exception:
+            pass
+    application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
