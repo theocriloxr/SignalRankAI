@@ -12,6 +12,7 @@ from engine.market_state import get_market_state_async
 from db.repository import persist_signal, persist_decision_log
 from db import models
 from db.session import async_session
+from core.redis_state import state
 from datetime import datetime
 from core.telemetry import observe_engine_cycle, observe_engine_task, observe_ml_confidence, observe_signal_generated, trace_span
 
@@ -21,6 +22,29 @@ logger = logging.getLogger(__name__)
 signal_gen = SignalGenerator()
 dedup = SignalDeduplicator()
 ml_tracker = MLRejectionTracker()
+
+
+def _apply_drift_confidence_adjustment(confidence: float | None) -> tuple[float | None, dict]:
+    """Reduce confidence when live drift penalties are active."""
+    try:
+        mode = str(state.get_sync("signalrankai:ml:drift:mode") or "").strip().lower()
+        severity = float(state.get_sync("signalrankai:ml:drift:severity") or 0.0)
+    except Exception:
+        return confidence, {}
+
+    if mode not in {"penalize", "reduce", "both"} or severity <= 0:
+        return confidence, {}
+
+    base_multiplier = float(os.getenv("ML_DRIFT_CONFIDENCE_MULTIPLIER", "0.75") or 0.75)
+    floor = float(os.getenv("ML_DRIFT_CONFIDENCE_FLOOR", "0.25") or 0.25)
+    severity = max(0.0, min(1.0, severity))
+    multiplier = max(floor, min(1.0, base_multiplier - (0.5 * severity)))
+
+    if confidence is None:
+        return None, {"mode": mode, "severity": severity, "multiplier": multiplier}
+
+    adjusted = max(0.01, min(1.0, float(confidence) * multiplier))
+    return adjusted, {"mode": mode, "severity": severity, "multiplier": multiplier}
 
 
 async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool = False) -> list:
@@ -87,6 +111,10 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                 )
                 continue
             try:
+                adjusted_confidence, drift_meta = _apply_drift_confidence_adjustment(sig.confidence)
+                if adjusted_confidence is not None:
+                    sig.confidence = adjusted_confidence
+
                 signal_data = {
                     "asset": asset,
                     "timeframe": timeframe,
@@ -105,6 +133,16 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     signals.append(signal_obj)
                     observe_signal_generated(asset, timeframe)
                     await dedup.register_signal(asset, timeframe, sig.direction, sig.entry)
+                    if drift_meta:
+                        await persist_decision_log(
+                            signal_obj.signal_id,
+                            asset,
+                            timeframe,
+                            "issued",
+                            reason=f"{sig.strategy_name} ({sig.score:.0f}) drift-adjusted",
+                            meta={"strategy_group": sig.strategy_group, "drift": drift_meta},
+                        )
+                        continue
                     await persist_decision_log(
                         signal_obj.signal_id,
                         asset,

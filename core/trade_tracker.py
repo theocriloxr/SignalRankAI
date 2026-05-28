@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 import yfinance as yf
 import requests
+import os
 
 from core.redis_state import state
 from services.asset_mapper import classify_asset
@@ -246,6 +247,18 @@ def _trade_key(signal: dict) -> tuple:
     return ("fallback", symbol, direction, timeframe, str(entry), str(stop))
 
 def open_trades():
+    try:
+        payloads = state.get_active_trades_sync() or {}
+    except Exception:
+        payloads = None
+
+    if payloads == {} and os.getenv("REDIS_URL"):
+        if open_trades_list:
+            open_trades_list.clear()
+        global _ACTIVE_TRADES_LOADED
+        _ACTIVE_TRADES_LOADED = True
+        return []
+
     if not open_trades_list:
         _load_open_trades_from_state()
     return list(open_trades_list)

@@ -211,7 +211,7 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
     return out
 
 
-async def load_training_data():
+async def load_training_data(lookback_days: int = 90):
     """Load signals + outcomes from Postgres."""
     try:
         from db.session import get_session
@@ -298,8 +298,9 @@ async def load_training_data():
             return 0.0
 
         async with get_session() as session:
-            # Get signals delivered in last 90 days with outcomes
-            cutoff = datetime.utcnow() - timedelta(days=90)
+            # Get signals delivered in the requested lookback window with outcomes
+            cutoff_days = max(1, int(lookback_days or 90))
+            cutoff = datetime.utcnow() - timedelta(days=cutoff_days)
 
             stmt = (
                 select(Signal, Outcome)
@@ -914,11 +915,17 @@ def save_model(model, feature_cols, calibration_x=None, calibration_y=None, trai
     return model_path
 
 
-async def main():
+async def main(lookback_days: int | None = None):
     logger.info("Starting ML model training...")
 
+    if lookback_days is None:
+        try:
+            lookback_days = int(os.getenv("ML_TRAIN_LOOKBACK_DAYS", "90") or 90)
+        except Exception:
+            lookback_days = 90
+
     # Load data
-    df = await load_training_data()
+    df = await load_training_data(int(lookback_days or 90))
     min_rows = int(os.getenv("ML_MIN_TRAIN_ROWS", "10") or 10)
     bootstrap_enabled = _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True)
     bootstrap_rows = int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)

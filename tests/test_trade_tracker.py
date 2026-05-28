@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
+import os
 
 from core.trade_tracker import (
     TradeRecord,
@@ -10,6 +11,7 @@ from core.trade_tracker import (
     price_hit_sl,
     update_trade_outcomes,
     open_trades_list,
+    open_trades,
 )
 
 
@@ -96,6 +98,24 @@ class TestTradeTracker(unittest.TestCase):
 
         self.assertIs(first, second)
         self.assertEqual(len(open_trades_list), 1)
+
+    @patch.dict(os.environ, {"REDIS_URL": "redis://example"}, clear=False)
+    @patch("core.trade_tracker.state.get_active_trades_sync", return_value={})
+    def test_open_trades_clears_stale_cache_when_state_empty(self, mock_state):
+        signal = {
+            "id": "sig_stale",
+            "symbol": "BTCUSDT",
+            "direction": "long",
+            "entry": 50000.0,
+            "stop_loss": 49000.0,
+            "take_profit": 52000.0,
+            "timestamp": _utcnow_naive_iso(),
+        }
+        add_trade(signal)
+
+        self.assertEqual(len(open_trades_list), 1)
+        self.assertEqual(open_trades(), [])
+        self.assertEqual(len(open_trades_list), 0)
 
     @patch('core.trade_tracker._get_current_price')
     def test_price_hit_tp_long(self, mock_price):

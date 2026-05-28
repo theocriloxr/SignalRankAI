@@ -539,6 +539,7 @@ from .commands import (
     report_command,
     feedback_command,
     notify_command,
+    filter_command,
     selfcheck_command,
     ops_health_command,
     myid_command,

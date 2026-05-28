@@ -34,6 +34,11 @@ except Exception:
 # Rate limiting state
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
+def get_candles(symbol: str, timeframe: str, limit: int = 200):
+    """Primary multi-provider candle fetcher (sync).
+
+    Tries multiple providers depending on asset class and falls back to cached results.
+    """
         # 0. Yahoo Finance (preferred when available)
         yf_sym = map_symbol(symbol, "yfinance") if cls else symbol
         result = fetch_yahoo_candles(yf_sym or symbol, timeframe)
@@ -161,13 +166,17 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
         return []
 
     try:
-        proxy_url = proxy_manager.get_proxy_sync()
+        proxy_url = (
+            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
+            or proxy_manager.get_proxy_sync()
+        )
         exchange_config: dict = {
             "enableRateLimit": True,
             "timeout": 2500,
         }
         if proxy_url:
             exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
+            exchange_config["proxy"] = proxy_url
         exchange = ccxt.binance(exchange_config)
         rows = exchange.fetch_ohlcv(
             _normalize_binance_symbol(symbol),

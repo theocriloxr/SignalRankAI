@@ -19,6 +19,7 @@ import signal
 import threading
 from typing import Optional
 
+from core.redis_state import state
 from db.session import get_session, run_with_db_retry, is_db_configured
 from db.repository import expire_subscriptions
 
@@ -212,14 +213,32 @@ class Worker:
             except asyncio.TimeoutError:
                 continue
 
+    async def _drift_retrain_once(self, ml_train_module, lookback_days: int = 7) -> None:
+        try:
+            logger.warning("[worker] starting drift-triggered ML retrain lookback_days=%s", lookback_days)
+            ok = await ml_train_module.main(lookback_days=max(1, int(lookback_days or 7)))
+            if ok:
+                logger.info("[worker] drift-triggered ML retrain completed successfully")
+            else:
+                logger.info("[worker] drift-triggered ML retrain skipped/failed")
+        except Exception as exc:
+            logger.error("[worker] drift-triggered ML retrain error: %s", exc)
+        finally:
+            try:
+                state.set_sync("signalrankai:ml:drift:retrain_running", "0", ex=300)
+            except Exception:
+                pass
+
     async def _drift_monitor_loop(self) -> None:
         """Compare live feature distributions against baseline and alert admins on drift."""
         interval = max(900, int(os.getenv("ML_DRIFT_CHECK_INTERVAL_SECONDS", "3600") or 3600))
         psi_threshold = float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
+        retrain_on_drift = str(os.getenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")).strip().lower() in {"1", "true", "yes", "on"}
 
         while not self._stop.is_set():
             try:
                 from ml.drift_monitor import detect_feature_drift
+                from ml import train_model as ml_train
 
                 baseline_path = os.getenv("ML_BASELINE_FEATURE_STATS_PATH", "ml/baseline_feature_stats.json")
                 live_path = os.getenv("ML_LIVE_FEATURE_STATS_PATH", "ml/live_feature_stats.json")
@@ -239,7 +258,30 @@ class Worker:
                 )
 
                 if bool(result.get("drift_detected")):
+                    severity = 0.0
+                    try:
+                        severity = max(float(v) for v in (result.get("psi_scores") or {}).values())
+                    except Exception:
+                        severity = float(psi_threshold)
+                    try:
+                        state.set_sync("signalrankai:ml:drift:mode", "penalize", ex=max(1800, interval * 2))
+                        state.set_sync("signalrankai:ml:drift:severity", f"{severity:.6f}", ex=max(1800, interval * 2))
+                        state.set_sync("signalrankai:ml:drift:detected_at", str(time.time()), ex=max(1800, interval * 2))
+                    except Exception:
+                        pass
                     await self._notify_admin_drift(result)
+                    if retrain_on_drift and str(state.get_sync("signalrankai:ml:drift:retrain_running") or "").strip() != "1":
+                        try:
+                            state.set_sync("signalrankai:ml:drift:retrain_running", "1", ex=max(1800, interval * 2))
+                            asyncio.create_task(self._drift_retrain_once(ml_train, lookback_days=7))
+                        except Exception as exc:
+                            logger.debug("[worker] could not schedule drift retrain: %s", exc)
+                else:
+                    try:
+                        state.set_sync("signalrankai:ml:drift:mode", "normal", ex=max(600, interval))
+                        state.set_sync("signalrankai:ml:drift:severity", "0", ex=max(600, interval))
+                    except Exception:
+                        pass
             except Exception as exc:
                 logger.debug("[worker] drift monitor skipped: %s", exc)
 
