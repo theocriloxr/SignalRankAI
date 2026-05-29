@@ -90,10 +90,116 @@ def _utcnow() -> datetime:
     return datetime.utcnow()
 
 
+class SignalDedupBlocked(RuntimeError):
+    def __init__(self, reason: str, signal_id: str | None = None):
+        super().__init__(reason)
+        self.reason = reason
+        self.signal_id = signal_id
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
+def _parse_interval_hours(*, default: float, env_names: tuple[str, ...]) -> float:
+    for name in env_names:
+        raw = (os.getenv(name) or "").strip()
+        if not raw:
+            continue
+        try:
+            lower = raw.lower()
+            if lower.endswith("ms"):
+                return max(0.0, float(lower[:-2]) / 3_600_000.0)
+            if lower.endswith("s"):
+                return max(0.0, float(lower[:-1]) / 3600.0)
+            if lower.endswith("m"):
+                return max(0.0, float(lower[:-1]) / 60.0)
+            if lower.endswith("h"):
+                return max(0.0, float(lower[:-1]))
+            if name == "SIGNAL_MIN_INTERVAL":
+                return max(0.0, float(lower))
+            return max(0.0, float(lower))
+        except Exception:
+            continue
+    return max(0.0, float(default))
+
+
+def _asset_matches(signal_asset: str, candidate_asset: str) -> bool:
+    return str(signal_asset or "").upper().strip() == str(candidate_asset or "").upper().strip()
+
+
+def _entry_within_buffer(new_entry: float, existing_entry: float, buffer_pct: float) -> bool:
+    try:
+        new_val = abs(float(new_entry))
+        existing_val = abs(float(existing_entry))
+        base = max(new_val, existing_val, 1e-9)
+        delta_pct = abs(new_val - existing_val) / base * 100.0
+        return delta_pct <= max(0.0, float(buffer_pct))
+    except Exception:
+        return False
+
+
+def _active_trade_signal_id_for_asset(active_trades: Any, asset: str) -> str | None:
+    for payload in (active_trades or {}).values():
+        if not isinstance(payload, dict):
+            continue
+        signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else payload
+        if not isinstance(signal, dict):
+            continue
+        if not _asset_matches(asset, signal.get("asset") or signal.get("symbol") or ""):
+            continue
+        signal_id = signal.get("signal_id") or signal.get("id") or payload.get("signal_id")
+        if signal_id:
+            return str(signal_id)
+        return None
+    return None
+
+
+def _active_trade_has_asset(active_trades: Any, asset: str) -> bool:
+    for payload in (active_trades or {}).values():
+        if not isinstance(payload, dict):
+            continue
+        signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else payload
+        if not isinstance(signal, dict):
+            continue
+        if _asset_matches(asset, signal.get("asset") or signal.get("symbol") or ""):
+            return True
+    return False
+
+
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()
     direction: str = str(signal.get("direction") or "").lower().strip()
+
+    def _normalize_timestamp(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, datetime):
+            dt = value.replace(tzinfo=None) if value.tzinfo else value
+            return dt.isoformat(timespec="seconds")
+        try:
+            if isinstance(value, (int, float)):
+                if float(value) > 10_000_000_000:
+                    dt = datetime.utcfromtimestamp(float(value) / 1000.0)
+                else:
+                    dt = datetime.utcfromtimestamp(float(value))
+                return dt.replace(microsecond=0).isoformat()
+        except Exception:
+            pass
+        text = str(value).strip()
+        if not text:
+            return ""
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed.replace(microsecond=0).isoformat()
+        except Exception:
+            return text
 
     def _round(v: Any) -> str:
         try:
@@ -111,8 +217,14 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
 
     strategy_group: str = str(signal.get("strategy_group") or "").lower().strip()
     strategy_name: str = str(signal.get("strategy_name") or signal.get("strategy") or "").lower().strip()
+    candle_timestamp: str = _normalize_timestamp(
+        signal.get("candle_timestamp")
+        or signal.get("candle_time")
+        or signal.get("source_candle_timestamp")
+        or signal.get("bar_timestamp")
+    )
 
-    raw: str = f"{asset}|{timeframe}|{direction}|{entry}|{sl}|{tp_norm}|{strategy_group}|{strategy_name}"
+    raw: str = f"{asset}|{timeframe}|{direction}|{entry}|{sl}|{tp_norm}|{strategy_group}|{strategy_name}|{candle_timestamp}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
 
 
@@ -171,6 +283,80 @@ async def get_or_create_signal(
             tp_str = _tp_json.dumps([float(take_profit)])
         except Exception:
             tp_str = _tp_json.dumps([str(take_profit)])
+
+    min_interval_hours: float = _parse_interval_hours(
+        default=2.0,
+        env_names=("SIGNAL_MIN_INTERVAL_HOURS", "SIGNAL_MIN_INTERVAL"),
+    )
+    price_buffer_pct: float = max(0.0, _env_float("SIGNAL_PRICE_BUFFER_PCT", 0.5))
+
+    active_signal_id: str | None = None
+    try:
+        from core.redis_state import state
+
+        active_trades = state.get_active_trades_sync() or {}
+        if _active_trade_has_asset(active_trades, asset):
+            active_signal_id = _active_trade_signal_id_for_asset(active_trades, asset)
+            if active_signal_id:
+                res_active: Result[Tuple[Signal]] = await session.execute(
+                    select(Signal).where(Signal.signal_id == active_signal_id)
+                )
+                existing_active = res_active.scalar_one_or_none()
+                if existing_active is not None:
+                    return existing_active
+            raise SignalDedupBlocked("active_trade", signal_id=active_signal_id)
+    except SignalDedupBlocked:
+        raise
+    except Exception:
+        pass
+
+    if min_interval_hours > 0:
+        min_interval_cutoff = now - timedelta(hours=float(min_interval_hours))
+        try:
+            res_recent: Result[Tuple[Signal]] = await session.execute(
+                select(Signal).where(
+                    and_(
+                        Signal.asset == asset,
+                        Signal.created_at >= min_interval_cutoff,
+                    )
+                ).order_by(Signal.created_at.desc())
+            )
+            recent_signal = res_recent.scalars().first()
+            if recent_signal is not None:
+                return recent_signal
+        except Exception:
+            pass
+
+    if cutoff is not None:
+        try:
+            res_fuzzy: Result[Tuple[Signal]] = await session.execute(
+                select(Signal).where(
+                    and_(
+                        Signal.asset == asset,
+                        Signal.created_at >= cutoff,
+                    )
+                ).order_by(Signal.created_at.desc())
+            )
+            for candidate in res_fuzzy.scalars().all():
+                try:
+                    if str(candidate.timeframe or "").lower().strip() != timeframe:
+                        continue
+                    if str(candidate.direction or "").lower().strip() != direction:
+                        continue
+                    if float(candidate.stop_loss or 0) != stop_loss:
+                        continue
+                    if str(candidate.take_profit or "") != str(tp_str):
+                        continue
+                    if str(candidate.strategy_group or "") != str(signal.get("strategy_group") or "unknown"):
+                        continue
+                    if str(candidate.strategy_name or "") != str(signal.get("strategy_name") or signal.get("strategy") or "unknown"):
+                        continue
+                    if _entry_within_buffer(entry, float(candidate.entry or 0), price_buffer_pct):
+                        return candidate
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
     rr_estimate = None
     try:

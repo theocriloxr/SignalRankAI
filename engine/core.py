@@ -23,7 +23,7 @@ import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
-from datetime import datetime, timedelta as _timedelta
+from datetime import datetime, timedelta as _timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -431,6 +431,33 @@ def _asset_class_key(asset: str) -> str:
     if is_stock(sym):
         return "stock"
     return "other"
+
+
+def _latest_candle_timestamp(candles: Any) -> datetime | None:
+    if not isinstance(candles, list) or not candles:
+        return None
+    last = candles[-1]
+    if not isinstance(last, dict):
+        return None
+    raw = last.get("timestamp") or last.get("time") or last.get("t") or last.get("datetime")
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw.replace(tzinfo=None) if raw.tzinfo else raw
+    try:
+        if isinstance(raw, (int, float)):
+            if float(raw) > 10_000_000_000:
+                return datetime.utcfromtimestamp(float(raw) / 1000.0)
+            return datetime.utcfromtimestamp(float(raw))
+    except Exception:
+        pass
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(timezone.utc)
+        return parsed.replace(tzinfo=None)
+    except Exception:
+        return None
 
 
 def _counts_from_active_trades(active_trades: dict[str, dict[str, Any]] | None) -> tuple[dict[str, int], dict[str, int]]:
@@ -1361,6 +1388,13 @@ def main_loop(DRY_RUN: bool = False):
                     seen = set()
                     for sig in selected_signals:
                         try:
+                            tf = sig.get('timeframe') or (list(market_data.keys())[0] if market_data else None)
+                            tf_data = market_data.get(tf, {}) if tf else {}
+                            candles = tf_data.get('candles', []) if isinstance(tf_data, dict) else []
+                            if not sig.get('candle_timestamp'):
+                                candle_timestamp = _latest_candle_timestamp(candles)
+                                if candle_timestamp is not None:
+                                    sig['candle_timestamp'] = candle_timestamp
                             fp = compute_signal_fingerprint(sig)
                         except Exception:
                             fp = None

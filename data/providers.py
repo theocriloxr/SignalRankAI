@@ -782,11 +782,23 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
     MT5 (if configured) is tried first for all asset classes when
     META_API_TOKEN is set (via the async mt5_client; sync fallback skips it).
     """
-    # Keep a minimal, import-safe fallback waterfall that prefers the CCXT path.
+    # Prefer Binance CCXT first, then fall back to the wider multi-provider
+    # fetcher so we can still resolve candles through Yahoo, AlphaVantage,
+    # Twelve Data, Polygon, CoinGecko, Bybit, or CryptoCompare when available.
     try:
         result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
         if result and len(result) >= 1:
             return result[-limit:]
     except Exception:
         pass
+
+    try:
+        from data.fetcher import get_candles as _get_candles
+
+        result = _get_candles(symbol, timeframe)
+        if result and len(result) >= 1:
+            return result[-limit:]
+    except Exception:
+        pass
+
     return []

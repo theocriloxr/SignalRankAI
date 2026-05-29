@@ -43,7 +43,7 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
         raise RuntimeError("DATABASE_URL not configured. Postgres is required.")
 
     async def _impl() -> str:
-        from db.pg_features import get_or_create_signal
+        from db.pg_features import SignalDedupBlocked, get_or_create_signal
         import os
 
         dedup_hours = signal.get("dedup_hours", signal.get("_dedup_hours"))
@@ -59,7 +59,10 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
                 dedup_hours = 24
 
         async with get_session() as session:
-            s = await get_or_create_signal(session, signal, dedup_hours=dedup_hours)
+            try:
+                s = await get_or_create_signal(session, signal, dedup_hours=dedup_hours)
+            except SignalDedupBlocked as exc:
+                return str(exc.signal_id or "")
             await session.commit()
             return s.signal_id
 
