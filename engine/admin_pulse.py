@@ -161,17 +161,49 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
             logger.exception("[admin_pulse] gemini weekly review failed: %s", exc)
             return False
 
-        # Build message: concise top-level summary + link to full review stored in runtime_state
+        # Build message: concise top-level summary + short delivered vs shadow outcome table
         summary = review.get("review") if isinstance(review, dict) else str(review or "")
         stats = review.get("aggregate") if isinstance(review, dict) else {}
+
+        # Delivered outcomes (DB): last window_days days
+        delivered_total = delivered_wins = delivered_losses = 0
+        try:
+            from db.session import get_session
+            from sqlalchemy import text
+            since = datetime.utcnow() - timedelta(days=max(1, int(window_days or 7)))
+            async with get_session() as session:
+                row = (await session.execute(
+                    text(
+                        "SELECT COUNT(*) AS total, SUM(CASE WHEN o.status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) AS wins, SUM(CASE WHEN o.status = 'sl' THEN 1 ELSE 0 END) AS losses FROM outcomes o WHERE o.closed_at >= :since"
+                    ), {"since": since}
+                )).first()
+                if row:
+                    delivered_total = int(row[0] or 0)
+                    delivered_wins = int(row[1] or 0)
+                    delivered_losses = int(row[2] or 0)
+        except Exception:
+            delivered_total = delivered_wins = delivered_losses = 0
+
+        # Shadow outcomes: prefer Redis counters, but also try DB ml_rejected_signals if available
+        try:
+            total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
+            false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
+            correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
+            partial_win = int(state.get_sync("shadow:counts:partial_win") or 0)
+        except Exception:
+            total_tracked = false_neg = correct_block = partial_win = 0
+
         txt = (
             f"Weekly Filter Efficacy Report ({window_days}d)\n\n"
-            f"Signals Issued: {stats.get('issued', 0)}  Rejected: {stats.get('rejected_or_skipped', 0)}\n"
-            f"Outcomes Total: {stats.get('outcomes_total', 0)} Wins: {stats.get('wins', 0)} Losses: {stats.get('losses', 0)}\n\n"
+            f"Signals Issued (recent): {stats.get('issued', 0)}  Rejected: {stats.get('rejected_or_skipped', 0)}\n"
+            f"Outcomes (recent): total={stats.get('outcomes_total',0)} wins={stats.get('wins',0)} losses={stats.get('losses',0)}\n\n"
+            "Delivered vs Shadow outcomes (last period):\n"
+            f"- Delivered: total={delivered_total} | wins={delivered_wins} | losses={delivered_losses}\n"
+            f"- Shadow (tracked rejects): total={total_tracked} | false_negatives={false_neg} | correct_blocks={correct_block} | partial_wins={partial_win}\n\n"
         )
-        # Truncate review text to keep Telegram messages reasonable; attach long review in chunks.
+        # Truncate review text to keep Telegram messages reasonable; include top recommendations snippet.
         if summary:
-            snippet = summary[:3500]
+            snippet = summary[:2000]
             txt += f"Top Recommendations:\n{snippet}\n"
 
         import requests
