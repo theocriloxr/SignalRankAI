@@ -170,6 +170,9 @@ except Exception as e:
 # Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
+_last_macro_snapshot_at: datetime | None = None
+_macro_snapshot_cache: dict[str, float] | None = None
+_macro_snapshot_refresh_seconds: int = max(300, _env_int("MACRO_SNAPSHOT_REFRESH_SECONDS", 900))
 
 
 @dataclass(slots=True)
@@ -900,6 +903,13 @@ def main_loop(DRY_RUN: bool = False):
 
     async def _fetch_macro_snapshot() -> Dict[str, float]:
         """Fetch macro context once per cycle for all assets."""
+        global _last_macro_snapshot_at, _macro_snapshot_cache
+        now_dt = datetime.utcnow()
+        if _macro_snapshot_cache is not None and _last_macro_snapshot_at is not None:
+            elapsed = (now_dt - _last_macro_snapshot_at).total_seconds()
+            if elapsed < float(_macro_snapshot_refresh_seconds):
+                return dict(_macro_snapshot_cache)
+
         macro: Dict[str, float] = {}
         try:
             from services.economic_calendar import get_macro_news_context
@@ -940,6 +950,8 @@ def main_loop(DRY_RUN: bool = False):
             "btc_corr": 0.0,
             "spx_trend": 0.0,
         })
+        _macro_snapshot_cache = dict(macro)
+        _last_macro_snapshot_at = now_dt
         return macro
     def _resolve_timeframes(env_key: str) -> list[str]:
         raw = os.getenv(env_key, _tf_default)
