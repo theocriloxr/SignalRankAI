@@ -1,0 +1,141 @@
+"""
+engine/admin_pulse.py
+
+Hourly admin pulse that computes engine health summary, including shadow regret
+metrics, and posts to owner/admin Telegram IDs.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import time
+from datetime import datetime, timedelta
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
+    """Collect engine health stats for the last `window_hours` hours."""
+    try:
+        from db.session import get_session
+        from sqlalchemy import text
+        from core.redis_state import state
+
+        since = datetime.utcnow() - timedelta(hours=max(1, int(window_hours or 1)))
+        params = {"since": since}
+        async with get_session() as session:
+            # Total scanned ~ signals considered (using decision_log entries)
+            scanned_row = (
+                await session.execute(
+                    text("SELECT COUNT(*) FROM decision_log WHERE created_at >= :since"),
+                    params,
+                )
+            ).first()
+            scanned = int(scanned_row[0] or 0) if scanned_row else 0
+
+            # Rejected by risk / score
+            rej_rows = (
+                await session.execute(
+                    text("SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"),
+                    params,
+                )
+            ).fetchall()
+            rejected_by = {str(r[0] or ""): int(r[1] or 0) for r in (rej_rows or [])}
+
+            # Delivered
+            delivered_row = (
+                await session.execute(
+                    text(
+                        "SELECT COUNT(DISTINCT signal_id) FROM signal_delivery WHERE created_at >= :since"
+                    ),
+                    params,
+                )
+            ).first()
+            delivered = int(delivered_row[0] or 0) if delivered_row else 0
+
+        # Shadow counters from Redis
+        try:
+            total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
+            false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
+            correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
+            partial_win = int(state.get_sync("shadow:counts:partial_win") or 0)
+        except Exception:
+            total_tracked = false_neg = correct_block = partial_win = 0
+
+        shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
+
+        return {
+            "scanned": scanned,
+            "rejected_by": rejected_by,
+            "delivered": delivered,
+            "shadow": {
+                "total_tracked": total_tracked,
+                "false_negative": false_neg,
+                "correct_block": correct_block,
+                "partial_win": partial_win,
+                "shadow_winner_rate_pct": shadow_winner_rate,
+            },
+            "generated_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as exc:
+        logger.error("[admin_pulse] compute error: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        logger.debug("[admin_pulse] no telegram token configured")
+        return False
+    try:
+        from config import OWNER_IDS, ADMIN_IDS
+        recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
+        if not recipients:
+            logger.debug("[admin_pulse] no recipients configured")
+            return False
+
+        stats = await compute_engine_health(window_hours=window_hours)
+        txt = (
+            f"Engine Pulse ({window_hours}h)\n\n"
+            f"Total Scanned: {stats.get('scanned', 0)}\n"
+            f"Delivered: {stats.get('delivered', 0)}\n"
+            "Rejected breakdown:\n"
+        )
+        for k, v in (stats.get("rejected_by") or {}).items():
+            txt += f"- {k}: {v}\n"
+        sh = stats.get("shadow") or {}
+        txt += (
+            f"\nShadow (tracked rejects): {sh.get('total_tracked', 0)}\n"
+            f"False Negatives (would have hit TP3): {sh.get('false_negative', 0)}\n"
+            f"Correct Blocks (would have hit SL): {sh.get('correct_block', 0)}\n"
+            f"Partial Wins: {sh.get('partial_win', 0)}\n"
+            f"Shadow Winner Rate: {sh.get('shadow_winner_rate_pct', 0.0):.1f}%\n"
+        )
+
+        import requests
+
+        for rid in recipients:
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": int(rid), "text": txt},
+                    timeout=6,
+                )
+            except Exception:
+                continue
+        return True
+    except Exception as exc:
+        logger.error("[admin_pulse] send error: %s", exc)
+        return False
+
+
+async def start_pulse_loop(interval_seconds: int = None) -> None:
+    interval = int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600) if interval_seconds is None else int(interval_seconds)
+    while True:
+        try:
+            await send_admin_pulse_via_telegram(window_hours=1)
+        except Exception:
+            logger.exception("[admin_pulse] loop send failed")
+        await asyncio.sleep(max(60, int(interval)))

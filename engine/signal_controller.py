@@ -394,6 +394,61 @@ class SignalController:
             return False
         s = self._normalize_signal(signal)
         key = (str(s.get("asset")), str(s.get("timeframe")), str(s.get("direction")))
+        # Optional correlation avoidance: don't emit if correlates too highly
+        try:
+            if os.getenv("ENABLE_CORRELATION_CHECK", "false").lower() in ("1", "true", "yes"):
+                try:
+                    from core.redis_state import state
+                    from engine.risk_manager import CorrelationManager
+                    from utils.async_runner import run_sync
+                    from data.market_data import fetch_market_data
+
+                    new_asset = str(s.get("asset") or "").upper().strip()
+                    tf = str(s.get("timeframe") or "").lower().strip()
+
+                    active = state.get_active_trades_sync() or {}
+                    existing_pairs = []
+                    for payload in (active or {}).values():
+                        try:
+                            asset = str(payload.get("symbol") or payload.get("asset") or payload.get("symbol") or "").upper().strip()
+                            if asset and asset != new_asset:
+                                existing_pairs.append(asset)
+                        except Exception:
+                            continue
+
+                    if existing_pairs:
+                        # Fetch recent market data for new and existing pairs in a thread
+                        def _fetch():
+                            return fetch_market_data(new_asset, [tf])
+
+                        data = run_sync(_fetch)
+                        # Build returns_data mapping symbol -> ndarray of pct returns
+                        returns_data = {}
+                        try:
+                            import numpy as np
+                            for asset in [new_asset] + existing_pairs:
+                                md = run_sync(lambda a=asset: fetch_market_data(a, [tf]))
+                                indicators = md.get(tf, {}).get("indicators") if md else None
+                                candles = md.get(tf, {}).get("candles") if md else None
+                                if candles and isinstance(candles, list) and len(candles) >= 5:
+                                    closes = [float(c.get("close") or c[4]) for c in candles if c]
+                                    if len(closes) >= 3:
+                                        rets = np.diff(closes) / closes[:-1]
+                                        returns_data[asset] = rets
+                        except Exception:
+                            returns_data = {}
+
+                        cm = CorrelationManager()
+                        ok, reason = cm.can_add_correlated_position(new_asset, existing_pairs, returns_data=returns_data)
+                        if not ok:
+                            self.audit_logger.info("Correlation block: %s -> %s", new_asset, reason)
+                            return False
+                except Exception:
+                    # On error, be permissive
+                    pass
+        except Exception:
+            pass
+
         return key not in self._cycle_seen
 
     def register(self, signal: Signal) -> None:
@@ -462,6 +517,74 @@ class SignalController:
             except Exception:
                 pass
         out.setdefault("rr_ratio", 0)
+
+        # If stop loss missing or extremely tight, try to compute ATR-based stops
+        try:
+            sl_val = out.get("stop_loss")
+            entry_val = out.get("entry")
+            tf = str(out.get("timeframe") or "1m").lower().strip()
+            asset = str(out.get("asset") or out.get("symbol") or "").upper().strip()
+            min_sl_pct = float(os.getenv("MIN_SL_PCT", "0.003"))
+            needs_atr = False
+            if entry_val is None:
+                needs_atr = False
+            else:
+                try:
+                    entry_f = float(entry_val)
+                    if sl_val is None:
+                        needs_atr = True
+                    else:
+                        sl_f = float(sl_val)
+                        if abs(entry_f - sl_f) / max(1e-9, entry_f) < min_sl_pct:
+                            needs_atr = True
+                except Exception:
+                    needs_atr = False
+
+            if needs_atr and asset:
+                from utils.async_runner import run_sync
+                from data.market_data import fetch_market_data
+                from engine.advanced_exit_manager import AdvancedExitManager
+
+                def _fetch():
+                    return fetch_market_data(asset, [tf])
+
+                try:
+                    md = run_sync(_fetch)
+                    tfdata = md.get(tf, {}) if md else {}
+                    indicators = tfdata.get("indicators") if tfdata else {}
+                    candles = tfdata.get("candles") if tfdata else None
+                    atr = None
+                    if indicators and isinstance(indicators, dict):
+                        # Prefer absolute ATR if provided
+                        atr = indicators.get("atr") or indicators.get("ATR") or indicators.get("atr_14")
+                    if atr is None and candles and isinstance(candles, list):
+                        # Fallback: approx ATR from highs/lows
+                        highs = [float(c.get("high") or (c[2] if isinstance(c, list) and len(c) > 2 else 0)) for c in candles]
+                        lows = [float(c.get("low") or (c[3] if isinstance(c, list) and len(c) > 3 else 0)) for c in candles]
+                        closes = [float(c.get("close") or (c[4] if isinstance(c, list) and len(c) > 4 else 0)) for c in candles]
+                        if len(highs) >= 5:
+                            import numpy as _np
+                            trs = []
+                            for i in range(1, len(closes)):
+                                tr = max(highs[i] - lows[i], abs(highs[i] - closes[i-1]), abs(lows[i] - closes[i-1]))
+                                trs.append(tr)
+                            if trs:
+                                atr = float(_np.mean(trs))
+
+                    if atr and entry_val is not None:
+                        adm = AdvancedExitManager()
+                        entry_f = float(entry_val)
+                        recent_low = min([float(c.get("low") or 0) for c in candles]) if candles else entry_f * 0.995
+                        recent_high = max([float(c.get("high") or 0) for c in candles]) if candles else entry_f * 1.005
+                        stops = adm.calculate_smart_stops(entry_f, float(atr), out.get("direction") or "long", entry_f, recent_low, recent_high, recent_low, recent_high)
+                        out["stop_loss"] = stops.get("stop_loss")
+                        # set take_profit list using tp1,tp2,tp3
+                        out["take_profit"] = [stops.get("tp1"), stops.get("tp2"), stops.get("tp3")]
+                        out["rr_ratio"] = stops.get("rr_tp1") or out.get("rr_ratio")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         return out
 

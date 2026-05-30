@@ -341,6 +341,34 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                 meta=_meta,
             )
         )
+        # Persist rejection immediately for ML outcome tracking so the
+        # adaptive learning pipeline can observe engine-rejected candidates
+        # without waiting for decision_log backfill.
+        try:
+            if decision in ("rejected", "skipped"):
+                try:
+                    features = dict(_meta or {})
+                    from engine.signal_deduplicator import MLRejectionTracker
+
+                    # Best-effort synchronous persist
+                    run_sync(
+                        _ml_rejection_tracker.persist_rejection(
+                            asset=sig.get("asset"),
+                            timeframe=sig.get("timeframe"),
+                            direction=sig.get("direction") or _meta.get("direction"),
+                            entry_price=sig.get("entry") or _meta.get("entry"),
+                            stop_loss=sig.get("stop_loss") or _meta.get("stop_loss"),
+                            take_profit_levels=sig.get("take_profit") or _meta.get("take_profit"),
+                            ml_probability=_meta.get("ml_probability"),
+                            rejection_reason=str(reason or _meta.get("reason") or "rejected")[:128],
+                            features=features,
+                            rejection_type="engine",
+                        )
+                    )
+                except Exception:
+                    logger.debug("[engine] persist_rejection best-effort failed", exc_info=True)
+        except Exception:
+            pass
     except Exception as e:
         logger.warning(f"[engine] Failed to publish analytics event: {e}")
         pass

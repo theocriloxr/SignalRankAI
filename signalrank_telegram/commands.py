@@ -4577,6 +4577,90 @@ async def gemini_review_command(update, context) -> None:
 		await update.message.reply_text(f"Could not load Gemini review: {exc}")
 
 
+async def gemini_analyze_command(update, context) -> None:
+	"""Admin-only: analyze a single asset with recent signals and rejections."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = list(context.args or [])
+	if not args:
+		await update.message.reply_text("Usage: /gemini_analyze SYMBOL [limit]")
+		return
+	asset = str(args[0] or "").upper().strip()
+	limit = int(args[1]) if len(args) > 1 else 20
+	from services.gemini_ml import analyze_asset
+
+	try:
+		res = await analyze_asset(asset=asset, limit=limit)
+		if not bool(res.get("ok", False)):
+			await update.message.reply_text(f"Analyze failed: {res.get('error')}")
+			return
+		await update.message.reply_text(f"Analysis for {asset}: {len(res.get('recent_signals', []))} signals, {len(res.get('recent_rejections', []))} rejections")
+	except Exception as exc:
+		await update.message.reply_text(f"Analyze error: {exc}")
+
+
+async def gemini_audit_command(update, context) -> None:
+	"""Admin-only: quick audit of recent losses and rejections."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = list(context.args or [])
+	limit = int(args[0]) if args else 50
+	from services.gemini_ml import audit_recent
+
+	try:
+		res = await audit_recent(limit=limit)
+		if not bool(res.get("ok", True)):
+			await update.message.reply_text(f"Audit failed: {res.get('error')}")
+			return
+		await update.message.reply_text(f"Recent losses: {len(res.get('recent_losses', []))}, recent rejections: {len(res.get('recent_rejections', []))}")
+	except Exception as exc:
+		await update.message.reply_text(f"Audit error: {exc}")
+
+
+async def gemini_predict_command(update, context) -> None:
+	"""Admin-only: predict/assess a candidate. Provide JSON or simple args.
+
+	Usage: /gemini_predict BTCUSD 1h long 123.4
+	"""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = list(context.args or [])
+	if not args:
+		await update.message.reply_text("Usage: /gemini_predict SYMBOL TIMEFRAME DIRECTION ENTRY")
+		return
+	try:
+		if len(args) == 1:
+			# try parse JSON
+			import json as _json
+
+			candidate = _json.loads(args[0])
+		else:
+			candidate = {"asset": args[0], "timeframe": args[1], "direction": args[2], "entry": float(args[3])}
+	except Exception as exc:
+		await update.message.reply_text(f"Candidate parse error: {exc}")
+		return
+	from services.gemini_ml import predict_candidate
+
+	try:
+		res = await predict_candidate(candidate)
+		if not bool(res.get("ok", False)):
+			await update.message.reply_text(f"Predict failed: {res.get('error')}")
+			return
+		dup = bool(res.get("is_duplicate"))
+		await update.message.reply_text(f"Duplicate: {dup}. Neighbors: {len(res.get('recent_neighbors', []))}")
+	except Exception as exc:
+		await update.message.reply_text(f"Predict error: {exc}")
+
+
 # -------- Premium commands --------
 @require_tier("PREMIUM")
 async def stats_command(update, context) -> None:

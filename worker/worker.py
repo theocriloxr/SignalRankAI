@@ -96,6 +96,15 @@ class Worker:
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
+        # Start shadow outcome tracker for ML-rejected signals
+        _enable_shadow = str(os.getenv("WORKER_SHADOW_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        if _enable_shadow:
+            try:
+                from engine.shadow_outcome_worker import shadow_outcome_worker
+                _register_task("shadow_outcome_tracker", lambda: shadow_outcome_worker.start(), restart_on_failure=True)
+                logger.info("[worker] ShadowOutcomeTracker started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
         else:
             logger.info("[worker] RealtimeOutcomeTracker disabled for this worker instance")
 
@@ -106,6 +115,16 @@ class Worker:
                 _register_task("market_monitor", lambda: start_market_monitor(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start market monitor: %s", e)
+
+        # Admin engine pulse (hourly) for owner/admin channels
+        _enable_pulse = str(os.getenv("WORKER_ENGINE_PULSE_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        if _enable_pulse:
+            try:
+                from engine.admin_pulse import start_pulse_loop
+                _register_task("engine_pulse", lambda: start_pulse_loop(), restart_on_failure=True)
+                logger.info("[worker] EnginePulse started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start EnginePulse: %s", e)
 
         if config.CRYPTO_WS_ENABLED:
             try:

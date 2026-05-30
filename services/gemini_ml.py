@@ -650,3 +650,286 @@ async def get_last_gemini_review() -> dict[str, Any] | None:
     if not row or row[0] is None:
         return None
     return dict(row[0]) if isinstance(row[0], dict) else None
+
+
+async def analyze_asset(asset: str, limit: int = 20) -> dict[str, Any]:
+    """Collect recent signals and rejections for a single asset and optionally run Gemini."""
+    if not asset:
+        return {"ok": False, "error": "asset required"}
+    a = str(asset or "").upper().strip()
+    limit = max(1, min(200, int(limit or 20)))
+    async with get_session() as session:
+        sigs = (
+            await session.execute(
+                text(
+                    """
+                    SELECT signal_id, asset, direction, entry, stop_loss, take_profit, timeframe, score, created_at
+                    FROM signals
+                    WHERE asset = :asset
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"asset": a, "limit": limit},
+            )
+        ).fetchall()
+
+        rejects = (
+            await session.execute(
+                text(
+                    """
+                    SELECT id, asset, timeframe, direction, entry, stop_loss, take_profit, ml_probability, rejection_reason, created_at
+                    FROM ml_rejected_signals
+                    WHERE asset = :asset
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                    """
+                ),
+                {"asset": a},
+            )
+        ).fetchall()
+        await session.commit()
+
+    recent = []
+    for r in (sigs or []):
+        recent.append({
+            "signal_id": str(r[0] or "")[:12],
+            "asset": str(r[1] or ""),
+            "direction": str(r[2] or ""),
+            "entry": float(r[3]) if r[3] is not None else None,
+            "stop_loss": float(r[4]) if r[4] is not None else None,
+            "take_profit": str(r[5] or ""),
+            "timeframe": str(r[6] or ""),
+            "score": float(r[7]) if r[7] is not None else None,
+            "created_at": r[8].isoformat() if r[8] else None,
+        })
+
+    recent_rejects = []
+    for r in (rejects or []):
+        recent_rejects.append({
+            "id": int(r[0] or 0),
+            "asset": str(r[1] or ""),
+            "timeframe": str(r[2] or ""),
+            "direction": str(r[3] or ""),
+            "entry": float(r[4]) if r[4] is not None else None,
+            "stop_loss": float(r[5]) if r[5] is not None else None,
+            "take_profit": str(r[6] or ""),
+            "ml_probability": float(r[7]) if r[7] is not None else None,
+            "reason": str(r[8] or ""),
+            "created_at": r[9].isoformat() if r[9] else None,
+        })
+
+    result = {"ok": True, "asset": a, "recent_signals": recent, "recent_rejections": recent_rejects}
+    # If Gemini is configured, request a concise textual review for this asset.
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if api_key:
+        try:
+            prompt = {
+                "task": f"Provide a concise trading audit for {a}. Confirm the outcomes listed and give a 2-sentence trade rationale template for future signals. Also list 3 quick feature suggestions.",
+                "asset": a,
+                "recent_signals": recent[:min(len(recent), 30)],
+                "recent_rejections": recent_rejects[:min(len(recent_rejects), 30)],
+            }
+            review = await asyncio.to_thread(_call_gemini_sync, api_key, prompt)
+            result["review"] = str(review or "")
+        except Exception as exc:
+            result["review_error"] = str(exc)
+    return result
+
+
+async def audit_recent(limit: int = 50) -> dict[str, Any]:
+    """Collect recent losses and top rejections for quick audit."""
+    limit = max(1, min(500, int(limit or 50)))
+    async with get_session() as session:
+        losses = (
+            await session.execute(
+                text(
+                    """
+                    SELECT o.signal_id, s.asset, s.direction, s.entry, o.status, o.r_multiple, o.closed_at
+                    FROM outcomes o
+                    JOIN signals s ON s.signal_id = o.signal_id
+                    WHERE o.status = 'sl'
+                    ORDER BY o.closed_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": limit},
+            )
+        ).fetchall()
+
+        top_rejects = (
+            await session.execute(
+                text(
+                    """
+                    SELECT id, asset, timeframe, direction, entry, ml_probability, rejection_reason, created_at
+                    FROM ml_rejected_signals
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                    """
+                )
+            )
+        ).fetchall()
+        await session.commit()
+
+    out_losses = []
+    for r in (losses or []):
+        out_losses.append({
+            "signal_id": str(r[0] or "")[:12],
+            "asset": str(r[1] or ""),
+            "direction": str(r[2] or ""),
+            "entry": float(r[3]) if r[3] is not None else None,
+            "status": str(r[4] or ""),
+            "r_multiple": float(r[5]) if r[5] is not None else None,
+            "closed_at": r[6].isoformat() if r[6] else None,
+        })
+
+    out_rejects = []
+    for r in (top_rejects or []):
+        out_rejects.append({
+            "id": int(r[0] or 0),
+            "asset": str(r[1] or ""),
+            "timeframe": str(r[2] or ""),
+            "direction": str(r[3] or ""),
+            "entry": float(r[4]) if r[4] is not None else None,
+            "ml_probability": float(r[5]) if r[5] is not None else None,
+            "reason": str(r[6] or ""),
+            "created_at": r[7].isoformat() if r[7] else None,
+        })
+
+    result = {"ok": True, "recent_losses": out_losses, "recent_rejections": out_rejects}
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if api_key:
+        try:
+            prompt = {
+                "task": "You are a quantitative trading reviewer. Summarize the recent losses and rejections, identify top failure modes, and provide 3 short actionable recommendations.",
+                "recent_losses": out_losses[:min(len(out_losses), 40)],
+                "recent_rejections": out_rejects[:min(len(out_rejects), 40)],
+            }
+            review = await asyncio.to_thread(_call_gemini_sync, api_key, prompt)
+            result["review"] = str(review or "")
+        except Exception as exc:
+            result["review_error"] = str(exc)
+    return result
+
+
+async def predict_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Lightweight prediction helper: check duplication and nearby signals.
+
+    Expects candidate to include `asset`, `timeframe`, `direction`, `entry`.
+    """
+    if not candidate or not isinstance(candidate, dict):
+        return {"ok": False, "error": "candidate dict required"}
+    asset = str(candidate.get("asset") or candidate.get("symbol") or "").upper().strip()
+    timeframe = str(candidate.get("timeframe") or candidate.get("tf") or "").lower().strip()
+    direction = str(candidate.get("direction") or candidate.get("side") or "long").lower().strip()
+    try:
+        entry = float(candidate.get("entry") or candidate.get("entry_price") or candidate.get("price") or 0.0)
+    except Exception:
+        entry = 0.0
+
+    if not asset or not timeframe or direction not in {"long", "short"} or entry <= 0:
+        return {"ok": False, "error": "asset,timeframe,direction,entry required"}
+
+    # Use SignalDeduplicator to check semantic duplicates
+    try:
+        from engine.signal_deduplicator import SignalDeduplicator
+
+        sd = SignalDeduplicator()
+        is_dup = await sd.is_duplicate(asset, timeframe, direction, entry)
+        neighbors = await sd.get_recent_signals(asset, timeframe, direction, lookback_hours=24)
+        return {"ok": True, "is_duplicate": bool(is_dup), "recent_neighbors": neighbors[:12]}
+    except Exception as e:
+        return {"ok": False, "error": f"predict failed: {e}"}
+
+
+def _simple_strategy_parse(text: str) -> dict[str, Any]:
+    """Heuristic parse of simple English strategy into structured JSON.
+
+    This is intentionally conservative: we only extract common tokens (asset,
+    percent moves, timeframe, RSI bounds, direction keywords) and return a
+    best-effort JSON. For complex text, the Gemini LLM is used instead.
+    """
+    out: dict[str, Any] = {}
+    try:
+        s = str(text or "").strip()
+        import re
+
+        # Asset: uppercase ticker (e.g., BTC, SOLUSDT, ETH)
+        m = re.search(r"\b([A-Z]{2,8}(?:USDT|USD|BTC)?)\b", s)
+        if m:
+            out["asset"] = m.group(1)
+
+        # Percent drop/gain
+        m = re.search(r"(drop|falls|drops|down)\s*(\d+(?:\.\d+)?)%\s*(in|over)?\s*(\d+\s*(m|h|d))", s, re.I)
+        if not m:
+            m = re.search(r"(\d+(?:\.\d+)?)%\s*(drop|decline|fall|down)\b", s, re.I)
+        if m:
+            try:
+                pct = float(m.group(2))
+                out.setdefault("conditions", {})["price_move_pct"] = -abs(pct)
+                # timeframe token
+                if len(m.groups()) >= 4 and m.group(4):
+                    out.setdefault("conditions", {})["within"] = m.group(4)
+            except Exception:
+                pass
+
+        # RSI ranges e.g., RSI stays above 40
+        m = re.search(r"RSI\s*(?:is\s*)?(?:stays\s*)?(?:above|>)\s*(\d+)", s, re.I)
+        if m:
+            out.setdefault("conditions", {})["rsi_min"] = int(m.group(1))
+        m = re.search(r"RSI\s*(?:is\s*)?(?:stays\s*)?(?:below|<)\s*(\d+)", s, re.I)
+        if m:
+            out.setdefault("conditions", {})["rsi_max"] = int(m.group(1))
+
+        # Direction keywords
+        if re.search(r"\b(buy|long)\b", s, re.I):
+            out["direction"] = "long"
+        elif re.search(r"\b(sell|short)\b", s, re.I):
+            out["direction"] = "short"
+
+        # Timeframe tokens
+        m = re.search(r"(\d+\s*(m|h|d)|1h|4h|1d|4h|15m)\b", s, re.I)
+        if m:
+            out.setdefault("timeframe", str(m.group(1)).replace(" ", ""))
+
+        return out
+    except Exception:
+        return {}
+
+
+async def parse_strategy_text(text: str) -> dict[str, Any]:
+    """Parse free-text strategy into JSON. Uses heuristic parser first,
+    then falls back to Gemini model if available for richer output.
+    Returns: {ok, parsed: {...}, rationale, gemini_review?}
+    """
+    if not text or not str(text).strip():
+        return {"ok": False, "error": "text required"}
+    parsed = _simple_strategy_parse(text)
+    gemini_review = None
+    api = (os.getenv("GEMINI_API_KEY") or "").strip()
+    if api:
+        try:
+            prompt = {
+                "task": "Parse this plain-English trading rule into a JSON strategy spec with keys: asset, timeframe, direction, entry_conditions, rsi_bounds, stop_loss_rule, take_profit_rule, note. Also provide a 2-sentence trade rationale and regime recommendation.",
+                "text": text,
+            }
+            gemini_review = await asyncio.to_thread(_call_gemini_sync, api, prompt)
+        except Exception as exc:
+            gemini_review = f"gemini_error:{exc}"
+
+    # Build trade rationale: prefer Gemini review if available, otherwise simple template
+    rationale = None
+    if gemini_review:
+        # Try extract first two sentences
+        try:
+            first = str(gemini_review).strip().split(". ")
+            rationale = ". ".join(first[:2]).strip()
+        except Exception:
+            rationale = str(gemini_review)[:240]
+    else:
+        # Template
+        asset = parsed.get("asset") or "the asset"
+        dirn = parsed.get("direction") or "direction"
+        rationale = f"Trade rationale: {asset} {dirn}. Confirm technical conditions (price move and RSI) before entry."
+
+    return {"ok": True, "parsed": parsed, "rationale": rationale, "gemini_review": gemini_review}
