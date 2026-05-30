@@ -786,10 +786,12 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
 
         if cfg is not None:
             # Allow an explicit env-var override to take precedence over DB-driven thresholds.
-            # Set PREVIOUS_RUNTIME_OVERRIDE=1 to prevent DB from overwriting runtime env values.
+            # Set PREMIUM_SCORE_THRESHOLD_FORCE=1 to prevent DB from overwriting runtime env values.
             _force_env_override = bool((os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE") or "").strip())
 
             if not _force_env_override:
+                previous_min_score = _runtime_min_score_threshold
+                previous_confluence = _runtime_confluence_min
                 _runtime_min_score_threshold = float(
                     getattr(cfg, "min_score_threshold", _runtime_min_score_threshold) or _runtime_min_score_threshold
                 )
@@ -801,11 +803,25 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
                 os.environ["ML_PROB_THRESHOLD"] = str(
                     float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55)
                 )
+                logger.info(
+                    "[engine] thresholds refreshed | min_score=%.1f->%.1f confluence=%.1f->%.1f ml_prob=%.3f",
+                    previous_min_score,
+                    _runtime_min_score_threshold,
+                    previous_confluence,
+                    _runtime_confluence_min,
+                    float(getattr(cfg, "ml_prob_threshold", _env_float("ML_PROB_THRESHOLD", 0.55)) or 0.55),
+                )
             else:
                 logger.info("[engine] PREMIUM_SCORE_THRESHOLD_FORCE set; preserving env vars over DB thresholds")
         else:
             _runtime_min_score_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
             _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", _runtime_confluence_min)
+            logger.debug(
+                "[engine] threshold refresh used env fallback | min_score=%.1f confluence=%.1f ml_prob=%.3f",
+                _runtime_min_score_threshold,
+                _runtime_confluence_min,
+                _env_float("ML_PROB_THRESHOLD", 0.55),
+            )
 
         _last_threshold_refresh = now_dt
     except Exception as e:
@@ -814,6 +830,15 @@ def _refresh_runtime_thresholds(force: bool = False) -> None:
 
 def _current_min_score_threshold() -> float:
     return _env_float("PREMIUM_SCORE_THRESHOLD", _runtime_min_score_threshold)
+
+
+def _current_ml_prob_threshold() -> float:
+    try:
+        if _threshold_optimizer is not None and hasattr(_threshold_optimizer, "get_threshold"):
+            return float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.55))
+    except Exception:
+        pass
+    return _env_float("ML_PROB_THRESHOLD", 0.55)
 
 
 def load_tradable_assets() -> List[str]:
@@ -1573,8 +1598,7 @@ def main_loop(DRY_RUN: bool = False):
                     if ml_filter and getattr(ml_filter, 'active', False):
                         try:
                             features = extract_features(sig, market_data)
-                            threshold_raw = str(os.getenv('ML_PROB_THRESHOLD') or '').strip()
-                            threshold = float(threshold_raw) if threshold_raw else None
+                            threshold = _current_ml_prob_threshold()
                             approved, prob = ml_filter.ml_filter(features, threshold=threshold)
                         except Exception:
                             approved, prob = True, None

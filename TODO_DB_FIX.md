@@ -1,4 +1,5 @@
 # TODO: Fix Database Connection Issues
+Status: Complete.
 
 ## Issues Identified:
 1. Some code may be accessing DB without proper configuration checks
@@ -16,8 +17,9 @@
 - db/auto_ops.py: Added logging to indicate DB configuration status
 
 ## Summary:
-- The database configuration is now checked early at startup in main.py
+- The database configuration is checked early at startup in main.py
 - Added `_check_database_configured()` function that uses both `resolve_database_url()` 
   and `is_db_configured()` for robust checking
 - Logging added to db/auto_ops.py to track when DB is being checked/configured
 - Warnings are printed at startup to indicate if DB is not configured
+- Startup schema backfill now restores missing live columns such as `signals.status`
