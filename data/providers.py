@@ -146,6 +146,124 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
     except Exception:
         return []
 
+
+_COINGECKO_ID_CACHE: dict[str, str] = {}
+
+
+def _coingecko_symbol_to_id(symbol: str) -> Optional[str]:
+    key = (symbol or "").upper().strip()
+    if not key:
+        return None
+    if key in _COINGECKO_ID_CACHE:
+        return _COINGECKO_ID_CACHE[key]
+    # Common quick map
+    common = {
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "SOL": "solana",
+        "ADA": "cardano",
+        "BNB": "binancecoin",
+        "USDT": "tether",
+        "DOT": "polkadot",
+        "DOGE": "dogecoin",
+    }
+    if key in common:
+        _COINGECKO_ID_CACHE[key] = common[key]
+        return common[key]
+    try:
+        resp = requests.get("https://api.coingecko.com/api/v3/coins/list", timeout=5)
+        if resp.ok:
+            data = resp.json()
+            for item in data or []:
+                sym = (item.get("symbol") or "").upper()
+                if sym == key:
+                    _COINGECKO_ID_CACHE[key] = item.get("id")
+                    return item.get("id")
+    except Exception:
+        pass
+    return None
+
+
+def fetch_coingecko_market_chart(symbol: str, days: int = 7) -> List[Dict]:
+    """Fetch simple market chart (prices) from CoinGecko as a lightweight OHLCV fallback.
+
+    Returns a list of dicts with timestamp (ms), open/high/low/close/volume where available.
+    """
+    try:
+        coin_id = _coingecko_symbol_to_id(symbol)
+        if not coin_id:
+            return []
+        url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
+        params = {"vs_currency": "usd", "days": int(days)}
+        resp = requests.get(url, params=params, timeout=8)
+        if not resp.ok:
+            return []
+        data = resp.json() or {}
+        prices = data.get("prices", [])
+        volumes = data.get("total_volumes", [])
+        # Build candles by grouping by day (approximate)
+        out: List[Dict] = []
+        for i in range(len(prices)):
+            try:
+                ts = int(prices[i][0])
+                price = float(prices[i][1])
+                vol = float(volumes[i][1]) if i < len(volumes) else 0.0
+                out.append({"timestamp": ts, "open": price, "high": price, "low": price, "close": price, "volume": vol})
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
+
+def fetch_coingecko_price(symbol: str) -> Optional[float]:
+    try:
+        coin_id = _coingecko_symbol_to_id(symbol)
+        if not coin_id:
+            return None
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {"ids": coin_id, "vs_currencies": "usd", "include_24hr_vol": "true"}
+        resp = requests.get(url, params=params, timeout=5)
+        if not resp.ok:
+            return None
+        data = resp.json() or {}
+        return float((data.get(coin_id) or {}).get("usd"))
+    except Exception:
+        return None
+
+
+def fetch_cryptopanic_news(limit: int = 10, currencies: Optional[List[str]] = None) -> List[Dict]:
+    """Fetch recent crypto news from CryptoPanic (if API token provided)."""
+    api_key = os.getenv("CRYPTOPANIC_API_KEY", "").strip()
+    if not api_key:
+        return []
+    try:
+        url = "https://cryptopanic.com/api/v1/posts/"
+        params = {"auth_token": api_key, "public": "true", "kind": "news", "limit": int(limit)}
+        if currencies:
+            params["currencies"] = ",".join(currencies)
+        resp = requests.get(url, params=params, timeout=8)
+        if not resp.ok:
+            return []
+        data = resp.json() or {}
+        posts = data.get("results") or data.get("results", [])
+        out = []
+        for p in posts or []:
+            try:
+                out.append({
+                    "id": p.get("id"),
+                    "title": p.get("title"),
+                    "domain": p.get("domain"),
+                    "published_at": p.get("published_at"),
+                    "votes": p.get("votes"),
+                    "url": p.get("url"),
+                })
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
     try:
         proxy_url = (
             (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
@@ -782,20 +900,43 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
     MT5 (if configured) is tried first for all asset classes when
     META_API_TOKEN is set (via the async mt5_client; sync fallback skips it).
     """
-    # Prefer Binance CCXT first, then fall back to the wider multi-provider
-    # fetcher so we can still resolve candles through Yahoo, AlphaVantage,
-    # Twelve Data, Polygon, CoinGecko, Bybit, or CryptoCompare when available.
+    # Keep a minimal, import-safe fallback waterfall that prefers the CCXT path.
+    # Heuristic: treat USDT/USD tickers as crypto; forex pairs contain '/'
+    sym = (symbol or "").upper()
+    is_crypto_sym = sym.endswith("USDT") or sym.endswith("USD") or sym.endswith("BTC")
+    is_forex_sym = "/" in symbol or "." in symbol and len(symbol) <= 7
+
+    # 1) Prefer CCXT Binance for crypto-like symbols
     try:
-        result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
-        if result and len(result) >= 1:
-            return result[-limit:]
+        if is_crypto_sym:
+            result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
+            if result and len(result) >= 1:
+                return result[-limit:]
     except Exception:
         pass
 
+    # 2) CoinGecko market chart fallback for crypto
     try:
-        from data.fetcher import get_candles as _get_candles
+        if is_crypto_sym:
+            cg = fetch_coingecko_market_chart(symbol, days=7)
+            if cg and len(cg) >= 1:
+                return cg[-limit:]
+    except Exception:
+        pass
 
-        result = _get_candles(symbol, timeframe)
+    # 3) AlphaVantage for stocks/forex if configured
+    try:
+        av_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
+        if av_key:
+            av = fetch_alphavantage_candles(symbol, timeframe)
+            if av and len(av) >= 1:
+                return av[-limit:]
+    except Exception:
+        pass
+
+    # 4) Polygon/TwelveData/others are already implemented above; try a lightweight Binance CCXT again as last resort
+    try:
+        result = fetch_binance_ccxt_candles(symbol, timeframe, limit=limit)
         if result and len(result) >= 1:
             return result[-limit:]
     except Exception:

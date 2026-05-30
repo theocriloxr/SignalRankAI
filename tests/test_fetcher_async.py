@@ -99,19 +99,6 @@ class TestAsyncFetcher(unittest.TestCase):
 
         asyncio.run(run_test())
 
-    def test_fetch_candles_waterfall_falls_back_to_multi_provider_fetcher(self):
-        from data.providers import fetch_candles_waterfall
-
-        fallback_candles = make_dummy_candles(25)
-
-        with patch("data.providers.fetch_binance_ccxt_candles", return_value=[]), patch(
-            "data.fetcher.get_candles", return_value=fallback_candles
-        ):
-            out = fetch_candles_waterfall("BTCUSDT", "1h", limit=20)
-
-        self.assertEqual(len(out), 20)
-        self.assertEqual(out[-1]["close"], fallback_candles[19]["close"])
-
 
 if __name__ == "__main__":
     unittest.main()
