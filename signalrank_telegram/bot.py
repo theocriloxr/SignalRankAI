@@ -6372,6 +6372,7 @@ def run_bot() -> None:
                             Signal.created_at >= cutoff,
                             Signal.ml_probability.is_(None),
                             Signal.expired.is_(False),
+                            Signal.status.not_like("shadow_%"),
                         ).limit(50)
                     )
                     signals = rows.scalars().all()

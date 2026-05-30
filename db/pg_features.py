@@ -12,6 +12,7 @@ def to_naive_utc(dt: datetime) -> datetime:
 from typing import Any, Dict, Optional, Tuple
 
 from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import (
@@ -893,81 +894,83 @@ async def upsert_outcome(
     vip_fill_outcome: str | None = None,
     sentiment_outcome: str | None = None,
 ) -> Outcome:
-    res: Result[Tuple[Outcome]] = await session.execute(
-        select(Outcome).where(Outcome.signal_id == str(signal_id))
+    signal_id_str = str(signal_id)
+    now = _utcnow()
+    status_l = str(status).lower()[:16]
+
+    stmt = pg_insert(Outcome).values(
+        signal_id=signal_id_str,
+        status=status_l,
+        r_multiple=float(r_multiple) if r_multiple is not None else None,
+        percent=float(percent) if percent is not None else None,
+        opened_at=opened_at,
+        closed_at=closed_at or now,
+        canonical_outcome=str(canonical_outcome).lower()[:16] if canonical_outcome is not None else None,
+        vip_fill_outcome=str(vip_fill_outcome).lower()[:16] if vip_fill_outcome is not None else None,
+        sentiment_outcome=str(sentiment_outcome).lower()[:16] if sentiment_outcome is not None else None,
+        meta=dict(meta or {}),
     )
-    oc: Outcome | None = res.scalars().first()
 
-    prev_status = None
-    prev_tp_idx = 0
-    try:
-        if oc is not None:
-            prev_status = str(getattr(oc, "status", "") or "").lower()
-            prev_tp_idx = int((getattr(oc, "meta", {}) or {}).get("tp_hit_index") or 0)
-    except Exception:
-        prev_status = None
-        prev_tp_idx = 0
-
-    if oc is None:
-        oc = Outcome(signal_id=str(signal_id), status=str(status).lower()[:16])
-        session.add(oc)
-        await session.flush()
-
-    oc.status = str(status).lower()[:16]
-    if opened_at is not None and oc.opened_at is None:
-        oc.opened_at = opened_at
-    if closed_at is not None:
-        oc.closed_at = closed_at
-    elif oc.closed_at is None:
-        oc.closed_at = _utcnow()
-
+    update_values: dict[str, Any] = {
+        "status": status_l,
+        "closed_at": closed_at or now,
+    }
+    if opened_at is not None:
+        update_values["opened_at"] = opened_at
     if r_multiple is not None:
-        oc.r_multiple = float(r_multiple)
+        update_values["r_multiple"] = float(r_multiple)
     if percent is not None:
-        oc.percent = float(percent)
+        update_values["percent"] = float(percent)
+    if canonical_outcome is not None:
+        update_values["canonical_outcome"] = str(canonical_outcome).lower()[:16]
+    if vip_fill_outcome is not None:
+        update_values["vip_fill_outcome"] = str(vip_fill_outcome).lower()[:16]
+    if sentiment_outcome is not None:
+        update_values["sentiment_outcome"] = str(sentiment_outcome).lower()[:16]
+    upsert_stmt = stmt.on_conflict_do_update(
+        index_elements=[Outcome.signal_id],
+        set_=update_values,
+    ).returning(Outcome)
 
-    try:
-        if canonical_outcome is not None:
-            oc.canonical_outcome = str(canonical_outcome).lower()[:16]
-        if vip_fill_outcome is not None:
-            oc.vip_fill_outcome = str(vip_fill_outcome).lower()[:16]
-        if sentiment_outcome is not None:
-            oc.sentiment_outcome = str(sentiment_outcome).lower()[:16]
-    except Exception:
-        pass
+    result = await session.execute(upsert_stmt)
+    oc = result.scalars().first()
+    if oc is None:
+        # Fallback: select row if RETURNING is unavailable in current driver/path.
+        res: Result[Tuple[Outcome]] = await session.execute(select(Outcome).where(Outcome.signal_id == signal_id_str))
+        oc = res.scalars().first()
+        if oc is None:
+            raise RuntimeError("upsert_outcome failed to return row")
 
-    # Best-effort duration
+    if meta:
+        try:
+            merged: Dict[str, Any] = dict(getattr(oc, "meta", {}) or {})
+            merged.update(dict(meta))
+            oc.meta = merged
+        except Exception:
+            pass
+
     try:
         if oc.opened_at is not None and oc.closed_at is not None:
             oc.duration_seconds = int((oc.closed_at - oc.opened_at).total_seconds())
     except Exception:
         pass
 
-    if meta:
-        try:
-            merged: Dict[str, Any] = dict(oc.meta or {})
-            merged.update(dict(meta))
-            oc.meta = merged
-        except Exception:
-            oc.meta = dict(meta)
-
     # Re-enable notification when outcome progresses (TP1→TP2→TP3, etc.).
     try:
         new_status = str(getattr(oc, "status", "") or "").lower()
         new_tp_idx = int((getattr(oc, "meta", {}) or {}).get("tp_hit_index") or 0)
-        progressed = (prev_status is None) or (new_status != prev_status) or (new_tp_idx > int(prev_tp_idx or 0))
-        if progressed:
-            _meta = dict(getattr(oc, "meta", {}) or {})
-            _meta.pop("notified", None)
-            _meta.pop("notified_at", None)
-            oc.meta = _meta
-            if oc.closed_at is not None:
-                await queue_outcome_notifications_for_outcome(
-                    session,
-                    int(getattr(oc, "id")),
-                    str(signal_id),
-                    new_status,
-                )
+        progressed = True
+        _meta = dict(getattr(oc, "meta", {}) or {})
+        _meta.pop("notified", None)
+        _meta.pop("notified_at", None)
+        oc.meta = _meta
+        if oc.closed_at is not None:
+            await queue_outcome_notifications_for_outcome(
+                session,
+                int(getattr(oc, "id")),
+                signal_id_str,
+                new_status,
+            )
     except Exception:
         pass
 

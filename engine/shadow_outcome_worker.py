@@ -10,6 +10,7 @@ regret/efficacy metrics used by admin dashboards.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from datetime import datetime, timedelta
@@ -49,7 +50,6 @@ class ShadowOutcomeWorker:
             from sqlalchemy import select, update as sa_update
             from engine.realtime_outcome_tracker import _get_live_price, _parse_tp_levels, _check_hit
             from core.redis_state import state
-            import contextlib
 
             while not self._stop.is_set():
                 try:
@@ -60,10 +60,12 @@ class ShadowOutcomeWorker:
                             .where(MLRejectedSignal.outcome_tracked_at.is_(None))
                             .where(MLRejectedSignal.created_at <= cutoff)
                             .order_by(MLRejectedSignal.created_at.asc())
+                            .with_for_update(skip_locked=True)
                             .limit(200)
                         )
                         res = await session.execute(stmt)
                         rows = res.scalars().all()
+                        await session.commit()
 
                     for r in rows:
                         try:
@@ -80,13 +82,17 @@ class ShadowOutcomeWorker:
                             if not hit:
                                 continue
                             now = datetime.utcnow()
-                            # update DB entry
+                            # Claim row only if still untracked, then update outcome.
                             async with get_session() as session:
-                                await session.execute(
+                                claim = await session.execute(
                                     sa_update(MLRejectedSignal)
                                     .where(MLRejectedSignal.id == int(getattr(r, "id", 0) or 0))
+                                    .where(MLRejectedSignal.outcome_tracked_at.is_(None))
                                     .values(actual_outcome=str(hit)[:32], outcome_tracked_at=now)
                                 )
+                                if int(getattr(claim, "rowcount", 0) or 0) <= 0:
+                                    await session.rollback()
+                                    continue
                                 await session.commit()
 
                             # classify and increment counters in Redis

@@ -3,6 +3,9 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+import numpy as np
+import pandas as pd
+
 from core.tier_constants import EXPECTANCY_MIN, DD_SOFT_THROTTLE, DD_HARD_LIMIT, CANDLE_STALENESS_MULTIPLIER
 from engine.signal_metrics import resolve_confidence_ratio, resolve_ml_probability, resolve_score_percent
 
@@ -43,6 +46,57 @@ def soft_throttle_active(account_state: Any) -> bool:
 def hard_stop_active(account_state: Any) -> bool:
     """Check if hard drawdown stop active (block all signals)."""
     return getattr(account_state, "drawdown", 0) > DD_HARD_LIMIT
+
+
+def check_correlation_gate(
+    new_symbol: str,
+    active_positions: list[str] | None,
+    price_series_by_symbol: dict[str, list[float]] | None = None,
+    max_correlation: float = 0.85,
+) -> tuple[bool, str]:
+    """Block new entries that are too correlated with existing open positions.
+
+    price_series_by_symbol should map symbols to close-price series of equal-ish length.
+    """
+    try:
+        new_symbol_norm = str(new_symbol or "").upper().strip()
+        active_norm = [str(s or "").upper().strip() for s in (active_positions or []) if str(s or "").strip()]
+        if not new_symbol_norm or not active_norm:
+            return True, "no_correlation_check_needed"
+
+        series_map = {k: v for k, v in (price_series_by_symbol or {}).items() if v}
+        if new_symbol_norm not in series_map:
+            return True, "missing_price_series"
+
+        new_series = pd.Series(series_map.get(new_symbol_norm, []), dtype="float64").dropna()
+        if len(new_series) < 10:
+            return True, "insufficient_price_history"
+
+        for existing in active_norm:
+            if existing == new_symbol_norm:
+                continue
+            existing_series = pd.Series(series_map.get(existing, []), dtype="float64").dropna()
+            if len(existing_series) < 10:
+                continue
+            length = min(len(new_series), len(existing_series))
+            if length < 10:
+                continue
+            corr = float(np.corrcoef(new_series.iloc[-length:], existing_series.iloc[-length:])[0, 1])
+            if np.isnan(corr):
+                continue
+            if abs(corr) >= float(max_correlation):
+                logger.info(
+                    "[risk] Correlation block: %s vs %s corr=%.2f threshold=%.2f",
+                    new_symbol_norm,
+                    existing,
+                    corr,
+                    max_correlation,
+                )
+                return False, f"high correlation with {existing}: {corr:.2f}"
+        return True, "ok"
+    except Exception as exc:
+        logger.debug("[risk] correlation gate failed open: %s", exc)
+        return True, "correlation_check_failed_open"
 
 
 def calculate_dynamic_risk(signal: Dict[str, Any], regime: Optional[str] = None, news_sentiment: Optional[float] = None, gemini_score: Optional[float] = None, account_state: Optional[Any] = None) -> Dict[str, Any]:
@@ -134,6 +188,48 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     live_expectancy = float(signal.get("live_expectancy", EXPECTANCY_MIN))
     if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_expectancy < EXPECTANCY_MIN:
         return False
+
+    # Correlation gate: block when new trade is too correlated with existing open positions.
+    if _env_bool("ENABLE_CORRELATION_GATE", True):
+        try:
+            active_positions = signal.get("active_positions") or []
+            price_series_by_symbol = signal.get("correlation_prices") or {}
+            if not price_series_by_symbol and active_positions:
+                try:
+                    from utils.async_runner import run_sync
+                    from data.market_data import fetch_market_data_cached
+
+                    timeframe = str(signal.get("timeframe") or "1h").lower().strip()
+                    symbols = [str(signal.get("asset") or signal.get("symbol") or "").upper().strip()] + [
+                        str(sym or "").upper().strip() for sym in active_positions
+                    ]
+                    series_map: dict[str, list[float]] = {}
+                    for sym in symbols:
+                        if not sym:
+                            continue
+                        md = run_sync(fetch_market_data_cached(sym, [timeframe]), timeout=20.0)
+                        candles = (md or {}).get(timeframe, {}).get("candles", []) if isinstance(md, dict) else []
+                        closes = []
+                        for candle in candles or []:
+                            try:
+                                closes.append(float(candle.get("close")))
+                            except Exception:
+                                continue
+                        if closes:
+                            series_map[sym] = closes
+                    price_series_by_symbol = series_map
+                except Exception:
+                    price_series_by_symbol = {}
+            ok, _reason = check_correlation_gate(
+                str(signal.get("asset") or signal.get("symbol") or ""),
+                list(active_positions) if isinstance(active_positions, (list, tuple, set)) else [],
+                price_series_by_symbol if isinstance(price_series_by_symbol, dict) else {},
+                max_correlation=float(os.getenv("MAX_PORTFOLIO_CORRELATION", "0.85") or 0.85),
+            )
+            if not ok:
+                return False
+        except Exception:
+            pass
     
     return True
 

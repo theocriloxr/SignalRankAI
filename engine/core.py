@@ -1501,6 +1501,20 @@ def main_loop(DRY_RUN: bool = False):
                             continue
                         # risk gate
                         account_state = type('AccountState', (), {'drawdown': 0.0})()
+                        try:
+                            active_trades = state.get_active_trades_sync() or {}
+                            active_positions = []
+                            for payload in (active_trades or {}).values():
+                                try:
+                                    sym = str(payload.get("symbol") or payload.get("asset") or "").upper().strip()
+                                    if sym:
+                                        active_positions.append(sym)
+                                except Exception:
+                                    continue
+                            if active_positions:
+                                sig["active_positions"] = list(dict.fromkeys(active_positions))
+                        except Exception:
+                            pass
                         if not risk_check(sig, account_state):
                             sig['rejection_reason'] = 'risk/volatility'
                             _record_gate_failure(asset, "risk", sig['rejection_reason'])
@@ -2000,6 +2014,16 @@ def main_loop(DRY_RUN: bool = False):
                 pipeline_stats["final_signals"] += len(final_signals)
                 # store final_signals
                 from datetime import timedelta as _timedelta  # ensure available in this scope
+
+                # Global kill-switch gate: block persistence / dispatch at the final stage.
+                try:
+                    from engine.signal_controller import SignalController as _SignalController
+                    if _SignalController().is_kill_switch_enabled():
+                        logger.warning("CRITICAL: Global Kill-Switch is ACTIVE. Blocking signal delivery for asset=%s cycle=%s", asset, cycle_no)
+                        pipeline_stats["skipped_kill_switch"] = int(pipeline_stats.get("skipped_kill_switch", 0) or 0) + len(final_signals)
+                        continue
+                except Exception:
+                    logger.debug("[engine] kill-switch final gate check failed", exc_info=True)
 
                 # ── Batch DB cooldown check (P11) ────────────────────────────────────────
                 # One query for all (asset, timeframe) pairs in this batch instead of

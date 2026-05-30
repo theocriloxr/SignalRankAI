@@ -37,6 +37,8 @@ class SignalController:
     _gemini_call_count: int = 0
     _gemini_call_day: str = ""
     _gemini_counter_lock = threading.Lock()
+    _global_kill_switch_enabled: bool = False
+    _global_kill_switch_reason: str = ""
 
     def __init__(self) -> None:
         self._kill_switch_enabled: bool = False
@@ -63,19 +65,23 @@ class SignalController:
             self.audit_logger.addHandler(handler)
 
     def enable_kill_switch(self, reason: str = "manual", admin_id: Optional[int] = None) -> None:
+        type(self)._global_kill_switch_enabled = True
+        type(self)._global_kill_switch_reason = str(reason or "manual")
         self._kill_switch_enabled = True
         self.KILL_SWITCH["enabled"] = True
         self.KILL_SWITCH["reason"] = reason
         self.audit_logger.warning(f"KILL SWITCH ENABLED by {admin_id}: {reason}")
 
     def disable_kill_switch(self, admin_id: Optional[int] = None) -> None:
+        type(self)._global_kill_switch_enabled = False
+        type(self)._global_kill_switch_reason = ""
         self._kill_switch_enabled = False
         self.KILL_SWITCH["enabled"] = False
         self.KILL_SWITCH["reason"] = ""
         self.audit_logger.info(f"KILL SWITCH DISABLED by {admin_id}")
 
     def is_kill_switch_enabled(self) -> bool:
-        return self._kill_switch_enabled
+        return bool(self._kill_switch_enabled or type(self)._global_kill_switch_enabled)
 
     # --- Legacy API (kept for current codebase + unit tests) ---
     def log_audit_event(self, event: str, user_id: Optional[int] = None, details: Any = None) -> None:
