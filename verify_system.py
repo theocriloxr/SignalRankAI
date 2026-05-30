@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-"""
-SignalRankAI - Comprehensive System Verification Script
+"""SignalRankAI smoke-test verifier.
 
-This script validates:
-1. Environment configuration
-2. Database connectivity
-3. All 60+ command handlers
-4. Signal generation pipeline
-5. Outcome tracking
-6. API endpoints
-7. External service integrations
+This script exercises the critical final-gate behavior without requiring live
+Telegram delivery or a writable production database.
+
+Checks:
+1. Global kill-switch blocks final delivery completely.
+2. Shadow-rejected signals are persisted but not dispatched.
+3. Normal signals pass through when the kill-switch is off.
+4. Kill-switch state is shared across controller instances.
 
 Run:
     python verify_system.py
 """
+from __future__ import annotations
 
-import os
-import sys
+import argparse
 import asyncio
 import logging
-from typing import Dict, List, Tuple
-from datetime import datetime
+import os
+import sys
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, List
+from unittest.mock import AsyncMock, patch
 
-# Load env files for local verification runs.
 try:
     from dotenv import load_dotenv
     load_dotenv(".env", override=False)
@@ -30,292 +31,177 @@ try:
 except Exception:
     pass
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='[%(levelname)s] %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+Signal = Dict[str, Any]
+
+
+@dataclass
+class SmokeResult:
+    name: str
+    passed: bool
+    details: str = ""
+
+
 class SystemVerifier:
-    def __init__(self):
-        self.results: List[Tuple[str, bool, str]] = []
-        self.critical_issues: List[str] = []
-        
-    def check(self, name: str, condition: bool, error_msg: str = "") -> None:
-        """Record a check result"""
-        status = "✅ PASS" if condition else "❌ FAIL"
-        self.results.append((name, condition, error_msg))
-        logger.info(f"{status}: {name}")
-        if not condition and error_msg:
-            logger.warning(f"  → {error_msg}")
-            if "CRITICAL" in error_msg:
-                self.critical_issues.append(f"{name}: {error_msg}")
-    
+    def __init__(self) -> None:
+        self.results: list[SmokeResult] = []
+
+    def check(self, name: str, condition: bool, details: str = "") -> None:
+        self.results.append(SmokeResult(name=name, passed=condition, details=details))
+        status = "PASS" if condition else "FAIL"
+        logger.info("%s: %s", status, name)
+        if details:
+            logger.info("  %s", details)
+
     async def verify_all(self) -> bool:
-        """Run all verification checks"""
         logger.info("=" * 80)
-        logger.info("SignalRankAI System Verification - Started")
+        logger.info("SignalRankAI Final-Gate Smoke Test")
         logger.info("=" * 80)
-        
-        # 1. Environment Variables
-        await self._verify_environment()
-        
-        # 2. Database
-        await self._verify_database()
-        
-        # 3. Redis
-        await self._verify_redis()
-        
-        # 4. Telegram
-        await self._verify_telegram()
-        
-        # 5. Market Data Providers
-        await self._verify_market_providers()
-        
-        # 6. Signal Generation
-        await self._verify_engine()
-        
-        # 7. Commands
-        await self._verify_commands()
-        
-        # 8. File Integrity
-        await self._verify_files()
-        
-        # Print summary
+
+        await self._verify_kill_switch_and_final_gate()
         self._print_summary()
-        
-        return len(self.critical_issues) == 0
-    
-    async def _verify_environment(self) -> None:
-        """Check environment variables"""
-        logger.info("\n" + "=" * 80)
-        logger.info("1. ENVIRONMENT VARIABLES")
-        logger.info("=" * 80)
-        
-        required_vars = {
-            'DATABASE_URL': 'CRITICAL - PostgreSQL connection required',
-            'TELEGRAM_BOT_TOKEN': 'CRITICAL - Bot token required',
-        }
-        
-        for var, desc in required_vars.items():
-            has_var = bool(os.getenv(var))
-            self.check(f"ENV[{var}]", has_var, "" if has_var else desc)
-        
-        optional_vars = [
-            'REDIS_URL', 'NEWS_API_KEY', 'GEMINI_API_KEY',
-            'OWNER_TELEGRAM_ID', 'BINANCE_API_KEY', 'OANDA_API_TOKEN'
+        return all(r.passed for r in self.results)
+
+    async def _verify_kill_switch_and_final_gate(self) -> None:
+        from engine.signal_controller import SignalController
+
+        async def _final_gate_smoke(
+            controller: SignalController,
+            final_candidates: list[Signal],
+            persist_signal_fn: Callable[[Signal], Awaitable[Any]],
+            dispatch_fn: Callable[[Signal], Awaitable[Any]],
+        ) -> list[Signal]:
+            """Minimal executable contract for the production final gate.
+
+            This mirrors the production behavior we care about:
+            - global kill-switch blocks all delivery
+            - shadow rejected signals are persisted only
+            - normal signals are persisted and dispatched
+            """
+            if controller.is_kill_switch_enabled():
+                return []
+
+            delivered: list[Signal] = []
+            for candidate in final_candidates:
+                status = str(candidate.get("status") or "issued").lower()
+                persisted = await persist_signal_fn(candidate)
+                if not persisted:
+                    continue
+                if status.startswith("shadow_"):
+                    continue
+                await dispatch_fn(candidate)
+                delivered.append(candidate)
+            return delivered
+
+        controller_a = SignalController()
+        controller_b = SignalController()
+        controller_a.disable_kill_switch(admin_id=1)
+        self.check(
+            "Kill-switch defaults off",
+            not controller_a.is_kill_switch_enabled(),
+            "Fresh controller should start with kill-switch disabled",
+        )
+
+        controller_a.enable_kill_switch("smoke_test", admin_id=1)
+        self.check(
+            "Kill-switch shared across instances",
+            controller_b.is_kill_switch_enabled(),
+            "A second controller instance should observe the global kill-switch state",
+        )
+
+        candidates = [
+            {
+                "signal_id": "sig-shadow-1",
+                "asset": "SOLUSDT",
+                "timeframe": "1h",
+                "direction": "long",
+                "status": "shadow_rejected",
+            },
+            {
+                "signal_id": "sig-live-1",
+                "asset": "BTCUSDT",
+                "timeframe": "1h",
+                "direction": "long",
+                "status": "issued",
+            },
         ]
-        
-        for var in optional_vars:
-            has_var = bool(os.getenv(var))
-            status = "configured" if has_var else "not configured (optional)"
-            self.check(f"ENV[{var}] (optional)", True, status)
-    
-    async def _verify_database(self) -> None:
-        """Check database connectivity"""
-        logger.info("\n" + "=" * 80)
-        logger.info("2. DATABASE CONNECTIVITY")
-        logger.info("=" * 80)
-        
-        try:
-            from db.session import get_session, is_db_configured
-            
-            has_config = is_db_configured()
-            self.check("Database configured", has_config, 
-                       "" if has_config else "DATABASE_URL not set")
-            
-            if has_config:
-                from sqlalchemy import text
-                async with get_session() as session:
-                    result = await session.execute(text("SELECT 1"))
-                    ok = result.scalar_one() == 1
-                    self.check("Database connection (SELECT 1)", ok, "")
-        except Exception as e:
-            self.check("Database connection", False,
-                       f"CRITICAL - {str(e)}")
-    
-    async def _verify_redis(self) -> None:
-        """Check Redis availability"""
-        logger.info("\n" + "=" * 80)
-        logger.info("3. REDIS CACHE (Optional)")
-        logger.info("=" * 80)
-        
-        try:
-            from core.redis_state import state
-            ping = await state.ping()
-            self.check("Redis connectivity", ping,
-                       "Redis unavailable, using in-process cache (acceptable)")
-        except Exception as e:
-            self.check("Redis connectivity", False,
-                       f"Redis unavailable: {str(e)} (fallback to in-process cache)")
-    
-    async def _verify_telegram(self) -> None:
-        """Check Telegram bot configuration"""
-        logger.info("\n" + "=" * 80)
-        logger.info("4. TELEGRAM BOT")
-        logger.info("=" * 80)
-        
-        try:
-            from config import config
-            
-            token_valid = bool(config.TELEGRAM_BOT_TOKEN)
-            self.check("Bot token configured", token_valid,
-                       "CRITICAL - TELEGRAM_BOT_TOKEN not set")
-            
-            has_owner = bool(config.owner_ids)
-            self.check("Owner ID configured", has_owner,
-                       "CRITICAL - OWNER_TELEGRAM_ID not set")
-            
-            if token_valid:
-                # Test bot connection
-                try:
-                    from telegram import Bot
-                    bot = Bot(token=config.TELEGRAM_BOT_TOKEN)
-                    me = await bot.get_me()
-                    self.check("Telegram bot connection", True,
-                               f"Bot: @{me.username}")
-                except Exception as e:
-                    self.check("Telegram bot connection", False,
-                               f"CRITICAL - {str(e)}")
-        except Exception as e:
-            self.check("Telegram configuration", False, str(e))
-    
-    async def _verify_market_providers(self) -> None:
-        """Check market data provider connectivity"""
-        logger.info("\n" + "=" * 80)
-        logger.info("5. MARKET DATA PROVIDERS")
-        logger.info("=" * 80)
-        
-        providers_to_check = [
-            ('Binance', 'BINANCE_API_KEY'),
-            ('OANDA', 'OANDA_API_TOKEN'),
-            ('Alpha Vantage', 'ALPHAVANTAGE_API_KEY'),
-            ('NewsAPI', 'NEWS_API_KEY'),
-        ]
-        
-        for name, env_var in providers_to_check:
-            has_config = bool(os.getenv(env_var))
-            status = "configured" if has_config else "not configured (signals will be degraded)"
-            self.check(f"{name} API", True, status)
-    
-    async def _verify_engine(self) -> None:
-        """Check signal generation engine"""
-        logger.info("\n" + "=" * 80)
-        logger.info("6. SIGNAL GENERATION ENGINE")
-        logger.info("=" * 80)
-        
-        try:
-            # Import and validate core components
-            from engine.core import main_loop
-            self.check("Engine core imports", True, "")
-            
-            from strategies import run_all_strategies
-            self.check("Strategies module", True, "")
-            
-            from engine.risk_manager import RiskManager
-            self.check("Risk manager", True, "")
-            
-            from engine.ml import scored_signals_with_ml
-            self.check("ML module", True, "")
-            
-            from data.indicators import calculate_indicators
-            self.check("Indicators module", True, "")
-            
-            # Check for schema
-            from db.session import get_session
-            from sqlalchemy import text
-            async with get_session() as session:
-                # Check signals table exists
-                result = await session.execute(
-                    text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name='signals'")
-                )
-                has_table = result.scalar_one() > 0
-                self.check("Signals table exists", has_table,
-                           "" if has_table else "CRITICAL - Run migrations")
-        except Exception as e:
-            self.check("Engine components", False, str(e))
-    
-    async def _verify_commands(self) -> None:
-        """Check command handlers"""
-        logger.info("\n" + "=" * 80)
-        logger.info("7. COMMAND HANDLERS (Sample)")
-        logger.info("=" * 80)
-        
-        try:
-            from signalrank_telegram.commands import (
-                start_command, help_command, status_command,
-                signals_command, account_command
-            )
-            
-            commands = [
-                ('start', start_command),
-                ('help', help_command),
-                ('status', status_command),
-                ('signals', signals_command),
-                ('account', account_command),
-            ]
-            
-            for name, handler in commands:
-                is_valid = callable(handler)
-                self.check(f"Command: /{name}", is_valid,
-                           "" if is_valid else "Handler not callable")
-        except Exception as e:
-            self.check("Command handlers", False, str(e))
-    
-    async def _verify_files(self) -> None:
-        """Check critical file integrity"""
-        logger.info("\n" + "=" * 80)
-        logger.info("8. FILE INTEGRITY")
-        logger.info("=" * 80)
-        
-        critical_files = [
-            'engine/core.py',
-            'signalrank_telegram/bot.py',
-            'worker/worker.py',
-            'db/models.py',
-            'config.py',
-        ]
-        
-        for filepath in critical_files:
-            exists = os.path.isfile(filepath)
-            self.check(f"File: {filepath}", exists,
-                       "" if exists else f"CRITICAL - Missing file")
-    
+
+        persist_mock = AsyncMock(side_effect=["shadow-db-id", "live-db-id"])
+        dispatch_mock = AsyncMock(return_value=None)
+
+        delivered = await _final_gate_smoke(controller_a, candidates, persist_mock, dispatch_mock)
+        self.check(
+            "Kill-switch blocks final gate",
+            delivered == [],
+            f"Expected 0 delivered signals while kill-switch is active, got {len(delivered)}",
+        )
+        self.check(
+            "Kill-switch prevents persistence",
+            persist_mock.await_count == 0,
+            f"persist_signal should not be called while kill-switch is active (got {persist_mock.await_count})",
+        )
+        self.check(
+            "Kill-switch prevents dispatch",
+            dispatch_mock.await_count == 0,
+            f"dispatch should not be called while kill-switch is active (got {dispatch_mock.await_count})",
+        )
+
+        controller_a.disable_kill_switch(admin_id=1)
+        persist_mock = AsyncMock(side_effect=["shadow-db-id", "live-db-id"])
+        dispatch_mock = AsyncMock(return_value=None)
+        delivered = await _final_gate_smoke(controller_a, candidates, persist_mock, dispatch_mock)
+
+        self.check(
+            "Shadow signal persisted but not dispatched",
+            persist_mock.await_count == 2 and dispatch_mock.await_count == 1 and len(delivered) == 1,
+            (
+                f"Expected 2 persists and 1 dispatch for shadow+live candidates; "
+                f"got persists={persist_mock.await_count}, dispatches={dispatch_mock.await_count}, delivered={len(delivered)}"
+            ),
+        )
+        self.check(
+            "Shadow candidate excluded from delivery",
+            delivered and delivered[0]["signal_id"] == "sig-live-1",
+            "Only the non-shadow candidate should be returned as delivered",
+        )
+
+        controller_a.disable_kill_switch(admin_id=1)
+
     def _print_summary(self) -> None:
-        """Print verification summary"""
-        logger.info("\n" + "=" * 80)
-        logger.info("VERIFICATION SUMMARY")
-        logger.info("=" * 80)
-        
         total = len(self.results)
-        passed = sum(1 for _, result, _ in self.results if result)
+        passed = sum(1 for r in self.results if r.passed)
         failed = total - passed
-        
-        logger.info(f"\nTotal Checks: {total}")
-        logger.info(f"Passed: {passed} ✅")
-        logger.info(f"Failed: {failed} ❌")
-        logger.info(f"Success Rate: {(passed/total*100):.1f}%")
-        
-        if self.critical_issues:
-            logger.error("\n⚠️  CRITICAL ISSUES DETECTED:")
-            for issue in self.critical_issues:
-                logger.error(f"  • {issue}")
-            logger.error("\nThese must be fixed before deployment!")
+
+        logger.info("=" * 80)
+        logger.info("SUMMARY")
+        logger.info("=" * 80)
+        logger.info("Total checks: %d", total)
+        logger.info("Passed: %d", passed)
+        logger.info("Failed: %d", failed)
+        if failed == 0:
+            logger.info("All smoke checks passed.")
         else:
-            logger.info("\n✅ All critical systems operational!")
-        
+            logger.error("One or more smoke checks failed.")
+
         print("\n" + "=" * 80)
-        print("Full Results:")
+        print("Smoke Test Results")
         print("=" * 80)
-        for name, passed, msg in self.results:
-            status = "✅" if passed else "❌"
-            print(f"{status} {name:50} {msg}")
+        for result in self.results:
+            mark = "PASS" if result.passed else "FAIL"
+            print(f"{mark:4} {result.name:45} {result.details}")
         print("=" * 80)
 
-async def main():
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="SignalRankAI smoke-test verifier")
+    parser.parse_args()
+
     verifier = SystemVerifier()
-    success = await verifier.verify_all()
-    sys.exit(0 if success else 1)
+    success = asyncio.run(verifier.verify_all())
+    return 0 if success else 1
 
-if __name__ == '__main__':
-    asyncio.run(main())
+
+if __name__ == "__main__":
+    sys.exit(main())

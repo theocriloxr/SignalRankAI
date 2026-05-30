@@ -365,13 +365,13 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                             rejection_type="engine",
                         )
                     )
-                            # Also persist a shadow copy to signals table for offline analysis
-                            try:
-                                shadow_payload = dict(sig or {})
-                                shadow_payload["status"] = "shadow_rejected"
-                                run_sync(persist_signal(shadow_payload), timeout=10.0)
-                            except Exception:
-                                logger.debug("[engine] persist shadow signal failed", exc_info=True)
+                    # Also persist a shadow copy to signals table for offline analysis
+                    try:
+                        shadow_payload = dict(sig or {})
+                        shadow_payload["status"] = "shadow_rejected"
+                        run_sync(persist_signal(shadow_payload), timeout=10.0)
+                    except Exception:
+                        logger.debug("[engine] persist shadow signal failed", exc_info=True)
                 except Exception:
                     logger.debug("[engine] persist_rejection best-effort failed", exc_info=True)
         except Exception:
