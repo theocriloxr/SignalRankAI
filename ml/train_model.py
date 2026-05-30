@@ -307,9 +307,15 @@ async def load_training_data(lookback_days: int = 90):
                 .join(Outcome, Outcome.signal_id == Signal.signal_id)
                 .where(Signal.created_at >= cutoff)
             )
-            res = await session.execute(stmt)
-            rows = list(res.all())
-            await session.commit()
+            try:
+                res = await session.execute(stmt)
+                rows = list(res.all())
+                await session.commit()
+            except Exception as exc:
+                logger.warning("Failed to load training data from DB; using offline bootstrap data: %s", exc)
+                if _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True):
+                    return _generate_offline_bootstrap_data(int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200))
+                return None
 
         if not rows:
             logger.warning("No signals with outcomes found in last 90 days")

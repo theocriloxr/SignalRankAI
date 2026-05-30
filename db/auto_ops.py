@@ -166,6 +166,7 @@ def run_startup_ops(run_mode: str) -> None:
                     # subscriptions
                     "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
                     # signals
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'issued'",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS ml_probability FLOAT",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
@@ -190,6 +191,10 @@ def run_startup_ops(run_mode: str) -> None:
                         cur.execute(stmt)
                     except Exception:
                         pass  # column already exists or table not yet created
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_status ON signals(status)")
+                except Exception:
+                    pass
                 conn.commit()
         except Exception:
             pass
