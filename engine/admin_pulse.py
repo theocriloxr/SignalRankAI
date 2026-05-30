@@ -131,6 +131,67 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
         return False
 
 
+async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool:
+    """Run Gemini weekly filter-efficacy review and post summary to admins.
+
+    This delegates to services.gemini_ml.run_gemini_review_pipeline which already
+    collects DB aggregates and stores the review in runtime_state.
+    """
+    token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token:
+        logger.debug("[admin_pulse] no telegram token configured for weekly report")
+        return False
+    try:
+        from config import OWNER_IDS, ADMIN_IDS
+        recipients = sorted({int(x) for x in ((OWNER_IDS or set()) | (ADMIN_IDS or set()))})
+        if not recipients:
+            logger.debug("[admin_pulse] no recipients configured for weekly report")
+            return False
+
+        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+        if not api_key:
+            logger.debug("[admin_pulse] GEMINI_API_KEY not configured; skipping weekly filter efficacy")
+            return False
+
+        # run the gemini weekly pipeline (it persists results and returns review)
+        try:
+            from services import gemini_ml
+            review = await gemini_ml.run_gemini_review_pipeline(trigger="weekly_filter_efficacy", scope="weekly")
+        except Exception as exc:
+            logger.exception("[admin_pulse] gemini weekly review failed: %s", exc)
+            return False
+
+        # Build message: concise top-level summary + link to full review stored in runtime_state
+        summary = review.get("review") if isinstance(review, dict) else str(review or "")
+        stats = review.get("aggregate") if isinstance(review, dict) else {}
+        txt = (
+            f"Weekly Filter Efficacy Report ({window_days}d)\n\n"
+            f"Signals Issued: {stats.get('issued', 0)}  Rejected: {stats.get('rejected_or_skipped', 0)}\n"
+            f"Outcomes Total: {stats.get('outcomes_total', 0)} Wins: {stats.get('wins', 0)} Losses: {stats.get('losses', 0)}\n\n"
+        )
+        # Truncate review text to keep Telegram messages reasonable; attach long review in chunks.
+        if summary:
+            snippet = summary[:3500]
+            txt += f"Top Recommendations:\n{snippet}\n"
+
+        import requests
+
+        for rid in recipients:
+            try:
+                requests.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": int(rid), "text": txt},
+                    timeout=10,
+                )
+            except Exception:
+                logger.debug("[admin_pulse] failed to send weekly report to %s", rid, exc_info=True)
+
+        return True
+    except Exception as exc:
+        logger.error("[admin_pulse] weekly send error: %s", exc, exc_info=True)
+        return False
+
+
 async def start_pulse_loop(interval_seconds: int = None) -> None:
     interval = int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600) if interval_seconds is None else int(interval_seconds)
     while True:
@@ -138,4 +199,39 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
             await send_admin_pulse_via_telegram(window_hours=1)
         except Exception:
             logger.exception("[admin_pulse] loop send failed")
+        # Weekly filter-efficacy report: run once per configured weekday/hour
+        try:
+            weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", str(datetime.utcnow().weekday())))
+            # Default weekday env not set -> use current weekday (no-op); recommend ADMIN_WEEKLY_REPORT_WEEKDAY=6 for Sunday
+            report_weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", "6"))
+            report_hour = int(os.getenv("ADMIN_WEEKLY_REPORT_HOUR_UTC", "9"))
+            now = datetime.utcnow()
+            if now.weekday() == report_weekday and now.hour == report_hour:
+                # Avoid duplicate runs by checking runtime_state key
+                try:
+                    from db.session import get_session
+                    from sqlalchemy import text
+                    async with get_session() as session:
+                        row = (await session.execute(text("SELECT value FROM runtime_state WHERE key = :k"), {"k": "admin_pulse_last_weekly_run"})).first()
+                        last = None
+                        if row and row[0]:
+                            last = str(row[0])
+                        # If last run is today, skip
+                        if last and str(now.date()) in last:
+                            pass
+                        else:
+                            # run weekly report
+                            try:
+                                await send_weekly_filter_efficacy_via_telegram(window_days=7)
+                            except Exception:
+                                logger.exception("[admin_pulse] weekly report failed")
+                            # persist last run
+                            val = f"{now.isoformat()}"
+                            await session.execute(text("INSERT INTO runtime_state(key,value,expires_at,updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"), {"k": "admin_pulse_last_weekly_run", "v": val})
+                            await session.commit()
+                except Exception:
+                    logger.debug("[admin_pulse] weekly run check failed", exc_info=True)
+        except Exception:
+            logger.debug("[admin_pulse] weekly scheduling check error", exc_info=True)
+
         await asyncio.sleep(max(60, int(interval)))

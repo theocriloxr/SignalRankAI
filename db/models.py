@@ -96,6 +96,7 @@ class Signal(Base):
     rr_estimate: Mapped[Optional[float]] = mapped_column(Float)
     score: Mapped[float] = mapped_column(Float)
     regime: Mapped[Optional[str]] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), index=True, default="issued")
     strategy_name: Mapped[str] = mapped_column(String(64))
     strategy_group: Mapped[str] = mapped_column(String(32))
     strength: Mapped[float] = mapped_column(Float)

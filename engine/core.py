@@ -54,7 +54,7 @@ from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk, risk_check
 from engine.scoring import calculate_signal_score as score_signal, calculate_confluence
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
-from db.repository import persist_decision_log
+from db.repository import persist_decision_log, persist_signal
 from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals_async
@@ -365,6 +365,13 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
                             rejection_type="engine",
                         )
                     )
+                            # Also persist a shadow copy to signals table for offline analysis
+                            try:
+                                shadow_payload = dict(sig or {})
+                                shadow_payload["status"] = "shadow_rejected"
+                                run_sync(persist_signal(shadow_payload), timeout=10.0)
+                            except Exception:
+                                logger.debug("[engine] persist shadow signal failed", exc_info=True)
                 except Exception:
                     logger.debug("[engine] persist_rejection best-effort failed", exc_info=True)
         except Exception:
@@ -2618,6 +2625,30 @@ def main_loop(DRY_RUN: bool = False):
                 signal_analytics.flush()
             except Exception:
                 logger.exception("analytics flush failed")
+
+        # Automated analyst: trigger Gemini audit when many strict candidates were rejected
+        try:
+            if str(os.getenv("AUTO_ANALYST_ENABLED", "1")).strip().lower() in {"1", "true", "yes"}:
+                try:
+                    # Only run when strict_candidates list exists in this scope and useful work was skipped
+                    if 'strict_candidates' in globals() or 'strict_candidates' in locals():
+                        sc_count = len(strict_candidates) if isinstance(strict_candidates, list) else 0
+                        fs_count = len(final_signals) if isinstance(final_signals, list) else 0
+                        if sc_count > 0 and sc_count > fs_count:
+                            try:
+                                from services.automated_analyst import run_automated_audit
+                                # Best-effort synchronous call with timeout so the engine isn't blocked long
+                                try:
+                                    run_sync(run_automated_audit(cycle_no, sc_count, fs_count), timeout=60.0)
+                                except Exception:
+                                    # swallow - non-critical
+                                    logger.debug("[engine] automated analyst call failed or timed out", exc_info=True)
+                            except Exception:
+                                logger.debug("[engine] failed to import automated_analyst", exc_info=True)
+                except Exception:
+                    logger.debug("[engine] automated analyst check failed", exc_info=True)
+        except Exception:
+            pass
 
         # cycle logging
         if _env_bool("ENGINE_CYCLE_LOG", True):

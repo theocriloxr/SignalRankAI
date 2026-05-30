@@ -271,6 +271,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 entry=signal_data.get('entry'),
                 stop_loss=signal_data.get('stop_loss'),
                 take_profit=tp_json,
+                status=signal_data.get('status', 'issued'),
                 score=signal_data.get('score', 70),
                 strategy_name=signal_data.get('strategy_name', 'unknown'),
                 strategy_group=signal_data.get('strategy_group', 'mixed'),
