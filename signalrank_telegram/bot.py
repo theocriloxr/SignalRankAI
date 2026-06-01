@@ -530,6 +530,7 @@ from .commands import (
     invite_command,
     stats_command,
     history_command,
+    apikey_command,
     simulate_command,
     analyze_command,
     risk_command,

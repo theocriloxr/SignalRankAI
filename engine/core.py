@@ -172,7 +172,13 @@ _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
 _last_macro_snapshot_at: datetime | None = None
 _macro_snapshot_cache: dict[str, float] | None = None
-_macro_snapshot_refresh_seconds: int = max(300, _env_int("MACRO_SNAPSHOT_REFRESH_SECONDS", 900))
+try:
+    _macro_snapshot_refresh_seconds: int = max(
+        300,
+        int((os.getenv("MACRO_SNAPSHOT_REFRESH_SECONDS") or "900").strip()),
+    )
+except Exception:
+    _macro_snapshot_refresh_seconds = 900
 
 
 @dataclass(slots=True)
