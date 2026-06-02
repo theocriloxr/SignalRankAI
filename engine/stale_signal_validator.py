@@ -28,11 +28,12 @@ logger = logging.getLogger(__name__)
 # Crypto is intentionally generous (2 %) because a full engine cycle can take
 # 30-120 s — BTC/ETH move well beyond 0.5 % in that window and signals would
 # be invalidated before anyone sees them.
+# FX: 0.05% = 5 pips (e.g., EURUSD moves 0.0005 = 5 pips)
 _CLASS_THRESHOLDS: dict[str, float] = {
     "crypto":    2.0,
-    "stock":     1.0,
+    "stock":     0.5,
     "commodity": 0.8,
-    "fx":        0.3,
+    "fx":        0.05,  # 5 pips - tight for Forex precision
 }
 
 

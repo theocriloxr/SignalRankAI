@@ -1776,3 +1776,132 @@ async def _telegram_webhook_status() -> dict:
 # Mount the existing web app AFTER the webhook route — FastAPI checks routes
 # in registration order, so /telegram/webhook is matched before the catch-all.
 app.mount("/", _web_app)
+
+
+# ============================================================================
+# TradingView Webhook Endpoint
+# ============================================================================
+
+@app.post("/webhook/tradingview")
+async def tradingview_webhook(payload: dict, secret: str = Header(None)):
+    """
+    Receive TradingView alerts and process them through the signal ranking engine.
+    
+    Payload expected from TradingView:
+    {
+        "ticker": "BTCUSDT",
+        "action": "buy",
+        "price": 68000,
+        "timeframe": "1h",
+        "indicator": "RSI_Breakout"
+    }
+    
+    Security: Requires TV_WEBHOOK_SECRET header matching the configured secret.
+    """
+    import os
+    
+    # 1. Security Check
+    expected_secret = os.getenv("TV_WEBHOOK_SECRET", "")
+    if expected_secret and (secret != expected_secret):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    # 2. Log the incoming webhook
+    logger.info("[tradingview] webhook received: %s", payload)
+    
+    # 3. Extract signal data
+    symbol = payload.get("ticker", "")
+    action = payload.get("action", "").upper()
+    price = payload.get("price", 0)
+    timeframe = payload.get("timeframe", "1h")
+    indicator = payload.get("indicator", "unknown")
+    
+    if not symbol or not action:
+        return {"status": "invalid_payload", "message": "Missing ticker or action"}
+    
+    # 4. Determine asset class
+    from data.fetcher import get_asset_type
+    asset_class = get_asset_type(symbol)
+    
+    # 5. Hydrate with macro context (news, VIX, DXY) if Gemini is available
+    hydrated_payload = {
+        "signal": {
+            "ticker": symbol,
+            "action": action,
+            "indicator": indicator,
+            "timeframe": timeframe,
+            "entry": price,
+        },
+        "macro_context": {},
+        "technical_stats": {},
+    }
+    
+    # Try to get cached macro data
+    try:
+        from core.redis_cache import cache_get
+        cached_news = await cache_get("macro:vix_level")
+        cached_dxy = await cache_get("macro:dxy_trend")
+        if cached_news or cached_dxy:
+            hydrated_payload["macro_context"] = {
+                "vix_level": cached_news,
+                "dxy_trend": cached_dxy,
+            }
+    except Exception:
+        pass  # Cache miss is OK
+    
+    # 6. Send to Gemini for signal ranking (if available)
+    gemini_result = None
+    try:
+        from engine.ranking import analyze_signal_for_tradingview
+        gemini_result = await analyze_signal_for_tradingview(hydrated_payload)
+    except Exception as e:
+        logger.warning("[tradingview] Gemini ranking failed: %s", e)
+    
+    # 7. Process the signal
+    if gemini_result:
+        score = gemini_result.get("score", 0)
+        verdict = gemini_result.get("verdict", "REJECT")
+        
+        logger.info(
+            "[tradingview] Signal processed: ticker=%s action=%s score=%s verdict=%s",
+            symbol, action, score, verdict
+        )
+        
+        # Send high-quality signals to Telegram
+        if score > 75 and verdict in ("RANK_A", "RANK_B"):
+            try:
+                from signalrank_telegram.bot import send_signal_alert
+                await send_signal_alert(
+                    ticker=symbol,
+                    action=action,
+                    score=score,
+                    verdict=verdict,
+                    reason=gemini_result.get("reasoning", ""),
+                )
+            except Exception as e:
+                logger.warning("[tradingview] Telegram notification failed: %s", e)
+        
+        return {
+            "status": "processed",
+            "score": score,
+            "verdict": verdict,
+            "reasoning": gemini_result.get("reasoning", ""),
+        }
+    
+    # Fallback: basic signal processing if Gemini not available
+    return {
+        "status": "received",
+        "ticker": symbol,
+        "action": action,
+        "asset_class": asset_class,
+    }
+
+
+@app.get("/webhook/tradingview_status")
+async def tradingview_webhook_status():
+    """Check TradingView webhook configuration status."""
+    import os
+    secret_set = bool(os.getenv("TV_WEBHOOK_SECRET", "").strip())
+    return {
+        "ok": True,
+        "webhook_configured": secret_set,
+    }

@@ -57,12 +57,21 @@ class Config:
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 		self.PAYSTACK_WEBHOOK_SECRET = os.getenv("PAYSTACK_WEBHOOK_SECRET", "")
-		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
+self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
 		self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 		self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 		self.BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")
 		self.BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 		self.BYBIT_TESTNET = self._env_bool("BYBIT_TESTNET", False)
+
+		# Multi-asset provider API keys
+		self.POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
+		self.TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
+		self.OANDA_API_KEY = os.getenv("OANDA_API_KEY", "")
+		self.OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID", "")
+
+		# TradingView webhook security
+		self.TV_WEBHOOK_SECRET = os.getenv("TV_WEBHOOK_SECRET", "")
 
 		# Trading and risk management
 		self.FX_PAIRS = [p.strip() for p in os.getenv("FX_PAIRS", "").split(",") if p.strip()]
