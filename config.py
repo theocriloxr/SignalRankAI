@@ -41,9 +41,6 @@ class Config:
 		self.OWNER_TELEGRAM_IDS = self._env_int_set("OWNER_TELEGRAM_IDS")
 		self.OWNER_IDS = self._env_int_set("OWNER_IDS")
 		self.owner_ids: set[int] = set()
-		if self.OWNER_TELEGRAM_ID:
-			self.owner_ids.add(self.OWNER_TELEGRAM_ID)
-		self.owner_ids |= self.OWNER_TELEGRAM_IDS
 		self.owner_ids |= self.OWNER_IDS
 
 		# Admin IDs — separate from owner; set via ADMIN_IDS (CSV) or ADMIN_ID (single)
@@ -57,7 +54,7 @@ class Config:
 		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 		self.PAYSTACK_WEBHOOK_SECRET = os.getenv("PAYSTACK_WEBHOOK_SECRET", "")
-self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
+		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
 		self.BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 		self.BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 		self.BYBIT_API_KEY = os.getenv("BYBIT_API_KEY", "")

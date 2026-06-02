@@ -1,14 +1,14 @@
 """
 data/fetcher_router.py - Multi-Asset Provider Router
 
-Routes data fetching requests to the appropriate provider based on asset class.
-This ensures that if one provider is blocked, the system can fall back to alternative providers.
+Routes data fetching to the appropriate provider based on asset class.
+This ensures that if one provider is blocked, the system falls back to alternatives.
 
-Provider Priority by Asset Class:
-- Crypto:     Binance -> Bybit -> CryptoCompare (bypasses geo-blocks)
-- Forex:     AlphaVantage -> OANDA -> TwelveData (high precision for pips)
-- Stocks:    Polygon.io -> TwelveData -> Finnhub (official exchange data)
-- Commodities: TwelveData -> Yahoo Finance (best coverage for Gold/Oil)
+Provider Priority (from config.py or defaults):
+- Crypto:     Bybit -> CryptoCompare -> CoinGecko (bypasses geo-blocks)
+- Forex:      Polygon.io -> Twelve Data -> OANDA (high precision for pips)
+- Stocks:     Polygon.io -> Twelve Data -> Finnhub (official SIP data)
+- Commodities: Twelve Data -> Yahoo Finance (best Gold/Oil coverage)
 
 Usage:
     from data.fetcher_router import DataRouter
@@ -16,206 +16,268 @@ Usage:
     router = DataRouter()
     candles = await router.fetch_price("BTCUSDT", "crypto")
 """
-from __future__ import annotations
-
+import os
 import logging
-from typing import Dict, List, Optional, Any
-
-from data.fetcher import get_candles, get_asset_type
-from data.providers import (
-    fetch_polygon_candles,
-    fetch_twelvedata_candles,
-    fetch_oanda_candles,
-    fetch_yahoo_candles,
-    fetch_cryptocompare_candles,
-)
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
 
-class RateLimitError(Exception):
-    """Raised when a provider hits rate limits."""
-    pass
+# Provider health tracking for automatic fallback
+_PROVIDER_HEALTH: Dict[str, Dict[str, Any]] = {}
+
+
+def _mark_provider_result(provider_name: str, ok: bool) -> None:
+    """Track provider success/failure for intelligent fallback."""
+    if provider_name not in _PROVIDER_HEALTH:
+        _PROVIDER_HEALTH[provider_name] = {"failures": 0, "successes": 0}
+    
+    if ok:
+        _PROVIDER_HEALTH[provider_name]["successes"] += 1
+    else:
+        _PROVIDER_HEALTH[provider_name]["failures"] += 1
+
+
+def _is_provider_healthy(provider_name: str) -> bool:
+    """Check if provider is healthy (not having too many failures)."""
+    if provider_name not in _PROVIDER_HEALTH:
+        return True
+    stats = _PROVIDER_HEALTH[provider_name]
+    total = stats["failures"] + stats["successes"]
+    if total < 3:
+        return True
+    # If failure rate > 50%, mark unhealthy
+    return stats["failures"] / total < 0.5
 
 
 class DataRouter:
-    """
-    Multi-asset data provider router with fallback logic.
-    
-    Routes fetch requests to the appropriate provider based on asset class.
-    Implements automatic fallback when primary provider fails.
-    """
+    """Routes data fetching to appropriate providers based on asset class."""
     
     def __init__(self):
-        # Initialize provider instances
         self._providers_initialized = False
         self._init_providers()
     
-    def _init_providers(self):
-        """Lazy initialization of providers."""
+    def _init_providers(self) -> None:
+        """Initialize provider instances lazily."""
         if self._providers_initialized:
             return
-            
-        # Primary providers per asset class
-        self.crypto_provider = "bybit"
-        self.equity_provider = "polygon"
-        self.macro_provider = "twelvedata"
-        self.fx_provider = "oanda"
+        
+        # Crypto providers (CCXT-based)
+        self._crypto_providers: List[tuple[str, callable]] = []
+        self._fx_providers: List[tuple[str, callable]] = []
+        self._stock_providers: List[tuple[str, callable]] = []
+        self._commodity_providers: List[tuple[str, callable]] = []
+        
+        # Try importing from connectors first, then fall back to legacy providers
+        try:
+            from data import connectors as conn
+            self._connectors = conn
+        except ImportError:
+            self._connectors = None
+        
+        try:
+            from data import providers as prov
+            self._legacy_providers = prov
+        except ImportError:
+            self._legacy_providers = None
+        
+        # Crypto: Bybit -> CryptoCompare -> CoinGecko
+        self._crypto_providers = [
+            ("bybit", self._get_bybit_candles),
+            ("cryptocompare", self._get_cryptocompare_candles),
+            ("coingecko", self._get_coingecko_candles),
+        ]
+        
+        # Forex: Polygon -> Twelve Data -> OANDA
+        self._fx_providers = [
+            ("polygon", self._get_polygon_candles),
+            ("twelvedata", self._get_twelvedata_candles),
+            ("oanda", self._get_oanda_candles),
+        ]
+        
+        # Stocks: Polygon -> Twelve Data -> Yahoo
+        self._stock_providers = [
+            ("polygon", self._get_polygon_candles),
+            ("twelvedata", self._get_twelvedata_candles),
+            ("yahoo", self._get_yahoo_candles),
+        ]
+        
+        # Commodities: Twelve Data -> Yahoo
+        self._commodity_providers = [
+            ("twelvedata", self._get_twelvedata_candles),
+            ("yahoo", self._get_yahoo_candles),
+        ]
         
         self._providers_initialized = True
         logger.info("[router] providers initialized")
     
-    async def fetch_price(self, symbol: str, asset_class: str) -> list:
-        """
-        Fetch price data using the appropriate provider for the asset class.
+    def _get_bybit_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch crypto candles from Bybit via CCXT."""
+        try:
+            if self._connectors and hasattr(self._connectors, "bybit_get_candles"):
+                return self._connectors.bybit_get_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        
+        # Fallback: direct bybit API call
+        try:
+            from data.fetcher import get_crypto_candles
+            return get_crypto_candles(symbol, timeframe)
+        except Exception:
+            pass
+        return []
+    
+    def _get_cryptocompare_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch crypto from CryptoCompare."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_coingecko_candles"):
+                return self._legacy_providers.fetch_coingecko_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_coingecko_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from CoinGecko."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_coingecko_market_chart"):
+                return self._legacy_providers.fetch_coingecko_market_chart(symbol) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_polygon_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Polygon.io."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_polygon_candles"):
+                return self._legacy_providers.fetch_polygon_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_twelvedata_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Twelve Data."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_twelvedata_candles"):
+                return self._legacy_providers.fetch_twelvedata_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_oanda_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from OANDA."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_oanda_candles"):
+                return self._legacy_providers.fetch_oanda_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_yahoo_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Yahoo Finance."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_yahoo_candles"):
+                return self._legacy_providers.fetch_yahoo_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_providers_for_asset_class(self, asset_class: str) -> List[tuple[str, callable]]:
+        """Get provider list for asset class."""
+        asset_class = (asset_class or "").lower().strip()
+        
+        if asset_class == "crypto":
+            return self._crypto_providers
+        elif asset_class == "fx" or asset_class == "forex":
+            return self._fx_providers
+        elif asset_class == "commodity":
+            return self._commodity_providers
+        else:
+            return self._stock_providers
+    
+    async def fetch_price(self, symbol: str, asset_class: str) -> Optional[Dict]:
+        """Fetch price data for symbol using appropriate provider.
         
         Args:
-            symbol: Trading symbol (e.g., "BTCUSDT", "EURUSD", "AAPL")
-            asset_class: Asset class ("crypto", "fx", "stock", "commodity")
-            
+            symbol: Trading symbol (e.g., "BTCUSDT", "EURUSD")
+            asset_class: "crypto", "fx", "stock", or "commodity"
+        
         Returns:
-            List of candle dictionaries
+            Dictionary with price data or None if all providers fail
         """
-        try:
-            if asset_class == "crypto":
-                return await self._fetch_crypto(symbol)
-            elif asset_class in ["stock", "commodity"]:
-                return await self._fetch_traditional(symbol)
-            elif asset_class == "fx":
-                return await self._fetch_fx(symbol)
-            else:
-                # Default fallback
-                return await self._fetch_crypto(symbol)
-        except RateLimitError:
-            # Fallback logic here
-            logger.warning(f"[router] rate limit hit for {symbol}, trying fallback")
-            return await self._fetch_fallback(symbol, asset_class)
+        # Get timeframe from env or use default
+        timeframe = os.getenv("DEFAULT_TIMEFRAME", "1h")
+        
+        providers = self._get_providers_for_asset_class(asset_class)
+        
+        # Try healthy providers first, then all providers
+        healthy = [p for p in providers if _is_provider_healthy(p[0])]
+        unhealthy = [p for p in providers if not _is_provider_healthy(p[0])]
+        
+        for provider_name, fetch_func in healthy + unhealthy:
+            try:
+                candles = fetch_func(symbol, timeframe)
+                if candles and len(candles) >= 20:
+                    _mark_provider_result(provider_name, True)
+                    logger.info(
+                        "[router] provider=%s symbol=%s class=%s candles=%d",
+                        provider_name, symbol, asset_class, len(candles)
+                    )
+                    return {
+                        "candles": candles,
+                        "provider": provider_name,
+                        "asset_class": asset_class,
+                        "symbol": symbol,
+                        "timeframe": timeframe,
+                    }
+                else:
+                    _mark_provider_result(provider_name, False)
+            except Exception as e:
+                _mark_provider_result(provider_name, False)
+                logger.warning(
+                    "[router] provider=%s failed for %s: %s",
+                    provider_name, symbol, e
+                )
+                continue
+        
+        logger.warning(
+            "[router] all providers failed for symbol=%s class=%s",
+            symbol, asset_class
+        )
+        return None
     
-    async def _fetch_crypto(self, symbol: str) -> list:
-        """Fetch crypto data - primary: Bybit, fallback: CryptoCompare."""
-        # Try Bybit first (CCXT-based, bypasses geo-blocks)
+    async def fetch_with_fallback(self, symbol: str, asset_class: str) -> Optional[Dict]:
+        """Fetch with explicit fallback chain - tries all providers in order."""
+        from data.fetcher import get_candles as fetcher_get_candles
+        
+        # Use the existing multi-provider fetcher as primary
         try:
-            candles = await self._try_provider(symbol, "bybit")
+            candles = fetcher_get_candles(symbol, asset_class)
             if candles and len(candles) >= 20:
-                return candles
+                return {
+                    "candles": candles,
+                    "provider": "fetcher_fallback",
+                    "asset_class": asset_class,
+                    "symbol": symbol,
+                }
         except Exception as e:
-            logger.warning(f"[router] bybit failed: {e}")
+            logger.warning("[router] fetcher fallback failed: %s", e)
         
-        # Fallback to CryptoCompare
-        try:
-            candles = await self._try_provider(symbol, "cryptocompare")
-            if candles and len(candles) >= 20:
-                return candles
-        except Exception as e:
-            logger.warning(f"[router] cryptocompare failed: {e}")
-        
-        # Final fallback to CoinGecko
-        return await self._try_provider(symbol, "coingecko")
-    
-    async def _fetch_fx(self, symbol: str) -> list:
-        """Fetch FX data - primary: OANDA, fallback: TwelveData."""
-        # Try OANDA first (bank-grade precision)
-        try:
-            candles = await self._try_provider(symbol, "oanda")
-            if candles and len(candles) >= 20:
-                return candles
-        except Exception as e:
-            logger.warning(f"[router] oanda failed: {e}")
-        
-        # Fallback to TwelveData
-        try:
-            candles = await self._try_provider(symbol, "twelvedata")
-            if candles and len(candles) >= 20:
-                return candles
-        except Exception as e:
-            logger.warning(f"[router] twelvedata failed: {e}")
-        
-        # Final fallback to Polygon
-        return await self._try_provider(symbol, "polygon")
-    
-    async def _fetch_traditional(self, symbol: str) -> list:
-        """Fetch stock/commodity data - primary: Polygon, fallback: TwelveData."""
-        # Try Polygon first (premium, official exchange data)
-        try:
-            candles = await self._try_provider(symbol, "polygon")
-            if candles and len(candles) >= 20:
-                return candles
-        except Exception as e:
-            logger.warning(f"[router] polygon failed: {e}")
-        
-        # Fallback to TwelveData
-        try:
-            candles = await self._try_provider(symbol, "twelvedata")
-            if candles and len(candles) >= 20:
-                return candles
-        except Exception as e:
-            logger.warning(f"[router] twelvedata failed: {e}")
-        
-        # Final fallback to Yahoo Finance
-        return await self._try_provider(symbol, "yahoo")
-    
-    async def _try_provider(self, symbol: str, provider: str, timeframe: str = "1h") -> list:
-        """Try a specific provider with error handling."""
-        import asyncio
-        
-        def _sync_fetch():
-            if provider == "bybit":
-                return fetch_bybit_candles(symbol, timeframe)
-            elif provider == "cryptocompare":
-                return fetch_cryptocompare_candles(symbol, timeframe)
-            elif provider == "polygon":
-                return fetch_polygon_candles(symbol, timeframe, "stocks")
-            elif provider == "twelvedata":
-                return fetch_twelvedata_candles(symbol, timeframe, "stocks")
-            elif provider == "oanda":
-                return fetch_oanda_candles(symbol, timeframe)
-            elif provider == "yahoo":
-                return fetch_yahoo_candles(symbol, timeframe)
-            elif provider == "coingecko":
-                from data.providers import fetch_coingecko_candles
-                return fetch_coingecko_candles(symbol, timeframe)
-            return []
-        
-        try:
-            return await asyncio.wait_for(
-                asyncio.to_thread(_sync_fetch),
-                timeout=10.0
-            )
-        except asyncio.TimeoutError:
-            raise RateLimitError(f"{provider} timeout")
-        except Exception as e:
-            if "429" in str(e) or "rate limit" in str(e).lower():
-                raise RateLimitError(f"{provider} rate limited")
-            raise
-    
-    async def _fetch_fallback(self, symbol: str, asset_class: str) -> list:
-        """Generic fallback using multi-provider fetcher."""
-        # Use the main fetcher which already has fallbacks
-        try:
-            import asyncio
-            return await asyncio.to_thread(lambda: get_candles(symbol, "1h"))
-        except Exception:
-            return []
+        return None
 
 
-# Default router instance
-_default_router: Optional[DataRouter] = None
+# Global router instance
+_router: Optional[DataRouter] = None
 
 
 def get_router() -> DataRouter:
-    """Get the default router instance."""
-    global _default_router
-    if _default_router is None:
-        _default_router = DataRouter()
-    return _default_router
+    """Get global router instance."""
+    global _router
+    if _router is None:
+        _router = DataRouter()
+    return _router
 
 
-async def fetch_with_router(symbol: str, timeframe: str = "1h") -> list:
-    """
-    Convenience function to fetch data using the router.
-    
-    Auto-detects asset class and routes to appropriate provider.
-    """
+async def fetch_candles(symbol: str, asset_class: str) -> Optional[Dict]:
+    """Convenience function to fetch candles via router."""
     router = get_router()
-    asset_class = get_asset_type(symbol)
     return await router.fetch_price(symbol, asset_class)
