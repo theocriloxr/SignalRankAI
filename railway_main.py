@@ -36,7 +36,7 @@ from contextlib import asynccontextmanager
 import time
 from typing import Iterable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, HTTPException, Header
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram

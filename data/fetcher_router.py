@@ -1,227 +1,201 @@
 """
-data/fetcher_router.py - Multi-Asset Provider Router.
+data/fetcher_router.py - Multi-Asset Provider Router
 
-This module routes data fetching to the appropriate provider based on asset class,
-with automatic fallback logic when the primary provider fails.
+Routes data fetching requests to the appropriate provider based on asset class.
+This ensures that if one provider is blocked, the system can fall back to alternative providers.
 
 Provider Priority by Asset Class:
-- Crypto:     Bybit -> CryptoCompare -> CoinGecko  (bypasses geo-blocks)
-- Forex:      OANDA -> Polygon.io -> TwelveData  (high precision for pips)
-- Stocks:     Polygon.io -> TwelveData -> Finnhub  (official exchange data)
-- Commodities: TwelveData -> Yahoo Finance  (best coverage for Gold/Oil)
+- Crypto:     Binance -> Bybit -> CryptoCompare (bypasses geo-blocks)
+- Forex:     AlphaVantage -> OANDA -> TwelveData (high precision for pips)
+- Stocks:    Polygon.io -> TwelveData -> Finnhub (official exchange data)
+- Commodities: TwelveData -> Yahoo Finance (best coverage for Gold/Oil)
+
+Usage:
+    from data.fetcher_router import DataRouter
+    
+    router = DataRouter()
+    candles = await router.fetch_price("BTCUSDT", "crypto")
 """
+from __future__ import annotations
+
 import logging
-import asyncio
-from typing import Dict, List, Optional, Tuple, Callable, Any
+from typing import Dict, List, Optional, Any
+
+from data.fetcher import get_candles, get_asset_type
+from data.providers import (
+    fetch_polygon_candles,
+    fetch_twelvedata_candles,
+    fetch_oanda_candles,
+    fetch_yahoo_candles,
+    fetch_cryptocompare_candles,
+)
 
 logger = logging.getLogger(__name__)
 
-# Asset class enum for type safety
-ASSET_CLASSES = ["crypto", "fx", "stock", "commodity"]
+
+class RateLimitError(Exception):
+    """Raised when a provider hits rate limits."""
+    pass
 
 
 class DataRouter:
     """
     Multi-asset data provider router with fallback logic.
     
-    Usage:
-        router = DataRouter()
-        candles = await router.fetch_price("BTCUSDT", "crypto", "1h")
+    Routes fetch requests to the appropriate provider based on asset class.
+    Implements automatic fallback when primary provider fails.
     """
     
     def __init__(self):
-        """Initialize providers for each asset class."""
-        # Import providers lazily to avoid import errors
-        self._providers: Dict[str, List[Tuple[str, Callable]] = {
-            "crypto": [],
-            "fx": [],
-            "stock": [],
-            "commodity": [],
-        }
-        self._initialized = False
+        # Initialize provider instances
+        self._providers_initialized = False
+        self._init_providers()
     
-    def _ensure_initialized(self) -> None:
-        """Lazy initialization of provider lists."""
-        if self._initialized:
+    def _init_providers(self):
+        """Lazy initialization of providers."""
+        if self._providers_initialized:
             return
+            
+        # Primary providers per asset class
+        self.crypto_provider = "bybit"
+        self.equity_provider = "polygon"
+        self.macro_provider = "twelvedata"
+        self.fx_provider = "oanda"
         
-        # Crypto providers (ordered by preference)
-        try:
-            from data.connectors import bybit_get_candles
-            self._providers["crypto"].append(("bybit", bybit_get_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.connectors import cryptocompare_get_candles
-            self._providers["crypto"].append(("cryptocompare", cryptocompare_get_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_coingecko_candles
-            self._providers["crypto"].append(("coingecko", fetch_coingecko_candles))
-        except ImportError:
-            pass
-        
-        # FX providers
-        try:
-            from data.providers import fetch_oanda_candles
-            self._providers["fx"].append(("oanda", fetch_oanda_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_polygon_candles
-            self._providers["fx"].append(("polygon", fetch_polygon_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_twelvedata_candles
-            self._providers["fx"].append(("twelvedata", fetch_twelvedata_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_yahoo_candles
-            self._providers["fx"].append(("yahoo", fetch_yahoo_candles))
-        except ImportError:
-            pass
-        
-        # Stock providers
-        try:
-            from data.providers import fetch_polygon_candles
-            self._providers["stock"].append(("polygon", fetch_polygon_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_twelvedata_candles
-            self._providers["stock"].append(("twelvedata", fetch_twelvedata_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_yahoo_candles
-            self._providers["stock"].append(("yahoo", fetch_yahoo_candles))
-        except ImportError:
-            pass
-        
-        # Commodity providers
-        try:
-            from data.providers import fetch_twelvedata_candles
-            self._providers["commodity"].append(("twelvedata", fetch_twelvedata_candles))
-        except ImportError:
-            pass
-        
-        try:
-            from data.providers import fetch_yahoo_candles
-            self._providers["commodity"].append(("yahoo", fetch_yahoo_candles))
-        except ImportError:
-            pass
-        
-        self._initialized = True
-        logger.info("[router] providers initialized: crypto=%d fx=%d stock=%d commodity=%d",
-                   len(self._providers["crypto"]), len(self._providers["fx"]),
-                   len(self._providers["stock"]), len(self._providers["commodity"]))
+        self._providers_initialized = True
+        logger.info("[router] providers initialized")
     
-    def _detect_asset_class(self, symbol: str) -> str:
-        """Detect asset class from symbol string."""
-        sym = symbol.upper()
-        
-        # Crypto: USDT/USDC/BTC/ETH/BNB suffix
-        if sym.endswith(("USDT", "USDC", "BTC", "ETH", "BNB")):
-            return "crypto"
-        
-        # FX: standard 6-char pairs
-        clean = sym.replace("/", "").replace("_", "").replace("-", "")
-        if len(clean) == 6 and clean.isalpha():
-            fx_currencies = {"EUR", "GBP", "USD", "JPY", "CHF", "CAD", "AUD", "NZD"}
-            if clean[:3] in fx_currencies and clean[3:] in fx_currencies:
-                return "fx"
-        
-        # Commodities
-        commodities = {"XAU", "XAG", "XPT", "XPD", "WTI", "BRENT", "GOLD", "SILVER", "OIL"}
-        for kw in commodities:
-            if kw in sym:
-                return "commodity"
-        
-        # Default to stock
-        return "stock"
-    
-    async def fetch_price(
-        self, 
-        symbol: str, 
-        asset_class: Optional[str] = None,
-        timeframe: str = "1h",
-        timeout: float = 10.0
-    ) -> List[Dict[str, Any]]:
+    async def fetch_price(self, symbol: str, asset_class: str) -> list:
         """
-        Fetch price data with automatic provider fallback.
+        Fetch price data using the appropriate provider for the asset class.
         
         Args:
-            symbol: Trading symbol (e.g., "BTCUSDT", "EURUSD")
-            asset_class: Override asset class detection ("crypto", "fx", "stock", "commodity")
-            timeframe: Chart timeframe ("5m", "15m", "1h", "4h", "1d")
-            timeout: Provider timeout in seconds
+            symbol: Trading symbol (e.g., "BTCUSDT", "EURUSD", "AAPL")
+            asset_class: Asset class ("crypto", "fx", "stock", "commodity")
             
         Returns:
-            List of candle dictionaries with timestamp, open, high, low, close, volume
+            List of candle dictionaries
         """
-        self._ensure_initialized()
+        try:
+            if asset_class == "crypto":
+                return await self._fetch_crypto(symbol)
+            elif asset_class in ["stock", "commodity"]:
+                return await self._fetch_traditional(symbol)
+            elif asset_class == "fx":
+                return await self._fetch_fx(symbol)
+            else:
+                # Default fallback
+                return await self._fetch_crypto(symbol)
+        except RateLimitError:
+            # Fallback logic here
+            logger.warning(f"[router] rate limit hit for {symbol}, trying fallback")
+            return await self._fetch_fallback(symbol, asset_class)
+    
+    async def _fetch_crypto(self, symbol: str) -> list:
+        """Fetch crypto data - primary: Bybit, fallback: CryptoCompare."""
+        # Try Bybit first (CCXT-based, bypasses geo-blocks)
+        try:
+            candles = await self._try_provider(symbol, "bybit")
+            if candles and len(candles) >= 20:
+                return candles
+        except Exception as e:
+            logger.warning(f"[router] bybit failed: {e}")
         
-        # Auto-detect asset class if not provided
-        if not asset_class:
-            asset_class = self._detect_asset_class(symbol)
+        # Fallback to CryptoCompare
+        try:
+            candles = await self._try_provider(symbol, "cryptocompare")
+            if candles and len(candles) >= 20:
+                return candles
+        except Exception as e:
+            logger.warning(f"[router] cryptocompare failed: {e}")
         
-        # Get providers for this asset class
-        providers = self._providers.get(asset_class, [])
+        # Final fallback to CoinGecko
+        return await self._try_provider(symbol, "coingecko")
+    
+    async def _fetch_fx(self, symbol: str) -> list:
+        """Fetch FX data - primary: OANDA, fallback: TwelveData."""
+        # Try OANDA first (bank-grade precision)
+        try:
+            candles = await self._try_provider(symbol, "oanda")
+            if candles and len(candles) >= 20:
+                return candles
+        except Exception as e:
+            logger.warning(f"[router] oanda failed: {e}")
         
-        if not providers:
-            logger.warning("[router] no providers for asset_class=%s symbol=%s", asset_class, symbol)
+        # Fallback to TwelveData
+        try:
+            candles = await self._try_provider(symbol, "twelvedata")
+            if candles and len(candles) >= 20:
+                return candles
+        except Exception as e:
+            logger.warning(f"[router] twelvedata failed: {e}")
+        
+        # Final fallback to Polygon
+        return await self._try_provider(symbol, "polygon")
+    
+    async def _fetch_traditional(self, symbol: str) -> list:
+        """Fetch stock/commodity data - primary: Polygon, fallback: TwelveData."""
+        # Try Polygon first (premium, official exchange data)
+        try:
+            candles = await self._try_provider(symbol, "polygon")
+            if candles and len(candles) >= 20:
+                return candles
+        except Exception as e:
+            logger.warning(f"[router] polygon failed: {e}")
+        
+        # Fallback to TwelveData
+        try:
+            candles = await self._try_provider(symbol, "twelvedata")
+            if candles and len(candles) >= 20:
+                return candles
+        except Exception as e:
+            logger.warning(f"[router] twelvedata failed: {e}")
+        
+        # Final fallback to Yahoo Finance
+        return await self._try_provider(symbol, "yahoo")
+    
+    async def _try_provider(self, symbol: str, provider: str, timeframe: str = "1h") -> list:
+        """Try a specific provider with error handling."""
+        import asyncio
+        
+        def _sync_fetch():
+            if provider == "bybit":
+                return fetch_bybit_candles(symbol, timeframe)
+            elif provider == "cryptocompare":
+                return fetch_cryptocompare_candles(symbol, timeframe)
+            elif provider == "polygon":
+                return fetch_polygon_candles(symbol, timeframe, "stocks")
+            elif provider == "twelvedata":
+                return fetch_twelvedata_candles(symbol, timeframe, "stocks")
+            elif provider == "oanda":
+                return fetch_oanda_candles(symbol, timeframe)
+            elif provider == "yahoo":
+                return fetch_yahoo_candles(symbol, timeframe)
+            elif provider == "coingecko":
+                from data.providers import fetch_coingecko_candles
+                return fetch_coingecko_candles(symbol, timeframe)
             return []
         
-        # Try each provider in order
-        for provider_name, fetch_func in providers:
-            try:
-                if asyncio.iscoroutinefunction(fetch_func):
-                    candles = await asyncio.wait_for(
-                        fetch_func(symbol, timeframe),
-                        timeout=timeout
-                    )
-                else:
-                    candles = await asyncio.wait_for(
-                        asyncio.to_thread(fetch_func, symbol, timeframe),
-                        timeout=timeout
-                    )
-                
-                if candles and len(candles) >= 20:
-                    logger.info(
-                        "[router] success provider=%s asset_class=%s symbol=%s tf=%s candles=%d",
-                        provider_name, asset_class, symbol, timeframe, len(candles)
-                    )
-                    return candles
-                else:
-                    logger.warning(
-                        "[router] provider=%s returned insufficient data symbol=%s tf=%s",
-                        provider_name, symbol, timeframe
-                    )
-            except asyncio.TimeoutError:
-                logger.warning("[router] timeout provider=%s symbol=%s", provider_name, symbol)
-            except Exception as e:
-                logger.warning("[router] error provider=%s symbol=%s: %s", provider_name, symbol, e)
-                continue
-        
-        # All providers failed
-        logger.error("[router] all providers failed asset_class=%s symbol=%s", asset_class, symbol)
-        return []
+        try:
+            return await asyncio.wait_for(
+                asyncio.to_thread(_sync_fetch),
+                timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            raise RateLimitError(f"{provider} timeout")
+        except Exception as e:
+            if "429" in str(e) or "rate limit" in str(e).lower():
+                raise RateLimitError(f"{provider} rate limited")
+            raise
     
-    def get_primary_provider(self, asset_class: str) -> Optional[str]:
-        """Get the name of the primary provider for an asset class."""
-        self._ensure_initialized()
-        providers = self._providers.get(asset_class, [])
-        return providers[0][0] if providers else None
+    async def _fetch_fallback(self, symbol: str, asset_class: str) -> list:
+        """Generic fallback using multi-provider fetcher."""
+        # Use the main fetcher which already has fallbacks
+        try:
+            import asyncio
+            return await asyncio.to_thread(lambda: get_candles(symbol, "1h"))
+        except Exception:
+            return []
 
 
 # Default router instance
@@ -229,22 +203,19 @@ _default_router: Optional[DataRouter] = None
 
 
 def get_router() -> DataRouter:
-    """Get or create the default DataRouter instance."""
+    """Get the default router instance."""
     global _default_router
     if _default_router is None:
         _default_router = DataRouter()
     return _default_router
 
 
-async def fetch_candles(
-    symbol: str,
-    timeframe: str = "1h",
-    asset_class: Optional[str] = None
-) -> List[Dict[str, Any]]:
+async def fetch_with_router(symbol: str, timeframe: str = "1h") -> list:
     """
-    Convenience function to fetch candles via the default router.
+    Convenience function to fetch data using the router.
     
-    This is the main entry point used by the rest of the codebase.
+    Auto-detects asset class and routes to appropriate provider.
     """
     router = get_router()
-    return await router.fetch_price(symbol, asset_class, timeframe)
+    asset_class = get_asset_type(symbol)
+    return await router.fetch_price(symbol, asset_class)
