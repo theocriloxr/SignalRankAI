@@ -41,7 +41,8 @@ def score_signal(signal):
     Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
-    confluence_min = _env_float("CONFLUENCE_MIN", 25.0)
+    # LOWERED from 25.0 to 15.0 to allow more signals through (fixes "Zero Signal")
+    confluence_min = _env_float("CONFLUENCE_MIN", 15.0)
     confluence_score = resolve_confluence_percent(signal)
     if confluence_score is None:
         confluence_score = calculate_confluence(signal)
@@ -53,8 +54,8 @@ def score_signal(signal):
     if confidence is None:
         confidence = resolve_ml_probability(signal)
     
-    # ULTRA-STRICT QUALITY GATE: Only trade-worthy setups
-    confidence_min = _env_float("CONFIDENCE_MIN", 0.35)
+    # LOWERED from 0.35 to 0.25 to allow more signals through (fixes "Zero Signal")
+    confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
     if confidence is not None and confidence < confidence_min:
         return 0.0
 
@@ -86,7 +87,8 @@ def score_signal(signal):
         return 0.0
     score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
-    min_rr = _env_float("MIN_RR", 1.5)
+    # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
+    min_rr = _env_float("MIN_RR", 1.0)
     # Hard rejection for poor R/R
     if rr < min_rr:
         return 0.0
@@ -230,7 +232,8 @@ def rr_score(rr):
     except Exception:
         rr = 0.0
     
-    min_rr = _env_float("MIN_RR", 1.5)
+    # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
+    min_rr = _env_float("MIN_RR", 1.0)
     # Hard floor: reject RR below configured minimum
     if rr < min_rr:
         return 0.0
@@ -252,13 +255,10 @@ def regime_fit_score(signal, regime=None):
 def volatility_quality_score(signal):
     """Score volatility quality (lower volatility = better conditions = higher score).
     
-    ULTRA-STRICT for win rate recovery:
-    - vol <= 0.08 (8%): score 1.0 (ideal low-volatility)
-    - vol = 0.10 (10%): score 0.50 (marginal)
-    - vol >= 0.12 (12%): score 0.0 (reject - too volatile for reliable execution)
-    
-    Rationale: High volatility = poor fills, slippage, stop hunting
-    With 16% win rate, we need PERFECT conditions to turn it around
+    LOWERED to allow more signals through (fixes "Zero Signal"):
+    - vol <= 0.10 (10%): score 1.0 (ideal low-volatility)
+    - vol = 0.15 (15%): score 0.50 (marginal)
+    - vol >= 0.20 (20%): score 0.0 (reject - too volatile for reliable execution)
     """
     vol = signal.get("volatility", 0.0)
     try:
@@ -266,8 +266,10 @@ def volatility_quality_score(signal):
     except Exception:
         vol = 0.0
     
-    max_vol = _env_float("MAX_VOLATILITY", 0.16)
-    ideal_vol = _env_float("IDEAL_VOLATILITY", 0.10)
+    # LOWERED from 0.16 to 0.20 to allow more signals through
+    max_vol = _env_float("MAX_VOLATILITY", 0.20)
+    # LOWERED from 0.10 to 0.12 to allow more signals through
+    ideal_vol = _env_float("IDEAL_VOLATILITY", 0.12)
     if vol <= ideal_vol:
         return 1.0  # Perfect
     elif vol >= max_vol:

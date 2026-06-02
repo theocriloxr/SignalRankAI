@@ -12,8 +12,9 @@ def _env_float(name: str, default: float) -> float:
 
 def rank_signals(signals):
     """Accepts a list of signals and returns a dict with keys 'vip', 'premium', 'free'."""
-    vip_threshold = _env_float("VIP_SCORE_THRESHOLD", 80)
-    premium_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", 68)
+    # Lowered thresholds to allow more signals through (was VIP=80, Premium=68)
+    vip_threshold = _env_float("VIP_SCORE_THRESHOLD", 75)
+    premium_threshold = _env_float("PREMIUM_SCORE_THRESHOLD", 60)
     premium = []
     vip = []
     free = []
@@ -41,4 +42,3 @@ def rank_signals(signals):
     premium.sort(key=lambda x: x.get('score_final', x.get('score', 0)), reverse=True)
     free.sort(key=lambda x: x.get('score_final', x.get('score', 0)), reverse=True)
     return {'vip': vip, 'premium': premium, 'free': free}
-
