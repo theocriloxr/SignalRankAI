@@ -99,15 +99,28 @@ def _threshold_pct(symbol: str = "") -> float:
 
     If STALE_PRICE_THRESHOLD_PCT is set explicitly it overrides all classes.
     Otherwise the per-class default is used (see _CLASS_THRESHOLDS).
+    
+    CRITICAL: Hardcoded fallback to prevent 0.0% threshold bug.
     """
+    # CRITICAL FIX: Add safety fallback to prevent 0.0% threshold
+    # This prevents the "drift=0.24% > threshold=0.0%" fatal error
     try:
         override = os.getenv("STALE_PRICE_THRESHOLD_PCT", "")
         if override.strip():
-            return max(0.01, float(override.strip()))
+            val = float(override.strip())
+            if val > 0.0:
+                return max(0.01, val)
     except Exception:
         pass
+    
     asset_class = _detect_asset_class(symbol) if symbol else "crypto"
-    return _CLASS_THRESHOLDS.get(asset_class, 2.0)
+    threshold = _CLASS_THRESHOLDS.get(asset_class, 2.0)
+    
+    # Safety net: NEVER return 0.0 - use minimum 0.5%
+    if threshold <= 0.0:
+        threshold = 0.5
+        
+    return threshold
 
 
 def _fetch_timeout() -> float:
