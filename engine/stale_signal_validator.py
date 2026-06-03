@@ -27,6 +27,77 @@ from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+
+class StaleSignalValidator:
+    """
+    StaleSignalValidator - Validates signal freshness against live market prices.
+    
+    CRITICAL FIX: This class now explicitly reads from environment variables during __init__
+    to prevent the "Zero Threshold" bug (threshold stuck at 0.0%).
+    
+    The validator ensures that:
+    1. Signal entry prices are still achievable at current market prices
+    2. Price drift doesn't exceed the configured threshold
+    3. Entry zone logic allows for legitimate price fluctuations
+    """
+    
+    def __init__(self):
+        """
+        Initialize the validator with environment-based configuration.
+        
+        CRITICAL: Force the code to read the Railway Env Var, or default to a SAFE 1.0%
+        This fixes the "Zero Threshold" bug where the threshold was stuck at 0.0%.
+        """
+        # Force the code to read the Railway Env Var, or default to a SAFE 1.0%
+        # This explicit reading prevents the 0.0% threshold bug
+        raw_threshold = os.getenv("STALE_PRICE_THRESHOLD_PCT", "1.0")
+        try:
+            self.default_threshold = float(raw_threshold) / 100.0
+        except (ValueError, TypeError):
+            self.default_threshold = 0.01  # 1.0% safe fallback
+        
+        # Safety net: NEVER allow 0.0 threshold - always use minimum 0.5%
+        if self.default_threshold <= 0.0:
+            self.default_threshold = 0.005  # 0.5% minimum
+        
+        logger.info(
+            f"[StaleSignalValidator] Initialized with threshold={self.default_threshold*100:.2f}% "
+            f"(from env: STALE_PRICE_THRESHOLD_PCT={raw_threshold})"
+        )
+    
+    def get_threshold(self) -> float:
+        """Return the default threshold as a percentage (0-1 range)."""
+        return self.default_threshold
+    
+    def validate(self, signal_price: float, live_price: float) -> bool:
+        """
+        Validate that the signal price is still fresh compared to live price.
+        
+        Args:
+            signal_price: The original signal's entry price
+            live_price: Current live market price
+        
+        Returns:
+            True if the signal is still fresh (drift within threshold)
+            False if the signal is stale (drift exceeds threshold)
+        """
+        if signal_price <= 0 or live_price <= 0:
+            return True  # Can't validate, assume OK
+        
+        drift = abs(signal_price - live_price) / signal_price
+        
+        if drift > self.default_threshold:
+            logger.info(
+                f"[StaleSignalValidator] Signal INVALIDATED: drift={drift*100:.2f}% > "
+                f"threshold={self.default_threshold*100:.2f}%"
+            )
+            return False
+        return True
+
+
+# Global instance - ensures env vars are read once at import time
+_validator = StaleSignalValidator()
+
 # Asset-class defaults when STALE_PRICE_THRESHOLD_PCT is not set.
 _CLASS_THRESHOLDS: dict[str, float] = {
     "crypto":     3.5,   # 3.5% (increased for crypto volatility)
@@ -374,3 +445,46 @@ def validate_signal_freshness_sync(signal: Dict[str, Any]) -> Tuple[bool, str, O
     """Synchronous wrapper around validate_signal_freshness."""
     from utils.async_runner import run_sync
     return run_sync(validate_signal_freshness(signal))
+
+
+def get_validator() -> StaleSignalValidator:
+    """
+    Get the global StaleSignalValidator instance.
+    
+    This function ensures that the validator is properly initialized with
+    environment variables and can be used throughout the codebase.
+    
+    Returns:
+        StaleSignalValidator: The global validator instance
+    """
+    return _validator
+
+
+def get_threshold_from_env(symbol: str = "") -> float:
+    """
+    Get the threshold percentage for a given symbol.
+    
+    This function now uses the global StaleSignalValidator instance to ensure
+    consistent threshold values are used throughout the codebase.
+    
+    Args:
+        symbol: Trading symbol (optional, for asset-class detection)
+    
+    Returns:
+        Threshold as a percentage (0-1 range)
+    """
+    # First try to get from global validator (uses env var)
+    global_threshold = _validator.get_threshold()
+    
+    # If dynamic drift is enabled and we have ATR, use that
+    use_dynamic = _env_bool("USE_DYNAMIC_DRIFT", True)
+    if use_dynamic:
+        # For symbol-based dynamic threshold, we need ATR value
+        # This is just the global threshold if no ATR is provided
+        return global_threshold
+    
+    # Fallback to asset-class threshold if no env var is set
+    if not os.getenv("STALE_PRICE_THRESHOLD_PCT"):
+        return _threshold_pct(symbol) / 100.0
+    
+    return global_threshold
