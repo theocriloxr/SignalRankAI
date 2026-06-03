@@ -413,8 +413,13 @@ async def validate_signal_freshness(
                     logger.warning(f"[stale_validator] Signal INVALIDATED for {symbol}: {reason}")
                     return False, reason, live
 
-    # Calculate threshold (dynamic ATR-based or static)
+# Calculate threshold (dynamic ATR-based or static)
+    # CRITICAL FIX: Ensure threshold is in percentage form to match drift_pct
     threshold = get_dynamic_threshold(symbol, atr_value, live)
+    
+    # If threshold is < 1.0, assume it's in decimal form (0.01 = 1%) and convert to percentage
+    if threshold < 1.0:
+        threshold = threshold * 100.0
 
     # Check drift percentage
     drift_pct = abs(live - entry) / entry * 100.0
