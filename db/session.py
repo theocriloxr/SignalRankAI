@@ -84,6 +84,12 @@ def _effective_pool_settings() -> tuple[int, int]:
         railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_CAP", 0, minimum=0)
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
+    else:
+        # Safety cap for non-Railway or when Railway cap is disabled
+        # Limit to 3 total connections to prevent exceeding typical shared plan limits
+        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 3, minimum=1)
+        pool_size = min(pool_size, global_pool_cap)
+        max_overflow = min(max_overflow, 1)
 
     return pool_size, max_overflow
 

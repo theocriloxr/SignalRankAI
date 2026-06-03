@@ -538,6 +538,7 @@ from .commands import (
     elite_command,
     early_command,
     report_command,
+    language_command,
     feedback_command,
     notify_command,
     filter_command,
