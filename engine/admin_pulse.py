@@ -25,35 +25,53 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
 
         since = datetime.utcnow() - timedelta(hours=max(1, int(window_hours or 1)))
         params = {"since": since}
+        
         async with get_session() as session:
-            # Total scanned ~ signals considered (using decision_log entries)
-            scanned_row = (
-                await session.execute(
-                    text("SELECT COUNT(*) FROM decision_log WHERE created_at >= :since"),
-                    params,
-                )
-            ).first()
-            scanned = int(scanned_row[0] or 0) if scanned_row else 0
+            # Check if created_at column exists in decision_log
+            try:
+                scanned_row = (
+                    await session.execute(
+                        text("SELECT COUNT(*) FROM decision_log WHERE created_at >= :since"),
+                        params,
+                    )
+                ).first()
+                scanned = int(scanned_row[0] or 0) if scanned_row else 0
 
-            # Rejected by risk / score
-            rej_rows = (
-                await session.execute(
-                    text("SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"),
-                    params,
-                )
-            ).fetchall()
-            rejected_by = {str(r[0] or ""): int(r[1] or 0) for r in (rej_rows or [])}
+                # Rejected by risk / score
+                rej_rows = (
+                    await session.execute(
+                        text("SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"),
+                        params,
+                    )
+                ).fetchall()
+                rejected_by = {str(r[0] or ""): int(r[1] or 0) for r in (rej_rows or [])}
+            except Exception as e:
+                # Fallback if created_at column doesn't exist yet
+                if "created_at" in str(e):
+                    logger.warning("[admin_pulse] created_at column missing in decision_log - using fallback")
+                    scanned = 0
+                    rejected_by = {}
+                else:
+                    raise
 
-            # Delivered
-            delivered_row = (
-                await session.execute(
-                    text(
-                        "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since"
-                    ),
-                    params,
-                )
-            ).first()
-            delivered = int(delivered_row[0] or 0) if delivered_row else 0
+            # Check if created_at column exists in signal_deliveries
+            try:
+                delivered_row = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since"
+                        ),
+                        params,
+                    )
+                ).first()
+                delivered = int(delivered_row[0] or 0) if delivered_row else 0
+            except Exception as e:
+                # Fallback if created_at column doesn't exist yet
+                if "created_at" in str(e):
+                    logger.warning("[admin_pulse] created_at column missing in signal_deliveries - using fallback")
+                    delivered = 0
+                else:
+                    delivered = 0
 
         # Shadow counters from Redis
         try:
