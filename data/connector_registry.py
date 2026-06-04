@@ -51,12 +51,20 @@ def _wrap_to_async(fn: Callable) -> Callable:
 def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     """Return sync (name, callable) providers for `asset_type`.
 
-    asset_type: 'crypto' | 'fx' | 'stock'
+    asset_type: 'crypto' | 'fx' | 'stock' | 'commodity'
+    
+    IMPORTANT: Different asset types need different providers!
+    - Crypto: binance, bybit, cryptocompare (ONLY crypto exchanges)
+    - Stocks: twelvedata, polygon, yahoo (NOT crypto exchanges!)
+    - Commodities: twelvedata, oanda, yahoo (NOT crypto exchanges!)
+    - FX: twelvedata, polygon, oanda (NOT crypto exchanges!)
     """
     providers: List[Tuple[str, Callable]] = []
     kind = str(asset_type or "").lower().strip()
-    if kind == "commodity":
-        kind = "stock"
+    
+    # CRITICAL: Keep commodity separate from stock!
+    # This is the fix for "Ghost Price" errors
+    # Previously commodities were being sent to crypto providers which returned wrong data
 
     try:
         from data import connectors as c
@@ -64,17 +72,36 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
         c = None
 
     if kind == "crypto":
+        # CRYPTO: ONLY use crypto exchanges (NOT stock/fx providers!)
         ordered = [
             ("binance_connector", getattr(c, "binance_get_candles", None)),
             ("bybit_connector", getattr(c, "bybit_get_candles", None)),
             ("cryptocompare_connector", getattr(c, "cryptocompare_get_candles", None)),
             ("coingecko_connector", getattr(c, "coingecko_get_candles", None)),
         ]
-    else:
-        # Traditional assets: prefer premium feeds first, then yfinance safety net.
+    elif kind == "commodity":
+        # COMMODITIES (Gold, Silver, Oil): Prefer OANDA/TwelveData, NOT crypto exchanges!
+        # This prevents the WTI=$4.01 ghost price bug
         ordered = [
-            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+        ]
+    elif kind in ("fx", "forex"):
+        # FOREX: Prefer OANDA/TwelveData (not crypto exchanges!)
+        ordered = [
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+        ]
+    else:
+        # STOCKS: Prefer premium feeds first, then yfinance safety net.
+        # Note: Polygon has strict rate limits, TwelveData is more generous
+        ordered = [
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
             ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
             ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),

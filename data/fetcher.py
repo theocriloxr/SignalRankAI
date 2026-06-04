@@ -639,6 +639,19 @@ def is_commodity(asset):
 
 def get_asset_type(asset):
     """Determine asset type: 'crypto', 'fx', 'stock', or 'commodity'."""
+    # First check for explicit namespace prefix
+    namespace, raw_symbol = parse_symbol(asset)
+    if namespace:
+        if namespace.upper() == "CRYPTO":
+            return "crypto"
+        elif namespace.upper() in ("EQUITY", "STOCK"):
+            return "stock"
+        elif namespace.upper() in ("COMMODITY", "CMDT"):
+            return "commodity"
+        elif namespace.upper() in ("FX", "FOREX"):
+            return "fx"
+    
+    # Fall back to symbol-based detection
     if is_crypto(asset):
         return "crypto"
     elif is_fx(asset):
@@ -647,6 +660,240 @@ def get_asset_type(asset):
         return "commodity"
     else:
         return "stock"
+
+
+# =============================================================================
+# TICKER NAMESPACING FUNCTIONS -解决 "Ghost Price" 和 "Sensor Misalignment" errors
+# =============================================================================
+
+# Valid namespace prefixes
+ASSET_NAMESPACE_PREFIXES = ("CRYPTO", "EQUITY", "STOCK", "COMMODITY", "CMDT", "FX", "FOREX")
+
+# Known commodity tickers (to prevent crypto provider from fetching wrong asset)
+KNOWN_COMMODITY_TICKERS = {
+    # Precious metals
+    "XAU", "XAG", "XPT", "XPD",  # Gold, Silver, Platinum, Palladium
+    "GOLD", "SILVER", "PLATINUM", "PALLADIUM",
+    # Energy
+    "WTI", "BRENT", "CL", "BZ", "NG", "NATURALGAS", "OIL",
+    # Agriculture  
+    "CORN", "WHEAT", "SOYBEAN", "COFFEE", "SUGAR", "COTTON",
+    # Base metals
+    "COPPER", "ALUMINUM", "ZINC", "NICKEL", "LEAD",
+}
+
+# Known stock tickers (major equities to distinguish from crypto)
+KNOWN_STOCK_TICKERS = {
+    # Tech giants
+    "AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA", "NFLX", "ORCL",
+    # Financials
+    "JPM", "BAC", "WFC", "GS", "MS", "C", "BLK", "AXP", "V", "MA", "PYPL",
+    # Healthcare
+    "JNJ", "UNH", "PFE", "ABBV", "MRK", "LLY", "TMO", "ABT",
+    # Consumer
+    "WMT", "HD", "MCD", "NKE", "SBUX", "KO", "PEP", "DIS",
+    # Energy
+    "XOM", "CVX", "COP", "SLB",
+    # Industrial
+    "BA", "CAT", "GE", "HON", "UPS", "RTX",
+}
+
+
+def parse_symbol(symbol: str) -> tuple[str | None, str]:
+    """Parse a namespaced symbol like 'EQUITY:MA' or 'COMMODITY:WTI'.
+    
+    Returns:
+        tuple of (namespace_prefix, raw_symbol) or (None, original_symbol)
+    
+    Examples:
+        >>> parse_symbol("EQUITY:MA")
+        ('EQUITY', 'MA')
+        >>> parse_symbol("COMMODITY:WTI")
+        ('COMMODITY', 'WTI')
+        >>> parse_symbol("BTCUSDT")
+        (None, 'BTCUSDT')
+    """
+    if not symbol:
+        return None, symbol
+    
+    sym = str(symbol).upper().strip()
+    
+    # Check for namespace prefix (PREFIX:SYMBOL format)
+    if ":" in sym:
+        parts = sym.split(":", 1)
+        if len(parts) == 2:
+            prefix, raw = parts
+            if prefix in ASSET_NAMESPACE_PREFIXES:
+                return prefix, raw
+    
+    return None, symbol
+
+
+def normalize_symbol(symbol: str, force_type: str | None = None) -> str:
+    """Add namespace prefix to symbol based on detected or specified asset type.
+    
+    Args:
+        symbol: Raw ticker symbol (e.g., "MA", "WTI", "BTCUSDT")
+        force_type: Optional asset type to force ('crypto', 'stock', 'commodity', 'fx')
+    
+    Returns:
+        Namespaced symbol (e.g., "EQUITY:MA", "COMMODITY:WTI", "CRYPTO:BTCUSDT")
+    
+    Examples:
+        >>> normalize_symbol("MA")
+        'EQUITY:MA'
+        >>> normalize_symbol("WTI") 
+        'COMMODITY:WTI'
+        >>> normalize_symbol("BTCUSDT")
+        'CRYPTO:BTCUSDT'
+    """
+    if not symbol:
+        return symbol
+    
+    sym = str(symbol).upper().strip()
+    
+    # Already has namespace prefix
+    namespace, raw = parse_symbol(sym)
+    if namespace:
+        return sym  # Already namespaced
+    
+    # Determine asset type
+    asset_type = force_type if force_type else get_asset_type(sym)
+    
+    # Add appropriate namespace prefix
+    if asset_type == "crypto":
+        return f"CRYPTO:{sym}"
+    elif asset_type in ("stock", "equity"):
+        return f"EQUITY:{sym}"
+    elif asset_type == "commodity":
+        return f"COMMODITY:{sym}"
+    elif asset_type in ("fx", "forex"):
+        return f"FX:{sym}"
+    else:
+        # Default to equity for unknown stocks, commodity for known commodities
+        if sym in KNOWN_COMMODITY_TICKERS:
+            return f"COMMODITY:{sym}"
+        elif sym in KNOWN_STOCK_TICKERS:
+            return f"EQUITY:{sym}"
+        else:
+            # Default: treat as crypto if looks like crypto pair
+            if is_crypto(sym):
+                return f"CRYPTO:{sym}"
+            return f"EQUITY:{sym}"
+
+
+def is_market_open(asset: str | None = None, asset_type: str | None = None) -> bool:
+    """Check if market is currently open for the given asset.
+    
+    This is the main entry point for market hours checking in the engine loop.
+    
+    Args:
+        asset: Symbol to check (e.g., "MA", "WTI")
+        asset_type: Optional asset type override ('crypto', 'stock', 'commodity', 'fx')
+    
+    Returns:
+        True if market is open, False otherwise
+    """
+    # Crypto is always 24/7
+    if asset_type == "crypto" or (asset and is_crypto(asset)):
+        return True
+    
+    # Get the closed reason - returns None if open, reason string if closed
+    reason = market_closed_reason(asset) if asset else None
+    
+    if reason:
+        logger.debug(f"[market_hours] market closed for {asset}: {reason}")
+        return False
+    
+    return True
+
+
+def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
+    """Get the ONLY providers that should be used for this asset.
+    
+    This prevents the "Ghost Price" issue where a crypto provider returns 
+    wrong data for non-crypto assets.
+    
+    Args:
+        asset: Symbol with optional namespace (e.g., "EQUITY:MA", "COMMODITY:WTI")
+    
+    Returns:
+        tuple of (asset_type, list_of_allowed_providers)
+    """
+    namespace, raw = parse_symbol(asset)
+    
+    # Use namespace if present
+    if namespace:
+        if namespace == "CRYPTO":
+            return "crypto", ["binance", "bybit", "cryptocompare", "coingecko"]
+        elif namespace in ("EQUITY", "STOCK"):
+            return "stock", ["twelvedata", "polygon", "yahoo"]
+        elif namespace in ("COMMODITY", "CMDT"):
+            return "commodity", ["twelvedata", "oanda", "yahoo"]
+        elif namespace in ("FX", "FOREX"):
+            return "fx", ["twelvedata", "polygon", "oanda"]
+    
+    # Fall back to symbol-based detection
+    asset_type = get_asset_type(asset)
+    
+    if asset_type == "crypto":
+        return "crypto", ["binance", "bybit", "cryptocompare", "coingecko"]
+    elif asset_type == "stock":
+        return "stock", ["twelvedata", "polygon", "yahoo"]
+    elif asset_type == "commodity":
+        return "commodity", ["twelvedata", "oanda", "yahoo"]
+    elif asset_type == "fx":
+        return "fx", ["twelvedata", "polygon", "oanda"]
+    
+    return asset_type, []
+
+
+def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None = None) -> bool:
+    """Validate that fetched price is reasonable to prevent ghost prices.
+    
+    Args:
+        asset: Symbol
+        price: Newly fetched price
+        lastKnownPrice: Optional previous price for comparison
+    
+    Returns:
+        True if price passes sanity check, False otherwise
+    """
+    if price is None or price <= 0:
+        logger.warning(f"[price_validator] Invalid price for {asset}: {price}")
+        return False
+    
+    # Get asset type to set reasonable bounds
+    asset_type = get_asset_type(asset)
+    
+    # Minimum price thresholds by asset type
+    MIN_PRICES = {
+        "crypto": 0.0001,      # Crypto can be very small
+        "fx": 0.0001,          # Forex pairs in major currencies
+        "stock": 0.01,         # Stocks rarely go below penny
+        "commodity": 0.01,     # Commodities in dollars
+    }
+    
+    min_price = MIN_PRICES.get(asset_type, 0.01)
+    if price < min_price:
+        logger.warning(
+            f"[price_validator] SUSPICIOUS price for {asset} ({asset_type}): "
+            f"${price:.4f} < min ${min_price:.4f}"
+        )
+        return False
+    
+    # If we have a last known price, check for extreme deviation
+    if lastKnownPrice and lastKnownPrice > 0:
+        ratio = price / lastKnownPrice
+        # Reject if price changed by more than 10x (ghost price indicator)
+        if ratio > 10 or ratio < 0.1:
+            logger.warning(
+                f"[price_validator] GHOST PRICE detected for {asset}: "
+                f"last=${lastKnownPrice:.4f}, new=${price:.4f}, ratio={ratio:.2f}x"
+            )
+            return False
+    
+    return True
 
 
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:

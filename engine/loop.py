@@ -51,6 +51,31 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
     signals: list = []
     started = time.perf_counter()
     try:
+        # === Phase 2: Market Hours Check - Skip if market is closed ===
+        # Import market hours check from fetcher
+        from data.fetcher import is_market_open, market_closed_reason
+        
+        # Get asset type for market hours determination
+        from data.fetcher import get_asset_type
+        asset_type = get_asset_type(asset)
+        
+        # Check if market is open (skip for non-crypto assets when market is closed)
+        if not is_market_open(asset, asset_type):
+            closed_reason = market_closed_reason(asset) or "market closed"
+            logger.debug(f"[engine] Skipping {asset} ({asset_type}): {closed_reason}")
+            # Log decision for analytics
+            await persist_decision_log(
+                None,
+                asset,
+                timeframe,
+                "skipped",
+                reason=f"market_hours: {closed_reason}",
+                meta={"asset_type": asset_type},
+            )
+            return signals  # Return empty list, don't generate signals for closed markets
+        
+        # === End Market Hours Check ===
+        
         with trace_span("engine.process_asset_timeframe", asset=asset, timeframe=timeframe, include_ml=include_ml):
             market_state = await get_market_state_async(asset, [timeframe], include_ml=include_ml)
         tf_data = market_state.get("timeframes", {}).get(timeframe)
