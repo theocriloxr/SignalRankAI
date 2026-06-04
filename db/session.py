@@ -79,9 +79,10 @@ def _effective_pool_settings() -> tuple[int, int]:
     max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
     if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
-        # Hobby tier has strict limits: 2 connections, 0 overflow
-        railway_pool_cap = _pool_int("DB_POOL_RAILWAY_CAP", 2, minimum=1)
-        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_CAP", 0, minimum=0)
+        # CRITICAL FIX: Railway shared plan limit is 20 connections.
+        # Force 1 connection per engine to prevent exhaustion.
+        railway_pool_cap = 1
+        railway_overflow_cap = 0
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
     else:
