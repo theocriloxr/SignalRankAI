@@ -326,7 +326,40 @@ def fetch_market_data(asset, timeframes):
             if not indicators:
                 continue  # Indicator calculation failed
             
-            provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
+provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
+            
+            # === GHOST PRICE VALIDATION ===
+            # Validate price is reasonable for asset type to prevent "Ghost Price" errors
+            # where wrong provider returns completely wrong price (e.g., crypto WTI token vs crude oil)
+            latest_close = latest_candle.get('close')
+            
+            if latest_close is not None:
+                # Get last known price from cache for comparison
+                last_known_key = f"last_price:{_asset_norm}"
+                last_known_price = _LAST_PROVIDER_USED.get(last_known_key)
+                
+                # Check price sanity
+                price_valid = validate_price_sanity(_asset_norm, float(latest_close), last_known_price)
+                if not price_valid:
+                    logger.error(
+                        f"[fetcher] GHOST PRICE REJECTED for {asset} {tf}: "
+                        f"price=${latest_close:.4f} provider={provider_name} "
+                        f"(expected reasonable price for {get_asset_type(_asset_norm)})"
+                    )
+                    # Skip this asset - price is suspicious
+                    continue
+                
+                # Update last known price for next comparison
+                _LAST_PROVIDER_USED[last_known_key] = float(latest_close)
+            
+            # Log which provider was used (helps debug Ghost Price issues)
+            asset_type = get_asset_type(_asset_norm)
+            logger.info(
+                f"[fetcher] price_fetched provider={provider_name} asset={asset} "
+                f"asset_type={asset_type} tf={tf} price={latest_close}"
+            )
+            # === END GHOST PRICE VALIDATION ===
+            
             data[tf] = {
                 'candles': candles,
                 'indicators': indicators,
@@ -334,6 +367,7 @@ def fetch_market_data(asset, timeframes):
                 'latest_candle_timestamp': latest_ts_sec,
                 'candle_age_seconds': candle_age,
                 'source': provider_name or 'unknown',
+                'asset_type': asset_type,
                 'stale_but_acceptable': bool(stale_but_acceptable),
             }
         except Exception as e:
