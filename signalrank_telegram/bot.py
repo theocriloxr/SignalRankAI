@@ -552,6 +552,7 @@ from .commands import (
     market_command,
     gemini_analyze_command,
     gemini_audit_command,
+    reports_command,
     gemini_predict_command,
     admin_command,
     admin_broadcast_command,
