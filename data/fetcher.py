@@ -312,7 +312,11 @@ def fetch_market_data(asset, timeframes):
             if candle_age > max_age:
                 # Allow a small grace window for some providers (yfinance/tradingview)
                 grace = float((os.getenv("YFINANCE_STALENESS_GRACE_SECONDS") or "120").strip())
-                provider_name = _get_last_provider_used(_asset_norm, _tf_norm) or ""
+                try:
+                    provider_name = _get_last_provider_used(_asset_norm, _tf_norm) or ""
+                except Exception as e:
+                    logger.warning(f"[fetcher] Error getting provider: {e}")
+                    provider_name = ""
                 if provider_name in {"yahoo", "yfinance", "tradingview", "tradingview_connector", "tradingview_legacy"} and candle_age <= (max_age + grace):
                     # mark as lower confidence but accept
                     logger.info(f"[fetcher] Stale-but-acceptable data for {asset} {tf} provider={provider_name} age={candle_age:.0f}s (max+grace={max_age+grace:.0f}s)")
@@ -325,8 +329,13 @@ def fetch_market_data(asset, timeframes):
             indicators = calculate_indicators(candles)
             if not indicators:
                 continue  # Indicator calculation failed
-            
-provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
+
+            # Safely get provider name with fallback
+            try:
+                provider_name = _get_last_provider_used(_asset_norm, _tf_norm)
+            except Exception as e:
+                logger.warning(f"[fetcher] Error fetching provider: {e}")
+                provider_name = "default"
             
             # === GHOST PRICE VALIDATION ===
             # Validate price is reasonable for asset type to prevent "Ghost Price" errors
