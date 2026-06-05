@@ -1,63 +1,52 @@
 """
-Live Price Fetch with Circuit Breaker - Task 5 Fix
+Live Price Fetcher with Circuit Breaker - Task 5 Fix
 
-Fixes:
-- "Ghost Prices" - wrong provider returning null/wrong prices
-- Asset routing - crypto to Binance/Bybit, stocks to Polygon/Yahoo
-- Circuit breaker pattern for API failures
-
-Implementation:
-- Strict asset routing by ticker suffix
-- Circuit breaker for each provider
-- Automatic failover on rate limits
+This module:
+- Implements strict asset routing: Crypto (USDT/*) → Binance/Bybit, Stocks → Yahoo
+- Uses Circuit Breaker pattern for each provider
+- Provides automatic failover on rate limits/geo-blocks
+- Prevents "Ghost Price" from wrong provider
 """
 
-import logging
 import os
+import logging
 import asyncio
-from typing import Optional
-from datetime import datetime, timedelta
+import time
+from typing import Optional, Dict, Any, List
+from dataclasses import dataclass
+from collections import deque
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Configuration
+# Circuit Breaker Configuration
 # ============================================================================
 
-# Provider URLs
-BINANCE_WS_URL = "wss://stream.binance.com:9443/ws"
-BYBIT_WS_URL = "wss://stream.bybit.com/v5/ws"
-POLYGON_WS_URL = "wss://streamer.polygon.io"
-
-# Circuit breaker config
-CIRCUIT_FAILURE_THRESHOLD = 3
-CIRCUIT_OPEN_SECONDS = 30.0
-CIRCUIT_WINDOW_SECONDS = 10.0
-
-# Price fetch timeout
-PRICE_TIMEOUT_SECONDS = 5.0
+@dataclass
+class PriceCircuitConfig:
+    """Configuration for price circuit breaker."""
+    failure_threshold: int = 3  # Open after 3 failures
+    window_seconds: float = 60.0  # Track failures in 60s window
+    open_seconds: float = 30.0  # Stay open for 30s
 
 
-# ============================================================================
-# Circuit Breaker State
-# ============================================================================
-
-class _CircuitBreaker:
-    """Simple circuit breaker for price providers."""
+class PriceCircuitBreaker:
+    """Circuit breaker for price providers."""
     
-    def __init__(self, name: str):
-        self.name = name
-        self._failures = []
-        self._open_until = 0.0
+    def __init__(self, config: Optional[PriceCircuitConfig] = None):
+        self.config = config or PriceCircuitConfig()
+        self._failures: deque[float] = deque()
+        self._open_until: float = 0.0
     
     def _now(self) -> float:
-        import time
         return time.time()
     
     def _prune(self, now_ts: float) -> None:
-        window_start = now_ts - CIRCUIT_WINDOW_SECONDS
-        self._failures = [f for f in self._failures if f >= window_start]
+        window_start = now_ts - self.config.window_seconds
+        while self._failures and self._failures[0] < window_start:
+            self._failures.popleft()
     
     def allow(self) -> bool:
         now_ts = self._now()
@@ -67,7 +56,7 @@ class _CircuitBreaker:
         return True
     
     def record_success(self) -> None:
-        self._failures = []
+        self._failures.clear()
         self._open_until = 0.0
     
     def record_failure(self) -> bool:
@@ -75,339 +64,422 @@ class _CircuitBreaker:
         self._failures.append(now_ts)
         self._prune(now_ts)
         
-        if len(self._failures) >= CIRCUIT_FAILURE_THRESHOLD:
-            self._open_until = now_ts + CIRCUIT_OPEN_SECONDS
-            logger.warning(f"[price] Circuit OPEN for {self.name}")
+        if len(self._failures) >= self.config.failure_threshold:
+            self._open_until = now_ts + self.config.open_seconds
             return True
         return False
 
 
 # Provider circuit breakers
-_breakers = {
-    "binance": _CircuitBreaker("binance"),
-    "bybit": _CircuitBreaker("bybit"),
-    "polygon": _CircuitBreaker("polygon"),
-    "yahoo": _CircuitBreaker("yahoo"),
-}
+_price_breakers: Dict[str, PriceCircuitBreaker] = {}
 
 
-def _get_breaker(provider: str) -> _CircuitBreaker:
-    """Get circuit breaker for provider."""
-    key = provider.lower().strip()
-    if key not in _breakers:
-        _breakers[key] = _CircuitBreaker(key)
-    return _breakers[key]
+def _get_breaker(provider: str) -> PriceCircuitBreaker:
+    """Get or create circuit breaker for provider."""
+    if provider not in _price_breakers:
+        _price_breakers[provider] = PriceCircuitBreaker()
+    return _price_breakers[provider]
 
 
 # ============================================================================
-# Asset Routing
+# Asset Routing Logic
 # ============================================================================
 
-def get_provider_for_asset(asset: str) -> str:
+def _is_crypto(asset: str) -> bool:
+    """Check if asset is crypto (USDT, USDC, BUSD, etc.)."""
+    a = (asset or "").upper().strip()
+    return (
+        a.endswith("USDT") or 
+        a.endswith("USDC") or 
+        a.endswith("BUSD") or
+        a.endswith("BTC") or
+        a.endswith("ETH")
+    )
+
+
+def _get_providers_for_asset(asset: str) -> List[str]:
     """
-    Get the appropriate provider for an asset.
+    Get provider priority list for asset.
     
-    STRICT routing:
-    - Crypto (USDT/USDC/BUSD suffix): Binance → Bybit → CryptoCompare
-    - Stocks/FX: Yahoo → Polygon → Twelve Data
-    
-    This is the KEY fix for Task 5 - prevents routing wrong assets to wrong providers.
+    Strict routing:
+    - Crypto (USDT/*) → Binance → Bybit → CryptoCompare
+    - Stocks → Yahoo → Polygon
     """
-    asset_upper = asset.upper().strip()
-    
-    # CRYPTO: ends with USDT, USDC, BUSD, or is a known crypto ticker
-    crypto_suffixes = ("USDT", "USDC", "BUSD", "USD")
-    is_crypto = any(asset_upper.endswith(s) for s in crypto_suffixes)
-    
-    # Check for known crypto tickers
-    known_crypto = {
-        "BTC", "ETH", "BNB", "XRP", "ADA", "DOGE", "SOL", "DOT",
-        "MATIC", "LTC", "AVAX", "LINK", "ATOM", "UNI", "XLM", "ETC",
-    }
-    if asset_upper in known_crypto:
-        is_crypto = True
-    
-    # Check for commodities (NOT crypto)
-    commodities = {"XAU", "XAG", "XPT", "XPD", "WTI", "BRENT", "CL", "BZ"}
-    if asset_upper in commodities:
-        is_crypto = False
-    
-    # CRYPTO: Use Binance
-    if is_crypto:
-        if _get_breaker("binance").allow():
-            return "binance"
-        if _get_breaker("bybit").allow():
-            return "bybit"
-        return "cryptocompare"
-    
-    # STOCKS/FX: Use Yahoo or Polygon
-    if _get_breaker("yahoo").allow():
-        return "yahoo"
-    if _get_breaker("polygon").allow():
-        return "polygon"
-    return "yahoo"  # Fallback
-
-
-def is_crypto_asset(asset: str) -> bool:
-    """Check if asset is crypto (for external use)."""
-    return get_provider_for_asset(asset) in ("binance", "bybit", "cryptocompare")
+    if _is_crypto(asset):
+        return ["binance", "bybit", "cryptocompare"]
+    else:
+        # Stocks and other assets
+        return ["yahoo", "polygon"]
 
 
 # ============================================================================
-# Price Fetchers
+# Price Fetching Functions
 # ============================================================================
 
 async def _fetch_binance_price(symbol: str) -> Optional[float]:
-    """Fetch price from Binance."""
+    """Fetch price from Binance public API."""
+    import requests
+    
+    breaker = _get_breaker("binance")
+    if not breaker.allow():
+        return None
+    
     try:
-        import requests
-        
-        # Convert to Binance format
         sym = symbol.upper().replace("/", "").replace("-", "")
-        
         if not sym.endswith("USDT") and not sym.endswith("USDC"):
-            sym = sym + "USDT"
+            sym += "USDT"
         
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={sym}"
+        resp = requests.get(url, timeout=5)
         
-        resp = requests.get(url, timeout=PRICE_TIMEOUT_SECONDS)
-        
-        if resp.status_code == 200:
-            _get_breaker("binance").record_success()
+        if resp.ok:
             data = resp.json()
-            return float(data.get("price", 0))
-        else:
-            _get_breaker("binance").record_failure()
-            
+            price = data.get("price")
+            if price:
+                breaker.record_success()
+                return float(price)
+        
+        breaker.record_failure()
+        return None
+        
     except Exception as e:
-        _get_breaker("binance").record_failure()
-        logger.debug(f"[price] Binance fetch error: {e}")
-    
-    return None
+        breaker.record_failure()
+        logger.debug(f"[price] Binance error for {symbol}: {e}")
+        return None
 
 
 async def _fetch_bybit_price(symbol: str) -> Optional[float]:
-    """Fetch price from Bybit."""
+    """Fetch price from Bybit public API."""
+    import requests
+    
+    breaker = _get_breaker("bybit")
+    if not breaker.allow():
+        return None
+    
     try:
-        import requests
-        
         sym = symbol.upper().replace("/", "").replace("-", "")
         
-        if not sym.endswith("USDT"):
-            sym = sym + "USDT"
+        url = "https://api.bybit.com/v5/market/ticker"
+        params = {
+            "category": "spot",
+            "symbol": sym,
+        }
         
-        url = f"https://api.bybit.com/v5/market/tickers?category=spot&symbol={sym}"
+        resp = requests.get(url, params=params, timeout=5)
         
-        resp = requests.get(url, timeout=PRICE_TIMEOUT_SECONDS)
-        
-        if resp.status_code == 200:
-            _get_breaker("bybit").record_success()
+        if resp.ok:
             data = resp.json()
-            result = data.get("result", {})
-            list_data = result.get("list", [])
-            
-            if list_data:
-                return float(list_data[0].get("lastPrice", 0))
-        else:
-            _get_breaker("bybit").record_failure()
-            
+            if str(data.get("retCode", "1")) == "0":
+                result = data.get("result", {})
+                price = result.get("lastPrice")
+                if price:
+                    breaker.record_success()
+                    return float(price)
+        
+        breaker.record_failure()
+        return None
+        
     except Exception as e:
-        _get_breaker("bybit").record_failure()
-        logger.debug(f"[price] Bybit fetch error: {e}")
-    
-    return None
-
-
-async def _fetch_yahoo_price(symbol: str) -> Optional[float]:
-    """Fetch price from Yahoo Finance."""
-    try:
-        import requests
-        
-        # Convert to Yahoo format: BTCUSDT -> BTC-USD
-        sym = symbol.upper().replace("/", "-").replace("-", "")
-        
-        if sym.endswith("USDT"):
-            sym = sym[:-4] + "-USD"
-        elif sym.endswith("USD") and len(sym) == 7:
-            pass  # Already in format
-        else:
-            sym = sym + "-USD"
-        
-        url = f"https://query1.finance.yahoo.com/v8/finance/charts/{sym}"
-        
-        resp = requests.get(url, timeout=PRICE_TIMEOUT_SECONDS)
-        
-        if resp.status_code == 200:
-            _get_breaker("yahoo").record_success()
-            data = resp.json()
-            chart = data.get("chart", [])
-            
-            if chart:
-                result = chart[0].get("result", [])
-                if result:
-                    meta = result[0].get("meta", {})
-                    return float(meta.get("regularMarketPrice", 0))
-        else:
-            _get_breaker("yahoo").record_failure()
-            
-    except Exception as e:
-        _get_breaker("yahoo").record_failure()
-        logger.debug(f"[price] Yahoo fetch error: {e}")
-    
-    return None
+        breaker.record_failure()
+        logger.debug(f"[price] Bybit error for {symbol}: {e}")
+        return None
 
 
 async def _fetch_cryptocompare_price(symbol: str) -> Optional[float]:
-    """Fetch price from CryptoCompare (fallback for crypto)."""
+    """Fetch price from CryptoCompare."""
+    import requests
+    
+    breaker = _get_breaker("cryptocompare")
+    if not breaker.allow():
+        return None
+    
     try:
-        import requests
-        
-        # Extract base currency
+        # Parse symbol (BTCUSDT -> BTC,USDT)
         sym = symbol.upper().replace("/", "").replace("-", "")
+        base = sym
+        quote = "USDT"
         
-        for q in ("USDT", "USD", "USDC"):
+        for q in ("USDT", "USDC", "BUSD", "USD"):
             if sym.endswith(q):
                 base = sym[:-len(q)]
                 quote = q
                 break
-        else:
-            base = sym
-            quote = "USDT"
         
-        api_key = os.getenv("CRYPTOCOMPARE_API_KEY", "")
+        api_key = os.getenv("CRYPTOCOMPARE_API_KEY", "").strip()
         
-        url = f"https://min-api.cryptocompare.com/data/price"
-        params = {"fsym": base, "tsyms": quote}
-        
+        url = "https://min-api.cryptocompare.com/data/price"
+        params = {
+            "fsym": base,
+            "tsyms": quote,
+        }
         if api_key:
             params["api_key"] = api_key
         
-        resp = requests.get(url, params=params, timeout=PRICE_TIMEOUT_SECONDS)
+        resp = requests.get(url, params=params, timeout=5)
         
-        if resp.status_code == 200:
+        if resp.ok:
             data = resp.json()
             price = data.get(quote)
-            
             if price:
+                breaker.record_success()
                 return float(price)
-                
+        
+        breaker.record_failure()
+        return None
+        
     except Exception as e:
-        logger.debug(f"[price] CryptoCompare fetch error: {e}")
+        breaker.record_failure()
+        logger.debug(f"[price] CryptoCompare error for {symbol}: {e}")
+        return None
+
+
+async def _fetch_yahoo_price(symbol: str) -> Optional[float]:
+    """Fetch price from Yahoo Finance."""
+    import requests
     
-    return None
+    breaker = _get_breaker("yahoo")
+    if not breaker.allow():
+        return None
+    
+    try:
+        # Yahoo format: BTC-USD -> BTCUSD=X
+        sym = symbol.upper().replace("/", "-")
+        if not sym.endswith("=X") and not sym.endswith("USD"):
+            if not sym.endswith("=X"):
+                sym = f"{sym}=X"
+        
+        url = f"https://query1.finance.yahoo.com/v8/finance/charts/{sym}"
+        resp = requests.get(url, timeout=5)
+        
+        if resp.ok:
+            data = resp.json()
+            chart = data.get("chart", {})
+            result = chart.get("result", [])
+            if result:
+                meta = result[0].get("meta", {})
+                price = meta.get("regularMarketPrice")
+                if price:
+                    breaker.record_success()
+                    return float(price)
+        
+        breaker.record_failure()
+        return None
+        
+    except Exception as e:
+        breaker.record_failure()
+        logger.debug(f"[price] Yahoo error for {symbol}: {e}")
+        return None
+
+
+async def _fetch_polygon_price(symbol: str) -> Optional[float]:
+    """Fetch price from Polygon.io."""
+    import requests
+    
+    breaker = _get_breaker("polygon")
+    if not breaker.allow():
+        return None
+    
+    try:
+        api_key = os.getenv("POLYGON_API_KEY", "").strip()
+        if not api_key:
+            return None
+        
+        # Clean symbol
+        sym = symbol.upper().replace("/", "").replace("-", "")
+        
+        url = f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev"
+        params = {"apiKey": api_key}
+        
+        resp = requests.get(url, params=params, timeout=5)
+        
+        if resp.ok:
+            data = resp.json()
+            results = data.get("results", [])
+            if results:
+                price = results[0].get("c")  # Close price
+                if price:
+                    breaker.record_success()
+                    return float(price)
+        
+        breaker.record_failure()
+        return None
+        
+    except Exception as e:
+        breaker.record_failure()
+        logger.debug(f"[price] Polygon error for {symbol}: {e}")
+        return None
 
 
 # ============================================================================
-# Main Price Fetch Function
+# Primary API with Circuit Breaker & Failover
 # ============================================================================
 
-async def get_live_price(symbol: str) -> Optional[float]:
+async def get_live_price(
+    symbol: str,
+    timeout: float = 5.0,
+) -> Optional[float]:
     """
-    Get live price with Circuit Breaker and strict asset routing.
+    Get live price with circuit breaker and automatic failover.
     
-    This is the MAIN entry point - replaces direct provider calls.
+    This is the MAIN entry point - replaces all direct price fetches.
     
     Features:
-    - Strict asset routing (crypto → Binance, stocks → Yahoo)
-    - Circuit breaker for each provider
-    - Automatic failover on failure/rate-limit
+    - Strict asset routing (crypto vs stocks)
+    - Circuit breaker per provider
+    - Automatic failover on rate limits
+    - Prevents "Ghost Price" from wrong provider
     
     Args:
-        symbol: Asset ticker (e.g., "BTCUSDT", "AAPL")
+        symbol: Asset symbol (e.g., "BTCUSDT", "AAPL")
+        timeout: Maximum wait time in seconds
         
     Returns:
-        Live price float or None if unavailable
+        Live price or None if unavailable
     """
     if not symbol:
         return None
     
-    # Get provider for asset type
-    provider = get_provider_for_asset(symbol)
+    symbol = symbol.upper().strip()
     
-    logger.debug(f"[price] Fetching {symbol} from {provider}")
+    # Get provider priority for asset type
+    providers = _get_providers_for_asset(symbol)
     
-    # Track attempts for failover
-    attempted_providers = set()
-    last_error = None
-    
-    while True:
-        attempted_providers.add(provider)
-        
-        # Fetch from provider
-        if provider == "binance":
-            price = await _fetch_binance_price(symbol)
-        elif provider == "bybit":
-            price = await _fetch_bybit_price(symbol)
-        elif provider == "yahoo":
-            price = await _fetch_yahoo_price(symbol)
-        elif provider == "cryptocompare":
-            price = await _fetch_cryptocompare_price(symbol)
-        elif provider == "polygon":
-            # Polygon needs API key - fallback to Yahoo
-            price = await _fetch_yahoo_price(symbol)
-        else:
+    # Try each provider with circuit breaker
+    for provider in providers:
+        try:
             price = None
-        
-        # Success
-        if price and price > 0:
-            logger.info(f"[price] {symbol} = {price} via {provider}")
-            return price
-        
-        # Failure - circuit breaker recorded
-        last_error = f"{provider} returned null"
-        
-        # Find next available provider
-        found_next = False
-        all_providers = ["binance", "bybit", "cryptocompare", "yahoo"]
-        
-        for next_provider in all_providers:
-            if next_provider in attempted_providers:
-                continue
-            if _get_breaker(next_provider).allow():
-                provider = next_provider
-                found_next = True
-                logger.debug(f"[price] Failover {symbol} to {next_provider}")
-                break
-        
-        if not found_next:
-            # All providers failed or circuit open
-            logger.warning(f"[price] All providers failed for {symbol}: {last_error}")
-            return None
+            
+            if provider == "binance":
+                price = await asyncio.wait_for(
+                    _fetch_binance_price(symbol),
+                    timeout=timeout,
+                )
+            elif provider == "bybit":
+                price = await asyncio.wait_for(
+                    _fetch_bybit_price(symbol),
+                    timeout=timeout,
+                )
+            elif provider == "cryptocompare":
+                price = await asyncio.wait_for(
+                    _fetch_cryptocompare_price(symbol),
+                    timeout=timeout,
+                )
+            elif provider == "yahoo":
+                price = await asyncio.wait_for(
+                    _fetch_yahoo_price(symbol),
+                    timeout=timeout,
+                )
+            elif provider == "polygon":
+                price = await asyncio.wait_for(
+                    _fetch_polygon_price(symbol),
+                    timeout=timeout,
+                )
+            
+            if price and price > 0:
+                logger.info(
+                    f"[price] {symbol}: {price} (provider={provider})"
+                )
+                return price
+            
+            # Provider failed or returned invalid price - continue to next
+            logger.debug(
+                f"[price] {symbol}: provider={provider} failed/invalid, "
+                f"trying next..."
+            )
+            
+        except asyncio.TimeoutError:
+            logger.debug(f"[price] {symbol}: {provider} timeout")
+            continue
+        except Exception as e:
+            logger.debug(f"[price] {symbol}: {provider} error: {e}")
+            continue
     
-    # Fallback (shouldn't reach here)
+    # All providers failed
+    logger.warning(f"[price] All providers failed for {symbol}")
     return None
 
 
-async def get_price_with_fallback(symbol: str) -> float:
+async def get_cached_price(
+    symbol: str,
+    max_age_seconds: float = 30.0,
+) -> Optional[float]:
     """
-    Get price with multiple fallback levels.
+    Get price with optional cache.
     
-    Returns 0.0 only if ALL providers fail.
+    Uses Redis cache if available to reduce API calls.
     """
-    price = await get_live_price(symbol)
-    
-    if price and price > 0:
-        return price
-    
-    # Try cached last known price from cache
     try:
-        from core.redis_cache import cache_get
-        cached = await cache_get(f"last_price:{symbol}")
+        from core.redis_state import state
+        
+        cache_key = f"live_price:{symbol.upper()}"
+        
+        # Try cache first
+        cached = await state.cache_get(cache_key)
         if cached:
-            return float(cached)
-    except Exception:
-        pass
+            import json
+            try:
+                data = json.loads(cached)
+                price = data.get("price")
+                ts = data.get("timestamp", 0)
+                
+                if price and ts:
+                    age = time.time() - ts
+                    if age <= max_age_seconds:
+                        return float(price)
+            except Exception:
+                pass
+        
+        # Fetch fresh price
+        price = await get_live_price(symbol)
+        
+        if price:
+            # Cache it
+            import json
+            await state.cache_set(
+                cache_key,
+                json.dumps({"price": price, "timestamp": time.time()}),
+                ex=int(max_age_seconds),
+            )
+        
+        return price
+        
+    except Exception as e:
+        logger.debug(f"[price] Cache error: {e}")
+        return await get_live_price(symbol)
+
+
+# Convenience function aliases
+get_price = get_live_price
+fetch_price = get_live_price
+
+
+# ============================================================================
+# Diagnostic Functions
+# ============================================================================
+
+def get_circuit_breaker_status() -> Dict[str, Dict[str, Any]]:
+    """Get circuit breaker status for all providers."""
+    status = {}
     
-    return 0.0
+    for name, breaker in _price_breakers.items():
+        now = time.time()
+        open_remaining = max(0.0, breaker._open_until - now) if breaker._open_until else 0.0
+        
+        status[name] = {
+            "open": bool(open_remaining > 0),
+            "open_remaining_s": open_remaining,
+            "failures": len(breaker._failures),
+        }
+    
+    return status
 
-
-# ============================================================================
-# Export
-# ============================================================================
 
 __all__ = [
     "get_live_price",
-    "get_price_with_fallback",
-    "get_provider_for_asset",
-    "is_crypto_asset",
+    "get_cached_price",
+    "get_price",
+    "fetch_price",
+    "get_circuit_breaker_status",
+    "_is_crypto",
+    "_get_providers_for_asset",
 ]

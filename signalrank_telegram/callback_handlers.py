@@ -1,346 +1,387 @@
 """
-Telegram Callback Query Handler - Task 2 Fix
+Telegram Global CallbackQueryHandler - Task 2 Fix
 
-Fixes:
-- Telegram inline buttons showing flashing loading circle
-- Buttons failing to execute
-
-Implementation:
-- Global CallbackQueryHandler for all button callbacks
-- Immediate query.answer() call to stop loading circle
-- Basic routing for button query.data payloads
+This handler:
+- Calls query.answer() IMMEDIATELY to stop the loading circle
+- Routes all button callbacks to appropriate handlers
+- Handles: mt5_trade_*, signal_reaction_*, monitor_signal_*, etc.
 """
 
 import logging
-from typing import Any, Optional
+import re
+import json
+from typing import Optional, Any, Dict, Callable
 
-from telegram import Update
-from telegram.ext import CallbackContext, CallbackQueryHandler
+from telegram import Update, Bot
+from telegram.ext import (
+    CallbackQueryHandler,
+    ContextTypes,
+    Application,
+    ConversationHandler,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# Button Callback Router
-# ============================================================================
+# Global callback patterns
+CALLBACK_PATTERNS = {
+    # MT5 Trade buttons
+    "mt5_trade": r"^mt5_trade_(.+)$",
+    
+    # Signal reactions (Taking It / Watching)
+    "signal_reaction": r"^signal_reaction_(.+)\|(.+)$",
+    
+    # Monitor signal
+    "monitor_signal": r"^monitor_signal_(.+)$",
+    
+    # Check outcome
+    "check_outcome": r"^check_outcome_(.+)$",
+    
+    # Open signal
+    "open_signal": r"^open_signal_(.+)$",
+    
+    # Navigation buttons
+    "nav": r"^nav_(.+)$",
+    
+    # Trade now
+    "trade_now": r"^trade_now_(.+)$",
+    
+    # MT5 link/guide
+    "mt5_link_guide": r"^mt5_link_guide$",
+    "mt5_settings": r"^mt5_settings$",
+    
+    # Admin buttons
+    "admin": r"^admin_(.+)$",
+    
+    # VIP sold out
+    "vip_sold_out": r"^vip_sold_out$",
+    
+    # Locked buttons
+    "locked": r"^locked_(.+)$",
+}
 
-async def handle_callback_query(update: Update, context: CallbackContext) -> None:
+
+def _parse_callback_data(data: str) -> Dict[str, Any]:
     """
-    Global callback query handler - routes button clicks to appropriate handlers.
+    Parse callback data into action and payload.
     
-    IMPORTANT: Calls query.answer() immediately to stop loading circle.
+    Args:
+        data: Raw callback data string
+        
+    Returns:
+        Dict with 'action' and 'payload' keys
     """
-    query = update.callback_query
-    if query is None:
-        return
-    
-    # === IMMEDIATE ANSWER - Stop loading circle ===
-    # This is the KEY fix for Task 2
-    try:
-        await query.answer()  # Immediate - no loading circle
-    except Exception as e:
-        logger.debug(f"[callback] answer failed: {e}")
-    
-    # Get callback data
-    data = query.data or ""
-    
-    # Parse callback type
     if not data:
-        await _send_error_message(update, context, "Invalid button data")
-        return
+        return {"action": None, "payload": None}
     
-    # === Route based on callback type ===
+    # Split on first underscore
+    parts = data.split("_", 1)
+    if len(parts) < 2:
+        return {"action": parts[0] if parts else None, "payload": None}
     
-    # Pattern: mt5_trade_<signal_id>
-    if data.startswith("mt5_trade_"):
-        await _handle_mt5_trade(update, context, data)
-        return
+    action = parts[0]
+    payload = parts[1]
     
-    # Pattern: signal_reaction_<signal_id>|<reaction>
-    if data.startswith("signal_reaction_"):
-        await _handle_signal_reaction(update, context, data)
-        return
-    
-    # Pattern: monitor_signal_<signal_id>
-    if data.startswith("monitor_signal_"):
-        await _handle_monitor_signal(update, context, data)
-        return
-    
-    # Pattern: check_outcome_<signal_id>
-    if data.startswith("check_outcome_"):
-        await _handle_check_outcome(update, context, data)
-        return
-    
-    # Pattern: open_signal_<signal_id>
-    if data.startswith("open_signal_"):
-        await _handle_open_signal(update, context, data)
-        return
-    
-    # Pattern: nav_<action> (navigation)
-    if data.startswith("nav_"):
-        await _handle_navigation(update, context, data)
-        return
-    
-    # Pattern: trade_now_<action>
-    if data.startswith("trade_now_"):
-        await _handle_trade_now(update, context, data)
-        return
-    
-    # Pattern: mt5_link_guide, mt5_settings, etc.
-    if data in ("mt5_link_guide", "mt5_settings", "advanced_portfolio"):
-        await _handle_menu_action(update, context, data)
-        return
-    
-    # Unknown callback - acknowledge silently
-    logger.debug(f"[callback] unknown data: {data}")
-    await _acknowledge(update, context)
+    return {"action": action, "payload": payload}
 
 
-# ============================================================================
-# Individual Callback Handlers
-# ============================================================================
-
-async def _handle_mt5_trade(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle MT5 trade execution button."""
+async def _handle_mt5_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
+    """Handle MT5 trade button click."""
+    query = update.callback_query
+    
     try:
-        # Extract signal_id from callback
-        signal_id = data.replace("mt5_trade_", "").strip()
+        # Immediately answer to stop loading
+        await query.answer()
         
-        if not signal_id:
-            await _send_error_message(update, context, "Invalid trade request")
+        # Load signal data
+        from signalrank_telegram.bot import _load_signal_payload
+        payload = await _load_signal_payload(signal_id)
+        
+        if not payload:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="❌ Signal data unavailable.",
+            )
             return
         
-        # Delegate to existing MT5 handler
-        # This reuses existing logic from bot.py
-        from signalrank_telegram.bot import _mt5_trade_callback
+        # Get user tier
+        from signalrank_telegram.access import resolve_user_tier
+        user_id = query.from_user.id
+        tier = resolve_user_tier(user_id)
         
-        # Create a mock update structure for compatibility
-        # The actual handler checks callback_query.data
-        try:
-            # Call the handler directly if it accepts callback data
-            await _mt5_trade_callback(update, context)
-        except Exception as e:
-            logger.debug(f"[callback] mt5_trade error: {e}")
-            await _send_menu_message(
-                update, context,
-                "⚠️ Trade execution temporarily unavailable. Please try /mt5_link."
+        # Check tier for premium
+        from signalrank_telegram.commands import tier_rank
+        if tier_rank(tier) < tier_rank("PREMIUM"):
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="🔒 Premium feature. Use /upgrade to unlock.",
             )
+            return
+        
+        # Direct to MT5 execution flow
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="⚡ Opening MT5 trade execution...",
+        )
         
     except Exception as e:
-        logger.error(f"[callback] mt5_trade failed: {e}")
-        await _send_error_message(update, context, "Trade execution failed")
+        logger.warning(f"[callback] mt5_trade error: {e}")
+        await query.answer("Error processing trade.", show_alert=True)
 
 
-async def _handle_signal_reaction(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle signal reaction (🔥 Taking It / 👀 Watching)."""
+async def _handle_signal_reaction(
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    signal_id: str, 
+    reaction: str
+) -> None:
+    """Handle signal reaction (Taking It / Watching)."""
+    query = update.callback_query
+    
     try:
-        # Pattern: signal_reaction_<signal_id>|<reaction>
-        data = data.replace("signal_reaction_", "")
-        
-        if "|" not in data:
-            await _send_error_message(update, context, "Invalid reaction")
-            return
-        
-        signal_id, reaction = data.split("|", 1)
+        # IMMEDIATELY answer to stop loading circle
+        await query.answer()
         
         if reaction not in ("taking_it", "watching"):
-            await _send_error_message(update, context, "Invalid reaction")
+            await query.answer("Invalid reaction.", show_alert=False)
             return
         
-        # Delegate to existing handler in bot.py
-        # The handler is defined as _signal_reaction_callback
-        logger.info(f"[callback] reaction: {signal_id} → {reaction}")
+        user_id = query.from_user.id
         
-        # Acknowledge
+        # Save reaction to DB
+        from db.session import get_session
+        from db.models import SignalEngagement
+        from db.pg_features import get_or_create_user
+        from sqlalchemy import select
+        
+        async with get_session() as session:
+            user = await get_or_create_user(session, telegram_user_id=int(user_id))
+            
+            # Check existing
+            existing = (
+                await session.execute(
+                    select(SignalEngagement).where(
+                        SignalEngagement.user_id == user.id,
+                        SignalEngagement.signal_id == signal_id,
+                    )
+                )
+            ).scalar_one_or_none()
+            
+            if existing:
+                existing.reaction = reaction
+            else:
+                session.add(SignalEngagement(
+                    user_id=user.id,
+                    signal_id=signal_id,
+                    reaction=reaction,
+                ))
+            
+            await session.commit()
+        
+        # Update keyboard
+        from signalrank_telegram.bot import (
+            _load_signal_payload,
+            _load_signal_engagement_counts,
+            _build_signal_keyboard,
+        )
+        
+        signal_payload = await _load_signal_payload(signal_id)
+        counts = await _load_signal_engagement_counts(signal_id)
+        
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=query.message.chat_id,
+                message_id=query.message.message_id,
+                reply_markup=_build_signal_keyboard(signal_id, signal=signal_payload, counts=counts),
+            )
+        except Exception as e:
+            logger.debug(f"[callback] keyboard refresh error: {e}")
+        
+        # Confirm
         emoji = "🔥" if reaction == "taking_it" else "👀"
         await query.answer(f"{emoji} Noted!", show_alert=False)
         
     except Exception as e:
-        logger.debug(f"[callback] signal_reaction error: {e}")
+        logger.warning(f"[callback] reaction error: {e}")
+        await query.answer("Error saving reaction.", show_alert=True)
 
 
-async def _handle_monitor_signal(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle signal monitor button."""
+async def _handle_monitor_signal(
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    signal_id: str
+) -> None:
+    """Handle monitor signal button."""
+    query = update.callback_query
+    
     try:
-        signal_id = data.replace("monitor_signal_", "").strip()
+        # Immediately answer
+        await query.answer("Refreshing...")
         
-        if not signal_id:
-            await _send_error_message(update, context, "Invalid monitor request")
-            return
+        # Build monitor snapshot
+        from signalrank_telegram.bot import _build_monitor_snapshot
         
-        # Delegate to existing monitor handler
-        from signalrank_telegram.bot import _signal_monitor_callback
+        text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
         
-        # Set callback_data for handler
-        update.callback_query.data = f"monitor_signal_{signal_id}"
-        
+        # Send new message or edit existing
         try:
-            await _signal_monitor_callback(update, context)
-        except Exception as e:
-            logger.debug(f"[callback] monitor error: {e}")
-            await query.answer("⚠️ Monitor unavailable", show_alert=True)
-        
-    except Exception as e:
-        logger.debug(f"[callback] monitor_signal error: {e}")
-
-
-async def _handle_check_outcome(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle check outcome button."""
-    try:
-        signal_id = data.replace("check_outcome_", "")
-        
-        # Send outcome check message
-        await query.answer("Checking outcome...", show_alert=False)
-        
-        # The outcome command is handled separately
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
-            InlineKeyboardButton("🔄 Refresh", callback_data=f"monitor_signal_{signal_id}"),
-        ]])
-        
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"📊 Outcome check for signal {signal_id[:8]}...",
-            reply_markup=keyboard,
-        )
-        
-    except Exception as e:
-        logger.debug(f"[callback] check_outcome error: {e}")
-
-
-async def _handle_open_signal(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle open signal button - navigate to signal message."""
-    try:
-        signal_id = data.replace("open_signal_", "")
-        
-        # Acknowledge
-        await query.answer("Opening signal...", show_alert=False)
-        
-        # Send signal details
-        from signalrank_telegram.bot import _load_signal_payload
-        
-        payload = await _load_signal_payload(signal_id)
-        
-        if payload:
-            asset = payload.get("asset", "Unknown")
-            direction = payload.get("direction", "long").upper()
-            entry = payload.get("entry", 0)
-            sl = payload.get("stop_loss", 0)
-            tp = payload.get("take_profit", [])
-            
-            text = f"📊 Signal: {asset} {direction}\n"
-            text += f"Entry: {entry}\nSL: {sl}\nTP: {tp}"
-            
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
+            await context.bot.edit_message_text(
+                chat_id=query.message.chat_id,
+                message_id=query.message.message_id,
                 text=text,
+                parse_mode="HTML",
+            )
+        except Exception:
+            # Send new if edit fails
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=text,
+                parse_mode="HTML",
+            )
+        
+    except Exception as e:
+        logger.warning(f"[callback] monitor error: {e}")
+        await query.answer("⚠️ Could not load monitor.", show_alert=True)
+
+
+async def _handle_check_outcome(
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    signal_id: str
+) -> None:
+    """Handle check outcome button."""
+    query = update.callback_query
+    
+    try:
+        await query.answer("Checking outcome...")
+        
+        # Load outcome from DB
+        from db.session import get_session
+        from db.models import Outcome
+        from sqlalchemy import select
+        
+        async with get_session() as session:
+            outcome = (
+                await session.execute(
+                    select(Outcome).where(Outcome.signal_id == signal_id).limit(1)
+                )
+            ).scalar_one_or_none()
+        
+        if outcome:
+            status = outcome.status.upper()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"📊 Outcome: {status}",
             )
         else:
-            await _send_error_message(update, context, "Signal not found")
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⏳ Outcome not yet determined.",
+            )
         
     except Exception as e:
-        logger.debug(f"[callback] open_signal error: {e}")
+        logger.warning(f"[callback] check_outcome error: {e}")
+        await query.answer("Error checking outcome.", show_alert=True)
 
 
-async def _handle_navigation(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle navigation buttons."""
-    try:
-        action = data.replace("nav_", "")
-        
-        # Acknowledge
-        await query.answer()
-        
-        # Handle various navigation actions
-        if action == "back":
-            await query.message.delete()
-        elif action == "menu":
-            from signalrank_telegram.commands import help_command
-            await help_command(update, context)
-        # Add other nav actions as needed
-        
-    except Exception as e:
-        logger.debug(f"[callback] navigation error: {e}")
-
-
-async def _handle_trade_now(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle trade now button."""
-    # Similar to _handle_mt5_trade
-    await _handle_mt5_trade(update, context, data.replace("trade_now_", "mt5_trade_"))
-
-
-async def _handle_menu_action(update: Update, context: CallbackContext, data: str) -> None:
-    """Handle menu action buttons."""
-    try:
-        await query.answer()
-        
-        if data == "mt5_link_guide":
-            from signalrank_telegram.commands import mt5_link_command
-            await mt5_link_command(update, context)
-        # Add other menu actions
-        
-    except Exception as e:
-        logger.debug(f"[callback] menu_action error: {e}")
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-async def _acknowledge(update: Update, context: CallbackContext) -> None:
-    """Silent acknowledge - no alert."""
+async def _handle_default_callback(
+    update: Update, 
+    context: ContextTypes.DEFAULT_TYPE, 
+    action: str, 
+    payload: str
+) -> None:
+    """Handle unknown callbacks gracefully."""
     query = update.callback_query
-    if query:
-        try:
+    
+    try:
+        await query.answer()
+    except Exception:
+        pass
+    
+    logger.debug(f"[callback] Unknown action: {action}, payload: {payload}")
+
+
+async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Main global callback handler.
+    
+    This is the CORE FIX - calls query.answer() IMMEDIATELY
+    to stop the loading circle timeout bug.
+    """
+    query = update.callback_query
+    
+    # CRITICAL: Answer immediately to stop loading circle
+    try:
+        await query.answer()
+    except Exception:
+        pass  # May error if already answered
+    
+    data = query.data
+    if not data:
+        return
+    
+    # Parse the callback
+    parsed = _parse_callback_data(data)
+    action = parsed.get("action")
+    payload = parsed.get("payload")
+    
+    # Route to appropriate handler
+    try:
+        if action == "mt5_trade":
+            # Handle MT5 trade
+            signal_id = payload
+            await _handle_mt5_trade(update, context, signal_id)
+            
+        elif action == "signal_reaction":
+            # Parse signal_id|reaction format
+            if "|" in payload:
+                signal_id, reaction = payload.split("|", 1)
+                await _handle_signal_reaction(update, context, signal_id, reaction)
+            else:
+                await _handle_default_callback(update, context, action, payload)
+                
+        elif action == "monitor_signal":
+            await _handle_monitor_signal(update, context, payload)
+            
+        elif action == "check_outcome":
+            await _handle_check_outcome(update, context, payload)
+            
+        elif action == "open_signal":
+            # Open signal link
             await query.answer()
+            
+        elif action and action.startswith("nav"):
+            await query.answer()
+            
+        else:
+            await _handle_default_callback(update, context, action, payload)
+            
+    except Exception as e:
+        logger.warning(f"[callback] Global handler error: {e}")
+        try:
+            await query.answer("Error processing request.", show_alert=True)
         except Exception:
             pass
 
 
-async def _send_error_message(update: Update, context: CallbackContext, error: str) -> None:
-    """Send error message to user."""
-    try:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"⚠️ {error}",
-        )
-    except Exception:
-        pass
-
-
-async def _send_menu_message(update: Update, context: CallbackContext, text: str) -> None:
-    """Send menu message to user."""
-    try:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=text,
-        )
-    except Exception:
-        pass
-
-
-# ============================================================================
-# Handler Factory
-# ============================================================================
-
-def create_global_callback_handler():
+def create_global_callback_handler() -> CallbackQueryHandler:
     """
-    Create the global CallbackQueryHandler.
+    Create the global callback query handler.
     
-    Usage in bot.py:
+    Add this to your Application in bot.py:
     
-    from signalrank_telegram.callback_handlers import create_global_callback_handler
-    application.add_handler(create_global_callback_handler())
+        application.add_handler(create_global_callback_handler())
+    
+    This handler MUST be added AFTER other handlers to catch
+    any unmatched callback queries.
     """
     return CallbackQueryHandler(
-        handle_callback_query,
-        pass_updates_to_queue=True,
+        _global_callback_handler,
+        pattern=None,  # Catch all callbacks
     )
 
 
-# Export
 __all__ = [
-    "handle_callback_query",
     "create_global_callback_handler",
+    "_global_callback_handler",
 ]
