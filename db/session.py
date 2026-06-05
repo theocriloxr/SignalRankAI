@@ -79,10 +79,11 @@ def _effective_pool_settings() -> tuple[int, int]:
     max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
     if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
-        # CRITICAL FIX: Railway shared plan limit is 20 connections.
-        # Force 1 connection per engine to prevent exhaustion.
-        railway_pool_cap = 1
-        railway_overflow_cap = 0
+        # FIX: Increased pool sizes for monolith runtime where bot + engine + shadow trackers
+        # run concurrently. Railway shared plan limit is 20 connections.
+        # Set pool_size=10 (was 1), max_overflow=20 (was 0) to allow concurrent access.
+        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 10, minimum=1)
+        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 20, minimum=0)
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
     else:

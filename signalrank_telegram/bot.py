@@ -560,6 +560,8 @@ from .commands import (
     decline_terms_callback,
     vip_waitlist_join_callback,
     blast_terms_command,
+    referral_leaderboard_command,
+    referral_rewards_command,
 )
 
 from .owner_commands import (

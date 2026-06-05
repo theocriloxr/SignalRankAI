@@ -13,8 +13,8 @@ import asyncio
 import contextlib
 import logging
 import os
+import traceback
 from datetime import datetime, timedelta
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -116,11 +116,13 @@ class ShadowOutcomeWorker:
                             except Exception:
                                 logger.debug("[shadow_tracker] redis increment failed", exc_info=True)
 
-                        except Exception:
-                            logger.debug("[shadow_tracker] row handling failed", exc_info=True)
+                        except Exception as e:
+                            logger.error(f"[shadow_tracker] row handling failed: {e}")
+                            logger.error(traceback.format_exc())
 
-                except Exception:
-                    logger.debug("[shadow_tracker] iteration failed", exc_info=True)
+                except Exception as e:
+                    logger.error(f"[shadow_tracker] iteration failed: {e}")
+                    logger.error(traceback.format_exc())
 
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
