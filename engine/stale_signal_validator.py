@@ -41,20 +41,24 @@ class StaleSignalValidator:
     3. Entry zone logic allows for legitimate price fluctuations
     """
     
-    def __init__(self):
+def __init__(self):
         """
         Initialize the validator with environment-based configuration.
         
         CRITICAL: Force the code to read the Railway Env Var, or default to a SAFE 1.0%
         This fixes the "Zero Threshold" bug where the threshold was stuck at 0.0%.
+        
+        FIX: Increased default from 1.0% to 1.5% to handle crypto volatility.
+        The old 0.2% caused constant invalidation during volatile moves.
         """
-        # Force the code to read the Railway Env Var, or default to a SAFE 1.0%
+        # Force the code to read the Railway Env Var, or default to a SAFE 1.5%
         # This explicit reading prevents the 0.0% threshold bug
-        raw_threshold = os.getenv("STALE_PRICE_THRESHOLD_PCT", "1.0")
+        # FIX: Use 1.5% as default (was 1.0%) to handle crypto volatility
+        raw_threshold = os.getenv("STALE_PRICE_THRESHOLD_PCT", "1.5")
         try:
             self.default_threshold = float(raw_threshold) / 100.0
         except (ValueError, TypeError):
-            self.default_threshold = 0.01  # 1.0% safe fallback
+            self.default_threshold = 0.015  # 1.5% safe fallback (FIXED from 0.01)
         
         # Safety net: NEVER allow 0.0 threshold - always use minimum 0.5%
         if self.default_threshold <= 0.0:
