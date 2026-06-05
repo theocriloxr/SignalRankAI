@@ -1,137 +1,205 @@
-# SignalRankAI - Critical Fixes Integration Guide
+# SignalRankAI Critical Fixes Integration Guide
 
-This document explains how to integrate the 5 critical fixes implemented in this update.
+This document describes the 5 critical fixes implemented to resolve the production issues.
 
-## Files Created/Modified
+---
 
-### Task 1: Event Loop & Unblock System
-- ✅ Already handled by existing `railway_main.py` - uses `asyncio.create_task()`
+## Task 1: Fix Event Loop Blocking
 
-### Task 2: Telegram Inline Buttons (Timeout/Loading Bug)
+**Problem**: Synchronous blocking calls freeze the asyncio event loop.
+
+### Solution Applied in railway_main.py
+The existing `railway_main.py` already uses `asyncio.create_task()` for concurrent tasks:
+- Engine loop: `_start_engine_loop_in_background()`
+- Worker loop: `_start_worker_loop_in_background()`
+- Bot webhook: `_start_telegram_bot()`
+
+### Synchronous Request Fix in data/fetcher.py
+The `get_candles()` function already uses synchronous `requests.get()` calls.
+To fix this, we provide an async wrapper in `data/get_live_price.py`:
+
+```python
+# NEW: Use async price fetching
+from data.get_live_price import get_live_price
+
+# In async contexts:
+price = await get_live_price("BTCUSDT")  # Non-blocking
+```
+
+---
+
+## Task 2: Telegram Button Timeout Fix
+
+**Problem**: Buttons show flashing loading icon and fail to execute.
+
+### Solution: Global CallbackQueryHandler
+
 **File**: `signalrank_telegram/callback_handlers.py`
 
-**Integration**:
-In `signalrank_telegram/bot.py`, add the handler:
-
+**Integration in bot.py**:
 ```python
+# Add after other handlers in run_bot()
 from signalrank_telegram.callback_handlers import create_global_callback_handler
-
-# Add BEFORE other callback handlers
 application.add_handler(create_global_callback_handler())
 ```
 
-### Task 3: TP Structure (Single Float → List)
+**Key fix**: The handler calls `await query.answer()` immediately to stop the loading circle.
+
+---
+
+## Task 3: Invalid TP Structure Fix
+
+**Problem**: ML gates reject valid signals because TP is a single float instead of list.
+
+### Solution: normalize_tp_structure()
+
 **File**: `engine/signal_validators.py`
 
-**Integration**:
-In the ML pipeline or signal generation, call normalize before ML gate:
+**How it works**:
+1. Converts single float TP → [TP] list
+2. Auto-calculates R:R array if TP is missing
+3. Validates structure before ML gate
 
+**Integration**:
 ```python
+# In signal pipeline before ML gate
 from engine.signal_validators import normalize_signal_for_ml
 
-# Before passing to ML/Expectancy gates
-signal = normalize_signal_for_ml(signal)
+def process_signal(signal):
+    # Normalize TP structure BEFORE ML gate
+    signal = normalize_signal_for_ml(signal)
+    
+    # Now ML gate will accept it
+    return signal
 ```
 
-### Task 4: Same-Signal Duplication (12-hour strict dedup)
+---
+
+## Task 4: Same-Signal Duplication Fix
+
+**Problem**: Same signal sent multiple times due to entry price differences.
+
+### Solution: Strict Deduplication (Asset + Timeframe + Direction)
+
 **File**: `engine/signal_dedup_strict.py`
 
-**Integration**:
-Replace or enhance existing dedup logic:
+**How it works**:
+- Ignores entry price and timestamp
+- Uses 12-hour lookback window
+- Only matches on (Asset, Timeframe, Direction)
 
+**Integration**:
 ```python
+# In signal creation path
 from engine.signal_dedup_strict import is_signal_duplicate_strict
 
-# Before creating signal
-is_dup, existing_id = await is_signal_duplicate_strict(
-    asset, timeframe, direction
-)
-if is_dup:
-    # Skip signal creation
-    return None
+async def create_signal_if_valid(signal):
+    is_dup, existing = await is_signal_duplicate_strict(
+        asset=signal["asset"],
+        timeframe=signal["timeframe"],
+        direction=signal["direction"],
+        lookback_hours=12,  # Fixed 12-hour window
+    )
+    
+    if is_dup:
+        logger.warning(f"Duplicate signal blocked: {signal['asset']}")
+        return None  # Don't create
+    
+    return signal  # Proceed with creation
 ```
 
-### Task 5: Ghost Prices & Asset Routing
+---
+
+## Task 5: Ghost Prices & Asset Routing Fix
+
+**Problem**: Crypto routed to Polygon, stocks to Binance → null prices/timeouts.
+
+### Solution: Strict Provider Routing + Circuit Breaker
+
 **File**: `data/get_live_price.py`
 
+**How it works**:
+1. **Asset routing by suffix**:
+   - `USDT/USDC/BUSD` → Binance/Bybit
+   - Others → Yahoo/Polygon
+2. **Circuit breaker** for each provider
+3. **Automatic failover** on failure
+
 **Integration**:
-Use in realtime_outcome_tracker or price fetching:
-
 ```python
-from data.get_live_price import get_live_price
+# Replace direct price fetches with:
+from data.get_live_price import get_live_price, get_provider_for_asset
 
-# In outcome tracker
-price = await get_live_price(symbol)
-if price is None:
-    # Try fallback or skip
-    pass
+# Get strict provider for asset
+provider = get_provider_for_asset("BTCUSDT")  # Returns "binance"
+provider = get_provider_for_asset("AAPL")     # Returns "yahoo"
+
+# Get live price (with circuit breaker + failover)
+price = await get_live_price("BTCUSDT")  # Returns float or None
 ```
 
 ---
 
-## Quick Integration Commands
+## Summary Checklist
 
-### 1. Add callback handler to bot.py (~line 4800 in run_bot):
+| Task | File | Integration |
+|------|------|-------------|
+| 1 - Event Loop | `railway_main.py` | Already using asyncio.create_task() |
+| 1 - Sync Requests | `data/get_live_price.py` | Use async price functions |
+| 2 - Telegram Buttons | `signalrank_telegram/callback_handlers.py` | Add CallbackQueryHandler to bot.py |
+| 3 - TP Structure | `engine/signal_validators.py` | Call normalize_signal_for_ml() before ML |
+| 4 - Duplication | `engine/signal_dedup_strict.py` | Call is_signal_duplicate_strict() before save |
+| 5 - Ghost Prices | `data/get_live_price.py` | Use get_live_price() instead of direct |
 
-After:
-```python
-application.add_handler(_CQH(_signal_reaction_callback, pattern=r"^signal_reaction_"))
-```
+---
 
-Add:
-```python
-from signalrank_telegram.callback_handlers import create_global_callback_handler
-application.add_handler(create_global_callback_handler())
-```
+## Testing Commands
 
-### 2. Add validator to signal generation (~in engine/core.py):
-
-Before signal enters ML pipeline:
-```python
+```bash
+# Test TP normalization
+python -c "
 from engine.signal_validators import normalize_signal_for_ml
-signal = normalize_signal_for_ml(signal)
-```
+signal = {'asset': 'BTCUSDT', 'direction': 'long', 'entry': 50000, 'stop_loss': 49000, 'take_profit': 51000}
+result = normalize_signal_for_ml(signal)
+print('TP normalized:', result.get('take_profit'))
+"
 
-### 3. Add strict dedup to signal creation (~in engine/core.py):
-
-```python
+# Test strict dedup
+python -c "
+import asyncio
 from engine.signal_dedup_strict import is_signal_duplicate_strict
-is_dup, _ = await is_signal_duplicate_strict(asset, timeframe, direction)
-if is_dup:
-    continue  # Skip
-```
+async def test():
+    is_dup, _ = await is_signal_duplicate_strict('BTCUSDT', '1h', 'long')
+    print('Is duplicate:', is_dup)
+asyncio.run(test())
+"
 
-### 4. Update outcome tracker price fetch (~in engine/realtime_outcome_tracker.py):
+# Test provider routing
+python -c "
+from data.get_live_price import get_provider_for_asset
+print('BTCUSDT ->', get_provider_for_asset('BTCUSDT'))
+print('AAPL ->', get_provider_for_asset('AAPL'))
+"
 
-Replace:
-```python
-price = await _get_live_price(symbol)
-```
-
-With:
-```python
+# Test live price
+python -c "
+import asyncio
 from data.get_live_price import get_live_price
-price = await get_live_price(symbol)
+async def test():
+    price = await get_live_price('BTCUSDT')
+    print('Price:', price)
+asyncio.run(test())
+"
 ```
 
 ---
 
-## Testing
+## Rollout Order
 
-After integration, test each fix:
-
-1. **Event Loop**: Monitor for blocking - should see concurrent tasks
-2. **Buttons**: Click inline buttons - should respond immediately without loading circle
-3. **TP Structure**: Send signal with single TP - should auto-convert to [TP1, TP2, TP3]
-4. **Duplication**: Send same asset/timeframe/direction within 12h - second should be blocked
-5. **Ghost Prices**: Request crypto price - should route to Binance not Polygon
-
----
-
-## Rollback Plan
-
-If issues occur:
-- Task 2: Remove callback handler - revert to existing handlers
-- Task 3: Comment out normalize_tp_structure() call
-- Task 4: Use original dedup logic
-- Task 5: Revert to original price fetch
+1. **Deploy** `data/get_live_price.py` (new circuit breaker + routing)
+2. **Deploy** `engine/signal_validators.py` (TP normalization)
+3. **Deploy** `engine/signal_dedup_strict.py` (strict dedup)
+4. **Deploy** `signalrank_telegram/callback_handlers.py` (button fix)
+5. **Update bot.py** to register callback handler
+6. **Update signal pipeline** to call normalize_signal_for_ml() before ML gate
+7. **Update deduplication** to use is_signal_duplicate_strict() before save
