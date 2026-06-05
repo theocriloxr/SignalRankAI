@@ -41,11 +41,11 @@ class StaleSignalValidator:
     3. Entry zone logic allows for legitimate price fluctuations
     """
     
-def __init__(self):
+    def __init__(self):
         """
         Initialize the validator with environment-based configuration.
         
-        CRITICAL: Force the code to read the Railway Env Var, or default to a SAFE 1.0%
+        CRITICAL: Force the code to read the Railway Env Var, or default to a SAFE 1.5%
         This fixes the "Zero Threshold" bug where the threshold was stuck at 0.0%.
         
         FIX: Increased default from 1.0% to 1.5% to handle crypto volatility.
@@ -53,12 +53,11 @@ def __init__(self):
         """
         # Force the code to read the Railway Env Var, or default to a SAFE 1.5%
         # This explicit reading prevents the 0.0% threshold bug
-        # FIX: Use 1.5% as default (was 1.0%) to handle crypto volatility
         raw_threshold = os.getenv("STALE_PRICE_THRESHOLD_PCT", "1.5")
         try:
             self.default_threshold = float(raw_threshold) / 100.0
         except (ValueError, TypeError):
-            self.default_threshold = 0.015  # 1.5% safe fallback (FIXED from 0.01)
+            self.default_threshold = 0.015  # 1.5% safe fallback
         
         # Safety net: NEVER allow 0.0 threshold - always use minimum 0.5%
         if self.default_threshold <= 0.0:
@@ -402,7 +401,7 @@ async def validate_signal_freshness(
     if use_ghost_check:
         secondary_price = await _get_secondary_price(symbol)
         if secondary_price and secondary_price > 0:
-            if not is_price_sane(live, secondary_price, max_diff_pct=1.0):
+if not is_price_sane(live, secondary_price, max_diff_pct=1.0):
                 # Try entry zone logic before invalidating
                 if is_in_entry_zone(entry, live, atr_value, direction):
                     logger.info(
@@ -417,7 +416,7 @@ async def validate_signal_freshness(
                     logger.warning(f"[stale_validator] Signal INVALIDATED for {symbol}: {reason}")
                     return False, reason, live
 
-# Calculate threshold (dynamic ATR-based or static)
+    # Calculate threshold (dynamic ATR-based or static)
     # CRITICAL FIX: Ensure threshold is in percentage form to match drift_pct
     threshold = get_dynamic_threshold(symbol, atr_value, live)
     
