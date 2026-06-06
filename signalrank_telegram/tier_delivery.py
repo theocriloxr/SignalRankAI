@@ -7,12 +7,17 @@ Implements the GOLDEN RULE:
 - Admin receives all signals
 """
 
+import logging
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
+from sqlalchemy import select, func
 from signalrank_telegram.formatter import (
     format_signal, format_signal_update_tp_hit,
     format_signal_no_trade_alert
 )
+from core.tier_constants import FREE_SIGNAL_DAILY_LIMIT
+
+logger = logging.getLogger(__name__)
 
 class TierDeliveryManager:
     """
@@ -387,6 +392,62 @@ class TierDeliveryManager:
                 stats['filter_reasons'][reason] = stats['filter_reasons'].get(reason, 0) + 1
         
         return stats
+
+# Upgrade 2: Daily Limit Enforcer for FREE Users
+# Returns True if user can receive signal, False if they hit daily limit
+async def check_and_enforce_daily_limit(session, user_id: int, user_tier: str) -> bool:
+    """
+    Check if user has reached their daily signal limit.
+    Returns True if allowed to receive signal.
+    Returns False if limit reached (FREE users get Paywall Upsell).
+    """
+    tier = str(user_tier or 'free').lower()
+    
+    # Premium/VIP/Admin/Owner have unlimited signals
+    if tier not in ('free',):
+        return True
+    
+    # FREE tier: enforce daily limit
+    now = datetime.now(timezone.utc)
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    try:
+        # Count signals delivered to this user today
+        from db.models import SignalDelivery
+        query = select(func.count()).select_from(SignalDelivery).where(
+            SignalDelivery.user_id == user_id,
+            SignalDelivery.delivered_at >= start_of_day,
+            SignalDelivery.sent_ok == True
+        )
+        result = await session.execute(query)
+        signals_sent_today = result.scalar() or 0
+    except Exception as e:
+        logger.warning(f"[delivery] Failed to count signals for user {user_id}: {e}")
+        signals_sent_today = 0
+    
+    daily_limit = FREE_SIGNAL_DAILY_LIMIT
+    
+    if signals_sent_today >= daily_limit:
+        logger.info(f"[delivery] User {user_id} hit daily limit ({signals_sent_today}/{daily_limit})")
+        return False
+    
+    return True
+
+
+def get_paywall_upsell_message() -> str:
+    """Get the paywall upsell message for FREE users who hit their daily limit."""
+    return (
+        "🛑 <b>Daily Limit Reached</b>\n\n"
+        "You've received your 3 free signals for today. \n\n"
+        "<b>Why upgrade to Premium?</b>\n"
+        "✅ Unlimited signals - never miss a setup\n"
+        "✅ Full Stop Loss data - trade safely\n"
+        "✅ TP2 & TP3 targets - maximize profits\n"
+        "✅ MT5 Auto-Execute - instant trade execution\n"
+        "✅ AI Confidence scores - know the probability\n\n"
+        "<i>Upgrade now: /premium</i>"
+    )
+
 
 # Global instance
 _delivery_manager = TierDeliveryManager()

@@ -1,85 +1,21 @@
-# SignalRankAI Implementation Plan
+# TODO - Tier-Gated Conversion Funnel Implementation
 
-## Current Analysis (from codebase exploration)
+## Status: IN PROGRESS
 
-### Already Working ✅
-1. `MLRejectedSignal` table - populated when signals are rejected (score gate, ML filter, expectancy, etc.)
-2. `DecisionLog` table - tracks engine decisions
-3. Signal delivery via Telegram with inline buttons
-4. RealtimeOutcomeTracker for TP/SL notifications
-5. ML scoring via `ml/inference.py` (MLFilter.ml_filter())
+### Upgrade 1: Tier-Gated Signal Formatter
+- [ ] Add `format_tiered_signal()` to `signalrank_telegram/tier_signal_formatter.py`
+- Gate SL, TP2/TP3, AI Confidence for free users
+- Button: Auto-Execute for premium only
 
-### Issues to Fix ❌
-1. `MLShadowPrediction` table exists but NOT populated after ML scoring
-2. `MLPastTrainingData` table exists but NOT populated when trades close
-3. Bot menu registration can be improved
-4. Rich signal formatting can be enhanced
+### Upgrade 2: Daily Limit Enforcer
+- [ ] Add `check_and_enforce_daily_limit()` to `signalrank_telegram/tier_delivery.py`
+- Send paywall upsell when free users hit daily limit
 
-## Implementation Plan
-
-### Phase 1: ML Prediction Logging (Priority: HIGH)
-**File:** `engine/core.py` or new `engine/ml_logger.py`
-
-Add explicit logging after ML scoring:
-
-```python
-# After ml_filter returns probability, log to MLShadowPrediction
-async def log_ml_prediction(session, signal_id, asset, timeframe, direction, 
-                        ml_probability, features):
-    """Save ML prediction to database for drift analysis."""
-    # Implementation needed
-```
-
-### Phase 2: ML Training Data from Outcomes (Priority: HIGH)  
-**File:** `engine/realtime_outcome_tracker.py` or `engine/shadow_outcome_worker.py`
-
-When trade closes (TP/SL hit), write to `MLPastTrainingData`:
-
-```python
-# When outcome is determined, populate training data
-async def log_trade_outcome(session, signal, outcome_status, pnl, features):
-    """Save closed trade to ML training table for model retraining."""
-    # Implementation needed
-```
-
-### Phase 3: Bot Menu Commands (Priority: MEDIUM)
-**File:** `signalrank_telegram/bot.py`
-
-Ensure commands are properly registered - most already exist:
-- `/portfolio` ✅ exists
-- `/dashboard` ✅ exists  
-- `/leaderboard` ✅ exists
-- `/mt5` ✅ exists
-
-### Phase 4: Rich Signal Formatting (Priority: MEDIUM)
-**File:** `signalrank_telegram/formatter.py`
-
-Enhance signal display with:
-- Asset class emojis (crypto 📱, FX 💱, etc.)
-- ML confidence display
-- Confluence indicators
+### Upgrade 3: Minimum Score Thresholds
+- [ ] Update `FREE_MIN_SCORE` from 60 to 80 in `core/tier_constants.py`
 
 ---
 
-## Files to Modify
-
-1. **engine/core.py** - Add ML prediction logging after scoring
-2. **engine/realtime_outcome_tracker.py** - Add training data logging on trade close  
-3. **engine/shadow_outcome_worker.py** - New file for async outcome logging
-4. **signalrank_telegram/formatter.py** - Enhanced formatting
-
-## Database Tables Used
-
-| Table | Status | Usage |
-|-------|--------|-------|
-| MLShadowPrediction | EMPTY | Log predictions after ML scoring |
-| MLPastTrainingData | EMPTY | Log outcomes when trades close |
-| MLRejectedSignal | POPULATED ✅ | Already working |
-| DecisionLog | POPULATED ✅ | Already working |
-
-## Implementation Order
-
-1. Create `engine/ml_logger.py` for prediction logging
-2. Update `engine/shadow_outcome_worker.py` for outcome → training data
-3. Update `engine/core.py` to call ml_logger
-4. Test with small signal batch
+## Notes
+- Free users: 3 signals/day, 80+ score, hidden Alpha (SL/TP2/TP3/ML locked)
+- Premium/VIP: Unlimited signals, full data access
