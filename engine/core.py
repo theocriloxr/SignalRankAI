@@ -1222,11 +1222,11 @@ def main_loop(DRY_RUN: bool = False):
         else:
             cycle_sleep_seconds = 30
 
-        # Graceful degradation slice
+# Graceful degradation slice
         degraded_assets = set()
         asset_to_tfs_degraded = {a: (tfs[:1] if a in degraded_assets else tfs) for a, tfs in asset_to_tfs.items()}
 
-# Fetch market data (async)
+        # Fetch market data (async)
         try:
             from utils.async_runner import run_sync
             fetch_timeout_s = max(30.0, float(_env_float("ENGINE_MARKET_FETCH_TIMEOUT_SECONDS", 180.0) or 180.0))
