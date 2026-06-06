@@ -2192,7 +2192,7 @@ def main_loop(DRY_RUN: bool = False):
                         except Exception as _ce:
                             logger.debug(f"[engine] confluence engine error: {_ce}")
 
-                        # ── Portfolio Exposure Manager Check ─────────────────────────────
+# ── Portfolio Exposure Manager Check ─────────────────────────────
                         # NEW: Check portfolio exposure limits before storing.
                         # This prevents over-exposure on correlated assets (e.g., 9 crypto shorts at once)
                         try:
@@ -2201,10 +2201,13 @@ def main_loop(DRY_RUN: bool = False):
                                 _direction = str(sig.get('direction') or 'long').lower().strip()
                                 # Use helper to get asset class
                                 _sig_asset_cls = _asset_class_key(_asset_name)
-                                _is_allowed = await exposure_manager.is_trade_allowed(
-                                    None,  # Session will be created inside if needed
-                                    _sig_asset_cls,
-                                    _direction,
+                                # FIX: Use run_sync to call async function from sync context
+                                _is_allowed = run_sync(
+                                    exposure_manager.is_trade_allowed(
+                                        None,  # Session will be created inside if needed
+                                        _sig_asset_cls,
+                                        _direction,
+                                    )
                                 )
                                 if not _is_allowed:
                                     pipeline_stats["skipped_portfolio_exposure"] = int(
