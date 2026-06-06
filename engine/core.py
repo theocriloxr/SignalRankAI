@@ -1601,7 +1601,7 @@ def main_loop(DRY_RUN: bool = False):
                 if not strict_candidates:
                     continue
 
-                # ML advisory (non-blocking)
+# ML advisory (non-blocking)
                 try:
                     from ml.inference import MLFilter
                     from ml.features import extract_features
@@ -1613,13 +1613,14 @@ def main_loop(DRY_RUN: bool = False):
                 for sig in strict_candidates:
                     approved = True
                     prob = None
-if ml_filter and getattr(ml_filter, 'active', False):
-                        try:
+                    features = {}
+                    try:
+                        if ml_filter and getattr(ml_filter, 'active', False):
                             features = extract_features(sig, market_data)
                             threshold = _current_ml_prob_threshold()
                             approved, prob = ml_filter.ml_filter(features, threshold=threshold)
-                        except Exception:
-                            approved, prob = True, None
+                    except Exception:
+                        approved, prob = True, None
 
                     # NEW: Log ML prediction to database for drift analysis
                     # Must happen BEFORE decision to ensure all predictions recorded
