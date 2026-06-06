@@ -1,3 +1,4 @@
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from .utils import require_tier
@@ -14,6 +15,20 @@ from engine.signal_analytics import signal_analytics
 from config import OWNER_IDS, ADMIN_IDS
 
 logger = logging.getLogger(__name__)
+
+def _effective_tier(user_id: int) -> str:
+    """Get effective tier for a user."""
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        t = resolve_user_tier(user_id)
+    except Exception:
+        t = "FREE"
+    try:
+        if state.has_temp_owner_sync(user_id):
+            return "OWNER"
+    except Exception:
+        pass
+    return (t or "FREE").upper()
 
 def _is_admin(user_id) -> bool:
     """Return True if user has admin or owner privileges."""

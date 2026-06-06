@@ -562,6 +562,14 @@ from .commands import (
     blast_terms_command,
     referral_leaderboard_command,
     referral_rewards_command,
+    assets_command,
+)
+
+# Import admin commands directly from admin_commands module to avoid import conflicts
+from .admin_commands import (
+    admin_top_assets_command,
+    admin_top_strategies_command,
+    admin_user_engagement_command,
 )
 
 from .owner_commands import (
