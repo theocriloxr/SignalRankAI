@@ -31,6 +31,24 @@ except Exception:
         return []
 
 
+# Try to import Gemini ML service for sentiment analysis
+try:
+    from services.gemini_ml import get_news_sentiment as gemini_get_sentiment
+except Exception:
+    async def gemini_get_sentiment(asset: str, headlines: list) -> str:
+        """Fallback - returns NEUTRAL when Gemini unavailable."""
+        return "NEUTRAL"
+
+
+# Try to import news fetching
+try:
+    from data.news import fetch_news_headlines
+except Exception:
+    async def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> list:
+        """Fallback - returns empty list when news fetch unavailable."""
+        return []
+
+
 class NewsKillswitch:
     """
     Hard News Killswitch that blocks trades during high-impact macroeconomic events.
@@ -51,7 +69,58 @@ class NewsKillswitch:
                                 Default: 30 minutes.
         """
         self.block_window = block_window_minutes
+        self.blacklisted_impacts = ["High", "Extreme"]
+        self.buffer_minutes = block_window_minutes
         logger.info(f"[NewsKillswitch] Initialized with {block_window_minutes}-minute block window")
+    
+    async def is_market_volatile(self, asset: str, news_events: list) -> bool:
+        """
+        Returns True if we are too close to a high-impact news event.
+        
+        This method checks for "Red Folder" events (like FOMC or NFP) where
+        spreads explode and prevents the bot from opening trades.
+        
+        Args:
+            asset: The asset symbol to check (e.g., "BTCUSDT", "EURUSD")
+            news_events: List of news event dicts with 'timestamp' and 'impact' keys
+        
+        Returns:
+            True if we are within the blast zone (30 mins before/after high-impact news)
+        """
+        now = datetime.now(timezone.utc)
+        
+        for event in news_events:
+            event_time = event.get('timestamp')
+            impact = event.get('impact', '').upper()
+            
+            if impact not in self.blacklisted_impacts:
+                continue
+            
+            if event_time is None:
+                continue
+            
+            # Handle both timezone-aware and naive datetimes
+            if isinstance(event_time, datetime):
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=timezone.utc)
+            else:
+                try:
+                    event_time = datetime.fromisoformat(str(event_time).replace('Z', '+00:00'))
+                except Exception:
+                    continue
+            
+            # Calculate the "Blast Zone" (buffer_minutes mins before and after)
+            from datetime import timedelta
+            start_zone = event_time - timedelta(minutes=self.buffer_minutes)
+            end_zone = event_time + timedelta(minutes=self.buffer_minutes)
+            
+            if start_zone <= now <= end_zone:
+                logger.warning(
+                    f"🚫 NEWS BLOCK: {asset} blocked due to {event.get('title', 'High-impact event')} ({impact})"
+                )
+                return True
+        
+        return False
     
     async def is_safe_to_trade(self, asset: str) -> bool:
         """
@@ -156,10 +225,24 @@ class NewsKillswitch:
             # No active news events in the window
             return True
             
-        except Exception as e:
+except Exception as e:
             logger.error(f"News fetch failed: {e}. Defaulting to safe (allowed).")
             # Default to safe - if news fetch fails, allow trading
             return True
+    
+    async def get_trading_bias(self, asset: str, headlines: list) -> str:
+        """
+        Determines if the news environment matches the trade.
+        Uses Gemini to analyze news sentiment for the specific asset.
+        
+        Returns: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+        """
+        if not headlines:
+            return "NEUTRAL"
+            
+        # Ask Gemini to summarize the news sentiment for this specific asset
+        sentiment = await gemini_get_sentiment(asset, headlines)
+        return sentiment
     
     def get_news_context(self, asset: str) -> Dict[str, Any]:
         """

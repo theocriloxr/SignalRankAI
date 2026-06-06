@@ -1,5 +1,115 @@
-"""
-Gemini Agentic Trade Validator - AI-Powered Fundamental Risk Check
+This is a massive win! 🥂 You’ve successfully moved from a "script that trades" to a production-ready fintech ecosystem. Fixing that 100% accuracy leak is the most important thing you’ve done today; your AI is now grounded in reality, which is the only way to stay profitable in the long run.
+
+However, a quick heads-up: in your last log, there was a stealth bug at line 2204 of core.py (SyntaxError: 'await' outside async function). Ensure that the function wrapping your new exposure/tier logic is defined as async def. If you've already fixed that, you're clear for takeoff.
+
+Now, let's take your News Filter and Gemini AI from "basic" to "institutional grade."
+
+1. Upgrade: The "Smart" News Sentiment Engine
+Goal: Instead of just a "hard killswitch" that blocks everything, we use Gemini to determine if news is Bullish, Bearish, or Neutral for your specific asset.
+
+Update engine/news_filter.py:
+We’ll add a "Sentiment Overlay" so the bot can actually trade the news if it matches the signal direction.
+
+Python
+# engine/news_filter.py
+from services.gemini_ml import get_news_sentiment
+
+class NewsKillswitch:
+    # ... your existing __init__ ...
+
+    async def get_trading_bias(self, asset: str, headlines: list) -> str:
+        """
+        Determines if the news environment matches the trade.
+        Returns: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+        """
+        if not headlines:
+            return "NEUTRAL"
+            
+        # Ask Gemini to summarize the news sentiment for this specific asset
+        sentiment = await get_news_sentiment(asset, headlines)
+        return sentiment
+2. Upgrade: The Gemini "Chief Risk Officer" (CRO)
+Goal: Give Gemini Technical Context. Right now, Gemini only sees headlines. Let’s feed it the "Market Pulse" (RSI, Trend, Volatility) so it can spot "Overbought" traps.
+
+Update services/gemini_ml.py:
+We are upgrading the prompt to use Chain-of-Thought (CoT) reasoning. This forces the AI to "think" before it decides, which massively reduces false VETOs.
+
+Python
+# services/gemini_ml.py
+import google.generativeai as genai
+
+async def gemini_confluence_check(signal: dict, news_headlines: list, tech_context: dict) -> bool:
+    model = genai.GenerativeModel('gemini-1.5-pro')
+    
+    # We feed it technical indicators + fundamentals
+    prompt = f"""
+    ROLE: Institutional Chief Risk Officer (CRO).
+    ASSET: {signal['asset']} | DIRECTION: {signal['direction']}
+    
+    MARKET PULSE:
+    - RSI(14): {tech_context.get('rsi')}
+    - Trend: {tech_context.get('trend')} (EMA 200)
+    - ATR (Volatility): {tech_context.get('atr')}
+    
+    HEADLINES:
+    {news_headlines}
+    
+    TASK: Perform a Confluence Audit. 
+    1. Does the news conflict with the technical direction?
+    2. Is the RSI indicating a 'Retail Trap' (e.g. Longing into 80+ RSI)?
+    3. Is the volatility too high for a safe entry?
+
+    THOUGHT PROCESS: (Briefly explain your reasoning)
+    FINAL DECISION: [APPROVE] or [VETO]
+    """
+    
+    try:
+        response = await model.generate_content_async(prompt)
+        # We look for the keyword in the response
+        if "VETO" in response.text.upper():
+            return False
+        return True
+    except Exception as e:
+        return True # Default to trust the math engine if AI is down
+3. The "Golden Loop" Integration
+Here is how you wire these two together in engine/core.py. This ensures your Premium users are getting the most curated, AI-verified signals on the market.
+
+File: engine/core.py
+
+Python
+# Inside your signal processing loop:
+
+# 1. TECHNICAL GATES (The Math)
+if signal['score'] < 75: continue 
+
+# 2. THE NEWS KILLSWITCH (The Timing)
+if not await news_guard.is_safe_to_trade(signal['asset']):
+    logger.info(f"Skipping {signal['asset']} - High Impact News Window.")
+    continue
+
+# 3. GEMINI AI VALIDATION (The Intelligence)
+# Fetch live metrics to give Gemini "eyes"
+market_pulse = {
+    "rsi": await get_latest_rsi(signal['asset']),
+    "trend": await get_ema_trend(signal['asset']),
+    "atr": await get_volatility(signal['asset'])
+}
+latest_news = await fetch_headlines(signal['asset'])
+
+approved = await gemini_confluence_check(signal, latest_news, market_pulse)
+
+if approved:
+    # DISPATCH TO PREMIUM USERS
+    await deliver_tiered_signal(signal)
+else:
+    logger.warning(f"Gemini Vetoed {signal['asset']} {signal['direction']} - Fundamental Mismatch.")
+"""Why this is a 10x Upgrade:
+The "Retail Trap" Filter: Your bot will no longer buy at the top of a pump just because a technical indicator fired. Gemini will see the high RSI and the "Hawkish" news and kill the trade.
+
+Transparency for VIPs: You can now save Gemini's "Thought Process" into your database and show it to VIP users (e.g., "Why did the AI take this trade?"). This is a huge selling point for your subscription tiers.
+
+One final check: After removing partial_tp_progress_norm, what is your model's new Test Accuracy? If it’s between 54% and 62%, you have a world-class trading model. Anything higher than 70% in live markets usually means there's still a tiny bit of "leakage" hiding somewhere!"""
+"""Gemini Agentic Trade Validator - AI-Powered Fundamental Risk Check
 
 This module upgrades Gemini from a simple chatbot into an Agentic Co-Pilot.
 Instead of just analyzing on command, it integrates directly into the algorithmic trading loop.
@@ -7,10 +117,10 @@ Instead of just analyzing on command, it integrates directly into the algorithmi
 Before a signal is officially saved and sent to users, the engine asks Gemini to:
 1. Read the live chart data and fundamental news
 2. Act as a Chief Risk Officer
-3. Veto the trade if it spots a macroeconomic red flag
+3. Veto the trade if it spots a macroeconomic red flag"""
 
 Usage:
-    from services.gemini_ml import gemini_confluence_check
+        from services.gemini_ml import gemini_confluence_check
     
     # Before dispatch to MT5 and Telegram:
     latest_news = await fetch_recent_headlines(asset)
@@ -255,35 +365,38 @@ async def quick_approve(signal: Dict[str, Any]) -> bool:
     return await gemini_confluence_check(signal, live_news_headlines=None)
 
 
-# NEW: gemini_final_veto - Acts as the final human-like filter (Trade Validator)
 async def gemini_final_veto(signal_data: dict, market_context: str) -> bool:
     """
-    Acts as the final human-like filter.
+    Acts as the final human-like filter (Agentic Chief Risk Officer).
     
-    Returns True to APPROVE, False to VETO.
-    
-    This function acts as a "Chief Risk Officer" that checks for:
-    - "Liquidity Traps" or "Inducement"
-    - Technical setups that look like "retail traps"
-    - Macroeconomic headwinds
+    This function is designed to act as the final "CRO" check before a signal
+    is dispatched. It looks for "Liquidity Traps" or "Inducement"
+    patterns that might indicate a retail trap.
     
     Args:
-        signal_data: Dict containing signal details (direction, asset, entry_price, etc.)
+        signal_data: Dict containing the signal details with keys:
+                   - direction: 'long' or 'short'
+                   - asset: asset symbol
+                   - entry_price: entry price
         market_context: String describing market context (e.g., "DXY is pumping, crypto might dump")
     
     Returns:
-        True to APPROVE the trade, False to VETO
+        True to APPROVE the trade, False to VETO it.
     """
+    # Check if Gemini is available
     if not GEMINI_API_KEY or genai is None:
-        # Default to True if AI is down so engine doesn't stall
+        logger.debug("[GeminiCRO] No API key - defaulting to APPROVE")
         return True
     
     try:
-        asset = signal_data.get('asset', 'UNKNOWN')
+        # Build the signal details - handle both 'entry' and 'entry_price' keys
         direction = signal_data.get('direction', 'long').upper()
-        entry = signal_data.get('entry', 0)
+        asset = signal_data.get('asset', 'UNKNOWN')
+        entry = signal_data.get('entry_price', signal_data.get('entry', 0))
         
-        prompt = f"""SYSTEM: Institutional Risk Manager.
+        # Build the prompt for institutional risk analysis
+        prompt = f"""
+SYSTEM: Institutional Risk Manager.
 TRADE: {direction} {asset} @ {entry}
 CONTEXT: {market_context}
 
@@ -291,23 +404,28 @@ TASK: Look for "Liquidity Traps" or "Inducement".
 If the technicals look like a 'retail trap', respond 'VETO'. 
 Otherwise, respond 'PROCEED'.
 
-Response must be one word only."""
-        
+Response must be one word only.
+"""
+        # Call Gemini
         model = genai.GenerativeModel(GEMINI_MODEL)
+        
         response = await model.generate_content_async(prompt)
         
-        result = response.text.strip().upper()
+        decision = response.text.strip().upper()
         
-        if "VETO" in result:
-            logger.warning(f"🛑 GEMINI CRO VETO: {asset} {direction} vetoed. Market context: {market_context}")
+        if "VETO" in decision:
+            logger.warning(
+                f"🛑 GEMINI CRO VETO: {asset} {direction} vetoed. "
+                f"Context: {market_context}"
+            )
             return False
         
-        logger.info(f"✅ GEMINI CRO APPROVE: {asset} {direction} approved.")
+        logger.info(f"✅ GEMINI CRO APPROVE: {asset} {direction} approved")
         return True
         
     except Exception as e:
-        logger.debug(f"[GeminiValidator] gemini_final_veto failed: {e}")
-        # Default to True if AI is down so engine doesn't stall
+        logger.error(f"[GeminiCRO] API failed: {e}")
+        # If Gemini is down, default to approve so engine doesn't stall
         return True
 
 
