@@ -78,6 +78,13 @@ except Exception:
     def _detect_order_blocks(candles, lookback=100) -> bool:  # type: ignore
         return False
 
+# Golden Loop: Gemini Chief Risk Officer (CRO) with technical context
+try:
+    from services.gemini_ml import gemini_confluence_check_with_tech_context as _gemini_cro_check
+except Exception:
+    async def _gemini_cro_check(signal, news_headlines, tech_context) -> bool:  # type: ignore
+        return True
+
 try:
     from services.economic_calendar import is_no_trade_zone_sync as _is_no_trade_zone_sync, get_macro_news_context
 except Exception:
