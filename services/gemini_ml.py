@@ -1,902 +1,121 @@
-from __future__ import annotations
+"""
+Gemini Agentic Trade Validator
 
-import asyncio
-import json
-import logging
+Uses Gemini 1.5 Pro as a Chief Risk Officer to validate trades before execution.
+Acts as a final AI confluence check to veto trades that are fundamentally dangerous.
+"""
+
 import os
-import urllib.error
-import urllib.request
-import traceback
-from datetime import datetime, timedelta
-from typing import Any
+import logging
+from typing import Dict, List, Optional, Any
 
-from sqlalchemy import text
+logger = logging.getLogger("GeminiValidator")
 
-from db.session import get_session
-
-logger = logging.getLogger(__name__)
-
-_gemini_cooldown_until_utc: datetime | None = None
-_gemini_cooldown_db_loaded: bool = False  # load from DB at most once per process
-
-
-def _load_cooldown_from_db() -> None:
-    """Restore any active Gemini cooldown from runtime_state so Railway
-    redeploys respect a previously set 429 cooldown."""
-    global _gemini_cooldown_until_utc
-    try:
-        from utils.async_runner import run_sync as _rs
-
-        async def _fetch() -> str | None:
-            async with get_session() as _s:
-                row = (
-                    await _s.execute(
-                        text("SELECT value FROM runtime_state WHERE key = 'gemini_cooldown_until'"),
-                    )
-                ).first()
-                return row[0] if row else None
-
-        val = _rs(_fetch(), timeout=5.0)
-        if val:
-            # JSONB columns are returned as Python objects or JSON strings.
-            # Use json.loads for robust parsing regardless of driver behaviour.
-            if isinstance(val, str):
-                ts_str = json.loads(val) if val.startswith('"') else val
-            else:
-                ts_str = str(val)
-            ts = datetime.fromisoformat(ts_str)
-            # Normalise to naive UTC for consistent comparison with datetime.utcnow()
-            if ts.tzinfo is not None:
-                ts = ts.replace(tzinfo=None) - ts.utcoffset()
-            if ts > datetime.utcnow():
-                _gemini_cooldown_until_utc = ts
-                logger.info("[gemini] cooldown restored from DB: until=%s", ts.isoformat())
-    except Exception as _e:
-        logger.debug("[gemini] cooldown load from DB failed (non-fatal): %s", _e)
-
-
-def _persist_cooldown_to_db() -> None:
-    """Write the current cooldown expiry to runtime_state so it survives restarts."""
-    global _gemini_cooldown_until_utc
-    if _gemini_cooldown_until_utc is None:
-        return
-    try:
-        from utils.async_runner import run_sync as _rs
-
-        _until_iso = json.dumps(_gemini_cooldown_until_utc.isoformat())
-
-        async def _save() -> None:
-            async with get_session() as _s:
-                await _s.execute(
-                    text(
-                        """
-                        INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                        VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
-                        ON CONFLICT (key) DO UPDATE
-                        SET value = EXCLUDED.value, updated_at = NOW()
-                        """
-                    ),
-                    {"k": "gemini_cooldown_until", "v": _until_iso},
-                )
-                await _s.commit()
-
-        _rs(_save(), timeout=5.0)
-    except Exception as _e:
-        logger.debug("[gemini] cooldown persist to DB failed (non-fatal): %s", _e)
-
-
-def _gemini_in_cooldown() -> tuple[bool, str | None]:
-    global _gemini_cooldown_until_utc, _gemini_cooldown_db_loaded
-    # Restore from DB exactly once per process so restarts respect active cooldowns.
-    if not _gemini_cooldown_db_loaded:
-        _gemini_cooldown_db_loaded = True
-        _load_cooldown_from_db()
-    if _gemini_cooldown_until_utc is None:
-        return False, None
-    now = datetime.utcnow()
-    if now >= _gemini_cooldown_until_utc:
-        _gemini_cooldown_until_utc = None
-        return False, None
-    return True, _gemini_cooldown_until_utc.isoformat()
-
-
-def _set_gemini_cooldown(hours: int) -> None:
-    global _gemini_cooldown_until_utc
-    safe_hours = max(1, int(hours or 24))
-    _gemini_cooldown_until_utc = datetime.utcnow() + timedelta(hours=safe_hours)
-    _persist_cooldown_to_db()
-
-
-def _extract_feature_suggestions(review_text: str, limit: int = 8) -> list[str]:
-    text = str(review_text or "").strip()
-    if not text:
-        return []
-
-    lines = [ln.strip() for ln in text.splitlines()]
-    suggestions: list[str] = []
-    capture = False
-
-    for ln in lines:
-        low = ln.lower()
-        if any(
-            marker in low
-            for marker in (
-                "feature suggestions",
-                "bot feature suggestions",
-                "functionality suggestions",
-                "product suggestions",
-            )
-        ):
-            capture = True
-            continue
-
-        if capture:
-            if low.startswith("###") or low.startswith("##"):
-                break
-            if low.startswith("-") or low.startswith("*") or low[:2].isdigit() and low[1] == ".":
-                cleaned = ln.lstrip("-*0123456789. ").strip()
-                if cleaned:
-                    suggestions.append(cleaned)
-
-    # Fallback: pick lines that explicitly mention feature/product/system upgrades.
-    if not suggestions:
-        for ln in lines:
-            low = ln.lower()
-            if any(k in low for k in ("feature", "module", "workflow", "automation", "dashboard", "alert")):
-                candidate = ln.lstrip("-*0123456789. ").strip()
-                if candidate and candidate not in suggestions:
-                    suggestions.append(candidate)
-
-    out: list[str] = []
-    for s in suggestions:
-        if s not in out:
-            out.append(s)
-        if len(out) >= max(1, int(limit)):
-            break
-    return out
-
-
-async def _collect_aggregate(scope: str) -> dict[str, Any]:
-    scope_norm = str(scope or "weekly").strip().lower()
-    if scope_norm not in {"weekly", "all_time"}:
-        scope_norm = "weekly"
-
-    since: datetime | None = None
-    if scope_norm == "weekly":
-        since = datetime.utcnow() - timedelta(days=7)
-
-    where_outcomes = ""
-    where_decisions = ""
-    where_signals = ""
-    where_decisions_with_rejects = "WHERE decision IN ('rejected','skipped')"
-    params: dict[str, Any] = {}
-    if since is not None:
-        where_outcomes = "WHERE closed_at >= :since"
-        where_decisions = "WHERE created_at >= :since"
-        where_signals = "WHERE created_at >= :since"
-        where_decisions_with_rejects = (
-            "WHERE created_at >= :since AND decision IN ('rejected','skipped')"
-        )
-        params["since"] = since
-
-    async with get_session() as session:
-        perf_row = (
-            await session.execute(
-                text(
-                    f"""
-                    SELECT
-                      COUNT(*) AS outcomes_total,
-                      SUM(CASE WHEN status IN ('tp','tp1','tp2','tp3','partial_tp') THEN 1 ELSE 0 END) AS wins,
-                      SUM(CASE WHEN status = 'sl' THEN 1 ELSE 0 END) AS losses,
-                      AVG(r_multiple) AS avg_r,
-                      SUM(r_multiple) AS net_r
-                    FROM outcomes
-                    {where_outcomes}
-                    """
-                ),
-                params,
-            )
-        ).first()
-
-        rej_rows = (
-            await session.execute(
-                text(
-                    f"""
-                    SELECT COALESCE(reason, '') AS reason, COUNT(*) AS c
-                    FROM decision_log
-                    {where_decisions_with_rejects}
-                    GROUP BY reason
-                    ORDER BY c DESC
-                    LIMIT 12
-                    """
-                ),
-                params,
-            )
-        ).fetchall()
-
-        issued_rejected = (
-            await session.execute(
-                text(
-                    f"""
-                    SELECT
-                      SUM(CASE WHEN decision = 'issued' THEN 1 ELSE 0 END) AS issued,
-                      SUM(CASE WHEN decision IN ('rejected','skipped') THEN 1 ELSE 0 END) AS rejected
-                    FROM decision_log
-                    {where_decisions}
-                    """
-                ),
-                params,
-            )
-        ).first()
-
-        assets = (
-            await session.execute(
-                text(
-                    f"""
-                    SELECT asset, COUNT(*) AS c
-                    FROM signals
-                    {where_signals}
-                    GROUP BY asset
-                    ORDER BY c DESC
-                    LIMIT 10
-                    """
-                ),
-                params,
-            )
-        ).fetchall()
-
-        # Collect individual signal+outcome records with timestamps so Gemini can
-        # confirm each outcome and identify patterns at the signal level.
-        signal_detail_where = ""
-        signal_detail_params: dict[str, Any] = {}
-        if since is not None:
-            signal_detail_where = "WHERE s.created_at >= :since"
-            signal_detail_params["since"] = since
-
-        signal_rows = (
-            await session.execute(
-                text(
-                    f"""
-                    SELECT
-                        s.signal_id,
-                        s.asset,
-                        s.direction,
-                        s.entry,
-                        s.stop_loss,
-                        s.take_profit,
-                        s.timeframe,
-                        s.score,
-                        s.created_at AS signal_created_at,
-                        o.status AS outcome_status,
-                        o.r_multiple,
-                        o.closed_at AS outcome_closed_at,
-                        o.meta AS outcome_meta
-                    FROM signals s
-                    LEFT JOIN outcomes o ON o.signal_id = s.signal_id
-                    {signal_detail_where}
-                    ORDER BY s.created_at DESC
-                    LIMIT 120
-                    """
-                ),
-                signal_detail_params,
-            )
-        ).fetchall()
-
-        await session.commit()
-
-    outcomes_total = int((perf_row[0] or 0) if perf_row else 0)
-    wins = int((perf_row[1] or 0) if perf_row else 0)
-    losses = int((perf_row[2] or 0) if perf_row else 0)
-    issued = int((issued_rejected[0] or 0) if issued_rejected else 0)
-    rejected = int((issued_rejected[1] or 0) if issued_rejected else 0)
-
-    # Build per-signal detail list for Gemini's per-signal confirmation
-    per_signal_records: list[dict[str, Any]] = []
-    for row in (signal_rows or []):
-        try:
-            sig_id = str(row[0] or "")[:12]
-            created_ts = row[8]
-            closed_ts = row[11]
-            outcome_meta = row[12]
-            close_price: Any = None
-            try:
-                if isinstance(outcome_meta, dict):
-                    close_price = outcome_meta.get("close_price")
-            except Exception:
-                pass
-            per_signal_records.append({
-                "signal_id": sig_id,
-                "asset": str(row[1] or ""),
-                "direction": str(row[2] or ""),
-                "entry": float(row[3]) if row[3] is not None else None,
-                "stop_loss": float(row[4]) if row[4] is not None else None,
-                "take_profit": str(row[5] or ""),
-                "timeframe": str(row[6] or ""),
-                "score": float(row[7]) if row[7] is not None else None,
-                "signal_timestamp": created_ts.isoformat() if created_ts else None,
-                "outcome_status": str(row[9] or "pending"),
-                "r_multiple": float(row[10]) if row[10] is not None else None,
-                "outcome_timestamp": closed_ts.isoformat() if closed_ts else None,
-                "close_price": float(close_price) if close_price is not None else None,
-            })
-        except Exception:
-            continue
-
-    return {
-        "scope": scope_norm,
-        "since_utc": since.isoformat() if since is not None else None,
-        "outcomes_total": outcomes_total,
-        "wins": wins,
-        "losses": losses,
-        "win_rate": (wins / max(1, wins + losses)),
-        "avg_r": float(perf_row[3]) if perf_row and perf_row[3] is not None else None,
-        "net_r": float(perf_row[4]) if perf_row and perf_row[4] is not None else None,
-        "issued": issued,
-        "rejected_or_skipped": rejected,
-        "top_rejections": [
-            {"reason": str(r[0] or ""), "count": int(r[1] or 0)} for r in (rej_rows or [])
-        ],
-        "top_assets": [
-            {"asset": str(r[0] or ""), "count": int(r[1] or 0)} for r in (assets or [])
-        ],
-        "per_signal_records": per_signal_records,
-    }
-
-
-def _gemini_model_candidates() -> list[str]:
-    """Resolve Gemini model candidates, starting with GEMINI_MODEL.
-
-    Defaults include currently common public model IDs. Users can override with
-    GEMINI_MODEL_FALLBACKS="model_a,model_b,...".
-    """
-    primary = (os.getenv("GEMINI_MODEL") or "gemini-2.0-flash").strip() or "gemini-2.0-flash"
-    fallbacks_raw = (os.getenv("GEMINI_MODEL_FALLBACKS") or "").strip()
-    # Comprehensive list of public Gemini models (add more as released)
-    all_known_models = [
-        # Gemini 3.1 Series
-        "gemini-3.1-pro",
-        "gemini-3.1-flash-lite",
-        "gemini-3.1-flash-image",
-
-        # Gemini 3 Series
-        "gemini-3-pro",
-        "gemini-3-flash",
-        "gemini-3-deep-think",
-        "gemini-3-pro-image",
-
-        # Gemini 2.5 Series
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite",
-        "gemini-2.5-flash-image",
-
-        # Gemini 2.0 Series
-        "gemini-2.0-pro",
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-lite",
-
-        # Gemini 1.5 Series
-        "gemini-1.5-pro",
-        "gemini-1.5-flash",
-
-        # Gemini 1.0 Series
-        "gemini-1.0-ultra",
-        "gemini-1.0-pro",
-        "gemini-1.0-pro-vision",
-        "gemini-1.0-nano",
-
-        # Legacy Aliases
-        "gemini-pro",
-        "gemini-pro-vision",
-    ]
-    extra = []
-    if fallbacks_raw:
-        extra = [m.strip() for m in fallbacks_raw.split(",") if m.strip()]
-    # Always try primary, then user fallbacks, then all known models (deduped, in order)
-    out: list[str] = []
-    for m in [primary] + extra + all_known_models:
-        if m and m not in out:
-            out.append(m)
-    return out
-
-
-def _call_gemini_sync(api_key: str, prompt_payload: dict[str, Any]) -> str:
-    in_cd, until = _gemini_in_cooldown()
-    if in_cd:
-        raise RuntimeError(f"gemini cooldown active until {until}")
-
-    models = _gemini_model_candidates()
-    req_body = {
-        "contents": [{"parts": [{"text": json.dumps(prompt_payload)}]}],
-        "generationConfig": {
-            "temperature": 0.2,
-            "maxOutputTokens": int(os.getenv("GEMINI_REVIEW_MAX_TOKENS", "1200") or 1200),
-        },
-    }
-
-    timeout = int(os.getenv("GEMINI_REVIEW_HTTP_TIMEOUT_SEC", "60") or 60)
-
-    last_err: Exception | None = None
-    for model in models:
-        req = urllib.request.Request(
-            url=(
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{model}:generateContent?key={api_key}"
-            ),
-            data=json.dumps(req_body).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                payload = json.loads(resp.read().decode("utf-8"))
-            try:
-                return str(payload["candidates"][0]["content"]["parts"][0].get("text") or "").strip()
-            except Exception:
-                return ""
-        except urllib.error.HTTPError as exc:
-            import traceback
-            last_err = exc
-            body = ""
-            try:
-                body = exc.read().decode("utf-8", errors="ignore")[:800]
-            except Exception:
-                body = ""
-            # Model-level 404 is usually recoverable by trying next candidate.
-            if int(getattr(exc, "code", 0) or 0) == 404:
-                logger.warning("[gemini] model '%s' not found (HTTP 404), trying fallback", model)
-                continue
-            if int(getattr(exc, "code", 0) or 0) == 429:
-                cd_hours = int(os.getenv("GEMINI_COOLDOWN_HOURS", "24") or 24)
-                _set_gemini_cooldown(cd_hours)
-                logger.warning("[gemini] HTTP 429 detected; enabling cooldown for %sh", cd_hours)
-            logger.error(
-                "[gemini] HTTP %s for model '%s': %s\nType: %s\nTraceback:\n%s",
-                getattr(exc, "code", "?"),
-                model,
-                body or str(exc),
-                type(exc).__name__,
-                traceback.format_exc(),
-            )
-            raise
-        except Exception as exc:
-            import traceback
-            last_err = exc
-            logger.error(
-                "[gemini] request failed for model '%s': %s\nType: %s\nTraceback:\n%s",
-                model,
-                exc,
-                type(exc).__name__,
-                traceback.format_exc(),
-            )
-            continue
-
-    if last_err is not None:
-        raise last_err
-    return ""
-
-
-async def _train_model_with_overwrite() -> dict[str, Any]:
-    from ml.train_model import main as train_main
-    from utils.async_runner import run_sync
-
-    started = datetime.utcnow().isoformat()
-    try:
-        # Run training in a worker thread so Telegram/webhook event loops remain responsive.
-        ok = await asyncio.to_thread(lambda: bool(run_sync(train_main(), timeout=1200.0)))
-        return {
-            "attempted": True,
-            "succeeded": bool(ok),
-            "started_at": started,
-            "finished_at": datetime.utcnow().isoformat(),
-            "note": "model.json overwritten from latest training run" if ok else "training returned False",
-        }
-    except Exception as exc:
-        logger.warning("[gemini] model retrain failed: %s", exc)
-        return {
-            "attempted": True,
-            "succeeded": False,
-            "started_at": started,
-            "finished_at": datetime.utcnow().isoformat(),
-            "note": f"training exception: {exc}",
-        }
-
-
-async def _store_review(key: str, value: dict[str, Any]) -> None:
-    async with get_session() as session:
-        await session.execute(
-            text(
-                """
-                INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                VALUES (:k, CAST(:v AS JSONB), NULL, NOW())
-                ON CONFLICT (key) DO UPDATE
-                SET value = EXCLUDED.value, expires_at = NULL, updated_at = NOW()
-                """
-            ),
-            {"k": key, "v": json.dumps(value)},
-        )
-        await session.commit()
-
-
-async def run_gemini_review_pipeline(*, trigger: str, scope: str) -> dict[str, Any]:
-    in_cd, until = _gemini_in_cooldown()
-    if in_cd:
-        return {
-            "ok": False,
-            "error": f"gemini cooldown active until {until}",
-            "trigger": trigger,
-            "scope": scope,
-        }
-
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not api_key:
-        return {
-            "ok": False,
-            "error": "GEMINI_API_KEY is not configured",
-            "trigger": trigger,
-            "scope": scope,
-        }
-
-    started_at = datetime.utcnow().isoformat()
-    aggregate = await _collect_aggregate(scope=scope)
-    per_signal_records = list(aggregate.get("per_signal_records") or [])
-
-    # Build a compact per-signal confirmation list for Gemini.
-    # We fetch up to 120 records from the DB but cap the payload at 80 to stay
-    # within Gemini's token budget.  The extra 40 give a buffer so that if some
-    # records are filtered out above they don't leave the sample short.
-    signal_sample = per_signal_records[:80]
-
-    prompt_payload = {
-        "task": (
-            "You are a quantitative trading review assistant for the SignalRankAI bot. "
-            "You will receive: (a) aggregate performance stats, (b) a list of individual signals "
-            "each with their timestamp, entry, SL, TP, score and outcome. "
-            "Your job is to: "
-            "1) Confirm the outcome of every signal in the list (signal_id, outcome_status, "
-            "outcome_timestamp) so they are validated. "
-            "2) Identify patterns — which assets/timeframes/directions perform best or worst. "
-            "3) Provide actionable ML feature suggestions to improve the win rate. "
-            "4) Provide bot feature suggestions to improve functionality and execution safety. "
-            "5) Provide risk-management tuning recommendations. "
-            "6) Point out any signals where the outcome appears inconsistent with the score "
-            "or direction (potential data quality issues). "
-            "Format your response with clear section headers: "
-            "'Signal Outcome Confirmations', 'Performance Patterns', 'ML Feature Suggestions', "
-            "'Bot Feature Suggestions', 'Risk Controls', 'Data Quality Issues'."
-        ),
-        "constraints": [
-            "Avoid overfitting and data leakage.",
-            "Use concise and actionable bullet points.",
-            "Do not provide investment guarantees.",
-            "Prefer robust improvements over aggressive optimization.",
-            "When confirming signal outcomes, output a brief table or list: "
-            "signal_id | asset | direction | score | outcome | timestamp.",
-        ],
-        "aggregate": {k: v for k, v in aggregate.items() if k != "per_signal_records"},
-        "signals_with_outcomes": signal_sample,
-        "total_signals_in_period": len(per_signal_records),
-        "review_generated_at": datetime.utcnow().isoformat(),
-    }
-
-    review_text = ""
-    try:
-        review_text = await asyncio.to_thread(_call_gemini_sync, api_key, prompt_payload)
-    except Exception as exc:
-        logger.error(
-            "[gemini] review request failed: %s\nType: %s\nTraceback:\n%s",
-            exc,
-            type(exc).__name__,
-            traceback.format_exc(),
-        )
-
-    training = await _train_model_with_overwrite()
-    feature_suggestions = _extract_feature_suggestions(review_text)
-
-    result = {
-        "ok": True,
-        "trigger": str(trigger),
-        "scope": str(aggregate.get("scope") or scope),
-        "started_at": started_at,
-        "finished_at": datetime.utcnow().isoformat(),
-        "received": {
-            "outcomes_total": int(aggregate.get("outcomes_total") or 0),
-            "wins": int(aggregate.get("wins") or 0),
-            "losses": int(aggregate.get("losses") or 0),
-            "issued": int(aggregate.get("issued") or 0),
-            "rejected_or_skipped": int(aggregate.get("rejected_or_skipped") or 0),
-            "top_assets_count": len(aggregate.get("top_assets") or []),
-            "top_rejections_count": len(aggregate.get("top_rejections") or []),
-            "per_signal_records_sent": len(signal_sample),
-        },
-        "processed": {
-            "prompt_chars": len(json.dumps(prompt_payload)),
-            "review_chars": len(review_text or ""),
-        },
-        "aggregate": aggregate,
-        "review": review_text,
-        "feature_suggestions": feature_suggestions,
-        "training": training,
-    }
-
-    await _store_review("gemini_ml_last_run", result)
-    await _store_review(
-        "gemini_weekly_ml_review",
-        {
-            "summary": {k: v for k, v in aggregate.items() if k != "per_signal_records"},
-            "recommendations": review_text,
-            "feature_suggestions": feature_suggestions,
-            "training": training,
-            "trigger": trigger,
-            "scope": scope,
-            "per_signal_records_sent": len(signal_sample),
-            "updated_at": datetime.utcnow().isoformat(),
-        },
-    )
-
-    return result
-
-
-async def get_last_gemini_review() -> dict[str, Any] | None:
-    async with get_session() as session:
-        row = (
-            await session.execute(
-                text("SELECT value FROM runtime_state WHERE key = :k"),
-                {"k": "gemini_ml_last_run"},
-            )
-        ).first()
-        await session.commit()
-
-    if not row or row[0] is None:
-        return None
-    return dict(row[0]) if isinstance(row[0], dict) else None
-
-
-async def analyze_asset(asset: str, limit: int = 20) -> dict[str, Any]:
-    """Collect recent signals and rejections for a single asset and optionally run Gemini."""
-    if not asset:
-        return {"ok": False, "error": "asset required"}
-    a = str(asset or "").upper().strip()
-    limit = max(1, min(200, int(limit or 20)))
-    async with get_session() as session:
-        sigs = (
-            await session.execute(
-                text(
-                    """
-                    SELECT signal_id, asset, direction, entry, stop_loss, take_profit, timeframe, score, created_at
-                    FROM signals
-                    WHERE asset = :asset
-                    ORDER BY created_at DESC
-                    LIMIT :limit
-                    """
-                ),
-                {"asset": a, "limit": limit},
-            )
-        ).fetchall()
-
-        rejects = (
-            await session.execute(
-                text(
-                    """
-                    SELECT id, asset, timeframe, direction, entry, stop_loss, take_profit, ml_probability, rejection_reason, created_at
-                    FROM ml_rejected_signals
-                    WHERE asset = :asset
-                    ORDER BY created_at DESC
-                    LIMIT 50
-                    """
-                ),
-                {"asset": a},
-            )
-        ).fetchall()
-        await session.commit()
-
-    recent = []
-    for r in (sigs or []):
-        recent.append({
-            "signal_id": str(r[0] or "")[:12],
-            "asset": str(r[1] or ""),
-            "direction": str(r[2] or ""),
-            "entry": float(r[3]) if r[3] is not None else None,
-            "stop_loss": float(r[4]) if r[4] is not None else None,
-            "take_profit": str(r[5] or ""),
-            "timeframe": str(r[6] or ""),
-            "score": float(r[7]) if r[7] is not None else None,
-            "created_at": r[8].isoformat() if r[8] else None,
-        })
-
-    recent_rejects = []
-    for r in (rejects or []):
-        recent_rejects.append({
-            "id": int(r[0] or 0),
-            "asset": str(r[1] or ""),
-            "timeframe": str(r[2] or ""),
-            "direction": str(r[3] or ""),
-            "entry": float(r[4]) if r[4] is not None else None,
-            "stop_loss": float(r[5]) if r[5] is not None else None,
-            "take_profit": str(r[6] or ""),
-            "ml_probability": float(r[7]) if r[7] is not None else None,
-            "reason": str(r[8] or ""),
-            "created_at": r[9].isoformat() if r[9] else None,
-        })
-
-    result = {"ok": True, "asset": a, "recent_signals": recent, "recent_rejections": recent_rejects}
-    # If Gemini is configured, request a concise textual review for this asset.
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if api_key:
-        try:
-            prompt = {
-                "task": f"Provide a concise trading audit for {a}. Confirm the outcomes listed and give a 2-sentence trade rationale template for future signals. Also list 3 quick feature suggestions.",
-                "asset": a,
-                "recent_signals": recent[:min(len(recent), 30)],
-                "recent_rejections": recent_rejects[:min(len(recent_rejects), 30)],
-            }
-            review = await asyncio.to_thread(_call_gemini_sync, api_key, prompt)
-            result["review"] = str(review or "")
-        except Exception as exc:
-            result["review_error"] = str(exc)
-    return result
-
-
-async def audit_recent(limit: int = 50) -> dict[str, Any]:
-    """Collect recent losses and top rejections for quick audit."""
-    limit = max(1, min(500, int(limit or 50)))
-    async with get_session() as session:
-        losses = (
-            await session.execute(
-                text(
-                    """
-                    SELECT o.signal_id, s.asset, s.direction, s.entry, o.status, o.r_multiple, o.closed_at
-                    FROM outcomes o
-                    JOIN signals s ON s.signal_id = o.signal_id
-                    WHERE o.status = 'sl'
-                    ORDER BY o.closed_at DESC
-                    LIMIT :limit
-                    """
-                ),
-                {"limit": limit},
-            )
-        ).fetchall()
-
-        top_rejects = (
-            await session.execute(
-                text(
-                    """
-                    SELECT id, asset, timeframe, direction, entry, ml_probability, rejection_reason, created_at
-                    FROM ml_rejected_signals
-                    ORDER BY created_at DESC
-                    LIMIT 50
-                    """
-                )
-            )
-        ).fetchall()
-        await session.commit()
-
-    out_losses = []
-    for r in (losses or []):
-        out_losses.append({
-            "signal_id": str(r[0] or "")[:12],
-            "asset": str(r[1] or ""),
-            "direction": str(r[2] or ""),
-            "entry": float(r[3]) if r[3] is not None else None,
-            "status": str(r[4] or ""),
-            "r_multiple": float(r[5]) if r[5] is not None else None,
-            "closed_at": r[6].isoformat() if r[6] else None,
-        })
-
-    out_rejects = []
-    for r in (top_rejects or []):
-        out_rejects.append({
-            "id": int(r[0] or 0),
-            "asset": str(r[1] or ""),
-            "timeframe": str(r[2] or ""),
-            "direction": str(r[3] or ""),
-            "entry": float(r[4]) if r[4] is not None else None,
-            "ml_probability": float(r[5]) if r[5] is not None else None,
-            "reason": str(r[6] or ""),
-            "created_at": r[7].isoformat() if r[7] else None,
-        })
-
-    result = {"ok": True, "recent_losses": out_losses, "recent_rejections": out_rejects}
-    api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if api_key:
-        try:
-            prompt = {
-                "task": "You are a quantitative trading reviewer. Summarize the recent losses and rejections, identify top failure modes, and provide 3 short actionable recommendations.",
-                "recent_losses": out_losses[:min(len(out_losses), 40)],
-                "recent_rejections": out_rejects[:min(len(out_rejects), 40)],
-            }
-            review = await asyncio.to_thread(_call_gemini_sync, api_key, prompt)
-            result["review"] = str(review or "")
-        except Exception as exc:
-            result["review_error"] = str(exc)
-    return result
-
-
-async def predict_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
-    """Lightweight prediction helper: check duplication and nearby signals.
-
-    Expects candidate to include `asset`, `timeframe`, `direction`, `entry`.
-    """
-    if not candidate or not isinstance(candidate, dict):
-        return {"ok": False, "error": "candidate dict required"}
-    asset = str(candidate.get("asset") or candidate.get("symbol") or "").upper().strip()
-    timeframe = str(candidate.get("timeframe") or candidate.get("tf") or "").lower().strip()
-    direction = str(candidate.get("direction") or candidate.get("side") or "long").lower().strip()
-    try:
-        entry = float(candidate.get("entry") or candidate.get("entry_price") or candidate.get("price") or 0.0)
-    except Exception:
-        entry = 0.0
-
-    if not asset or not timeframe or direction not in {"long", "short"} or entry <= 0:
-        return {"ok": False, "error": "asset,timeframe,direction,entry required"}
-
-    # Use SignalDeduplicator to check semantic duplicates
-    try:
-        from engine.signal_deduplicator import SignalDeduplicator
-
-        sd = SignalDeduplicator()
-        is_dup = await sd.is_duplicate(asset, timeframe, direction, entry)
-        neighbors = await sd.get_recent_signals(asset, timeframe, direction, lookback_hours=24)
-        return {"ok": True, "is_duplicate": bool(is_dup), "recent_neighbors": neighbors[:12]}
-    except Exception as e:
-        return {"ok": False, "error": f"predict failed: {e}"}
-
-
-async def gemini_confluence_check(signal: dict[str, Any], live_news_headlines: list[str]) -> bool:
-    """
-    Agentic Co-Pilot: Asks Gemini to act as a Chief Risk Officer.
+# Configure Gemini API
+try:
+    import google.generativeai as genai
     
-    Before a signal is officially saved and sent to users, the engine asks Gemini
-    to read the live chart data and fundamental news. If Gemini spots a
-    macroeconomic red flag, it vetoes the trade.
+    # Configure with API key from environment
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
+    else:
+        logger.warning("GEMINI_API_KEY not set - Gemini validator will be disabled")
+except ImportError:
+    genai = None
+    logger.warning("google-generativeai not installed - Gemini validator will be disabled")
+
+
+async def fetch_recent_headlines(asset: str, limit: int = 5) -> List[str]:
+    """
+    Fetch recent news headlines for an asset.
     
     Args:
-        signal: Signal dict with 'asset', 'direction', 'entry_price', 'ml_probability'
-        live_news_headlines: List of recent news headlines
+        asset: Asset symbol (e.g., 'BTCUSDT', 'EURUSD')
+        limit: Maximum number of headlines to return
         
     Returns:
-        True if the trade makes fundamental sense, False if it should be vetoed
+        List of headline strings
     """
-    import urllib.error
-    import urllib.request
-    
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not api_key:
-        logger.warning("[gemini] No API key, defaulting to APPROVE")
-        return True
-    
-    asset = signal.get('asset', 'UNKNOWN')
-    direction = signal.get('direction', 'long')
-    entry_price = signal.get('entry_price') or signal.get('entry', 0)
-    ml_prob = signal.get('ml_probability', 0) * 100
-    
-    # Build prompt for Gemini to act as Chief Risk Officer
-    news_text = "\n".join(f"- {h}" for h in live_news_headlines[:10]) if live_news_headlines else "No recent news"
-    
-    prompt_payload = {
-        "task": (
-            "You are an institutional Chief Risk Officer. "
-            "Our algorithmic engine wants to take a {direction} position on {asset} at {entry_price}. "
-            "The ML Engine confidence is {ml_prob}%. "
-            f"Recent fundamental news headlines:\n{news_text} "
-            "Based on the news and asset class, is this trade fundamentally dangerous right now? "
-            "Reply ONLY with 'APPROVE' or 'VETO'."
-        ).format(
-            direction=direction,
-            asset=asset,
-            entry_price=entry_price,
-            ml_prob=ml_prob,
-        ),
-    }
+    headlines: List[str] = []
     
     try:
-        review_text = await asyncio.to_thread(_call_gemini_sync, api_key, prompt_payload)
-        decision = str(review_text).strip().upper()
+        # Try to get news from data providers
+        from data.news import get_latest_news
+        news_items = await get_latest_news(asset=asset, limit=limit)
+        
+        for item in news_items:
+            title = item.get('title', '')
+            if title:
+                headlines.append(title)
+                
+    except Exception as e:
+        logger.debug(f"Failed to fetch headlines for {asset}: {e}")
+    
+    # Fallback to empty list if nothing found
+    return headlines
+
+
+async def gemini_confluence_check(
+    signal: Dict[str, Any],
+    live_news_headlines: List[str]
+) -> bool:
+    """
+    Asks Gemini 1.5 Pro to act as a Chief Risk Officer.
+    
+    This function validates that a trade makes fundamental sense by checking
+    against recent news and macroeconomic context. If Gemini identifies a 
+    fundamental red flag, it vetoes the trade.
+    
+    Args:
+        signal: Signal dictionary with 'asset', 'direction', 'entry_price', 'ml_probability'
+        live_news_headlines: List of recent news headlines for the asset
+        
+    Returns:
+        True if trade is approved, False if vetoed
+    """
+    # Check if Gemini is configured
+    if genai is None:
+        logger.debug("Gemini not available, defaulting to APPROVE")
+        return True
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        logger.debug("GEMINI_API_KEY not set, defaulting to APPROVE")
+        return True
+    
+    try:
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        
+        # Build the prompt
+        asset = signal.get('asset', 'UNKNOWN')
+        direction = signal.get('direction', 'UNKNOWN')
+        entry = signal.get('entry_price', signal.get('entry', 0))
+        ml_prob = signal.get('ml_probability', signal.get('ml_prob', 0.5))
+        
+        # Format news for the prompt
+        news_text = "No recent news available"
+        if live_news_headlines:
+            news_text = "\n".join(f"- {h}" for h in live_news_headlines[:5])
+        
+        prompt = f"""You are an institutional Chief Risk Officer.
+Our algorithmic engine wants to take a {direction} position on {asset} at {entry}.
+The ML Engine confidence is {ml_prob * 100:.1f}%.
+
+Recent fundamental news headlines:
+{news_text}
+
+Based on the news and asset class, is this trade fundamentally dangerous right now?
+Reply ONLY with 'APPROVE' or 'VETO'."""
+        
+        # Generate response
+        response = await model.generate_content_async(prompt)
+        decision = response.text.strip().upper()
         
         if "VETO" in decision:
             logger.warning(
-                f"🛑 GEMINI VETO: AI rejected {signal.get('asset')} {signal.get('direction')} "
-                f"due to fundamental risk. Reason: {review_text}"
+                f"🛑 GEMINI VETO: AI rejected {asset} {direction} "
+                f"due to fundamental risk. Reason: {response.text}"
             )
             return False
         
@@ -904,98 +123,33 @@ async def gemini_confluence_check(signal: dict[str, Any], live_news_headlines: l
         return True
         
     except Exception as e:
-        logger.error(f"Gemini API failed: {e}. Defaulting to APPROVE (trust math)")
+        logger.error(f"Gemini API failed: {e}. Defaulting to APPROVE (fail-safe).")
         return True
 
 
-def _simple_strategy_parse(text: str) -> dict[str, Any]:
-    """Heuristic parse of simple English strategy into structured JSON.
-
-    This is intentionally conservative: we only extract common tokens (asset,
-    percent moves, timeframe, RSI bounds, direction keywords) and return a
-    best-effort JSON. For complex text, the Gemini LLM is used instead.
+async def validate_signal(signal: Dict[str, Any]) -> bool:
     """
-    out: dict[str, Any] = {}
+    Convenience function to validate a signal with Gemini.
+    
+    Fetches headlines and runs confluence check.
+    
+    Args:
+        signal: Signal dictionary
+        
+    Returns:
+        True if approved, False if vetoed
+    """
+    asset = signal.get('asset', '')
+    
+    # Try to fetch headlines
     try:
-        s = str(text or "").strip()
-        import re
-
-        # Asset: uppercase ticker (e.g., BTC, SOLUSDT, ETH)
-        m = re.search(r"\b([A-Z]{2,8}(?:USDT|USD|BTC)?)\b", s)
-        if m:
-            out["asset"] = m.group(1)
-
-        # Percent drop/gain
-        m = re.search(r"(drop|falls|drops|down)\s*(\d+(?:\.\d+)?)%\s*(in|over)?\s*(\d+\s*(m|h|d))", s, re.I)
-        if not m:
-            m = re.search(r"(\d+(?:\.\d+)?)%\s*(drop|decline|fall|down)\b", s, re.I)
-        if m:
-            try:
-                pct = float(m.group(2))
-                out.setdefault("conditions", {})["price_move_pct"] = -abs(pct)
-                # timeframe token
-                if len(m.groups()) >= 4 and m.group(4):
-                    out.setdefault("conditions", {})["within"] = m.group(4)
-            except Exception:
-                pass
-
-        # RSI ranges e.g., RSI stays above 40
-        m = re.search(r"RSI\s*(?:is\s*)?(?:stays\s*)?(?:above|>)\s*(\d+)", s, re.I)
-        if m:
-            out.setdefault("conditions", {})["rsi_min"] = int(m.group(1))
-        m = re.search(r"RSI\s*(?:is\s*)?(?:stays\s*)?(?:below|<)\s*(\d+)", s, re.I)
-        if m:
-            out.setdefault("conditions", {})["rsi_max"] = int(m.group(1))
-
-        # Direction keywords
-        if re.search(r"\b(buy|long)\b", s, re.I):
-            out["direction"] = "long"
-        elif re.search(r"\b(sell|short)\b", s, re.I):
-            out["direction"] = "short"
-
-        # Timeframe tokens
-        m = re.search(r"(\d+\s*(m|h|d)|1h|4h|1d|4h|15m)\b", s, re.I)
-        if m:
-            out.setdefault("timeframe", str(m.group(1)).replace(" ", ""))
-
-        return out
+        headlines = await fetch_recent_headlines(asset)
     except Exception:
-        return {}
+        headlines = []
+    
+    # Run Gemini check
+    return await gemini_confluence_check(signal, headlines)
 
 
-async def parse_strategy_text(text: str) -> dict[str, Any]:
-    """Parse free-text strategy into JSON. Uses heuristic parser first,
-    then falls back to Gemini model if available for richer output.
-    Returns: {ok, parsed: {...}, rationale, gemini_review?}
-    """
-    if not text or not str(text).strip():
-        return {"ok": False, "error": "text required"}
-    parsed = _simple_strategy_parse(text)
-    gemini_review = None
-    api = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if api:
-        try:
-            prompt = {
-                "task": "Parse this plain-English trading rule into a JSON strategy spec with keys: asset, timeframe, direction, entry_conditions, rsi_bounds, stop_loss_rule, take_profit_rule, note. Also provide a 2-sentence trade rationale and regime recommendation.",
-                "text": text,
-            }
-            gemini_review = await asyncio.to_thread(_call_gemini_sync, api, prompt)
-        except Exception as exc:
-            gemini_review = f"gemini_error:{exc}"
-
-    # Build trade rationale: prefer Gemini review if available, otherwise simple template
-    rationale = None
-    if gemini_review:
-        # Try extract first two sentences
-        try:
-            first = str(gemini_review).strip().split(". ")
-            rationale = ". ".join(first[:2]).strip()
-        except Exception:
-            rationale = str(gemini_review)[:240]
-    else:
-        # Template
-        asset = parsed.get("asset") or "the asset"
-        dirn = parsed.get("direction") or "direction"
-        rationale = f"Trade rationale: {asset} {dirn}. Confirm technical conditions (price move and RSI) before entry."
-
-    return {"ok": True, "parsed": parsed, "rationale": rationale, "gemini_review": gemini_review}
+# Global instance for easy import
+gemini_validator = gemini_confluence_check

@@ -1,178 +1,150 @@
 """
-News Filter Module - High-Impact News Killswitch
+News Filter - Hard News Killswitch
 
-This module provides a hard killswitch that blocks all trading 30 minutes before 
-and after Tier-1 (high-impact) news events like FOMC, CPI, NFP, etc.
-
-Prevents:
-- Spread widening during news events
-- Stop Loss hunting
-- Slippage due to macroeconomic volatility
+Blocks all trading 30 minutes before and after Tier-1 macroeconomic news events.
+Prevents stop hunt and spread widening during high-impact news like FOMC, CPI, NFP.
 """
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
 logger = logging.getLogger("NewsFilter")
 
 
-async def get_today_high_impact_news() -> List[Dict[str, Any]]:
-    """
-    Fetch today's high-impact news events.
-    
-    In production, this would fetch from:
-    - FinancialModelingPrep API
-    - Polygon.io API
-    - ForexFactory Calendar
-    
-    Returns a list of news events with:
-    - title: Event name (e.g., "FOMC Rate Decision")
-    - timestamp: datetime in UTC
-    - currency: USD, EUR, GBP, etc.
-    - impact: "high" or "low"
-    """
-    from data.providers import get_fundamental_news
-    
-    try:
-        news = await get_fundamental_news()
-        high_impact = [
-            n for n in news 
-            if n.get('impact', '').lower() == 'high'
-        ]
-        return high_impact
-    except Exception as e:
-        logger.error(f"Failed to fetch high-impact news: {e}")
-        return []
-
-
 class NewsKillswitch:
     """
-    Hard News Killswitch - Blocks trades during high-impact news events.
+    A hard killswitch that blocks trades during high-impact news events.
     
-    Usage:
-        news_guard = NewsKillswitch(block_window_minutes=30)
-        
-        if not await news_guard.is_safe_to_trade("BTCUSDT"):
-            # Skip this signal - too risky near news
-            continue
+    When US high-impact news (FOMC, CPI, NFP) is within the block window,
+    we block all USD pairs and Crypto (BTCUSDT, ETHUSDT) to prevent stop hunting.
     """
     
     def __init__(self, block_window_minutes: int = 30):
         """
-        Initialize the news killswitch.
-        
         Args:
-            block_window_minutes: Minutes to block before and after news event
+            block_window_minutes: Minutes before/after news to block trading (default: 30)
         """
         self.block_window = block_window_minutes
-        logger.info(f"NewsKillswitch initialized with {block_window_minutes}min window")
+        self._cached_news: Optional[List[dict]] = None
+        self._last_fetch: Optional[datetime] = None
     
     async def is_safe_to_trade(self, asset: str) -> bool:
         """
-        Check if it's safe to trade the given asset.
-        
-        Blocks trades if we are within the blast radius of high-impact news.
+        Blocks trades if within blast radius of high-impact news.
         
         Args:
-            asset: Trading pair (e.g., "BTCUSDT", "EURUSD")
+            asset: Asset symbol (e.g., 'BTCUSDT', 'EURUSD')
             
         Returns:
-            True if safe to trade, False if blocked by news
+            True if safe to trade, False if news killswitch is active
         """
         try:
-            news_events = await get_today_high_impact_news()
-            
-            if not news_events:
-                return True
-            
+            news_events = await self._fetch_today_high_impact_news()
             now = datetime.now(timezone.utc)
             
             for event in news_events:
-                event_time = event.get('timestamp')
+                event_time = event.get('timestamp')  # type: ignore
                 if not event_time:
                     continue
-                
-                if event_time.tzinfo is None:
-                    event_time = event_time.replace(tzinfo=timezone.utc)
+                    
+                # Handle both datetime objects and ISO strings
+                if isinstance(event_time, str):
+                    event_time = datetime.fromisoformat(event_time.replace('Z', '+00:00'))
                 
                 time_diff_minutes = abs((now - event_time).total_seconds() / 60.0)
                 
                 if time_diff_minutes <= self.block_window:
-                    currency = event.get('currency', '')
-                    impact = event.get('impact', 'high')
-                    title = event.get('title', 'Unknown Event')
+                    # Check if it's US news affecting this asset
+                    currency = str(event.get('currency', ''))
+                    impact = str(event.get('impact', '')).lower()
                     
-                    # If it's US news, block USD pairs and Crypto
+                    # Block USD pairs and Crypto during US high-impact news
                     if currency == 'USD' or impact == 'high':
-                        stablecoins = ['USDT', 'USD', 'BUSD', 'USDC']
-                        if 'USD' in asset or any(s in asset for s in stablecoins):
+                        is_usd_asset = 'USD' in asset or asset in ['BTCUSDT', 'ETHUSDT', 'BNBUSDT']
+                        is_crypto = asset.endswith(('USDT', 'USDC', 'BUSD'))
+                        
+                        if is_usd_asset or is_crypto:
                             logger.warning(
-                                f"🚨 NEWS KILLSWITCH ACTIVE: {title} is in {time_diff_minutes:.1f} mins. "
-                                f"Blocking {asset}. Event: {event.get('title', 'Unknown')}"
+                                f"🚨 NEWS KILLSWITCH ACTIVE: {event.get('title', 'Unknown')} "
+                                f"in {time_diff_minutes:.1f} mins. Blocking {asset}."
                             )
                             return False
-                    
-                    # Block major pairs (EURUSD, GBPUSD, etc.) for EUR/GBP news
-                    if currency in ['EUR', 'GBP'] and any(pair in asset for pair in ['EUR', 'GBP']):
-                        logger.warning(
-                            f"🚨 NEWS KILLSWITCH ACTIVE: {title} is in {time_diff_minutes:.1f} mins. "
-                            f"Blocking {asset}."
-                        )
-                        return False
-            
+                            
             return True
             
         except Exception as e:
             logger.error(f"News fetch failed: {e}. Defaulting to safe (allowed).")
             return True
     
-    async def get_next_news_event(self, asset: str) -> Optional[Dict[str, Any]]:
+    async def _fetch_today_high_impact_news(self) -> List[dict]:
         """
-        Get the next upcoming high-impact news event for an asset.
+        Fetch today's high-impact news events.
         
-        Args:
-            asset: Trading pair
-            
+        Try multiple providers in order:
+        1. Financial Modeling Prep (configured)
+        2. Polygon
+        3. Fallback to empty list
+        """
+        # Check cache (valid for 5 minutes)
+        cache_ttl_seconds = 300
+        if self._cached_news and self._last_fetch:
+            age = (datetime.now(timezone.utc) - self._last_fetch).total_seconds()
+            if age < cache_ttl_seconds:
+                return self._cached_news  # type: ignore
+        
+        news_events: List[dict] = []
+        
+        # Try Financial Modeling Prep
+        try:
+            from data.providers import get_today_high_impact_news
+            news_events = await get_today_high_impact_news()  # type: ignore
+        except Exception as e:
+            logger.debug(f"FMP news unavailable: {e}")
+        
+        # Try Polygon as fallback
+        if not news_events:
+            try:
+                from data.alternative_providers import get_polygon_news
+                news_events = await get_polygon_news()  # type: ignore
+            except Exception as e:
+                logger.debug(f"Polygon news unavailable: {e}")
+        
+        # Cache results
+        self._cached_news = news_events  # type: ignore
+        self._last_fetch = datetime.now(timezone.utc)
+        
+        return news_events
+    
+    def get_next_high_impact_news(self) -> Optional[dict]:
+        """
+        Get the next upcoming high-impact news event.
+        
         Returns:
-            Dict with next news event or None
+            Dict with 'title', 'timestamp', 'currency', 'impact' or None
         """
         try:
-            news_events = await get_today_high_impact_news()
-            if not news_events:
-                return None
-            
+            news = self._cached_news or []
             now = datetime.now(timezone.utc)
-            upcoming: List[Dict[str, Any]] = []
             
-            for event in news_events:
-                event_time = event.get('timestamp')
-                if not event_time:
-                    continue
+            for event in news:
+                event_time = event.get('timestamp')  # type: ignore
+                if isinstance(event_time, str):
+                    event_time = datetime.fromisoformat(event_time.replace('Z', '+00:00'))
                 
-                if event_time.tzinfo is None:
-                    event_time = event_time.replace(tzinfo=timezone.utc)
-                
-                if event_time > now:
-                    currency = event.get('currency', '')
-                    if currency == 'USD' or 'USD' in asset:
-                        upcoming.append({
-                            'title': event.get('title'),
-                            'timestamp': event_time,
-                            'minutes_until': (event_time - now).total_seconds() / 60.0,
-                            'currency': currency,
-                        })
-            
-            if upcoming:
-                upcoming.sort(key=lambda x: x['timestamp'])
-                return upcoming[0]
-            
-            return None
-            
+                if event_time and event_time > now:
+                    return event  # type: ignore
+                    
         except Exception as e:
-            logger.error(f"Failed to get next news event: {e}")
-            return None
+            logger.error(f"Failed to get next news: {e}")
+            
+        return None
 
 
 # Global instance for easy import
-news_guard = NewsKillswitch(block_window_minutes=30)
+news_guard = NewsKillswitch()
+
+
+async def is_safe_to_trade(asset: str) -> bool:
+    """Convenience function using global news_guard instance."""
+    return await news_guard.is_safe_to_trade(asset)

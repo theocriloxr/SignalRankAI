@@ -742,7 +742,9 @@ def engineer_features(df):
     X['risk_amount'] = (X['entry'] - X['stop_loss']).abs() / (X['entry'] + 1e-6)
     X['spread_ratio'] = X['risk_amount'] / (X['price_range'] + 1e-6)
     X['strength_normalized'] = X['strength'] / 100.0 if X['strength'].max() > 1 else X['strength']
-    X['partial_tp_progress_norm'] = X['partial_tp_progress'].fillna(0.0) / 3.0
+    # FIX: Removed partial_tp_progress_norm - this feature leaks the trade outcome (whether TP was hit)
+    # into training data, causing data leakage/lookahead bias and fake 100% accuracy
+    # X['partial_tp_progress_norm'] = X['partial_tp_progress'].fillna(0.0) / 3.0
     X['velocity_abs_3'] = X['price_velocity_3'].abs()
     X['velocity_abs_10'] = X['price_velocity_10'].abs()
     X['atr_regime_clamped'] = X['atr_regime'].clip(lower=0.0, upper=5.0)
