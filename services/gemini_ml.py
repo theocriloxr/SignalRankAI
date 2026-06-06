@@ -156,13 +156,64 @@ except ImportError:
 
 # Try to import news fetching
 try:
-    from data.news import get_news_sentiment, fetch_recent_headlines
+    from data.news import get_news_sentiment as fetch_news_sentiment, fetch_recent_headlines
 except Exception:
-    async def get_news_sentiment(asset: str):
+    async def fetch_news_sentiment(asset: str):
         return 0.0
     
     async def fetch_recent_headlines(asset: str, limit: int = 5) -> List[Dict[str, Any]]:
         return []
+
+
+async def get_news_sentiment(asset: str, headlines: list) -> str:
+    """
+    Analyzes news headlines using Gemini to determine sentiment direction.
+    
+    Args:
+        asset: The asset symbol to check (e.g., "BTCUSDT", "EURUSD")
+        headlines: List of news headlines (strings)
+    
+    Returns:
+        'BULLISH', 'BEARISH', or 'NEUTRAL'
+    """
+    if not GEMINI_API_KEY or genai is None:
+        # Fallback: return NEUTRAL when Gemini unavailable
+        return "NEUTRAL"
+    
+    if not headlines:
+        return "NEUTRAL"
+    
+    try:
+        # Format headlines for prompt
+        headlines_text = "\n".join([f"- {h}" for h in headlines[:10]])
+        
+        prompt = f"""Analyze these news headlines for {asset} and determine the market sentiment.
+
+Headlines:
+{headlines_text}
+
+Reply ONLY with one of these exact words:
+- BULLISH (if news is positive/optimistic for price going up)
+- BEARISH (if news is negative/pessimistic for price going down)
+- NEUTRAL (if news is mixed or neutral)
+
+Do not explain. Just reply with one word."""
+        
+        model = genai.GenerativeModel(GEMINI_MODEL)
+        response = await model.generate_content_async(prompt)
+        
+        decision = response.text.strip().upper()
+        
+        if "BULLISH" in decision:
+            return "BULLISH"
+        elif "BEARISH" in decision:
+            return "BEARISH"
+        else:
+            return "NEUTRAL"
+            
+    except Exception as e:
+        logger.error(f"[GeminiValidator] get_news_sentiment failed: {e}")
+        return "NEUTRAL"
 
 
 async def gemini_confluence_check(

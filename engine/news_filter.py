@@ -170,7 +170,6 @@ class NewsKillswitch:
                 
                 # Inside the block window - check if this news affects our asset
                 event_currency = event.get('currency', 'USD').upper()
-                event_impact = event.get('impact', '').upper()
                 
                 # Determine if this news affects our asset
                 # USD news affects: all USD pairs + Crypto (BTCUSDT, ETHUSDT, etc.)
@@ -225,7 +224,7 @@ class NewsKillswitch:
             # No active news events in the window
             return True
             
-except Exception as e:
+        except Exception as e:
             logger.error(f"News fetch failed: {e}. Defaulting to safe (allowed).")
             # Default to safe - if news fetch fails, allow trading
             return True
@@ -260,7 +259,7 @@ except Exception as e:
         # This is a synchronous convenience method
         # For full async functionality, use is_safe_to_trade
         return {
-            'has_upcoming_news': False,  # Would need async call
+            'has_upcoming_news': False,
             'minutes_until_news': None,
             'block_window': self.block_window,
         }
