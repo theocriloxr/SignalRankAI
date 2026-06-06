@@ -36,3 +36,4 @@ redis>=5.0.7,<6
 cryptography>=42.0
 optuna>=3.6.1
 pytest-asyncio
+google-generativeai>=0.1.0

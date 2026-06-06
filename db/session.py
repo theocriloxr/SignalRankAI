@@ -80,10 +80,10 @@ def _effective_pool_settings() -> tuple[int, int]:
 
     if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
         # FIX for Railway "too many clients already" error
-        # Reduced pool_size from 10 to 3 to stay within Railway's ~50 connection limit
-        # Also reduced max_overflow from 20 to 5 to allow temporary spikes without hitting limit
-        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 3, minimum=1)
-        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 5, minimum=0)
+        # Reduced pool_size from 3 to 2 to stay within Railway's ~20 connection limit
+        # Also reduced max_overflow from 5 to 0 to prevent opening extra connections
+        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1)
+        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0)
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
     else:
