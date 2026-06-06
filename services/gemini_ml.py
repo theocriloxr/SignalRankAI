@@ -26,22 +26,23 @@ from typing import Dict, List, Any, Optional, Tuple
 
 logger = logging.getLogger("GeminiValidator")
 
-# Configure Gemini API
+# Setup Client (New SDK: google-genai)
+client = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-pro").strip()
+MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
 
-# Try to import google.generativeai, fallback gracefully
+# Try to import google.genai (new SDK), fallback gracefully
 try:
-    import google.generativeai as genai
+    from google import genai
     
     if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        logger.info(f"[GeminiValidator] Configured with model: {GEMINI_MODEL}")
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info(f"[GeminiValidator] Configured with model: {MODEL_ID}")
     else:
         logger.warning("[GeminiValidator] No GEMINI_API_KEY - will use fallback")
 except ImportError:
-    genai = None
-    logger.warning("[GeminiValidator] google-generativeai not installed - will use fallback")
+    client = None
+    logger.warning("[GeminiValidator] google-genai not installed - will use fallback")
 
 
 # Try to import news fetching
@@ -66,7 +67,7 @@ async def get_news_sentiment(asset: str, headlines: list) -> str:
     Returns:
         'BULLISH', 'BEARISH', or 'NEUTRAL'
     """
-    if not GEMINI_API_KEY or genai is None:
+    if not GEMINI_API_KEY or client is None:
         # Fallback: return NEUTRAL when Gemini unavailable
         return "NEUTRAL"
     
@@ -89,8 +90,11 @@ Reply ONLY with one of these exact words:
 
 Do not explain. Just reply with one word."""
         
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = await model.generate_content_async(prompt)
+        # New SDK: client.models.generate_content()
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt
+        )
         
         decision = response.text.strip().upper()
         
@@ -125,7 +129,7 @@ async def gemini_confluence_check_with_tech_context(
     Returns:
         True if APPROVED, False if VETOED
     """
-    if not GEMINI_API_KEY or genai is None:
+    if not GEMINI_API_KEY or client is None:
         return True
     
     try:
@@ -167,8 +171,11 @@ TASK: Perform a Confluence Audit.
 THOUGHT PROCESS: (Briefly explain your reasoning)
 FINAL DECISION: [APPROVE] or [VETO]"""
 
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = await model.generate_content_async(prompt)
+        # New SDK call
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt
+        )
         
         decision = response.text.strip().upper()
         
@@ -211,7 +218,7 @@ async def gemini_confluence_check(
         True if approved, False if vetoed.
     """
     # Check if Gemini is available
-    if not GEMINI_API_KEY or genai is None:
+    if not GEMINI_API_KEY or client is None:
         logger.debug("[GeminiValidator] No API key - defaulting to APPROVE")
         return True
     
@@ -274,10 +281,11 @@ Reply ONLY with one of these exact responses:
 
 Do not explain. Just reply with APPROVE or VETO."""
         
-        # Call Gemini
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        
-        response = await model.generate_content_async(prompt)
+        # New SDK call
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt
+        )
         
         decision = response.text.strip().upper()
         
@@ -319,7 +327,7 @@ async def gemini_risk_review(
     Returns:
         Tuple of (approved, risk_score, reasoning)
     """
-    if not GEMINI_API_KEY or genai is None:
+    if not GEMINI_API_KEY or client is None:
         return True, 5.0, "No API key - using default"
     
     try:
@@ -347,8 +355,11 @@ RATE: [1-10]
 REASON: [brief reason]
 DECISION: [APPROVE/VETO]"""
 
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        response = await model.generate_content_async(prompt)
+        # New SDK call
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt
+        )
         
         text = response.text.strip()
         
@@ -406,7 +417,7 @@ async def gemini_final_veto(signal_data: dict, market_context: str) -> bool:
         True to APPROVE the trade, False to VETO it.
     """
     # Check if Gemini is available
-    if not GEMINI_API_KEY or genai is None:
+    if not GEMINI_API_KEY or client is None:
         logger.debug("[GeminiCRO] No API key - defaulting to APPROVE")
         return True
     
@@ -428,10 +439,11 @@ Otherwise, respond 'PROCEED'.
 
 Response must be one word only.
 """
-        # Call Gemini
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        
-        response = await model.generate_content_async(prompt)
+        # New SDK call
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt
+        )
         
         decision = response.text.strip().upper()
         
