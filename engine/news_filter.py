@@ -22,6 +22,14 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger("NewsFilter")
 
+# Try to import Gemini sentiment analysis
+try:
+    from services.gemini_ml import get_news_sentiment as _gemini_sentiment
+except Exception:
+    async def _gemini_sentiment(asset: str, headlines: list) -> str:
+        """Fallback when Gemini unavailable."""
+        return "NEUTRAL"
+
 # Try to import the news provider, fallback gracefully
 try:
     from data.providers import get_today_high_impact_news
