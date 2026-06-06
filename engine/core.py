@@ -1613,13 +1613,33 @@ def main_loop(DRY_RUN: bool = False):
                 for sig in strict_candidates:
                     approved = True
                     prob = None
-                    if ml_filter and getattr(ml_filter, 'active', False):
+if ml_filter and getattr(ml_filter, 'active', False):
                         try:
                             features = extract_features(sig, market_data)
                             threshold = _current_ml_prob_threshold()
                             approved, prob = ml_filter.ml_filter(features, threshold=threshold)
                         except Exception:
                             approved, prob = True, None
+
+                    # NEW: Log ML prediction to database for drift analysis
+                    # Must happen BEFORE decision to ensure all predictions recorded
+                    if prob is not None and sig.get('signal_id'):
+                        try:
+                            from engine.ml_logger import log_ml_prediction as _log_ml_pred
+                            run_sync(
+                                _log_ml_pred(
+                                    session=None,  # Will create new session inside
+                                    signal_id=str(sig.get('signal_id') or ''),
+                                    asset=str(sig.get('asset') or ''),
+                                    timeframe=str(sig.get('timeframe') or ''),
+                                    direction=str(sig.get('direction') or ''),
+                                    ml_probability=float(prob),
+                                    features=features if isinstance(features, dict) else {},
+                                )
+                            )
+                        except Exception as _ml_log_err:
+                            logger.debug(f"[engine] ML prediction logging failed: {_ml_log_err}")
+
                     if not approved:
                         sig['ml_advisory'] = 'filtered_by_ml'
                         _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})

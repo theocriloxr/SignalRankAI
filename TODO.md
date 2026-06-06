@@ -1,47 +1,85 @@
-# SignalRankAI - Multi-Provider Data & Signal Generation Fixes
+# SignalRankAI Implementation Plan
 
-## Task Summary
-Completed. The system now:
-1. Uses fallback data from multiple providers
-2. Normalizes provider candle output
-3. Gates signal generation by market-open status
-4. Auto-sends signals and outcome summaries to owner/admin
+## Current Analysis (from codebase exploration)
 
-## Log Issues Identified
-Resolved.
-- SyntaxError in engine/core.py line 161 (_FallbackThresholdOptimizer)
-- Provider rate limits: TwelveData 429, Polygon 429, Gemini quota exceeded
-- Symbols failing: USDTIDR, BTCIDR, BTCJPY, ETHIDR, DOGEIDR, MANTAIDR, USDTARS
-- Working: Yahoo Finance (some FX), CryptoCompare (crypto)
+### Already Working ✅
+1. `MLRejectedSignal` table - populated when signals are rejected (score gate, ML filter, expectancy, etc.)
+2. `DecisionLog` table - tracks engine decisions
+3. Signal delivery via Telegram with inline buttons
+4. RealtimeOutcomeTracker for TP/SL notifications
+5. ML scoring via `ml/inference.py` (MLFilter.ml_filter())
 
-## Plan
+### Issues to Fix ❌
+1. `MLShadowPrediction` table exists but NOT populated after ML scoring
+2. `MLPastTrainingData` table exists but NOT populated when trades close
+3. Bot menu registration can be improved
+4. Rich signal formatting can be enhanced
 
-### 1. Fix SyntaxError (engine/core.py ~line 161)
-- [x] Verify `_FallbackThresholdOptimizer` class is properly defined before instantiation
+## Implementation Plan
 
-### 2. Improve Provider Fallback (data/fetcher.py)
-- [x] Add Yahoo Finance as crypto fallback when Binance/Bybit/CryptoCompare fail
-- [x] Add more FX providers as fallbacks
-- [x] Implement circuit breaker (track/deprioritize dead providers)
+### Phase 1: ML Prediction Logging (Priority: HIGH)
+**File:** `engine/core.py` or new `engine/ml_logger.py`
 
-### 3. Normalize Data Format (data/connectors/)
-- [x] Standardize candle format: timestamp, open, high, low, close, volume
+Add explicit logging after ML scoring:
 
-### 4. Market Hours Check (data/market_hours.py)
-- [x] Already implemented in `market_closed_reason()`
-- [x] Use for all asset classes: crypto (24/7), FX, stocks, commodities
+```python
+# After ml_filter returns probability, log to MLShadowPrediction
+async def log_ml_prediction(session, signal_id, asset, timeframe, direction, 
+                        ml_probability, features):
+    """Save ML prediction to database for drift analysis."""
+    # Implementation needed
+```
 
-### 5. Signal Auto-Delivery
-- [x] Already implemented in `engine/core.py` main_loop()
-- [x] Owner/admin receive all signals that meet their requirements
+### Phase 2: ML Training Data from Outcomes (Priority: HIGH)  
+**File:** `engine/realtime_outcome_tracker.py` or `engine/shadow_outcome_worker.py`
+
+When trade closes (TP/SL hit), write to `MLPastTrainingData`:
+
+```python
+# When outcome is determined, populate training data
+async def log_trade_outcome(session, signal, outcome_status, pnl, features):
+    """Save closed trade to ML training table for model retraining."""
+    # Implementation needed
+```
+
+### Phase 3: Bot Menu Commands (Priority: MEDIUM)
+**File:** `signalrank_telegram/bot.py`
+
+Ensure commands are properly registered - most already exist:
+- `/portfolio` ✅ exists
+- `/dashboard` ✅ exists  
+- `/leaderboard` ✅ exists
+- `/mt5` ✅ exists
+
+### Phase 4: Rich Signal Formatting (Priority: MEDIUM)
+**File:** `signalrank_telegram/formatter.py`
+
+Enhance signal display with:
+- Asset class emojis (crypto 📱, FX 💱, etc.)
+- ML confidence display
+- Confluence indicators
+
+---
 
 ## Files to Modify
-- engine/core.py
-- data/fetcher.py  
-- data/connector_registry.py
-- data/connectors/*.py
 
-## Testing
-- [x] Deploy to Railway and verify logs
-- [x] Check provider fallback behavior
-- [x] Verify signals generate for open markets only
+1. **engine/core.py** - Add ML prediction logging after scoring
+2. **engine/realtime_outcome_tracker.py** - Add training data logging on trade close  
+3. **engine/shadow_outcome_worker.py** - New file for async outcome logging
+4. **signalrank_telegram/formatter.py** - Enhanced formatting
+
+## Database Tables Used
+
+| Table | Status | Usage |
+|-------|--------|-------|
+| MLShadowPrediction | EMPTY | Log predictions after ML scoring |
+| MLPastTrainingData | EMPTY | Log outcomes when trades close |
+| MLRejectedSignal | POPULATED ✅ | Already working |
+| DecisionLog | POPULATED ✅ | Already working |
+
+## Implementation Order
+
+1. Create `engine/ml_logger.py` for prediction logging
+2. Update `engine/shadow_outcome_worker.py` for outcome → training data
+3. Update `engine/core.py` to call ml_logger
+4. Test with small signal batch

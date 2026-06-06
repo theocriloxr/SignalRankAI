@@ -343,6 +343,19 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         vip_fill_outcome = "pending"
         sentiment_outcome = "pending"
 
+        # Fetch signal data for ML training data logging BEFORE creating session
+        signal_data = None
+        try:
+            from db.session import get_session
+            from sqlalchemy import select
+            async with get_session() as _session:
+                result = await _session.execute(
+                    select(Signal).where(Signal.signal_id == signal_id)
+                )
+                signal_data = result.scalar_one_or_none()
+        except Exception:
+            pass
+
         async with get_session() as session:
             _outcome = await upsert_outcome(
                 session,
@@ -371,6 +384,36 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 status_l,
             )
             await session.commit()
+            
+            # NEW: Log to ML training data table for model retraining
+            if terminal and signal_data is not None:
+                try:
+                    from engine.ml_logger import log_ml_training_data
+                    _outcome_status = canonical_outcome if canonical_outcome != "pending" else status_l
+                    await log_ml_training_data(
+                        session,
+                        signal_id=str(signal_id),
+                        asset=str(getattr(signal_data, "asset", "") or ""),
+                        timeframe=str(getattr(signal_data, "timeframe", "") or ""),
+                        direction=str(getattr(signal_data, "direction", "") or ""),
+                        entry=float(getattr(signal_data, "entry", 0) or 0),
+                        stop_loss=float(getattr(signal_data, "stop_loss", 0) or 0),
+                        take_profit=str(getattr(signal_data, "take_profit", "") or ""),
+                        ml_probability=float(getattr(signal_data, "ml_probability", 0) or 0) if getattr(signal_data, "ml_probability", None) else None,
+                        outcome_status=_outcome_status,
+                        outcome_r_multiple=float(r_mult) if r_mult else None,
+                        outcome_percent=float(pct) if pct else None,
+                        outcome_meta={"close_price": float(price)},
+                        signals_created_at=getattr(signal_data, "created_at", None),
+                        outcome_closed_at=now,
+                    )
+                    logger.info(
+                        "[outcome_tracker] ML training data logged: %s outcome=%s r=%.2f",
+                        signal_id[:8], _outcome_status, r_mult
+                    )
+                except Exception as _ml_train_err:
+                    logger.debug(f"[outcome_tracker] ML training data logging failed: {_ml_train_err}")
+            
         logger.info("[outcome_tracker] Outcome persisted: %s -> %s @ %.5f", signal_id[:8], status_l, price)
     except Exception as exc:
         logger.error("[outcome_tracker] persist_outcome error: %s", exc)
