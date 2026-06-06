@@ -1,6 +1,30 @@
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return int(default)
+    raw = raw.strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
 
 
 # Lightweight cluster map to prevent over-exposure on tightly coupled assets.
@@ -82,3 +106,143 @@ def select_best_per_cluster(signals: List[Dict[str, Any]]) -> List[Dict[str, Any
 
     # Keep stable highest-first ordering for deterministic dispatch.
     return sorted(best.values(), key=_signal_score, reverse=True)
+
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Portfolio Exposure Manager (Capital Protection)
+# ────────────────────────────────────────────────────���─────────────────────────────────────────────────────
+# Limits open trades per asset class + direction to prevent over-exposure.
+# E.g., max 2 Crypto Shorts, 2 Crypto Longs, etc.
+
+class PortfolioExposureManager:
+    """Gatekeeper that limits trades per asset class+direction to prevent correlation risk."""
+
+    def __init__(
+        self,
+        max_sector_direction: int = 2,
+        max_global_trades: int = 5,
+    ):
+        self.max_sector_direction = max_sector_direction
+        self.max_global_trades = max_global_trades
+
+    async def is_trade_allowed(
+        self,
+        session,
+        asset_class: str,
+        direction: str,
+    ) -> bool:
+        """Returns True if portfolio has room for this trade, False if over-exposed."""
+        try:
+            # Normalize inputs
+            asset_class = str(asset_class or "crypto").lower().strip()
+            direction = str(direction or "long").lower().strip()
+
+            # If no session provided, create one internally
+            if session is None:
+                try:
+                    from db.session import get_session
+                    async with get_session() as _internal_session:
+                        return await self._check_exposure(_internal_session, asset_class, direction)
+                except Exception as e:
+                    logger.debug(f"[exposure] could not create internal session: {e}")
+                    return True  # Fail open - allow trade if we can't check
+            else:
+                return await self._check_exposure(session, asset_class, direction)
+
+        except Exception as e:
+            logger.error(f"Failed to check portfolio exposure: {e}")
+            # Fail closed to protect capital
+            return False
+
+    async def _check_exposure(self, session, asset_class: str, direction: str) -> bool:
+        """Internal method to check exposure limits."""
+        try:
+            # Import here to avoid circular imports
+            from db.models import Signal
+            from sqlalchemy import select, func
+
+            # Query open trades (not expired, not archived)
+            query = (
+                select(Signal.asset, Signal.direction, func.count(Signal.signal_id).label("count"))
+                .where(
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+                .group_by(Signal.asset, Signal.direction)
+            )
+            result = await session.execute(query)
+            rows = result.fetchall()
+
+            # Count trades by asset_class + direction
+            sector_direction_count = 0
+            global_count = 0
+
+            for row in rows:
+                trade_asset = str(row[0] or "").upper().strip()
+                trade_direction = str(row[1] or "").lower().strip()
+                count = int(row[2] or 0)
+
+                # Determine asset class for this trade
+                trade_class = self._get_asset_class(trade_asset)
+
+                global_count += count
+
+                # Count within the same asset_class + direction
+                if trade_class == asset_class and trade_direction == direction:
+                    sector_direction_count += count
+
+            # Check global limit
+            if global_count >= self.max_global_trades:
+                logger.warning(
+                    f"Portfolio maxed out ({global_count}/{self.max_global_trades} trades). "
+                    f"Blocking {direction} on {asset_class}."
+                )
+                return False
+
+            # Check sector direction limit
+            if sector_direction_count >= self.max_sector_direction:
+                logger.warning(
+                    f"Sector maxed out ({sector_direction_count}/{self.max_sector_direction} "
+                    f"{asset_class} {direction}s). Blocking trade."
+                )
+                return False
+
+            logger.debug(
+                f"Portfolio check passed: {asset_class} {direction} "
+                f"({sector_direction_count}/{self.max_sector_direction}), "
+                f"global ({global_count}/{self.max_global_trades})"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to check portfolio exposure: {e}")
+            # Fail closed to protect capital
+            return False
+
+    def _get_asset_class(self, asset: str) -> str:
+        """Determine asset class from symbol."""
+        from data.fetcher import is_crypto, is_fx, is_stock
+
+        s = str(asset or "").upper().strip()
+        if is_crypto(s):
+            return "crypto"
+        if is_fx(s):
+            return "fx"
+        if is_stock(s):
+            return "stock"
+        # Default to crypto for crypto symbols
+        if s.endswith("USDT") or s.endswith("BUSD"):
+            return "crypto"
+        return "other"
+
+
+def _create_exposure_manager() -> PortfolioExposureManager:
+    """Factory to create exposure manager with env overrides."""
+    return PortfolioExposureManager(
+        max_sector_direction=_env_int("PORTFOLIO_MAX_SECTOR_DIRECTION", 2),
+        max_global_trades=_env_int("PORTFOLIO_MAX_GLOBAL_TRADES", 5),
+    )
+
+
+# Global instance
+exposure_manager = _create_exposure_manager()

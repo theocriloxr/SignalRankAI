@@ -53,6 +53,16 @@ from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk, risk_check
 from engine.scoring import calculate_signal_score as score_signal, calculate_confluence
+
+# Portfolio Exposure Manager (Capital Protection)
+# Limits open trades per asset class + direction
+try:
+    from engine.correlation_filter import exposure_manager
+except Exception:
+    class _DummyExposureManager:
+        async def is_trade_allowed(self, session, asset_class, direction):
+            return True
+    exposure_manager = _DummyExposureManager()
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from db.repository import persist_decision_log, persist_signal
 from engine.signal_deduplicator import MLRejectionTracker
@@ -1237,7 +1247,7 @@ def main_loop(DRY_RUN: bool = False):
         max_candidate_score = None
         # Fix 2: cycle-level set prevents duplicate asset+timeframe signals in the same batch
         _cycle_cooldown: set = set()
-        pipeline_stats = {
+pipeline_stats = {
             "strategy_signals": 0,
             "normalized": 0,
             "consensus": 0,
@@ -1252,6 +1262,7 @@ def main_loop(DRY_RUN: bool = False):
             "skipped_cycle_cooldown": 0,
             "skipped_db_cooldown": 0,
             "skipped_confluence_block": 0,
+            "skipped_portfolio_exposure": 0,
             "store_failed": 0,
         }
 
@@ -2169,7 +2180,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _sig_dir   = str(sig.get('direction') or 'LONG').upper()
                                 _norm_sdir = 'LONG' if _sig_dir in ('LONG', 'BUY') else 'SHORT'
                                 _conf_hard_block = _env_bool('CONFLUENCE_DIRECTION_HARD_BLOCK_ENABLED', False)
-                                if _conf_dir != 'NEUTRAL' and _conf_dir != _norm_sdir:
+if _conf_dir != 'NEUTRAL' and _conf_dir != _norm_sdir:
                                     logger.info(
                                         f"[engine] confluence mismatch: signal={_norm_sdir} "
                                         f"confluence={_conf_dir} ({_conf_result['score']}/{_conf_result['total']}) "
@@ -2181,7 +2192,34 @@ def main_loop(DRY_RUN: bool = False):
                         except Exception as _ce:
                             logger.debug(f"[engine] confluence engine error: {_ce}")
 
-                        # Stamp created_at so freshness checks in the delivery loop have a timestamp.
+                        # ── Portfolio Exposure Manager Check ─────────────────────────────
+                        # NEW: Check portfolio exposure limits before storing.
+                        # This prevents over-exposure on correlated assets (e.g., 9 crypto shorts at once)
+                        try:
+                            _exp_enabled = _env_bool("PORTFOLIO_EXPOSURE_ENABLED", True)
+                            if _exp_enabled:
+                                _direction = str(sig.get('direction') or 'long').lower().strip()
+                                # Use helper to get asset class
+                                _sig_asset_cls = _asset_class_key(_asset_name)
+                                _is_allowed = await exposure_manager.is_trade_allowed(
+                                    None,  # Session will be created inside if needed
+                                    _sig_asset_cls,
+                                    _direction,
+                                )
+                                if not _is_allowed:
+                                    pipeline_stats["skipped_portfolio_exposure"] = int(
+                                        pipeline_stats.get("skipped_portfolio_exposure", 0) or 0
+                                    ) + 1
+                                    logger.info(
+                                        f"[engine] portfolio_exposure: skipping {_asset_name} "
+                                        f"class={_sig_asset_cls} direction={_direction} "
+                                        "(exposure limit reached)"
+                                    )
+                                    continue
+                        except Exception as _pex:
+                            logger.debug(f"[engine] portfolio exposure check failed: {_pex}")
+
+                        # Stamp created_at
                         # store_signal_compat sets it on the DB row but doesn't write it back
                         # to the dict; without this every is_signal_fresh() call returns False.
                         sig.setdefault('created_at', datetime.utcnow())
