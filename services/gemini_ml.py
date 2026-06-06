@@ -842,6 +842,72 @@ async def predict_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": f"predict failed: {e}"}
 
 
+async def gemini_confluence_check(signal: dict[str, Any], live_news_headlines: list[str]) -> bool:
+    """
+    Agentic Co-Pilot: Asks Gemini to act as a Chief Risk Officer.
+    
+    Before a signal is officially saved and sent to users, the engine asks Gemini
+    to read the live chart data and fundamental news. If Gemini spots a
+    macroeconomic red flag, it vetoes the trade.
+    
+    Args:
+        signal: Signal dict with 'asset', 'direction', 'entry_price', 'ml_probability'
+        live_news_headlines: List of recent news headlines
+        
+    Returns:
+        True if the trade makes fundamental sense, False if it should be vetoed
+    """
+    import urllib.error
+    import urllib.request
+    
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        logger.warning("[gemini] No API key, defaulting to APPROVE")
+        return True
+    
+    asset = signal.get('asset', 'UNKNOWN')
+    direction = signal.get('direction', 'long')
+    entry_price = signal.get('entry_price') or signal.get('entry', 0)
+    ml_prob = signal.get('ml_probability', 0) * 100
+    
+    # Build prompt for Gemini to act as Chief Risk Officer
+    news_text = "\n".join(f"- {h}" for h in live_news_headlines[:10]) if live_news_headlines else "No recent news"
+    
+    prompt_payload = {
+        "task": (
+            "You are an institutional Chief Risk Officer. "
+            "Our algorithmic engine wants to take a {direction} position on {asset} at {entry_price}. "
+            "The ML Engine confidence is {ml_prob}%. "
+            f"Recent fundamental news headlines:\n{news_text} "
+            "Based on the news and asset class, is this trade fundamentally dangerous right now? "
+            "Reply ONLY with 'APPROVE' or 'VETO'."
+        ).format(
+            direction=direction,
+            asset=asset,
+            entry_price=entry_price,
+            ml_prob=ml_prob,
+        ),
+    }
+    
+    try:
+        review_text = await asyncio.to_thread(_call_gemini_sync, api_key, prompt_payload)
+        decision = str(review_text).strip().upper()
+        
+        if "VETO" in decision:
+            logger.warning(
+                f"🛑 GEMINI VETO: AI rejected {signal.get('asset')} {signal.get('direction')} "
+                f"due to fundamental risk. Reason: {review_text}"
+            )
+            return False
+        
+        logger.info(f"✅ GEMINI APPROVE: {asset} {direction} passed fundamental check")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Gemini API failed: {e}. Defaulting to APPROVE (trust math)")
+        return True
+
+
 def _simple_strategy_parse(text: str) -> dict[str, Any]:
     """Heuristic parse of simple English strategy into structured JSON.
 

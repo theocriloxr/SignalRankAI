@@ -1243,11 +1243,11 @@ def main_loop(DRY_RUN: bool = False):
         except Exception:
             macro_snapshot = {}
 
-        scored_signals_all: List[Dict] = []
+scored_signals_all: List[Dict] = []
         max_candidate_score = None
         # Fix 2: cycle-level set prevents duplicate asset+timeframe signals in the same batch
         _cycle_cooldown: set = set()
-pipeline_stats = {
+        pipeline_stats = {
             "strategy_signals": 0,
             "normalized": 0,
             "consensus": 0,

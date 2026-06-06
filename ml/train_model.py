@@ -755,12 +755,14 @@ def engineer_features(df):
     # Direction bias
     X['is_long'] = (X['direction'].str.lower() == 'long').astype(int)
 
-    # Feature selection for model
+# Feature selection for model
+    # BUG FIX: Removed partial_tp_progress_norm to prevent data leakage (lookahead bias)
+    # This feature tracks whether a trade hit TP, which leaks the outcome into training data
     feature_cols = [
         'score_normalized', 'risk_reward_ratio', 'price_range', 'risk_amount',
         'spread_ratio', 'strength_normalized', 'direction_enc', 'regime_enc',
         'strategy_enc', 'high_score', 'medium_score', 'is_long', 'asset_class_enc',
-        'partial_tp_progress_norm',
+        # 'partial_tp_progress_norm',  # REMOVED - causes data leakage/lookahead bias
         'price_velocity_3', 'price_velocity_5', 'price_velocity_10',
         'price_acceleration_3_10', 'velocity_abs_3', 'velocity_abs_10',
         'atr_rel', 'atr_regime_clamped', 'relative_volume_clamped',
