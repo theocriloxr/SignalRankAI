@@ -442,6 +442,9 @@ except Exception:
             return 'stub'
     advanced_exit = _ExitStub()
 
+# Global stats tracker for Pulse reporting (fixes "Total Scanned: 0")
+from engine.stats_manager import stats
+
 # Misc
 logger = logging.getLogger(__name__)
 
@@ -1031,8 +1034,12 @@ def main_loop(DRY_RUN: bool = False):
         "commodity": 0,
     }
 
-    # Keep the main loop simple and robust
+# Keep the main loop simple and robust
     last_heartbeat = time.time()
+    
+    # Reset global stats at start of each run
+    stats.reset()
+    
     while True:
         cycle_no += 1
         cycle_sleep_seconds = 30
@@ -1429,12 +1436,19 @@ def main_loop(DRY_RUN: bool = False):
                 except Exception:
                     pass
 
-                # Detect regime
+# Detect regime
                 try:
                     regime = detect_market_regime(market_data)
                 except Exception:
                     regime = None
 
+                # === PHASE 1 FIX: Increment stats.scanned for each asset analyzed ===
+                stats.scanned += 1
+                
+                # === PHASE 1 FIX: Check regime and track vetoes ===
+                if regime is None or regime == "neutral" or regime == "unknown":
+                    stats.vetoed_regime += 1
+                    
                 # News sentiment (non-critical)
                 try:
                     news_sent = get_news_sentiment(asset)
@@ -2265,7 +2279,7 @@ def main_loop(DRY_RUN: bool = False):
                         # to the dict; without this every is_signal_fresh() call returns False.
                         sig.setdefault('created_at', datetime.utcnow())
                         logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
-                        stored_signal_id = store_signal_compat(sig)
+stored_signal_id = store_signal_compat(sig)
                         if stored_signal_id:
                             sig["signal_id"] = str(stored_signal_id)
                             if _asset_name:
@@ -2275,6 +2289,9 @@ def main_loop(DRY_RUN: bool = False):
                             stored_signals.append(sig)
                             _cycle_cooldown.add(_asset_tf_key)
                             pipeline_stats["stored"] += 1
+                            
+                            # === PHASE 1 FIX: Increment delivered when signal is stored ===
+                            stats.delivered += 1
                         else:
                             pipeline_stats["store_failed"] += 1
                     except Exception as e:

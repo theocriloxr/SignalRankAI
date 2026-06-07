@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -17,7 +16,36 @@ logger = logging.getLogger(__name__)
 
 
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
-    """Collect engine health stats for the last `window_hours` hours."""
+    """Collect engine health stats for the last `window_hours` hours.
+    
+    Now uses GlobalStats for real-time engine metrics instead of only DB queries.
+    Falls back to DB-only if GlobalStats not available.
+    """
+    # Try to get stats from GlobalStats first (real-time from engine)
+    global_scanned = 0
+    global_delivered = 0
+    global_vetoed = {}
+    use_global_stats = False
+    
+    try:
+        from engine.stats_manager import stats
+        global_stats = stats.get_stats()
+        global_scanned = global_stats.get("scanned", 0)
+        global_delivered = global_stats.get("delivered", 0)
+        global_vetoed = {
+            "regime": global_stats.get("vetoed_regime", 0),
+            "squeeze": global_stats.get("vetoed_squeeze", 0),
+            "microstructure": global_stats.get("vetoed_microstructure", 0),
+            "score": global_stats.get("vetoed_score", 0),
+            "ml": global_stats.get("vetoed_ml", 0),
+            "other": global_stats.get("vetoed_other", 0),
+        }
+        use_global_stats = True
+        logger.info("[admin_pulse] Using GlobalStats for real-time metrics")
+    except ImportError:
+        logger.debug("[admin_pulse] GlobalStats not available, using DB fallback")
+    
+    # Always get DB-based counts for delivered signals and shadow metrics
     try:
         from db.session import get_session
         from sqlalchemy import text
@@ -35,7 +63,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                         params,
                     )
                 ).first()
-                scanned = int(scanned_row[0] or 0) if scanned_row else 0
+                db_scanned = int(scanned_row[0] or 0) if scanned_row else 0
 
                 # Rejected by risk / score
                 rej_rows = (
@@ -44,15 +72,16 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                         params,
                     )
                 ).fetchall()
-                rejected_by = {str(r[0] or ""): int(r[1] or 0) for r in (rej_rows or [])}
+                db_rejected_by = {str(r[0] or ""): int(r[1] or 0) for r in (rej_rows or [])}
             except Exception as e:
                 # Fallback if created_at column doesn't exist yet
                 if "created_at" in str(e):
                     logger.warning("[admin_pulse] created_at column missing in decision_log - using fallback")
-                    scanned = 0
-                    rejected_by = {}
+                    db_scanned = 0
+                    db_rejected_by = {}
                 else:
-                    raise
+                    db_scanned = 0
+                    db_rejected_by = {}
 
             # Check if created_at column exists in signal_deliveries
             try:
@@ -64,42 +93,46 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                         params,
                     )
                 ).first()
-                delivered = int(delivered_row[0] or 0) if delivered_row else 0
+                db_delivered = int(delivered_row[0] or 0) if delivered_row else 0
             except Exception as e:
                 # Fallback if created_at column doesn't exist yet
                 if "created_at" in str(e):
                     logger.warning("[admin_pulse] created_at column missing in signal_deliveries - using fallback")
-                    delivered = 0
+                    db_delivered = 0
                 else:
-                    delivered = 0
+                    db_delivered = 0
+    except Exception as db_err:
+        logger.debug("[admin_pulse] DB query failed: %s", db_err)
+        db_scanned = 0
+        db_delivered = 0
+        db_rejected_by = {}
 
-        # Shadow counters from Redis
-        try:
-            total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
-            false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
-            correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
-            partial_win = int(state.get_sync("shadow:counts:partial_win") or 0)
-        except Exception:
-            total_tracked = false_neg = correct_block = partial_win = 0
+    # Get shadow counters from Redis
+    try:
+        from core.redis_state import state
+        total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
+        false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
+        correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
+        partial_win = int(state.get_sync("shadow:counts:partial_win") or 0)
+    except Exception:
+        total_tracked = false_neg = correct_block = partial_win = 0
 
-        shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
+    shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
 
-        return {
-            "scanned": scanned,
-            "rejected_by": rejected_by,
-            "delivered": delivered,
-            "shadow": {
-                "total_tracked": total_tracked,
-                "false_negative": false_neg,
-                "correct_block": correct_block,
-                "partial_win": partial_win,
-                "shadow_winner_rate_pct": shadow_winner_rate,
-            },
-            "generated_at": datetime.utcnow().isoformat(),
-        }
-    except Exception as exc:
-        logger.error("[admin_pulse] compute error: %s", exc)
-        return {"ok": False, "error": str(exc)}
+    # Merge: use GlobalStats if available, otherwise use DB stats
+    return {
+        "scanned": global_scanned if use_global_stats else db_scanned,
+        "delivered": global_delivered if use_global_stats else db_delivered,
+        "rejected_by": global_vetoed if use_global_stats else db_rejected_by,
+        "shadow": {
+            "total_tracked": total_tracked,
+            "false_negative": false_neg,
+            "correct_block": correct_block,
+            "partial_win": partial_win,
+            "shadow_winner_rate_pct": shadow_winner_rate,
+        },
+        "generated_at": datetime.utcnow().isoformat(),
+    }
 
 
 async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:

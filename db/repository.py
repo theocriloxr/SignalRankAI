@@ -214,6 +214,8 @@ async def persist_decision_log(
     """Persist a decision/annotation about a signal or market evaluation.
 
     Returns inserted row id (when available) or 0.
+    
+    IMPORTANT: With NullPool enabled, failing to commit causes data loss!
     """
     try:
         async with get_session() as session:
@@ -227,6 +229,10 @@ async def persist_decision_log(
             )
             session.add(dl)
             await session.flush()
+            
+            # FIX: Explicit commit for NullPool compatibility (data vanishes without commit!)
+            await session.commit()
+            
             try:
                 return int(dl.id or 0)
             except Exception:
@@ -283,6 +289,10 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             
             session.add(signal)
             await session.flush()
+            
+            # FIX: Explicit commit for NullPool compatibility
+            await session.commit()
+            
             return signal
     except Exception as e:
         import logging
@@ -448,4 +458,3 @@ async def mark_webhook_event_processed(
     except IntegrityError:
         await session.rollback()
         return False
-
