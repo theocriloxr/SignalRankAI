@@ -1003,19 +1003,19 @@ def main_loop(DRY_RUN: bool = False):
         _macro_snapshot_cache = dict(macro)
         _last_macro_snapshot_at = now_dt
         return macro
-    def _resolve_timeframes(env_key: str) -> list[str]:
-        raw = os.getenv(env_key, _tf_default)
-        parsed = _normalize_tf_list(raw)
-        filtered = [tf for tf in parsed if tf in _allowed_tfs]
-        if filtered:
-            return filtered
-        if parsed:
-            logger.warning("[engine] %s=%s filtered out by allowlist; falling back to %s", env_key, raw, _tf_default)
+def _resolve_timeframes(env_key: str) -> list[str]:
+    raw = os.getenv(env_key, _tf_default)
+    parsed = _normalize_tf_list(raw)
+    filtered = [tf for tf in parsed if tf in _allowed_tfs]
+    if filtered:
+        return filtered
+    if parsed:
+        logger.warning("[engine] %s=%s filtered out by allowlist; falling back to %s", env_key, raw, _tf_default)
         return [tf for tf in _normalize_tf_list(_tf_default) if tf in _allowed_tfs]
-    crypto_timeframes = _resolve_timeframes('CRYPTO_TIMEFRAMES')
-    fx_timeframes = _resolve_timeframes('FX_TIMEFRAMES')
-    stock_timeframes = _resolve_timeframes('STOCK_TIMEFRAMES')
-    commodity_timeframes = _resolve_timeframes('COMMODITY_TIMEFRAMES')
+crypto_timeframes = _resolve_timeframes('CRYPTO_TIMEFRAMES')
+fx_timeframes = _resolve_timeframes('FX_TIMEFRAMES')
+stock_timeframes = _resolve_timeframes('STOCK_TIMEFRAMES')
+commodity_timeframes = _resolve_timeframes('COMMODITY_TIMEFRAMES')
 
 cycle_no = 0
 
