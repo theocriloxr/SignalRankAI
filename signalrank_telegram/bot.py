@@ -2471,6 +2471,83 @@ def _is_free_fomo_dispatch_only_enabled() -> bool:
         return False
 
 
+# ============================================================================
+# APSCHEDULER JOBS REGISTRATION
+# ============================================================================
+# Register scheduled jobs with the BackgroundScheduler during bot initialization.
+# These jobs are added in run_bot() after the application is built.
+
+def _schedule_bot_jobs(scheduler: BackgroundScheduler) -> None:
+    """Register all scheduled jobs with the BackgroundScheduler.
+    
+    This function is called during run_bot() initialization to set up
+    recurring jobs for signal distribution and system maintenance.
+    
+    Note: Functions are referenced directly since they're defined in this same module.
+    """
+    # CRITICAL: FREE signal distribution job - runs every 30 minutes
+    # This distributes random signals from the global pool to FREE tier users
+    try:
+        scheduler.add_job(
+            distribute_random_signals_to_free_users_job,
+            "interval",
+            minutes=30,
+            id="free_signal_distribution",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("[sched] Registered: free_signal_distribution (every 30min)")
+    except Exception as e:
+        logger.warning(f"[sched] Could not add free_signal_distribution job: {e}")
+    
+    # Resend unsent signals job - runs every 15 minutes
+    try:
+        scheduler.add_job(
+            resend_unsent_signals_job,
+            "interval",
+            minutes=15,
+            id="resend_unsent_signals",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("[sched] Registered: resend_unsent_signals (every 15min)")
+    except Exception as e:
+        logger.warning(f"[sched] Could not add resend_unsent_signals job: {e}")
+    
+    # Daily subscription downgrade check - runs at midnight UTC
+    try:
+        scheduler.add_job(
+            downgrade_expired_subscriptions_job,
+            "cron",
+            hour=0,
+            minute=0,
+            id="downgrade_expired_subscriptions",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("[sched] Registered: downgrade_expired_subscriptions (daily at midnight UTC)")
+    except Exception as e:
+        logger.warning(f"[sched] Could not add downgrade_expired_subscriptions job: {e}")
+    
+    # Weekly old signals cleanup - runs every Sunday at 3am UTC
+    try:
+        scheduler.add_job(
+            auto_delete_old_signals_job,
+            "cron",
+            day_of_week="sun",
+            hour=3,
+            minute=0,
+            id="auto_delete_old_signals",
+            replace_existing=True,
+            max_instances=1,
+        )
+        logger.info("[sched] Registered: auto_delete_old_signals (weekly Sunday 3am UTC)")
+    except Exception as e:
+        logger.warning(f"[sched] Could not add auto_delete_old_signals job: {e}")
+    
+    logger.info("[sched] All scheduled jobs registered successfully")
+
+
 def _format_free_fomo_unlock_message(signal: dict) -> str:
     asset = str(signal.get("asset") or signal.get("symbol") or "MARKET").upper()
     timeframe = str(signal.get("timeframe") or "").lower() or "signal"
