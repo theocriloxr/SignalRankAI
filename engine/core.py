@@ -2297,7 +2297,7 @@ while True:
                         # to the dict; without this every is_signal_fresh() call returns False.
                         sig.setdefault('created_at', datetime.utcnow())
                         logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
-stored_signal_id = store_signal_compat(sig)
+                        stored_signal_id = store_signal_compat(sig)
                         if stored_signal_id:
                             sig["signal_id"] = str(stored_signal_id)
                             if _asset_name:
