@@ -1,11 +1,39 @@
 import threading
 import time
+from cachetools import TTLCache
 
 # Provider health state (in-memory, per process)
 _PROVIDER_HEALTH = {}
 _PROVIDER_HEALTH_LOCK = threading.Lock()
 _PROVIDER_FAIL_WINDOW = 600  # seconds to deprioritize after repeated failures
 _PROVIDER_FAIL_THRESHOLD = 3
+
+# ============================================================================
+# MACRO DATA CACHING - Fix for HTTP 429 rate limit errors
+# Macro indicators (US10Y, VIX, DXY) don't change by the minute
+# Cache them for 1 hour to prevent hitting API rate limits
+# ============================================================================
+_MACRO_CACHE_TTL_SECONDS = 3600  # 1 hour cache for macro data
+_macro_data_cache: dict[str, tuple[float, float, str]] = {}  # symbol -> (timestamp, value, source)
+_macro_cache_lock = threading.Lock()
+
+def _get_cached_macro_value(symbol: str) -> tuple[float, float, str] | None:
+    """Get cached macro value if not expired."""
+    with _macro_cache_lock:
+        entry = _macro_data_cache.get(symbol.upper())
+        if entry:
+            ts, value, source = entry
+            age = time.time() - ts
+            if age < _MACRO_CACHE_TTL_SECONDS:
+                return entry
+            # Expired - remove
+            del _macro_data_cache[symbol.upper()]
+    return None
+
+def _set_cached_macro_value(symbol: str, value: float, source: str = "cached") -> None:
+    """Cache macro value with TTL."""
+    with _macro_cache_lock:
+        _macro_data_cache[symbol.upper()] = (time.time(), value, source)
 
 # Short-lived candle memoization to prevent N+1 duplicate provider calls when
 # multiple strategies ask for the same symbol/timeframe in the same second.

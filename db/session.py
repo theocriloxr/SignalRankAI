@@ -64,7 +64,7 @@ def _pool_int(name: str, default: int, minimum: int = 0) -> int:
         return default
 
 
-def _pool_bool(name: str, default: bool = True) -> bool:
+def _pool_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return bool(default)

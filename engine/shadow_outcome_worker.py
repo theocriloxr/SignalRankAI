@@ -6,6 +6,9 @@ Background worker to track outcomes for `ml_rejected_signals` (shadow tracking).
 It marks rejected signals with `actual_outcome` and `outcome_tracked_at` when the
 market price reaches a TP or SL. It also increments Redis counters to compute
 regret/efficacy metrics used by admin dashboards.
+
+Additionally, this worker writes predictions to `ml_shadow_predictions` table to track
+the ML model's accuracy on rejected signals for the Engine Pulse Report.
 """
 from __future__ import annotations
 
@@ -15,6 +18,7 @@ import logging
 import os
 import traceback
 from datetime import datetime, timedelta
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +50,7 @@ class ShadowOutcomeWorker:
     async def _run_loop(self) -> None:
         try:
             from db.session import get_session
-            from db.models import MLRejectedSignal
+            from db.models import MLRejectedSignal, MLShadowPrediction
             from sqlalchemy import select, update as sa_update
             from engine.realtime_outcome_tracker import _get_live_price, _parse_tp_levels, _check_hit
             from core.redis_state import state
@@ -82,6 +86,50 @@ class ShadowOutcomeWorker:
                             if not hit:
                                 continue
                             now = datetime.utcnow()
+                            
+                            # === FIX: Also write to ml_shadow_predictions table ===
+                            # This tracks the ML model's prediction on rejected signals for the Engine Pulse Report
+                            signal_id = getattr(r, "signal_id", None)
+                            if signal_id is None:
+                                # Try to get from features if not directly stored
+                                features = getattr(r, "features", {}) or {}
+                                signal_id = features.get("signal_id") if features else None
+                            
+                            ml_probability = float(getattr(r, "ml_probability", 0.0) or 0.0)
+                            
+                            # Determine the actual outcome type (win/loss)
+                            actual_outcome = str(hit).lower() if hit else None
+                            is_shadow = True
+                            feature_schema_ok = True  # We have the features from the rejection record
+                            
+                            # Write to ml_shadow_predictions
+                            try:
+                                shadow_pred = MLShadowPrediction(
+                                    signal_id=signal_id,
+                                    model_name="xgboost_rejection_validator",
+                                    model_version=os.getenv("ML_MODEL_VERSION", "v1"),
+                                    probability=ml_probability,
+                                    is_shadow=is_shadow,
+                                    feature_schema_ok=feature_schema_ok,
+                                    meta={
+                                        "asset": asset,
+                                        "direction": str(getattr(r, "direction", "") or ""),
+                                        "entry": entry,
+                                        "stop_loss": sl,
+                                        "take_profit": str(tp_raw),
+                                        "actual_outcome": actual_outcome,
+                                        "rejection_reason": str(getattr(r, "rejection_reason", "") or ""),
+                                        "rejection_id": int(getattr(r, "id", 0) or 0),
+                                    },
+                                    created_at=now,
+                                )
+                                async with get_session() as pred_session:
+                                    pred_session.add(shadow_pred)
+                                    await pred_session.commit()
+                                logger.info(f"[shadow_tracker] Wrote ml_shadow_predictions for {asset} outcome={actual_outcome}")
+                            except Exception as sp_err:
+                                logger.error(f"[shadow_tracker] Failed to write ml_shadow_predictions: {sp_err}")
+
                             # Claim row only if still untracked, then update outcome.
                             async with get_session() as session:
                                 claim = await session.execute(
@@ -100,7 +148,7 @@ class ShadowOutcomeWorker:
                                 # false_negative: rejected but would have hit TP3 or terminal TP
                                 if str(hit).lower().startswith("tp"):
                                     # treat tp3 or generic tp as false negative
-                                    if str(hit).lower() in {"tp3", "tp"} or (len(str(hit)) > 3 and int(str(hit)[2:]) >= 3):
+                                    if str(hit).lower() in {"tp3", "tp"} or (len(str(hit)) > 3 and int(str(hit)[2:]) >= 3:
                                         state.incr_sync("shadow:counts:false_negative", 1)
                                     else:
                                         # lesser TP hits are partial wins

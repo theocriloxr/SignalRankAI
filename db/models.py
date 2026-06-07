@@ -504,6 +504,7 @@ class MLRejectedSignal(Base):
     __tablename__ = "ml_rejected_signals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    signal_id: Mapped[Optional[str]] = mapped_column(String(36), index=True)
     asset: Mapped[str] = mapped_column(String(32), index=True)
     timeframe: Mapped[str] = mapped_column(String(8), index=True)
     direction: Mapped[str] = mapped_column(String(8))

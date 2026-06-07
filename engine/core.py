@@ -2264,7 +2264,31 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _ce:
                                 logger.debug(f"[engine] confluence engine error: {_ce}")
 
-    # ── Portfolio Exposure Manager Check ─────────────────────────────
+# ── Duplicate Trade Check (FIX 2) ─────────────────────────────────────────
+                            # Prevent "Over-Trading" bug - skip if we already have an active trade on this asset
+                            # This fixes the issue where the bot opens multiple trades on ETHUSDT in minutes
+                            try:
+                                _dup_check_enabled = _env_bool("DUPLICATE_TRADE_CHECK_ENABLED", True)
+                                if _dup_check_enabled:
+                                    # Get active positions from Redis state
+                                    _active_trades = state.get_active_trades_sync() or {}
+                                    _active_assets = [
+                                        str(payload.get("symbol") or payload.get("asset") or "").upper().strip()
+                                        for payload in _active_trades.values()
+                                    ]
+                                    if _asset_name in _active_assets:
+                                        pipeline_stats["skipped_duplicate_trade"] = int(
+                                            pipeline_stats.get("skipped_duplicate_trade", 0) or 0
+                                        ) + 1
+                                        logger.info(
+                                            f"[engine] duplicate_trade: skipping {_asset_name} "
+                                            "(already in an active trade)"
+                                        )
+                                        continue
+                            except Exception as _dup_err:
+                                logger.debug(f"[engine] duplicate trade check failed: {_dup_err}")
+
+                            # ── Portfolio Exposure Manager Check ─────────────────────────────
                             # NEW: Check portfolio exposure limits before storing.
                             # This prevents over-exposure on correlated assets (e.g., 9 crypto shorts at once)
                             try:

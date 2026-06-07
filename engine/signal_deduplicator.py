@@ -381,7 +381,7 @@ class MLRejectionTracker:
         except Exception:
             return 0.0
 
-    async def persist_rejection(
+async def persist_rejection(
         self,
         asset: str,
         timeframe: str,
@@ -393,6 +393,7 @@ class MLRejectionTracker:
         rejection_reason: str,
         features: Dict[str, Any],
         rejection_type: Optional[str] = None,
+        signal_id: Optional[str] = None,
     ) -> None:
         """Store rejection for future outcome tracking."""
         try:
@@ -403,8 +404,11 @@ class MLRejectionTracker:
             features = dict(features or {})
             if rejection_type:
                 features.setdefault("rejection_type", rejection_type)
+            if signal_id:
+                features.setdefault("signal_id", signal_id)
             async with get_session() as session:
                 rejection = MLRejectedSignal(
+                    signal_id=signal_id,
                     asset=str(asset or "").upper(),
                     timeframe=str(timeframe or "").lower(),
                     direction=str(direction or "").lower(),
@@ -420,10 +424,14 @@ class MLRejectionTracker:
                 )
 
                 session.add(rejection)
-                await session.flush()
-                logger.info("Rejection stored: %s %s %s", asset, timeframe, direction)
+                await session.commit()  # CRITICAL: Must commit to save to DB (not just flush)
+                logger.info("Rejection stored: %s %s %s signal_id=%s", asset, timeframe, direction, signal_id)
         except Exception as e:
             logger.error("Failed to persist rejection: %s", e)
+            try:
+                await session.rollback()
+            except Exception:
+                pass
 
     async def _load_runtime_int(self, key: str, default: int = 0) -> int:
         try:
