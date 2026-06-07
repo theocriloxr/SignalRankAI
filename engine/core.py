@@ -1045,8 +1045,8 @@ def main_loop(DRY_RUN: bool = False):
     # Initialize circuit breaker to check market health before starting
     circuit_breaker = MarketCircuitBreaker()
     
-    while True:
-cycle_no += 1
+while True:
+        cycle_no += 1
         cycle_sleep_seconds = 30
         now = time.time()
         # Heartbeat log every 30 seconds

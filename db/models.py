@@ -101,12 +101,16 @@ class Signal(Base):
     strategy_group: Mapped[str] = mapped_column(String(32))
     strength: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
-    fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     ml_probability: Mapped[Optional[float]] = mapped_column(Float)
-    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    expires_at: Mapped[Optional[datetime]]
     expired: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_near_order_block: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # MFE = Maximum Favorable Excursion (how far into profit before closing)
+    mfe_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # MAE = Maximum Adverse Excursion (how far into loss before closing)
+    mae_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
 
