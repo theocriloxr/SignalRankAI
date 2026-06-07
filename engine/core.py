@@ -1037,11 +1037,16 @@ def main_loop(DRY_RUN: bool = False):
 # Keep the main loop simple and robust
     last_heartbeat = time.time()
     
-    # Reset global stats at start of each run
-    stats.reset()
+    # PHASE 1 FIX: Don't reset stats each cycle - they should accumulate!
+    # stats.reset() is only called once at startup, not every cycle
+    # The Pulse reporter reads cumulative stats across all cycles
+    
+    # === PHASE 3 FIX: Circuit Breaker Health Check ===
+    # Initialize circuit breaker to check market health before starting
+    circuit_breaker = MarketCircuitBreaker()
     
     while True:
-        cycle_no += 1
+cycle_no += 1
         cycle_sleep_seconds = 30
         now = time.time()
         # Heartbeat log every 30 seconds
@@ -1049,6 +1054,19 @@ def main_loop(DRY_RUN: bool = False):
             logger.info(f"[engine] heartbeat: cycle={cycle_no} running")
             print(f"[engine] heartbeat: cycle={cycle_no} running", flush=True)
             last_heartbeat = now
+
+        # === PHASE 3 FIX: Circuit Breaker Health Check ===
+        # Check market health before starting the cycle - if flash crash detected, skip this cycle
+        try:
+            import asyncio
+            is_healthy = asyncio.get_event_loop().run_until_complete(circuit_breaker.check_market_health())
+            logger.info(f"[engine] Market Health Check: is_healthy={is_healthy}")
+            if not is_healthy:
+                logger.warning("[engine] Circuit breaker activated - skipping cycle due to market flash crash")
+                time.sleep(max(5, cycle_sleep_seconds))
+                continue
+        except Exception as cb_err:
+            logger.debug(f"[engine] Circuit breaker check failed (allow continue): {cb_err}")
 
         # Pull dynamic thresholds from adaptive ML/Gemini optimizer on schedule.
         _refresh_runtime_thresholds(force=(cycle_no == 1))
