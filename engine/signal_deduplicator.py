@@ -381,57 +381,59 @@ class MLRejectionTracker:
         except Exception:
             return 0.0
 
-async def persist_rejection(
-        self,
-        asset: str,
-        timeframe: str,
-        direction: str,
-        entry_price: float,
-        stop_loss: float,
-        take_profit_levels: Any,
-        ml_probability: Optional[float],
-        rejection_reason: str,
-        features: Dict[str, Any],
-        rejection_type: Optional[str] = None,
-        signal_id: Optional[str] = None,
-    ) -> None:
-        """Store rejection for future outcome tracking."""
-        try:
-            tp_value = self._parse_tp_value(take_profit_levels)
-            if tp_value <= 0:
-                tp_value = entry_price * 1.05 if entry_price else 0.0
-            safe_ml_prob = float(ml_probability or 0.0)
-            features = dict(features or {})
-            if rejection_type:
-                features.setdefault("rejection_type", rejection_type)
-            if signal_id:
-                features.setdefault("signal_id", signal_id)
-            async with get_session() as session:
-                rejection = MLRejectedSignal(
-                    signal_id=signal_id,
-                    asset=str(asset or "").upper(),
-                    timeframe=str(timeframe or "").lower(),
-                    direction=str(direction or "").lower(),
-                    entry=float(entry_price or 0.0),
-                    stop_loss=float(stop_loss or 0.0),
-                    take_profit=str(tp_value),
-                    ml_probability=safe_ml_prob,
-                    rejection_reason=str(rejection_reason or "rejected")[:128],
-                    features=features,
-                    actual_outcome=None,
-                    outcome_tracked_at=None,
-                    created_at=now_utc_naive(),
-                )
-
-                session.add(rejection)
-                await session.commit()  # CRITICAL: Must commit to save to DB (not just flush)
-                logger.info("Rejection stored: %s %s %s signal_id=%s", asset, timeframe, direction, signal_id)
-        except Exception as e:
-            logger.error("Failed to persist rejection: %s", e)
+    async def persist_rejection(
+            self,
+            asset: str,
+            timeframe: str,
+            direction: str,
+            entry_price: float,
+            stop_loss: float,
+            take_profit_levels: Any,
+            ml_probability: Optional[float],
+            rejection_reason: str,
+            features: Dict[str, Any],
+            rejection_type: Optional[str] = None,
+            signal_id: Optional[str] = None,
+        ) -> None:
+            """Store rejection for future outcome tracking."""
+            session = None
             try:
-                await session.rollback()
-            except Exception:
-                pass
+                tp_value = self._parse_tp_value(take_profit_levels)
+                if tp_value <= 0:
+                    tp_value = entry_price * 1.05 if entry_price else 0.0
+                safe_ml_prob = float(ml_probability or 0.0)
+                features = dict(features or {})
+                if rejection_type:
+                    features.setdefault("rejection_type", rejection_type)
+                if signal_id:
+                    features.setdefault("signal_id", signal_id)
+                async with get_session() as session:
+                    rejection = MLRejectedSignal(
+                        signal_id=signal_id,
+                        asset=str(asset or "").upper(),
+                        timeframe=str(timeframe or "").lower(),
+                        direction=str(direction or "").lower(),
+                        entry=float(entry_price or 0.0),
+                        stop_loss=float(stop_loss or 0.0),
+                        take_profit=str(tp_value),
+                        ml_probability=safe_ml_prob,
+                        rejection_reason=str(rejection_reason or "rejected")[:128],
+                        features=features,
+                        actual_outcome=None,
+                        outcome_tracked_at=None,
+                        created_at=now_utc_naive(),
+                    )
+
+                    session.add(rejection)
+                    await session.commit()  # CRITICAL: Must commit to save to DB (not just flush)
+                    logger.info("Rejection stored: %s %s %s signal_id=%s", asset, timeframe, direction, signal_id)
+            except Exception as e:
+                logger.error("Failed to persist rejection: %s", e)
+                if session:
+                    try:
+                        await session.rollback()
+                    except Exception:
+                        pass
 
     async def _load_runtime_int(self, key: str, default: int = 0) -> int:
         try:
