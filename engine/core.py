@@ -1126,8 +1126,6 @@ def main_loop(DRY_RUN: bool = False):
             fx_assets = [a for a in open_assets if is_fx(a)]
             stock_assets = [a for a in open_assets if is_stock(a)]
             commodity_assets = [a for a in open_assets if is_commodity(a)]
-
-            import os
             fx_enabled = _env_bool('FX_ENABLED', True)
             stocks_enabled = _env_bool('STOCKS_ENABLED', True)
             if not fx_enabled:
