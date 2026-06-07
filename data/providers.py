@@ -115,6 +115,28 @@ def _rate_limit_cooldown_seconds(provider: str, *, status_code: int | None = Non
     return None
 
 
+def _jitter_sleep(base_seconds: float = 1.0, jitter_factor: float = 0.5) -> float:
+    """Calculate sleep time with jitter for rate limit backoff.
+    
+    Bug Fix: "Dead Zone" - Add jitter to prevent thundering herd on API rate limits.
+    
+    Args:
+        base_seconds: Base wait time before jitter
+        jitter_factor: Random factor (0.0-1.0) to add to base time
+        
+    Returns:
+        Total seconds to sleep
+    """
+    import random
+    import math
+    # Ensure positive values
+    base = max(0.1, float(base_seconds))
+    jitter_mult = max(0.0, min(1.0, float(jitter_factor)))
+    # Add random component: [base, base * (1 + jitter)]
+    extra = base * jitter_mult * random.random()
+    return base + extra
+
+
 def _maybe_apply_rate_limit_cooldown(provider: str, *, status_code: int | None = None, message: str = "") -> bool:
     cooldown_seconds = _rate_limit_cooldown_seconds(provider, status_code=status_code, message=message)
     if cooldown_seconds is None:

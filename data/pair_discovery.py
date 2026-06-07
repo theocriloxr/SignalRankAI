@@ -62,6 +62,13 @@ _BINANCE_DISABLED_REASON: str | None = None
 # Default crypto symbols to pause until reliable intraday providers are configured.
 _DEFAULT_CRYPTO_BLACKLIST = set()
 
+# Stablecoin pairs to exclude from trading (Bug Fix: "Stablecoin Trap")
+# These pairs have minimal volatility and should not generate "trend" signals
+STABLECOIN_PAIRS: set[str] = {
+    "USDCUSDT", "USDCPERF", "DAIUSDT", "BUSDUSDT", "FDUSDUSDT",
+    "USDTUSDC", "TUSDUSDT", "USDDUSDT", "FRAXUSDT", "MIMUSDT",
+}
+
 
 def _load_crypto_blacklist() -> set[str]:
     raw = (os.getenv("CRYPTO_BLACKLIST") or "").strip()
@@ -88,6 +95,10 @@ def _filter_blacklisted(pairs: list[str]) -> list[str]:
     for p in pairs:
         sym = _normalize_legacy_symbol(p)
         if sym in _CRYPTO_BLACKLIST or sym in EXCLUDE_ALWAYS:
+            continue
+        # Bug Fix: Filter stablecoin pairs to prevent "Stablecoin Trap" signals
+        if sym in STABLECOIN_PAIRS:
+            logger.info(f"[pair_discovery] Filtering stablecoin pair: {sym}")
             continue
         out.append(sym)
     return out
