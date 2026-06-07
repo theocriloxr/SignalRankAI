@@ -1017,17 +1017,17 @@ def main_loop(DRY_RUN: bool = False):
     stock_timeframes = _resolve_timeframes('STOCK_TIMEFRAMES')
     commodity_timeframes = _resolve_timeframes('COMMODITY_TIMEFRAMES')
 
-    cycle_no = 0
+cycle_no = 0
 
     # Round-robin queue — covers every open asset exactly once per round
     # before any asset is repeated.  Persists across cycles; new assets
     # discovered mid-run are appended to the current round's tail.
-    from engine.cycle_queue import AssetCycleQueue
-    _cycle_queue = AssetCycleQueue()
+from engine.cycle_queue import AssetCycleQueue
+_cycle_queue = AssetCycleQueue()
 
     # Per-class rotating cursor used to guarantee at least one analyzed asset
     # from each open class on every cycle.
-    _class_cursor = {
+_class_cursor = {
         "crypto": 0,
         "fx": 0,
         "stock": 0,
@@ -1035,7 +1035,7 @@ def main_loop(DRY_RUN: bool = False):
     }
 
 # Keep the main loop simple and robust
-    last_heartbeat = time.time()
+last_heartbeat = time.time()
     
     # PHASE 1 FIX: Don't reset stats each cycle - they should accumulate!
     # stats.reset() is only called once at startup, not every cycle
@@ -1043,8 +1043,9 @@ def main_loop(DRY_RUN: bool = False):
     
     # === PHASE 3 FIX: Circuit Breaker Health Check ===
     # Initialize circuit breaker to check market health before starting
-    circuit_breaker = MarketCircuitBreaker()
-cycle_no = 0    
+circuit_breaker = MarketCircuitBreaker()
+   
+
 while True:
         cycle_no += 1
         cycle_sleep_seconds = 30
