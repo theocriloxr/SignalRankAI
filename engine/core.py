@@ -1044,7 +1044,7 @@ def main_loop(DRY_RUN: bool = False):
     # === PHASE 3 FIX: Circuit Breaker Health Check ===
     # Initialize circuit breaker to check market health before starting
     circuit_breaker = MarketCircuitBreaker()
-    
+cycle_no = 0    
 while True:
         cycle_no += 1
         cycle_sleep_seconds = 30
