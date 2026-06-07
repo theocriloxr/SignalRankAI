@@ -101,7 +101,7 @@ class Signal(Base):
     strategy_group: Mapped[str] = mapped_column(String(32))
     strength: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
-fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     ml_probability: Mapped[Optional[float]] = mapped_column(Float)
     expires_at: Mapped[Optional[datetime]]
     expired: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
