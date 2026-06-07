@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from config import config, resolve_database_url, prefer_ipv4_database_url
 
@@ -78,6 +79,11 @@ def _effective_pool_settings() -> tuple[int, int]:
     pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
     max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
+    # NullPool mode: If enabled, return dummy values (pool handling is disabled)
+    if _pool_bool("DB_USE_NULLPOOL", True):
+        logger.info("[db] Using NullPool - connection pooling disabled for Railway compatibility")
+        return 0, 0
+
     if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
         # FIX for Railway "too many clients already" error
         # Reduced pool_size from 3 to 2 to stay within Railway's ~20 connection limit
@@ -101,6 +107,15 @@ def create_engine() -> Optional[AsyncEngine]:
     if not url:
         return None
     pool_size, max_overflow = _effective_pool_settings()
+    
+    # Use NullPool when pool_size is 0 (NullPool mode enabled)
+    if pool_size == 0 and max_overflow == 0:
+        return create_async_engine(
+            url,
+            poolclass=NullPool,
+            connect_args=_engine_connect_args(),
+        )
+    
     return create_async_engine(
         url,
         pool_size=pool_size,
@@ -152,15 +167,23 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
 
         pool_size, max_overflow = _effective_pool_settings()
 
-        engine = create_async_engine(
-            url,
-            pool_size=pool_size,
-            max_overflow=max_overflow,
-            pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
-            pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
-            pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
-            connect_args=_engine_connect_args(),
-        )
+        # Use NullPool when pool_size is 0 (NullPool mode enabled)
+        if pool_size == 0 and max_overflow == 0:
+            engine = create_async_engine(
+                url,
+                poolclass=NullPool,
+                connect_args=_engine_connect_args(),
+            )
+        else:
+            engine = create_async_engine(
+                url,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+                pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+                pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
+                pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
+                connect_args=_engine_connect_args(),
+            )
         _engines_by_loop[loop_id] = engine
         _sessionmakers_by_loop[loop_id] = async_sessionmaker(engine, expire_on_commit=False)
         try:

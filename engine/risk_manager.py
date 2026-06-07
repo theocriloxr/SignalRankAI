@@ -190,6 +190,79 @@ class RiskManager:
                 'label': f'TP{i}'
             } for i in range(1, num_levels + 1)]
 
+class SmartRiskSizer:
+    """
+    Smart Kelly Position Sizing.
+    
+    Scales position size dynamically based on:
+    1. Stop Loss Distance (ATR)
+    2. ML Conviction Score
+    
+    Logic:
+    - If ML Conviction >= 85%: Risk 1.5%
+    - If ML Conviction >= 75%: Risk 1.0%
+    - If ML Conviction < 75%: Risk 0.5%
+    
+    Formula: Risk Amount / Stop Loss Distance = Position Size
+    """
+    
+    def __init__(
+        self,
+        account_balance: float = 10000.0,
+        base_risk_pct: float = 0.01
+    ):
+        self.account_balance = account_balance
+        self.base_risk_pct = base_risk_pct  # Base risk: 1% of account
+    
+    def get_risk_multiplier(self, ml_prob: float) -> float:
+        """Get risk multiplier based on ML probability."""
+        if ml_prob >= 0.85:
+            return 1.5  # High Conviction = Risk 1.5%
+        elif ml_prob >= 0.75:
+            return 1.0  # Normal Conviction = Risk 1.0%
+        else:
+            return 0.5  # Low Conviction = Risk 0.5%
+    
+    def calculate_position_size(
+        self,
+        entry_price: float,
+        stop_loss: float,
+        ml_prob: float
+    ) -> float:
+        """
+        Calculate exact unit size based on conviction and SL distance.
+        
+        Args:
+            entry_price: Entry price
+            stop_loss: Stop loss price
+            ml_prob: ML probability (0-1)
+            
+        Returns:
+            Position size in units
+        """
+        # 1. Scale risk based on ML Probability
+        risk_multiplier = self.get_risk_multiplier(ml_prob)
+        
+        actual_risk_amount = self.account_balance * (self.base_risk_pct * risk_multiplier)
+        
+        # 2. Calculate distance to Stop Loss (Absolute)
+        sl_distance = abs(entry_price - stop_loss)
+        if sl_distance == 0:
+            return 0.0
+        
+        # 3. Calculate Position Size
+        # Risk Amount / Stop Loss Distance = Number of Units
+        position_size = actual_risk_amount / sl_distance
+        
+        logger.info(
+            f"📐 RISK SIZER: ML Prob {ml_prob*100:.1f}% -> "
+            f"Risk Multiplier {risk_multiplier}x -> "
+            f"Risking ${actual_risk_amount:.2f}. Size: {position_size:.4f} units"
+        )
+        
+        return position_size
+
+
 class CorrelationManager:
     """Realtime correlation avoidance."""
     

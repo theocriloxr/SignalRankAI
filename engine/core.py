@@ -27,7 +27,11 @@ from datetime import datetime, timedelta as _timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
-# Core engine pieces (ensure these exist in your repo or adapt names)
+# Hard blacklist for zombie stablecoins that persist in database
+# These have minimal volatility and should never be traded
+HARD_BLACKLIST = ["USDCUSDT", "USDTPERF", "DAIUSDT", "FDUSDUSDT", "USDTUSDC", "TUSDUSDT"]
+
+# Core engine pieces
 from signalrank_telegram.tier_delivery import TierDeliveryManager
 from engine.signal_analytics import signal_analytics
 
@@ -1342,8 +1346,15 @@ def main_loop(DRY_RUN: bool = False):
         except Exception as _redis_reconcile_err:
             logger.debug(f"[engine] redis/db open-signal reconciliation failed: {_redis_reconcile_err}")
 
-        # Per-asset pipeline
+# Per-asset pipeline
         for asset in assets:
+            # HARD_BLACKLIST check: skip zombie stablecoins
+            _norm_asset = _normalize_asset_symbol(asset)
+            if _norm_asset in HARD_BLACKLIST:
+                logger.warning(f"[engine] HARDBLACKLIST: skipping zombie stablecoin {asset}")
+                _record_gate_failure(asset, "hard_blacklist", "zombie_stablecoin")
+                continue
+                
             logger.info(f"[engine] pipeline: starting asset={asset}")
             try:
                 market_data = all_market_data.get(asset, {})
