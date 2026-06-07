@@ -82,6 +82,26 @@ except Exception:
     def _detect_order_blocks(candles, lookback=100) -> bool:  # type: ignore
         return False
 
+# Institutional Grade Derivatives Microstructure (Squeeze Detector)
+try:
+    from engine.derivatives import SqueezeDetector, get_squeeze_bias
+except Exception:
+    class SqueezeDetector:
+        async def get_squeeze_bias(self, asset: str) -> str:
+            return "NEUTRAL"
+    async def get_squeeze_bias(asset: str) -> str:
+        return "NEUTRAL"
+
+# Institutional Grade Market Circuit Breaker (Flash Crash Protection)
+try:
+    from engine.market_circuit_breaker import MarketCircuitBreaker, check_market_health
+except Exception:
+    class MarketCircuitBreaker:
+        async def check_market_health(self) -> bool:
+            return True
+    async def check_market_health() -> bool:
+        return True
+
 # Golden Loop: Gemini Chief Risk Officer (CRO) with technical context
 try:
     from services.gemini_ml import gemini_confluence_check_with_tech_context as _gemini_cro_check
