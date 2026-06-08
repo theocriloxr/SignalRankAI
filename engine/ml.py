@@ -275,16 +275,31 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
 
 
 def score_signal(signal: Dict[str, Any]) -> Optional[float]:
-    """Return ML probability (0-1) for a signal or None if unavailable."""
+    """Return ML probability (0-1) for a signal or None if unavailable.
+    
+    Always attempts to persist shadow prediction, even on failure, to track all signal attempts.
+    """
 
     _load_model()
     booster = _MODEL_CACHE.get("booster")
     feature_cols: List[str] = _MODEL_CACHE.get("feature_cols") or []
+    
+    shadow_mode = str(os.getenv("ML_SHADOW_MODE", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    
+    # Handle case where main model is not available
     if booster is None or not feature_cols:
+        model_status = _MODEL_CACHE.get("error", "not_loaded")
+        logger.warning("[ml] model not available: %s", model_status)
+        # Still try to persist a shadow prediction with 0.0 if shadow mode enabled
+        if shadow_mode:
+            _persist_shadow_prediction(signal, 0.0, schema_ok=False, prob_source=f"no_model:{model_status}")
         return None
 
     x = _feature_vector(signal, feature_cols)
     if x is None:
+        logger.warning("[ml] feature vector creation failed for asset=%s", signal.get("asset"))
+        if shadow_mode:
+            _persist_shadow_prediction(signal, 0.0, schema_ok=False, prob_source="feature_vector_failed")
         return None
 
     try:
@@ -294,17 +309,28 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
         del dm  # release DMatrix immediately
         gc.collect()  # free cyclic garbage after inference
         if preds is None or len(preds) == 0:
+            logger.warning("[ml] prediction returned empty for asset=%s", signal.get("asset"))
+            if shadow_mode:
+                _persist_shadow_prediction(signal, 0.0, schema_ok=True, prob_source="empty_prediction")
             return None
         prob = float(preds[0])
         if prob < 0 or prob > 1:
+            logger.warning("[ml] probability out of range: %.3f for asset=%s", prob, signal.get("asset"))
+            if shadow_mode:
+                _persist_shadow_prediction(signal, 0.0, schema_ok=True, prob_source="out_of_range")
             return None
-        # Shadow mode: evaluate candidate model silently and persist.
-        if str(os.getenv("ML_SHADOW_MODE", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+            
+        logger.info("[ml] scored asset=%s prob=%.3f", signal.get("asset"), prob)
+        
+        # Shadow mode: evaluate candidate model silently and persist
+        if shadow_mode:
             try:
                 _load_shadow_model()
                 sh_booster = _SHADOW_CACHE.get("booster")
                 sh_cols: List[str] = _SHADOW_CACHE.get("feature_cols") or []
+                
                 if sh_booster is not None and sh_cols:
+                    # Shadow model loaded - use it for prediction
                     x_shadow = _feature_vector(signal, sh_cols)
                     schema_ok = x_shadow is not None
                     if x_shadow is not None:
@@ -312,11 +338,23 @@ def score_signal(signal: Dict[str, Any]) -> Optional[float]:
                         dm_shadow = xgb.DMatrix(x_shadow, feature_names=sh_cols)
                         sh_preds = sh_booster.predict(dm_shadow)
                         if sh_preds is not None and len(sh_preds) > 0:
-                            _persist_shadow_prediction(signal, float(sh_preds[0]), schema_ok=schema_ok)
+                            _persist_shadow_prediction(signal, float(sh_preds[0]), schema_ok=schema_ok, prob_source="shadow_model")
+                        else:
+                            _persist_shadow_prediction(signal, prob, schema_ok=schema_ok, prob_source="fallback_to_main")
+                    else:
+                        _persist_shadow_prediction(signal, prob, schema_ok=False, prob_source="shadow_feature_fail")
+                else:
+                    # No shadow model - still persist with main model probability
+                    _persist_shadow_prediction(signal, prob, schema_ok=True, prob_source="main_model_no_shadow")
             except Exception as shadow_exc:
-                logger.debug("[ml-shadow] scoring skipped: %s", shadow_exc)
+                logger.warning("[ml-shadow] scoring error: %s", shadow_exc)
+                # Still persist with main model probability to track the attempt
+                _persist_shadow_prediction(signal, prob, schema_ok=True, prob_source=f"shadow_error:{type(shadow_exc).__name__}")
         return prob
-    except Exception:  # pragma: no cover - defensive
+    except Exception as exc:
+        logger.warning("[ml] scoring exception: %s", exc)
+        if shadow_mode:
+            _persist_shadow_prediction(signal, 0.0, schema_ok=True, prob_source=f"exception:{type(exc).__name__}")
         return None
 
 
