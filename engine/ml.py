@@ -120,7 +120,15 @@ def _load_shadow_model() -> None:
         logger.warning("[ml-shadow] failed to load candidate model: %s", exc)
 
 
-def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: bool) -> None:
+def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: bool, prob_source: str = "model") -> None:
+    """Persist shadow prediction to database.
+    
+    Args:
+        signal: The signal dict containing asset, timeframe, etc.
+        prob: The probability score from the model (can be 0.0 or None)
+        schema_ok: Whether the feature schema was valid
+        prob_source: Where the probability came from (model, default_zero, no_model, etc.)
+    """
     try:
         from utils.async_runner import run_sync
         from db.session import get_session
@@ -128,21 +136,33 @@ def _persist_shadow_prediction(signal: Dict[str, Any], prob: float, schema_ok: b
 
         async def _save():
             async with get_session() as session:
+                # Always persist even if prob is 0 or None - to track the prediction attempt
+                prob_value = float(prob) if prob is not None else 0.0
                 row = MLShadowPrediction(
                     signal_id=str(signal.get("signal_id") or "") or None,
                     model_name=str(_SHADOW_CACHE.get("name") or "xgb_candidate"),
                     model_version=str(_SHADOW_CACHE.get("version") or "unknown"),
-                    probability=float(prob),
+                    probability=prob_value,
                     is_shadow=True,
                     feature_schema_ok=bool(schema_ok),
-                    meta={"asset": signal.get("asset"), "timeframe": signal.get("timeframe")},
+                    meta={
+                        "asset": signal.get("asset"), 
+                        "timeframe": signal.get("timeframe"),
+                        "source": prob_source,
+                        "signal_entry": signal.get("entry"),
+                        "signal_score": signal.get("score"),
+                    },
                 )
                 session.add(row)
                 await session.commit()
+                logger.info(
+                    "[ml-shadow] persisted prediction asset=%s prob=%.3f source=%s schema_ok=%s",
+                    signal.get("asset"), prob_value, prob_source, schema_ok
+                )
 
         run_sync(_save())
     except Exception as exc:
-        logger.debug("[ml-shadow] persist failed: %s", exc)
+        logger.warning("[ml-shadow] persist failed: %s", exc)
 
 
 def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Optional[np.ndarray]:
