@@ -62,6 +62,17 @@ _BINANCE_DISABLED_REASON: str | None = None
 # Default crypto symbols to pause until reliable intraday providers are configured.
 _DEFAULT_CRYPTO_BLACKLIST = set()
 
+# Hardcoded fallback crypto pairs - used when all providers fail
+# These are the top-tier liquid pairs that work even when APIs are blocked/rate-limited
+_HARDCODED_CRYPTO_PAIRS: list[str] = [
+    "BTCUSDT", "ETHUSDT", "BNBUSDT", "XRPUSDT", "ADAUSDT",
+    "SOLUSDT", "DOGEUSDT", "DOTUSDT", "MATICUSDT", "LTCUSDT",
+    "AVAXUSDT", "LINKUSDT", "ATOMUSDT", "UNIUSDT", "XLMUSDT",
+    "ETCUSDT", "XMRUSDT", "BCHUSDT", "ALGOUSDT", "XLMUSDT",
+    "AAVEUSDT", "FILUSDT", "APEUSDT", "SANDUSDT", "MANAUSDT",
+    "OPUSDT", "ARBUSDT", "NEARUSDT", "APTUSDT", "RNDRUSDT",
+]
+
 # Stablecoin pairs to exclude from trading (Bug Fix: "Stablecoin Trap")
 # These pairs have minimal volatility and should not generate "trend" signals
 STABLECOIN_PAIRS: set[str] = {
@@ -226,6 +237,7 @@ def get_trending_crypto_pairs(top_n=20):
     global _BINANCE_DISABLED_REASON
     provider = (os.getenv("CRYPTO_DATA_PROVIDER") or "").strip().lower()
     EXCLUDE_ALWAYS = {"UNIUSDT", "APTUSDT"}
+    
     def exclude_pairs(pairs):
         out = []
         for p in pairs:
@@ -234,14 +246,34 @@ def get_trending_crypto_pairs(top_n=20):
                 continue
             out.append(sym)
         return out
+    
+    # Check for manual override first - CRYPTO_PAIRS env var takes absolute priority
+    manual = (os.getenv("CRYPTO_PAIRS") or "").strip()
+    if manual:
+        manual_pairs = [x.strip().upper() for x in manual.split(",") if x.strip()]
+        if manual_pairs:
+            logger.info("[pair_discovery] Using manual CRYPTO_PAIRS: %s", manual_pairs[:5])
+            return exclude_pairs(_filter_blacklisted(manual_pairs[:top_n]))
+    
     # Explicit provider override remains supported.
     if provider == "cryptocompare":
-        return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
+        result = _cryptocompare_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
+        # Fallback to hardcoded if CryptoCompare explicitly requested but fails
+        logger.warning("[pair_discovery] CryptoCompare explicitly requested but failed, using hardcoded fallback")
+        return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
+    
     if provider == "binance":
         binance_only = _binance_top_crypto_pairs(top_n)
         if binance_only:
             return exclude_pairs(binance_only)
-        return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
+        result = _cryptocompare_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
+        # Fallback to hardcoded if Binance requested but fails
+        logger.warning("[pair_discovery] Binance explicitly requested but failed, using hardcoded fallback")
+        return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
 
     # Default and "all": aggregate providers in parallel, fail-open.
     all_enabled = provider in {"all", "auto", ""} and _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
@@ -267,11 +299,18 @@ def get_trending_crypto_pairs(top_n=20):
         if merged:
             return exclude_pairs(merged)
 
-    # Final fail-open fallback
+    # Final fail-open fallback: try Binance first, then CryptoCompare, then HARDCODED
     fallback = _binance_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(fallback)
-    return exclude_pairs(_filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n)))
+    
+    fallback = _cryptocompare_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(_filter_blacklisted(fallback))
+    
+    # CRITICAL FIX: Use hardcoded pairs when ALL providers fail (the "Total Scanned: 0" fix)
+    logger.warning("[pair_discovery] All providers failed, using hardcoded fallback pairs")
+    return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
 
 def get_trending_fx_pairs():
     """Return configured FX pairs.
