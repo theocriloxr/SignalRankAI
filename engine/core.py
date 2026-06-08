@@ -192,11 +192,11 @@ try:
     _threshold_optimizer = get_threshold_optimizer()
 except Exception as e:
     logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
-# Fallback threshold optimizer that uses env var
+    # Fallback threshold optimizer that uses env var
     # LOWERED from 0.55 to 0.50 to address ML drift confusion
     # The model is "confused" during drift events and outputting lower probabilities
     # This allows ~64 scores to pass through instead of being zeroed out
-class _FallbackThresholdOptimizer:
+    class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
             # LOWERED to 0.40 to allow drifted model predictions (~56%) through
             # This addresses the ML drift issue where model outputs 56% but previous threshold was 55%
@@ -1729,7 +1729,7 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _ml_log_err:
                                 logger.debug(f"[engine] ML prediction logging failed: {_ml_log_err}")
 
-if not approved:
+                        if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
                             stats.vetoed_ml += 1  # FIX: Track ML rejections
                             _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
