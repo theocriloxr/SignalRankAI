@@ -387,6 +387,183 @@ DECISION: [APPROVE/VETO]"""
         return True, 5.0, f"Review failed: {e}"
 
 
+async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dict[str, Any]:
+    """
+    Run a comprehensive Gemini review pipeline for automated analytics.
+    
+    This collects DB aggregates and uses Gemini to analyze cycle performance,
+    identifying patterns in rejected signals and potential improvements.
+    
+    Args:
+        trigger: Identifier for what triggered this review (e.g., "automated_cycle_20")
+        scope: Time scope for analysis (e.g., "daily", "weekly", "monthly")
+    
+    Returns:
+        Dict with analysis results including ok status and insights
+    """
+    if not GEMINI_API_KEY or client is None:
+        return {"ok": False, "error": "GEMINI_API_KEY not configured"}
+    
+    from db import SessionLocal
+    from db.models import Signal, Outcome, MLRejectedSignal, MLShadowPrediction
+    
+    try:
+        async with SessionLocal() as db_session:
+            # Collect aggregates based on scope
+            from datetime import timedelta
+            from utils.timeutils import now_utc_naive
+            
+            cutoff = now_utc_naive()
+            if scope == "daily":
+                cutoff = cutoff - timedelta(days=1)
+            elif scope == "weekly":
+                cutoff = cutoff - timedelta(days=7)
+            elif scope == "monthly":
+                cutoff = cutoff - timedelta(days=30)
+            else:
+                cutoff = cutoff - timedelta(days=7)
+            
+            # Query signal counts
+            signals_generated = 0
+            signals_stored = 0
+            ml_rejected_count = 0
+            outcomes_count = 0
+            wins = 0
+            losses = 0
+            
+            try:
+                # Count generated signals
+                from sqlalchemy import select, func
+                signals_generated = await db_session.scalar(
+                    select(func.count(Signal.signal_id)).where(Signal.created_at >= cutoff)
+                ) or 0
+                
+                # Count stored signals (status='issued' or similar)
+                signals_stored = await db_session.scalar(
+                    select(func.count(Signal.signal_id)).where(
+                        Signal.created_at >= cutoff,
+                        Signal.status == "issued"
+                    )
+                ) or 0
+                
+                # Count ML rejected signals
+                ml_rejected_count = await db_session.scalar(
+                    select(func.count(MLRejectedSignal.id)).where(
+                        MLRejectedSignal.created_at >= cutoff
+                    )
+                ) or 0
+                
+                # Count outcomes with results
+                outcomes_count = await db_session.scalar(
+                    select(func.count(Outcome.id)).where(
+                        Outcome.closed_at >= cutoff,
+                        Outcome.status.isnot(None)
+                    )
+                ) or 0
+                
+                # Count wins and losses
+                wins = await db_session.scalar(
+                    select(func.count(Outcome.id)).where(
+                        Outcome.closed_at >= cutoff,
+                        Outcome.status == "win"
+                    )
+                ) or 0
+                
+                losses = await db_session.scalar(
+                    select(func.count(Outcome.id)).where(
+                        Outcome.closed_at >= cutoff,
+                        Outcome.status.in_(["loss", "timeout"])
+                    )
+                ) or 0
+            except Exception as e:
+                logger.warning(f"[GeminiValidator] DB query failed: {e}")
+            
+            # Get recent ML rejection reasons
+            rejection_reasons = []
+            try:
+                from sqlalchemy import select
+                rejected_query = await db_session.execute(
+                    select(MLRejectedSignal.rejection_reason, MLRejectedSignal.asset)
+                    .order_by(MLRejectedSignal.created_at.desc())
+                    .limit(10)
+                )
+                for row in rejected_query:
+                    rejection_reasons.append(f"{row[1]}: {row[0]}")
+            except Exception as e:
+                logger.debug(f"[GeminiValidator] Could not fetch rejection reasons: {e}")
+            
+            # Build the review prompt
+            win_rate = (wins / outcomes_count * 100) if outcomes_count > 0 else 0
+            
+            prompt = f"""You are an Institutional Trading Analyst reviewing cycle performance.
+
+TRIGGER: {trigger}
+SCOPE: {scope} (cutoff: {cutoff.isoformat()})
+
+PERFORMANCE METRICS:
+- Signals Generated: {signals_generated}
+- Signals Stored (issued): {signals_stored}
+- ML Rejected (before storage): {ml_rejected_count}
+- Outcomes Tracked: {outcomes_count}
+- Wins: {wins}
+- Losses: {losses}
+- Win Rate: {win_rate:.1f}%
+
+RECENT ML REJECTION REASONS:
+{chr(10).join(rejection_reasons) if rejection_reasons else "No recent rejections recorded."}
+
+TASK: Analyze these metrics and provide:
+1. A brief assessment of how the ML model is performing
+2. Any patterns you notice in the rejections
+3. Suggestions for improving signal quality
+
+Respond in this format:
+ASSESSMENT: [1-2 sentence summary]
+PATTERNS: [What you observe in the data]
+RECOMMENDATIONS: [Specific suggestions]
+"""
+            
+            # Call Gemini
+            try:
+                response = client.models.generate_content(
+                    model=MODEL_ID,
+                    contents=prompt
+                )
+                
+                analysis = response.text.strip()
+                
+                return {
+                    "ok": True,
+                    "trigger": trigger,
+                    "scope": scope,
+                    "metrics": {
+                        "signals_generated": signals_generated,
+                        "signals_stored": signals_stored,
+                        "ml_rejected": ml_rejected_count,
+                        "outcomes": outcomes_count,
+                        "wins": wins,
+                        "losses": losses,
+                        "win_rate": win_rate,
+                    },
+                    "analysis": analysis,
+                }
+            except Exception as e:
+                logger.error(f"[GeminiValidator] Pipeline API call failed: {e}")
+                return {
+                    "ok": False,
+                    "error": f"API call failed: {e}",
+                    "metrics": {
+                        "signals_generated": signals_generated,
+                        "signals_stored": signals_stored,
+                        "ml_rejected": ml_rejected_count,
+                    }
+                }
+                
+    except Exception as e:
+        logger.exception("[GeminiValidator] Pipeline failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
 # Quick check without news (for simpler integration)
 async def quick_approve(signal: Dict[str, Any]) -> bool:
     """
