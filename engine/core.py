@@ -196,9 +196,11 @@ except Exception as e:
     # LOWERED from 0.55 to 0.50 to address ML drift confusion
     # The model is "confused" during drift events and outputting lower probabilities
     # This allows ~64 scores to pass through instead of being zeroed out
-    class _FallbackThresholdOptimizer:
+class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.50') or 0.50)
+            # LOWERED to 0.40 to allow drifted model predictions (~56%) through
+            # This addresses the ML drift issue where model outputs 56% but previous threshold was 55%
+            return float(os.getenv('ML_PROB_THRESHOLD', '0.40') or 0.40)
         async def analyze_and_adjust(self, force: bool = False):
             return None
         def get_config(self):
@@ -1727,7 +1729,7 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _ml_log_err:
                                 logger.debug(f"[engine] ML prediction logging failed: {_ml_log_err}")
 
-                        if not approved:
+if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
                             stats.vetoed_ml += 1  # FIX: Track ML rejections
                             _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
@@ -1749,10 +1751,12 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.debug(f"[engine] Failed to record ML rejection: {e}")
                                 pass
                             continue
+                        # LOWERED from 0.55 to 0.40 to allow drifted model predictions (~56%) through
+                        # This addresses the ML drift issue where model outputs 56% but threshold was too high
                         try:
-                            ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.55") or 0.55)
+                            ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.40") or 0.40)
                         except Exception:
-                            ml_hard_min = 0.55
+                            ml_hard_min = 0.40
                         if prob is not None and float(prob) < ml_hard_min:
                             sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
                             _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})

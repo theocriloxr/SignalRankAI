@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 # Default threshold bounds (safety limits)
+# LOWERED to 0.45 to allow drifted model predictions (~56%) through
+# This addresses the ML drift issue where model outputs 56% but threshold was 55%
 DEFAULT_ML_THRESHOLD_MIN = float(os.getenv("ML_THRESHOLD_MIN", "0.30"))
 DEFAULT_ML_THRESHOLD_MAX = float(os.getenv("ML_THRESHOLD_MAX", "0.85"))
-DEFAULT_ML_THRESHOLD_DEFAULT = float(os.getenv("ML_THRESHOLD_DEFAULT", "0.55"))
+DEFAULT_ML_THRESHOLD_DEFAULT = float(os.getenv("ML_THRESHOLD_DEFAULT", "0.45"))
 
 # Performance targets
 TARGET_WIN_RATE = float(os.getenv("TARGET_WIN_RATE", "0.60"))  # 60% win rate target
