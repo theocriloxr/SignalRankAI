@@ -99,7 +99,8 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             if ml_prob_value is None and include_ml:
                 try:
                     from engine.ml import score_signal as _score_signal
-                    ml_prob_value = _score_signal({
+                    # Build comprehensive signal dict for ML scoring with all required features
+                    signal_dict = {
                         "asset": asset,
                         "timeframe": timeframe,
                         "direction": sig.direction,
@@ -110,7 +111,21 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                         "strategy_name": sig.strategy_name,
                         "strategy_group": sig.strategy_group,
                         "confidence": sig.confidence,
-                    })
+                        "rr_estimate": getattr(sig, 'rr_estimate', None) or getattr(sig, 'rr_ratio', None),
+                        "regime": getattr(sig, 'regime', 'neutral'),
+                        "strength": getattr(sig, 'strength', 0.0) or 0.0,
+                        # Additional features that may be available from the signal
+                        "partial_tp_progress": getattr(sig, 'partial_tp_progress', 0.0) or 0.0,
+                        "price_velocity_3": getattr(sig, 'price_velocity_3', 0.0) or 0.0,
+                        "price_velocity_5": getattr(sig, 'price_velocity_5', 0.0) or 0.0,
+                        "price_velocity_10": getattr(sig, 'price_velocity_10', 0.0) or 0.0,
+                        "atr_rel": getattr(sig, 'atr_rel', 0.0) or 0.0,
+                        "atr_regime": getattr(sig, 'atr_regime', 0.0) or 0.0,
+                        "relative_volume": getattr(sig, 'relative_volume', 0.0) or 0.0,
+                        "mtf_4h_trend": getattr(sig, 'mtf_4h_trend', 0.0) or 0.0,
+                        "mtf_1d_trend": getattr(sig, 'mtf_1d_trend', 0.0) or 0.0,
+                    }
+                    ml_prob_value = _score_signal(signal_dict)
                 except Exception:
                     ml_prob_value = None
             observe_ml_confidence(ml_prob_value)

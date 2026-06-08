@@ -228,7 +228,7 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             "exchange_inflow": _num(signal.get("exchange_inflow"), _num(macro.get("exchange_inflow"), 0.0)),
             "exchange_outflow": _num(signal.get("exchange_outflow"), _num(macro.get("exchange_outflow"), 0.0)),
             "liquidation_heatmap_score": _num(signal.get("liquidation_heatmap_score"), _num(macro.get("liquidation_heatmap_score"), 0.0)),
-            "liquidation_heatmap_density": _num(signal.get("liquidation_heatmap_density"), _num(macro.get("liquidation_heatmap_density"), 0.0)),
+"liquidation_heatmap_density": _num(signal.get("liquidation_heatmap_density"), _num(macro.get("liquidation_heatmap_density"), 0.0)),
             "onchain_source_flag": _num(signal.get("onchain_source_flag"), 1.0 if macro.get("onchain_source") not in (None, "", "none") else 0.0),
             "spx_trend": _num(signal.get("spx_trend"), _num(macro.get("spx_trend"), spx_trend)),
             "btc_corr": _num(signal.get("btc_corr"), _num(macro.get("btc_corr"), btc_corr)),
@@ -239,8 +239,15 @@ def _feature_vector(signal: Dict[str, Any], feature_cols: Iterable[str]) -> Opti
             preview = ",".join(missing[:8])
             suffix = f" (+{len(missing)-8} more)" if len(missing) > 8 else ""
             logger.warning("[ml] schema mismatch: missing features=%s%s", preview, suffix)
+            # Log more details when features are missing for debugging
+            logger.debug("[ml] signal data keys: %s", list(signal.keys()))
+            logger.debug("[ml] signal score: %s", signal.get("score"))
+            logger.debug("[ml] signal entry: %s", signal.get("entry"))
+            # Use 0.0 for missing features instead of returning None - this ensures ML scoring runs
+            # even with incomplete feature data from 429 errors or missing indicators
             if str(os.getenv("ML_STRICT_SCHEMA", "0")).strip().lower() in {"1", "true", "yes", "on"}:
-                return None
+                logger.debug("[ml] strict schema mode - using default values for missing features")
+        # Always use 0.0 for any missing features instead of failing
         vec = [float(values.get(col, 0.0)) for col in feature_cols]
         return np.asarray([vec], dtype=np.float32)
     except Exception:

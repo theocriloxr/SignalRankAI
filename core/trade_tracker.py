@@ -468,9 +468,12 @@ def price_hit_tp(trade, market_data=None):
 
 def price_hit_sl(trade, market_data=None):
     """
-    Check if stop loss is hit.
-    For LONG: SL hit when current price <= stop
-    For SHORT: SL hit when current price >= stop
+    Check if stop loss is hit AFTER confirming entry was reached.
+    For LONG: Price must have reached entry level before SL can trigger
+    For SHORT: Price must have reached entry level before SL can trigger
+    
+    This prevents "SL-before-entry" invalidations where the price hits
+    the stop loss before ever reaching the entry price.
     """
     # Get current price from market_data or fetch it
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
@@ -480,18 +483,44 @@ def price_hit_sl(trade, market_data=None):
     if current_price is None:
         return False
     
-    # Normalize direction and stop
+    # Normalize direction, stop, and entry
     direction = (getattr(trade, "direction", "LONG") or "LONG").upper()
     stop = getattr(trade, "stop", None)
+    entry = getattr(trade, "entry", None)
+    
     if stop is None:
         return False
 
-    # Ensure numeric
+    # Ensure numeric values
     try:
         stop_val = float(stop)
     except Exception:
         return False
 
+    # NEW: Check if entry was ever reached before checking SL
+    # This is the critical fix for "SL-before-entry" invalidations
+    if entry is not None:
+        try:
+            entry_val = float(entry)
+            if direction == "LONG":
+                # For LONG: price should have reached or exceeded entry level
+                entry_reached = current_price >= entry_val
+            else:
+                # For SHORT: price should have reached or dropped to entry level
+                entry_reached = current_price <= entry_val
+            
+            if not entry_reached:
+                # Price hasn't reached entry yet - don't check SL
+                logger.debug(
+                    f"Entry not yet reached for {trade.symbol} {direction}: "
+                    f"entry={entry_val}, current={current_price}, stop={stop_val}"
+                )
+                return False
+        except Exception:
+            # If entry parsing fails, allow SL check to proceed
+            pass
+    
+    # Now check SL (original logic) - entry was verified reached
     if direction == "LONG":
         if current_price <= stop_val:
             logger.info(f"SL hit for {trade.symbol} LONG: price={current_price} <= stop={stop_val}")
