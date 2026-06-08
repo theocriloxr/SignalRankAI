@@ -192,17 +192,20 @@ try:
     _threshold_optimizer = get_threshold_optimizer()
 except Exception as e:
     logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
-    # Fallback threshold optimizer that uses env var
+# Fallback threshold optimizer that uses env var
+    # LOWERED from 0.55 to 0.50 to address ML drift confusion
+    # The model is "confused" during drift events and outputting lower probabilities
+    # This allows ~64 scores to pass through instead of being zeroed out
     class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.55') or 0.55)
+            return float(os.getenv('ML_PROB_THRESHOLD', '0.50') or 0.50)
         async def analyze_and_adjust(self, force: bool = False):
             return None
         def get_config(self):
             from datetime import datetime
             return type('Config', (), {
                 'ml_prob_threshold': self.get_threshold(),
-                'min_score_threshold': 60.0,
+                'min_score_threshold': 48.0,  # LOWERED from 60 to allow more signals through
                 'confluence_min': 0.0,
                 'last_updated': datetime.utcnow(),
                 'source': 'env',

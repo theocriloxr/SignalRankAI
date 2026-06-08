@@ -60,7 +60,8 @@ _BINANCE_DISABLED_REASON: str | None = None
 
 
 # Default crypto symbols to pause until reliable intraday providers are configured.
-_DEFAULT_CRYPTO_BLACKLIST = set()
+# Includes DOGEIDR due to Polygon rate-limiting (429 errors)
+_DEFAULT_CRYPTO_BLACKLIST = {"DOGEIDR"}
 
 # Hardcoded fallback crypto pairs - used when all providers fail
 # These are the top-tier liquid pairs that work even when APIs are blocked/rate-limited

@@ -87,11 +87,19 @@ class Config:
 		# Feature toggles (add more as needed)
 		self.MARKET_MONITOR_ENABLED = True
 		self.CRYPTO_WS_ENABLED = True
-		# Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
+# Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
 		is_railway = bool(self.RAILWAY_SERVICE_NAME or self.RAILWAY_ENVIRONMENT)
 		ml_train_default = not is_railway  # Default False on Railway (Hobby plan constraint)
 		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", ml_train_default)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
+
+		# ML probability threshold - LOWERED to 0.50 to allow signals with 60+ scores to pass through
+		# This addresses the "Score = 0" bottleneck where ML model calculates ~64 but gets zeroed due to high threshold
+		self.ML_PROB_THRESHOLD = self._env_float("ML_PROB_THRESHOLD", 0.50)
+
+		# Score threshold for signal storage - lowered to 48 to allow more signals through
+		# This is the min_score gate that was zeroing 64.4 scores
+		self.PREMIUM_SCORE_THRESHOLD = self._env_float("PREMIUM_SCORE_THRESHOLD", 48.0)
 
 		# Exchange scope (native execution and market connectors)
 		self.EXECUTION_EXCHANGES = ["binance", "bybit"]
