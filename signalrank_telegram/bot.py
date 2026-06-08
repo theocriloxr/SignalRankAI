@@ -3472,10 +3472,16 @@ def auto_delete_old_signals_job():
 
 
 def distribute_random_signals_to_free_users_job():
-    """Periodic job: distribute random signals to FREE users from global pool."""
-    if _is_free_fomo_dispatch_only_enabled():
-        logger.debug("[free_random] skipped (FREE_FOMO_DISPATCH_ONLY=1)")
-        return
+    """Periodic job: distribute random signals to FREE users from global pool.
+    
+    CRITICAL: This job ALWAYS runs to distribute signals to FREE users.
+    The FREE_FOMO_DISPATCH_ONLY mode is an alternative that unlocks signals
+    on VIP TP1 events, but the regular queue distribution should still work.
+    """
+    # NOTE: We intentionally removed the _is_free_fomo_dispatch_only_enabled() check
+    # because FREE users need regular signal distribution regardless of FOMO mode.
+    # The FOMO mode is for unlocking signals on VIP TP1 events, not for disabling
+    # the regular queue distribution.
 
     logger.info("🎲 Distributing random signals to FREE users...")
     try:
