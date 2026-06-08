@@ -1724,7 +1724,7 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _ml_log_err:
                                 logger.debug(f"[engine] ML prediction logging failed: {_ml_log_err}")
 
-if not approved:
+                        if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
                             stats.vetoed_ml += 1  # FIX: Track ML rejections
                             _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
@@ -2042,7 +2042,7 @@ if not approved:
                                 except Exception:
                                     pass
 
-min_score_threshold = _current_min_score_threshold()
+                            min_score_threshold = _current_min_score_threshold()
                             if sig.get('score', 0) < min_score_threshold:
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
