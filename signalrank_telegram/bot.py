@@ -2,7 +2,7 @@ from utils.async_runner import run_sync
 import threading
 from core.redis_state import state, mark_signal_delivered_sync
 from core.telemetry import observe_signal_dispatch
-
+from apscheduler.schedulers.background import BackgroundScheduler
 
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
@@ -6953,9 +6953,16 @@ def run_bot() -> None:
             jobstore=_sa,
         )
 
-        logger.info("[sched] BackgroundScheduler starting (state=pre_start)")
+logger.info("[sched] BackgroundScheduler starting (state=pre_start)")
         scheduler.start()
         logger.info("[sched] BackgroundScheduler started (state=running jobs=%d)", len(scheduler.get_jobs()))
+
+    # Register scheduled jobs for signal distribution and system maintenance
+    # This includes distribute_random_signals_to_free_users_job (every 30min)
+    try:
+        _schedule_bot_jobs(scheduler)
+    except Exception as _sched_err:
+        logger.warning(f"[sched] _schedule_bot_jobs failed: {_sched_err}")
 
     # One-shot startup migration: refresh keyboards on previously sent active messages.
     try:
