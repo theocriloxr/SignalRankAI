@@ -6959,7 +6959,7 @@ def run_bot() -> None:
             jobstore=_sa,
         )
 
-logger.info("[sched] BackgroundScheduler starting (state=pre_start)")
+        logger.info("[sched] BackgroundScheduler starting (state=pre_start)")
         scheduler.start()
         logger.info("[sched] BackgroundScheduler started (state=running jobs=%d)", len(scheduler.get_jobs()))
 
