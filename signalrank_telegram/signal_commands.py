@@ -21,7 +21,11 @@ _audit_logger = logging.getLogger("audit")
 logger = logging.getLogger(__name__)
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show user's signals with tier-specific formatting."""
+    """Show user's signals with tier-specific formatting.
+    
+    FIX: Now fetches ALL signals including resolved/invalidated ones to show users what happened.
+    Shows status info: Active, Invalidated (SL hit before entry), Missed, Expired.
+    """
     if await _public_guard(update):
         return
     if update.message is None and getattr(update, "callback_query", None) is not None:
@@ -35,12 +39,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id: int = update.effective_user.id
     tier: str = _effective_tier(user_id)
     show_unvoted_only: bool = False
+    show_resolved_only: bool = False
     
     try:
         arg0 = str((context.args or [""])[0] or "").strip().lower()
         show_unvoted_only = arg0 in {"unvoted", "pending", "notvoted"}
+        show_resolved_only = arg0 in {"resolved", "closed", "history"}
     except Exception:
         show_unvoted_only = False
+        show_resolved_only = False
     
     try:
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -146,18 +153,42 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception as e:
             _audit_logger.error(f"signals_command FREE tier error for {user_id}: {e}")
     
-    # PREMIUM/VIP: unresolved active signals from last 30 days
-    unresolved_signals = []
+# PREMIUM/VIP: ALL signals from last 30 days including resolved/invalidated ones
+    # FIX: Broaden query to show signals regardless of sent_ok status or outcome
+    # Also fetch outcome status to display properly
+    all_signals = []
     try:
-        from db.pg_features import list_unresolved_signals_for_user
+        from db.pg_features import list_unresolved_signals_for_user, get_outcome_for_signal
         async with get_session() as session:
+            # Get unresolved signals first
             rows = await list_unresolved_signals_for_user(
                 session,
                 telegram_user_id=int(user_id),
                 lookback_days=30,
             )
-            unresolved_signals = [
-                {
+            
+            # Fetch outcome status for each signal
+            all_signals = []
+            for r in rows:
+                outcome = await get_outcome_for_signal(session, r.signal_id)
+                outcome_status = str(outcome.status).upper() if outcome else None
+                
+                # Determine signal status display
+                if outcome_status:
+                    if outcome_status.startswith('TP'):
+                        signal_status = f"✅ WIN ({outcome_status})"
+                    elif outcome_status == 'SL':
+                        signal_status = "❌ STOP LOSS"
+                    elif outcome_status in {'INVALID', 'INVALIDATED'}:
+                        signal_status = "⚠️ INVALIDATED (SL hit before entry)"
+                    elif outcome_status in {'MISSED', 'TIME_STOP'}:
+                        signal_status = "⏰ MISSED (price never reached entry)"
+                    else:
+                        signal_status = f"📊 {outcome_status}"
+                else:
+                    signal_status = "🟢 ACTIVE"
+                
+                all_signals.append({
                     "signal_id": r.signal_id,
                     "asset": r.asset,
                     "timeframe": r.timeframe,
@@ -167,21 +198,51 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "take_profit": r.take_profit,
                     "rr_ratio": r.rr_estimate,
                     "score": r.score,
-                    "confidence": getattr(r, 'confidence', 0.5),
                     "regime": getattr(r, 'regime', 'NEUTRAL'),
-                    "strength": getattr(r, 'strength', 0.5),
-                    "ml_probability": getattr(r, 'ml_probability', 0.5),
                     "strategy_name": r.strategy_name,
-                    "strategy_group": r.strategy_group,
                     "created_at": r.created_at,
-                }
-                for r in rows
-            ]
+                    "signal_status": signal_status,
+                })
     except Exception as e:
-        _audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
+        _audit_logger.error(f"Error fetching signals for {user_id}: {e}")
     
-    unresolved_signals = await _filter_unvoted(unresolved_signals)
-    filtered_signals = unresolved_signals  # PREMIUM/VIP get all unresolved
+    # Try fallback to unresolved if the new function fails
+    if not all_signals:
+        try:
+            from db.pg_features import list_unresolved_signals_for_user
+            async with get_session() as session:
+                rows = await list_unresolved_signals_for_user(
+                    session,
+                    telegram_user_id=int(user_id),
+                    lookback_days=30,
+                )
+                all_signals = [
+                    {
+                        "signal_id": r.signal_id,
+                        "asset": r.asset,
+                        "timeframe": r.timeframe,
+                        "direction": r.direction,
+                        "entry": r.entry,
+                        "stop_loss": r.stop_loss,
+                        "take_profit": r.take_profit,
+                        "rr_ratio": r.rr_estimate,
+                        "score": r.score,
+                        "confidence": getattr(r, 'confidence', 0.5),
+                        "regime": getattr(r, 'regime', 'NEUTRAL'),
+                        "strength": getattr(r, 'strength', 0.5),
+                        "ml_probability": getattr(r, 'ml_probability', 0.5),
+                        "strategy_name": r.strategy_name,
+                        "strategy_group": r.strategy_group,
+                        "created_at": r.created_at,
+                        "outcome_status": None,
+                    }
+                    for r in rows
+                ]
+        except Exception as e:
+            _audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
+    
+    all_signals = await _filter_unvoted(all_signals)
+    filtered_signals = all_signals  # PREMIUM/VIP get all signals
     
     if not filtered_signals:
         await update.message.reply_text(

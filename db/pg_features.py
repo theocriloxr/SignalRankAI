@@ -1826,6 +1826,42 @@ async def list_unresolved_signals_for_user(
     return list(res2.scalars().all())
 
 
+async def list_recent_signals_for_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+    lookback_days: int = 30,
+) -> list[Signal]:
+    """Return ALL signals delivered to this user in the lookback window, including resolved/invalidated ones.
+    
+    FIX for /signals command - fetches all signals regardless of:
+    - sent_ok status (shows signals even if delivery marking failed)
+    - outcome status (shows invalidated/missed signals too)
+    
+    This ensures users see all their signals, not just the ones that appear "active".
+    """
+    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user: User | None = res.scalar_one_or_none()
+    if user is None:
+        return []
+
+    cutoff_days = max(1, int(lookback_days or 30))
+    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
+
+    # BROAD query: Include ALL delivered signals, regardless of sent_ok or outcome
+    q: Select[Tuple[Signal]] = (
+        select(Signal)
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(
+            SignalDelivery.user_id == user.id,
+            Signal.archived == False,
+            Signal.created_at >= cutoff,
+        )
+        .order_by(SignalDelivery.delivered_at.desc())
+    )
+    res2: Result[Tuple[Signal]] = await session.execute(q)
+    return list(res2.scalars().all())
+
+
 async def delete_old_signals(session: AsyncSession, older_than_days: int = 7) -> int:
     """Hard delete signals older than N days. Called periodically."""
     cutoff: datetime = _utcnow() - timedelta(days=max(1, int(older_than_days)))
