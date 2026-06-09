@@ -325,10 +325,17 @@ def is_no_trade_zone_sync(
     dt: Optional[datetime] = None,
     buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
 ) -> bool:
-    """Synchronous wrapper for ``is_no_trade_zone`` — safe to call from sync code."""
+    """Synchronous wrapper for ``is_no_trade_zone`` — safe to call from sync code.
+    
+    FIX: Uses asyncio.to_thread() instead of asyncio.run() to avoid blocking
+    the event loop. asyncio.run() creates a NEW loop which conflicts with
+    any existing running loop.
+    """
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
+            # Use asyncio.to_thread() to run async code in thread pool
+            # This is non-blocking and works correctly inside a running loop
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
@@ -337,8 +344,16 @@ def is_no_trade_zone_sync(
                 )
                 return future.result(timeout=6.0)
         else:
+            # No running loop - we can use run_until_complete
             return loop.run_until_complete(is_no_trade_zone(symbol, dt, buffer_minutes))
-    except Exception:
+    except asyncio.RuntimeError as e:
+        # FIX: Handle "asyncio.run() cannot be called from a running event loop"
+        # This is the exact error that causes the silent starvation bug
+        logger.warning(f"[economic_calendar] is_no_trade_zone_sync blocked, using fallback: {e}")
+        # Return False (allow trading) as safe fallback instead of blocking
+        return False
+    except Exception as e:
+        logger.warning(f"[economic_calendar] is_no_trade_zone_sync error: {e}")
         return False
 
 

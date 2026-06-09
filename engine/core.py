@@ -805,7 +805,13 @@ async def _one(asset: str, tfs: List[str], _index: int = 0):
                         elapsed,
                     )
                 if not data or not any(data.values()):
-                    logger.warning("[WARN] All providers failed for %s, skipping...", asset)
+                    # FIX: Add explicit error logging to diagnose WHY providers failed
+                    logger.error(
+                        "[engine][FATAL] All providers failed for %s timeframes=%s - "
+                        "This is why strategy_signals=0 and max_score=None",
+                        asset,
+                        tfs,
+                    )
                     return asset, {}
                 # Ensure indicators are present per timeframe
                 for tf, tf_data in (data or {}).items():
@@ -816,8 +822,17 @@ async def _one(asset: str, tfs: List[str], _index: int = 0):
                     except Exception:
                         logger.exception("indicator calc failed")
                 return asset, (data or {})
-            except Exception:
-                logger.exception(f"[engine] candle_fetch failed for {asset}")
+            except Exception as e:
+                # FIX: Add explicit error logging with exception details
+                logger.error(
+                    "[engine][FATAL] CANDLE FETCH EXCEPTION for %s: %s - "
+                    "This is why strategy_signals=0 and max_score=None. "
+                    "Exception type: %s",
+                    asset,
+                    str(e)[:200],
+                    type(e).__name__,
+                    exc_info=True,
+                )
                 return asset, {}
 
         tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
