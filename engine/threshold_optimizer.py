@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 # LOWERED to 0.45 to allow drifted model predictions (~56%) through
 # This addresses the ML drift issue where model outputs 56% but threshold was 55%
 DEFAULT_ML_THRESHOLD_MIN = float(os.getenv("ML_THRESHOLD_MIN", "0.30"))
-DEFAULT_ML_THRESHOLD_MAX = float(os.getenv("ML_THRESHOLD_MAX", "0.85"))
+# FIX: Changed from 0.85 to 0.80 to fix "Final Signals: 0" threshold trap (max_score 85.01 blocked)
+DEFAULT_ML_THRESHOLD_MAX = float(os.getenv("ML_THRESHOLD_MAX", "0.80"))
 DEFAULT_ML_THRESHOLD_DEFAULT = float(os.getenv("ML_THRESHOLD_DEFAULT", "0.45"))
 
 # Performance targets
@@ -36,7 +37,8 @@ MIN_SIGNALS_PER_CYCLE = int(os.getenv("MIN_SIGNALS_PER_CYCLE", "3"))
 # Dynamic gate bounds (safety rails to avoid over-tight/over-loose behavior)
 # Keep the floor lower so the optimizer cannot starve the bot during weak regimes.
 MIN_SCORE_FLOOR = float(os.getenv("MIN_SCORE_FLOOR", "40.0"))
-MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "75.0"))
+# FIX: Raised from 75.0 to 85.0 to prevent "Final Signals: 0" (max_score 85.01 was blocked by 75 ceiling)
+MIN_SCORE_CEILING = float(os.getenv("MIN_SCORE_CEILING", "85.0"))
 CONFLUENCE_MIN_FLOOR = float(os.getenv("CONFLUENCE_MIN_FLOOR", "0.0"))
 CONFLUENCE_MIN_CEILING = float(os.getenv("CONFLUENCE_MIN_CEILING", "40.0"))
 
