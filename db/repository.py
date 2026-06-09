@@ -458,3 +458,35 @@ async def mark_webhook_event_processed(
     except IntegrityError:
         await session.rollback()
         return False
+
+async def get_economic_events(session, hours_ahead: int = 168) -> List["EconomicEvent"]:
+    """Get upcoming high-impact economic events from DB.
+    
+    Args:
+        session: Database session
+        hours_ahead: How many hours ahead to look (default 7 days)
+    
+    Returns:
+        List of EconomicEvent records
+    """
+    from db.models import EconomicEvent
+    from sqlalchemy import select, and_
+    from datetime import datetime, timezone, timedelta
+    
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(hours=hours_ahead)
+    
+    try:
+        result = await session.execute(
+            select(EconomicEvent).where(
+                and_(
+                    EconomicEvent.event_date >= now,
+                    EconomicEvent.event_date <= window_end,
+                    EconomicEvent.impact.in_(["high", "medium"])
+                )
+            ).order_by(EconomicEvent.event_date)
+        )
+        return list(result.scalars().all())
+    except Exception:
+        return []
+

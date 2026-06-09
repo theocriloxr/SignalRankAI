@@ -992,7 +992,7 @@ def main_loop(DRY_RUN: bool = False):
 
         macro: Dict[str, float] = {}
         try:
-            from services.economic_calendar import get_macro_news_context
+            from services.economic_calendar import get_macro_news_context_context
             news_ctx = await get_macro_news_context()
             macro.update({
                 "minutes_since_high_impact_news": float(news_ctx.get("minutes_since_high_impact_news") or 0.0) if news_ctx.get("minutes_since_high_impact_news") is not None else 0.0,

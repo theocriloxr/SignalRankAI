@@ -17,7 +17,7 @@ logger = logging.getLogger("news_sync_worker")
 
 # Import from existing services
 try:
-    from services.economic_calendar import fetch_economic_calendar, get_upcoming_high_impact_events
+    from services.economic_calendar import fetch_economic_events, get_upcoming_events_summary
 except ImportError:
     async def fetch_economic_calendar(days_ahead: int = 7) -> List[Dict[str, Any]]:
         """Fallback when economic_calendar not available."""
@@ -52,6 +52,7 @@ except ImportError:
 SYNC_INTERVAL_HOURS = int(os.getenv("NEWS_SYNC_INTERVAL_HOURS", "6"))
 MAX_EVENTS_PER_SYNC = int(os.getenv("NEWS_MAX_EVENTS_PER_SYNC", "50"))
 ENABLE_NEWS_SYNC = os.getenv("ENABLE_NEWS_SYNC", "1") == "1"
+REDIS_EVENTS_KEY = "signalrankai:economic_events:cached"
 
 
 async def sync_economic_events_to_db() -> Dict[str, Any]:
@@ -80,7 +81,7 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
     try:
         # Fetch economic calendar for next 7 days
         logger.info("[news_sync] Fetching economic calendar...")
-        events = await fetch_economic_calendar(days_ahead=7)
+        events = await fetch_economic_events(force_refresh=True)
         
         if not events:
             logger.info("[news_sync] No events fetched from API")
@@ -180,6 +181,36 @@ async def sync_economic_events_to_db() -> Dict[str, Any]:
                 await session.commit()
                 result["synced"] = synced
                 result["failed"] = failed
+                
+                # Also update Redis cache for fast access
+                try:
+                    from core.redis_state import state
+                    import json
+                    # Get all stored events for Redis
+                    async with get_session() as redis_session:
+                        from sqlalchemy import select
+                        now = datetime.now(timezone.utc)
+                        window_end = now + timedelta(days=7)
+                        result_db = await redis_session.execute(
+                            select(EconomicEvent).where(
+                                EconomicEvent.event_date >= now,
+                                EconomicEvent.event_date <= window_end
+                            )
+                        )
+                        redis_events = result_db.scalars().all()
+                        events_list = [
+                            {
+                                "title": e.title,
+                                "currency": e.currency,
+                                "impact": e.impact,
+                                "event_time": e.event_date.isoformat() if e.event_date else None
+                            }
+                            for e in redis_events
+                        ]
+                        state.set_sync(REDIS_EVENTS_KEY, json.dumps(events_list), ex=43200)  # 12 hour TTL
+                        logger.info(f"[news_sync] Updated Redis cache with {len(events_list)} events")
+                except Exception as e:
+                    logger.debug(f"[news_sync] Redis cache update failed: {e}")
                 logger.info(f"[news_sync] Synced {synced} events, {failed} failed")
             except Exception as e:
                 logger.error("[news_sync] Commit failed: %s", e)

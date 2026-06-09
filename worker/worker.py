@@ -1,4 +1,3 @@
-
 #
 # SignalRankAI Async Worker Entrypoint
 #
@@ -24,8 +23,6 @@ from db.session import get_session, run_with_db_retry, is_db_configured
 from db.repository import expire_subscriptions
 
 logger = logging.getLogger(__name__)
-
-
 
 
 class Worker:
@@ -84,10 +81,18 @@ class Worker:
 
         _register_task("expiry_loop", lambda: self._expiry_loop(), restart_on_failure=True)
 
-        # Start real-time TP/SL outcome tracker — this is the core monitoring loop
-        # that detects when signals hit their targets and notifies users.
-        # Default to ON in all deployments so every generated signal is tracked.
-        # Override with WORKER_OUTCOME_TRACKER_ENABLED=0 to explicitly disable.
+        # News sync worker - fetches economic calendar every 6 hours
+        # This populates the economic_events table for news filter
+        _enable_news_sync = str(os.getenv("WORKER_NEWS_SYNC_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        if _enable_news_sync:
+            try:
+                from worker.news_sync_worker import start_news_sync_worker as _start_news
+                _register_task("news_sync", lambda: _start_news(), restart_on_failure=True)
+                logger.info("[worker] NewsSyncWorker started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start news sync worker: %s", e)
+
+        # Start real-time TP/SL outcome tracker
         _enable_worker_tracker = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
         if _enable_worker_tracker:
             try:
@@ -96,6 +101,7 @@ class Worker:
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
+        
         # Start shadow outcome tracker for ML-rejected signals
         _enable_shadow = str(os.getenv("WORKER_SHADOW_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
         if _enable_shadow:
@@ -140,12 +146,13 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
-        # Data drift monitor loop (enabled by default).
+        # Data drift monitor loop (enabled by default)
         if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start drift monitor loop: %s", e)
+        
         import time
         last_heartbeat = time.time()
         try:
@@ -192,7 +199,7 @@ class Worker:
                 logger.info("[worker] task stopped: %s", name)
 
     async def _expiry_loop(self) -> None:
-        # Runs periodically; safe no-op when DATABASE_URL not configured.
+        """Runs periodically - cleans up expired subscriptions."""
         while not self._stop.is_set():
             try:
                 if is_db_configured():
@@ -207,10 +214,9 @@ class Worker:
 
     async def _ml_train_loop(self) -> None:
         """Periodically retrain the ML model from Postgres outcomes."""
-        # Import inside to avoid startup failures if deps missing in minimal envs
         try:
             from ml import train_model as ml_train
-        except Exception as exc:  # pragma: no cover
+        except Exception as exc:
             logger.warning("[worker] ML train loop disabled (import failed): %s", exc)
             return
 
@@ -223,10 +229,9 @@ class Worker:
                     logger.info("[worker] ML model retrained successfully")
                 else:
                     logger.info("[worker] ML model retrain skipped/failed (insufficient data)")
-            except Exception as exc:  # pragma: no cover
+            except Exception as exc:
                 logger.error("[worker] ML train loop error: %s", exc)
 
-            # Sleep until next window or until stop requested
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
@@ -372,22 +377,17 @@ async def _amain() -> None:
     def _handle_sig(*_: object) -> None:
         worker.request_stop()
 
-    # NOTE: `loop.add_signal_handler` only works in the main thread on Unix.
-    # In RUN_MODE=all we run the worker in a background thread, so skip
-    # installing signal handlers there.
     if threading.current_thread() is threading.main_thread():
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, _handle_sig)
             except NotImplementedError:
-                # Windows event loop may not support add_signal_handler
                 pass
 
     await worker.run()
 
 
 def main() -> None:
-    # Worker is a long-running loop; do not apply run_sync timeout.
     run_sync(_amain(), timeout=None)
 
 
