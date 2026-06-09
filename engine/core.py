@@ -981,9 +981,20 @@ def main_loop(DRY_RUN: bool = False):
         return out
 
 
+# Cache for macro data fallback when providers fail
+    _macro_fallback_cache: Dict[str, float] = {}
+
     async def _fetch_macro_snapshot() -> Dict[str, float]:
-        """Fetch macro context once per cycle for all assets."""
-        global _last_macro_snapshot_at, _macro_snapshot_cache
+        """Fetch macro context once per cycle for all assets.
+        
+        FIX: Added rate-limiting delays between macro fetches to prevent Polygon 429 errors.
+        FIX: Added fallback to cached values when providers fail.
+        FIX: Added ticker format fallback for DXY (various sources use different formats).
+        """
+        global _last_macro_snapshot_at, _macro_snapshot_cache, _macro_fallback_cache
+        import random
+        import asyncio
+        
         now_dt = datetime.utcnow()
         if _macro_snapshot_cache is not None and _last_macro_snapshot_at is not None:
             elapsed = (now_dt - _last_macro_snapshot_at).total_seconds()
@@ -992,7 +1003,7 @@ def main_loop(DRY_RUN: bool = False):
 
         macro: Dict[str, float] = {}
         try:
-            from services.economic_calendar import get_macro_news_context_context
+            from services.economic_calendar import get_macro_news_context
             news_ctx = await get_macro_news_context()
             macro.update({
                 "minutes_since_high_impact_news": float(news_ctx.get("minutes_since_high_impact_news") or 0.0) if news_ctx.get("minutes_since_high_impact_news") is not None else 0.0,
@@ -1002,25 +1013,91 @@ def main_loop(DRY_RUN: bool = False):
         except Exception:
             pass
 
-        async def _macro_tf(asset: str, timeframe: str = "1d") -> Dict[str, Any]:
+        async def _macro_tf(asset: str, timeframe: str = "1d", delay_between: float = 0.0) -> Dict[str, Any]:
+            """Fetch macro indicator with rate limiting delay.
+            
+            Args:
+                asset: Ticker symbol (e.g., DXY, VIX, US10Y)
+                timeframe: Timeframe for candles
+                delay_between: Seconds to delay before fetching (helps prevent rate limits)
+            """
+            # Apply rate limiting delay to prevent 429 errors for Polygon free tier
+            if delay_between > 0:
+                jitter = random.random() * 0.5  # Add jitter for randomization
+                await asyncio.sleep(delay_between + jitter)
+            
             try:
                 data = await fetch_market_data_cached(asset, [timeframe])
                 tf_data = (data or {}).get(timeframe) or {}
                 candles = tf_data.get("candles") or []
                 closes = [float(c.get("close") or 0.0) for c in candles if isinstance(c, dict)]
                 if len(closes) < 2:
+                    # Try fallback formats for DXY
+                    if asset == "DXY":
+                        retry_formats = ["USDX", "DX-Y", "USDXUSD", "DXYUSD"]
+                        for alt_format in retry_formats:
+                            if alt_format == asset:
+                                continue
+                            try:
+                                alt_data = await fetch_market_data_cached(alt_format, [timeframe])
+                                alt_tf = (alt_data or {}).get(timeframe) or {}
+                                alt_candles = alt_tf.get("candles") or []
+                                alt_closes = [float(c.get("close") or 0.0) for c in alt_candles if isinstance(c, dict)]
+                                if len(alt_closes) >= 2:
+                                    candles = alt_candles
+                                    closes = alt_closes
+                                    logger.info(f"[macro] DXY fetched using alt format: {alt_format}")
+                                    break
+                            except Exception:
+                                continue
+                if len(closes) < 2:
+                    # Use cached fallback if fetch failed
+                    cache_key = f"{asset}_last"
+                    cached = _macro_fallback_cache.get(cache_key)
+                    if cached is not None:
+                        logger.info(f"[macro] Using cached fallback for {asset}: {cached}")
+                        return {"trend": 0.0, "last": cached, "source": "cache_fallback"}
                     return {}
                 first = closes[0]
                 last = closes[-1]
                 trend = ((last - first) / first) if first else 0.0
+                # Cache successful values for fallback
+                _macro_fallback_cache[f"{asset}_last"] = float(last)
                 return {"trend": float(trend), "last": float(last), "source": tf_data.get("source") or ""}
-            except Exception:
+            except Exception as e:
+                logger.debug(f"[macro] Failed to fetch {asset}: {e}")
+                # Try fallback formats for DXY
+                if asset == "DXY":
+                    retry_formats = ["USDX", "DX-Y", "USDXUSD"]
+                    for alt_format in retry_formats:
+                        try:
+                            alt_data = await fetch_market_data_cached(alt_format, [timeframe])
+                            alt_tf = (alt_data or {}).get(timeframe) or {}
+                            alt_candles = alt_tf.get("candles") or []
+                            alt_closes = [float(c.get("close") or 0.0) for c in alt_candles if isinstance(c, dict)]
+                            if len(alt_closes) >= 2:
+                                first = alt_closes[0]
+                                last = alt_closes[-1]
+                                trend = ((last - first) / first) if first else 0.0
+                                _macro_fallback_cache[f"{asset}_last"] = float(last)
+                                logger.info(f"[macro] DXY fetched using alt format: {alt_format}")
+                                return {"trend": float(trend), "last": float(last), "source": "alt_format"}
+                        except Exception:
+                            continue
+                # Use cached fallback if all fetch attempts failed
+                cache_key = f"{asset}_last"
+                cached = _macro_fallback_cache.get(cache_key)
+                if cached is not None:
+                    logger.info(f"[macro] Using cached fallback for {asset} after error: {cached}")
+                    return {"trend": 0.0, "last": cached, "source": "cache_fallback"}
                 return {}
 
-        dxy = await _macro_tf("DXY", "1d")
-        vix = await _macro_tf("VIX", "1d")
-        us10 = await _macro_tf("US10Y", "1d")
-        us02 = await _macro_tf("US02Y", "1d")
+        # FIX: Add delays between macro fetches to prevent Polygon 429 errors
+        # Polygon free tier allows 5 calls/minute, so we space them out
+        dxy = await _macro_tf("DXY", "1d", delay_between=0.0)  # First call no delay
+        vix = await _macro_tf("VIX", "1d", delay_between=2.5)  # 2.5s delay after DXY
+        us10 = await _macro_tf("US10Y", "1d", delay_between=2.5)  # 2.5s delay after VIX
+        us02 = await _macro_tf("US02Y", "1d", delay_between=2.5)  # 2.5s delay after US10Y
 
         macro.update({
             "dxy_trend": float(dxy.get("trend") or 0.0),
@@ -1030,6 +1107,10 @@ def main_loop(DRY_RUN: bool = False):
             "btc_corr": 0.0,
             "spx_trend": 0.0,
         })
+        
+        # Log macro fetch status for diagnostics
+        logger.info(f"[macro] snapshot: dxy={dxy.get('last')} vix={vix.get('last')} us10y={us10.get('last')}")
+        
         _macro_snapshot_cache = dict(macro)
         _last_macro_snapshot_at = now_dt
         return macro
