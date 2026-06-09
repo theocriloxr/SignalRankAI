@@ -39,15 +39,12 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id: int = update.effective_user.id
     tier: str = _effective_tier(user_id)
     show_unvoted_only: bool = False
-    show_resolved_only: bool = False
     
     try:
         arg0 = str((context.args or [""])[0] or "").strip().lower()
         show_unvoted_only = arg0 in {"unvoted", "pending", "notvoted"}
-        show_resolved_only = arg0 in {"resolved", "closed", "history"}
     except Exception:
         show_unvoted_only = False
-        show_resolved_only = False
     
     try:
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -148,59 +145,95 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         )
                 except Exception as e:
                     _audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
-            await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
+await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
             return
         except Exception as e:
             _audit_logger.error(f"signals_command FREE tier error for {user_id}: {e}")
     
-# PREMIUM/VIP: ALL signals from last 30 days including resolved/invalidated ones
+    # PREMIUM/VIP: ALL signals from last 48 hours including resolved/invalidated ones
     # FIX: Broaden query to show signals regardless of sent_ok status or outcome
+    # This fixes the issue where resend job didn't mark sent_ok=True
     # Also fetch outcome status to display properly
     all_signals = []
     try:
-        from db.pg_features import list_unresolved_signals_for_user, get_outcome_for_signal
+        from sqlalchemy import select
+        from db.models import Signal, SignalDelivery, User, Outcome
+        from datetime import datetime, timedelta, timezone
+        
         async with get_session() as session:
-            # Get unresolved signals first
-            rows = await list_unresolved_signals_for_user(
-                session,
-                telegram_user_id=int(user_id),
-                lookback_days=30,
-            )
+            # Get user
+            user_row = (await session.execute(
+                select(User).where(User.telegram_user_id == int(user_id)).limit(1)
+            )).scalar_one_or_none()
             
-            # Fetch outcome status for each signal
-            all_signals = []
-            for r in rows:
-                outcome = await get_outcome_for_signal(session, r.signal_id)
-                outcome_status = str(outcome.status).upper() if outcome else None
+            if user_row is None:
+                await update.message.reply_text("⚠️ User not found. Start with /start")
+                return
+            
+            # FIX: Get signals from last 48 hours WITHOUT filtering by sent_ok or outcome
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+            
+            # Get ALL signals delivered to user in last 48 hours (regardless of sent_ok or outcome)
+            rows = (
+                await session.execute(
+                    select(Signal, SignalDelivery.delivered_at)
+                    .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+                    .where(
+                        SignalDelivery.user_id == user_row.id,
+                        SignalDelivery.delivered_at >= cutoff,
+                    )
+                    .order_by(SignalDelivery.delivered_at.desc())
+                    .limit(50)
+                )
+            ).all()
+            
+            # Get outcomes for these signals
+            signal_ids = [r[0].signal_id for r in rows]
+            outcomes_map = {}
+            if signal_ids:
+                outcome_rows = (
+                    await session.execute(
+                        select(Outcome.signal_id, Outcome.status)
+                        .where(Outcome.signal_id.in_(signal_ids))
+                    )
+                ).all()
+                outcomes_map = {row[0]: row[1] for row in outcome_rows}
+            
+            # Build signal dicts with status info
+            for sig_row, delivered_at in rows:
+                outcome_status = outcomes_map.get(sig_row.signal_id)
+                status_str = str(outcome_status).upper() if outcome_status else None
                 
                 # Determine signal status display
-                if outcome_status:
-                    if outcome_status.startswith('TP'):
-                        signal_status = f"✅ WIN ({outcome_status})"
-                    elif outcome_status == 'SL':
+                if status_str:
+                    if status_str.startswith('TP'):
+                        signal_status = f"✅ WIN ({status_str})"
+                    elif status_str == 'SL':
                         signal_status = "❌ STOP LOSS"
-                    elif outcome_status in {'INVALID', 'INVALIDATED'}:
+                    elif status_str in {'INVALID', 'INVALIDATED'}:
                         signal_status = "⚠️ INVALIDATED (SL hit before entry)"
-                    elif outcome_status in {'MISSED', 'TIME_STOP'}:
+                    elif status_str in {'MISSED', 'TIME_STOP'}:
                         signal_status = "⏰ MISSED (price never reached entry)"
                     else:
-                        signal_status = f"📊 {outcome_status}"
+                        signal_status = f"📊 {status_str}"
+                elif getattr(sig_row, 'expired', False):
+                    signal_status = "⏰ EXPIRED"
                 else:
                     signal_status = "🟢 ACTIVE"
                 
                 all_signals.append({
-                    "signal_id": r.signal_id,
-                    "asset": r.asset,
-                    "timeframe": r.timeframe,
-                    "direction": r.direction,
-                    "entry": r.entry,
-                    "stop_loss": r.stop_loss,
-                    "take_profit": r.take_profit,
-                    "rr_ratio": r.rr_estimate,
-                    "score": r.score,
-                    "regime": getattr(r, 'regime', 'NEUTRAL'),
-                    "strategy_name": r.strategy_name,
-                    "created_at": r.created_at,
+                    "signal_id": sig_row.signal_id,
+                    "asset": sig_row.asset,
+                    "timeframe": sig_row.timeframe,
+                    "direction": sig_row.direction,
+                    "entry": sig_row.entry,
+                    "stop_loss": sig_row.stop_loss,
+                    "take_profit": sig_row.take_profit,
+                    "rr_ratio": sig_row.rr_estimate,
+                    "score": sig_row.score,
+                    "regime": getattr(sig_row, 'regime', 'NEUTRAL'),
+                    "strategy_name": sig_row.strategy_name,
+                    "created_at": sig_row.created_at,
                     "signal_status": signal_status,
                 })
     except Exception as e:
