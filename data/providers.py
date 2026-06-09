@@ -668,6 +668,10 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     if _is_cooldown_active("yahoo"):
         return []
 
+    # FIX: Yahoo Finance returns NaN for volume on Forex pairs (no central exchange).
+    # We need to fill these with 0 BEFORE processing to prevent data loss.
+    # This is the notorious "NaN Volume" bug that causes 260 candles to become 0.
+
     # Normalize symbols for Yahoo
     # - FX: EURUSD / EUR-USD -> EURUSD=X
     # - Crypto: BTCUSDT -> BTC-USD
@@ -708,11 +712,13 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     
     _rate_limit("yahoo", 0.5)  # Yahoo is pretty lenient
     
-    def _fetch_history() -> "pd.DataFrame":
+    def _fetch_history():
+        import pandas as pd
         ticker = yf.Ticker(symbol)
         return ticker.history(period=period, interval=interval)
 
-    async def _fetch_with_timeout() -> "pd.DataFrame":
+    async def _fetch_with_timeout():
+        import pandas as pd
         timeout_s = float(os.getenv("YFINANCE_TIMEOUT_SECONDS", "6") or 6)
         return await asyncio.wait_for(
             asyncio.to_thread(_fetch_history),
@@ -724,6 +730,12 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
         
         if hist.empty:
             return []
+        
+        # FIX: Fill NaN volume with 0 for Forex pairs BEFORE processing.
+        # Yahoo Finance returns NaN for volume on Forex pairs since there's no central exchange.
+        # Without this fix, subsequent code that checks for NaN or uses dropna() would discard all rows.
+        if "Volume" in hist.columns:
+            hist["Volume"] = hist["Volume"].fillna(0)
         
         candles = []
         for idx, row in hist.iterrows():
