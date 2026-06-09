@@ -898,9 +898,11 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
     if _is_cooldown_active("coingecko"):
         return []
 
-    # CoinGecko /coins/{id}/ohlc: days param
-    days_map = {"5m": 1, "15m": 1, "1h": 7, "4h": 30, "1d": 365}
-    days = days_map.get(timeframe, 7)
+# CoinGecko /coins/{id}/ohlc: days param
+    # FIX: Extended from 7 to 14 days for 1h to ensure 50+ candles for 50-period indicators
+    # Previously only returned ~42 candles which caused indicators to return NaN (50-period EMA needs 50+ candles)
+    days_map = {"5m": 2, "15m": 3, "1h": 14, "4h": 60, "1d": 365}
+    days = days_map.get(timeframe, 14)
 
     url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/ohlc"
     params = {"vs_currency": "usd", "days": days}

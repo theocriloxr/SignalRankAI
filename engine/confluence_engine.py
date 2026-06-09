@@ -24,6 +24,19 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Import market hours for stock market check - prevents "After-Hours Flatline" trap
+# When stocks are evaluated outside market hours (9:30 AM - 4:00 PM ET), 
+# volume=0 and price flatlines, causing false breakout signals
+try:
+    from data.market_hours import is_market_open as _check_market_hours
+    _MARKET_HOURS_AVAILABLE = True
+except ImportError:
+    _MARKET_HOURS_AVAILABLE = False
+    
+    def _check_market_hours(asset_class: str) -> Tuple[bool, str]:
+        """Fallback when market_hours module not available."""
+        return True, "module unavailable"
+
 CONFLUENCE_TOTAL = 15
 _LONG    =  1
 _SHORT   = -1
@@ -380,11 +393,13 @@ _VOTE_FNS = [
 #  Public API
 # ─────────────────────────────────────────────────────────────
 
-def run_confluence_engine(candles: list) -> Dict:
+def run_confluence_engine(candles: list, asset_type: str = None, asset: str = None) -> Dict:
     """Run all 15 vectorized strategies and return a confluence result dict.
 
     Args:
         candles: List of OHLCV dicts with keys open/high/low/close/volume.
+        asset_type: Optional asset type ('stock', 'crypto', 'fx', 'commodity') for market hours check
+        asset: Optional asset symbol for logging
 
     Returns:
         {
@@ -397,6 +412,23 @@ def run_confluence_engine(candles: list) -> Dict:
             'passed':      bool,       # True if score >= CONFLUENCE_MIN_VOTES env var (default 10)
         }
     """
+    # FIX: Stock Market Hours Guard - prevents "After-Hours Flatline" trap
+    # If asset is a stock and market is closed, return NEUTRAL to avoid false breakout signals
+    if asset_type == "stock" or (asset and asset.upper() in {
+        "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "NFLX", 
+        "JPM", "BAC", "WFC", "GS", "MS", "C", "V", "MA", "JNJ", "UNH", 
+        "PFE", "ABBV", "MRK", "WMT", "HD", "DIS", "NKE", "MCD", "SBUX", 
+        "KO", "PEP", "XOM", "CVX", "COP", "SLB"
+    }):
+        if _MARKET_HOURS_AVAILABLE:
+            is_open, reason = _check_market_hours("stock")
+            if not is_open:
+                logger.debug(f"[confluence] Skipping stock {asset} - {reason}")
+                return {
+                    "long_votes": 0, "short_votes": 0, "total": CONFLUENCE_TOTAL,
+                    "direction": "NEUTRAL", "score": 0, "drivers": [], "passed": False,
+                }
+    
     min_votes = _env_int("CONFLUENCE_MIN_VOTES", 10)
     df = _candles_to_df(candles)
     if df is None:
