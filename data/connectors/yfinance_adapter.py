@@ -53,18 +53,18 @@ def _sync_get_candles_impl(symbol: str, timeframe: str, limit: int = 200) -> Lis
     interval = timeframe
     period = "60d" if "d" in timeframe or "h" in timeframe else "7d"
 
-try:
+    try:
         t = yf.Ticker(symbol_norm)
         df = t.history(period=period, interval=interval)
         if df is None or df.empty:
             return []
-        
+
         # FIX: Fill NaN volume with 0 for Forex pairs BEFORE processing.
         # Yahoo Finance returns NaN for volume on Forex pairs since there's no central exchange.
         # Without this fix, subsequent code that checks for NaN or uses dropna() would discard all rows.
         if "Volume" in df.columns:
             df["Volume"] = df["Volume"].fillna(0)
-        
+
         out: List[Dict[str, Any]] = []
         for idx, row in df.iterrows():
             try:
