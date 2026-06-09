@@ -120,10 +120,28 @@ def _write_cached_candles(key: tuple[str, str], candles: list) -> None:
 
 
 def _get_forward_fill_ttl_seconds() -> float:
+    """Get forward-fill TTL for cached candles.
+    
+    FIX: Increased default from 300s to 1800s (30 min) to handle provider outages.
+    This allows the engine to use stale cached data when providers are down,
+    preventing the pipeline from starving entirely.
+    """
     try:
-        return float((os.getenv("CANDLE_FORWARD_FILL_TTL_SECONDS") or "300").strip())
+        return float((os.getenv("CANDLE_FORWARD_FILL_TTL_SECONDS") or "1800").strip())
     except Exception:
-        return 300.0
+        return 1800.0
+
+
+def _get_degraded_mode_min_candles() -> int:
+    """Get minimum candles for degraded mode.
+    
+    FIX: Allow 10 candles minimum (vs 20) when in degraded operation.
+    This prevents complete pipeline failure during provider outages.
+    """
+    try:
+        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "10").strip())
+    except Exception:
+        return 10
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
@@ -489,17 +507,34 @@ def get_candles(asset, timeframe):
             else:  # stock
                 candles = _fetch_stock_multi_provider(asset, timeframe)
 
-            if (not candles) or len(candles) < 20:
+# FIX: Use degraded mode minimum (10 candles) when forward-fill is triggered
+            # This prevents complete pipeline starvation during provider outages
+            _min_candles_normal = 20
+            _min_candles_degraded = _get_degraded_mode_min_candles()  # 10 by default
+            
+            if (not candles) or len(candles) < _min_candles_normal:
                 ff_ttl = _get_forward_fill_ttl_seconds()
                 stale_cached = _read_stale_cached_candles(_cache_key, ff_ttl)
-                if stale_cached is not None and len(stale_cached) >= 20:
+                # FIX: Accept degraded mode minimum (10 candles) to prevent pipeline starvation
+                if stale_cached is not None and len(stale_cached) >= _min_candles_degraded:
                     logger.warning(
-                        "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss",
+                        "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss candles=%d (degraded mode)",
                         asset,
                         timeframe,
                         ff_ttl,
+                        len(stale_cached),
                     )
                     _set_last_provider_used(asset, timeframe, "cache_forward_fill")
+                    return stale_cached
+                # FIX: Try even older cache if degraded mode helps prevent complete failure
+                if stale_cached is not None and len(stale_cached) >= 5:
+                    logger.warning(
+                        "[data] ultra-stale cache used symbol=%s tf=%s candles=%d (emergency mode)",
+                        asset,
+                        timeframe,
+                        len(stale_cached),
+                    )
+                    _set_last_provider_used(asset, timeframe, "cache_emergency")
                     return stale_cached
 
             _write_cached_candles(_cache_key, candles or [])
