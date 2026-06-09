@@ -1092,6 +1092,14 @@ def main_loop(DRY_RUN: bool = False):
                     return {"trend": 0.0, "last": cached, "source": "cache_fallback"}
                 return {}
 
+# FIX: Add proactive rate limiting to prevent 429 errors BEFORE they happen
+        # This calls the provider-level rate limiter from data/providers.py
+        from data.providers import _macro_rate_limit
+        await _macro_rate_limit("DXY")   # Wait if needed before DXY fetch
+        await _macro_rate_limit("VIX")   # Wait if needed before VIX fetch
+        await _macro_rate_limit("US10Y")  # Wait if needed before US10Y fetch
+        await _macro_rate_limit("US02Y")  # Wait if needed before US02Y fetch
+
         # FIX: Add delays between macro fetches to prevent Polygon 429 errors
         # Polygon free tier allows 5 calls/minute, so we space them out
         dxy = await _macro_tf("DXY", "1d", delay_between=0.0)  # First call no delay

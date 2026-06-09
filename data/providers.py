@@ -59,6 +59,73 @@ def _is_cooldown_active(provider: str) -> bool:
         return False
 
 
+# ============================================================================
+# MACRO INDEX RATE LIMITING - Prevent 429 errors before they happen
+# ============================================================================
+
+# Track last call times and delays for macro indices separately
+_MACRO_LAST_CALL: dict[str, float] = {}
+_MACRO_MIN_DELAY: dict[str, float] = {
+    # FIX: Polygon free tier allows 5 calls/minute, so space these out
+    # These are called sequentially by engine/core.py _fetch_macro_snapshot()
+    "DXY": 12.0,      # 12s between DXY calls (TwelveData)
+    "VIX": 12.0,      # 12s between VIX calls (Polygon)
+    "US10Y": 12.0,   # 12s between US10Y calls (Polygon)
+    "US02Y": 12.0,   # 12s between US02Y calls (Polygon)
+    # Yahoo Finance has higher limits, but still delay to avoid hammering
+    "^GSPC": 3.0,   # S&P 500
+    "^DJI": 3.0,     # Dow Jones
+    "^IXIC": 3.0,    # Nasdaq
+}
+
+
+def _macro_rate_limit(symbol: str) -> float:
+    """Apply rate limiting for macro indices to prevent 429 errors.
+    
+    This is called BEFORE making API calls to prevent rate limiting.
+    Polygon free tier: 5 calls/minute = 12s between calls
+    
+    Args:
+        symbol: Ticker symbol (e.g., DXY, VIX, US10Y)
+        
+    Returns:
+        Seconds to sleep (0 if no delay needed)
+    """
+    import random
+    
+    # Normalize symbol
+    sym = (symbol or "").upper().strip()
+    
+    # Check if this is a macro index
+    min_delay = _MACRO_MIN_DELAY.get(sym, 0.0)
+    if min_delay <= 0:
+        return 0.0
+    
+    # Calculate elapsed time since last call
+    now = time.monotonic()
+    last_call = _MACRO_LAST_CALL.get(sym, 0.0)
+    elapsed = now - last_call if last_call else 0.0
+    
+    # If enough time has passed, no delay needed
+    if elapsed >= min_delay:
+        _MACRO_LAST_CALL[sym] = now
+        return 0.0
+    
+    # Calculate delay needed with jitter to prevent thundering herd
+    delay_needed = min_delay - elapsed
+    
+    # Add random jitter: [delay, delay * 1.5]
+    jitter = random.random() * 0.5 * delay_needed
+    total_delay = delay_needed + jitter
+    
+    logger.debug(f"[macro_rate_limit] sleeping {total_delay:.1f}s before fetching {sym}")
+    time.sleep(total_delay)
+    
+    # Update last call time
+    _MACRO_LAST_CALL[sym] = time.monotonic()
+    return total_delay
+
+
 def _rate_limit(provider: str, wait: float) -> None:
     try:
         last = float(_PROVIDER_LAST_CALL.get(provider) or 0.0)
