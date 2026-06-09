@@ -15,7 +15,7 @@ import asyncio
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 import requests
 from utils.async_runner import run_sync
@@ -286,42 +286,63 @@ def fetch_cryptopanic_news(limit: int = 10, currencies: Optional[List[str]] = No
     except Exception:
         return []
 
+# ============================================================================
+# NEWS API - High-impact economic news for trading protection
+# ============================================================================
+
+async def get_today_high_impact_news() -> List[Dict[str, Any]]:
+    """
+    Fetch today's high-impact economic events (USD-related).
+    
+    This function provides news events for the News Killswitch to block
+    trades during high-impact events (FOMC, NFP, CPI, etc.).
+    
+    Returns:
+        List of event dicts with: title, currency, impact, timestamp
+    """
     try:
-        proxy_url = (
-            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
-            or proxy_manager.get_proxy_sync()
-        )
-        exchange_config: dict = {
-            "enableRateLimit": True,
-            "timeout": 2500,
-        }
-        if proxy_url:
-            exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
-            exchange_config["proxy"] = proxy_url
-        exchange = ccxt.binance(exchange_config)
-        rows = exchange.fetch_ohlcv(
-            _normalize_binance_symbol(symbol),
-            timeframe=_map_binance_timeframe(timeframe),
-            limit=max(20, int(limit or 200)),
-        )
-        out: List[Dict] = []
-        for row in rows or []:
-            try:
-                out.append(
-                    {
-                        "timestamp": int(row[0]),
-                        "open": float(row[1]),
-                        "high": float(row[2]),
-                        "low": float(row[3]),
-                        "close": float(row[4]),
-                        "volume": float(row[5]),
-                    }
-                )
-            except Exception:
-                continue
-        return out
+        # Try to import from economic calendar service (preferred)
+        from services.economic_calendar import fetch_economic_events
+        events = await fetch_economic_events(force_refresh=False)
+        
+        # Filter for high-impact USD events
+        high_impact = []
+        for e in events:
+            if e.get("impact") == "high" and e.get("currency") == "USD":
+                event_time = e.get("event_time")
+                if event_time:
+                    high_impact.append({
+                        "title": e.get("title", ""),
+                        "currency": e.get("currency", "USD"),
+                        "impact": e.get("impact", "high"),
+                        "timestamp": event_time,
+                        "source": e.get("source", "finnhub"),
+                    })
+        
+        return high_impact
     except Exception:
-        return []
+        pass
+    
+# Fallback: try database cache
+    try:
+        from worker.news_sync_worker import get_cached_high_impact_events
+        events = await get_cached_high_impact_events(hours=24)
+        
+        # Convert to expected format
+        return [
+            {
+                "title": e.get("title", ""),
+                "currency": e.get("currency", "USD"),
+                "impact": e.get("impact", "high"),
+                "timestamp": e.get("event_date"),
+                "source": e.get("source", "db"),
+            }
+            for e in events
+        ]
+    except Exception:
+        pass
+    
+    return []
 
 
 async def _fetch_binance_ccxt_async(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
