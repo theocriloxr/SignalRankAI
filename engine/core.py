@@ -448,7 +448,19 @@ except Exception:
     advanced_exit = _ExitStub()
 
 # Global stats tracker for Pulse reporting (fixes "Total Scanned: 0")
-from engine.stats_manager import stats
+# Uses Redis-backed GlobalStats for cross-process sharing between engine and Pulse workers
+try:
+    from core.redis_global_stats import global_stats as global_stats_instance
+    _using_redis_stats = True
+    logger.info("[engine] Using RedisGlobalStats for cross-process stats sharing")
+except ImportError:
+    # Fallback to legacy in-memory stats_manager
+    from engine.stats_manager import stats as global_stats_instance
+    _using_redis_stats = False
+    logger.info("[engine] Using legacy GlobalStats (in-memory) for stats")
+
+# Keep legacy stats import for backwards compatibility in this module
+from engine.stats_manager import stats as legacy_stats
 
 # Misc
 logger = logging.getLogger(__name__)
@@ -1467,12 +1479,12 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         regime = None
 
-                    # === PHASE 1 FIX: Increment stats.scanned for each asset analyzed ===
-                    stats.scanned += 1
+# === PHASE 1 FIX: Increment global_stats_instance.scanned for each asset analyzed ===
+                    global_stats_instance.increment_scanned(1)
                     
                     # === PHASE 1 FIX: Check regime and track vetoes ===
                     if regime is None or regime == "neutral" or regime == "unknown":
-                        stats.vetoed_regime += 1
+                        global_stats_instance.increment_vetoed("regime", 1)
                         
                     # News sentiment (non-critical)
                     try:
@@ -1729,9 +1741,9 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _ml_log_err:
                                 logger.debug(f"[engine] ML prediction logging failed: {_ml_log_err}")
 
-                        if not approved:
+if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
-                            stats.vetoed_ml += 1  # FIX: Track ML rejections
+                            global_stats_instance.increment_vetoed("ml", 1)  # FIX: Track ML rejections using Redis-backed stats
                             _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
                             try:
                                 run_sync(
@@ -2049,11 +2061,11 @@ def main_loop(DRY_RUN: bool = False):
                                 except Exception:
                                     pass
 
-                            min_score_threshold = _current_min_score_threshold()
+min_score_threshold = _current_min_score_threshold()
                             if sig.get('score', 0) < min_score_threshold:
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
-                                stats.vetoed_score += 1  # FIX: Track score rejections
+                                global_stats_instance.increment_vetoed("score", 1)  # FIX: Track score rejections using Redis-backed stats
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                                 try:
                                     run_sync(
@@ -2343,8 +2355,8 @@ def main_loop(DRY_RUN: bool = False):
                                 _cycle_cooldown.add(_asset_tf_key)
                                 pipeline_stats["stored"] += 1
                                 
-                                # === PHASE 1 FIX: Increment delivered when signal is stored ===
-                                stats.delivered += 1
+# === PHASE 1 FIX: Increment delivered when signal is stored ===
+                                global_stats_instance.increment_delivered(1)
                             else:
                                 pipeline_stats["store_failed"] += 1
                         except Exception as e:

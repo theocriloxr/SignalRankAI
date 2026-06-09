@@ -18,32 +18,54 @@ logger = logging.getLogger(__name__)
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     """Collect engine health stats for the last `window_hours` hours.
     
-    Now uses GlobalStats for real-time engine metrics instead of only DB queries.
-    Falls back to DB-only if GlobalStats not available.
+    Now uses Redis-backed GlobalStats for real-time engine metrics instead of only DB queries.
+    Falls back to DB-only if RedisGlobalStats not available.
     """
-    # Try to get stats from GlobalStats first (real-time from engine)
+    # Try to get stats from RedisGlobalStats first (real-time from engine)
     global_scanned = 0
     global_delivered = 0
     global_vetoed = {}
     use_global_stats = False
     
     try:
-        from engine.stats_manager import stats
-        global_stats = stats.get_stats()
-        global_scanned = global_stats.get("scanned", 0)
-        global_delivered = global_stats.get("delivered", 0)
+        # First try new RedisGlobalStats (cross-process sharing)
+        from core.redis_global_stats import global_stats as redis_global_stats
+        stats_data = redis_global_stats.get_stats()
+        global_scanned = stats_data.get("scanned", 0)
+        global_delivered = stats_data.get("delivered", 0)
         global_vetoed = {
-            "regime": global_stats.get("vetoed_regime", 0),
-            "squeeze": global_stats.get("vetoed_squeeze", 0),
-            "microstructure": global_stats.get("vetoed_microstructure", 0),
-            "score": global_stats.get("vetoed_score", 0),
-            "ml": global_stats.get("vetoed_ml", 0),
-            "other": global_stats.get("vetoed_other", 0),
+            "regime": stats_data.get("vetoed_regime", 0),
+            "squeeze": stats_data.get("vetoed_squeeze", 0),
+            "microstructure": stats_data.get("vetoed_microstructure", 0),
+            "score": stats_data.get("vetoed_score", 0),
+            "ml": stats_data.get("vetoed_ml", 0),
+            "other": stats_data.get("vetoed_other", 0),
         }
-        use_global_stats = True
-        logger.info("[admin_pulse] Using GlobalStats for real-time metrics")
+        if redis_global_stats.has_redis():
+            use_global_stats = True
+            logger.info("[admin_pulse] Using RedisGlobalStats for real-time metrics")
+        else:
+            logger.debug("[admin_pulse] Redis unavailable, using in-memory fallback")
     except ImportError:
-        logger.debug("[admin_pulse] GlobalStats not available, using DB fallback")
+        logger.debug("[admin_pulse] RedisGlobalStats not available, trying legacy GlobalStats")
+        # Fallback to legacy stats_manager
+        try:
+            from engine.stats_manager import stats
+            global_stats = stats.get_stats()
+            global_scanned = global_stats.get("scanned", 0)
+            global_delivered = global_stats.get("delivered", 0)
+            global_vetoed = {
+                "regime": global_stats.get("vetoed_regime", 0),
+                "squeeze": global_stats.get("vetoed_squeeze", 0),
+                "microstructure": global_stats.get("vetoed_microstructure", 0),
+                "score": global_stats.get("vetoed_score", 0),
+                "ml": global_stats.get("vetoed_ml", 0),
+                "other": global_stats.get("vetoed_other", 0),
+            }
+            use_global_stats = True
+            logger.info("[admin_pulse] Using legacy GlobalStats for real-time metrics")
+        except ImportError:
+            logger.debug("[admin_pulse] Legacy GlobalStats not available, using DB fallback")
     
     # Always get DB-based counts for delivered signals and shadow metrics
     try:
