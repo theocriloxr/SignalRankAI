@@ -145,8 +145,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         )
                 except Exception as e:
                     _audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
-await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
-            return
+                await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
+                return
         except Exception as e:
             _audit_logger.error(f"signals_command FREE tier error for {user_id}: {e}")
     
