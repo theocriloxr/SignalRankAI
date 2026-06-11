@@ -273,10 +273,13 @@ def _coingecko_symbol_to_id(symbol: str) -> Optional[str]:
     return None
 
 
-def fetch_coingecko_market_chart(symbol: str, days: int = 7) -> List[Dict]:
+def fetch_coingecko_market_chart(symbol: str, days: int = 30) -> List[Dict]:
     """Fetch simple market chart (prices) from CoinGecko as a lightweight OHLCV fallback.
 
     Returns a list of dicts with timestamp (ms), open/high/low/close/volume where available.
+    
+    FIX: Changed days default from 7 to 30 to ensure enough candles for technical indicators.
+    30 days * 24h = 720 candles for 1h timeframe - enough for 200-period EMAs.
     """
     try:
         coin_id = _coingecko_symbol_to_id(symbol)
@@ -1039,10 +1042,11 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
     except Exception:
         pass
 
-    # 2) CoinGecko market chart fallback for crypto
+# 2) CoinGecko market chart fallback for crypto
+    # FIX: Use days=30 to ensure enough candles for technical indicators
     try:
         if is_crypto_sym:
-            cg = fetch_coingecko_market_chart(symbol, days=7)
+            cg = fetch_coingecko_market_chart(symbol, days=30)
             if cg and len(cg) >= 1:
                 return cg[-limit:]
     except Exception:
