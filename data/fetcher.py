@@ -307,13 +307,25 @@ def fetch_market_data(asset, timeframes):
         try:
             candles = get_candles(asset, tf)
             # Validate candles: must be non-empty and have required fields
-            if not candles or not isinstance(candles, list) or len(candles) < 20:
+            # FIX: Accept degraded mode (10 candles minimum) to prevent data starvation
+            # Previously required 20, but this causes starvation when providers fail
+            _min_candles_for_engine = _get_degraded_mode_min_candles()  # Returns 10 by default
+            if not candles or not isinstance(candles, list) or len(candles) < _min_candles_for_engine:
+                # FIX: Log diagnostic for degraded mode
+                logger.warning(
+                    f"[fetcher] Insufficient candles for {asset} {tf}: got {len(candles) if candles else 0}, "
+                    f"need >= {_min_candles_for_engine}. Skipping asset (causes strategy_signals=0)"
+                )
                 continue
             
             # Verify candle structure
             first = candles[0]
             required_keys = {'close', 'high', 'low', 'open', 'timestamp'}
             if not all(k in first for k in required_keys):
+                logger.warning(
+                    f"[fetcher] Missing required OHLC keys for {asset} {tf}: "
+                    f"has={set(first.keys())}, need={required_keys}"
+                )
                 continue
             
             # Check candle freshness - most recent candle should not be too old
