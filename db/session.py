@@ -64,7 +64,7 @@ def _pool_int(name: str, default: int, minimum: int = 0) -> int:
         return default
 
 
-def _pool_bool(name: str, default: bool = False) -> bool:
+def _pool_bool(name: str, default: bool = True) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return bool(default)
@@ -79,10 +79,17 @@ def _effective_pool_settings() -> tuple[int, int]:
     pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
     max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
-    # NullPool mode: If enabled, return dummy values (pool handling is disabled)
-    if _pool_bool("DB_USE_NULLPOOL", True):
-        logger.info("[db] Using NullPool - connection pooling disabled for Railway compatibility")
+    # NullPool mode: Only use NullPool when explicitly set to True (disabled by default now)
+    use_nullpool = os.getenv("DB_USE_NULLPOOL", "").strip().lower()
+    if use_nullpool in ("1", "true", "yes", "on", "y"):
+        logger.info("[db] Using NullPool - connection pooling disabled (explicit)")
         return 0, 0
+    
+    # Default: Enable connection pooling for better DB performance
+    if use_nullpool == "" and pool_size == 0:
+        # If env not set and pool_size not configured, use defaults
+        pool_size = 5
+        max_overflow = 3
 
     if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
         # FIX for Railway "too many clients already" error

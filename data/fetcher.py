@@ -135,13 +135,14 @@ def _get_forward_fill_ttl_seconds() -> float:
 def _get_degraded_mode_min_candles() -> int:
     """Get minimum candles for degraded mode.
     
-    FIX: Allow 10 candles minimum (vs 20) when in degraded operation.
-    This prevents complete pipeline failure during provider outages.
+    FIX: Allow 5 candles minimum (vs 20) when in degraded operation.
+    This prevents complete pipeline starvation during provider outages.
+    Lowered from 10 to 5 on 2026-06-12 to fix signal starvation.
     """
     try:
-        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "10").strip())
+        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "5").strip())
     except Exception:
-        return 10
+        return 5
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
@@ -592,14 +593,16 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     
-    # FIX: Track consecutive failures to short-circuit after 2 failures
+# FIX: Track consecutive failures to short-circuit after 2 failures
     consecutive_failures = 0
     max_consecutive_failures = 2  # Short-circuit threshold
+    _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
     
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            if candles and len(candles) >= 20:
+            # FIX: Use degraded mode threshold instead of hardcoded 20
+            if candles and len(candles) >= _min_candles:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
@@ -673,14 +676,16 @@ def _fetch_fx_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     
-    # FIX: Track consecutive failures to short-circuit after 2 failures
+# FIX: Track consecutive failures to short-circuit after 2 failures
     consecutive_failures = 0
     max_consecutive_failures = 2  # Short-circuit threshold
+    _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
     
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            if candles and len(candles) >= 20:
+            # FIX: Use degraded mode threshold instead of hardcoded 20
+            if candles and len(candles) >= _min_candles:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
@@ -730,14 +735,16 @@ def _fetch_stock_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     
-    # FIX: Track consecutive failures to short-circuit after 2 failures
+# FIX: Track consecutive failures to short-circuit after 2 failures
     consecutive_failures = 0
     max_consecutive_failures = 2  # Short-circuit threshold
+    _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
     
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            if candles and len(candles) >= 20:
+            # FIX: Use degraded mode threshold instead of hardcoded 20
+            if candles and len(candles) >= _min_candles:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
@@ -1860,7 +1867,9 @@ async def async_get_candles(asset, timeframe):
 
         symbol_for_providers = asset
 
-        provider_timeout_s = 2.5
+provider_timeout_s = 2.5
+        _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
+        
         for provider_name, fetch_fn in provs:
             try:
                 # Strict per-provider timeout so slow upstreams fail fast and the chain can fallback.
@@ -1868,12 +1877,16 @@ async def async_get_candles(asset, timeframe):
                     fetch_fn(symbol_for_providers, timeframe, timeout=provider_timeout_s),
                     timeout=provider_timeout_s,
                 )
-                if candles and len(candles) >= 20:
+                # FIX: Use degraded mode threshold instead of hardcoded 20
+                if candles and len(candles) >= _min_candles:
                     mark_provider_result(provider_name, True)
                     logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                     return candles
                 else:
                     mark_provider_result(provider_name, False)
+                    logger.warning(
+                        f"[data][async] provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0}"
+                    )
             except asyncio.TimeoutError:
                 mark_provider_result(provider_name, False)
                 logger.warning(
@@ -1883,6 +1896,21 @@ async def async_get_candles(asset, timeframe):
                 mark_provider_result(provider_name, False)
                 logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")
                 continue
+
+        # FIX: Try forward-fill cache before giving up completely
+        cache_key = (str(asset or "").upper().strip(), str(timeframe or "").lower().strip())
+        ff_ttl = _get_forward_fill_ttl_seconds()
+        stale_cached = _read_stale_cached_candles(cache_key, ff_ttl)
+        if stale_cached is not None and len(stale_cached) >= _min_candles:
+            logger.warning(
+                "[data][async] forward-fill cached candles symbol=%s tf=%s age<=%ss candles=%d (degraded mode)",
+                asset,
+                timeframe,
+                ff_ttl,
+                len(stale_cached),
+            )
+            _set_last_provider_used(asset, timeframe, "cache_forward_fill_async")
+            return stale_cached
 
         logger.warning("[WARN] All providers failed for %s, skipping...", asset)
         return []
