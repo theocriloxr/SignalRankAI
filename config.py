@@ -61,11 +61,15 @@ class Config:
 		self.BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET", "")
 		self.BYBIT_TESTNET = self._env_bool("BYBIT_TESTNET", False)
 
-		# Multi-asset provider API keys
+# Multi-asset provider API keys
 		self.POLYGON_API_KEY = os.getenv("POLYGON_API_KEY", "")
 		self.TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
 		self.OANDA_API_KEY = os.getenv("OANDA_API_KEY", "")
 		self.OANDA_ACCOUNT_ID = os.getenv("OANDA_ACCOUNT_ID", "")
+
+		# CryptoCompare API key - Required for Nigeria deployment (Binance geo-blocked)
+		# Get free key from https://www.cryptocompare.com/cryptoapi/
+		self.CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY", "").strip()
 
 		# TradingView webhook security
 		self.TV_WEBHOOK_SECRET = os.getenv("TV_WEBHOOK_SECRET", "")
