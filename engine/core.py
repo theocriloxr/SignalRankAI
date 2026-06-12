@@ -1614,8 +1614,31 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         market_data['news_sentiment'] = None
 
-    # Run strategies -> returns list of signals (each is a dict)
+# Run strategies -> returns list of signals (each is a dict)
                     try:
+                        # FIX: Add diagnostic logging to identify why strategies output 0 signals
+                        # Get representative candle data before running strategies
+                        _tf_sample = list(market_data.keys())[0] if market_data else None
+                        _tf_data_sample = market_data.get(_tf_sample, {}) if _tf_sample else {}
+                        _candles_before_strategies = _tf_data_sample.get('candles', []) if isinstance(_tf_data_sample, dict) else []
+                        _candle_count = len(_candles_before_strategies)
+                        
+                        # Check for DATA STARVATION BEFORE strategy runs
+                        if not _candles_before_strategies or _candle_count == 0:
+                            logger.error(
+                                f"🚨 [engine][DIAGNOSTIC] {asset}: Data provider returned EMPTY dataframe! "
+                                f"This is WHY strategy_signals=0. Check yfinance ticker formatting."
+                            )
+                        elif _candle_count < 50:
+                            logger.warning(
+                                f"⚠️ [engine][DIAGNOSTIC] {asset}: Data provider only returned {_candle_count} candles! "
+                                f"Strategies with 50-period indicators will fail (return NaN). Need at least 100 candles."
+                            )
+                        else:
+                            logger.info(
+                                f"[engine][DIAGNOSTIC] {asset}: Have {_candle_count} candles before strategy run - OK"
+                            )
+                        
                         strategy_signals = run_all_strategies(asset, market_data, regime) or []
                         if not strategy_signals:
                             # Debug: log why no signals (indicator values that failed)
