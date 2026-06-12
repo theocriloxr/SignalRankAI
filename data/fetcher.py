@@ -1867,7 +1867,7 @@ async def async_get_candles(asset, timeframe):
 
         symbol_for_providers = asset
 
-provider_timeout_s = 2.5
+        provider_timeout_s = 2.5
         _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
         
         for provider_name, fetch_fn in provs:
