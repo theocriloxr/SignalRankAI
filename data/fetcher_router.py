@@ -81,11 +81,12 @@ class DataRouter:
         except ImportError:
             self._legacy_providers = None
         
-        # Crypto: Bybit -> CryptoCompare -> CoinGecko
+# Crypto: Bybit -> CryptoCompare -> CoinGecko -> Yahoo (yfinance - no API key needed, no geo-block)
         self._crypto_providers = [
             ("bybit", self._get_bybit_candles),
             ("cryptocompare", self._get_cryptocompare_candles),
             ("coingecko", self._get_coingecko_candles),
+            ("yahoo", self._get_yahoo_candles),
         ]
         
         # Forex: Polygon -> Twelve Data -> OANDA
@@ -93,6 +94,7 @@ class DataRouter:
             ("polygon", self._get_polygon_candles),
             ("twelvedata", self._get_twelvedata_candles),
             ("oanda", self._get_oanda_candles),
+            ("yahoo", self._get_yahoo_candles),
         ]
         
         # Stocks: Polygon -> Twelve Data -> Yahoo
