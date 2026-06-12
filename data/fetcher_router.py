@@ -18,6 +18,7 @@ Usage:
 """
 import os
 import logging
+import traceback
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -203,45 +204,54 @@ class DataRouter:
         try:
             from data.connectors.binance_adapter import get_candles as binance_get_candles
             return binance_get_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
-    
+        except Exception as e:
+            logger.error("❌ FATAL CRASH in binance adapter for %s!", symbol)
+            logger.error(traceback.format_exc())
+            return []
+        
     def _get_kucoin_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from KuCoin (NO API KEY - free crypto)."""
         try:
             from data.connectors.kucoin_adapter import get_candles as kucoin_get_candles
             return kucoin_get_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
+        except Exception as e:
+            logger.error("❌ FATAL CRASH in kucoin adapter for %s!", symbol)
+            logger.error(traceback.format_exc())
+            return []
+        
     
     def _get_tiingo_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from Tiingo (requires TIINGO_API_KEY)."""
         try:
             from data.connectors.tiingo_adapter import get_candles as tiingo_get_candles
             return tiingo_get_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
+        except Exception as e:
+            logger.error("❌ FATAL CRASH in tiingo adapter for %s!", symbol)
+            logger.error(traceback.format_exc())
+            return []
+        
     
     def _get_fmp_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from Financial Modeling Prep (requires FMP_API_KEY)."""
         try:
             from data.connectors.fmp_adapter import get_candles as fmp_get_candles
             return fmp_get_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
+        except Exception as e:
+            logger.error("❌ FATAL CRASH in fmp adapter for %s!", symbol)
+            logger.error(traceback.format_exc())
+            return []
+      
     
     def _get_fcs_candles(self, symbol: str, timeframe: str) -> List[Dict]:
         """Fetch from FCS API (requires FCS_API_KEY)."""
         try:
             from data.connectors.fcs_adapter import get_candles as fcs_get_candles
             return fcs_get_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
+        except Exception as e:
+            logger.error("❌ FATAL CRASH in fcs adapter for %s!", symbol)
+            logger.error(traceback.format_exc())
+            return []
+        
     
     def _get_providers_for_asset_class(self, asset_class: str) -> List[tuple[str, callable]]:
         """Get provider list for asset class."""

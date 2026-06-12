@@ -207,6 +207,7 @@ def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=6
 import os
 import time
 import logging
+import traceback
 from datetime import datetime
 
 import requests
@@ -618,11 +619,9 @@ def _fetch_crypto_multi_provider(asset, timeframe):
         except Exception as e:
             mark_provider_result(provider_name, False)
             consecutive_failures += 1
-            # FIX: Enhanced error logging for diagnostics - log exact error
-            logger.warning(
-                f"[data] crypto_provider={provider_name} symbol={asset} error={type(e).__name__}:{str(e)[:80]} "
-                f"consecutive_failures={consecutive_failures}"
-            )
+            # FIX: Enhanced error logging - include FULL TRACEBACK for diagnostics
+            logger.error(f"❌ FATAL CRASH in {provider_name} adapter for {asset}!")
+            logger.error(traceback.format_exc())
             # FIX: Short-circuit after max_consecutive_failures
             if consecutive_failures >= max_consecutive_failures:
                 logger.warning(
@@ -701,11 +700,9 @@ def _fetch_fx_multi_provider(asset, timeframe):
         except Exception as e:
             mark_provider_result(provider_name, False)
             consecutive_failures += 1
-            # FIX: Enhanced error logging for diagnostics - log exact error
-            logger.warning(
-                f"[data] fx_provider={provider_name} symbol={asset} error={type(e).__name__}:{str(e)[:80]} "
-                f"consecutive_failures={consecutive_failures}"
-            )
+            # FIX: Enhanced error logging - include FULL TRACEBACK for diagnostics
+            logger.error(f"❌ FATAL CRASH in {provider_name} adapter for {asset}!")
+            logger.error(traceback.format_exc())
             # FIX: Short-circuit after max_consecutive_failures
             if consecutive_failures >= max_consecutive_failures:
                 logger.warning(
@@ -713,6 +710,7 @@ def _fetch_fx_multi_provider(asset, timeframe):
                 )
                 break
             continue
+    
     logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
