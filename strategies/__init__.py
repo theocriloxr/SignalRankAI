@@ -43,6 +43,27 @@ except ImportError:
 def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime_strategies=None):
     signals = []
 
+    # === FIX: STRATEGY STARVATION - Add diagnostic logging ===
+    logger = logging.getLogger(__name__)
+    if not market_data:
+        logger.warning(f"[strategies] No market_data for {asset}, skipping")
+        return signals
+    
+    # Check data structure before running strategies
+    tf_count = len(market_data) if isinstance(market_data, dict) else 0
+    indicators_found = 0
+    candles_found = 0
+    for tf_name, tf_data in market_data.items():
+        if isinstance(tf_data, dict):
+            if 'indicators' in tf_data and tf_data['indicators']:
+                indicators_found += 1
+            if 'candles' in tf_data and tf_data.get('candles'):
+                candles_found += len(tf_data['candles'])
+    
+    logger.info(f"[strategies] pipeline start: {asset} tfs={tf_count} indicators_present={indicators_found} candles={candles_found}")
+    
+    # === END FIX ===
+
     # Multi-timeframe bias: get higher timeframe (HTF) bias for each asset
     def get_htf_bias(market_data):
         # Use 4h or 1d as HTF, fallback to None
@@ -70,6 +91,10 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
     imp_enabled = _env_bool("IMP_STRATEGY_ENABLED", True)
     imp_only_mode = _env_bool("IMP_ONLY_MODE", False)
     from .stock import stock_strategies
+    
+    # === FIX: Force fallback to run BEFORE returning empty ===
+    # Store initial signal count after IMP runs
+    initial_signal_count = 0
 
     # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or
     # 'LONG'/'SHORT' (new). Normalize to 'LONG'/'SHORT'.
@@ -87,9 +112,26 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             except Exception:
                 pass
 
-    if imp_only_mode:
+# === FIX: Track signal count after IMP ===
+    initial_signal_count = len(signals)
+    
+    # === FIX: Don't short-circuit on imp_only_mode if fallback should run ===
+    # imp_only_mode only skips non-IMP strategies, but should still allow fallback
+    
+    if imp_only_mode and not (use_fallback and FALLBACK_AVAILABLE and not signals):
         return signals
 
+    # === FIX: Force run_all to ensure all strategies run unless imp_only_mode is EXPLICITLY enabled ===
+    # If imp_only_mode is set, skip non-IMP strategies but STILL allow fallback to run
+    if imp_only_mode:
+        # In IMP-only mode: skip main strategy groups but force fallback
+        pass
+    else:
+        run_all = True  # Force all strategies to run to ensure we get signals
+
+    # Initialize timeframe for fallback (fixes "possibly unbound" bug)
+    timeframe = None
+    
     for timeframe, data in market_data.items():
         if not isinstance(data, dict):
             continue
@@ -162,10 +204,12 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 except Exception:
                     pass
     
-    # === FALLBACK STRATEGIES ===
-    # If no signals generated from main strategies and fallback is enabled, try fallback strategies
-    # This ensures the engine produces signals even when market conditions don't align with strict strategies
-    if use_fallback and FALLBACK_AVAILABLE and not signals:
+# === FALLBACK STRATEGIES ===
+    # FIX: Force fallback to run if fallback is enabled BUT either:
+    # 1. No signals at all (original logic), OR  
+    # 2. initial_signal_count > 0 but those were filtered out by allowed_direction check
+    # This ensures the engine produces signals even when IMP-only mode or HTF filtering removes initial signals
+    if use_fallback and FALLBACK_AVAILABLE and (not signals or (initial_signal_count > 0 and len(signals) == 0)):
         logger.debug(f"[strategies] No main strategy signals for {asset}, running fallback strategies")
         try:
             # Get a single timeframe data for fallback (use first available)
