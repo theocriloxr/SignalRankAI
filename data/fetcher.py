@@ -550,6 +550,9 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     NOTE: For Nigeria (Binance blocked):
     - Binance/Bybit → Yahoo Finance (free, works worldwide) → CryptoCompare
     - Yahoo requires symbol conversion: BTCUSDT → BTC-USD
+    
+    FIX: Short-circuit provider chain after 2 consecutive failures to prevent 
+    excessive retries during outages. Also adds enhanced error logging.
     """
     # Build provider list from connector registry (prefer connectors)
     from data.connector_registry import get_providers_for_asset
@@ -576,6 +579,11 @@ def _fetch_crypto_multi_provider(asset, timeframe):
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    
+    # FIX: Track consecutive failures to short-circuit after 2 failures
+    consecutive_failures = 0
+    max_consecutive_failures = 2  # Short-circuit threshold
+    
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
@@ -586,16 +594,38 @@ def _fetch_crypto_multi_provider(asset, timeframe):
                 return candles
             else:
                 mark_provider_result(provider_name, False)
+                consecutive_failures += 1
+                # FIX: Enhanced error logging for diagnostics
+                logger.warning(
+                    f"[data] crypto_provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0} "
+                    f"consecutive_failures={consecutive_failures}"
+                )
         except Exception as e:
             mark_provider_result(provider_name, False)
-            logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
+            consecutive_failures += 1
+            # FIX: Enhanced error logging for diagnostics - log exact error
+            logger.warning(
+                f"[data] crypto_provider={provider_name} symbol={asset} error={type(e).__name__}:{str(e)[:80]} "
+                f"consecutive_failures={consecutive_failures}"
+            )
+            # FIX: Short-circuit after max_consecutive_failures
+            if consecutive_failures >= max_consecutive_failures:
+                logger.warning(
+                    f"[data] crypto_providers short-circuited after {consecutive_failures} consecutive failures for {asset} {timeframe}"
+                )
+                break
             continue
+    
     logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
 
 def _fetch_fx_multi_provider(asset, timeframe):
-    """Try multiple FX providers in order."""
+    """Try multiple FX providers in order.
+    
+    FIX: Short-circuit provider chain after 2 consecutive failures to prevent 
+    excessive retries during outages. Also adds enhanced error logging.
+    """
     from .providers import fetch_oanda_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles, fetch_tradingview_candles
     
     # Convert to formats needed by different providers
@@ -630,6 +660,11 @@ def _fetch_fx_multi_provider(asset, timeframe):
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    
+    # FIX: Track consecutive failures to short-circuit after 2 failures
+    consecutive_failures = 0
+    max_consecutive_failures = 2  # Short-circuit threshold
+    
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
@@ -640,16 +675,37 @@ def _fetch_fx_multi_provider(asset, timeframe):
                 return candles
             else:
                 mark_provider_result(provider_name, False)
+                consecutive_failures += 1
+                # FIX: Enhanced error logging for diagnostics
+                logger.warning(
+                    f"[data] fx_provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0} "
+                    f"consecutive_failures={consecutive_failures}"
+                )
         except Exception as e:
             mark_provider_result(provider_name, False)
-            logger.warning(f"[data] fx_provider={provider_name} symbol={asset} failed: {e}")
+            consecutive_failures += 1
+            # FIX: Enhanced error logging for diagnostics - log exact error
+            logger.warning(
+                f"[data] fx_provider={provider_name} symbol={asset} error={type(e).__name__}:{str(e)[:80]} "
+                f"consecutive_failures={consecutive_failures}"
+            )
+            # FIX: Short-circuit after max_consecutive_failures
+            if consecutive_failures >= max_consecutive_failures:
+                logger.warning(
+                    f"[data] fx_providers short-circuited after {consecutive_failures} consecutive failures for {asset} {timeframe}"
+                )
+                break
             continue
     logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
 
 def _fetch_stock_multi_provider(asset, timeframe):
-    """Try multiple stock providers in order."""
+    """Try multiple stock providers in order.
+    
+    FIX: Short-circuit provider chain after 2 consecutive failures to prevent 
+    excessive retries during outages. Also adds enhanced error logging.
+    """
     from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
     
     from data.connector_registry import get_providers_for_asset
@@ -661,6 +717,11 @@ def _fetch_stock_multi_provider(asset, timeframe):
     providers.append(("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="NYSE")))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    
+    # FIX: Track consecutive failures to short-circuit after 2 failures
+    consecutive_failures = 0
+    max_consecutive_failures = 2  # Short-circuit threshold
+    
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
@@ -671,9 +732,26 @@ def _fetch_stock_multi_provider(asset, timeframe):
                 return candles
             else:
                 mark_provider_result(provider_name, False)
+                consecutive_failures += 1
+                # FIX: Enhanced error logging for diagnostics
+                logger.warning(
+                    f"[data] stock_provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0} "
+                    f"consecutive_failures={consecutive_failures}"
+                )
         except Exception as e:
             mark_provider_result(provider_name, False)
-            logger.warning(f"[data] stock_provider={provider_name} symbol={asset} failed: {e}")
+            consecutive_failures += 1
+            # FIX: Enhanced error logging for diagnostics - log exact error
+            logger.warning(
+                f"[data] stock_provider={provider_name} symbol={asset} error={type(e).__name__}:{str(e)[:80]} "
+                f"consecutive_failures={consecutive_failures}"
+            )
+            # FIX: Short-circuit after max_consecutive_failures
+            if consecutive_failures >= max_consecutive_failures:
+                logger.warning(
+                    f"[data] stock_providers short-circuited after {consecutive_failures} consecutive failures for {asset} {timeframe}"
+                )
+                break
             continue
     logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
