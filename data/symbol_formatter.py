@@ -1,287 +1,266 @@
 """
-Dynamic Symbol Formatter for Multi-Provider Data Pipeline.
+Dynamic Symbol Formatter - Provider-specific symbol formatting.
 
-This module provides provider-aware symbol formatting to fix the "silent failure" issue
-where yfinance and other providers fail silently due to ticker symbol format mismatches.
+This module handles symbol format conversion between different data providers:
+- Binance/Crypto: BTCUSDT, ETHUSDT (uses USDT suffix)
+- Yahoo Finance: BTC-USD, ETH-USD (uses -USD format)
+- OANDA: BTC_USD (uses underscore)
+- AlphaVantage: BTCUSD (plain format)
+- Polygon: X:BTCUSD (prefix format)
 
-Provider Symbol Requirements:
-- Binance: BTCUSDT, ETHUSDT (no separator)
-- Yahoo Finance: BTC-USD, ETH-USD (uses hyphen, not USDT)
-- CryptoCompare: BTCUSDT (understands Binance format)
-- Polygon: X:BTCUSD (requires X: prefix for crypto)
-- Twelve Data: BTC/USD (uses forward slash)
-
-Usage:
-    from data.symbol_formatter import format_symbol_for_provider
-    
-    # Convert asset to provider-specific format
-    yf_symbol = format_symbol_for_provider("BTCUSDT", "yahoo")
-    # Returns: "BTC-USD"
+The key fix is for the "BTC/USDT" -> "BTC-USD" conversion that yfinance requires.
+Without this, yfinance silently returns 0 candles because it can't find the symbol.
 """
 
 import os
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Known crypto bases that should use USDT->USD conversion
+# Known crypto bases for detection
 CRYPTO_BASES = {
-    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", 
-    "DOT", "LINK", "MATIC", "ARB", "OP", "ATOM", "LTC", "UNI",
-    "AVAX", "FIL", "APT", "NEAR", "ALGO", "VET", "ICP", "FTM",
-    "SAND", "MANA", "AXS", "AAVE", "MKR", "SNX", "CRV", "LDO"
+    "BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", 
+    "LINK", "MATIC", "FIL", "APT", "NEAR", "ALGO", "ATOM", "UNI", "LTC",
+    "BCH", "ETC", "XLM", "VET", "HBAR", "ALGB", "FTM", "SAND", "MANA",
+    "AAVE", "MKR", "COMP", "SNX", "CRV", "SUSHI", "YFI", "BAT", "ENJ", "CHZ",
 }
 
-# Common overrides for special symbols
-SYMBOL_OVERRIDES = {
-    # Commodities
-    "XAUUSD": "GC=F",  # Gold
-    "XAGUSD": "SI=F",  # Silver
-    "WTI": "CL=F",    # Crude Oil
+# Known forex majors for detection  
+FOREX_BASES = {
+    "EUR", "GBP", "USD", "JPY", "CHF", "CAD", "AUD", "NZD", "HKD", "SGD", "SEK", "NOK"
+}
+
+# Commodity ticker overrides for Yahoo Finance
+COMMONDITY_YAHOO_OVERRIDES = {
+    "XAUUSD": "GC=F",   # Gold
+    "XAGUSD": "SI=F",   # Silver  
+    "WTI": "CL=F",     # Crude Oil
     "WTIUSD": "CL=F",
     "CRUDEOIL": "CL=F",
-    "NATGAS": "NG=F",
-    # Forex majors/crosses
-    "EURUSD": "EURUSD=X",
-    "GBPUSD": "GBPUSD=X",
-    "USDJPY": "USDJPY=X",
-    "USDCHF": "USDCHF=X",
-    "AUDUSD": "AUDUSD=X",
-    "USDCAD": "USDCAD=X",
-    "NZDUSD": "NZDUSD=X",
+    "NATGAS": "NG=F",  # Natural Gas
 }
 
 
-class SymbolFormatError(Exception):
-    """Raised when symbol cannot be formatted for a provider."""
-    pass
-
-
-def _is_crypto_symbol(symbol: str) -> bool:
-    """Check if symbol appears to be a crypto pair (USDT/BUSD/USDC suffix)."""
-    s = (symbol or "").upper().strip().replace("/", "").replace("-", "").replace("_", "")
-    return s.endswith(("USDT", "BUSD", "USDC", "BTC", "ETH")) or s[:3] in CRYPTO_BASES
-
-
-def format_symbol_for_provider(symbol: str, provider: str) -> str:
-    """
-    Convert a raw asset symbol to provider-specific format.
-    
-    Args:
-        symbol: Raw asset symbol (e.g., "BTCUSDT", "ETHUSDT", "EURUSD")
-        provider: Target provider name ("binance", "yahoo", "cryptocompare", "polygon", "twelvedata", "oanda")
-    
-    Returns:
-        Provider-formatted symbol string
-        
-    Raises:
-        SymbolFormatError: If symbol cannot be formatted
-        
-    Examples:
-        >>> format_symbol_for_provider("BTCUSDT", "yahoo")
-        'BTC-USD'
-        >>> format_symbol_for_provider("ETHUSDT", "yahoo")
-        'ETH-USD'
-        >>> format_symbol_for_provider("BTCUSDT", "binance")
-        'BTCUSDT'
-    """
-    if not symbol:
-        return symbol
-        
-    s = str(symbol).upper().strip()
-    provider = (provider or "").lower().strip()
-    
-    # Remove common separators
-    s_clean = s.replace("/", "").replace("-", "").replace("_", "")
-    
-    # Check for commodity overrides first (universal)
-    if s_clean in SYMBOL_OVERRIDES:
-        return SYMBOL_OVERRIDES[s_clean]
-    
-    # Provider-specific formatting
-    if provider in ("yahoo", "yfinance"):
-        # === YAHOO FINANCE FORMAT ===
-        # FX: EURUSD -> EURUSD=X
-        # Crypto: BTCUSDT -> BTC-USD (NOT BTCUSDT which fails)
-        # Crypto: ETHUSDT -> ETH-USD
-        
-        # Check if it's a crypto pair
-        if s_clean.endswith("USDT") and len(s_clean) > 4:
-            base = s_clean[:-4]
-            # Only convert known crypto bases to avoid false positives
-            if base in CRYPTO_BASES or len(base) <= 5:
-                return f"{base}-USD"
-        
-        # Check for USDC/BUSD pairs
-        if s_clean.endswith(("USDC", "BUSD")) and len(s_clean) > 4:
-            base = s_clean[:-4]
-            if base in CRYPTO_BASES or len(base) <= 5:
-                return f"{base}-USD"
-        
-        # Check for BTC/ETH pairs (e.g., ETHBTC)
-        if s_clean.endswith(("BTC", "ETH")) and len(s_clean) > 3:
-            quote = s_clean[-3:]
-            base = s_clean[:-3]
-            if quote == "BTC":
-                return f"{base}BTC"
-            elif quote == "ETH":
-                return f"{base}ETH"
-        
-        # Check for 6-char forex pairs: EURUSD -> EURUSD=X
-        if len(s_clean) == 6 and s_clean[:3].isalpha() and s_clean[3:].isalpha():
-            return f"{s_clean}=X"
-        
-        # Default: return cleaned symbol (might still fail but try)
-        return s_clean
-    
-    elif provider in ("binance", "bybit"):
-        # === BINANCE/BYBIT FORMAT ===
-        # Always use no separator, USDT suffix
-        if s_clean.endswith(("USD", "USDC", "BUSD")) and len(s_clean) > 3:
-            base = s_clean[:-3]
-            return f"{base}USDT"
-        
-        if s_clean.endswith("USDT"):
-            return s_clean  # Already correct
-        
-        # For plain crypto like BTC, add USDT
-        if s_clean in CRYPTO_BASES:
-            return f"{s_clean}USDT"
-        
-        return s_clean
-    
-    elif provider in ("cryptocompare", "coingecko"):
-        # === CRYPTOCOMPARE/COINGECKO FORMAT ===
-        # Uses Binance-style format: BTCUSDT
-        if s_clean.endswith("USD") and len(s_clean) > 3:
-            base = s_clean[:-3]
-            if base in CRYPTO_BASES:
-                return f"{base}USDT"
-        
-        if not s_clean.endswith("USDT"):
-            if s_clean in CRYPTO_BASES:
-                return f"{s_clean}USDT"
-        
-        return s_clean
-    
-    elif provider == "polygon":
-        # === POLYGON FORMAT ===
-        # Crypto: X:BTCUSD
-        # Forex: C:EURUSD
-        # Stocks: ticker only, no prefix needed
-        
-        if _is_crypto_symbol(s_clean):
-            # Remove USD suffix and add X: prefix
-            if s_clean.endswith("USD") and len(s_clean) > 3:
-                base = s_clean[:-3]
-                return f"X:{base}USD"
-            return f"X:{s_clean}"
-        
-        # Check for forex
-        if len(s_clean) == 6 and s_clean[:3].isalpha() and s_clean[3:].isalpha():
-            return f"C:{s_clean}"
-        
-        return s_clean
-    
-    elif provider == "twelvedata":
-        # === TWELVE DATA FORMAT ===
-        # Uses forward slash: BTC/USD
-        if s_clean.endswith("USDT") and len(s_clean) > 4:
-            base = s_clean[:-4]
-            return f"{base}/USD"
-        
-        if s_clean.endswith("USD") and len(s_clean) > 3:
-            base = s_clean[:-3]
-            return f"{base}/USD"
-        
-        # Forex pairs use slash
-        if len(s_clean) == 6:
-            return f"{s_clean[:3]}/{s_clean[3:]}"
-        
-        return s_clean
-    
-    elif provider == "oanda":
-        # === OANDA FORMAT ===
-        # Uses underscore: EUR_USD
-        if len(s_clean) == 6:
-            return f"{s_clean[:3]}_{s_clean[3:]}"
-        
-        if s_clean.endswith("USDT") and len(s_clean) > 4:
-            base = s_clean[:-4]
-            return f"{base}_USD"
-        
-        return s_clean
-    
-    else:
-        # Default: return cleaned symbol
-        return s_clean
-
-
-def format_symbol_for_yahoo(symbol: str) -> str:
-    """Convenience function - format symbol specifically for Yahoo Finance."""
-    return format_symbol_for_provider(symbol, "yahoo")
-
-
-def format_symbol_for_binance(symbol: str) -> str:
-    """Convenience function - format symbol specifically for Binance."""
-    return format_symbol_for_provider(symbol, "binance")
-
-
-def format_symbol_for_cryptocompare(symbol: str) -> str:
-    """Convenience function - format symbol specifically for CryptoCompare."""
-    return format_symbol_for_provider(symbol, "cryptocompare")
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def normalize_crypto_symbol(symbol: str) -> str:
     """
-    Normalize crypto symbol to a canonical format (BTCUSDT style).
+    Normalize a crypto symbol to standard format.
     
-    This is the internal canonical format used throughout the system.
+    Handles:
+    - BTC/USDT -> BTCUSDT
+    - BTC-USD -> BTCUSDT
+    - BTC_USD -> BTCUSDT
+    
+    Returns the normalized symbol (e.g., BTCUSDT)
     """
-    s = (symbol or "").upper().strip().replace("/", "").replace("-", "").replace("_", "")
+    if not symbol:
+        return symbol
     
-    # Already in canonical format?
-    if s.endswith("USDT") or s.endswith("USDC") or s.endswith("BUSD"):
-        return s
+    s = str(symbol).upper().strip()
     
-    # Convert from USD suffix
-    if s.endswith("USD") and len(s) > 3:
+    # Remove common separators
+    s = s.replace("/", "").replace("-", "").replace("_", "")
+    
+    # Handle USDC/USDT variants
+    if s.endswith("USDC"):
+        s = s[:-4] + "USDT"
+    elif s.endswith("USD") and not s.endswith("USDT") and len(s) > 4:
+        # BTCUSD -> BTCUSDT
         base = s[:-3]
         if base in CRYPTO_BASES:
-            return f"{base}USDT"
-    
-    # Plain crypto base
-    if s in CRYPTO_BASES:
-        return f"{s}USDT"
+            s = base + "USDT"
     
     return s
 
 
-def detect_symbol_type(symbol: str) -> str:
+def format_symbol_for_yahoo(symbol: str) -> str:
     """
-    Detect the type of symbol based on its format.
+    Convert symbol to Yahoo Finance format.
+    
+    Yahoo Finance requires specific formats:
+    - Crypto: BTC-USD (NOT BTC/USDT)
+    - Forex: EURUSD=X (with =X suffix)
+    - Commodities: GC=F, SI=F, CL=F (futures)
+    - Stocks: AAPL, MSFT (plain)
+    
+    Examples:
+    - BTCUSDT -> BTC-USD
+    - ETHUSDT -> ETH-USD
+    - XAUUSD -> GC=F
+    - EURUSD -> EURUSD=X
+    
+    Returns the Yahoo-compatible symbol.
+    """
+    if not symbol:
+        return symbol
+    
+    s = str(symbol).upper().strip()
+    
+    # First check for explicit overrides (commodities)
+    if s in COMMONDITY_YAHOO_OVERRIDES:
+        return COMMONDITY_YAHOO_OVERRIDES[s]
+    
+    # Clean the symbol
+    s = s.replace("/", "").replace("-", "").replace("_", "")
+    
+    # Detect if it's a crypto pair (ends with USDT or USDC)
+    if s.endswith("USDT") or s.endswith("USDC"):
+        base = s[:-4]
+        return f"{base}-USD"
+    
+    # If it ends with plain USD, check if it's crypto (base is in crypto_bases)
+    if s.endswith("USD") and not s.endswith("USDT"):
+        base = s[:-3]
+        if base in CRYPTO_BASES:
+            return f"{base}-USD"
+        # Otherwise it's likely a forex pair or commodity
+    
+    # Check for forex: 6 char pair like EURUSD, GBPJPY
+    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+        base = s[:3]
+        quote = s[3:]
+        # If both base and quote are currency codes
+        if base in FOREX_BASES and quote in FOREX_BASES:
+            return f"{s}=X"
+        # Could be a stock ticker - return as-is
+    
+    # Check for commodity codes
+    if s in {"XAU", "GOLD"}:
+        return "GC=F"
+    if s in {"XAG", "SILVER"}:
+        return "SI=F"
+    if s in {"WTI", "CL", "OIL"}:
+        return "CL=F"
+    
+    # Default: return as-is (works for stocks)
+    return s
+
+
+def format_symbol_for_oanda(symbol: str) -> str:
+    """
+    Convert symbol to OANDA format.
+    
+    OANDA uses: BTC_USD (underscore separator)
+    
+    Examples:
+    - BTCUSDT -> BTC_USD
+    - BTC-USD -> BTC_USD
+    - EURUSD -> EUR_USD
+    """
+    if not symbol:
+        return symbol
+    
+    s = str(symbol).upper().strip()
+    
+    # Clean separators
+    s = s.replace("/", "").replace("-", "")
+    
+    # Handle USDT suffix
+    if s.endswith("USDT"):
+        s = s[:-4] + "_USD"
+    elif s.endswith("USD") and len(s) > 3:
+        s = s[:-3] + "_USD"
+    
+    return s
+
+
+def format_symbol_for_polygon(symbol: str, asset_type: str = "stocks") -> str:
+    """
+    Convert symbol to Polygon.io format.
+    
+    Polygon uses prefixes:
+    - Crypto: X:BTCUSD
+    - Forex: C:EURUSD
+    - Stocks: AAPL (plain)
+    
+    Args:
+        symbol: Raw symbol
+        asset_type: "crypto", "forex", or "stocks"
+    """
+    if not symbol:
+        return symbol
+    
+    s = str(symbol).upper().strip()
+    s = s.replace("/", "").replace("-", "").replace("_", "")
+    
+    if asset_type == "crypto":
+        # Convert USDT to USD
+        if s.endswith("USDT"):
+            s = s[:-4] + "USD"
+        return f"X:{s}"
+    elif asset_type == "forex":
+        return f"C:{s}"
+    else:
+        return s
+
+
+def format_symbol_for_twelvedata(symbol: str) -> str:
+    """
+    Convert symbol for Twelve Data API.
+    
+    Twelve Data generally uses plain format but with some quirks.
+    Most symbols work as-is.
+    """
+    if not symbol:
+        return symbol
+    
+    s = str(symbol).upper().strip()
+    
+    # Remove separators for consistency
+    s = s.replace("/", "").replace("-", "").replace("_", "")
+    
+    return s
+
+
+def format_symbol_for_alphavantage(symbol: str) -> str:
+    """
+    Convert symbol for AlphaVantage.
+    
+    AlphaVantage uses plain format: BTCUSD, EURGS
+    """
+    if not symbol:
+        return symbol
+    
+    s = str(symbol).upper().strip()
+    s = s.replace("/", "").replace("-", "").replace("_", "")
+    
+    return s
+
+
+def get_formatted_symbol_for_provider(
+    symbol: str, 
+    provider: str,
+    asset_type: str = "crypto"
+) -> str:
+    """
+    Get provider-specific formatted symbol.
+    
+    Args:
+        symbol: Raw symbol (e.g., BTCUSDT)
+        provider: Provider name (yahoo, oanda, polygon, twelvedata, alphavantage)
+        asset_type: Asset type (crypto, forex, stock, commodity)
     
     Returns:
-        "crypto", "fx", "commodity", or "stock"
+        Provider-formatted symbol
     """
-    s = (symbol or "").upper().strip().replace("/", "").replace("-", "").replace("_", "")
+    providers = {
+        "yahoo": format_symbol_for_yahoo,
+        "oanda": format_symbol_for_oanda,
+        "polygon": lambda s: format_symbol_for_polygon(s, asset_type),
+        "twelvedata": format_symbol_for_twelvedata,
+        "alphavantage": format_symbol_for_alphavantage,
+    }
     
-    # Commodity check
-    if s in SYMBOL_OVERRIDES:
-        val = SYMBOL_OVERRIDES[s]
-        if val.endswith("=F"):
-            return "commodity"
+    formatter = providers.get(provider.lower())
+    if formatter:
+        return formatter(symbol)
     
-    # Crypto check
-    if s.endswith(("USDT", "BUSD", "USDC", "BTC", "ETH")):
-        return "crypto"
-    
-    if s[:3] in CRYPTO_BASES and len(s) <= 6:
-        return "crypto"
-    
-    # FX check (6 chars, both parts are currency codes)
-    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
-        return "fx"
-    
-    # Default to stock
-    return "stock"
+    # Default: return as-is
+    return symbol
