@@ -93,13 +93,15 @@ class Config:
 		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", ml_train_default)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
 
-		# ML probability threshold - LOWERED to 0.50 to allow signals with 60+ scores to pass through
-		# This addresses the "Score = 0" bottleneck where ML model calculates ~64 but gets zeroed due to high threshold
-		self.ML_PROB_THRESHOLD = self._env_float("ML_PROB_THRESHOLD", 0.50)
+# ML probability threshold - LOWERED to 0.40 to allow signals with 56%+ ML probability to pass through
+		# This addresses the ML drift issue where model outputs 56% but threshold was 55%
+		# FIX: Lowered from 0.50 to 0.40
+		self.ML_PROB_THRESHOLD = self._env_float("ML_PROB_THRESHOLD", 0.40)
 
-		# Score threshold for signal storage - lowered to 48 to allow more signals through
+		# Score threshold for signal storage - lowered to 40 to allow more signals through
+		# FIX: Lowered from 48 to 40 to allow signals with scores 40-48 to pass through
 		# This is the min_score gate that was zeroing 64.4 scores
-		self.PREMIUM_SCORE_THRESHOLD = self._env_float("PREMIUM_SCORE_THRESHOLD", 48.0)
+		self.PREMIUM_SCORE_THRESHOLD = self._env_float("PREMIUM_SCORE_THRESHOLD", 40.0)
 
 		# Exchange scope (native execution and market connectors)
 		self.EXECUTION_EXCHANGES = ["binance", "bybit"]

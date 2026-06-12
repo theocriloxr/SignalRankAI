@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # This addresses the ML drift issue where model outputs 56% but threshold was 55%
 DEFAULT_ML_THRESHOLD_MIN = float(os.getenv("ML_THRESHOLD_MIN", "0.30"))
 # FIX: Changed from 0.85 to 0.80 to fix "Final Signals: 0" threshold trap (max_score 85.01 blocked)
-DEFAULT_ML_THRESHOLD_MAX = float(os.getenv("ML_THRESHOLD_MAX", "0.80"))
+DEFAULT_ML_THRESHOLD_MAX = float(os.getenv("ML_THRESHOLD_MAX", "0.85"))
 DEFAULT_ML_THRESHOLD_DEFAULT = float(os.getenv("ML_THRESHOLD_DEFAULT", "0.45"))
 
 # Performance targets
