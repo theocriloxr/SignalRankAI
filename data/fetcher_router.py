@@ -81,32 +81,47 @@ class DataRouter:
         except ImportError:
             self._legacy_providers = None
         
-# Crypto: Bybit -> CryptoCompare -> CoinGecko -> Yahoo (yfinance - no API key needed, no geo-block)
+        # ==============================================================
+        # MULTI-PROVIDER FALLBACK CHAINS (STARVATION_FIX_V5)
+        # Priority: Direct exchanges -> Free tier APIs -> yfinance safety net
+        # ==============================================================
+        
+        # Crypto: Binance -> KuCoin -> CryptoCompare -> Tiingo -> yfinance
+        # - KuCoin: No API key required
+        # - Tiingo: Free tier 500 req/hr
         self._crypto_providers = [
-            ("bybit", self._get_bybit_candles),
+            ("binance", self._get_binance_candles),
+            ("kucoin", self._get_kucoin_candles),        # NO API KEY - free
             ("cryptocompare", self._get_cryptocompare_candles),
-            ("coingecko", self._get_coingecko_candles),
-            ("yahoo", self._get_yahoo_candles),
+            ("tiingo", self._get_tiingo_candles),    # Free tier - key in TIINGO_API_KEY
+            ("yahoo", self._get_yahoo_candles),   # Safety net
         ]
         
-        # Forex: Polygon -> Twelve Data -> OANDA
-        self._fx_providers = [
-            ("polygon", self._get_polygon_candles),
-            ("twelvedata", self._get_twelvedata_candles),
-            ("oanda", self._get_oanda_candles),
-            ("yahoo", self._get_yahoo_candles),
-        ]
-        
-        # Stocks: Polygon -> Twelve Data -> Yahoo
+        # Stocks: Tiingo -> Twelve Data -> FMP -> yfinance
+        # - Tiingo: Free tier 500 req/hr, best for stocks
+        # - Twelve Data: Free tier 800/day, key in TWELVEDATA_API_KEY
+        # - FMP: Free tier 250/day, key in FMP_API_KEY
         self._stock_providers = [
-            ("polygon", self._get_polygon_candles),
+            ("tiingo", self._get_tiingo_candles),
             ("twelvedata", self._get_twelvedata_candles),
+            ("fmp", self._get_fmp_candles),
             ("yahoo", self._get_yahoo_candles),
         ]
         
-        # Commodities: Twelve Data -> Yahoo
+        # Forex: Twelve Data -> Tiingo -> FCS -> yfinance
+        # - Twelve Data: Best for Forex pairs
+        # - FCS: fcsapi.com key in FCS_API_KEY
+        self._fx_providers = [
+            ("twelvedata", self._get_twelvedata_candles),
+            ("tiingo", self._get_tiingo_candles),
+            ("fcs", self._get_fcs_candles),
+            ("yahoo", self._get_yahoo_candles),
+        ]
+        
+        # Commodities: Twelve Data -> Tiingo -> yfinance
         self._commodity_providers = [
             ("twelvedata", self._get_twelvedata_candles),
+            ("tiingo", self._get_tiingo_candles),
             ("yahoo", self._get_yahoo_candles),
         ]
         
@@ -179,6 +194,51 @@ class DataRouter:
         try:
             if self._legacy_providers and hasattr(self._legacy_providers, "fetch_yahoo_candles"):
                 return self._legacy_providers.fetch_yahoo_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_binance_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch crypto candles from Binance REST API."""
+        try:
+            from data.connectors.binance_adapter import get_candles as binance_get_candles
+            return binance_get_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_kucoin_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from KuCoin (NO API KEY - free crypto)."""
+        try:
+            from data.connectors.kucoin_adapter import get_candles as kucoin_get_candles
+            return kucoin_get_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_tiingo_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Tiingo (requires TIINGO_API_KEY)."""
+        try:
+            from data.connectors.tiingo_adapter import get_candles as tiingo_get_candles
+            return tiingo_get_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_fmp_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Financial Modeling Prep (requires FMP_API_KEY)."""
+        try:
+            from data.connectors.fmp_adapter import get_candles as fmp_get_candles
+            return fmp_get_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_fcs_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from FCS API (requires FCS_API_KEY)."""
+        try:
+            from data.connectors.fcs_adapter import get_candles as fcs_get_candles
+            return fcs_get_candles(symbol, timeframe) or []
         except Exception:
             pass
         return []
