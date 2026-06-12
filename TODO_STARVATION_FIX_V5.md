@@ -1,42 +1,95 @@
-# TODO: Multi-Provider Data Pipeline Fix (STARVATION_FIX_V5)
+# STARVATION_FIX_V5 Implementation Plan
 
-## Status: IN PROGRESS
+## Summary of Fixes Required
 
-## Task List
+Based on diagnostics, the system is outputting zero signals (`generated_signals=0`, `strategy_signals=0`) despite:
+- Engine not crashing
+- Database healthy
+- ML model training successfully
 
-- [ ] 1. Create KuCoin adapter (no API key required for crypto)
-- [ ] 2. Create Tiingo adapter (API key: TIINGO_API_KEY)
-- [ ] 3. Create FMP adapter (Financial Modeling Prep - API key: FMP_API_KEY)  
-- [ ] 4. Update fetcher_router.py with new fallback chains
-- [ ] 5. Test imports and verify adapter registration
+The root cause analysis identified THREE main issues:
 
-## PLAN APPROVED BY: User
+### 1. Ticker Symbol Mismatch (The Silent Killer)
+**Problem**: yfinance requires `BTC-USD` format, but the system passes `BTC/USDT`. This causes silent failures returning 0 candles.
 
-## Implementation Notes
+**Status**: ✅ ALREADY FIXED
+- `yfinance_adapter.py` uses `format_symbol_for_yahoo()` from `data/symbol_formatter.py`
+- Properly converts `BTCUSDT` -> `BTC-USD`
 
-### KuCoin Adapter
-- Provider: https://api.kucoin.com/api/v1/market/candles
-- Symbol format: BTC-USDT (replace "/" with "-")
-- Timeframe: 1hour, 4hour, 1day
-- NO API KEY REQUIRED
+### 2. Strategy Indicator Minimums (The Math Problem)
+**Problem**: Strategies mathematically require at least 50+ candles (e.g., EMA 50, RSI 14). If only 5-10 candles provided, indicators calculate as NaN, causing strategies to fail silently.
 
-### Tiingo Adapter  
-- Provider: https://api.tiingo.com
-- API Key env: TIINGO_API_KEY
-- Endpoints for crypto/stocks/forex
-- Free tier: 500 requests/hour
+**Status**: ✅ ALREADY FIXED
+- The system fetches 60-day periods by default
+- This provides sufficient candles for all indicator calculations
 
-### FMP Adapter
-- Provider: https://financialmodelingprep.com
-- API Key env: FMP_API_KEY
-- Free tier: 250 requests/day
-- Best for stocks
+### 3. Strict Confluence and Risk Filters
+**Problem**: Some strategies wrap generation inside strict market regime filters or risk conditions that cause them to output 0 signals during certain market conditions.
 
-### Router Update
+**Status**: Need to verify configuration
+
+## Implementation Completed
+
+### Files Updated
+
+1. **data/fetcher_router.py** ✅
+   - Added comprehensive fallback chains:
+     - Crypto: Binance -> KuCoin -> CryptoCompare -> Tiingo -> yfinance
+     - Stocks: Tiingo -> Twelve Data -> FMP -> yfinance
+     - Forex: Twelve Data -> Tiingo -> FCS -> yfinance
+     - Commodities: Twelve Data -> Tiingo -> yfinance
+
+2. **data/connectors/** (All adapters already exist)
+   - kucoin_adapter.py ✅
+   - tiingo_adapter.py ✅
+   - twelvedata_adapter.py ✅
+   - fmp_adapter.py ✅
+   - fcs_adapter.py ✅
+
+3. **data/symbol_formatter.py** ✅
+   - `format_symbol_for_yahoo()` properly handles ticker translation
+   - `normalize_crypto_symbol()` for Binance format conversion
+
+4. **data/connectors/yfinance_adapter.py** ✅
+   - Uses dynamic symbol formatter
+   - Fetches 60-day periods (sufficient for all indicators)
+
+## Logging Added to Engine
+
+The following diagnostic logging exists in `engine/core.py`:
 ```python
-FALLBACK_ROUTING = {
-    "crypto": ["binance", "kucoin", "cryptocompare", "tiingo", "yfinance"],
-    "stocks": ["tiingo", "twelvedata", "fmp", "yfinance"],
-    "fx": ["twelvedata", "tiingo", "yfinance"],
-    "commodities": ["twelvedata", "tiingo", "yfinance"]
-}
+# FIX 2: Add DATA STARVATION warning logging
+if not has_candles:
+    logger.warning(f"[engine][DATA STARVATION] {asset} returned empty candles...")
+
+if _candle_count < 50:
+    logger.warning(f"⚠️ [engine][DIAGNOSTIC] {asset}: Data provider only returned {_candle_count} candles!")
+```
+
+## Environment Variables for API Keys
+
+Required for enhanced fallback chain:
+- `TIINGO_API_KEY` - Tiingo free tier (500 req/hr)
+- `TWELVEDATA_API_KEY` - Twelve Data free tier (800/day)
+- `FMP_API_KEY` - Financial Modeling Prep free tier (250/day)
+
+## Verification Steps
+
+After deployment, check Railway logs for:
+1. `[engine][DIAGNOSTIC] {asset}: Have {N} candles before strategy run - OK` = Data OK
+2. `[router] provider={name} symbol={symbol} class={class} candles={N}` = Provider working
+3. Warning messages indicate which component is failing
+
+## Next Steps
+
+1. Set API keys in Railway dashboard:
+   - TIINGO_API_KEY
+   - TWELVEDATA_API_KEY
+   - FMP_API_KEY
+
+2. Monitor logs after redeployment
+
+3. If still seeing issues:
+   - Check specific warning messages
+   - Verify strategy configuration
+   - Check market regime settings
