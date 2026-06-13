@@ -1554,34 +1554,38 @@ def main_loop(DRY_RUN: bool = False):
                         global_stats_instance.increment_scanned(1)
                         continue
 
-                    # FIX: Add INDICATORS check - strategies need valid indicators (RSI, MACD, EMA, etc.)
+# FIX: Add INDICATORS check - strategies need valid indicators (RSI, MACD, EMA, etc.)
                     # Without valid indicators, strategies return [] -> strategy_signals=0
                     has_valid_indicators = False
                     indicator_details = {}
                     for tf_name, tf_data in market_data.items():
                         if isinstance(tf_data, dict):
-                            ind = tf_data.get('indicators', {}) or {}
-                            if ind and isinstance(ind, dict):
+                            ind = tf_data.get('indicators')
+                            # FIX: Check for None or empty dict specifically - empty dict {} is returned when < 50 candles
+                            if ind and isinstance(ind, dict) and len(ind) > 0:
                                 # Check for key indicators that strategies need
+                                # Handle nested macd dict: {'macd': {'macd': x, 'signal': y, 'hist': z}}
+                                macd_val = ind.get('macd_hist') or (ind.get('macd', {}) or {}).get('hist', 0) if isinstance(ind.get('macd'), dict) else 0
                                 rsi_val = ind.get('rsi', 0)
-                                macd_hist = ind.get('macd_hist', 0)
                                 ema_fast = ind.get('ema_fast', 0)
                                 ema_slow = ind.get('ema_slow', 0)
                                 # Check if values are valid (not NaN, not None, within reasonable range)
-                                import math
-                                if rsi_val and not math.isnan(float(rsi_val or 0)):
-                                    has_valid_indicators = True
-                                if macd_hist and not math.isnan(float(macd_hist or 0)):
-                                    has_valid_indicators = True
-                                if ema_fast and not math.isnan(float(ema_fast or 0)):
-                                    has_valid_indicators = True
-                                if ema_slow and not math.isnan(float(ema_slow or 0)):
-                                    has_valid_indicators = True
+                                try:
+                                    import math
+                                    if rsi_val and 0 <= float(rsi_val) <= 100:
+                                        has_valid_indicators = True
+                                    if ema_fast and not math.isnan(float(ema_fast or 0)):
+                                        has_valid_indicators = True
+                                    if ema_slow and not math.isnan(float(ema_slow or 0)):
+                                        has_valid_indicators = True
+                                except (TypeError, ValueError):
+                                    pass
                                 indicator_details[tf_name] = {
                                     'rsi': rsi_val,
-                                    'macd_hist': macd_hist,
+                                    'macd_hist': macd_val,
                                     'ema_fast': ema_fast,
-                                    'ema_slow': ema_slow
+                                    'ema_slow': ema_slow,
+                                    'total_indicators': len(ind)
                                 }
                     
                     if not has_valid_indicators:
