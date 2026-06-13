@@ -785,7 +785,7 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
     _fetch_delay_base = float(os.getenv("ASSET_FETCH_DELAY_SECONDS", "1.0"))
     _fetch_delay_jitter = float(os.getenv("ASSET_FETCH_DELAY_JITTER", "0.5"))
 
-async def _one(asset: str, tfs: List[str], _index: int = 0):
+    async def _one(asset: str, tfs: List[str], _index: int = 0):
         async with sem:
             # FIX: Add rate limiting delay to prevent Polygon 429 errors
             # Only apply delay if this is not the first asset (index > 0)
@@ -796,7 +796,26 @@ async def _one(asset: str, tfs: List[str], _index: int = 0):
             
             try:
                 started = time.time()
-                data = await fetch_market_data_cached(asset, tfs)
+                # FIX: Add per-asset timeout to prevent batch from hanging on slow providers
+                # This is the KEY FIX for signal starvation - without this, 
+                # a single slow FX provider can block the entire batch
+                try:
+                    data = await asyncio.wait_for(
+                        fetch_market_data_cached(asset, tfs),
+                        timeout=per_asset_timeout
+                    )
+                except asyncio.TimeoutError:
+                    # Log timeout and return empty to allow batch to continue
+                    elapsed = time.time() - started
+                    logger.warning(
+                        "[engine] TIMEOUT asset=%s elapsed=%.2fs timeout=%ss - "
+                        "Returning empty to prevent batch hang",
+                        asset,
+                        elapsed,
+                        per_asset_timeout,
+                    )
+                    return asset, {}
+                
                 elapsed = time.time() - started
                 if elapsed > max(5.0, per_asset_timeout):
                     logger.warning(

@@ -115,19 +115,31 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
 # === FIX: Track signal count after IMP ===
     initial_signal_count = len(signals)
     
+    # Log initial signal status
+    if initial_signal_count > 0:
+        logger.info(f"[strategies] IMP generated {initial_signal_count} signals for {asset}")
+    else:
+        logger.debug(f"[strategies] IMP generated no signals for {asset}, trying other strategies")
+    
     # === FIX: Don't short-circuit on imp_only_mode if fallback should run ===
     # imp_only_mode only skips non-IMP strategies, but should still allow fallback
     
     if imp_only_mode and not (use_fallback and FALLBACK_AVAILABLE and not signals):
+        logger.debug(f"[strategies] Returning {len(signals)} IMP signals for {asset}")
         return signals
 
     # === FIX: Force run_all to ensure all strategies run unless imp_only_mode is EXPLICITLY enabled ===
     # If imp_only_mode is set, skip non-IMP strategies but STILL allow fallback to run
     if imp_only_mode:
         # In IMP-only mode: skip main strategy groups but force fallback
-        pass
+        logger.debug(f"[strategies] IMP-only mode for {asset}, will run fallback if no signals")
     else:
         run_all = True  # Force all strategies to run to ensure we get signals
+    
+    # Always ensure we have at least some strategy signals before failing
+    # This is critical to prevent signal starvation
+    if not signals:
+        logger.warning(f"[strategies] No signals after IMP for {asset}, continuing with other strategies")
 
     # Initialize timeframe for fallback (fixes "possibly unbound" bug)
     timeframe = None
