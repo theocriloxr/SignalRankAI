@@ -9,8 +9,14 @@ class EMATrendStrategy(BaseStrategy):
         candles = market_data['candles']
         if not candles:
             return None
+        
+        # Use available EMA indicator with fallback to ema_50 or trend_ema
+        ema_trend = ind.get('ema_trend') or ind.get('ema_50') or ind.get('trend_ema') or 0
+        if not ema_trend:
+            return None
+            
         # LONG: EMA bullish stack
-        if ind['ema_fast'] > ind['ema_slow'] and ind['ema_slow'] > ind['ema_trend']:
+        if ind['ema_fast'] > ind['ema_slow'] and ind['ema_slow'] > ema_trend:
             entry = candles[-1]['close']
             regime = ind.get('regime', 'neutral')
             quality = 0.9  # High confidence for strong EMA alignment
@@ -35,8 +41,8 @@ class EMATrendStrategy(BaseStrategy):
                 'rr_ratio': levels['rr_ratio'],
                 'reasoning': f"EMA fast > EMA slow > EMA trend. Uptrend confirmed — LONG. R:R={levels['rr_ratio']:.2f}"
             }
-        # SHORT: EMA bearish stack
-        if ind['ema_fast'] < ind['ema_slow'] and ind['ema_slow'] < ind['ema_trend']:
+# SHORT: EMA bearish stack
+        if ind['ema_fast'] < ind['ema_slow'] and ind['ema_slow'] < ema_trend:
             entry = candles[-1]['close']
             regime = ind.get('regime', 'neutral')
             quality = 0.9

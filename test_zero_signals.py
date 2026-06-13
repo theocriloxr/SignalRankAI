@@ -1,123 +1,149 @@
 #!/usr/bin/env python3
 """
-Focused diagnostic to identify where strategy pipeline breaks.
-Run this to identify exactly which stage returns empty.
+Diagnostic test for zero signal generation.
+Tests the signal pipeline to find where signals=0.
 """
-import asyncio
-import os
+
 import sys
+import os
+import logging
 
-# Minimal setup
-os.environ.setdefault("TRADINGVIEW_ENABLED", "false")
-os.environ.setdefault("USE_FALLBACK_STRATEGIES", "true")
-os.environ.setdefault("RUN_ALL_STRATEGIES", "true")
-os.environ.setdefault("IMP_STRATEGY_ENABLED", "true")
-os.environ["PYTHONUNBUFFERED"] = "1"
+# Setup path
+sys.path.insert(0, os.path.dirname(__file__))
+logging.basicConfig(level=logging.INFO, format='%(name)s %(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
 
-async def test_pipeline():
-    """Test each pipeline stage separately."""
+def test_fallback_strategies():
+    """Test fallback strategies directly."""
+    from strategies.fallback import fallback_strategies
     
-    print("\n" + "=" * 60)
-    print("ZERO SIGNALS DIAGNOSTIC")
-    print("=" * 60 + "\n")
+    # Create mock market data
+    candles = [
+        {'open': 50000 + i*10, 'high': 50100 + i*10, 'low': 49900 + i*10, 'close': 50050 + i*10, 'volume': 1000000}
+        for i in range(30)
+    ]
     
-    asset = "BTCUSDT"
-    tfs = ["1h", "4h"]
-    
-    # STAGE 1: Data Fetch
-    print("[STAGE 1] Fetching market data...")
-    try:
-        from data.market_data import fetch_market_data_cached
-        market_data = await fetch_market_data_cached(asset, tfs)
-        
-        if not market_data:
-            print("  FAIL: No market data returned")
-            return
-            
-        for tf, data in market_data.items():
-            candles = data.get("candles", []) if isinstance(data, dict) else []
-            inds = data.get("indicators", {}) if isinstance(data, dict) else {}
-            print(f"  {tf}: candles={len(candles)}, indicators={len(inds)}")
-            
-            if candles and not inds:
-                print(f"    -> Indicators MISSING, calculating...")
-                from data.indicators import calculate_indicators
-                inds = calculate_indicators(candles)
-                data["indicators"] = inds
-                print(f"    -> Calculated {len(inds)} indicators")
-                
-    except Exception as e:
-        print(f"  FAIL: {e}")
-        return
-        
-    # STAGE 2: Regime Detection
-    print("\n[STAGE 2] Detecting regime...")
-    try:
-        from engine.regime import detect_market_regime
-        regime = detect_market_regime(market_data)
-        print(f"  Regime: {regime}")
-    except Exception as e:
-        print(f"  FAIL: {e}")
-        regime = None
-        
-    # STAGE 3: Strategy Groups (test each separately)
-    print("\n[STAGE 3] Testing strategy groups...")
-    
-    from strategies import (
-        trend_strategies, momentum_strategies, volatility_strategies,
-        structure_strategy, liquidity_sweep_strategies, fibonacci_confluence_strategies,
-        fallback_strategies, institutional_momentum_pulse_strategies
-    )
-    
-    # Get first timeframe data
-    tf = list(market_data.keys())[0] if market_data else "1h"
-    data = market_data.get(tf, {})
-    candles = data.get("candles", [])
-    
-    print(f"  Testing with tf={tf}, {len(candles)} candles")
-    
-    # Test each strategy group
-    strategy_groups = {
-        "trend": trend_strategies,
-        "momentum": momentum_strategies,
-        "volatility": volatility_strategies,
-        "structure": structure_strategy,
-        "liquidity": liquidity_sweep_strategies,
-        "fibonacci": fibonacci_confluence_strategies,
-        "imp": institutional_momentum_pulse_strategies,
-        "fallback": fallback_strategies,
+    indicators = {
+        'close_price': 50050,
+        'ema_fast': 50000,
+        'ema_slow': 49900,
+        'sma_20': 50000,
+        'rsi': 55,
+        'volume_ratio': 1.2,
+        'volume': 1000000,
+        'volume_avg': 900000,
+        'regime': 'trending'
     }
     
-    total_signals = 0
-    for name, strategy_fn in strategy_groups.items():
-        try:
-            sigs = strategy_fn(asset, tf, data) if name != "liquidity" else strategy_fn(asset, market_data)
-            print(f"    {name}: {len(sigs)} signals")
-            total_signals += len(sigs)
-        except Exception as e:
-            print(f"    {name}: ERROR - {e}")
-            
-    # STAGE 4: run_all_strategies()
-    print("\n[STAGE 4] Testing run_all_strategies()...")
-    try:
-        from strategies import run_all_strategies
-        signals = run_all_strategies(asset, market_data, regime)
-        print(f"  Total signals: {len(signals)}")
-        
-        if signals:
-            for s in signals[:3]:
-                print(f"    - {s.get('strategy_name')}: {s.get('direction')}")
-        else:
-            print("  NO SIGNALS - This is why engine reports zero signals!")
-            
-    except Exception as e:
-        print(f"  FAIL: {e}")
-        
-    print("\n" + "=" * 60)
-    print(f"RESULT: {total_signals} signals from individual groups")
-    print("=" * 60 + "\n")
+    market_data = {'candles': candles, 'indicators': indicators}
+    
+    # Test fallback strategies
+    sigs = fallback_strategies('BTCUSDT', '1h', market_data)
+    print(f'[test_fallback] Returned {len(sigs)} signals')
+    for s in sigs[:3]:
+        print(f'  - direction={s.get("direction")} entry={s.get("entry")} conf={s.get("confidence")}')
+    
+    return len(sigs) > 0
 
 
-if __name__ == "__main__":
-    asyncio.run(test_pipeline())
+def test_run_all_strategies():
+    """Test run_all_strategies function."""
+    from strategies import run_all_strategies
+    
+    # Create mock market data with indicators
+    candles = [
+        {'open': 50000 + i*10, 'high': 50100 + i*10, 'low': 49900 + i*10, 'close': 50050 + i*10, 'volume': 1000000, 'timestamp': i}
+        for i in range(60)
+    ]
+    
+    indicators = {
+        'close_price': 50050,
+        'ema_fast': 50000,
+        'ema_slow': 49900,
+        'sma_20': 50000,
+        'sma_50': 49800,
+        'rsi': 55,
+        'volume_ratio': 1.2,
+        'volume': 1000000,
+        'volume_avg': 900000,
+        'regime': 'trending',
+        'trend_ema': 1,
+        'macd_trend': 1,
+        'atr': 100,
+    }
+    
+    market_data = {
+        '1h': {'candles': candles, 'indicators': indicators}
+    }
+    
+    # Test run_all_strategies
+    sigs = run_all_strategies('BTCUSDT', market_data, 'trending')
+    print(f'[test_run_all] Returned {len(sigs)} signals')
+    
+    if not sigs:
+        print('[test_run_all] WARNING: No signals generated!')
+        # Debug: check what's in market_data
+        for tf, data in market_data.items():
+            ind = data.get('indicators', {})
+            print(f'  TF={tf}: candles={len(data.get("candles", []))}, indicators={len(ind)}')
+            if ind:
+                print(f'    ema_fast={ind.get("ema_fast")}, ema_slow={ind.get("ema_slow")}, rsi={ind.get("rsi")}')
+                print(f'    sma_20={ind.get("sma_20")}, regime={ind.get("regime")}')
+    
+    for s in sigs[:3]:
+        print(f'  - {s.get("strategy_name")} dir={s.get("direction")} conf={s.get("confidence")}')
+    
+    return len(sigs) > 0
+
+
+def test_indicators_calculation():
+    """Test indicator calculation."""
+    from data.indicators import calculate_indicators
+    
+    candles = [
+        {'open': 50000 + i*10, 'high': 50100 + i*10, 'low': 49900 + i*10, 'close': 50050 + i*10, 'volume': 1000000}
+        for i in range(60)
+    ]
+    
+    indicators = calculate_indicators(candles)
+    print(f'[test_indicators] Calculated {len(indicators)} indicators')
+    print(f'  ema_fast={indicators.get("ema_fast")}, ema_slow={indicators.get("ema_slow")}')
+    print(f'  rsi={indicators.get("rsi")}, sma_20={indicators.get("sma_20")}')
+    print(f'  regime={indicators.get("regime")}')
+    
+    return len(indicators) > 0
+
+
+if __name__ == '__main__':
+    print('='* 60)
+    print('DIAGNOSTIC: Testing signal generation pipeline')
+    print('='* 60)
+    
+    results = []
+    
+    # Test 1: Indicators calculation
+    print('\n--- Test 1: Indicators Calculation ---')
+    results.append(('indicators', test_indicators_calculation()))
+    
+    # Test 2: Fallback strategies
+    print('\n--- Test 2: Fallback Strategies ---')
+    results.append(('fallback', test_fallback_strategies()))
+    
+    # Test 3: run_all_strategies
+    print('\n--- Test 3: run_all_strategies ---')
+    results.append(('run_all', test_run_all_strategies()))
+    
+    # Summary
+    print('\n' + '='*60)
+    print('SUMMARY:')
+    for name, passed in results:
+        status = 'PASS' if passed else 'FAIL'
+        print(f'  {name}: {status}')
+    
+    if all(r[1] for r in results):
+        print('\nAll tests passed - pipeline is working!')
+        sys.exit(0)
+    else:
+        print('\nSome tests FAILED - this explains zero signal generation')
+        sys.exit(1)

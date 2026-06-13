@@ -10,9 +10,18 @@ from .base import BaseStrategy
 class ATRBreakoutStrategy(BaseStrategy):
     name = "ATR Breakout"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
-        if ind['atr'] > 1.5 * ind['bollinger']['width'] and candles:
+        ind = market_data.get('indicators') or {}
+        candles = market_data.get('candles') or []
+        
+        # Use available indicators with fallbacks
+        atr = ind.get('atr') or 0
+        bb = ind.get('bollinger') or {}
+        bb_width = bb.get('width') if bb else (ind.get('bollinger_width') or ind.get('bb_width') or 0)
+        
+        if not candles or not atr or not bb_width:
+            return None
+            
+        if atr > 1.5 * bb_width:
             entry = candles[-1]['close']
             stop = candles[-1]['low']
             target = entry + (entry - stop) * 2
@@ -29,40 +38,48 @@ class ATRBreakoutStrategy(BaseStrategy):
 class BBWidthVolatilityStrategy(BaseStrategy):
     name = "BB Width Volatility"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
-        if ind.get('bollinger_width', 0) > 0.05 and candles:
-            entry = candles[-1]['close']
-            stop = candles[-1]['low']
-            target = entry + (entry - stop) * 2
-            return {
-                'direction': 'BUY',
-                'entry': entry,
-                'stop': stop,
-                'targets': target,
-                'confidence': 0.75,
-                'reasoning': f"Bollinger width > 0.05. Volatility expansion for BUY."
-            }
-        return None
+        ind = market_data.get('indicators') or {}
+        candles = market_data.get('candles') or []
+        
+        bb_width = ind.get('bollinger_width') or ind.get('bb_width') or 0
+        
+        if not candles or bb_width <= 0.05:
+            return None
+            
+        entry = candles[-1]['close']
+        stop = candles[-1]['low']
+        target = entry + (entry - stop) * 2
+        return {
+            'direction': 'BUY',
+            'entry': entry,
+            'stop': stop,
+            'targets': target,
+            'confidence': 0.75,
+            'reasoning': f"Bollinger width {bb_width:.4f} > 0.05. Volatility expansion for BUY."
+        }
 
 class KeltnerVolatilityStrategy(BaseStrategy):
     name = "Keltner Volatility"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
-        if ind.get('keltner_width', 0) > 0.04 and candles:
-            entry = candles[-1]['close']
-            stop = candles[-1]['low']
-            target = entry + (entry - stop) * 2
-            return {
-                'direction': 'BUY',
-                'entry': entry,
-                'stop': stop,
-                'targets': target,
-                'confidence': 0.7,
-                'reasoning': f"Keltner width > 0.04. Volatility signal for BUY."
-            }
-        return None
+        ind = market_data.get('indicators') or {}
+        candles = market_data.get('candles') or []
+        
+        kelt_width = ind.get('keltner_width') or ind.get('kc_width') or 0
+        
+        if not candles or kelt_width <= 0.04:
+            return None
+            
+        entry = candles[-1]['close']
+        stop = candles[-1]['low']
+        target = entry + (entry - stop) * 2
+        return {
+            'direction': 'BUY',
+            'entry': entry,
+            'stop': stop,
+            'targets': target,
+            'confidence': 0.7,
+            'reasoning': f"Keltner width {kelt_width:.4f} > 0.04. Volatility signal for BUY."
+        }
 
 def volatility_strategies(asset, timeframe, market_data):
     strategies = [ATRBreakoutStrategy(), BBWidthVolatilityStrategy(), KeltnerVolatilityStrategy()]
