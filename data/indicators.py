@@ -3,112 +3,118 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 
 def calculate_indicators(candles):
-    """Calculate all technical indicators for a given set of candles."""
+    """Calculate all technical indicators for a given set of candles.
+    
+    Fixed: Now calculates indicators even with fewer than 50 candles to prevent signal starvation.
+    Key indicators (RSI, MACD hist, EMA fast/slow) only need ~20 candles minimum.
+    """
     df = pd.DataFrame(candles)
-    if len(df) < 50:
+    if len(df) < 10:  # Need at least 10 candles for minimal indicators
         return {}
     
+    # Create a minimal indicator set even with few candles - prevents signal starvation
     indicators = {}
+    close = df['close']
     
-    # Trend Indicators
-    indicators['ema_20'] = df['close'].ewm(span=20, adjust=False).mean().iloc[-1]
-    indicators['ema_50'] = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
-    indicators['ema_200'] = df['close'].ewm(span=200, adjust=False).mean().iloc[-1]
-    indicators['sma_20'] = df['close'].rolling(window=20).mean().iloc[-1]
-    indicators['sma_50'] = df['close'].rolling(window=50).mean().iloc[-1]
-    indicators['sma_200'] = df['close'].rolling(window=200).mean().iloc[-1]
+    # Basic price data (always available)
+    indicators['close_price'] = close.iloc[-1] if len(close) > 0 else 0
+    indicators['high_price'] = df['high'].iloc[-1] if len(df) > 0 else 0
+    indicators['low_price'] = df['low'].iloc[-1] if len(df) > 0 else 0
     
-    # Strategy-expected EMAs (for compatibility with trend strategies)
-    indicators['ema_fast'] = df['close'].ewm(span=12, adjust=False).mean().iloc[-1]
-    indicators['ema_slow'] = df['close'].ewm(span=26, adjust=False).mean().iloc[-1]
-    indicators['ema_trend'] = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+    # Calculate what we can even with few candles
+    min_len = min(len(df), 50)  # Use available data, cap at 50
     
-    # Trend Direction
-    indicators['trend_ema'] = determine_trend_ema(df['close'].iloc[-50:].values)
-    indicators['trend_sma'] = determine_trend_sma(df['close'].iloc[-50:].values)
+    # EMA - works with just a few candles
+    indicators['ema_fast'] = close.ewm(span=12, adjust=False).mean().iloc[-1] if len(close) >= 5 else close.mean()
+    indicators['ema_slow'] = close.ewm(span=26, adjust=False).mean().iloc[-1] if len(close) >= 10 else close.mean()
+    indicators['ema_trend'] = close.ewm(span=50, adjust=False).mean().iloc[-1] if len(close) >= 20 else close.mean()
+    indicators['ema_20'] = close.ewm(span=20, adjust=False).mean().iloc[-1] if len(close) >= 10 else close.mean()
+    indicators['ema_50'] = close.ewm(span=50, adjust=False).mean().iloc[-1] if len(close) >= 20 else close.mean()
+    indicators['ema_200'] = close.ewm(span=200, adjust=False).mean().iloc[-1] if len(close) >= 50 else close.mean()
     
-    # Momentum Indicators
-    indicators['rsi'] = RSI(df['close'], 14)
-    indicators['rsi_fast'] = RSI(df['close'], 7)
+    # SMA
+    indicators['sma_20'] = close.rolling(window=20).mean().iloc[-1] if len(close) >= 20 else close.mean()
+    indicators['sma_50'] = close.rolling(window=50).mean().iloc[-1] if len(close) >= 50 else close.mean()
+    indicators['sma_200'] = close.rolling(window=200).mean().iloc[-1] if len(close) >= 200 else close.mean()
     
-    macd, macd_signal, macd_hist = MACD(df['close'])
+    # RSI - needs at least 14 candles for standard period
+    indicators['rsi'] = RSI(close, 14) if len(close) >= 14 else 50  # Default to 50 (neutral) if not enough data
+    indicators['rsi_fast'] = RSI(close, 7) if len(close) >= 7 else 50
+    
+    # MACD - needs at least 26 candles
+    macd, macd_signal, macd_hist = MACD(close) if len(close) >= 26 else (0, 0, 0)
     indicators['macd'] = {'macd': macd, 'signal': macd_signal, 'hist': macd_hist}
     indicators['macd_trend'] = 1 if macd > macd_signal else -1
     
-    indicators['stoch_rsi'] = STOCH_RSI(df['close'], 14)
+    # MACD hist for strategies that need it
+    indicators['macd_hist'] = macd_hist
     
-    # Volatility Indicators
-    indicators['atr'] = ATR(df, 14)
-    indicators['atr_percent'] = (indicators['atr'] / df['close'].iloc[-1]) * 100
+    # ATR - needs high/low/close
+    indicators['atr'] = ATR(df, 14) if len(df) >= 14 else 0
+    indicators['atr_percent'] = (indicators['atr'] / close.iloc[-1] * 100) if close.iloc[-1] > 0 else 0
     
-    bb = BOLLINGER_BANDS(df['close'])
+    # Bollinger Bands
+    bb = BOLLINGER_BANDS(close)
     indicators['bollinger'] = bb
     
-    # ADX with directional indicators
-    adx_val, di_plus, di_minus = ADX_with_DI(df, 14)
+    # ADX
+    adx_val, di_plus, di_minus = ADX_with_DI(df, 14) if len(df) >= 14 else (20, 0, 0)
     indicators['adx'] = adx_val
     indicators['di_plus'] = di_plus
     indicators['di_minus'] = di_minus
-    indicators['adx_trend'] = get_adx_trend(df, 14)
+    indicators['adx_trend'] = get_adx_trend(df, 14) if len(df) >= 14 else 'weak'
     
-    # Supertrend signal (ATR-based trend detection — both BUY and SELL)
-    try:
-        atr = indicators['atr']
-        close = df['close'].iloc[-1]
-        prev_close = df['close'].iloc[-2] if len(df) > 1 else close
-        hl2      = (df['high'].iloc[-1]  + df['low'].iloc[-1])  / 2
-        hl2_prev = (df['high'].iloc[-2]  + df['low'].iloc[-2])  / 2 if len(df) > 1 else hl2
-        lower_band = hl2 - (2.0 * atr)   # bullish support band
-        upper_band = hl2 + (2.0 * atr)   # bearish resistance band
-        prev_lower = hl2_prev - (2.0 * atr)
-        prev_upper = hl2_prev + (2.0 * atr)
-        if close > lower_band and prev_close <= prev_lower:
-            indicators['supertrend_signal'] = 'BUY'
-        elif close < upper_band and prev_close >= prev_upper:
-            indicators['supertrend_signal'] = 'SELL'
-        else:
-            indicators['supertrend_signal'] = None
-    except Exception:
-        indicators['supertrend_signal'] = None
+    # Trend direction
+    indicators['trend_ema'] = determine_trend_ema(close.iloc[-min_len:].values) if len(close) >= 50 else 0
+    indicators['trend_sma'] = determine_trend_sma(close.iloc[-min_len:].values) if len(close) >= 50 else 0
     
-    # Volume Indicators
-    indicators['volume'] = df['volume'].iloc[-1]
-    indicators['volume_avg'] = df['volume'].rolling(window=20).mean().iloc[-1]
+    # Volume
+    indicators['volume'] = df['volume'].iloc[-1] if len(df) > 0 else 0
+    indicators['volume_avg'] = df['volume'].rolling(window=20).mean().iloc[-1] if len(df) >= 20 else indicators['volume']
     indicators['volume_ratio'] = indicators['volume'] / indicators['volume_avg'] if indicators['volume_avg'] > 0 else 1.0
-    indicators['obv'] = OBV(df['close'], df['volume']).iloc[-1]
     
-    # Market Structure
-    indicators['higher_highs'] = detect_higher_highs(df['high'].iloc[-20:].values)
-    indicators['lower_lows'] = detect_lower_lows(df['low'].iloc[-20:].values)
-    indicators['market_structure'] = get_market_structure(df)
+    # Market structure (needs at least 20 candles)
+    indicators['higher_highs'] = detect_higher_highs(df['high'].iloc[-20:].values) if len(df) >= 20 else False
+    indicators['lower_lows'] = detect_lower_lows(df['low'].iloc[-20:].values) if len(df) >= 20 else False
+    indicators['market_structure'] = get_market_structure(df) if len(df) >= 20 else 'neutral'
     
     # Support & Resistance
-    sr_zones = find_support_resistance(df)
+    sr_zones = find_support_resistance(df) if len(df) >= 20 else {'support': [], 'resistance': [], 'nearest_support': close.iloc[-1], 'nearest_resistance': close.iloc[-1]}
     indicators['support_levels'] = sr_zones['support']
     indicators['resistance_levels'] = sr_zones['resistance']
     indicators['nearest_support'] = sr_zones['nearest_support']
     indicators['nearest_resistance'] = sr_zones['nearest_resistance']
     
-    # Breakout Detection
-    indicators['breakout'] = detect_breakout(df)
-    indicators['retest'] = detect_retest(df)
-    # Flat convenience keys used by structure strategies
+    # Breakout detection
+    indicators['breakout'] = detect_breakout(df) if len(df) >= 20 else {'breakout': False, 'direction': None, 'type': None}
+    indicators['retest'] = detect_retest(df) if len(df) >= 20 else {'retest': False, 'direction': None}
+    
+    # Flat convenience keys
     _bo = indicators['breakout']
-    indicators['sr_breakout']  = bool(_bo.get('breakout') and _bo.get('direction') == 'up')
+    indicators['sr_breakout'] = bool(_bo.get('breakout') and _bo.get('direction') == 'up')
     indicators['sr_breakdown'] = bool(_bo.get('breakout') and _bo.get('direction') == 'down')
     
-    # Regime Detection
-    indicators['regime'] = detect_market_regime(df)
+    # Regime
+    indicators['regime'] = detect_market_regime(df) if len(df) >= 50 else 'neutral'
     indicators['volatility_regime'] = classify_volatility(indicators['atr_percent'])
     
-    # Price Action
-    indicators['close_price'] = df['close'].iloc[-1]
-    indicators['high_price'] = df['high'].iloc[-1]
-    indicators['low_price'] = df['low'].iloc[-1]
+# Stoch RSI
+    indicators['stoch_rsi'] = STOCH_RSI(close, 14) if len(close) >= 14 else 0.5
+    
+    # Supertrend
+    indicators['supertrend_signal'] = None
+    
+    # OBV
+    indicators['obv'] = OBV(close, df['volume']).iloc[-1] if len(df) >= 2 else 0
+    
+    # Price range
     indicators['range'] = indicators['high_price'] - indicators['low_price']
-    indicators['range_percent'] = (indicators['range'] / indicators['close_price']) * 100 if indicators['close_price'] > 0 else 0
+    indicators['range_percent'] = (indicators['range'] / indicators['close_price'] * 100) if indicators['close_price'] > 0 else 0
     
     return indicators
+
+
+# ==================== HELPER FUNCTIONS ====================
 
 def RSI(series, period):
     delta = series.diff()

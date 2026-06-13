@@ -1,114 +1,118 @@
-# TODO: Fix Signal Generation - ML Drift, Strategies, and Thresholds
+# Signal Generation Fix - Analysis & Plan
 
-## Information Gathered
+## Log Comparison Summary
 
-From startup logs analysis:
-- Engine running with 20 assets but generating 0 signals per cycle
-- ML Drift detected: Δacc=0.120, Δauc=0.333 with many drifted features
-- Max score = None, strategy_signals = 0
-- Binance disabled due to geo-restriction but uses fallback
+### BEFORE (Working - June 9)
+```
+generated_signals=219 normalized=219 consensus=60 selected=51 unique=51 
+strict_candidates=28 risk_passed=28 final_signals=0 stored=0 skipped_open_limit_asset=0 ...
+```
 
-### Root Causes Identified:
-1. ✅ **Thresholds properly lowered**: Score 40, ML 0.40 (already fixed in config.py)
-2. ✅ **Strategy code fixed**: get_htf_bias() properly structured (no bug)
-3. ⚠️ **ML Drift**: Informational warning (logs to ml_drift.json), not blocking
-4. ⚠️ **Data providers**: May fail in Nigeria location - needs verification
+### AFTER (Broken - June 12)
+```
+generated_signals=0 max_score=None max_score_pre_threshold=None strategy_signals=0 normalized=0 
+consensus=0 selected=0 unique=0 strict_candidates=0 risk_passed=0 final_signals=0 ...
+```
 
-## Plan
+---
 
-### Step 1: Ensure Fallback Strategies Always Run (CRITICAL)
-- [x] 1.1: Confirmed fallback_strategies exist in strategies/fallback.py
-- [x] 1.2: Logic in strategies/__init__.py properly triggers fallback
+## Root Cause Analysis
 
-### Step 2: Verify Data Provider Chain
-- [ ] 2.1: Check CRYPTOCOMPARE_API_KEY is set in Railway env
-- [ ] 2.2: Verify BYBIT_API_KEY is set as fallback
-- [ ] 2.3: Check provider chain logs for failures
+### The engine uses multiple gates/stages:
 
-### Step 3: Lower Degraded Mode Threshold (Emergency)
-- [x] 3.1: Already lowering to 5 candles in fetcher.py
+1. **Candles check** (line ~1070) - Already implemented
+2. **Indicators check** (line ~1078) - Already implemented
+3. **Strategy generation** - `run_all_strategies()` returns empty
+4. **Consensus filter** - Removes all signals
+5. **Strict candidates** - Validation failures
+6. **Risk/ML gates**
+7. **Final scoring**
 
-### Step 4: Thresholds (Already Fixed)
-- [x] 4.1: Score threshold = 40 (FIXED in config.py)
-- [x] 4.2: ML probability = 0.40 (FIXED in config.py)
+### Key diagnostic needed:
+- The logs show `generated_signals=0` which means strategies returned ZERO outputs
+- This happens when: no valid candles OR no valid indicators
 
-### Step 5: Force Strategy Generation (Override)
-- [ ] 5.1: Add emergency env var to bypass all filtering
+---
 
-## Code Changes Made
+## Implemented Fixes
 
-### Change 1: config.py - Thresholds already at 40
+### 1. INDICATOR STARVATION Check (LINES 1078-1134)
+Already in core.py - checks for RSI, MACD hist, EMA fast/slow validity
+
+### 2. DATA STARVATION Check (LINES ~1070-1080)
+Already in core.py - checks for candles
+
+---
+
+## What ISN'T Fixed Yet?
+
+Need to add more diagnostic logging to identify WHICH specific gate is failing:
+
+1. **Provider diagnostics** - Which data provider returned empty/no-data for each asset
+2. **Indicator calculation failures** - Whether indicators.py calculate_indicators() is failing silently
+3. **Strategy-specific diagnostics** - Which strategy is returning empty and WHY
+
+---
+
+## Action Items
+
+### Step 1: Add Enhanced Provider Diagnostics
+Add logging to show WHICH provider succeeded/failed for each asset:
+
 ```python
-self.PREMIUM_SCORE_THRESHOLD = 40.0
-self.ML_PROB_THRESHOLD = 0.40
+# In _fetch_market_data_for_assets() around line ~650
+for asset, data in results:
+    providers_used = []
+    for tf_name, tf_data in data.items():
+        provider = tf_data.get('source', 'unknown')
+        if provider:
+            providers_used.append(provider)
+    logger.info(f"[engine] Asset {asset}: providers={set(providers_used)}")
 ```
 
-### Change 2: data/fetcher.py - Degraded mode 5 candles
+### Step 2: Add Strategy Diagnostics  
+Log indicator values BEFORE calling strategies:
+
 ```python
-return 5  # Lowered from 10 to 5 on 2026-06-12
+# Around line ~1180, before run_all_strategies
+ind = (market_data.get(list(market_data.keys())[0]) or {}).get('indicators', {})
+logger.info(f"[engine] Pre-strategy indicators for {asset}: {ind}")
 ```
 
-## What's Working
-- ✅ Thresholds properly lowered (Score 40, ML 0.40)
-- ✅ Fallback strategies system in place
-- ✅ Multi-provider fallback chain (Binance → Bybit → CryptoCompare)
-- ✅ Degraded mode (5 candles minimum)
-- ✅ Forward-fill cache for stale data
-- ✅ ML drift logging (informational, not blocking)
+### Step 3: Add Data Provider Verification
+Verify which providers work from environment:
 
-## Most Likely Issue: Provider Failures in Nigeria
-
-The logs show "Binance geo-blocked" but the provider chain should fall back to:
-1. Bybit (usually works worldwide)
-2. CryptoCompare (requires API key)
-
-### Action Required
-
-1. **Must set in Railway environment variables:**
-   - `CRYPTOCOMPARE_API_KEY` - Get free key from cryptocompare.com
-   - `BYBIT_API_KEY` (optional) - Already has public API
-
-2. **Verify with logs:** Look for lines like:
-   - `[data] crypto_provider=cryptocompare symbol=BTCUSDT tf=1h candles=150`
-   - `[fetcher] Insufficient candles for BTCUSDT 1h: got 0, need >= 5`
-
-### Emergency Override (if needed)
-Set `USE_FALLBACK_STRATEGIES=true` and ensure assets are being fetched correctly.
-
-## Railway Deployment Notes
-
-### Environment Variables to Set in Railway Dashboard:
-
-| Variable | Required | Source |
-|----------|----------|--------|
-| `CRYPTOCOMPARE_API_KEY` | YES - Get free key from cryptocompare.com | cryptocompare.com |
-| `BYBIT_API_KEY` | Optional | Bybit account (public API available) |
-| `BYBIT_SECRET` | Optional | Bybit account |
-
-### Startup Log Indicators:
-
-Success (signals should generate):
-```
-[data][BYBIT] symbol=BTCUSDT tf=1h candles=150
-[data][CRYPTO] provider=bybit
-[engine] strategy_signals generated: count=1
-[engine] max_score=65
+```python
+# Check provider status at startup
+from data.providers import get_unhealthy_providers
+unhealthy = get_unhealthy_providers()
+logger.warning(f"[engine] UNHEALTHY PROVIDERS: {unhealthy}")
 ```
 
-Failure (no signals):
-```
-[data][FETCHER] All providers failed for BTCUSDT
-[engine] Data Starvacion: returned empty candles
-[engine] No strategy signals for BTCUSDT
-```
+---
 
-### Check Railway Logs for:
-1. `[data]` lines showing provider success
-2. `[engine] pipeline` logs showing asset processing
-3. `[engine] strategy_signals generated` - confirms strategies ran
+## Files to Check
 
-## Followup Steps
-1. Deploy with CRYPTOCOMPARE_API_KEY set in Railway
-2. Monitor logs for provider success/failure
-3. Expected output: `[data] crypto_provider=bybit symbol=... candles=...` or `cryptocompare`
-4. If still no signals, check `[engine] No strategy signals for` lines
+1. **data/providers.py** - Check provider configuration
+2. **data/market_data.py** - Check fetch function
+3. **data/indicators.py** - Check indicator calculation
+4. **strategies/** - Check strategy functions
+5. **config.py** - Check environment variables
+
+---
+
+## Questions to Resolve
+
+1. Are any data providers returning empty data for all assets?
+2. Are indicators being calculated correctly?  
+3. Are strategies receiving valid indicator dictionaries?
+4. Has data source changed between June 9 and June 12?
+5. Are there any environment variable changes affecting data providers?
+
+---
+
+## Next Steps
+
+1. Run diagnostic script to check provider health
+2. Add more verbose logging to engine/core.py
+3. Verify data provider URLs haven't changed
