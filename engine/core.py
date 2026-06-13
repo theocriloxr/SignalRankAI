@@ -1554,6 +1554,50 @@ def main_loop(DRY_RUN: bool = False):
                         global_stats_instance.increment_scanned(1)
                         continue
 
+                    # FIX: Add INDICATORS check - strategies need valid indicators (RSI, MACD, EMA, etc.)
+                    # Without valid indicators, strategies return [] -> strategy_signals=0
+                    has_valid_indicators = False
+                    indicator_details = {}
+                    for tf_name, tf_data in market_data.items():
+                        if isinstance(tf_data, dict):
+                            ind = tf_data.get('indicators', {}) or {}
+                            if ind and isinstance(ind, dict):
+                                # Check for key indicators that strategies need
+                                rsi_val = ind.get('rsi', 0)
+                                macd_hist = ind.get('macd_hist', 0)
+                                ema_fast = ind.get('ema_fast', 0)
+                                ema_slow = ind.get('ema_slow', 0)
+                                # Check if values are valid (not NaN, not None, within reasonable range)
+                                import math
+                                if rsi_val and not math.isnan(float(rsi_val or 0)):
+                                    has_valid_indicators = True
+                                if macd_hist and not math.isnan(float(macd_hist or 0)):
+                                    has_valid_indicators = True
+                                if ema_fast and not math.isnan(float(ema_fast or 0)):
+                                    has_valid_indicators = True
+                                if ema_slow and not math.isnan(float(ema_slow or 0)):
+                                    has_valid_indicators = True
+                                indicator_details[tf_name] = {
+                                    'rsi': rsi_val,
+                                    'macd_hist': macd_hist,
+                                    'ema_fast': ema_fast,
+                                    'ema_slow': ema_slow
+                                }
+                    
+                    if not has_valid_indicators:
+                        # Log indicator values for diagnostics
+                        logger.warning(
+                            f"[engine][INDICATOR STARVATION] {asset} missing valid indicators! "
+                            f"Skipping. This is WHY strategy_signals=0 and max_score=None. "
+                            f"Indicator details: {indicator_details}"
+                        )
+                        _record_gate_failure(asset, "indicators", "no_valid_indicators")
+                        _maybe_log_heatmap(asset, cycle_no, 0)
+                        global_stats_instance.increment_scanned(1)
+                        continue
+                    
+                    logger.info(f"[engine] Indicators validated for {asset}: {indicator_details}")
+
                     # Check data age for each timeframe
                     # Data is considered stale if older than 2x the timeframe interval
                     # (e.g., 1h candles stale after 2 hours, allows for provider delays)
