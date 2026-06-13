@@ -79,21 +79,26 @@ def _effective_pool_settings() -> tuple[int, int]:
     pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
     max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
-    # NullPool mode: Use NullPool when explicitly set to True OR automatically on Railway
+    # Force NullPool on Railway to prevent "too many clients already" errors
+    # The PostgreSQL hobby tier has very limited connections (~20 max)
+    # NullPool creates fresh connections per use instead of pooling - safer for limited setups
     use_nullpool = os.getenv("DB_USE_NULLPOOL", "").strip().lower()
     
-    # IMMEDIATE FIX for Railway "too many clients already" error:
-    # Automatically use NullPool on Railway to prevent connection exhaustion.
-    # This closes connections immediately after use, preventing zombie build-ups.
-    if _is_railway_runtime() and use_nullpool not in ("1", "true", "yes", "on", "y"):
-        # Auto-enable NullPool on Railway unless explicitly disabled
-        if not _pool_bool("DB_USE_NULLPOOL", True):  # Default True on Railway
-            logger.info("[db] Auto-enabling NullPool on Railway to prevent connection exhaustion")
-            use_nullpool = "1"
+    # FIX: Always use NullPool on Railway regardless of env var (unless explicitly disabled)
+    # This prevents connection exhaustion that causes "sorry, too many clients already"
+    is_railway = _is_railway_runtime()
+    if is_railway and use_nullpool not in ("0", "false", "no", "off"):
+        # Force NullPool on Railway unless explicitly disabled
+        logger.info("[db] FORCED NullPool on Railway to prevent connection exhaustion")
+        return 0, 0
     
     if use_nullpool in ("1", "true", "yes", "on", "y"):
         logger.info("[db] Using NullPool - connection pooling disabled")
         return 0, 0
+    
+    if use_nullpool in ("0", "false", "no", "off"):
+        logger.info("[db] NullPool explicitly disabled - using connection pooling")
+        # Continue with pooling config below
     
     # Default: Enable connection pooling for better DB performance
     if use_nullpool == "" and pool_size == 0:
@@ -101,7 +106,7 @@ def _effective_pool_settings() -> tuple[int, int]:
         pool_size = 5
         max_overflow = 3
 
-    if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
+    if is_railway and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
         # FIX for Railway "too many clients already" error
         # Reduced pool_size from 3 to 2 to stay within Railway's ~20 connection limit
         # Also reduced max_overflow from 5 to 0 to prevent opening extra connections
