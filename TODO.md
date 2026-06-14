@@ -4,7 +4,7 @@
 
 - [x] Add calculate_dynamic_threshold to ml/dynamic_threshold.py
 - [x] Create engine/dynamic_threshold.py wrapper
-- [ ] Create worker/ai_feedback.py with Gemini AI validation loop (optional macro-adjustments)
+- [x] Create worker/ai_feedback.py with Gemini AI validation loop (optional macro-adjustments)
 - [x] Update engine/core.py to use dynamic threshold
 
 ## Implementation Log
@@ -21,7 +21,13 @@
    - get_ml_model_auc() - fetches AUC from Redis
    - get_threshold() - matches engine interface
 
-3. ✅ Updated engine/core.py _current_ml_prob_threshold() to use dynamic threshold
+3. ✅ Created worker/ai_feedback.py (Gemini AI validation loop):
+   - Gathers 7-day performance stats from DB
+   - Uses Gemini to recommend threshold adjustments
+   - Falls back to rule-based logic if Gemini unavailable
+   - Stores recommendations in Redis
+
+4. ✅ Updated engine/core.py _current_ml_prob_threshold() to use dynamic threshold
 
 ### How it works:
 - Micro-adjustments (every cycle): Dynamic threshold math shifts threshold based on XGBoost AUC
@@ -29,6 +35,16 @@
 - If model AUC > target (0.85), threshold DECREASES (looser) -> more signals
 - If no AUC in Redis, falls back to base threshold from env var
 
+### Macro-adjustments (daily/weekly):
+- worker/ai_feedback.py runs periodically
+- Reviews win rate, profit factor, signal quality
+- Gemini recommends base threshold adjustments
+- Stores in Redis for engine to use
+
 ### To enable:
-Set env var ML_PROB_THRESHOLD=0.30 (base threshold)
-ML model will store AUC to Redis key "ml:model:auc" after training
+```env
+ML_PROB_THRESHOLD=0.30  # Base threshold
+ML_DYNAMIC_THRESHOLD_ENABLED=true  # Use dynamic calculation
+```
+
+Run AI feedback worker: `python -m worker.ai_feedback` (daily via cron)
