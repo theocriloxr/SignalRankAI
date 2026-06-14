@@ -135,14 +135,15 @@ def _get_forward_fill_ttl_seconds() -> float:
 def _get_degraded_mode_min_candles() -> int:
     """Get minimum candles for degraded mode.
     
-    FIX: Allow 5 candles minimum (vs 20) when in degraded operation.
+    FIX: Allow 10 candles minimum (vs 20) when in degraded operation.
     This prevents complete pipeline starvation during provider outages.
-    Lowered from 10 to 5 on 2026-06-12 to fix signal starvation.
+    Lowered from 20 to 10 on 2026-06-13 to fix signal starvation.
+    Also lowered in market_data.py MARKET_CACHE_MIN_CANDLES to match.
     """
     try:
-        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "5").strip())
+        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "10").strip())
     except Exception:
-        return 5
+        return 10
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
@@ -213,6 +214,25 @@ from datetime import datetime
 import requests
 import asyncio
 from core.circuit_breaker import provider_breaker
+
+# FIX: Add provider error tracking for better diagnostics
+_PROVIDER_ERRORS: dict[tuple[str, str], list[str]] = {}  # (asset, tf) -> [error messages]
+
+
+def _track_provider_error(asset: str, tf: str, error_msg: str) -> None:
+    """Track provider errors for diagnostics."""
+    key = (str(asset).upper().strip(), str(tf).lower().strip())
+    if key not in _PROVIDER_ERRORS:
+        _PROVIDER_ERRORS[key] = []
+    _PROVIDER_ERRORS[key].append(error_msg)
+    # Keep only last 5 errors
+    _PROVIDER_ERRORS[key] = _PROVIDER_ERRORS[key][-5:]
+
+
+def _get_provider_errors(asset: str, tf: str) -> list[str]:
+    """Get tracked errors for asset/timeframe."""
+    key = (str(asset).upper().strip(), str(tf).lower().strip())
+    return _PROVIDER_ERRORS.get(key, [])
 
 # Import market hours module for holiday checks
 try:

@@ -20,14 +20,15 @@ _T = TypeVar("_T")
 
 
 def _engine_connect_args() -> dict[str, Any]:
+    # FIX: Increased default timeouts to prevent ML training timeouts on Railway
     try:
-        connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "15").strip())
+        connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "60").strip())  # Increased from 15s to 60s
     except Exception:
-        connect_timeout = 15.0
+        connect_timeout = 60.0  # Increased default for ML training
     try:
-        command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "45").strip())
+        command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "120").strip())  # Increased from 45s to 120s
     except Exception:
-        command_timeout = 45.0
+        command_timeout = 120.0  # Increased default for ML training
     app_name = (os.getenv("DB_APP_NAME") or "signalrankai").strip() or "signalrankai"
     return {
         "timeout": connect_timeout,

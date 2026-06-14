@@ -693,13 +693,17 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     1. yfinance (primary source for all assets)
     2. Postgres cache (from WS ingestor)
     3. REST providers (Binance/Bybit/etc)
+
+    FIX: Lowered default minimum candles from 80 to 20 to prevent signal starvation
+    when providers return limited data. In degraded mode, accepts 5+ candles.
     """
 
     tfs = [str(tf).strip() for tf in (timeframes or []) if str(tf).strip()]
     if not tfs:
         return {}
 
-    want = _env_int("MARKET_CACHE_MIN_CANDLES", 80)
+    # FIX: Lowered from 80 to 20 to allow more signals through when providers return limited data
+    want = _env_int("MARKET_CACHE_MIN_CANDLES", 20)
     limit = _env_int("MARKET_CACHE_READ_LIMIT", 200)
     use_cache = _env_bool("MARKET_CACHE_ENABLED", True)
     use_yfinance = _env_bool("YFINANCE_ENABLED", True)

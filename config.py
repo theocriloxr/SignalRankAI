@@ -107,6 +107,10 @@ class Config:
 		# This is the min_score gate that was zeroing 64.4 scores
 		self.PREMIUM_SCORE_THRESHOLD = self._env_float("PREMIUM_SCORE_THRESHOLD", 40.0)
 
+		# MARKET DATA: Minimum candles required (lowered to 20 to prevent signal starvation)
+		# FIX: Lowered from 80 to 20 to allow more data through when providers return limited candles
+		self.MARKET_CACHE_MIN_CANDLES = self._env_int("MARKET_CACHE_MIN_CANDLES", 20)
+
 		# Exchange scope (native execution and market connectors)
 		self.EXECUTION_EXCHANGES = ["binance", "bybit"]
 		self.CRYPTO_DATA_EXCHANGES = ["binance", "bybit"]
