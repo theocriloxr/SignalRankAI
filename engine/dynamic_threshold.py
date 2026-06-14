@@ -20,10 +20,8 @@ try:
         get_current_model_auc as _get_ml_auc,
         get_dynamic_ml_threshold as _get_dynamic_threshold,
     )
-    _HAS_ML_DYNAMIC = True
 except ImportError as e:
     logger.warning(f"[engine] ml.dynamic_threshold not available: {e}")
-    _HAS_ML_DYNAMIC = False
     # Stub functions
     def _ml_calculate_threshold(*args, **kwargs):
         return 0.30
