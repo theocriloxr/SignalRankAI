@@ -43,6 +43,87 @@ MODEL_PATH = _resolve_model_path()
 logger = logging.getLogger(__name__)
 
 
+def calculate_dynamic_threshold(base_threshold: float, current_auc: float, target_auc: float = 0.85) -> float:
+    """
+    Auto-adjusts the required score threshold based on the ML model's current performance.
+    
+    If the model is performing poorly (low AUC), it becomes stricter.
+    If the model is performing well (high AUC), it loosens the threshold.
+    
+    Args:
+        base_threshold: The base ML probability threshold (e.g., 0.30)
+        current_auc: The current model AUC from training (0.0-1.0)
+        target_auc: The target AUC to normalize against (default: 0.85)
+    
+    Returns:
+        Dynamic threshold adjusted based on model performance
+    
+    Example:
+        >>> calculate_dynamic_threshold(0.30, 0.70, 0.85)
+        0.36  # Stricter because model is underperforming (0.70 < 0.85)
+        >>> calculate_dynamic_threshold(0.30, 0.90, 0.85)
+        0.28  # Looser because model is overperforming (0.90 > 0.85)
+    """
+    # Model is essentially guessing - block almost all trades
+    if current_auc <= 0.50:
+        logger.warning("[ml] Model AUC %s <= 0.50 (guessing); blocking with threshold 0.99", current_auc)
+        return 0.99
+    
+    # Model is very strong - allow more trades
+    if current_auc >= 0.95:
+        logger.info("[ml] Model AUC %s >= 0.95 (excellent); loosening threshold", current_auc)
+        return max(0.10, base_threshold * 0.8)
+    
+    # Scale the threshold inversely to model performance
+    # If current_auc < target_auc, ratio < 1.0, threshold increases (stricter)
+    # If current_auc > target_auc, ratio > 1.0, threshold decreases (looser)
+    adjustment_factor = target_auc / current_auc
+    dynamic_threshold = base_threshold * adjustment_factor
+    
+    # Clamp to reasonable bounds
+    min_threshold = max(0.10, base_threshold * 0.5)  # At least 50% of base
+    max_threshold = min(0.70, base_threshold * 1.5)  # At most 150% of base
+    
+    final_threshold = max(min_threshold, min(max_threshold, dynamic_threshold))
+    
+    logger.info(
+        "[ml] Dynamic threshold: base=%s current_auc=%s target=%s -> adjusted=%s",
+        base_threshold,
+        current_auc,
+        target_auc,
+        final_threshold
+    )
+    
+    return final_threshold
+
+
+def get_current_model_auc() -> float | None:
+    """
+    Fetch the current model AUC from Redis.
+    
+    Returns:
+        float: The AUC value if available, None otherwise
+    """
+    try:
+        import redis as redis_client
+        import os
+        
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            return None
+        
+        r = redis_client.from_url(redis_url, decode_responses=True)
+        auc_str = r.get("ml:model:auc")
+        r.close()
+        
+        if auc_str is not None:
+            return float(auc_str)
+    except Exception as e:
+        logger.debug("[ml] Failed to fetch AUC from Redis: %s", e)
+    
+    return None
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:

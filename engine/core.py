@@ -948,12 +948,33 @@ def _current_min_score_threshold() -> float:
 
 
 def _current_ml_prob_threshold() -> float:
+    """
+    Get current ML probability threshold with dynamic AUC-based adjustment.
+    
+    Auto-adjusts threshold based on:
+    - Base threshold from optimizer/env
+    - Current ML model AUC (from Redis key ml:model:auc)
+    - Target AUC (default 0.85)
+    
+    If model is accurate (high AUC), threshold lowers -> more signals.
+    If model degraded (low AUC), threshold rises -> fewer signals.
+    """
+    # Try dynamic threshold first (preferred)
+    try:
+        from engine.dynamic_threshold import calculate_dynamic_threshold
+        base_threshold = _env_float("ML_PROB_THRESHOLD", 0.30)
+        dynamic_thresh = calculate_dynamic_threshold(base_threshold=base_threshold)
+        return dynamic_thresh
+    except Exception as e:
+        logger.debug(f"[engine] Dynamic threshold unavailable: {e}")
+    
+    # Fallback to threshold optimizer
     try:
         if _threshold_optimizer is not None and hasattr(_threshold_optimizer, "get_threshold"):
-            return float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.55))
+            return float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.30))
     except Exception:
         pass
-    return _env_float("ML_PROB_THRESHOLD", 0.55)
+    return _env_float("ML_PROB_THRESHOLD", 0.30)
 
 
 def load_tradable_assets() -> List[str]:

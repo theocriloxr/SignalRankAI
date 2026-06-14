@@ -213,11 +213,13 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
 
 async def load_training_data(lookback_days: int = 90):
     """Load signals + outcomes from Postgres."""
+    logger.info("[ml] Starting load_training_data...")
     try:
         from db.session import get_session
 
         from db.models import Signal, Outcome, MarketCandle, MLRejectedSignal
         from sqlalchemy import select, desc
+        logger.info("[ml] Fetching signals from DB...")
 
         def _parse_tp(raw_tp):
             if raw_tp is None:
@@ -853,6 +855,22 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
 
     logger.info(f"Test Accuracy: {acc:.4f}")
     logger.info(f"Test AUC: {auc:.4f}")
+
+    # FIX: Store AUC in Redis for dynamic threshold calculation
+    # This enables the engine to auto-adjust threshold based on ML model performance
+    try:
+        import redis as _redis_client
+        import os as _os_env
+        
+        _redis_url = _os_env.getenv("REDIS_URL")
+        if _redis_url:
+            _r = _redis_client.from_url(_redis_url, decode_responses=True)
+            _r.set("ml:model:auc", float(auc))
+            _r.set("ml:model:auc:last_updated", datetime.utcnow().isoformat())
+            _r.close()
+            logger.info(f"[ml] Stored AUC={auc:.4f} in Redis for dynamic threshold")
+    except Exception as _e:
+        logger.debug(f"[ml] Failed to store AUC in Redis: {_e}")
     logger.info(f"Confusion Matrix:\n{confusion_matrix(y_te, y_pred)}")
     logger.info(f"Classification Report:\n{classification_report(y_te, y_pred)}")
 
