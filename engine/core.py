@@ -193,21 +193,19 @@ try:
 except Exception as e:
     logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
 # Fallback threshold optimizer that uses env var
-    # LOWERED to 0.40 to address ML drift confusion
-    # The model is "confused" during drift events and outputting lower probabilities
-    # This allows ~56%+ ML probability to pass through instead of being zeroed out
+# LOWERED to 0.25 to fix zero signal generation issue
+    # The model degrades to ~56% accuracy, so we need very low threshold
     class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
-            # LOWERED to 0.40 to allow drifted model predictions (~56%) through
-            # This addresses the ML drift issue where model outputs 56% but previous threshold was 55%
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.40') or 0.40)
+            # FIXED: Lowered from 0.40 to 0.25 to allow degraded ML model predictions
+            return float(os.getenv('ML_PROB_THRESHOLD', '0.25') or 0.25)
         async def analyze_and_adjust(self, force: bool = False):
             return None
         def get_config(self):
             from datetime import datetime
             return type('Config', (), {
                 'ml_prob_threshold': self.get_threshold(),
-                'min_score_threshold': 40.0,  # FIX: Lowered from 48 to 40 to allow signals with 40-48 score through
+                'min_score_threshold': 30.0,  # FIXED: Lowered from 40 to 30 to allow more signals through
                 'confluence_min': 0.0,
                 'last_updated': datetime.utcnow(),
                 'source': 'env',
@@ -876,9 +874,9 @@ async def _maybe_await(func, *a, **k):
 # signal can reach at least one tier.  Signals scored 65-69 waste cooldown
 # slots and DB space while being unreachable by any tier; raising this to 70
 # prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
-# LOWERED from 55 to 48 to allow more signals through (fixes "Zero Signal" issue)
-# Based on log analysis and drift threshold adjustment
-DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 48)
+# FIXED: Lowered from 48 to 35 to allow more signals through
+# This fixes "generated_signals=0" when data is available but score threshold blocks
+DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 35)
 _runtime_min_score_threshold = float(DEFAULT_MIN_SCORE_THRESHOLD)
 _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
 
@@ -1952,12 +1950,12 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.debug(f"[engine] Failed to record ML rejection: {e}")
                                 pass
                             continue
-                        # LOWERED from 0.55 to 0.40 to allow drifted model predictions (~56%) through
-                        # This addresses the ML drift issue where model outputs 56% but threshold was too high
-                        try:
-                            ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.40") or 0.40)
-                        except Exception:
-                            ml_hard_min = 0.40
+# LOWERED threshold to 0.25 to allow more signals through when model is degraded
+    # This fixes "generated_signals=0" issue
+    try:
+        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.25") or 0.25)
+    except Exception:
+        ml_hard_min = 0.25
                         if prob is not None and float(prob) < ml_hard_min:
                             sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
                             _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})

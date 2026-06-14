@@ -85,13 +85,10 @@ def _effective_pool_settings() -> tuple[int, int]:
     # NullPool creates fresh connections per use instead of pooling - safer for limited setups
     use_nullpool = os.getenv("DB_USE_NULLPOOL", "").strip().lower()
     
-    # FIX: Always use NullPool on Railway regardless of env var (unless explicitly disabled)
-    # This prevents connection exhaustion that causes "sorry, too many clients already"
+# FIXED: Never force NullPool - always use connection pooling
+    # This fixes the timeout issues that cause ML to train on bootstrap data
     is_railway = _is_railway_runtime()
-    if is_railway and use_nullpool not in ("0", "false", "no", "off"):
-        # Force NullPool on Railway unless explicitly disabled
-        logger.info("[db] FORCED NullPool on Railway to prevent connection exhaustion")
-        return 0, 0
+    # Use connection pooling by default (was forcing NullPool=0 on Railway)
     
     if use_nullpool in ("1", "true", "yes", "on", "y"):
         logger.info("[db] Using NullPool - connection pooling disabled")
@@ -107,20 +104,18 @@ def _effective_pool_settings() -> tuple[int, int]:
         pool_size = 5
         max_overflow = 3
 
+# FIXED: Use larger pool on Railway too (was limiting to 2-3)
+    # This fixes connection starvation that causes ML timeout and bootstrap data fallback
     if is_railway and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
-        # FIX for Railway "too many clients already" error
-        # Reduced pool_size from 3 to 2 to stay within Railway's ~20 connection limit
-        # Also reduced max_overflow from 5 to 0 to prevent opening extra connections
-        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1)
-        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0)
+        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 5, minimum=1)
+        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 5, minimum=0)
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
     else:
-        # Safety cap for non-Railway or when Railway cap is disabled
-        # Limit to 3 total connections to prevent exceeding typical shared plan limits
-        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 3, minimum=1)
+        # Larger global cap for better performance
+        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 5, minimum=1)
         pool_size = min(pool_size, global_pool_cap)
-        max_overflow = min(max_overflow, 1)
+        max_overflow = min(max_overflow, 5)
 
     return pool_size, max_overflow
 
