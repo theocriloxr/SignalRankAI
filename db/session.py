@@ -107,18 +107,21 @@ def _effective_pool_settings() -> tuple[int, int]:
         pool_size = 15
         max_overflow = 15
 
-# FIXED: Use larger pool on Railway too (was limiting to 2-3)
+# FIXED: Allow larger pool on Railway too (was limiting to smaller values)
     # This fixes connection starvation that causes ML timeout and bootstrap data fallback
+    # Use DB_POOL_SIZE_RAILWAY and DB_MAX_OVERFLOW_RAILWAY env vars to override
     if is_railway and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
         railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 15, minimum=1)
         railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 15, minimum=0)
-        pool_size = min(pool_size, railway_pool_cap)
-        max_overflow = min(max_overflow, railway_overflow_cap)
+        # Allow larger values - use max to enable bigger pools when env vars are set
+        pool_size = max(pool_size, railway_pool_cap)
+        max_overflow = max(max_overflow, railway_overflow_cap)
     else:
         # Larger global cap for better performance
         global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 15, minimum=1)
-        pool_size = min(pool_size, global_pool_cap)
-        max_overflow = min(max_overflow, 15)
+        global_overflow_cap = _pool_int("DB_MAX_OVERFLOW_GLOBAL_CAP", 15, minimum=0)
+        pool_size = max(pool_size, global_pool_cap)
+        max_overflow = max(max_overflow, global_overflow_cap)
 
     return pool_size, max_overflow
 

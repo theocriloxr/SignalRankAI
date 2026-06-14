@@ -224,7 +224,11 @@ class Worker:
 
         while not self._stop.is_set():
             try:
-                ok = await ml_train.main()
+                # FIX: Run the heavy sync ML training in a thread to not block the async event loop
+                # The ML code uses synchronous Pandas/XGBoost which would freeze the event loop
+                # asyncio.to_thread() runs it in a thread pool executor without blocking
+                logger.info("[worker] ML training starting in background thread...")
+                ok = await asyncio.to_thread(ml_train.main)
                 if ok:
                     logger.info("[worker] ML model retrained successfully")
                 else:
