@@ -211,7 +211,7 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
     return out
 
 
-def load_training_data_sync(lookback_days: int = 90):
+async def load_training_data_sync(lookback_days: int = 90):
     """Load signals + outcomes from Postgres using synchronous session.
 
     This is FIX for the asyncpg thread deadlock issue.
@@ -222,7 +222,7 @@ def load_training_data_sync(lookback_days: int = 90):
     """
     logger.info("[ml] Starting load_training_data_sync...")
     try:
-        from db.session import get_sync_session
+        from db.session import get_sync_session, get_session
 
         from db.models import Signal, Outcome, MarketCandle, MLRejectedSignal
         from sqlalchemy import select, desc
@@ -307,7 +307,7 @@ def load_training_data_sync(lookback_days: int = 90):
                 return -1.0
             return 0.0
 
-        with get_session() as session:
+        async with get_session() as session:
             # Get signals delivered in the requested lookback window with outcomes
             cutoff_days = max(1, int(lookback_days or 90))
             cutoff = datetime.utcnow() - timedelta(days=cutoff_days)
@@ -318,9 +318,9 @@ def load_training_data_sync(lookback_days: int = 90):
                 .where(Signal.created_at >= cutoff)
             )
             try:
-                res = await session.execute(stmt)
+                res = session.execute(stmt)
                 rows = list(res.all())
-                await session.commit()
+                session.commit()
             except Exception as exc:
                 logger.warning("Failed to load training data from DB; using offline bootstrap data: %s", exc)
                 if _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True):
@@ -477,7 +477,7 @@ def load_training_data_sync(lookback_days: int = 90):
             async with get_session() as session:
                 # Defensive bootstrap for environments where bot schema ensure
                 # has not run yet (e.g. webhook startup race).
-                await session.execute(text(
+                session.execute(text(
                     """
                     CREATE TABLE IF NOT EXISTS ml_past_training_data (
                         id SERIAL PRIMARY KEY,
@@ -509,7 +509,7 @@ def load_training_data_sync(lookback_days: int = 90):
                         select(MLPastTrainingData).where(MLPastTrainingData.signal_created_at >= cutoff)
                     )
                 ).scalars().all()
-                await session.commit()
+                session.commit()
 
             for a in archive_rows:
                 status = str(getattr(a, 'outcome_status', '') or '').lower()
@@ -623,7 +623,7 @@ def load_training_data_sync(lookback_days: int = 90):
 
             async with get_session() as session:
                 rejected_rows = (
-                    await session.execute(
+                    session.execute(
                         select(MLRejectedSignal).where(
                             and_(
                                 MLRejectedSignal.created_at >= cutoff,
