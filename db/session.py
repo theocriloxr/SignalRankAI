@@ -77,8 +77,11 @@ def _is_railway_runtime() -> bool:
 
 
 def _effective_pool_settings() -> tuple[int, int]:
-    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
+    # FIX: Increased default pool sizes to prevent connection starvation deadlock
+    # Previous defaults of pool_size=5, max_overflow=3 were too small for multi-worker startup
+    # This was causing ML training to hang indefinitely waiting for connections
+    pool_size = _pool_int("DB_POOL_SIZE", 15, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 15, minimum=0)
 
     # Force NullPool on Railway to prevent "too many clients already" errors
     # The PostgreSQL hobby tier has very limited connections (~20 max)
@@ -101,21 +104,21 @@ def _effective_pool_settings() -> tuple[int, int]:
     # Default: Enable connection pooling for better DB performance
     if use_nullpool == "" and pool_size == 0:
         # If env not set and pool_size not configured, use defaults
-        pool_size = 5
-        max_overflow = 3
+        pool_size = 15
+        max_overflow = 15
 
 # FIXED: Use larger pool on Railway too (was limiting to 2-3)
     # This fixes connection starvation that causes ML timeout and bootstrap data fallback
     if is_railway and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
-        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 5, minimum=1)
-        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 5, minimum=0)
+        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 15, minimum=1)
+        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 15, minimum=0)
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
     else:
         # Larger global cap for better performance
-        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 5, minimum=1)
+        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 15, minimum=1)
         pool_size = min(pool_size, global_pool_cap)
-        max_overflow = min(max_overflow, 5)
+        max_overflow = min(max_overflow, 15)
 
     return pool_size, max_overflow
 
