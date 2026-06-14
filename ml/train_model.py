@@ -307,7 +307,7 @@ def load_training_data_sync(lookback_days: int = 90):
                 return -1.0
             return 0.0
 
-        async with get_session() as session:
+        with get_session() as session:
             # Get signals delivered in the requested lookback window with outcomes
             cutoff_days = max(1, int(lookback_days or 90))
             cutoff = datetime.utcnow() - timedelta(days=cutoff_days)
