@@ -315,3 +315,68 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def async_session() -> AsyncIterator[AsyncSession]:
     async with get_session() as session:
         yield session
+
+
+# =============================================================================
+# SYNCHRONOUS SESSION FIX for asyncpg thread deadlock
+# When ML training runs in a separate thread (asyncio.to_thread()),
+# async sessions cannot cross thread boundaries.
+# Use synchronous SQLAlchemy for thread-safe background tasks.
+# =============================================================================
+
+def _create_sync_engine() -> Optional[Any]:
+    """Create a synchronous SQLAlchemy engine for background tasks."""
+    url = get_database_url_or_none()
+    if not url:
+        return None
+
+    # Convert from async driver to sync driver
+    # postgresql+asyncpg:// -> postgresql://
+    sync_url = url.replace("+asyncpg", "")
+
+    from sqlalchemy import create_engine
+
+    return create_engine(
+        sync_url,
+        pool_size=_pool_int("DB_SYNC_POOL_SIZE", 10, minimum=1),
+        max_overflow=_pool_int("DB_SYNC_MAX_OVERFLOW", 10, minimum=0),
+        pool_timeout=_pool_int("DB_SYNC_POOL_TIMEOUT_SECONDS", 60, minimum=1),
+        pool_recycle=_pool_int("DB_SYNC_POOL_RECYCLE_SECONDS", 1800, minimum=30),
+        pool_pre_ping=_pool_bool("DB_SYNC_POOL_PRE_PING", True),
+    )
+
+
+_sync_engine = None
+_sync_sessionmaker = None
+
+
+def get_sync_session():
+    """Get a synchronous session factory for background tasks.
+
+    This creates a separate synchronous connection pool that can be used
+    safely in background threads where the async event loop is not available.
+
+    Usage:
+        from db.session import get_sync_session
+        Session = get_sync_session()
+        with Session() as session:
+            # synchronous queries
+            result = session.query(Model).all()
+    """
+    global _sync_engine, _sync_sessionmaker
+
+    if _sync_engine is None:
+        _sync_engine = _create_sync_engine()
+        if _sync_engine is None:
+            raise RuntimeError("DATABASE_URL is not configured")
+
+    if _sync_sessionmaker is None:
+        from sqlalchemy.orm import sessionmaker
+
+        _sync_sessionmaker = sessionmaker(
+            autocommit=False,
+            autoflush=False,
+            bind=_sync_engine
+        )
+
+    return _sync_sessionmaker

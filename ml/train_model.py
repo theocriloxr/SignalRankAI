@@ -211,15 +211,22 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
     return out
 
 
-async def load_training_data(lookback_days: int = 90):
-    """Load signals + outcomes from Postgres."""
-    logger.info("[ml] Starting load_training_data...")
+def load_training_data_sync(lookback_days: int = 90):
+    """Load signals + outcomes from Postgres using synchronous session.
+
+    This is FIX for the asyncpg thread deadlock issue.
+    When running ML training in a separate thread via asyncio.to_thread(),
+    the async session cannot cross thread boundaries because asyncpg
+    is bound to the event loop where it was created.
+    Use synchronous SQLAlchemy for background tasks.
+    """
+    logger.info("[ml] Starting load_training_data_sync...")
     try:
-        from db.session import get_session
+        from db.session import get_sync_session
 
         from db.models import Signal, Outcome, MarketCandle, MLRejectedSignal
         from sqlalchemy import select, desc
-        logger.info("[ml] Fetching signals from DB...")
+        logger.info("[ml] Fetching signals from DB (sync)...")
 
         def _parse_tp(raw_tp):
             if raw_tp is None:
@@ -247,11 +254,12 @@ async def load_training_data(lookback_days: int = 90):
                 except Exception:
                     return 0.0
 
-        async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
+        def _load_candles_sync(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
             if not symbol or not timeframe or not created_at:
                 return []
             cutoff_ms = int(created_at.timestamp() * 1000)
-            async with get_session() as candle_session:
+            Session = get_sync_session()
+            with Session() as candle_session:
                 q = (
                     select(MarketCandle)
                     .where(
@@ -262,7 +270,7 @@ async def load_training_data(lookback_days: int = 90):
                     .order_by(desc(MarketCandle.open_time_ms))
                     .limit(limit)
                 )
-                res = await candle_session.execute(q)
+                res = candle_session.execute(q)
                 rows = list(res.scalars().all())
                 rows.reverse()
                 return rows
