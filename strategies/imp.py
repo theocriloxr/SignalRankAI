@@ -233,7 +233,31 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
     h4_ind = dict(h4.get("indicators") or {})
     h1_ind = dict(h1.get("indicators") or {})
 
-    if len(h4_candles) < 220 or len(h1_candles) < 120:
+    # FIX: Reduced from 220/120 to 50/30 for degraded mode operation
+    # The fetcher only gets 200 candles max, so 220 requirement always fails
+    # Also allow fallback to 1d/4h if 4h/1h not available
+    _min_h4_candles = 50
+    _min_h1_candles = 30
+    
+    if len(h4_candles) < _min_h4_candles:
+        # Try fallback to 1d for H4 data
+        d1 = market_data.get("1d") or {}
+        if isinstance(d1, dict) and d1.get("candles"):
+            h4_candles = list(d1.get("candles") or [])
+            h4_ind = dict(d1.get("indicators") or {})
+    
+    if len(h1_candles) < _min_h1_candles:
+        # Try fallback to 4h for H1 data
+        f4h = market_data.get("4h") or {}
+        if isinstance(f4h, dict) and f4h.get("candles"):
+            h1_candles = list(f4h.get("candles") or [])
+            h1_ind = dict(f4h.get("indicators") or {})
+    
+    if len(h4_candles) < _min_h4_candles or len(h1_candles) < _min_h1_candles:
+        import logging
+        logging.getLogger(__name__).debug(
+            f"[imp] Insufficient candles: h4={len(h4_candles)} (need {_min_h4_candles}), h1={len(h1_candles)} (need {_min_h1_candles})"
+        )
         return []
 
     symbol = str(asset or "").upper().strip()

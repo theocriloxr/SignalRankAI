@@ -19,12 +19,15 @@ def fallback_strategies(asset, timeframe, market_data):
     """
     Run fallback strategies with relaxed conditions.
     These should generate signals when main strategies produce nothing.
+    
+    FIX: Added UltraEmergencyStrategy as LAST RESORT to prevent zero signals.
+    The ultra-fallback will ALWAYS generate a signal if price has any movement.
     """
     if not market_data or 'candles' not in market_data or 'indicators' not in market_data:
         return []
     
     candles = market_data.get('candles', [])
-    if not candles or len(candles) < 20:
+    if not candles or len(candles) < 10:  # FIX: Lowered from 20 to 10
         return []
     
     strategies = [
@@ -32,6 +35,7 @@ def fallback_strategies(asset, timeframe, market_data):
         SimpleVolumeConfirmationStrategy(), # Volume spike confirmation
         SimpleTrendContinuationStrategy(),  # Trend continuation
         SimpleRangeBreakStrategy(),         # Range/flat breakout
+        UltraEmergencyStrategy(),           # ULTRA-FALLBACK: Last resort safety net
     ]
     
     signals = []
@@ -360,6 +364,101 @@ class SimpleRangeBreakStrategy(BaseStrategy):
                 'confidence': confidence,
                 'rr_ratio': levels['rr_ratio'],
                 'reasoning': f"Breakdown below 20h low {low_20:.4f}. Range break SHORT. R:R={levels['rr_ratio']:.2f}"
+            }
+        
+        return None
+
+
+class UltraEmergencyStrategy(BaseStrategy):
+    """
+    ULTRA-FALLBACK: Last resort strategy that ALWAYS fires if there's ANY price movement.
+    This is the safety net to prevent zero-signal generation.
+    
+    Conditions:
+    - Just need price above/below simple moving average
+    - Any green/red candle
+    - Basic risk calculations
+    """
+    name = "Ultra Emergency"
+    
+    def evaluate(self, market_data):
+        ind = market_data.get('indicators', {})
+        candles = market_data.get('candles', [])
+        if not candles or len(candles) < 10:
+            return None
+        
+        close = float(candles[-1].get('close', 0))
+        open_price = float(candles[-1].get('open', close))
+        
+        if close <= 0:
+            return None
+        
+        # Get any available average - be extremely flexible
+        smas = [ind.get(f'sma_{p}') for p in [20, 50, 100, 200]]
+        emas = [ind.get(f'ema_{p}') for p in [12, 20, 50, 100, 200]]
+        all_avgs = [s for s in smas + emas if s and s > 0]
+        
+        if not all_avgs:
+            # Use close of 10 candles ago as "moving average" fallback
+            if len(candles) >= 10:
+                fallback_avg = float(candles[-10].get('close', close))
+                if fallback_avg > 0:
+                    all_avgs = [fallback_avg]
+        
+        if not all_avgs:
+            return None
+        
+        # Use whichever average is available
+        avg = min(all_avgs)  # Most conservative - use lowest average
+        
+        regime = ind.get('regime', 'neutral')
+        
+        # LONG: Price above very basic average
+        if close > avg:
+            confidence = 0.50  # Low but acceptable
+            
+            levels = calculate_dynamic_targets(
+                direction='LONG',
+                entry_price=close,
+                candles=candles,
+                indicators=ind,
+                regime=regime,
+                signal_quality=confidence
+            )
+            
+            return {
+                'direction': 'LONG',
+                'entry': close,
+                'stop_loss': levels['stop_loss'],
+                'take_profit': levels['take_profit'],
+                'targets': levels['tp_levels'],
+                'confidence': confidence,
+                'rr_ratio': levels['rr_ratio'],
+                'reasoning': f"ULTRA-FALLBACK: Price {close:.4f} above basic average {avg:.4f}. Emergency safety net. R:R={levels['rr_ratio']:.2f}"
+            }
+        
+        # SHORT: Price below very basic average
+        if close < avg:
+            confidence = 0.50
+            
+            levels = calculate_dynamic_targets(
+                direction='SHORT',
+                entry_price=close,
+                candles=candles,
+                indicators=ind,
+                regime=regime,
+                signal_quality=confidence
+            )
+            
+            return {
+                'direction': 'SHORT',
+                'entry': close,
+                'stop_loss': levels['stop_loss'],
+                'take_profit': levels['take_profit'],
+                'targets': levels['tp_levels'],
+                'confidence': confidence,
+                'rr_ratio': levels['rr_ratio'],
+                'reasoning': f"ULTRA-FALLBACK: Price {close:.4f} below basic average {avg:.4f}. Emergency safety net. R:R={levels['rr_ratio']:.2f}"
             }
         
         return None

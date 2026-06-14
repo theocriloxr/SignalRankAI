@@ -1618,12 +1618,29 @@ def main_loop(DRY_RUN: bool = False):
                     
                     logger.info(f"[engine] Indicators validated for {asset}: {indicator_details}")
 
-                    # Check data age for each timeframe
+# Check data age for each timeframe
                     # Data is considered stale if older than 2x the timeframe interval
                     # (e.g., 1h candles stale after 2 hours, allows for provider delays)
                     from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
                     _TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
                     stale_data = False
+                    
+                    # DIAGNOSTIC: Log market_data contents BEFORE stale check
+                    _tf_count = len(market_data) if isinstance(market_data, dict) else 0
+                    _candle_counts = {}
+                    _indicator_counts = {}
+                    for _tf, _tf_data in (market_data or {}).items():
+                        if isinstance(_tf_data, dict):
+                            _candles = _tf_data.get('candles') or []
+                            _inds = _tf_data.get('indicators') or {}
+                            _candle_counts[_tf] = len(_candles) if isinstance(_candles, list) else 0
+                            _indicator_counts[_tf] = len(_inds) if isinstance(_inds, dict) else 0
+                    
+                    logger.info(
+                        f"[engine][DIAGNOSTIC] market_data_check asset={asset} tfs={_tf_count} "
+                        f"candle_counts={_candle_counts} indicator_counts={_indicator_counts}"
+                    )
+                    
                     for tf, tf_data in market_data.items():
                         if isinstance(tf_data, dict):
                             data_age = tf_data.get("data_age_seconds")
