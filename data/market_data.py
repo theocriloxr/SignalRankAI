@@ -332,75 +332,152 @@ def detect_order_blocks(candles: list, lookback: int = 100) -> bool:
 # ---------------------------------------------------------------------------
 
 def _convert_to_yfinance_symbol(symbol: str) -> str:
-    """Deprecated: use ``format_ticker(symbol, 'yfinance')`` instead."""
+    """Convert symbol to yfinance format using format_ticker.
+    
+    This is the primary conversion function. Note: For crypto symbols like AAVEUSDT,
+    yfinance may not have data - the _fetch_via_yfinance function will try multiple formats as fallback.
+    """
     return format_ticker(symbol, "yfinance")
+
+
+def _get_yfinance_symbol_variants(symbol: str) -> list:
+    """Generate multiple yfinance ticker variants to try.
+    
+    FIX: This is CRITICAL - different crypto symbols need different formats
+    and yfinance is inconsistent. We try multiple formats to maximize success.
+    
+    Returns list of ticker strings in order of likelihood to work.
+    """
+    if not symbol:
+        return [symbol]
+    
+    s = str(symbol).upper().strip()
+    variants = []
+    
+    # For USDT pairs (crypto), try these formats
+    if s.endswith("USDT"):
+        base = s[:-4]  # e.g., AAVE from AAVEUSDT
+        # Most likely to work (most common crypto tickers on yfinance)
+        variants = [
+            f"{base}-USD",      # AAVE-USD (most common format)
+            f"{base}=X",       # AAVE=X 
+            base,              # Just the base (AAVE) - sometimes works
+            s,                 # Original (AAVEUSDT) - rarely works but try anyway
+        ]
+    # For BUSD pairs
+    elif s.endswith("BUSD"):
+        base = s[:-4]
+        variants = [f"{base}-USD", f"{base}=X", base]
+    # For USDT-like
+    elif s.endswith("USDC"):
+        base = s[:-4]
+        variants = [f"{base}-USD", f"{base}=X", base]
+    # For standard 6-char FX pairs like EURUSD
+    elif len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+        variants = [f"{s[:3]}{s[3:]}X", f"{s[:3]}-{s[3:]}", s]
+    else:
+        # For everything else, start with format_ticker result then try original
+        variants = [format_ticker(symbol, "yfinance"), s]
+    
+    # Dedupe while preserving order
+    seen = set()
+    unique_variants = []
+    for v in variants:
+        v_upper = v.upper().strip() if v else ""
+        if v_upper and v_upper not in seen:
+            seen.add(v_upper)
+            unique_variants.append(v)
+    
+    return unique_variants
 
 
 def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
     """Fetch OHLCV data synchronously from yfinance and return list of candles.
 
+    FIX: Now tries multiple ticker formats to handle yfinance's inconsistent behavior.
+    This is the key fix for "No candles found" errors.
+    
     Each candle is a dict with keys: open, high, low, close, volume, timestamp
     Timestamp is seconds since epoch.
     """
-    try:
-        yf_symbol = _convert_to_yfinance_symbol(symbol)
-        ticker = yf.Ticker(yf_symbol)
-
-        # Map timeframe to yfinance interval
-        interval_map = {
-            "1m": "1m",
-            "5m": "5m",
-            "15m": "15m",
-            "1h": "1h",
-            "4h": "4h",
-            "1d": "1d",
-        }
-        interval = interval_map.get(str(timeframe), "1h")
-
-        # Request history; rely on tests that mock Ticker.history()
-        df = ticker.history(period=None, interval=interval)
-        if df is None or df.empty:
-            return []
-
-        # Ensure expected column names exist (case-insensitive)
-        df_cols = {c.lower(): c for c in df.columns}
-        out = []
-        for idx, row in df.iterrows():
-            try:
-                o = row[df_cols.get("open", "Open")]
-                h = row[df_cols.get("high", "High")]
-                l = row[df_cols.get("low", "Low")]
-                c = row[df_cols.get("close", "Close")]
-                v = row[df_cols.get("volume", "Volume")]
-            except Exception:
-                # Skip rows we cannot parse
+    # Map timeframe to yfinance interval
+    interval_map = {
+        "1m": "1m",
+        "5m": "5m",
+        "15m": "15m",
+        "1h": "1h",
+        "4h": "4h",
+        "1d": "1d",
+    }
+    interval = interval_map.get(str(timeframe), "1h")
+    
+    # Get all ticker variants to try
+    variants = _get_yfinance_symbol_variants(symbol)
+    
+    # Try each variant until we get data
+    for yf_symbol in variants:
+        if not yf_symbol:
+            continue
+            
+        try:
+            ticker = yf.Ticker(yf_symbol)
+            
+            # Request history
+            df = ticker.history(period=None, interval=interval)
+            if df is None or df.empty:
+                # This variant didn't work, try next
+                logger.debug(f"[yfinance] {yf_symbol} returned empty for {symbol}, trying next variant")
                 continue
 
-            ts = None
-            try:
-                # pandas.Timestamp -> seconds
-                if hasattr(idx, "timestamp"):
-                    ts = int(idx.timestamp())
-                else:
-                    ts = int(pd.to_datetime(idx).timestamp())
-            except Exception:
+            # Ensure expected column names exist (case-insensitive)
+            df_cols = {c.lower(): c for c in df.columns}
+            out = []
+            for idx, row in df.iterrows():
+                try:
+                    o = row[df_cols.get("open", "Open")]
+                    h = row[df_cols.get("high", "High")]
+                    l = row[df_cols.get("low", "Low")]
+                    c = row[df_cols.get("close", "Close")]
+                    v = row[df_cols.get("volume", "Volume")]
+                except Exception:
+                    # Skip rows we cannot parse
+                    continue
+
                 ts = None
+                try:
+                    # pandas.Timestamp -> seconds
+                    if hasattr(idx, "timestamp"):
+                        ts = int(idx.timestamp())
+                    else:
+                        ts = int(pd.to_datetime(idx).timestamp())
+                except Exception:
+                    ts = None
 
-            out.append({
-                "open": float(o) if o is not None else 0.0,
-                "high": float(h) if h is not None else 0.0,
-                "low": float(l) if l is not None else 0.0,
-                "close": float(c) if c is not None else 0.0,
-                "volume": float(v) if v is not None else 0.0,
-                "timestamp": int(ts) if ts is not None else 0,
-            })
+                out.append({
+                    "open": float(o) if o is not None else 0.0,
+                    "high": float(h) if h is not None else 0.0,
+                    "low": float(l) if l is not None else 0.0,
+                    "close": float(c) if c is not None else 0.0,
+                    "volume": float(v) if v is not None else 0.0,
+                    "timestamp": int(ts) if ts is not None else 0,
+                })
 
-        # Trim to requested limit if limit provided
-        if limit and isinstance(limit, int) and len(out) > limit:
-            out = out[-limit:]
-        return out
-    except Exception:
-        return []
+            # If we got here and have data, return it
+            if out:
+                logger.info(f"[yfinance] success: {symbol} -> {yf_symbol} got {len(out)} candles")
+                # Trim to requested limit if limit provided
+                if limit and isinstance(limit, int) and len(out) > limit:
+                    out = out[-limit:]
+                return out
+                
+        except Exception as e:
+            # This variant failed with exception, try next
+            logger.debug(f"[yfinance] {yf_symbol} failed for {symbol}: {e}, trying next variant")
+            continue
+    
+    # All variants failed
+    logger.warning(f"[yfinance] all variants exhausted for {symbol}, no candles found")
+    return []
 
 
 def get_realtime_price(symbol: str) -> float | None:
