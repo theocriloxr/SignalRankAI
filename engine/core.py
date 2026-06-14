@@ -1952,10 +1952,10 @@ def main_loop(DRY_RUN: bool = False):
                             continue
 # LOWERED threshold to 0.25 to allow more signals through when model is degraded
     # This fixes "generated_signals=0" issue
-    try:
-        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.25") or 0.25)
-    except Exception:
-        ml_hard_min = 0.25
+                    try:
+                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.25") or 0.25)
+                    except Exception:
+                        ml_hard_min = 0.25
                         if prob is not None and float(prob) < ml_hard_min:
                             sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
                             _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
