@@ -140,9 +140,12 @@ class Worker:
                 logger.exception("[worker] Failed to start WS ingestor")
 
         # ML daily retrain loop (optional)
+        # FIX: ML training runs directly in the async event loop using await
+        # Previously used asyncio.to_thread() which doesn't work with async functions
         if config.ML_TRAIN_ENABLED:
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
+                logger.info("[worker] ML train loop registered")
             except Exception as e:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
@@ -214,21 +217,26 @@ class Worker:
 
     async def _ml_train_loop(self) -> None:
         """Periodically retrain the ML model from Postgres outcomes."""
+        # ADDED: Debug log to confirm function is being called
+        logger.info("[worker] INSIDE ML TRAIN LOOP - function entered")
+        
         try:
             from ml import train_model as ml_train
+            logger.info("[worker] ML train_model import succeeded")
         except Exception as exc:
-            logger.warning("[worker] ML train loop disabled (import failed): %s", exc)
+            logger.error("[worker] ML train loop disabled (import failed): %s", exc, exc_info=True)
             return
 
         interval = max(3600, int(getattr(config, "ML_TRAIN_INTERVAL_SECONDS", 86400) or 86400))
+        logger.info("[worker] ML train loop interval set to %s seconds", interval)
 
         while not self._stop.is_set():
             try:
-                # FIX: Run the heavy sync ML training in a thread to not block the async event loop
-                # The ML code uses synchronous Pandas/XGBoost which would freeze the event loop
-                # asyncio.to_thread() runs it in a thread pool executor without blocking
-                logger.info("[worker] ML training starting in background thread...")
-                ok = await asyncio.to_thread(ml_train.main)
+                # FIX: ml_train.main is an async function, so we await it directly
+                # Previously used asyncio.to_thread() which doesn't work with async functions
+                # and causes silent failures with no logs
+                logger.info("[worker] ML training starting...")
+                ok = await ml_train.main()
                 if ok:
                     logger.info("[worker] ML model retrained successfully")
                 else:
@@ -259,6 +267,7 @@ class Worker:
 
     async def _drift_monitor_loop(self) -> None:
         """Compare live feature distributions against baseline and alert admins on drift."""
+        import time as drift_time
         interval = max(900, int(os.getenv("ML_DRIFT_CHECK_INTERVAL_SECONDS", "3600") or 3600))
         psi_threshold = float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
         retrain_on_drift = str(os.getenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")).strip().lower() in {"1", "true", "yes", "on"}
@@ -294,7 +303,7 @@ class Worker:
                     try:
                         state.set_sync("signalrankai:ml:drift:mode", "penalize", ex=max(1800, interval * 2))
                         state.set_sync("signalrankai:ml:drift:severity", f"{severity:.6f}", ex=max(1800, interval * 2))
-                        state.set_sync("signalrankai:ml:drift:detected_at", str(time.time()), ex=max(1800, interval * 2))
+                        state.set_sync("signalrankai:ml:drift:detected_at", str(drift_time.time()), ex=max(1800, interval * 2))
                     except Exception:
                         pass
                     await self._notify_admin_drift(result)
