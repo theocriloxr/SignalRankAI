@@ -667,6 +667,243 @@ except Exception as e:
 """
 
 
+async def audit_recent(limit: int = 50) -> Dict[str, Any]:
+    """
+    Admin-only: quick audit of recent losses and rejections.
+    
+    Args:
+        limit: Number of recent items to fetch (default 50)
+    
+    Returns:
+        Dict with ok status, recent_losses, recent_rejections
+    """
+    if not GEMINI_API_KEY or client is None:
+        return {"ok": False, "error": "GEMINI_API_KEY not configured"}
+    
+    try:
+        from db.session import get_session
+        from db.models import Outcome, MLRejectedSignal
+        from sqlalchemy import select
+        from datetime import timedelta
+        from utils.timeutils import now_utc_naive
+        
+        cutoff = now_utc_naive() - timedelta(days=7)
+        
+        recent_losses = []
+        recent_rejections = []
+        
+        async with get_session() as session:
+            # Get recent losses (status = 'sl')
+            loss_query = await session.execute(
+                select(Outcome)
+                .where(
+                    Outcome.status == "sl",
+                    Outcome.closed_at >= cutoff
+                )
+                .order_by(Outcome.closed_at.desc())
+                .limit(limit)
+            )
+            loss_rows = loss_query.scalars().all()
+            for row in loss_rows:
+                recent_losses.append({
+                    "signal_id": row.signal_id,
+                    "status": row.status,
+                    "r_multiple": row.r_multiple,
+                    "closed_at": str(row.closed_at) if row.closed_at else None,
+                })
+            
+            # Get recent ML rejections
+            reject_query = await session.execute(
+                select(MLRejectedSignal)
+                .order_by(MLRejectedSignal.created_at.desc())
+                .limit(limit)
+            )
+            reject_rows = reject_query.scalars().all()
+            for row in reject_rows:
+                recent_rejections.append({
+                    "signal_id": getattr(row, 'signal_id', None),
+                    "asset": row.asset,
+                    "rejection_reason": row.rejection_reason,
+                    "created_at": str(row.created_at) if row.created_at else None,
+                })
+            
+            await session.commit()
+        
+        return {
+            "ok": True,
+            "recent_losses": recent_losses,
+            "recent_rejections": recent_rejections,
+            "losses_count": len(recent_losses),
+            "rejections_count": len(recent_rejections),
+        }
+        
+    except Exception as e:
+        logger.error(f"[GeminiValidator] audit_recent failed: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+async def analyze_asset(asset: str, limit: int = 20) -> Dict[str, Any]:
+    """
+    Admin-only: analyze a single asset with recent signals and rejections.
+    
+    Args:
+        asset: Asset symbol to analyze (e.g., "BTCUSDT")
+        limit: Number of recent items to fetch
+    
+    Returns:
+        Dict with analysis results
+    """
+    if not GEMINI_API_KEY or client is None:
+        return {"ok": False, "error": "GEMINI_API_KEY not configured"}
+    
+    try:
+        from db.session import get_session
+        from db.models import Signal, MLRejectedSignal
+        from sqlalchemy import select
+        from datetime import timedelta
+        from utils.timeutils import now_utc_naive
+        
+        cutoff = now_utc_naive() - timedelta(days=30)
+        
+        recent_signals = []
+        recent_rejections = []
+        
+        async with get_session() as session:
+            # Get recent signals for this asset
+            signal_query = await session.execute(
+                select(Signal)
+                .where(
+                    Signal.asset == asset,
+                    Signal.created_at >= cutoff
+                )
+                .order_by(Signal.created_at.desc())
+                .limit(limit)
+            )
+            signal_rows = signal_query.scalars().all()
+            for row in signal_rows:
+                recent_signals.append({
+                    "signal_id": row.signal_id,
+                    "direction": row.direction,
+                    "entry": row.entry,
+                    "score": row.score,
+                    "created_at": str(row.created_at) if row.created_at else None,
+                })
+            
+            # Get recent rejections for this asset
+            reject_query = await session.execute(
+                select(MLRejectedSignal)
+                .where(
+                    MLRejectedSignal.asset == asset,
+                    MLRejectedSignal.created_at >= cutoff
+                )
+                .order_by(MLRejectedSignal.created_at.desc())
+                .limit(limit)
+            )
+            reject_rows = reject_query.scalars().all()
+            for row in reject_rows:
+                recent_rejections.append({
+                    "rejection_reason": row.rejection_reason,
+                    "created_at": str(row.created_at) if row.created_at else None,
+                })
+            
+            await session.commit()
+        
+        return {
+            "ok": True,
+            "asset": asset,
+            "recent_signals": recent_signals,
+            "recent_rejections": recent_rejections,
+            "signals_count": len(recent_signals),
+            "rejections_count": len(recent_rejections),
+        }
+        
+    except Exception as e:
+        logger.error(f"[GeminiValidator] analyze_asset failed: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+async def predict_candidate(candidate: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Admin-only: predict/assess a candidate signal.
+    
+    Args:
+        candidate: Dict with asset, timeframe, direction, entry
+    
+    Returns:
+        Dict with prediction results
+    """
+    if not GEMINI_API_KEY or client is None:
+        return {"ok": False, "error": "GEMINI_API_KEY not configured"}
+    
+    try:
+        asset = candidate.get("asset", "UNKNOWN")
+        direction = candidate.get("direction", "long").upper()
+        entry = candidate.get("entry", 0)
+        timeframe = candidate.get("timeframe", "1h")
+        
+        # Check for duplicates in recent signals
+        from db.session import get_session
+        from db.models import Signal
+        from sqlalchemy import select
+        from datetime import timedelta
+        from utils.timeutils import now_utc_naive
+        
+        cutoff = now_utc_naive() - timedelta(hours=24)
+        is_duplicate = False
+        recent_neighbors = []
+        
+        async with get_session() as session:
+            dup_query = await session.execute(
+                select(Signal)
+                .where(
+                    Signal.asset == asset,
+                    Signal.direction == direction.lower(),
+                    Signal.timeframe == timeframe,
+                    Signal.created_at >= cutoff
+                )
+                .order_by(Signal.created_at.desc())
+                .limit(5)
+            )
+            dup_rows = dup_query.scalars().all()
+            if dup_rows:
+                is_duplicate = True
+                for row in dup_rows:
+                    recent_neighbors.append({
+                        "signal_id": row.signal_id,
+                        "entry": row.entry,
+                        "created_at": str(row.created_at) if row.created_at else None,
+                    })
+            
+            await session.commit()
+        
+        return {
+            "ok": True,
+            "is_duplicate": is_duplicate,
+            "recent_neighbors": recent_neighbors,
+            "candidate": candidate,
+        }
+        
+    except Exception as e:
+        logger.error(f"[GeminiValidator] predict_candidate failed: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+# Cache for last Gemini review (for gemini_review_command)
+_last_gemini_review: Dict[str, Any] = {}
+
+
+async def get_last_gemini_review() -> Dict[str, Any]:
+    """Get the cached last Gemini review result."""
+    global _last_gemini_review
+    return _last_gemini_review
+
+
+async def set_last_gemini_review(result: Dict[str, Any]) -> None:
+    """Store the last Gemini review result."""
+    global _last_gemini_review
+    _last_gemini_review = result
+
+
 if __name__ == "__main__":
     # Quick test
     import asyncio
