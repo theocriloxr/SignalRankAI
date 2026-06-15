@@ -775,14 +775,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
     per_asset_timeout_default = 120.0 if is_binance_blocked() else 45.0
     per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default))
     sem = asyncio.Semaphore(concurrency)
-    
-    # FIX: Add rate limiting to prevent Polygon 429 errors
-    # Add jittered delay between asset fetches for free-tier API limits
-    import random
-    _fetch_delay_base = float(os.getenv("ASSET_FETCH_DELAY_SECONDS", "1.0"))
-    _fetch_delay_jitter = float(os.getenv("ASSET_FETCH_DELAY_JITTER", "0.5"))
 
-async def _one(asset: str, tfs: List[str], _index: int = 0):
+    async def _one(asset: str, tfs: List[str]):
         async with sem:
             try:
                 started = time.time()
@@ -844,9 +838,9 @@ async def _one(asset: str, tfs: List[str], _index: int = 0):
                 )
                 return asset, {}
 
-        tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
-        results = await asyncio.gather(*tasks, return_exceptions=False)
-        return {asset: data for asset, data in results}
+    tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    return {asset: data for asset, data in results}
 
 
 # Minimal helper: safe await-or-call for maybe-async functions
