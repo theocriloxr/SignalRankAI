@@ -197,8 +197,8 @@ except Exception as e:
     # The model degrades to ~56% accuracy, so we need very low threshold
     class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
-            # FIXED: Lowered from 0.40 to 0.25 to allow degraded ML model predictions
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.25') or 0.25)
+# FIXED: Lowered from 0.25 to 0.20 to allow degraded ML model predictions
+            return float(os.getenv('ML_PROB_THRESHOLD', '0.20') or 0.20)
         async def analyze_and_adjust(self, force: bool = False):
             return None
         def get_config(self):

@@ -248,4 +248,23 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             logger.debug(f"[strategies] Fallback strategies error: {e}")
             pass
     
+    # === ULTIMATE EMERGENCY FALLBACK ===
+    # FIX: If NO signals after all strategies, call emergency signal generator
+    # This is the last-resort safety net to prevent zero-signal generation
+    if not signals:
+        logger.warning(f"[strategies] NO SIGNALS after all strategy groups for {asset}, attempting EMERGENCY fallback")
+        try:
+            from STRATEGY_DEBUG_FIX import get_emergency_signals
+            emergency_sigs = get_emergency_signals(asset, market_data, regime)
+            for sig in emergency_sigs:
+                sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
+                sig['is_emergency'] = True  # Mark as emergency
+                signals.append(sig)
+            
+            if emergency_sigs:
+                logger.info(f"[strategies] EMERGENCY generated {len(emergency_sigs)} signals for {asset}")
+        except Exception as e:
+            logger.debug(f"[strategies] EMERGENCY fallback error: {e}")
+            # Don't fail - try other methods
+    
     return signals

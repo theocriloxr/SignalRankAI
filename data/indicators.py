@@ -16,6 +16,9 @@ def calculate_indicators(candles):
     indicators = {}
     close = df['close']
     
+    # Ensure we have enough data for analysis
+    min_candles = len(df)
+    
     # Basic price data (always available)
     indicators['close_price'] = close.iloc[-1] if len(close) > 0 else 0
     indicators['high_price'] = df['high'].iloc[-1] if len(df) > 0 else 0
@@ -85,32 +88,32 @@ def calculate_indicators(candles):
     indicators['nearest_support'] = sr_zones['nearest_support']
     indicators['nearest_resistance'] = sr_zones['nearest_resistance']
     
-    # Breakout detection
+# Breakout detection
     indicators['breakout'] = detect_breakout(df) if len(df) >= 20 else {'breakout': False, 'direction': None, 'type': None}
     indicators['retest'] = detect_retest(df) if len(df) >= 20 else {'retest': False, 'direction': None}
-    
+
     # Flat convenience keys
     _bo = indicators['breakout']
     indicators['sr_breakout'] = bool(_bo.get('breakout') and _bo.get('direction') == 'up')
     indicators['sr_breakdown'] = bool(_bo.get('breakout') and _bo.get('direction') == 'down')
-    
+
     # Regime
     indicators['regime'] = detect_market_regime(df) if len(df) >= 50 else 'neutral'
     indicators['volatility_regime'] = classify_volatility(indicators['atr_percent'])
-    
-# Stoch RSI
+
+    # Stoch RSI
     indicators['stoch_rsi'] = STOCH_RSI(close, 14) if len(close) >= 14 else 0.5
-    
+
     # Supertrend
     indicators['supertrend_signal'] = None
-    
+
     # OBV
     indicators['obv'] = OBV(close, df['volume']).iloc[-1] if len(df) >= 2 else 0
-    
+
     # Price range
     indicators['range'] = indicators['high_price'] - indicators['low_price']
     indicators['range_percent'] = (indicators['range'] / indicators['close_price'] * 100) if indicators['close_price'] > 0 else 0
-    
+
     return indicators
 
 
