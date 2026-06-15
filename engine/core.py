@@ -1580,17 +1580,16 @@ def main_loop(DRY_RUN: bool = False):
                     if isinstance(market_data, dict):
                         market_data["_macro"] = dict(macro_snapshot or {})
 
-# FIX 2: Add DATA STARVATION warning logging - explicit check for empty data
-                    # This helps diagnose why assets are silently skipped
+# FIX: REMOVED the early-exit check that was skipping strategy execution
+                    # The original code had:
+                    #   if not has_candles: continue 
+                    # This caused the engine to skip ALL strategies BEFORE running them
+                    # if market data appeared empty, causing generated_signals=0
+                    
+                    # Instead, we now ALWAYS run strategies - they have their own fallback logic
                     has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
                     if not has_candles:
-                        logger.warning(f"[engine][DATA STARVATION] {asset} returned empty candles. Skipping. This is why strategy_signals=0.")
-                        _record_gate_failure(asset, "market_data", "no_candles")
-                        _maybe_log_heatmap(asset, cycle_no, 0)
-                        # FIX 1: Move Redis counter to TOP of loop - increment BEFORE data check fails
-                        # This unfreezes the dashboard pulse counter
-                        global_stats_instance.increment_scanned(1)
-                        continue
+                        logger.warning(f"[engine][DATA STARVATION] {asset} missing candles - continuing anyway to let strategies decide")
 
 # FIX: Add INDICATORS check - but be more lenient to prevent blocking valid data
                     # Fixed: Allow signals through if ANY data exists, even with minimal indicators
