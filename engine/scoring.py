@@ -3,9 +3,9 @@ def _direction_sign(direction_val) -> float:
     try:
         if isinstance(direction_val, str):
             d = direction_val.strip().lower()
-            if d in {"long", "buy", "+", "bull"}:
+            if d in ("long", "buy", "+", "bull"):
                 return 1.0
-            if d in {"short", "sell", "-", "bear"}:
+            if d in ("short", "sell", "-", "bear"):
                 return -1.0
         return float(direction_val)
     except Exception:
@@ -59,10 +59,36 @@ def score_signal(signal):
     if confidence is not None and confidence < confidence_min:
         return 0.0
 
-    entry = signal.get("entry")
-    stop = signal.get("stop") or signal.get("stop_loss")
-    target = signal.get("targets", entry)
-    rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
+    # === FIX: Handle both 'stop' and 'stop_loss' keys - with proper None handling ===
+    entry_raw = signal.get("entry")
+    stop_raw = signal.get("stop") if signal.get("stop") is not None else signal.get("stop_loss")
+    # Handle 'targets' being either a list (multiple TPs) or a single float
+    target_raw = signal.get("targets")
+    if isinstance(target_raw, list) and target_raw:
+        target = float(target_raw[-1])  # Use the final/last target from the list
+    else:
+        target = float(target_raw) if target_raw is not None else entry_raw
+    
+    # Defensive: ensure entry and stop are floats
+    try:
+        entry = float(entry_raw) if entry_raw is not None else 0.0
+    except (TypeError, ValueError):
+        entry = 0.0
+    
+    try:
+        stop = float(stop_raw) if stop_raw is not None else None
+    except (TypeError, ValueError):
+        stop = None
+    
+    # Calculate R:R ratio with defensive checks
+    if entry is None or stop is None or entry == 0 or stop is None:
+        rr = 0.0
+    else:
+        denominator = abs(entry - stop)
+        if denominator > 0:
+            rr = abs(target - entry) / denominator
+        else:
+            rr = 0.0
 
     rr_component = rr_score(rr)
     vol_component = volatility_quality_score(signal)
@@ -73,7 +99,7 @@ def score_signal(signal):
     weight_vol = _env_float("SCORE_WEIGHT_VOL", 0.2)
     weight_confli = _env_float("SCORE_WEIGHT_CONFLUENCE", 0.2)
 
-    components: dict[str, tuple[float, float]] = {
+    components = {
         "rr": (rr_component, weight_rr),
         "vol": (vol_component, weight_vol),
     }
@@ -132,7 +158,7 @@ def calculate_signal_score(signal, risk_profile=None, regime=None):
     return score_signal(signal)
 
 
-def calculate_confluence(signal: dict) -> float | None:
+def calculate_confluence(signal):
     """Calculate confluence score (0-100) based on multiple signal confirmations.
     
     Checks:
