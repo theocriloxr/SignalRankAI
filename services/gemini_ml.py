@@ -668,6 +668,8 @@ except Exception as e:
 
 
 # Backwards compatibility alias - Issue 1 & 7 fix
+# Add alias to preserve backwards compatibility with /gemini_audit command
+audit_recent = audit_recent_signals
 
 
 if __name__ == "__main__":

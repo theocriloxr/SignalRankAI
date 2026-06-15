@@ -2,6 +2,7 @@
 from datetime import datetime, date, time, timezone
 from typing import Optional, Tuple
 import logging
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -209,3 +210,53 @@ def is_fx_low_liquidity(now_utc: Optional[datetime] = None) -> bool:
     """Check if FX market has reduced liquidity due to holidays."""
     now = now_utc or datetime.now(timezone.utc)
     return now.date() in FX_REDUCED_LIQUIDITY
+
+
+# Additional Market Session Verification (for engine/core.py)
+def is_market_session_open(symbol: str) -> bool:
+    """
+    Checks if an asset class is eligible for data-fetching or signal evaluation 
+    based on asset class specific global market hours.
+    
+    Args:
+        symbol: The asset symbol to check (e.g., "BTCUSDT", "EURUSD", "XAUUSD")
+    
+    Returns:
+        bool: True if market is open for this asset class, False otherwise
+    """
+    sym = symbol.upper().strip().replace("=X", "")
+    now_utc = datetime.now(pytz.utc)
+    weekday = now_utc.weekday()  # Monday = 0, Sunday = 6
+    current_time = now_utc.time()
+
+    # 1. Crypto Asset Coverage (24/7/365)
+    if any(crypto in sym for crypto in ["BTC", "ETH", "SOL", "USDT", "ADA", "AAVE"]):
+        return True
+        
+    # 2. Forex Session Coverage (Sydney, Tokyo, London, New York)
+    # Open continuous from Sunday 22:00 UTC to Friday 22:00 UTC
+    if len(sym) == 6 or any(fx in sym for fx in ["EUR", "GBP", "USD", "JPY", "AUD", "CAD", "CHF"]):
+        if weekday == 5:  # Saturday: Closed
+            return False
+        if weekday == 6 and current_time < time(22, 0):  # Sunday pre-open: Closed
+            return False
+        if weekday == 4 and current_time >= time(22, 0):  # Friday post-close: Closed
+            return False
+        return True
+
+    # 3. Commodities Coverage (XAUUSD, XAGUSD, WTI, BRENT, Natural Gas)
+    # Generally open Mon-Fri with a daily 1-hour maintenance break from 21:00 to 22:00 UTC
+    if any(comm in sym for comm in ["XAU", "XAG", "WTI", "BRENT", "OIL", "GAS"]):
+        if weekday in [5, 6]:  # Weekend closed
+            return False
+        if time(21, 0) <= current_time < time(22, 0):  # Maintenance window
+            return False
+        return True
+
+    # 4. Indices Coverage (US30, US500, SPX, DJI, VIX) & Major Stock Markets (NYSE, NASDAQ)
+    # Active standard exchange sessions Mon-Fri 14:30 UTC to 21:00 UTC (09:30 AM - 04:00 PM EST)
+    if weekday in [5, 6]:
+        return False
+    market_start = time(14, 30)
+    market_end = time(21, 0)
+    return market_start <= current_time <= market_end
