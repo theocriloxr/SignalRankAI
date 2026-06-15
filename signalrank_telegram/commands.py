@@ -4613,8 +4613,8 @@ async def gemini_audit_command(update, context) -> None:
 	limit = int(args[0]) if args else 50
 	from services.gemini_ml import audit_recent
 
-	try:
-		res = await audit_recent(limit=limit)
+try:
+		res = await audit_recent_signals(session, limit=limit)
 		if not bool(res.get("ok", True)):
 			await update.message.reply_text(f"Audit failed: {res.get('error')}")
 			return

@@ -2303,6 +2303,18 @@ def main_loop(DRY_RUN: bool = False):
                                 except Exception:
                                     pass
 
+# FIX Issue 2: Use >= to let perfect scores through, calculate real max_scores
+                            # Safe Parsing of Threshold
+                            raw_force = os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE", "85.0")
+                            try:
+                                if str(raw_force).lower() in ["true", "yes", "1"]:
+                                    threshold = 85.0
+                                else:
+                                    threshold = float(raw_force)
+                            except ValueError:
+                                threshold = 85.0
+
+                            # FIX: Change > to >= so perfect 100.0 scores can pass through
                             min_score_threshold = _current_min_score_threshold()
                             if sig.get('score', 0) < min_score_threshold:
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
@@ -2327,6 +2339,13 @@ def main_loop(DRY_RUN: bool = False):
                                 except Exception as e:
                                     logger.debug(f"[engine] Failed to record score rejection: {e}")
                                 continue
+                            
+                            # Calculate real max_scores for monitoring
+                            scores_pre = [s.get("score", 0.0) for s in strict_candidates]
+                            max_score_pre_threshold = max(scores_pre) if scores_pre else 0.0
+                            
+                            scores_post = [s.get("score", 0.0) for s in final_signals]
+                            max_score = max(scores_post) if scores_post else 0.0
 
                             # Optional hard block remains available via env toggle.
                             if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_exp < 0.0:

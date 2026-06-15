@@ -1,16 +1,22 @@
-"""
-Market Hours & Broker Resolution Utility
+"""Market Hours and Broker Mapping Utilities for SignalRankAI.
 
- Handles broker mappings and strict market hour checks to prevent 
- querying closed markets.
+This module handles:
+- Broker mapping for different asset types
+- Market hour checks to prevent querying closed markets
+- Prevents 429 rate limit errors from querying closed exchanges
 
- Issues 7 & 8: Broker Map & Market Hours Support
+Supported Brokers:
+- Crypto: BINANCE, BYBIT, COINBASE, KRAKEN (24/7)
+- FX: OANDA, FXCM, TVC (Forex.com)
+- Equities: NASDAQ, NYSE (US exchanges)
 """
 
 from datetime import datetime, time
-import pytz
+import logging
 
-# Broker mapping constant
+logger = logging.getLogger(__name__)
+
+# Broker mapping for different exchanges
 BROKER_MAP = {
     "BINANCE": "BINANCE",
     "BYBIT": "BYBIT",
@@ -22,160 +28,174 @@ BROKER_MAP = {
     "FOREXCOM": "FOREXCOM",
     "TVC": "TVC",
     "NASDAQ": "NASDAQ",
-    "NYSE": "NYSE",
+    "NYSE": "NYSE"
 }
+
+# Pre-defined broker lists for efficient checking
+CRYPTO_BROKERS = [BROKER_MAP["BINANCE"], BROKER_MAP["BYBIT"], BROKER_MAP["COINBASE"], BROKER_MAP["KRAKEN"]]
+FX_BROKERS = [BROKER_MAP["OANDA"], BROKER_MAP["FXCM"], BROKER_MAP["TVC"], BROKER_MAP["FOREXCOM"]]
+EQUITY_BROKERS = [BROKER_MAP["NASDAQ"], BROKER_MAP["NYSE"]]
 
 
 def resolve_broker(symbol: str) -> str:
-    """
-    Resolve the broker/exchange for a given symbol based on patterns.
+    """Resolve the appropriate broker for a given symbol based on its characteristics.
     
     Args:
-        symbol: The asset symbol to resolve
+        symbol: Trading symbol (e.g., BTCUSDT, XAUUSD, EURUSD)
         
     Returns:
-        The broker name from BROKER_MAP
+        Broker name from BROKER_MAP
     """
     sym = symbol.upper()
     
-    # Crypto:BINANCE
-    if any(c in sym for c in ["BTC", "ETH", "SOL", "USDT", "XRP"]):
+    # Crypto symbols (USDT, USDC, BUSD endings or common crypto prefixes)
+    if any(suffix in sym for suffix in ["USDT", "USDC", "BUSD"]):
+        return BROKER_MAP["BINANCE"]
+    if any(c in sym for c in ["BTC", "ETH", "SOL", "XRP", "ADA", "DOT", "AVAX", "MATIC"]):
         return BROKER_MAP["BINANCE"]
     
-    # Commodities: TVC
-    if any(c in sym for c in ["XAU", "XAG", "WTI", "BRENT", "OIL"]):
+    # Commodities (XAU = Gold, XAG = Silver, WTI/BRENT = Oil)
+    if any(c in sym for c in ["XAU", "XAG", "WTI", "BRENT", "OIL", "NATGAS", "NG"]):
         return BROKER_MAP["TVC"]
     
-    # Indices: TVC
-    if any(c in sym for c in ["US30", "SPX", "DJI", "NAS100"]):
+    # Indices (US30, SPX, DJI, NAS100)
+    if any(c in sym for c in ["US30", "SPX", "DJI", "NAS100", "US500", "NDX"]):
         return BROKER_MAP["TVC"]
     
-    # Forex: OANDA (major/minor pairs)
-    if len(sym) == 6 or any(c in sym for c in ["JPY", "EUR", "USD", "GBP", "AUD", "CAD", "NZD", "CHF"]):
+    # FOREX pairs (6-char alphabetic or common FX patterns)
+    if len(sym) == 6 and sym.isalpha():
+        return BROKER_MAP["OANDA"]
+    if "JPY" in sym or "EUR" in sym or "USD" in sym or "GBP" in sym:
         return BROKER_MAP["OANDA"]
     
-    # Default: NASDAQ for stocks
+    # Default to NASDAQ for stocks
     return BROKER_MAP["NASDAQ"]
 
 
 def is_market_open(symbol: str) -> bool:
-    """
-    Check if the market for a given symbol is currently open.
+    """Check if the market for a given symbol is currently open.
     
-    This function blocks the engine from querying closed markets.
+    This function blocks the engine from querying closed markets,
+    preventing 429 rate limit errors.
     
     Args:
-        symbol: The asset symbol to check
+        symbol: Trading symbol
         
     Returns:
         True if market is open, False otherwise
     """
     sym = symbol.upper()
     
-    # Get broker for this symbol
+    # Crypto markets are 24/7
     broker = resolve_broker(sym)
-    
-    # Get current time in UTC
-    now = datetime.now(pytz.utc)
-    
-    # Crypto markets: 24/7
-    if broker in ["BINANCE", "BYBIT", "COINBASE"]:
+    if broker in CRYPTO_BROKERS:
         return True
     
-    # Forex & Commodities: Close Friday 22:00 UTC, Open Sunday 22:00 UTC
-    if broker in ["OANDA", "FXCM", "TVC"]:
+    # Get current UTC time
+    now = datetime.now()
+    
+    # FX & Commodities: Close Friday 22:00 UTC, Open Sunday 22:00 UTC
+    if broker in FX_BROKERS:
         # Saturday - always closed
         if now.weekday() == 5:
             return False
-        # Sunday before 22:00 - closed
+        # Sunday - only open after 22:00
         if now.weekday() == 6 and now.time() < time(22, 0):
             return False
-        # Friday after 22:00 - closed
+        # Friday - closed after 22:00
         if now.weekday() == 4 and now.time() >= time(22, 0):
             return False
         return True
     
     # Equities (NYSE/NASDAQ): Mon-Fri 13:30 - 20:00 UTC
-    if broker in ["NASDAQ", "NYSE"]:
-        # Weekend - closed
+    if broker in EQUITY_BROKERS:
+        # Weekend
         if now.weekday() >= 5:
             return False
-        # Market hours 13:30 - 20:00 UTC
-        if time(13, 30) <= now.time() <= time(20, 0):
+        # Market hours: 13:30 - 20:00 UTC
+        market_open_time = time(13, 30)
+        market_close_time = time(20, 0)
+        if market_open_time <= now.time() <= market_close_time:
             return True
         return False
     
-    # Default: assume open
+    # Unknown broker - assume open to be safe
     return True
 
 
-def get_market_status(symbol: str) -> dict:
-    """
-    Get detailed market status for a symbol.
+def is_market_open_for_timeframe(symbol: str, timeframe: str) -> bool:
+    """Check if market is open, considering the timeframe.
+    
+    Some timeframes (like 1m, 5m) can be queried even when market is closed,
+    but larger timeframes (1h, 4h, 1d) require open markets.
     
     Args:
-        symbol: The asset symbol to check
+        symbol: Trading symbol
+        timeframe: Timeframe (e.g., '1m', '1h', '4h', '1d')
         
     Returns:
-        Dict with 'is_open', 'broker', 'next_open', 'next_close' keys
+        True if market data can be fetched for this timeframe
+    """
+    # Micro timeframes can sometimes be fetched even when market is "closed"
+    micro_timeframes = {'1m', '5m', '15m', '30m'}
+    
+    if timeframe in micro_timeframes:
+        return True
+    
+    # Larger timeframes require open markets
+    return is_market_open(symbol)
+
+
+def get_market_status(symbol: str) -> dict:
+    """Get detailed market status for a symbol.
+    
+    Args:
+        symbol: Trading symbol
+        
+    Returns:
+        Dict with keys: is_open, broker, reason
     """
     sym = symbol.upper()
     broker = resolve_broker(sym)
     is_open = is_market_open(sym)
     
-    now = datetime.now(pytz.utc)
-    
-    # Calculate next open/close times
-    next_open = None
-    next_close = None
-    
-    # For crypto, markets are always open
-    if broker in ["BINANCE", "BYBIT", "COINBASE"]:
+    if is_open:
         return {
             "is_open": True,
             "broker": broker,
-            "next_open": "24/7",
-            "next_close": "N/A",
+            "reason": "market_open"
         }
     
-    # For forex/commodities
-    if broker in ["OANDA", "FXCM", "TVC"]:
-        if is_open:
-            # Find next close (Friday 22:00 UTC)
-            if now.weekday() < 4:  # Mon-Thu
-                days_ahead = (4 - now.weekday()) % 7
-            else:  # Fri
-                days_ahead = 0
-            if now.weekday() == 4 and now.time() >= time(22, 0):
-                days_ahead = 3  # Next Monday
+    # Determine why market is closed
+    now = datetime.now()
+    reason = "unknown"
+    
+    if broker in CRYPTO_BROKERS:
+        reason = "crypto_24_7"
+    elif now.weekday() == 5:
+        reason = "saturday_closed"
+    elif now.weekday() == 6 and now.time() < time(22, 0):
+        reason = "sunday_not_yet_open"
+    elif now.weekday() == 4 and now.time() >= time(22, 0):
+        reason = "friday_closed"
+    elif broker in EQUITY_BROKERS:
+        if now.weekday() >= 5:
+            reason = "weekend"
         else:
-            # Find next open
-            if now.weekday() == 5:  # Saturday
-                days_ahead = 2  # Sunday
-            elif now.weekday() == 6 and now.time() < time(22, 0):
-                days_ahead = 0  # Today (Sunday)
-            elif now.weekday() == 4 and now.time() >= time(22, 0):
-                days_ahead = 3  # Next Sunday
-            else:
-                days_ahead = 0
+            reason = "outside_market_hours"
     
     return {
-        "is_open": is_open,
+        "is_open": False,
         "broker": broker,
-        "next_open": next_open,
-        "next_close": next_close,
+        "reason": reason
     }
 
 
-if __name__ == "__main__":
-    # Test some symbols
-    test_symbols = ["BTCUSDT", "EURUSD", "XAUUSD", "AAPL", "US30"]
-    
-    print("Market Hours Check:")
-    print("-" * 50)
-    
-    for sym in test_symbols:
-        broker = resolve_broker(sym)
-        is_open = is_market_open(sym)
-        status = "OPEN" if is_open else "CLOSED"
-        print(f"{sym}: {broker} - {status}")
+# For backwards compatibility
+__all__ = [
+    "BROKER_MAP",
+    "resolve_broker",
+    "is_market_open",
+    "is_market_open_for_timeframe",
+    "get_market_status"
+]
