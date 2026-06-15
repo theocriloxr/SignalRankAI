@@ -165,7 +165,9 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     if atr_pct > get_max_volatility(signal.get("asset_class", "crypto")):
         return False
     
-    # RR min 1.5 (primary TP)
+    # ORIGINAL VALUE: 1.5 - Made configurable via MIN_RR_RISK env var (default 1.5)
+    # ADDED: diagnostic logging to identify which gate rejects signals
+    min_rr_risk = float(os.getenv("MIN_RR_RISK", "1.5") or 1.5)
     entry = signal.get("entry")
     stop = signal.get("stop_loss") or signal.get("stop")
     tp_primary = signal.get("take_profit")
@@ -174,7 +176,9 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     if entry and stop and tp_primary:
         risk_dist = abs(float(entry) - float(stop))
         reward_dist = abs(float(tp_primary) - float(entry))
-        if risk_dist > 0 and reward_dist / risk_dist < 1.5:
+        rr_ratio = reward_dist / risk_dist if risk_dist > 0 else 0
+        if rr_ratio < min_rr_risk:
+            logger.warning(f"[risk] RR gate rejected: {signal.get('asset')} rr={rr_ratio:.2f} < {min_rr_risk}")
             return False
     
     # Freshness check (integrate tier_constants)

@@ -41,8 +41,8 @@ def score_signal(signal):
     Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
-    # LOWERED from 25.0 to 15.0 to allow more signals through (fixes "Zero Signal")
-    confluence_min = _env_float("CONFLUENCE_MIN", 15.0)
+    # ORIGINAL VALUE: 25.0 (restored from 15.0)
+    confluence_min = _env_float("CONFLUENCE_MIN", 25.0)
     confluence_score = resolve_confluence_percent(signal)
     if confluence_score is None:
         confluence_score = calculate_confluence(signal)
@@ -54,8 +54,8 @@ def score_signal(signal):
     if confidence is None:
         confidence = resolve_ml_probability(signal)
     
-    # LOWERED from 0.35 to 0.25 to allow more signals through (fixes "Zero Signal")
-    confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
+    # ORIGINAL VALUE: 0.35 (restored from 0.25)
+    confidence_min = _env_float("CONFIDENCE_MIN", 0.35)
     if confidence is not None and confidence < confidence_min:
         return 0.0
 
@@ -113,8 +113,8 @@ def score_signal(signal):
         return 0.0
     score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
-    # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
-    min_rr = _env_float("MIN_RR", 1.0)
+    # ORIGINAL VALUE: 1.5 (restored from 1.0)
+    min_rr = _env_float("MIN_RR", 1.5)
     # Hard rejection for poor R/R
     if rr < min_rr:
         return 0.0
@@ -258,8 +258,8 @@ def rr_score(rr):
     except Exception:
         rr = 0.0
     
-    # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
-    min_rr = _env_float("MIN_RR", 1.0)
+    # ORIGINAL VALUE: 1.5 (restored from 1.0)
+    min_rr = _env_float("MIN_RR", 1.5)
     # Hard floor: reject RR below configured minimum
     if rr < min_rr:
         return 0.0
