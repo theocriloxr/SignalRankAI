@@ -83,7 +83,7 @@ If final_signals=0 but risk_passed>0, the blocker is in the final scoring/filter
   - 'confluence'              → confluence direction mismatch
   
 To fix:
-  1. Set PREMIUM_SCORE_THRESHOLD=0 and PREMIUM_SCORE_THRESHOLD_FORCE=1 (temporary)
+  1. Set PREMIUM_SCORE_THRESHOLD=0 and PREMIUM_SCORE_THRESHOLD_FORCE=0 (temporary)
   2. Set GEMINI_SIGNAL_REVIEW_ENABLED=0 (disable LLM review temporarily)
   3. Set ULTRA_QUALITY_ENABLED=0 (disable ultra filter)
   4. Set EXPECTANCY_HARD_BLOCK_ENABLED=0 (disable hard expectancy block)

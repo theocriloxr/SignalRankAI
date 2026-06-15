@@ -14,7 +14,7 @@ def apply_fix():
     # These must be set BEFORE importing engine modules
     os.environ['ML_PROB_THRESHOLD'] = '0.80'
     os.environ['PREMIUM_SCORE_THRESHOLD'] = '75'
-    os.environ['PREMIUM_SCORE_THRESHOLD_FORCE'] = '1'
+    os.environ['PREMIUM_SCORE_THRESHOLD_FORCE'] = '0'
     os.environ['LOG_LEVEL'] = 'DEBUG'
     
     print("=" * 60)

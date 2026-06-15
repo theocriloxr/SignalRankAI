@@ -17,7 +17,7 @@ def main():
     # Set environment variables to override thresholds
     os.environ['ML_PROB_THRESHOLD'] = '0.80'
     os.environ['PREMIUM_SCORE_THRESHOLD'] = '75'
-    os.environ['PREMIUM_SCORE_THRESHOLD_FORCE'] = '1'  # Force env override over DB
+    os.environ['PREMIUM_SCORE_THRESHOLD_FORCE'] = '0'  # Force env override over DB
     os.environ['LOG_LEVEL'] = 'DEBUG'  # Enable debug logging
     
     print("=== Threshold Override Applied ===")
