@@ -951,6 +951,12 @@ def save_model(model, feature_cols, calibration_x=None, calibration_y=None, trai
     return model_path
 
 
+# Alias for backwards compatibility - main() expects load_training_data
+async def load_training_data(lookback_days: int = 90):
+    """Alias for load_training_data_sync for backwards compatibility."""
+    return await load_training_data_sync(lookback_days)
+
+
 async def main(lookback_days: int | None = None):
     logger.info("Starting ML model training...")
 
