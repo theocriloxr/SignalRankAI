@@ -54,8 +54,10 @@ def score_signal(signal):
     if confidence is None:
         confidence = resolve_ml_probability(signal)
     
+# LOWERED from 0.35 to 0.20 to allow more signals through
+    # This fixes "generated_signals=0" when ML probability is moderate
     # ORIGINAL VALUE: 0.35 (restored from 0.25)
-    confidence_min = _env_float("CONFIDENCE_MIN", 0.35)
+    confidence_min = _env_float("CONFIDENCE_MIN", 0.20)
     if confidence is not None and confidence < confidence_min:
         return 0.0
 

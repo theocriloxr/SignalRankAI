@@ -873,9 +873,9 @@ async def _maybe_await(func, *a, **k):
 # signal can reach at least one tier.  Signals scored 65-69 waste cooldown
 # slots and DB space while being unreachable by any tier; raising this to 70
 # prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
-# FIXED: Lowered from 48 to 35 to allow more signals through
+# FIXED: Lowered from 48 to 30 to allow more signals through
 # This fixes "generated_signals=0" when data is available but score threshold blocks
-DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 35)
+DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 30)
 _runtime_min_score_threshold = float(DEFAULT_MIN_SCORE_THRESHOLD)
 _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
 
@@ -958,10 +958,12 @@ def _current_ml_prob_threshold() -> float:
     If model is accurate (high AUC), threshold lowers -> more signals.
     If model degraded (low AUC), threshold rises -> fewer signals.
     """
-    # Try dynamic threshold first (preferred)
+# Try dynamic threshold first (preferred)
     try:
         from engine.dynamic_threshold import calculate_dynamic_threshold
-        base_threshold = _env_float("ML_PROB_THRESHOLD", 0.30)
+        # LOWERED from 0.30 to 0.20 to allow more signals through when ML model degrades
+        # This fixes the issue where ALL signals are blocked at ML filter (risk_passed=0)
+        base_threshold = _env_float("ML_PROB_THRESHOLD", 0.20)
         dynamic_thresh = calculate_dynamic_threshold(base_threshold=base_threshold)
         return dynamic_thresh
     except Exception as e:
@@ -1847,12 +1849,17 @@ def main_loop(DRY_RUN: bool = False):
                             sig['minutes_until_high_impact_news'] = (market_data.get('_macro') or {}).get('minutes_until_high_impact_news', 0.0)
                             sig['news_event_impact_score'] = (market_data.get('_macro') or {}).get('news_event_impact_score', 0.0)
 
-                            # preview score (even if it doesn't pass validation/gates)
+# preview score (even if it doesn't pass validation/gates)
                             try:
                                 preview_score = float(score_signal(sig)) if score_signal else 0
                                 sig['_preview_score'] = preview_score
                                 if max_candidate_score is None or preview_score > max_candidate_score:
                                     max_candidate_score = preview_score
+                                # DEBUG: Log raw score for diagnosing 100.0 score issue
+                                logger.info(
+                                    f"[engine][SCORE_DEBUG] asset={sig.get('asset')} tf={sig.get('timeframe')} "
+                                    f"raw_score={preview_score} direction={sig.get('direction')}"
+                                )
                             except Exception as e:
                                 logger.debug(f"[engine] Failed to compute preview score: {e}")
                                 pass
@@ -1924,11 +1931,17 @@ def main_loop(DRY_RUN: bool = False):
                     if not strict_candidates:
                         continue
 
-    # ML advisory (non-blocking)
+# ML advisory (non-blocking)
+                    # FIX: Check ML_FILTER_ACTIVE env var to override ml_filter.active flag
+                    # This ensures signals aren't blocked when ML model is unavailable
+                    _ml_filter_active = _env_bool("ML_FILTER_ACTIVE", True)
                     try:
                         from ml.inference import MLFilter
                         from ml.features import extract_features
                         ml_filter = MLFilter()
+                        # Override active flag with env var if set
+                        if not _ml_filter_active:
+                            ml_filter.active = False
                     except Exception:
                         ml_filter = None
 
@@ -1938,10 +1951,16 @@ def main_loop(DRY_RUN: bool = False):
                         prob = None
                         features = {}
                         try:
-                            if ml_filter and getattr(ml_filter, 'active', False):
+                            # FIX: Use env var to determine if ML filter should be applied
+                            # If ml_filter.active is False OR ML_FILTER_ACTIVE=False, skip ML filtering
+                            if ml_filter and getattr(ml_filter, 'active', False) and _ml_filter_active:
                                 features = extract_features(sig, market_data)
                                 threshold = _current_ml_prob_threshold()
                                 approved, prob = ml_filter.ml_filter(features, threshold=threshold)
+                            else:
+                                # FIX: ML filter disabled - allow all signals through
+                                approved = True
+                                prob = 0.5  # Default neutral probability
                         except Exception:
                             approved, prob = True, None
 
@@ -1986,12 +2005,12 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.debug(f"[engine] Failed to record ML rejection: {e}")
                                 pass
                             continue
-# LOWERED threshold to 0.25 to allow more signals through when model is degraded
-    # This fixes "generated_signals=0" issue
+# LOWERED threshold to 0.15 to allow more signals through when model is degraded
+# This fixes "generated_signals=0" issue
                     try:
-                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.25") or 0.25)
+                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.15") or 0.15)
                     except Exception:
-                        ml_hard_min = 0.25
+                        ml_hard_min = 0.15
                         if prob is not None and float(prob) < ml_hard_min:
                             sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
                             _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
