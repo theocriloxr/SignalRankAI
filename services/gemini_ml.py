@@ -199,7 +199,7 @@ async def gemini_confluence_check(
     live_news_headlines: Optional[List[Dict[str, Any]]] = None
 ) -> bool:
     """
-    Ask Gemini 1.5 Pro to act as a Chief Risk Officer.
+    Ask Gemini 2.5 Pro to act as a Chief Risk Officer.
     
     This function acts as a fundamental risk gate. It evaluates:
     - The technical signal (direction, entry, SL, TP)
@@ -667,82 +667,10 @@ except Exception as e:
 """
 
 
-async def audit_recent(limit: int = 50) -> Dict[str, Any]:
-    """
-    Admin-only: quick audit of recent losses and rejections.
-    
-    Args:
-        limit: Number of recent items to fetch (default 50)
-    
-    Returns:
-        Dict with ok status, recent_losses, recent_rejections
-    """
-    if not GEMINI_API_KEY or client is None:
-        return {"ok": False, "error": "GEMINI_API_KEY not configured"}
-    
-    try:
-        from db.session import get_session
-        from db.models import Outcome, MLRejectedSignal
-        from sqlalchemy import select
-        from datetime import timedelta
-        from utils.timeutils import now_utc_naive
-        
-        cutoff = now_utc_naive() - timedelta(days=7)
-        
-        recent_losses = []
-        recent_rejections = []
-        
-        async with get_session() as session:
-            # Get recent losses (status = 'sl')
-            loss_query = await session.execute(
-                select(Outcome)
-                .where(
-                    Outcome.status == "sl",
-                    Outcome.closed_at >= cutoff
-                )
-                .order_by(Outcome.closed_at.desc())
-                .limit(limit)
-            )
-            loss_rows = loss_query.scalars().all()
-            for row in loss_rows:
-                recent_losses.append({
-                    "signal_id": row.signal_id,
-                    "status": row.status,
-                    "r_multiple": row.r_multiple,
-                    "closed_at": str(row.closed_at) if row.closed_at else None,
-                })
-            
-            # Get recent ML rejections
-            reject_query = await session.execute(
-                select(MLRejectedSignal)
-                .order_by(MLRejectedSignal.created_at.desc())
-                .limit(limit)
-            )
-            reject_rows = reject_query.scalars().all()
-            for row in reject_rows:
-                recent_rejections.append({
-                    "signal_id": getattr(row, 'signal_id', None),
-                    "asset": row.asset,
-                    "rejection_reason": row.rejection_reason,
-                    "created_at": str(row.created_at) if row.created_at else None,
-                })
-            
-            await session.commit()
-        
-        return {
-            "ok": True,
-            "recent_losses": recent_losses,
-            "recent_rejections": recent_rejections,
-            "losses_count": len(recent_losses),
-            "rejections_count": len(recent_rejections),
-        }
-        
-    except Exception as e:
-        logger.error(f"[GeminiValidator] audit_recent failed: {e}")
-        return {"ok": False, "error": str(e)}
+# Backwards compatibility alias - Issue 1 & 7 fix
 
 
-async def analyze_asset(asset: str, limit: int = 20) -> Dict[str, Any]:
+if __name__ == "__main__":
     """
     Admin-only: analyze a single asset with recent signals and rejections.
     
@@ -902,6 +830,10 @@ async def set_last_gemini_review(result: Dict[str, Any]) -> None:
     """Store the last Gemini review result."""
     global _last_gemini_review
     _last_gemini_review = result
+
+
+# Backwards compatibility alias - Issue 1 & 7 fix
+audit_recent = audit_recent_signals
 
 
 if __name__ == "__main__":

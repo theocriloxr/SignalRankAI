@@ -49,7 +49,7 @@ def calculate_dynamic_threshold(
         logger.info("[ml] Model AUC %.2f >= 0.95 (excellent); loosening threshold", current_auc)
         return max(0.10, base_threshold * 0.8)
     
-    # Scale the threshold inversely to model performance
+# Scale the threshold inversely to model performance
     # If current_auc < target_auc, ratio < 1.0, threshold increases (stricter)
     # If current_auc > target_auc, ratio > 1.0, threshold decreases (looser)
     adjustment_factor = target_auc / current_auc
