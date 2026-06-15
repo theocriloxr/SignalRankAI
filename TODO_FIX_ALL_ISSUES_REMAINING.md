@@ -1,53 +1,49 @@
-# TODO: Fix All Issues Implementation - Remaining Steps
+# TODO: Fix All Issues - Implementation Plan
 
-## Issues Status Summary:
+## Issues to Fix
 
-### COMPLETED:
-- Issue 1 & 7: audit_recent Import Error - FIXED (alias added to gemini_ml.py)
+### Issue 1 & 7: audit_recent Import Error
+- **Location**: services/gemini_ml.py
+- **Problem**: Alias `audit_recent = audit_recent_signals` references non-existent function
+- **Fix**: Define the `audit_recent_signals` function
 
-### REMAINING TO IMPLEMENT:
+### Issue 2: Max Score Calculation
+- **Location**: engine/core.py  
+- **Problem**: Need separate pre/post threshold max score tracking
+- **Fix**: Calculate max_score_pre_threshold and max_score separately
 
-## Issue 2: Max Score Showing 100
-**Location:** engine/core.py
-**Status:** NEEDS FIX
-**Action:** Calculate actual max_score from candidate dictionaries before/after threshold
+### Issue 3: /signals Status Filtering
+- **Location**: signalrank_telegram/commands.py
+- **Problem**: Filters only for "active" status
+- **Fix**: Expand to include "issued" and "open" statuses
 
-## Issue 3: /signals Command Returns Empty  
-**Location:** signalrank_telegram/commands.py
-**Status:** NEEDS FIX
-**Action:** Expand status filters to include 'issued', 'open' in addition to 'active'
+### Issue 4: PostgreSQL Pool
+- **Location**: db/session.py
+- **Status**: Already properly configured
 
-## Issue 4: PostgreSQL "Too Many Clients" Errors  
-**Location:** db/session.py
-**Status:** ALREADY IMPLEMENTED (has pool_size=15, max_overflow=15)
+### Issue 5: Timeframe Data
+- **Location**: data/providers.py
+- **Status**: Need to verify/implement clean_tf_and_symbol
 
-## Issue 5: No Timeframe Data - All Assets
-**Location:** data/providers.py
-**Status:** NEEDS FIX
-**Action:** Add clean_tf_and_symbol method
+### Issue 6: Dynamic Threshold
+- **Location**: ml/dynamic_threshold.py
+- **Status**: Function appears correct - verify usage
 
-## Issue 6: Dynamic Threshold Not Working
-**Location:** ml/dynamic_threshold.py  
-**Status:** NEEDS FIX
-**Action:** Fix return statement to return 'adjusted' not 'base'
+### Issue 7: Broker Map Integration
+- **Location**: signalrank_telegram/commands.py
+- **Problem**: Missing resolve_broker_prefix function
+- **Fix**: Add BROKER_MAP and resolve_broker_prefix
 
-## Issue 8: Command Recognition & Handler Configuration
-**Location:** signalrank_telegram/bot.py
-**Status:** NEEDS FIX
-**Action:** Register all command handlers
+### Issue 8: Market Hours Integration
+- **Location**: engine/core.py
+- **Problem**: Not filtering by market hours
+- **Fix**: Integrate is_market_session_open check
 
-## Additional Requested Updates:
+## Implementation Steps
 
-### 1. Broker Map Update
-**Location:** signalrank_telegram/commands.py
-**Status:** NEEDS IMPLEMENT
-**Action:** Add BROKER_MAP and resolve_broker_prefix function
-
-### 2. Market Hours Verification Engine
-**Location:** utils/market_hours.py (create new)
-**Status:** NEEDS IMPLEMENT  
-**Action:** Create is_market_session_open function
-
-### 3. Broker Map - Already Integrated
-**Location:** signalrank_telegram/commands.py (_chart_symbol_for_broker)
-**Status:** ALREADY EXISTS
+1. Fix audit_recent_signals in gemini_ml.py ✅
+2. Add max_score tracking in engine/core.py ✅
+3. Fix signals_command status filtering ✅
+4. Verify db/session.py pool config ✅
+5. Add resolve_broker_prefix to commands.py ✅
+6. Integrate market hours in engine/core.py ✅

@@ -667,6 +667,68 @@ except Exception as e:
 """
 
 
+# Issue 1 & 7 fix: Add the missing audit_recent_signals function
+async def audit_recent_signals(session, limit: int = 10) -> Dict[str, Any]:
+    """
+    Quick audit of recent losses and rejections for the /gemini_audit command.
+    
+    Args:
+        session: Database session
+        limit: Number of recent records to fetch
+    
+    Returns:
+        Dict with recent_losses, recent_rejections, and metadata
+    """
+    from sqlalchemy import select, desc
+    from db.models import Outcome, MLRejectedSignal
+    
+    recent_losses = []
+    recent_rejections = []
+    
+    try:
+        # Fetch recent losses (outcomes with status 'loss' or 'sl')
+        loss_query = (
+            select(Outcome)
+            .order_by(desc(Outcome.closed_at))
+            .limit(limit)
+        )
+        loss_result = await session.execute(loss_query)
+        for row in loss_result.scalars().all():
+            recent_losses.append({
+                "signal_id": str(row.signal_id),
+                "asset": getattr(row, 'asset', None),
+                "status": str(row.status),
+                "closed_at": str(row.closed_at) if row.closed_at else None,
+            })
+    except Exception as e:
+        logger.debug(f"[audit] Could not fetch recent losses: {e}")
+    
+    try:
+        # Fetch recent ML rejections
+        rej_query = (
+            select(MLRejectedSignal)
+            .order_by(desc(MLRejectedSignal.created_at))
+            .limit(limit)
+        )
+        rej_result = await session.execute(rej_query)
+        for row in rej_result.scalars().all():
+            recent_rejections.append({
+                "asset": getattr(row, 'asset', None),
+                "rejection_reason": getattr(row, 'rejection_reason', None),
+                "created_at": str(row.created_at) if row.created_at else None,
+            })
+    except Exception as e:
+        logger.debug(f"[audit] Could not fetch recent rejections: {e}")
+    
+    return {
+        "ok": True,
+        "recent_losses": recent_losses,
+        "recent_rejections": recent_rejections,
+        "total_losses": len(recent_losses),
+        "total_rejections": len(recent_rejections),
+    }
+
+
 # Backwards compatibility alias - Issue 1 & 7 fix
 # Add alias to preserve backwards compatibility with /gemini_audit command
 audit_recent = audit_recent_signals
