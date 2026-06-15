@@ -77,52 +77,22 @@ def _is_railway_runtime() -> bool:
 
 
 def _effective_pool_settings() -> tuple[int, int]:
-    # FIX: Increased default pool sizes to prevent connection starvation deadlock
-    # Previous defaults of pool_size=5, max_overflow=3 were too small for multi-worker startup
-    # This was causing ML training to hang indefinitely waiting for connections
-    pool_size = _pool_int("DB_POOL_SIZE", 15, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 15, minimum=0)
+    # FIX: Issue 4 - Severely limit pool to prevent asyncpg exhaustion
+    # FIX: Reduced from pool_size=15 to pool_size=3
+    # FIX: Reduced from max_overflow=15 to max_overflow=5
+    # This prevents "too many clients already" PostgreSQL errors
+    pool_size = _pool_int("DB_POOL_SIZE", 3, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 5, minimum=0)
 
-    # Force NullPool on Railway to prevent "too many clients already" errors
-    # The PostgreSQL hobby tier has very limited connections (~20 max)
-    # NullPool creates fresh connections per use instead of pooling - safer for limited setups
+    # Force NullPool only when explicitly requested
     use_nullpool = os.getenv("DB_USE_NULLPOOL", "").strip().lower()
     
-# FIXED: Never force NullPool - always use connection pooling
-    # This fixes the timeout issues that cause ML to train on bootstrap data
-    is_railway = _is_railway_runtime()
-    # Use connection pooling by default (was forcing NullPool=0 on Railway)
-    
+    # Allow NullPool only if explicitly enabled via env var
     if use_nullpool in ("1", "true", "yes", "on", "y"):
         logger.info("[db] Using NullPool - connection pooling disabled")
         return 0, 0
     
-    if use_nullpool in ("0", "false", "no", "off"):
-        logger.info("[db] NullPool explicitly disabled - using connection pooling")
-        # Continue with pooling config below
-    
-    # Default: Enable connection pooling for better DB performance
-    if use_nullpool == "" and pool_size == 0:
-        # If env not set and pool_size not configured, use defaults
-        pool_size = 15
-        max_overflow = 15
-
-# FIXED: Allow larger pool on Railway too (was limiting to smaller values)
-    # This fixes connection starvation that causes ML timeout and bootstrap data fallback
-    # Use DB_POOL_SIZE_RAILWAY and DB_MAX_OVERFLOW_RAILWAY env vars to override
-    if is_railway and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
-        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 15, minimum=1)
-        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 15, minimum=0)
-        # Allow larger values - use max to enable bigger pools when env vars are set
-        pool_size = max(pool_size, railway_pool_cap)
-        max_overflow = max(max_overflow, railway_overflow_cap)
-    else:
-        # Larger global cap for better performance
-        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 15, minimum=1)
-        global_overflow_cap = _pool_int("DB_MAX_OVERFLOW_GLOBAL_CAP", 15, minimum=0)
-        pool_size = max(pool_size, global_pool_cap)
-        max_overflow = max(max_overflow, global_overflow_cap)
-
+    # Default: Use connection pooling with limited size (FIX Issue 4)
     return pool_size, max_overflow
 
 
