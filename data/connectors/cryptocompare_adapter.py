@@ -22,10 +22,12 @@ def _map_tf(tf: str):
 
 async def _fetch_for_quote(client, base_raw: str, tsym: str, endpoint: str, aggregate: int, timeout: int):
     url = f"https://min-api.cryptocompare.com/data/v2/{endpoint}"
+    # FIXUP: Increased from 200 to 720 for 30 days of hourly data
+    # This fixes 100/200-period indicator starvation (was only getting ~84 candles)
     params = {
         "fsym": base_raw,
         "tsym": tsym,
-        "limit": 200,
+        "limit": 720,
         "aggregate": aggregate,
     }
     api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
@@ -99,7 +101,8 @@ async def cryptocompare_get_candles(symbol: str, timeframe: str, timeout: int = 
                 import requests
 
                 url = f"https://min-api.cryptocompare.com/data/v2/{endpoint}"
-                params = {"fsym": base_raw, "tsym": tsym, "limit": 200, "aggregate": aggregate}
+                # FIXUP: Increased from 200 to 720 for 30 days of hourly data
+                params = {"fsym": base_raw, "tsym": tsym, "limit": 720, "aggregate": aggregate}
                 api_key = (os.getenv("CRYPTOCOMPARE_API_KEY") or "").strip()
                 headers = {"authorization": f"Apikey {api_key}"} if api_key else {}
                 resp = await asyncio.wait_for(
