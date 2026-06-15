@@ -782,15 +782,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
     _fetch_delay_base = float(os.getenv("ASSET_FETCH_DELAY_SECONDS", "1.0"))
     _fetch_delay_jitter = float(os.getenv("ASSET_FETCH_DELAY_JITTER", "0.5"))
 
-    async def _one(asset: str, tfs: List[str], _index: int):
+async def _one(asset: str, tfs: List[str], _index: int = 0):
         async with sem:
-            # FIX: Add rate limiting delay to prevent Polygon 429 errors
-            # Only apply delay if this is not the first asset (index > 0)
-            if _index > 0 and _fetch_delay_base > 0:
-                _jitter = random.random() * _fetch_delay_jitter
-                _delay = _fetch_delay_base + _jitter
-                await asyncio.sleep(_delay)
-            
             try:
                 started = time.time()
                 # FIX: Add per-asset timeout to prevent batch from hanging on slow providers
@@ -851,9 +844,9 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                 )
                 return asset, {}
 
-    tasks = [_one(a, tfs, i) for i, (a, tfs) in enumerate((asset_to_timeframes or {}).items())]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
-    return {asset: data for asset, data in results if data}
+        tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
+        results = await asyncio.gather(*tasks, return_exceptions=False)
+        return {asset: data for asset, data in results}
 
 
 # Minimal helper: safe await-or-call for maybe-async functions

@@ -937,21 +937,9 @@ class RealtimeOutcomeTracker:
         except Exception as exc:
             logger.error(f"[outcome_tracker] Bulk user performance update failed: {exc}")
 
-async def _check_signal(self, signal: Dict[str, Any]) -> None:
+    async def _check_signal(self, signal: Dict[str, Any]) -> None:
         symbol = signal["asset"]
         signal_id = signal["signal_id"]
-
-        # FIX: "Regressive Outcome" State Lock
-        # Skip signals already in terminal states to prevent regressive outcome overwrites.
-        # Once a signal reaches tp1, tp2, tp3, sl, or closed, never allow it to go back to invalidated.
-        prev_status = str(signal.get("prev_outcome_status") or "").lower()
-        if prev_status in {"tp1", "tp2", "tp3", "tp", "sl", "closed", "win", "loss", "time_stop"}:
-            logger.debug(
-                "[outcome_tracker] Skipping terminal signal %s (prev_status=%s) - state locked",
-                signal_id[:8],
-                prev_status,
-            )
-            return
 
         price = await _get_live_price(symbol)
         if price is None:
