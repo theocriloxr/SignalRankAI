@@ -249,6 +249,10 @@ def get_sessionmaker_for_event_loop() -> Optional[async_sessionmaker[AsyncSessio
     return _get_sessionmaker_for_loop(_loop_identity())
 
 
+# Backward compatibility alias
+async_session_maker = get_sessionmaker_for_event_loop
+
+
 def is_db_configured() -> bool:
     return get_database_url_or_none() is not None
 
