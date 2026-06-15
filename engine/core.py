@@ -852,9 +852,9 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                 )
                 return asset, {}
 
-        tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
-        results = await asyncio.gather(*tasks, return_exceptions=False)
-        return {asset: data for asset, data in results}
+    tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    return {asset: data for asset, data in results}
 
 
 # Minimal helper: safe await-or-call for maybe-async functions
