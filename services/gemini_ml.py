@@ -401,10 +401,10 @@ async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dic
     Returns:
         Dict with analysis results including ok status and insights
     """
-    if not GEMINI_API_KEY or client is None:
+if not GEMINI_API_KEY or client is None:
         return {"ok": False, "error": "GEMINI_API_KEY not configured"}
     
-    from db import SessionLocal
+    from db.session import AsyncSessionLocal as SessionLocal
     from db.models import Signal, Outcome, MLRejectedSignal, MLShadowPrediction
     
     try:
