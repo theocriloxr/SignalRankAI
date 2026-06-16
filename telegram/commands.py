@@ -59,7 +59,60 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await has_full_access(user_id):
         await update.message.reply_text("🔒 Premium required. Use /upgrade.")
         return
-    await update.message.reply_text("(Stub) Detailed stats will appear here.")
+
+    # Fetch this week's stats from database
+    try:
+        from db.session import get_session
+        from sqlalchemy import select, func
+        from db.models import Signal
+        from datetime import datetime, timedelta
+        from sqlalchemy import and_
+
+        week_ago = datetime.utcnow() - timedelta(days=7)
+
+        async with get_session() as session:
+            # Get signals created this week
+            result = await session.execute(
+                select(Signal).where(
+                    and_(
+                        Signal.created_at >= week_ago,
+                        Signal.status.in_(['closed', 'expired'])
+                    )
+                )
+            )
+            signals = result.scalars().all()
+
+            wins = sum(1 for s in signals if s.status == 'closed' and s.outcome and s.outcome.startswith('TP'))
+            losses = sum(1 for s in signals if s.status == 'closed' and s.outcome == 'SL')
+            total = wins + losses
+            win_rate = (wins / total * 100) if total > 0 else 0
+
+            # Calculate pips by asset
+            asset_pips = {}
+            for s in signals:
+                if s.outcome in ['TP', 'SL']:
+                    asset = s.asset or 'UNKNOWN'
+                    # Estimate pips from outcome
+                    pips = float(s.r_multiple or 0) * 100  # Convert R to pips
+                    asset_pips[asset] = asset_pips.get(asset, 0) + pips
+
+            # Top asset
+            top_asset = max(asset_pips.items(), key=lambda x: x[1]) if asset_pips else (None, 0)
+    except Exception as e:
+        await update.message.reply_text(f"Stats unavailable: {str(e)[:100]}")
+        return
+
+    # Format response
+    msg = (
+        f"🔥 This Week\n"
+        f"━━━━━━━━━━━━━━━━\n"
+        f"Wins: {wins} | Losses: {losses}\n"
+        f"Win Rate: {win_rate:.0f}%\n"
+    )
+    if top_asset[0]:
+        msg += f"Top Asset: {top_asset[0]} ({top_asset[1]:+.0f} pips)\n"
+
+    await update.message.reply_text(msg)
 
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

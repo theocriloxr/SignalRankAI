@@ -297,6 +297,69 @@ class LiquiditySweepDetector:
         return False, 0.0
 
 
+class LowVolatilityFilter:
+    """Filter signals when market ATR is too low (dead market)."""
+    
+    def __init__(self):
+        self.atr_multiplier_threshold = 0.5  # 50% of 14-day average
+    
+    def is_low_volatility(
+        self,
+        current_atr: float,
+        average_atr_14d: float,
+    ) -> Tuple[bool, str]:
+        """
+        Detect dead market conditions.
+        
+        Returns: (is_low_volatility, reason)
+        If current 1h ATR < 50% of 14-day average ATR, market is dead.
+        """
+        if current_atr <= 0 or average_atr_14d <= 0:
+            return False, ""  # Can't determine, allow signal
+        
+        ratio = current_atr / average_atr_14d
+        if ratio < self.atr_multiplier_threshold:
+            return True, f"Market Volatility Too Low (ATR ratio: {ratio:.2%})"
+        
+        return False, ""
+    
+    def calculate_atr_ratio(
+        self,
+        candles_1h: List[Dict],
+        candles_14d: List[Dict],
+    ) -> Tuple[float, float]:
+        """Calculate current ATR vs 14-day average ATR."""
+        import statistics
+        
+        def _calc_atr(candles: List[Dict]) -> float:
+            if not candles or len(candles) < 2:
+                return 0.0
+            
+            trs = []
+            for i in range(1, len(candles)):
+                try:
+                    h = float(candles[i].get('high', 0))
+                    l = float(candles[i].get('low', 0))
+                    pc = float(candles[i-1].get('close', 0))
+                    tr = max(
+                        h - l,
+                        abs(h - pc),
+                        abs(l - pc)
+                    )
+                    trs.append(tr)
+                except (TypeError, ValueError):
+                    continue
+            
+            if not trs:
+                return 0.0
+            return statistics.mean(trs)
+        
+        current_atr = _calc_atr(candles_1h)
+        avg_atr = _calc_atr(candles_14d)
+        
+        return current_atr, avg_atr_14d
+
+
 class SessionVolatilityFilter:
     """Filter signals based on session volatility patterns."""
     
