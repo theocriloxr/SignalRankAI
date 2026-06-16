@@ -126,6 +126,64 @@ def get_dynamic_ml_threshold(base_threshold: Optional[float] = None) -> float:
     return calculate_dynamic_threshold(base_threshold, current_auc, target_auc)
 
 
+# EMA-based threshold smoothing for stable dynamic adjustment
+# Stores the previous threshold for EMA smoothing
+_prev_threshold: Optional[float] = None
+
+
+def adjust_threshold(base: float, current_auc: float, target: float, prev_threshold: float = None) -> float:
+    """
+    Apply EMA smoothing to threshold calculation.
+    
+    This prevents abrupt threshold jumps that could cause signal starvation
+    by smoothing transitions based on previous threshold values.
+    
+    Args:
+        base: Base threshold value
+        current_auc: Current ML model AUC
+        target: Target AUC 
+        prev_threshold: Previous threshold value for EMA smoothing
+        
+    Returns:
+        Smoothed threshold value
+    """
+    global _prev_threshold
+    
+    # Use provided prev_threshold or fall back to stored global
+    if prev_threshold is None:
+        prev_threshold = _prev_threshold
+    
+    if current_auc < target:
+        raw = base + (target - current_auc) * 0.3
+    else:
+        raw = base - (current_auc - target) * 0.2
+        
+    raw = max(0.35, min(0.85, raw))
+    
+    # EMA Smoothing: 30% new value + 70% previous
+    if prev_threshold is not None and prev_threshold > 0:
+        smoothed = (raw * 0.3) + (prev_threshold * 0.7)
+    else:
+        smoothed = raw
+    
+    # Store for next iteration
+    _prev_threshold = smoothed
+    
+    return smoothed
+
+
+def get_prev_threshold() -> Optional[float]:
+    """Get the previously stored threshold value."""
+    global _prev_threshold
+    return _prev_threshold
+
+
+def set_prev_threshold(value: float) -> None:
+    """Set the previous threshold value for EMA smoothing."""
+    global _prev_threshold
+    _prev_threshold = value
+
+
 # Test the functions
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
