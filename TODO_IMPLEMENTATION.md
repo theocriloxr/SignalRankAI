@@ -17,9 +17,9 @@
 ---
 
 ## Phase 1: Score Collapse Fix
-- [ ] Add soft cap in engine/scoring.py
-- [ ] Add score_components tracking
-- [ ] Add raw_score and display_score fields
+- [x] Add soft cap in engine/scoring.py
+- [x] Add score_components tracking
+- [x] Add raw_score and display_score fields
 
 ## Phase 2: Risk Passed Fix
 - [ ] Add best_target_for_direction helper
