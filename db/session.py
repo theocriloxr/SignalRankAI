@@ -77,22 +77,19 @@ def _is_railway_runtime() -> bool:
 
 
 def _effective_pool_settings() -> tuple[int, int]:
-    # FIX: Issue 4 - Severely limit pool to prevent asyncpg exhaustion
-    # FIX: Reduced from pool_size=15 to pool_size=3
-    # FIX: Reduced from max_overflow=15 to max_overflow=5
-    # This prevents "too many clients already" PostgreSQL errors
-    pool_size = _pool_int("DB_POOL_SIZE", 3, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 5, minimum=0)
-
     # Force NullPool only when explicitly requested
     use_nullpool = os.getenv("DB_USE_NULLPOOL", "").strip().lower()
-    
-    # Allow NullPool only if explicitly enabled via env var
     if use_nullpool in ("1", "true", "yes", "on", "y"):
         logger.info("[db] Using NullPool - connection pooling disabled")
         return 0, 0
-    
-    # Default: Use connection pooling with limited size (FIX Issue 4)
+
+    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
+
+    if _is_railway_runtime():
+        pool_size = min(pool_size, 3)
+        max_overflow = 0
+
     return pool_size, max_overflow
 
 

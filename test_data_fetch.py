@@ -1,30 +1,37 @@
-#!/usr/bin/env python3
-"""Quick diagnostic test for data fetching and indicators."""
-import sys
-sys.path.insert(0, '.')
+"""Diagnostic test for data fetching and indicators."""
 
-from data.fetcher import get_candles
+import os
 
-# Test fetching candles for a sample crypto asset
-asset = 'BTCUSDT'
-timeframe = '1h'
+import pytest
 
-print(f'Testing data fetch for {asset} {timeframe}...')
-candles = get_candles(asset, timeframe)
-print(f'Got {len(candles) if candles else 0} candles')
 
-if candles:
-    print(f'First candle timestamp: {candles[0].get("timestamp")}')
-    print(f'Last candle: close={candles[-1].get("close")}')
-    
-    # Test indicators
+def _fetch_sample_candles():
+    from data.fetcher import get_candles
+
+    return get_candles("BTCUSDT", "1h")
+
+
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_DATA_TESTS", "0").strip().lower() not in {"1", "true", "yes"},
+    reason="live market-data smoke test requires RUN_LIVE_DATA_TESTS=1",
+)
+def test_live_data_fetch_and_indicators():
+    candles = _fetch_sample_candles()
+
+    assert candles
+
     from data.indicators import calculate_indicators
+
     indicators = calculate_indicators(candles)
-    print(f'Indicators calculated: {len(indicators)}')
-    print(f'RSI: {indicators.get("rsi")}')
-    print(f'EMA fast: {indicators.get("ema_fast")}')
-    print(f'Trend EMA: {indicators.get("trend_ema")}')
-    print(f'Close price: {indicators.get("close_price")}')
-else:
-    print('ERROR: No candles returned!')
-    sys.exit(1)
+    assert indicators
+    assert "close_price" in indicators
+
+
+if __name__ == "__main__":
+    candles = _fetch_sample_candles()
+    print(f"Got {len(candles) if candles else 0} candles")
+    if candles:
+        print(f"First candle timestamp: {candles[0].get('timestamp')}")
+        print(f"Last candle: close={candles[-1].get('close')}")
+    else:
+        print("No candles returned")

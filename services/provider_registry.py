@@ -120,6 +120,7 @@ class ProviderRegistry:
         self._redis_url = self._resolve_redis_url()
         self._cooldown_seconds = int(
             os.getenv("PROVIDER_COOLDOWN_SECONDS", str(DEFAULT_COOLDOWN_SECONDS))
+        )
         
         if self._redis_url:
             self._init_redis()

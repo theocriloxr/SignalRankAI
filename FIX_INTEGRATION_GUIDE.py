@@ -1,3 +1,4 @@
+'''
 # SignalRankAI - Task Fixes Integration Guide
 
 This guide shows how to integrate all 5 task fixes into the system.
@@ -194,3 +195,4 @@ status = get_circuit_breaker_status()
 5. **Fifth**: Deploy Task 1 (async fetcher) - improves performance
 
 Each task can be deployed independently.
+'''

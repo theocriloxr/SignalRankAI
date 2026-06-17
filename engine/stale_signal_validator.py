@@ -394,7 +394,7 @@ async def validate_signal_freshness(
 
     if live is None:
         logger.debug("[stale_validator] No price available for %s — allowing signal", symbol)
-return True, "price_unavailable_skip", None
+        return True, "price_unavailable_skip", None
 
     # Ghost price detection using secondary source
     use_ghost_check = _env_bool("GHOST_PRICE_CHECK", True)
