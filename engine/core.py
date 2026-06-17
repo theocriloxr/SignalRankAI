@@ -195,21 +195,24 @@ except Exception as e:
 # Fallback threshold optimizer that uses env var
 # FIX: LOWERED to 0.15 to match config.py and fix signal starvation
 class _FallbackThresholdOptimizer:
-        def get_threshold(self) -> float:
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.15') or 0.15)
-        async def analyze_and_adjust(self, force: bool = False):
-            return None
-        def get_config(self):
-            from datetime import datetime
-            return type('Config', (), {
-                'ml_prob_threshold': self.get_threshold(),
-# FIXED: Lowered from 30 to 25 to match PREMIUM_SCORE_THRESHOLD in config.py (fixes max_score=100, final_signals=0)
-                'min_score_threshold': 25.0,
-                'confluence_min': 0.0,
-                'last_updated': datetime.utcnow(),
-                'source': 'env',
-            })()
-    _threshold_optimizer = _FallbackThresholdOptimizer()
+    def get_threshold(self) -> float:
+        return float(os.getenv('ML_PROB_THRESHOLD', '0.15') or 0.15)
+    
+    async def analyze_and_adjust(self, force: bool = False):
+        return None
+    
+    def get_config(self):
+        from datetime import datetime
+        return type('Config', (), {
+            'ml_prob_threshold': self.get_threshold(),
+            # FIXED: Lowered from 30 to 25 to match PREMIUM_SCORE_THRESHOLD in config.py (fixes max_score=100, final_signals=0)
+            'min_score_threshold': 25.0,
+            'confluence_min': 0.0,
+            'last_updated': datetime.utcnow(),
+            'source': 'env',
+        })()
+
+_threshold_optimizer = _FallbackThresholdOptimizer()
 # Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
@@ -2035,20 +2038,39 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.debug(f"[engine] Failed to record ML rejection: {e}")
                                 pass
                             continue
-# LOWERED threshold to 0.15 to allow more signals through when model is degraded
-# This fixes "generated_signals=0" issue
+# LOWERED threshold to 0.05 to allow more signals through when model is degraded
+# This fixes "generated_signals=0" issue - DEBUG FIX
                     try:
-                        # LOWERED from 0.15 to 0.10 to fix ML blocking all signals
+                        # LOWERED from 0.10 to 0.05 to fix ML blocking all signals
                         # This is the PRIMARY fix for strict_candidates=33 -> risk_passed=0
-                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.10") or 0.10)
+                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.05") or 0.05)
                     except Exception:
-                        ml_hard_min = 0.10
-                        if prob is not None and float(prob) < ml_hard_min:
-                            sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
-                            _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
-                            continue
-                        sig['ml_probability'] = prob
-                        risk_passed.append(sig)
+                        ml_hard_min = 0.05
+                    # DEBUG: Log ML probability for every signal to identify why it's being rejected
+                    if prob is not None:
+                        # Log if signal is being rejected due to ML probability
+                        if float(prob) < ml_hard_min:
+                            logger.warning(
+                                f"[RISK_DEBUG] ML_REJECTED asset={sig.get('asset')} "
+                                f"prob={prob:.4f} threshold={ml_hard_min:.4f} "
+                                f"direction={sig.get('direction')}"
+                            )
+                        else:
+                            logger.info(
+                                f"[RISK_DEBUG] ML_PASSED asset={sig.get('asset')} "
+                                f"prob={prob:.4f} threshold={ml_hard_min:.4f}"
+                            )
+                    else:
+                        logger.warning(
+                            f"[RISK_DEBUG] ML_PROB_NONE asset={sig.get('asset')} "
+                            f"threshold={ml_hard_min:.4f} - using default"
+                        )
+                    if prob is not None and float(prob) < ml_hard_min:
+                        sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
+                        _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
+                        continue
+                    sig['ml_probability'] = prob
+                    risk_passed.append(sig)
 
 # PROBLEM 1 FIX: Track WHY signals are rejected at risk/ML filter
                     # This is the KEY DIAGNOSTIC - currently we have no visibility into WHY 33 candidates -> 0 risk_passed

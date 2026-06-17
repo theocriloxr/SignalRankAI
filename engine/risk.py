@@ -165,20 +165,52 @@ def risk_check(signal: Dict[str, Any], account_state: Any) -> bool:
     if atr_pct > get_max_volatility(signal.get("asset_class", "crypto")):
         return False
     
-    # ORIGINAL VALUE: 1.5 - Made configurable via MIN_RR_RISK env var (default 1.5)
+# ORIGINAL VALUE: 1.5 - Made configurable via MIN_RR_RISK env var (default 1.5)
     # ADDED: diagnostic logging to identify which gate rejects signals
     min_rr_risk = float(os.getenv("MIN_RR_RISK", "1.5") or 1.5)
     entry = signal.get("entry")
     stop = signal.get("stop_loss") or signal.get("stop")
+    
+    # FIX: Check ALL take profit levels, not just the first one
+    # Use the best target that aligns with trade direction
     tp_primary = signal.get("take_profit")
     if isinstance(tp_primary, list):
-        tp_primary = tp_primary[0] if tp_primary else None
+        # For longs: want highest TP (best reward)
+        # For shorts: want lowest TP (best reward)
+        direction = str(signal.get("direction") or "long").lower()
+        valid_tps = []
+        for tp in tp_primary:
+            try:
+                tp_val = float(tp) if not isinstance(tp, dict) else float(tp.get("price") or tp.get("tp") or tp.get("target"))
+                if tp_val and tp_val > 0:
+                    valid_tps.append(tp_val)
+            except (TypeError, ValueError):
+                continue
+        
+        if valid_tps:
+            if direction == "long":
+                # Long: take the highest TP for best RR
+                tp_primary = max(valid_tps)
+            else:
+                # Short: take the lowest TP for best RR
+                tp_primary = min(valid_tps)
+        else:
+            tp_primary = None
+    elif isinstance(tp_primary, dict):
+        tp_primary = tp_primary.get("price") or tp_primary.get("tp") or tp_primary.get("target")
+    
     if entry and stop and tp_primary:
         risk_dist = abs(float(entry) - float(stop))
         reward_dist = abs(float(tp_primary) - float(entry))
         rr_ratio = reward_dist / risk_dist if risk_dist > 0 else 0
         if rr_ratio < min_rr_risk:
-            logger.warning(f"[risk] RR gate rejected: {signal.get('asset')} rr={rr_ratio:.2f} < {min_rr_risk}")
+            # DEBUG: Log detailed RR rejection info
+            logger.warning(
+                f"[RISK_DEBUG] RR_REJECTED asset={signal.get('asset')} "
+                f"rr_ratio={rr_ratio:.4f} min_required={min_rr_risk} "
+                f"entry={entry} stop={stop} tp={tp_primary} "
+                f"risk_dist={risk_dist:.4f} reward_dist={reward_dist:.4f}"
+            )
             return False
     
     # Freshness check (integrate tier_constants)

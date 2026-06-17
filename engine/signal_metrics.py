@@ -95,23 +95,18 @@ def resolve_confluence_total(signal: Mapping[str, Any]) -> Optional[int]:
 
 
 def resolve_ml_probability(signal: Mapping[str, Any]) -> Optional[float]:
-    """Resolve ML probability as a 0..1 ratio, derived if missing."""
+    """Resolve ML probability as a 0..1 ratio, derived if missing.
+    
+    FIX: Removed circular fallback where ml_probability was being inferred from
+    score/confidence which could feed back into scoring calculations.
+    Now only uses direct ML probability fields without derivation fallback.
+    """
+    # First priority: direct ML probability fields
     for key in ("ml_probability", "ml_prob", "ml_score", "ml_confidence"):
         val = _clamp_ratio(signal.get(key))
         if val is not None:
             return val
-
-    components: list[float] = []
-    conf = resolve_confidence_ratio(signal)
-    if conf is not None:
-        components.append(conf)
-    score = _clamp_ratio(signal.get("score"))
-    if score is not None:
-        components.append(score)
-    confluence = resolve_confluence_percent(signal)
-    if confluence is not None:
-        components.append(max(0.0, min(confluence / 100.0, 1.0)))
-
-    if components:
-        return sum(components) / len(components)
+    
+    # FIX: No longer derive from score/confidence to avoid circularity
+    # that was causing the score to saturate at 100.0
     return None

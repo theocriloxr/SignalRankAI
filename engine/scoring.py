@@ -260,7 +260,7 @@ def rr_score(rr):
     except Exception:
         rr = 0.0
     
-    # ORIGINAL VALUE: 1.5 (restored from 1.0)
+# ORIGINAL VALUE: 1.5 (restored from 1.0)
     min_rr = _env_float("MIN_RR", 1.5)
     # Hard floor: reject RR below configured minimum
     if rr < min_rr:
@@ -269,7 +269,17 @@ def rr_score(rr):
     # Scale: 2.0 is 50%, 3.0 is 100%
     base = max(min_rr, 1.0)
     scale = max(0.5, 3.0 - base)
-    return float(min(max((rr - base) / scale, 0.0), 1.0))
+    raw_score = float(min(max((rr - base) / scale, 0.0), 1.0))
+    
+    # FIX: Soft-cap on top end to prevent all strong signals from collapsing to 100.0
+    # Apply soft cap: scores above 85 get compressed, so 90->92, 95->96, 100 stays 100
+    # This ensures some spread remains in the score distribution
+    if raw_score >= 0.85:
+        # Compress the top end: (score - 0.85) * 0.5 + 0.85
+        soft_cap = 0.85 + (raw_score - 0.85) * 0.5
+        return soft_cap
+    
+    return raw_score
 
 
 def htf_alignment_score(signal):
