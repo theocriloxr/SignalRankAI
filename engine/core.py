@@ -193,11 +193,9 @@ try:
 except Exception as e:
     logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
 # Fallback threshold optimizer that uses env var
-# ORIGINAL VALUE: 0.55 (restored from 0.20)
+# FIX: LOWERED to 0.15 to match config.py and fix signal starvation
 class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
-# LOWERED from 0.55 to 0.15 to fix ML blocking all signals
-# This ensures more signals pass through when ML model degrades
             return float(os.getenv('ML_PROB_THRESHOLD', '0.15') or 0.15)
         async def analyze_and_adjust(self, force: bool = False):
             return None
@@ -205,7 +203,8 @@ class _FallbackThresholdOptimizer:
             from datetime import datetime
             return type('Config', (), {
                 'ml_prob_threshold': self.get_threshold(),
-                'min_score_threshold': 30.0,  # FIXED: Lowered from 40 to 30 to allow more signals through
+# FIXED: Lowered from 30 to 25 to match PREMIUM_SCORE_THRESHOLD in config.py (fixes max_score=100, final_signals=0)
+                'min_score_threshold': 25.0,
                 'confluence_min': 0.0,
                 'last_updated': datetime.utcnow(),
                 'source': 'env',

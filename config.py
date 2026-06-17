@@ -104,15 +104,15 @@ class Config:
 		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", ml_train_default)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
 
-# ML probability threshold - LOWERED to 0.25 to allow signals with 56%+ ML probability to pass through
-		# This addresses the ML drift issue where model outputs 56% but threshold was 55%
-		# FIX: Lowered from 0.40 to 0.25 to fix signal starvation
-		self.ML_PROB_THRESHOLD = self._env_float("ML_PROB_THRESHOLD", 0.25)
+# ML probability threshold - LOWERED to 0.15 to allow signals with moderate ML probability
+		# FIX: Lowered from 0.25 to 0.15 to fix signal starvation (risk_rejected_risk=36, final_signals=0)
+		# This is the ML filter gate - signals must have ML probability >= this to pass
+		self.ML_PROB_THRESHOLD = self._env_float("ML_PROB_THRESHOLD", 0.15)
 
-		# Score threshold for signal storage - lowered to 35 to allow more signals through
-		# FIX: Lowered from 40 to 35 to fix signal starvation
-		# This is the min_score gate that was zeroing 64.4 scores
-		self.PREMIUM_SCORE_THRESHOLD = self._env_float("PREMIUM_SCORE_THRESHOLD", 35.0)
+# Score threshold for signal storage - lowered to 25 to allow more signals through
+		# FIX: Lowered from 35 to 25 to fix signal starvation (max_score stuck at 100, final_signals=0)
+		# This is the min_score gate - signals must score >= this to be stored
+		self.PREMIUM_SCORE_THRESHOLD = self._env_float("PREMIUM_SCORE_THRESHOLD", 25.0)
 
 		# MARKET DATA: Minimum candles required (lowered to 20 to prevent signal starvation)
 		# FIX: Lowered from 80 to 20 to allow more data through when providers return limited candles
