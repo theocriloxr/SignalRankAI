@@ -115,7 +115,7 @@ def score_signal(signal):
         return 0.0
     score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
-    # ORIGINAL VALUE: 1.5 (restored from 1.0)
+# ORIGINAL VALUE: 1.5 (restored from 1.0)
     min_rr = _env_float("MIN_RR", 1.5)
     # Hard rejection for poor R/R
     if rr < min_rr:
@@ -123,6 +123,7 @@ def score_signal(signal):
     
     # REGIME ALIGNMENT BONUS
     regime_fit = signal.get("regime_fit") or signal.get("htf_alignment")
+    regime_bonus = 1.0
     try:
         if regime_fit is not None:
             regime_fit = float(regime_fit)
@@ -136,6 +137,7 @@ def score_signal(signal):
     
     # ML PROBABILITY BOOST
     ml_val = resolve_ml_probability(signal)
+    ml_boost = 1.0
     if ml_val is not None:
         try:
             ml_val = min(max(float(ml_val), 0.0), 1.0)
@@ -147,12 +149,39 @@ def score_signal(signal):
             pass
     
     # EXCEPTIONAL R/R REWARD
+    rr_bonus = 1.0
     if rr >= 2.5:
+        rr_bonus = 1.20
         score = score * 1.20
     elif rr >= 2.0:
+        rr_bonus = 1.15
         score = score * 1.15
     
-    return round(min(score, 100.0), 2)
+    # PHASE 1 FIX: Soft cap to prevent score collapse to 100
+    # Store raw_score before cap for debugging
+    raw_score = score
+    
+    # Soft-cap: exponential decay prevents collapse while preserving ordering
+    # At raw_score=75, soft_score≈63; At raw_score=150, soft_score≈86
+    # This prevents all scores from collapsing to 100
+    import math
+    soft_score = 100.0 * (1.0 - math.exp(-raw_score / 75.0))
+    display_score = round(min(soft_score, 99.5), 2)
+    
+    # Store component breakdown in signal for debugging
+    signal["score_components"] = {
+        "rr": rr_component,
+        "vol": vol_component,
+        "confidence": confidence,
+        "confluence": confluence_score,
+        "regime_bonus": regime_bonus,
+        "ml_boost": ml_boost,
+        "rr_bonus": rr_bonus,
+    }
+    signal["raw_score"] = raw_score
+    signal["display_score"] = display_score
+    
+    return display_score
 
 
 def calculate_signal_score(signal, risk_profile=None, regime=None):
