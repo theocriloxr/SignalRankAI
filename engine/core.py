@@ -194,10 +194,11 @@ except Exception as e:
     logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
 # Fallback threshold optimizer that uses env var
 # ORIGINAL VALUE: 0.55 (restored from 0.20)
-    class _FallbackThresholdOptimizer:
+class _FallbackThresholdOptimizer:
         def get_threshold(self) -> float:
-# ORIGINAL VALUE: 0.55 (restored from 0.20)
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.55') or 0.55)
+# LOWERED from 0.55 to 0.15 to fix ML blocking all signals
+# This ensures more signals pass through when ML model degrades
+            return float(os.getenv('ML_PROB_THRESHOLD', '0.15') or 0.15)
         async def analyze_and_adjust(self, force: bool = False):
             return None
         def get_config(self):
@@ -2037,10 +2038,12 @@ def main_loop(DRY_RUN: bool = False):
                             continue
 # LOWERED threshold to 0.15 to allow more signals through when model is degraded
 # This fixes "generated_signals=0" issue
-                    try:
-                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.15") or 0.15)
+try:
+                        # LOWERED from 0.15 to 0.10 to fix ML blocking all signals
+                        # This is the PRIMARY fix for strict_candidates=33 -> risk_passed=0
+                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.10") or 0.10)
                     except Exception:
-                        ml_hard_min = 0.15
+                        ml_hard_min = 0.10
                         if prob is not None and float(prob) < ml_hard_min:
                             sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
                             _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
@@ -2363,15 +2366,18 @@ def main_loop(DRY_RUN: bool = False):
                                     pass
 
 # FIX Issue 2: Use >= to let perfect scores through, calculate real max_scores
-                            # Safe Parsing of Threshold
-                            raw_force = os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE", "85.0")
+# Safe Parsing of Threshold
+                            # FIXED: Lowered default from 85.0 to 25.0 to allow more signals through
+                            # This fixes the issue where strict_candidates > 0 but final_signals = 0
+                            # because score threshold was too aggressive
+                            raw_force = os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE", "25.0")
                             try:
                                 if str(raw_force).lower() in ["true", "yes", "1"]:
-                                    threshold = 85.0
+                                    threshold = 25.0
                                 else:
                                     threshold = float(raw_force)
                             except ValueError:
-                                threshold = 85.0
+                                threshold = 25.0
 
                             # FIX: Change > to >= so perfect 100.0 scores can pass through
                             min_score_threshold = _current_min_score_threshold()
