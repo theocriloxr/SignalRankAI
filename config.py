@@ -88,9 +88,16 @@ class Config:
 		self.RAILWAY_DEPLOYMENT_ID = os.getenv("RAILWAY_DEPLOYMENT_ID", "")
 		self.GIT_COMMIT_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
 
-		# Feature toggles (add more as needed)
+# Feature toggles (add more as needed)
 		self.MARKET_MONITOR_ENABLED = True
 		self.CRYPTO_WS_ENABLED = True
+		
+		# Asset class enablement toggles - Enable/disable asset classes globally
+		# Set to 'true' or 'false' via environment variables
+		self.FX_ENABLED = self._env_bool('FX_ENABLED', True)
+		self.STOCKS_ENABLED = self._env_bool('STOCKS_ENABLED', True)
+		self.CRYPTO_ENABLED = self._env_bool('CRYPTO_ENABLED', True)
+		self.COMMODITY_ENABLED = self._env_bool('COMMODITY_ENABLED', True)
 # Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
 		is_railway = bool(self.RAILWAY_SERVICE_NAME or self.RAILWAY_ENVIRONMENT)
 		ml_train_default = not is_railway  # Default False on Railway (Hobby plan constraint)
@@ -153,10 +160,18 @@ class Config:
 		self.ONCHAIN_ALERT_INCLUDE_EXCHANGE_FLOWS = self._env_bool("ONCHAIN_ALERT_INCLUDE_EXCHANGE_FLOWS", True)
 		self.ONCHAIN_ALERT_INCLUDE_DORMANT_MOVES = self._env_bool("ONCHAIN_ALERT_INCLUDE_DORMANT_MOVES", True)
 
-		# AI journal and correlation governance
+# AI journal and correlation governance
 		self.AI_JOURNAL_AUTO_SEND = self._env_bool("AI_JOURNAL_AUTO_SEND", True)
 		self.AI_JOURNAL_WEEKLY_DAY = os.getenv("AI_JOURNAL_WEEKLY_DAY", "sunday").strip().lower() or "sunday"
 		self.CORRELATION_FILTER_MODE = os.getenv("CORRELATION_FILTER_MODE", "best_per_cluster").strip().lower() or "best_per_cluster"
+
+		# Signal Orchestrator / Spam Prevention
+		# Cooldown between signal updates for the same signal_id (seconds)
+		self.SIGNAL_NOTIFY_COOLDOWN_SECONDS = self._env_int("SIGNAL_NOTIFY_COOLDOWN_SECONDS", 900)  # 15 min default
+		# Minimum % price change to warrant an edit notification
+		self.SIGNAL_UPDATE_THRESHOLD_PCT = self._env_float("SIGNAL_UPDATE_THRESHOLD_PCT", 0.1)
+		# Enable signal orchestrator for editMessageText support
+		self.SIGNAL_ORCHESTRATOR_ENABLED = self._env_bool("SIGNAL_ORCHESTRATOR_ENABLED", True)
 
 	def _env_int(self, name: str, default: int = 0) -> int:
 		raw = os.getenv(name)

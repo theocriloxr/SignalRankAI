@@ -1286,12 +1286,19 @@ def main_loop(DRY_RUN: bool = False):
             fx_assets = [a for a in open_assets if is_fx(a)]
             stock_assets = [a for a in open_assets if is_stock(a)]
             commodity_assets = [a for a in open_assets if is_commodity(a)]
+# FIX: Add CRYPTO_ENABLED and COMMODITY_ENABLED checks (matching config.py)
             fx_enabled = _env_bool('FX_ENABLED', True)
             stocks_enabled = _env_bool('STOCKS_ENABLED', True)
+            crypto_enabled = _env_bool('CRYPTO_ENABLED', True)
+            commodity_enabled = _env_bool('COMMODITY_ENABLED', True)
             if not fx_enabled:
                 fx_assets = []
             if not stocks_enabled:
                 stock_assets = []
+            if not crypto_enabled:
+                crypto_assets = []
+            if not commodity_enabled:
+                commodity_assets = []
 
             # ── Round-robin queue: cover every open asset once per round ──────────
             # Interleave asset classes so each batch has natural diversity
