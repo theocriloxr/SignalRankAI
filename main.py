@@ -114,12 +114,15 @@ def main() -> None:
         import uvicorn
         port = int(os.getenv("PORT", "8000"))
         print("[boot] all mode → delegating to railway_main:app (webhook route included)", flush=True)
-        uvicorn.run("railway_main:app", host="0.0.0.0", port=port, log_level="info")
+        # FIX: Use log_config=None to prevent uvicorn from sending INFO logs to stderr
+        # Railway maps stderr to error severity, breaking dashboards
+        uvicorn.run("railway_main:app", host="0.0.0.0", port=port, log_level="info", log_config=None)
         return
     elif mode == "web":
         import uvicorn
         port = int(os.getenv("PORT", "8000"))
-        uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
+        # FIX: Use log_config=None to prevent uvicorn from sending INFO logs to stderr
+        uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info", log_config=None)
         return
     elif mode == "worker":
         from worker.worker import main as worker_main

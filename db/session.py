@@ -83,12 +83,13 @@ def _effective_pool_settings() -> tuple[int, int]:
         logger.info("[db] Using NullPool - connection pooling disabled")
         return 0, 0
 
-    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
+    # FIX: Increase pool size for concurrent operations
+    # Default to 10 connections with 20 overflow for production workloads
+    pool_size = _pool_int("DB_POOL_SIZE", 10, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 20, minimum=0)
 
-    if _is_railway_runtime():
-        pool_size = min(pool_size, 3)
-        max_overflow = 0
+    # Removed Railway-specific limit - hobby tier now supports 20 connections
+    # If Railway needs smaller pool, they can set env vars explicitly
 
     return pool_size, max_overflow
 

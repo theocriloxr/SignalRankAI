@@ -1,21 +1,36 @@
-# TODO: Fix All Issues Implementation Plan
+# TODO: Fix All Issues from Railway Diagnostic Report
 
-## Phase 1: Critical ML & Database Fixes
-- [ ] 1. Fix audit_recent Import Error (signalrank_telegram/commands.py) - Already has function
-- [ ] 2. Fix Max Score 100.0 (engine/core.py) - Fix >= operator
-- [ ] 3. Fix /signals Command Returning Empty (signalrank_telegram/commands.py) - Expand statuses
-- [ ] 4. Fix PostgreSQL "Too Many Clients" (db/session.py) - Check current settings
-- [ ] 5. Fix No Timeframe Data (Rate Limits) (engine/core.py) - Add semaphore waterfall
+## Issues to Fix (Priority Order)
 
-## Phase 2: Core ML Stability
-- [ ] 6. Fix Dynamic Threshold (ml/dynamic_threshold.py) - Return adjusted value
-- [ ] 7. Create Broker Map & Market Hours Support (utils/market_hours.py)
-- [ ] 8. Add ML scale_pos_weight (ml/train_model.py)
-- [ ] 9. Add EMA Smoothing to Dynamic Threshold
+### 1. Railway Log Misclassification (INFO as ERROR)
+- Status: PENDING
+- Files: main.py, railway_main.py
+- Task: Configure uvicorn to use log_config=None and route all logs to stdout
 
-## Phase 3: Advanced Features
-- [ ] 10. Add Trade Correlation Blocker
-- [ ] 11. Add Redis Market Data Caching
-- [ ] 12. Add Graceful Shutdown
+### 2. Binance Pair Discovery Broken
+- Status: PENDING  
+- Files: data/pair_discovery.py
+- Task: Make CryptoCompare primary, add Bybit as alternative
 
-## Status: Ready to implement
+### 3. Database Pool Too Small
+- Status: PENDING
+- Files: db/session.py
+- Task: Increase pool_size to 10, max_overflow to 20
+
+### 4. Engine Heartbeat Confirmation
+- Status: PENDING
+- Files: engine/core.py
+- Task: Add [engine] main loop started and heartbeat logs
+
+### 5. Background Task Monitoring
+- Status: ALREADY DONE
+- Notes: _log_task_failure callback already exists in railway_main.py
+
+## Implementation Checklist
+- [ ] 1. Fix Railway logging in main.py
+- [ ] 2. Fix Railway logging in railway_main.py  
+- [ ] 3. Update pair discovery to prefer CryptoCompare
+- [ ] 4. Add Bybit pair discovery
+- [ ] 5. Increase DB pool settings
+- [ ] 6. Add engine startup confirmation
+- [ ] 7. Test all changes locally

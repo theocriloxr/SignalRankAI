@@ -256,6 +256,10 @@ def get_trending_crypto_pairs(top_n=20):
             logger.info("[pair_discovery] Using manual CRYPTO_PAIRS: %s", manual_pairs[:5])
             return exclude_pairs(_filter_blacklisted(manual_pairs[:top_n]))
     
+    # FIX: Default to CryptoCompare because Railway IP ranges are geo-blocked by Binance
+    # Check if running on Railway - default to CryptoCompare to avoid geoblock issues
+    is_railway = _is_true(os.getenv("RAILWAY_SERVICE_NAME") or "") or _is_true(os.getenv("RAILWAY_ENVIRONMENT") or "")
+    
     # Explicit provider override remains supported.
     if provider == "cryptocompare":
         result = _cryptocompare_top_crypto_pairs(top_n)
@@ -274,6 +278,27 @@ def get_trending_crypto_pairs(top_n=20):
             return exclude_pairs(_filter_blacklisted(result))
         # Fallback to hardcoded if Binance requested but fails
         logger.warning("[pair_discovery] Binance explicitly requested but failed, using hardcoded fallback")
+        return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
+    
+    if provider == "bybit":
+        bybit_result = _bybit_top_crypto_pairs(top_n)
+        if bybit_result:
+            return exclude_pairs(bybit_result)
+        # Fallback to CryptoCompare if Bybit requested but fails
+        result = _cryptocompare_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
+        logger.warning("[pair_discovery] Bybit explicitly requested but failed, using hardcoded fallback")
+        return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
+
+    # FIX: On Railway, use CryptoCompare by default to avoid Binance geoblock
+    if is_railway:
+        logger.info("[pair_discovery] Railway detected, using CryptoCompare by default to avoid Binance geoblock")
+        result = _cryptocompare_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
+        # Fallback to hardcoded
+        logger.warning("[pair_discovery] CryptoCompare failed on Railway, using hardcoded fallback")
         return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
 
     # Default and "all": aggregate providers in parallel, fail-open.
@@ -301,13 +326,15 @@ def get_trending_crypto_pairs(top_n=20):
             return exclude_pairs(merged)
 
     # Final fail-open fallback: try Binance first, then CryptoCompare, then HARDCODED
-    fallback = _binance_top_crypto_pairs(top_n)
-    if fallback:
-        return exclude_pairs(fallback)
-    
+    # Try CryptoCompare first (safer for Railway)
     fallback = _cryptocompare_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(_filter_blacklisted(fallback))
+    
+    # Then try Binance
+    fallback = _binance_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(fallback)
     
     # CRITICAL FIX: Use hardcoded pairs when ALL providers fail (the "Total Scanned: 0" fix)
     logger.warning("[pair_discovery] All providers failed, using hardcoded fallback pairs")
