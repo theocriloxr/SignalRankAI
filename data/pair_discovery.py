@@ -280,18 +280,7 @@ def get_trending_crypto_pairs(top_n=20):
         logger.warning("[pair_discovery] Binance explicitly requested but failed, using hardcoded fallback")
         return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
     
-    if provider == "bybit":
-        bybit_result = _bybit_top_crypto_pairs(top_n)
-        if bybit_result:
-            return exclude_pairs(bybit_result)
-        # Fallback to CryptoCompare if Bybit requested but fails
-        result = _cryptocompare_top_crypto_pairs(top_n)
-        if result:
-            return exclude_pairs(_filter_blacklisted(result))
-        logger.warning("[pair_discovery] Bybit explicitly requested but failed, using hardcoded fallback")
-        return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
-
-    # FIX: On Railway, use CryptoCompare by default to avoid Binance geoblock
+# FIX: On Railway
     if is_railway:
         logger.info("[pair_discovery] Railway detected, using CryptoCompare by default to avoid Binance geoblock")
         result = _cryptocompare_top_crypto_pairs(top_n)

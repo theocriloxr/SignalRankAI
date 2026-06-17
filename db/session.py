@@ -99,18 +99,9 @@ def create_engine() -> Optional[AsyncEngine]:
     if not url:
         return None
     
-    # FIX Issue 4: Severely limit pool to prevent asyncpg exhaustion
-    # Use smaller pool sizes to avoid "too many clients already" errors
-    pool_size = 3    # Reduced from 15
-    max_overflow = 5   # Reduced from 15
-    
-    # Check for Railway deployment and apply stricter limits
-    is_railway = _is_railway_runtime()
-    if is_railway:
-        # Railway PostgreSQL hobby tier is very limited (~20 max connections)
-        # Use even smaller pool to avoid exhaustion
-        pool_size = 3
-        max_overflow = 2
+    # FIX: Use _effective_pool_settings() for proper pool configuration
+    # This returns pool_size=10, max_overflow=20 by default (or env var values)
+    pool_size, max_overflow = _effective_pool_settings()
     
     # Use NullPool when pool_size is 0 (NullPool mode enabled)
     if pool_size == 0 and max_overflow == 0:
