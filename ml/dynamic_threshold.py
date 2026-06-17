@@ -59,7 +59,7 @@ def calculate_dynamic_threshold(
     min_threshold = max(0.10, base_threshold * 0.5)  # At least 50% of base
     max_threshold = min(0.70, base_threshold * 1.5)  # At most 150% of base
     
-final_threshold = max(min_threshold, min(max_threshold, dynamic_threshold))
+    final_threshold = max(min_threshold, min(max_threshold, dynamic_threshold))
     
     # HARD CLAMP: Prevent threshold from climbing too high when model degrades
     # This fixes the issue where ALL signals get blocked (strict_candidates > 0 but risk_passed = 0)

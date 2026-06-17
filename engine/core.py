@@ -2038,7 +2038,7 @@ def main_loop(DRY_RUN: bool = False):
                             continue
 # LOWERED threshold to 0.15 to allow more signals through when model is degraded
 # This fixes "generated_signals=0" issue
-try:
+                    try:
                         # LOWERED from 0.15 to 0.10 to fix ML blocking all signals
                         # This is the PRIMARY fix for strict_candidates=33 -> risk_passed=0
                         ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.10") or 0.10)
