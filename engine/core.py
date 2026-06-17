@@ -1922,21 +1922,26 @@ def main_loop(DRY_RUN: bool = False):
                             logger.exception("candidate gating failed")
 
                     pipeline_stats["strict_candidates"] += len(strict_candidates)
-                    
-# DIAGNOSTIC: Log candidate details before risk filtering
-                    # This helps identify duplicates (33 candidates from 20 assets)
+
+                    # === FIX PROBLEM 3: Log candidate breakdown before risk filtering ===
+                    # Tracks symbol+direction+timeframe duplicates (33 from 20 assets anomaly)
                     if _env_bool("ENGINE_PIPELINE_DEBUG", True):
-                        for _cand_idx, _cand in enumerate(strict_candidates[:5]):  # Log first 5
-                            logger.info(
-                                f"[engine][CANDIDATE_DEBUG] strict_candidate[%d] asset=%s direction=%s timeframe=%s score=%.1f",
-                                _cand_idx,
-                                _cand.get("asset"),
-                                _cand.get("direction"),
-                                _cand.get("timeframe"),
-                                _cand.get("_preview_score") or _cand.get("score", 0),
-                            )
+                        _candidate_breakdown: dict[str, list] = {}
+                        for _cand in strict_candidates:
+                            _key = f"{_cand.get('asset')}|{_cand.get('direction')}|{_cand.get('timeframe')}"
+                            _candidate_breakdown[_key] = _candidate_breakdown.get(_key, []) + [
+                                _cand.get("_preview_score") or _cand.get("score", 0)
+                            ]
                         
-                        # DIAGNOSTIC: Log score distribution to identify why max_score always = 100.0
+                        # Log duplicates
+                        for _key, _scores in _candidate_breakdown.items():
+                            if len(_scores) > 1:
+                                logger.warning(
+                                    f"[engine][CANDIDATE_DUP] %s count=%d scores=%s",
+                                    _key, len(_scores), _scores
+                                )
+                        
+                        # FIX PROBLEM 2: Log score distribution to identify why max_score always = 100.0
                         _candidate_scores = [s.get("_preview_score") or s.get("score", 0) for s in strict_candidates]
                         if _candidate_scores:
                             _candidate_scores_sorted = sorted(_candidate_scores, reverse=True)
@@ -1952,7 +1957,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _median,
                                 max(_candidate_scores) if _candidate_scores else 0,
                             )
-                    
+
                     if not strict_candidates:
                         continue
 
