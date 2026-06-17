@@ -54,9 +54,12 @@ import requests
 from utils import proxy_manager
 
 BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
+BYBIT_API = 'https://api.bybit.com/v5/market/tickers'
+BYBIT_CATEGORY = 'linear'
 FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}'
 
 _BINANCE_DISABLED_REASON: str | None = None
+_BYBIT_DISABLED_REASON: str | None = None
 
 
 # Default crypto symbols to pause until reliable intraday providers are configured.
@@ -192,7 +195,6 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
 
     Returns Binance-style symbols like BTCUSDT, ETHUSDT.
     """
-
     try:
         limit = max(1, int(top_n))
     except Exception:
@@ -232,6 +234,61 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
         return _filter_blacklisted(out)
     except Exception:
         return []
+
+
+def _bybit_top_crypto_pairs(top_n: int) -> list[str]:
+    """Best-effort crypto universe via Bybit API.
+
+    Returns Binance-style symbols like BTCUSDT, ETHUSDT.
+    Recommended as primary fallback when Binance is geo-blocked.
+    """
+    global _BYBIT_DISABLED_REASON
+    if _BYBIT_DISABLED_REASON is not None:
+        return []
+
+    try:
+        limit = max(1, int(top_n))
+    except Exception:
+        limit = 20
+
+    url = BYBIT_API
+    params = {"category": BYBIT_CATEGORY, "limit": limit, "symbol": ""}
+
+    try:
+        resp = requests.get(url, params=params, timeout=8)
+        payload = resp.json() if resp.ok else {}
+        if not resp.ok:
+            return []
+        ret_code = payload.get("retCode")
+        if ret_code != 0:
+            msg = payload.get("retMsg", "")
+            msg_s = str(msg or "")
+            if "restricted" in msg_s.lower() or "location" in msg_s.lower():
+                _BYBIT_DISABLED_REASON = msg_s
+                logger.warning("[pair_discovery] Bybit pairs disabled: %s", msg_s)
+                return []
+            logger.debug("[pair_discovery] Bybit API error: retCode=%s msg=%s", ret_code, msg_s)
+            return []
+        data = payload.get("result", {}).get("list") or []
+        if not isinstance(data, list):
+            return []
+        out: list[str] = []
+        for row in data:
+            try:
+                symbol = row.get("symbol")
+                if not symbol:
+                    continue
+                # Bybit symbols are like BTCUSDT, ETHUSDT - already in our format
+                sym = str(symbol).upper().strip()
+                if sym.endswith("USDT") or sym.endswith("USDT"):
+                    out.append(sym)
+            except Exception:
+                continue
+        return _filter_blacklisted(out)
+    except Exception as e:
+        logger.debug("[pair_discovery] Bybit provider failed: %s", e)
+        return []
+
 
 # Discover trending crypto pairs from Binance
 def get_trending_crypto_pairs(top_n=20):
@@ -280,14 +337,19 @@ def get_trending_crypto_pairs(top_n=20):
         logger.warning("[pair_discovery] Binance explicitly requested but failed, using hardcoded fallback")
         return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
     
-# FIX: On Railway
+# FIX: On Railway - prefer Bybit as primary (less likely to be geo-blocked than Binance)
     if is_railway:
-        logger.info("[pair_discovery] Railway detected, using CryptoCompare by default to avoid Binance geoblock")
+        logger.info("[pair_discovery] Railway detected, trying Bybit first to avoid Binance geoblock")
+        result = _bybit_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
+        # Fallback to CryptoCompare if Bybit unavailable
+        logger.warning("[pair_discovery] Bybit failed on Railway, trying CryptoCompare")
         result = _cryptocompare_top_crypto_pairs(top_n)
         if result:
             return exclude_pairs(_filter_blacklisted(result))
-        # Fallback to hardcoded
-        logger.warning("[pair_discovery] CryptoCompare failed on Railway, using hardcoded fallback")
+        # Final fallback to hardcoded
+        logger.warning("[pair_discovery] All providers failed on Railway, using hardcoded fallback")
         return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
 
     # Default and "all": aggregate providers in parallel, fail-open.

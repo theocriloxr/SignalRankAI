@@ -1922,6 +1922,37 @@ def main_loop(DRY_RUN: bool = False):
                             logger.exception("candidate gating failed")
 
                     pipeline_stats["strict_candidates"] += len(strict_candidates)
+                    
+# DIAGNOSTIC: Log candidate details before risk filtering
+                    # This helps identify duplicates (33 candidates from 20 assets)
+                    if _env_bool("ENGINE_PIPELINE_DEBUG", True):
+                        for _cand_idx, _cand in enumerate(strict_candidates[:5]):  # Log first 5
+                            logger.info(
+                                f"[engine][CANDIDATE_DEBUG] strict_candidate[%d] asset=%s direction=%s timeframe=%s score=%.1f",
+                                _cand_idx,
+                                _cand.get("asset"),
+                                _cand.get("direction"),
+                                _cand.get("timeframe"),
+                                _cand.get("_preview_score") or _cand.get("score", 0),
+                            )
+                        
+                        # DIAGNOSTIC: Log score distribution to identify why max_score always = 100.0
+                        _candidate_scores = [s.get("_preview_score") or s.get("score", 0) for s in strict_candidates]
+                        if _candidate_scores:
+                            _candidate_scores_sorted = sorted(_candidate_scores, reverse=True)
+                            _top_5 = _candidate_scores_sorted[:5]
+                            _avg_score = sum(_candidate_scores) / len(_candidate_scores) if _candidate_scores else 0
+                            _mid = len(_candidate_scores_sorted) // 2
+                            _median = _candidate_scores_sorted[_mid] if _candidate_scores else 0
+                            logger.info(
+                                f"[engine][SCORE_DIST] strict_candidates=%d top_5=%s avg=%.1f median=%.1f max=%.1f",
+                                len(strict_candidates),
+                                _top_5,
+                                _avg_score,
+                                _median,
+                                max(_candidate_scores) if _candidate_scores else 0,
+                            )
+                    
                     if not strict_candidates:
                         continue
 
@@ -2012,7 +2043,36 @@ def main_loop(DRY_RUN: bool = False):
                         sig['ml_probability'] = prob
                         risk_passed.append(sig)
 
+# PROBLEM 1 FIX: Track WHY signals are rejected at risk/ML filter
+                    # This is the KEY DIAGNOSTIC - currently we have no visibility into WHY 33 candidates -> 0 risk_passed
+                    _risk_rejection_reasons: dict[str, int] = {}
+                    for _sig_idx, _sig in enumerate(strict_candidates):
+                        # Check if ML filter rejected this signal
+                        _ml_rejected = _sig.get('ml_advisory') is not None
+                        if _ml_rejected:
+                            _reason = "ml_filter"
+                            _risk_rejection_reasons[_reason] = _risk_rejection_reasons.get(_reason, 0) + 1
+                            continue
+                        # Check if already in risk_passed (meaning it passed)
+                        if _sig in risk_passed:
+                            continue
+                        # If not passed, record it as "risk_advanced_filters"
+                        _reason = "risk_advanced_filters"
+                        _risk_rejection_reasons[_reason] = _risk_rejection_reasons.get(_reason, 0) + 1
+                    
+                    # Log risk rejection reasons - THIS IS THE CRITICAL MISSING DIAGNOSTIC
+                    if _env_bool("ENGINE_PIPELINE_DEBUG", True) and _risk_rejection_reasons:
+                        logger.info(
+                            f"[engine][RISK_REJECTION] strict_candidates=%d risk_passed=%d reasons=%s",
+                            len(strict_candidates),
+                            len(risk_passed),
+                            _risk_rejection_reasons,
+                        )
+                    
                     pipeline_stats["risk_passed"] += len(risk_passed)
+                    pipeline_stats["risk_rejected_ml"] = pipeline_stats.get("risk_rejected_ml", 0) + _risk_rejection_reasons.get("ml_filter", 0)
+                    pipeline_stats["risk_rejected_risk"] = pipeline_stats.get("risk_rejected_risk", 0) + _risk_rejection_reasons.get("risk_advanced_filters", 0)
+                    
                     if not risk_passed:
                         continue
 
