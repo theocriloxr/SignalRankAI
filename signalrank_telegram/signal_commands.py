@@ -150,10 +150,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception as e:
             _audit_logger.error(f"signals_command FREE tier error for {user_id}: {e}")
     
-    # PREMIUM/VIP: ALL signals from last 48 hours including resolved/invalidated ones
-    # FIX: Broaden query to show signals regardless of sent_ok status or outcome
-    # This fixes the issue where resend job didn't mark sent_ok=True
-    # Also fetch outcome status to display properly
+# PREMIUM/VIP: ALL signals from last 48 hours including resolved/invalidated ones
+    # FIX: Show signals regardless of sent_ok status (delivery may have failed but signal exists)
+    # This fixes the issue where "No active unresolved signals" shows despite stored signals
     all_signals = []
     try:
         from sqlalchemy import select
@@ -170,10 +169,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await update.message.reply_text("⚠️ User not found. Start with /start")
                 return
             
-            # FIX: Get signals from last 48 hours WITHOUT filtering by sent_ok or outcome
+            # FIX: Get signals from last 48 hours - NO sent_ok filter
+            # This ensures signals without successful delivery still show
             cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
             
-            # Get ALL signals delivered to user in last 48 hours (regardless of sent_ok or outcome)
+            # Get ALL signals delivered to user (regardless of sent_ok status)
             rows = (
                 await session.execute(
                     select(Signal, SignalDelivery.delivered_at)

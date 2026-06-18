@@ -2526,7 +2526,19 @@ def main_loop(DRY_RUN: bool = False):
                         logger.info(f"[engine] collapsed {dropped_variants} lower-ROI signal variants before storage")
                     final_signals = collapsed_signals
 
-                    pipeline_stats["final_signals"] += len(final_signals)
+pipeline_stats["final_signals"] += len(final_signals)
+
+                    # === DELIVERY STAGE LOGGING ===
+                    # Track signal lifecycle stages for debugging delivery issues
+                    # Stages: selected → stored → dispatched → delivered
+                    _delivery_stage_log = _env_bool("DELIVERY_STAGE_LOG", False)
+                    if _delivery_stage_log:
+                        logger.info(
+                            "[delivery_stage] stage=final_signals count=%d assets=%s",
+                            len(final_signals),
+                            [s.get('asset') for s in final_signals[:5]],
+                        )
+
                     # store final_signals
                     from datetime import timedelta as _timedelta  # ensure available in this scope
 

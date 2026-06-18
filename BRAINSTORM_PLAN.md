@@ -1,286 +1,242 @@
-# SignalRankAI - Comprehensive Fix Plan
+# SignalRankAI - Comprehensive Fix Implementation Plan
 
-## Executive Summary
-Based on codebase analysis, SignalRankAI is an institutional-grade multi-asset automated trading platform that evaluates Forex, Crypto, Equities, and Commodities using technical indicators, order flow analysis, and Gemini-powered sentiment analysis. The system has several ongoing issues causing signal starvation (generated_signals=0) that need comprehensive fixing.
+This plan addresses the critical issues identified from logs analysis.
+
+## Issue Analysis & Root Causes
+
+### 1. DYNAMIC THRESHOLD BUG - HIGH PRIORITY ✅ IDENTIFIED
+
+**Log Symptom:**
+```
+[ml] Dynamic threshold:
+base=0.50
+current_auc=0.51
+target=0.85
+-> adjusted=0.40
+(clamped to 0.40)
+```
+
+**Root Cause:** 
+- `calculate_dynamic_threshold()` called every cycle, never persisted
+- Hard-coded floor at 0.40 blocks all threshold adjustments
+- AUC 0.51 = model is guessing (coin flip)
+- Logs are noisy - same value repeated every cycle
+
+**Affected Files:**
+- `ml/dynamic_threshold.py` - hard clamp at 0.40
+- `engine/core.py` _current_ml_prob_threshold() - no persistence
+
+### 2. AUDUSD PRICING BUG (4430% drift) - CRITICAL ✅ IDENTIFIED
+
+**Log Symptom:**
+```
+Signal INVALIDATED for AUDUSD:
+entry=0.01570
+live=0.71124
+drift=4430.15%
+```
+
+**Root Cause:** FX price scaling error - 0.71124 becoming 0.01570
+
+**Affected Files:**
+- data providers (normalization)
+- signal formatter
+
+### 3. SIGNAL STATUS MISMATCH - HIGH PRIORITY ✅ IDENTIFIED
+
+**Log Symptom:**
+```
+"No active unresolved signals in your range right now"
+while signals clearly exist (trade opened: AUDUSD, SOLUSDT...)
+```
+
+**Root Cause:** Status definition mismatch
+- Engine stores: `status = 'issued'`
+- Command queries: `status = 'active'`
+
+**Affected Files:**
+- signalrank_telegram/commands.py - query logic
+- signalrank_telegram/signal_commands.py
+
+### 4. BRENT PROVIDER FAILURES - MEDIUM PRIORITY
+
+**Log Symptom:**
+```
+No timeframe data for BRENT
+twelvedata fetch_failed
+polygon 429
+```
+
+**Root Cause:** No fallback chain, rate limits hit
+
+### 5. SIGNAL LOSS AFTER RISK - MEDIUM PRIORITY
+
+**Log Symptom:**
+```
+risk_passed=16
+final_signals=14
+stored=5
+dropped=11
+```
+
+**Root Cause:** Multiple gates (cooldown, duplicate, portfolio exposure)
 
 ---
 
-## Issue 1: Signal Generation Issues (Signal Starvation)
+## Implementation Plan
 
-### Problem Analysis
-- Engine returns generated_signals=0 despite market data being available
-- Multiple threshold gates blocking valid signals
-- Data provider failures notfalling back properly
+### Phase 1: DYNAMIC THRESHOLD FIX (Critical)
 
-### Root Causes Identified
-1. **Threshold Gates**: 
-   - ML_PROB_THRESHOLD too high (0.55 default, blocking 82.43 scores)
-   - PREMIUM_SCORE_THRESHOLD at 30-85 blocking valid signals
-   - ML filter hard blocking signals with prob < 0.15
+#### Step 1.1: Remove Hard Floor Clamp
+File: `ml/dynamic_threshold.py`
 
-2. **Data Provider Issues**:
-   - Polygon rate limits (429 errors)
-   - Yahoo Finance formatting issues
-   - Binance geo-blocking
-
-3. **Strategy Execution**:
-   - Early-exit checks skipping ALL strategies when market data appears empty
-   - Indicator validation too strict
-
-### Fix Plan
+Current code:
+```python
+# HARD CLAMP: Prevent threshold from climbing too high when model degrades
+final_threshold = min(final_threshold, 0.40)
 ```
-Step 1.1: Adjust thresholds in config.py
-- ML_PROB_THRESHOLD: 0.25 (from 0.55)
-- PREMIUM_SCORE_THRESHOLD: 30 (from 85)
-- ML_HARD_FILTER_MIN: 0.15 (from 0.55)
 
-Step 1.2: Fix data providers in data/fetcher.py
-- Add more aggressive fallbacks (CCXT -> Yahoo -> CryptoCompare)
-- Add circuit breakers for rate limits
-- Fix ticker formatting
+Change to: Allow dynamic adjustment with proper bounds
+- MIN_THRESHOLD = 0.10
+- MAX_THRESHOLD = 0.85
+- Remove hard clamp
 
-Step 1.3: Fix strategy execution in engine/core.py
-- Remove early-exit when market_data appears empty
-- Allow strategies to run with fallback logic
-- Make indicator validation more lenient
+#### Step 1.2: Add Persistence
+File: `engine/threshold_optimizer.py`
+
+Add Redis persistence for thresholds by asset class:
 ```
+ml:threshold:crypto
+ml:threshold:fx
+ml:threshold:stocks
+ml:threshold:commodities
+```
+
+#### Step 1.3: Add Cooldown
+Only recalculate every:
+- 100 outcomes OR
+- 6 hours
+
+Add hysteresis: MIN_CHANGE = 0.03 before threshold changes
+
+#### Step 1.4: Fix Logging
+Only log at INFO when threshold CHANGES
+Otherwise log at DEBUG
+
+#### Step 1.5: Disable When Model is Bad
+If AUC < 0.60, disable dynamic adaptation
+Focus on data quality first
 
 ---
 
-## Issue 2: ML Drift Monitoring
+### Phase 2: AUDUSD PRICING FIX (Critical)
 
-### Problem Analysis
-- ML model degrades over time without detection
-- Threshold doesn't adapt to model degradation
-- No automated retraining triggers
+#### Step 2.1: Find Root Cause
+Search for:
+- pip_value
+- point_value  
+- pip conversion
+- decimal normalization around FX
 
-### Root Causes
-1. No AUC tracking in production
-2. No dynamic threshold adjustment based on model accuracy
-3. No drift alerts
+#### Step 2.2: Fix Normalization
+Ensure 0.71124 stays 0.71124
+Never scale by 10000 or pips
 
-### Fix Plan
-```
-Step 2.1: Enhance ml/drift_monitor.py
-- Track prediction accuracy over time
-- Calculate rolling AUC
-- Trigger retraining alerts
-
-Step 2.2: Add ml/dynamic_threshold.py integration
-- calculate_dynamic_threshold() already exists
-- Ensure it's called in engine/core.py
-
-Step 2.3: Add Redis-backed ML metrics
-- Track ml:model:auc key
-- Track ml:predictions:correct key
-```
+#### Step 2.3: Add Validation
+Before storing signal, verify:
+- price within 50% of live price
+- else reject/rebuild
 
 ---
 
-## Issue 3: Telegram Bot Issues
+### Phase 3: SIGNAL STATUS FIX (High Priority)
 
-### Problem Analysis
-- audit_recent import error in services/gemini_ml.py
-- /signals command only filters "active" status
-- Missing broker map integration
-
-### Root Causes
-1. Function alias `audit_recent = audit_recent_signals` references non-existent function
-2. Status filter too narrow in commands.py
-3. BROKER_MAP not defined
-
-### Fix Plan
+#### Step 3.1: Unify Status Definition
+Create shared constant:
+```python
+ACTIVE_STATUSES = {"issued", "active", "open"}
 ```
-Step 3.1: Fix gemini_ml.py
-- Define audit_recent_signals function
-- Fix alias reference
 
-Step 3.2: Fix commands.py /signals
-- Expand status filter to: ['issued', 'active', 'open']
-- Add outcome status display
+Use everywhere, not hard-coded strings
 
-Step 3.3: Add broker map to commands.py
-- Define BROKER_MAP dictionary
-- Add resolve_broker_prefix function
-```
+#### Step 3.2: Fix /signals Query
+File: `signalrank_telegram/signal_commands.py`
+
+Query using ACTIVE_STATUSES instead of fixed values
+
+#### Step 3.3: Add Command Audit
+At startup, verify all help commands have handlers
 
 ---
 
-## Issue 4: Risk Management
+### Phase 4: BRENT FALLBACK FIX
 
-### Problem Analysis
-- No equity curve protection (drawdown limits)
-- No max correlated exposure checks
-- Position sizing not using Fractional Kelly
+#### Step 4.1: Add Yahoo Fallback
+In provider chain for commodities
 
-### Root Causes
-1. Drawdown tracking not implemented
-2. Portfolio exposure checks incomplete
-3. Static position sizing
+#### Step 4.2: Add Cache Fallback
+Use last known good price
 
-### Fix Plan
-```
-Step 4.1: Add equity curve protection in engine/core.py
-- Track 24-hour rolling P&L
-- Halt LIVE signals when drawdown > X%
-- Switch to SHADOW mode
-
-Step 4.2: Implement max correlated exposure
-- Check existing positions before new signals
-- Block correlated pairs (e.g., EURUSD when GBPUSD long)
-
-Step 4.3: Add Fractional Kelly sizing
-- Risk % = Win_Prob - ((1-Win_Prob) / RR_Ratio)
-- Implement in engine/risk_sizer.py or engine/core.py
-```
+#### Step 4.3: Mark Asset Health
+Redis: asset_health["BRENT"] = "DEGRADED"
 
 ---
 
-## Issue 5: Database Optimizations
+### Phase 5: SIGNAL LOSS TELEMETRY
 
-### Problem Analysis
-- Slow queries on signals table
-- Missing indexes
-- No query performance monitoring
-
-### Root Causes
-1. Large signals table without proper indexes
-2. No composite indexes for common queries
-3. N+1 query problems
-
-### Fix Plan
+#### Step 5.1: Log Rejection Reasons
+Add to pipeline_stats:
 ```
-Step 5.1: Add database indexes
-- Index on (asset, timeframe, status, created_at)
-- Index on (status, archived, expired)
-- Index on (user_id, signal_id) for deliveries
-
-Step 5.2: Optimize queries
-- Use batch queries instead of per-signal
-- Add query result caching
-
-Step 5.3: Add performance monitoring
-- Log slow queries
-- Monitor connection pool usage
+dropped_after_risk=11
+rejection_reasons={
+    "cooldown": 5,
+    "duplicate": 2,
+    "portfolio_exposure": 4
+}
 ```
+
+#### Step 5.2: Add /diag Command
+Admin only, shows full pipeline breakdown
 
 ---
 
-## Implementation Order
+## Verification Checklist
 
-### Phase 1: Critical Signal Generation Fixes (Day 1-2)
-1. Adjust thresholds in config.py
-2. Fix data provider fallbacks
-3. Fix strategy execution
+### Dynamic Threshold
+- [ ] No more "clamped to 0.40" spam
+- [ ] Threshold persists across restarts
+- [ ] Logs only when value changes
+- [ ] Per-asset-class thresholds work
 
-### Phase 2: ML Improvements (Day 3-4)
-4. Enhance drift monitoring
-5. Integrate dynamic thresholds
-6. Add ML prediction logging
+### AUDUSD
+- [ ] No more 4430% drift
+- [ ] Entry price matches live
 
-### Phase 3: Telegram Bot Fixes (Day 5)
-7. Fix audit_recent import
-8. Fix /signals filtering
-9. Add broker map
+### Signals Command
+- [ ] /signals shows active signals
+- [ ] Commands in /help all work
 
-### Phase 4: Risk Management (Day 6-7)
-10. Add equity curve protection
-11. Implement correlation limits
-12. Add Kelly sizing
-
-### Phase 5: Database (Day 8)
-13. Add indexes
-14. Optimize queries
-15. Add monitoring
+### BRENT
+- [ ] Data available
+- [ ] Fallback works
 
 ---
 
 ## Files to Modify
 
-### Critical Files
-1. `config.py` - Threshold adjustments
-2. `engine/core.py` - Multiple fixes
-3. `data/fetcher.py` - Provider fallbacks
-4. `data/providers.py` - Rate limiting
-5. `ml/drift_monitor.py` - Enhancement
-6. `ml/dynamic_threshold.py` - Integration
-
-### Telegram Files
-7. `services/gemini_ml.py` - Fix import
-8. `signalrank_telegram/commands.py` - Fix filtering, add broker map
-
-### Risk Files
-9. `engine/risk_sizer.py` - Kelly sizing
-10. `engine/correlation_filter.py` - Exposure limits
-11. `engine/trade_tracker.py` - Drawdown tracking
-
-### Database Files
-12. `db/models.py` - Add indexes (via migration)
-13. `db/repository.py` - Optimize queries
+1. `ml/dynamic_threshold.py` - Remove hard clamp, add persistence
+2. `engine/core.py` - Use persisted thresholds
+3. `engine/threshold_optimizer.py` - Add Redis persistence
+4. `signalrank_telegram/signal_commands.py` - Fix status query
+5. `signalrank_telegram/commands.py` - Add status constants
+6. Data providers - Fix AUDUSD normalization
 
 ---
 
-## Testing Plan
+## Implementation Order
 
-### Unit Tests
-- Test threshold adjustments
-- Test data provider fallbacks
-- Test ML drift detection
-
-### Integration Tests
-- Test full signal pipeline
-- Test Telegram commands
-- Test risk limits
-
-### Manual Testing
-- Run engine in dry-run mode
-- Check generated signals count
-- Verify Telegram delivery
-
----
-
-## Success Metrics
-
-1. **Signal Generation**: generated_signals > 0 per cycle
-2. **ML Filtering**: risk_passed > 0 when data available
-3. **Storage**: stored > 0 signals per cycle
-4. **Delivery**: users_dispatched > 0
-5. **Performance**: cycle time < 60 seconds
-
----
-
-## Dependencies
-
-- PostgreSQL database
-- Redis instance
-- Telegram bot token
-- Data provider API keys (Polygon, Yahoo, CryptoCompare)
-- Gemini API key (for ML review)
-
----
-
-## Risk Mitigation
-
-1. **Rollback Plan**: Keep backup of original config values in environment variables
-2. **Gradual Rollout**: Start with SHADOW mode, then enable LIVE
-3. **Monitoring**: Add detailed logging for all gates
-4. **Circuit Breakers**: Auto-disable features that cause issues
-
----
-
-## Timeline
-
-- **Week 1**: Signal generation fixes + ML improvements
-- **Week 2**: Telegram bot fixes + Risk management
-- **Week 3**: Database optimizations + Testing
-- **Week 4**: Full integration + deployment
-
----
-
-## Notes
-
-This plan addresses all issues from TODO_FIX_ALL_ISSUES_REMAINING.md while following the core engineering directives:
-- Unblock the event loop (heavy computation offloaded)
-- Stateful idempotency (signals persisted, not spam)
-- Failover & resiliency (waterfall fallback)
-- Zero look-ahead bias (training/inference separation)
+1. Dynamic Threshold Persistence (Biggest Impact)
+2. Status Fix (User-Facing)
+3. AUDUSD (Data Quality)
+4. BRENT Fallback (Reliability)
+5. Telemetry (Observability)
