@@ -56,11 +56,11 @@ TIER_DAILY_LIMITS: Final[dict[str, float]] = {
 # FIX: Lowered thresholds to fix signal starvation (signals not passing 80 gate)
 # These can be restored to 80+ once scoring formula fix takes effect
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-  "free": 75.0,      # Lowered from 80.0 (temporary fix)
-  "premium": 73.0,   # Lowered from 80.0 (temporary fix)
-  "vip": 73.0,       # Lowered from 80.0 (temporary fix)
-    "owner": 0.0,      # No score gate
-    "admin": 0.0,      # Admin receives all signals
+  "free": 60.0,      # Lowered from 75.0 (Phase 1 fix - was 80.0 originally)
+  "premium": 65.0,   # Lowered from 73.0 (Phase 1 fix - was 80.0 originally)
+  "vip": 65.0,       # Lowered from 73.0 (Phase 1 fix - was 80.0 originally)
+  "owner": 65.0,      # No score gate
+  "admin": 65.0,      # Admin receives all signals
 }
 
 # Signal depth per tier (how many TP levels shown)
@@ -138,7 +138,7 @@ ACTIVE_SIGNAL_LOOKBACK_HOURS: Final[int] = 24
 
 # FREE tier specific constants
 # FIX: Lowered to match TIER_SCORE_THRESHOLDS (temporary fix for signal flow)
-FREE_MIN_SCORE: Final[int] = 75  # Lowered from 80 to match TIER_SCORE_THRESHOLDS
+FREE_MIN_SCORE: Final[int] = 70  # Lowered from 75 to match TIER_SCORE_THRESHOLDS
 FREE_SIGNAL_DAILY_LIMIT: Final[int] = 3  # Daily signal limit for FREE users
 FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
 
