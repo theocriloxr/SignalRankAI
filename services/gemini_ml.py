@@ -29,7 +29,7 @@ logger = logging.getLogger("GeminiValidator")
 # Setup Client (New SDK: google-genai)
 client = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-pro").strip()
 
 # Try to import google.genai (new SDK), fallback gracefully
 try:

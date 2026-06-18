@@ -29,6 +29,107 @@ def _env_bool(name: str, default: bool = False) -> bool:
 PROD_MODE = not _env_bool("DEV_MODE", False)
 
 
+# PHASE 2 FIX: Helper to find best target for direction
+def best_target_for_direction(entry, stop, targets, direction):
+    """Return the best valid target for given direction based on RR.
+    
+    For longs: returns the highest TP (best reward)
+    For shorts: returns the lowest TP (best reward)
+    
+    Args:
+        entry: Entry price float
+        stop: Stop loss price float
+        targets: List of target prices (single float or list)
+        direction: Trade direction ('long' or 'short')
+    
+    Returns:
+        Best target float or None if no valid targets
+    """
+    if not targets or entry is None or stop is None:
+        return None
+    
+    try:
+        entry = float(entry)
+        stop = float(stop)
+    except (TypeError, ValueError):
+        return None
+    
+    risk_dist = abs(entry - stop)
+    if risk_dist <= 0:
+        return None
+    
+    # Normalize targets to list
+    if isinstance(targets, (int, float, str)):
+        targets = [targets]
+    elif isinstance(targets, dict):
+        targets = [targets.get("price") or targets.get("tp") or targets.get("target")]
+    
+    valid = []
+    direction = str(direction or "long").lower().strip()
+    
+    for t in targets:
+        try:
+            tp_val = float(t) if not isinstance(t, dict) else float(t.get("price") or t.get("tp") or t.get("target"))
+            if tp_val and tp_val > 0:
+                rr = abs(tp_val - entry) / risk_dist
+                valid.append((rr, tp_val))
+        except (TypeError, ValueError):
+            continue
+    
+    if not valid:
+        return None
+    
+    # For longs: highest RR (highest TP)
+    # For shorts: highest RR (lowest TP - since price goes down)
+    if direction == "long":
+        return max(valid, key=lambda x: x[0])[1]
+    else:
+        return max(valid, key=lambda x: x[0])[1]
+
+
+# PHASE 2 FIX: RR stats tracking
+# Store RR rejection reasons for diagnostics
+_risk_stats = {
+    "rr_tp1": 0,        # RR using first TP
+    "rr_best": 0,        # RR using best TP
+    "rr_final": 0,       # RR using final TP (as used in calculation)
+    "risk_rejected_rr": 0,
+    "risk_rejected_volatility": 0,
+    "risk_rejected_news": 0,
+    "risk_rejected_correlation": 0,
+    "risk_rejected_age": 0,
+    "risk_rejected_other": 0,
+}
+
+
+def get_risk_stats() -> dict:
+    """Get current risk rejection statistics."""
+    return dict(_risk_stats)
+
+
+def reset_risk_stats() -> None:
+    """Reset risk statistics counter."""
+    global _risk_stats
+    _risk_stats = {
+        "rr_tp1": 0,
+        "rr_best": 0,
+        "rr_final": 0,
+        "risk_rejected_rr": 0,
+        "risk_rejected_volatility": 0,
+        "risk_rejected_news": 0,
+        "risk_rejected_correlation": 0,
+        "risk_rejected_age": 0,
+        "risk_rejected_other": 0,
+    }
+
+
+def _record_rr_stats(rr_key: str) -> None:
+    """Record RR-related stat for diagnostics."""
+    global _risk_stats
+    if rr_key in _risk_stats:
+        _risk_stats[rr_key] = _risk_stats.get(rr_key, 0) + 1
+
+
 # Dynamic real-time thresholds (no fixed values)
 def get_max_volatility(asset_type: str) -> float:
     """Realtime volatility max from ATR regime + news vol."""
