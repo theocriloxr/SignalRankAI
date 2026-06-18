@@ -82,54 +82,61 @@ class DataRouter:
         except ImportError:
             self._legacy_providers = None
         
-# ==============================================================
-        # MULTI-PROVIDER FALLBACK CHAINS (STARVATION_FIX_V5)
+        # ==============================================================
+        # MULTI-PROVIDER FALLBACK CHAINS (STARVATION_FIX_V6 - COMPREHENSIVE)
         # Priority: Direct exchanges -> Free tier APIs -> yfinance safety net
         # 
         # CRITICAL FIX: Geo-blocking bypass for Railway/Nigeria users
-        # - Binance is blocked in some regions (Railway)
+        # - Binance is blocked in some regions (Railway) - DO NOT USE AS PRIMARY
         # - Bybit works when Binance is blocked
         # - CryptoCompare works worldwide as last resort
         # ==============================================================
         
-        # Crypto: Bybit -> Binance -> KuCoin -> CryptoCompare -> CoinGecko -> yfinance
-        # Order matters: Bybit first (often works when Binance blocked)
-        # Binance second (try first on non-blocked infrastructure)
+        # CRITICAL: Move Binance to LAST in crypto chain (behind Bybit)
+        # It fails with "Service unavailable from a restricted location" on Railway
+        # Bybit has similar liquidity and works when Binance is geo-blocked
         self._crypto_providers = [
-            ("bybit", self._get_bybit_candles),      # PRIMARY - works when Binance blocked
-            ("binance", self._get_binance_candles),   # Secondary - works on normal infra
-            ("kucoin", self._get_kucoin_candles),      # NO API KEY - free
-            ("cryptocompare", self._get_cryptocompare_candles),
-            ("coingecko", self._get_coingecko_candles),  # Free - works worldwide
-            ("yahoo", self._get_yahoo_candles),      # Safety net
+            ("bybit", self._get_bybit_candles),         # PRIMARY - works when Binance blocked
+            ("kucoin", self._get_kucoin_candles),       # No API key - free tier
+            ("cryptocompare", self._get_cryptocompare_candles),  # Worldwide
+            ("coingecko", self._get_coingecko_candles), # Free - works worldwide
+            ("yahoo", self._get_yahoo_candles),        # Safety net
+            ("binance", self._get_binance_candles),   # LAST - may fail on Railway
         ]
         
-        # Stocks: Tiingo -> Twelve Data -> FMP -> yfinance
-        # - Tiingo: Free tier 500 req/hr, best for stocks
+        # Stocks: Twelve Data -> Tiingo -> FMP -> yfinance
         # - Twelve Data: Free tier 800/day, key in TWELVEDATA_API_KEY
+        # - Tiingo: Free tier 500 req/hr, requires registration
         # - FMP: Free tier 250/day, key in FMP_API_KEY
         self._stock_providers = [
+            ("twelvedata", self._get_twelvedata_candles),  # PRIMARY for stocks
             ("tiingo", self._get_tiingo_candles),
-            ("twelvedata", self._get_twelvedata_candles),
             ("fmp", self._get_fmp_candles),
-            ("yahoo", self._get_yahoo_candles),
+            ("yahoo", self._get_yahoo_candles),           # Safety net
         ]
         
-        # Forex: Twelve Data -> Tiingo -> FCS -> yfinance
-        # - Twelve Data: Best for Forex pairs
-        # - FCS: fcsapi.com key in FCS_API_KEY
+        # Forex: Twelve Data -> AlphaVantage -> Yahoo -> Stooq
+        # - Twelve Data: Best for Forex pairs (primary)
+        # - AlphaVantage: Good for major pairs, key in ALPHA_VANTAGE_KEY
+        # - Yahoo: Works for major FX
+        # - Stooq: Last resort for exotic pairs
         self._fx_providers = [
-            ("twelvedata", self._get_twelvedata_candles),
-            ("tiingo", self._get_tiingo_candles),
-            ("fcs", self._get_fcs_candles),
-            ("yahoo", self._get_yahoo_candles),
+            ("twelvedata", self._get_twelvedata_candles),  # PRIMARY - best Forex coverage
+            ("alpha_vantage", self._get_alpha_vantage_candles),  # Good fallback
+            ("yahoo", self._get_yahoo_candles),          # Works for majors
+            ("stooq", self._get_stooq_candles),          # Last resort for exotics
         ]
         
-        # Commodities: Twelve Data -> Tiingo -> yfinance
+        # Commodities: Twelve Data -> Yahoo -> Stooq
+        # CRITICAL FIX: Tiingo does NOT support commodities (WTI, BRENT, XAU, XAG)
+        # Twelve Data: Best commodity coverage
+        # Yahoo: Good for Gold, Oil, Natural Gas
+        # Stooq: Last resort
         self._commodity_providers = [
-            ("twelvedata", self._get_twelvedata_candles),
-            ("tiingo", self._get_tiingo_candles),
-            ("yahoo", self._get_yahoo_candles),
+            ("twelvedata", self._get_twelvedata_candles),  # PRIMARY - best commodity coverage
+            ("yahoo", self._get_yahoo_candles),          # Works for Gold, Oil
+            ("stooq", self._get_stooq_candles),          # Last resort
+            # Tiingo removed - does NOT support commodities!
         ]
         
         self._providers_initialized = True
@@ -257,6 +264,24 @@ class DataRouter:
             logger.error("❌ FATAL CRASH in fcs adapter for %s!", symbol)
             logger.error(traceback.format_exc())
             return []
+        
+    def _get_alpha_vantage_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Alpha Vantage (requires ALPHA_VANTAGE_API_KEY)."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_alpha_vantage_candles"):
+                return self._legacy_providers.fetch_alpha_vantage_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
+    
+    def _get_stooq_candles(self, symbol: str, timeframe: str) -> List[Dict]:
+        """Fetch from Stooq (free Japanese/Asian data)."""
+        try:
+            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_stooq_candles"):
+                return self._legacy_providers.fetch_stooq_candles(symbol, timeframe) or []
+        except Exception:
+            pass
+        return []
         
     
     def _get_providers_for_asset_class(self, asset_class: str) -> List[tuple[str, callable]]:

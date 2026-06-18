@@ -8,6 +8,9 @@ _PROVIDER_HEALTH_LOCK = threading.Lock()
 _PROVIDER_FAIL_WINDOW = 600  # seconds to deprioritize after repeated failures
 _PROVIDER_FAIL_THRESHOLD = 3
 
+from typing import Optional
+
+
 # ============================================================================
 # MACRO DATA CACHING - Fix for HTTP 429 rate limit errors
 # Macro indicators (US10Y, VIX, DXY) don't change by the minute
@@ -321,35 +324,206 @@ def _get_last_provider_used(asset: str, timeframe: str) -> str | None:
     except Exception:
         return None
 
-def _validate_data_quality(candles: list, max_nan_ratio: float = 0.05) -> tuple[bool, str]:
+# ============================================================================
+# DATA QUALITY GATE - Telemetry and Strategy-Aware Validation
+# ============================================================================
+
+# Quality metrics for cycle summaries
+_QUALITY_METRICS = {
+    "short_history": 0,
+    "nan_ratio": 0,
+    "stale_data": 0,
+    "empty": 0,
+    "total_checked": 0,
+}
+
+# Maximum staleness by timeframe (in seconds)
+_STALENESS_THRESHOLDS = {
+    "5m": 20 * 60,      # 20 minutes
+    "15m": 45 * 60,      # 45 minutes
+    "1h": 3 * 3600,     # 3 hours
+    "4h": 12 * 3600,    # 12 hours
+    "1d": 2 * 86400,    # 2 days
+}
+
+# Minimum candles by strategy requirement
+# Strategy can override with strategy.required_history()
+_MIN_CANDLES_NORMAL = 150   # For EMA200, ATR, ADX
+_MIN_EMERGENCY_BARS = 50    # Absolute minimum - marks signals as BASIC tier only
+
+
+def reset_quality_metrics() -> None:
+    """Reset quality metrics for new cycle."""
+    global _QUALITY_METRICS
+    _QUALITY_METRICS = {k: 0 for k in _QUALITY_METRICS}
+    _QUALITY_METRICS["total_checked"] = 0
+
+
+def get_quality_metrics() -> dict:
+    """Get current quality metrics for logging."""
+    return dict(_QUALITY_METRICS)
+
+
+def _calculate_quality_score(candles: list, nan_ratio: float, stale_minutes: float, asset_type: str) -> int:
+    """Calculate overall quality score 0-100.
+    
+    Factors:
+    - Candle count (up to 40 points)
+    - NaN ratio (up to 30 points)
+    - Freshness (up to 30 points)
+    """
+    score = 0
+    
+    # Candle count scoring (40 points max)
+    candle_count = len(candles) if candles else 0
+    if candle_count >= 200:
+        score += 40
+    elif candle_count >= 150:
+        score += 35
+    elif candle_count >= 100:
+        score += 25
+    elif candle_count >= 50:
+        score += 10
+    
+    # NaN ratio scoring (30 points max)
+    if nan_ratio <= 0.01:
+        score += 30
+    elif nan_ratio <= 0.03:
+        score += 25
+    elif nan_ratio <= 0.05:
+        score += 20
+    elif nan_ratio <= 0.10:
+        score += 10
+    
+    # Freshness scoring (30 points max) - asset-type aware
+    if asset_type == "crypto":
+        # Crypto: always fresh
+        score += 30
+    elif asset_type == "stock":
+        # Stocks: allow staleness during market hours
+        if stale_minutes <= 5:
+            score += 30
+        elif stale_minutes <= 60:
+            score += 20
+        elif stale_minutes <= 360:  # 6 hours - allow after-market
+            score += 10
+    else:
+        # FX, Commodities - allow some staleness
+        if stale_minutes <= 30:
+            score += 30
+        elif stale_minutes <= 120:
+            score += 20
+        elif stale_minutes <= 360:
+            score += 10
+    
+    return min(100, score)
+
+
+def _validate_data_quality(
+    candles: list, 
+    max_nan_ratio: float = 0.05,
+    asset_type: str = "crypto",
+    timeframe: str = "1h",
+    latest_candle_timestamp: Optional[float] = None
+) -> tuple[bool, str, dict]:
     """Validate data quality before passing to strategies.
     
     Returns:
-        tuple of (is_valid, reason_if_invalid)
+        tuple of (is_valid, reason_if_invalid, quality_report)
     
     Quality gates:
-    - Minimum 150 candles for indicator stability
+    - Minimum candles: 150 (normal) or 50 (emergency)
     - Max 5% NaN values in close column
+    - Max staleness by asset type and timeframe
     """
-    if not candles or not isinstance(candles, list):
-        return False, "empty_dataframe"
+    global _QUALITY_METRICS
     
-    # Minimum candles for indicator stability (150 needed for 200-period EMAs)
-    if len(candles) < 150:
-        return False, f"insufficient_candles_{len(candles)}_need_150"
+    quality_report = {
+        "asset_type": asset_type,
+        "timeframe": timeframe,
+        "candles": 0,
+        "nan_ratio": 0.0,
+        "stale_minutes": 0.0,
+        "quality_score": 0,
+        "tier": "PREMIUM",
+    }
+    
+    if not candles or not isinstance(candles, list):
+        _QUALITY_METRICS["empty"] += 1
+        return False, "empty_dataframe", quality_report
+    
+    candle_count = len(candles)
+    quality_report["candles"] = candle_count
+    
+    # Check minimum candles - use strategy-aware requirement
+    # Scalping: 50+, Swing: 150+, Trend: 200+
+    if candle_count < _MIN_EMERGENCY_BARS:
+        _QUALITY_METRICS["short_history"] += 1
+        quality_report["tier"] = "BASIC"
+        return False, f"insufficient_candles_{candle_count}_need_{_MIN_EMERGENCY_BARS}_emergency", quality_report
+    
+    # For premium quality, require more candles
+    if candle_count < _MIN_CANDLES_NORMAL:
+        # Still acceptable but marks as potentially limited
+        quality_report["tier"] = "STANDARD"
     
     # Check NaN ratio in close column
     close_values = [float(c.get("close", 0) or 0) for c in candles if isinstance(c, dict)]
     if not close_values:
-        return False, "no_close_prices"
+        _QUALITY_METRICS["nan_ratio"] += 1
+        return False, "no_close_prices", quality_report
     
     nan_count = sum(1 for v in close_values if v is None or v == 0 or (isinstance(v, float) and math.isnan(v)))
     nan_ratio = nan_count / len(close_values) if close_values else 1.0
+    quality_report["nan_ratio"] = nan_ratio
     
     if nan_ratio > max_nan_ratio:
-        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}"
+        _QUALITY_METRICS["nan_ratio"] += 1
+        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}", quality_report
     
-    return True, ""
+    # Check staleness if timestamp provided
+    stale_minutes = 0.0
+    if latest_candle_timestamp:
+        current_time = time.time()
+        age_seconds = current_time - latest_candle_timestamp
+        stale_minutes = age_seconds / 60.0
+        quality_report["stale_minutes"] = stale_minutes
+        
+        # Get threshold for this timeframe
+        max_stale = _STALENESS_THRESHOLDS.get(timeframe, 3600)
+        
+        # Adjust based on asset class
+        if asset_type == "crypto":
+            # Crypto is 24/7 - very lenient
+            max_stale = max_stale * 2
+        elif asset_type == "stock":
+            # Stocks: apply strict during market, lenient after hours
+            from datetime import datetime
+            now_utc = datetime.utcnow()
+            wd = now_utc.weekday()
+            hr = now_utc.hour
+            # Outside market hours (9:30-16:00 ET = 14:30-21:00 UTC)
+            is_market_hours = wd < 5 and 14 <= hr < 21
+            if not is_market_hours:
+                max_stale = max_stale * 3  # More lenient after hours
+        
+        if stale_minutes * 60 > max_stale:
+            _QUALITY_METRICS["stale_data"] += 1
+            return False, f"stale_data_{stale_minutes:.0f}min_max_{max_stale/60:.0f}min", quality_report
+    
+    # Calculate quality score
+    quality_report["quality_score"] = _calculate_quality_score(
+        candles, nan_ratio, stale_minutes, asset_type
+    )
+    
+    # Downgrade tier if quality is low
+    if quality_report["quality_score"] < 50:
+        quality_report["tier"] = "BASIC"
+    elif quality_report["quality_score"] < 75:
+        quality_report["tier"] = "STANDARD"
+    
+    _QUALITY_METRICS["total_checked"] += 1
+    return True, "", quality_report
 
 
 def fetch_market_data(asset, timeframes):

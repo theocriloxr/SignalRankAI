@@ -43,6 +43,7 @@ except Exception:
     def is_commodity(asset: Any) -> bool:  # type: ignore
         return False
 from data.market_data import fetch_market_data_cached
+from data.market_hours import validate_data_quality, is_tradeable_now, rank_assets_by_priority
 from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers, get_all_tradable_assets
 from data.indicators import calculate_indicators
 from data.news import get_news_sentiment

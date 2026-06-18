@@ -1,188 +1,161 @@
-# Market Data Fix Plan - SignalRankAI
+# Market Data Fix Implementation Plan
 
-## Problem Summary (from uploaded logs)
+## Problem Summary
 
-```
-No timeframe data for WTI
-No timeframe data for LTCUSDT
-No timeframe data for GBPJPY
-...
+From the logs:
+- `generated_signals=0`
+- `strategy_signals=0`
+- `normalized=0`
+- `consensus=0`
+- `selected=0`
 
-cycle=1
-assets=20
-generated_signals=0
-strategy_signals=0
-normalized=0
-consensus=0
-selected=0
-```
+Root cause: Market data acquisition is failing BEFORE strategies run.
 
-**Root Cause**: Market data acquisition is failing BEFORE strategies run.
+### Critical Issues:
 
-### Issue 1: Binance Region Block (CRITICAL)
-```
-Binance pairs disabled:
-Service unavailable from a restricted location
-```
+1. **Binance geo-blocked on Railway**: Returns "Service unavailable from a restricted location"
+2. **Commodity provider failures**: BRENT fails on TwelveData and Polygon (429)
+3. **No data quality validation**: Empty dataframes passed to strategies
 
-Railway is running in a region Binance blocks. The bot discovers assets but cannot fetch candle data.
+## Implementation Steps
 
-### Issue 2: Provider Failures (HIGH)
-```
-twelvedata fetch_failed symbol=BRENT
-polygon fetch_failed symbol=BRENT status=429
-```
+### Step 1: Verify Provider Chains (CRITICAL)
 
-Commodity providers all failing simultaneously.
+Current `data/fetcher_router.py` already has:
+- Crypto: Bybit -> KuCoin -> CryptoCompare -> CoinGecko -> Yahoo -> Binance
+- FX: TwelveData -> AlphaVantage -> Yahoo -> Stooq
+- Commodities: TwelveData -> Yahoo -> Stooq
 
-### Issue 3: Data Quality Starvation (HIGH)
-Even when data appears available, it's often insufficient quality:
-- Too few candles (< 150 needed for 200-period EMAs)
-- Too many NaN values (> 5%)
-- Stale data (older than 2x timeframe)
+**Action**: Verify Bybit connector exists and works
 
-This is WHY `strategy_signals=0` despite `assets=20` being scanned.
+### Step 2: Add Data Quality Gates (HIGH)
 
----
-
-## Implemented Fixes
-
-### 1. Data Quality Gate (CRITICAL - DONE ✅)
-
-**File**: `data/fetcher.py`
-
-**Added**: `_validate_data_quality()` function with strict quality gates:
-- Minimum 150 candles (for indicator stability)
-- Maximum 5% NaN ratio in close column
-- Logs diagnostic when rejected
+In `engine/core.py`, before strategy execution, add:
 
 ```python
-def _validate_data_quality(candles: list, max_nan_ratio: float = 0.05) -> tuple[bool, str]:
-    """Validate data quality before passing to strategies.
+# Data quality validation
+def validate_data_quality(market_data: dict, asset: str) -> tuple[bool, str]:
+    """Validate data quality before strategy execution.
     
-    Quality gates:
-    - Minimum 150 candles for indicator stability
-    - Max 5% NaN values in close column
+    Returns: (is_valid, reason)
     """
-    if not candles or not isinstance(candles, list):
-        return False, "empty_dataframe"
+    # Check minimum candles
+    min_candles = 150
     
-    # Minimum candles for indicator stability (150 needed for 200-period EMAs)
-    if len(candles) < 150:
-        return False, f"insufficient_candles_{len(candles)}_need_150"
+    # Check NaN ratio
+    max_nan_ratio = 0.05
     
-    # Check NaN ratio in close column
-    close_values = [float(c.get("close", 0) or 0) for c in candles if isinstance(c, dict)]
-    if not close_values:
-        return False, "no_close_prices"
+    # Check data freshness
+    max_age_seconds = {
+        '1m': 120,
+        '5m': 600,
+        '15m': 1800,
+        '1h': 7200,
+        '4h': 28800,
+        '1d': 172800,
+    }
     
-    nan_count = sum(1 for v in close_values if v is None or v == 0 or (isinstance(v, float) and math.isnan(v)))
-    nan_ratio = nan_count / len(close_values) if close_values else 1.0
-    
-    if nan_ratio > max_nan_ratio:
-        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}"
+    for tf, tf_data in market_data.items():
+        candles = tf_data.get('candles', [])
+        if len(candles) < min_candles:
+            return False, f"insufficient_candles:{len(candles)}"
+        
+        # Check NaN ratio in close prices
+        closes = [c.get('close') for c in candles if c.get('close') is not None]
+        nan_count = sum(1 for c in closes if c is None or (isinstance(c, float) and np.isnan(c)))
+        if len(closes) > 0 and (nan_count / len(closes)) > max_nan_ratio:
+            return False, f"high_nan_ratio:{nan_count/len(closes):.2%}"
+        
+        # Check freshness
+        data_age = tf_data.get('data_age_seconds', 0)
+        tf_interval = _TF_SECONDS.get(tf, 3600)
+        max_age = tf_interval * 2  # 2x timeframe
+        if data_age > max_age:
+            return False, f"stale_data:{data_age:.0f}s > {max_age:.0f}s"
     
     return True, ""
 ```
 
-**Called in**: `fetch_market_data()` before processing
+### Step 3: Market Session Quality (HIGH)
 
-**Log Output**:
-```
-[fetcher][QUALITY GATE] REJECTED BTCUSDT 1h: insufficient_candles_47_need_150. This is WHY strategy_signals=0 despite asset being scanned.
-```
-
----
-
-### 2. Enhanced Forward-Fill Cache (HIGH - Already exists)
-
-The existing forward-fill cache already handles provider outages by using stale cached data when providers fail.
-
-**Behavior**:
-1. If provider returns < 20 candles
-2. Try forward-fill cache (up to 1800s / 30 min old)
-3. Accept degraded mode minimum (10 candles)
-
-This prevents complete pipeline starvation.
-
----
-
-### 3. Provider Health Tracking (MEDIUM - Already exists)
-
-The bot already tracks provider health and skips unhealthy providers:
+In `data/market_hours.py`, add:
 
 ```python
-def provider_is_healthy(provider_name):
-    # If failure rate > 50%, mark unhealthy
-    return stats["failures"] / total < 0.5
+def is_tradeable_now(asset: str) -> tuple[bool, str]:
+    """Check if asset is tradeable NOW with good liquidity.
+    
+    Returns: (is_tradeable, reason)
+    """
+    # Check market open
+    if not is_market_session_open(asset):
+        return False, "market_closed"
+    
+    # Check if overnight session (poor liquidity for some assets)
+    now = datetime.utcnow()
+    hour = now.hour
+    
+    # XAUUSD: Poor liquidity 20:00-00:00 UTC
+    if asset in ('XAUUSD', 'GOLD'):
+        if hour >= 20 or hour < 0:
+            return False, "poor_overnight_liquidity"
+    
+    # Commodities: Poor liquidity 22:00-02:00 UTC
+    if is_commodity(asset):
+        if hour >= 22 or hour < 2:
+            return False, "poor_overnight_liquidity"
+    
+    return True, "tradeable"
 ```
 
----
+### Step 4: Asset Ranking for Railway (MEDIUM)
 
-## Recommended Additional Fixes
+Add auto-ranking based on:
+- Liquidity score (volume)
+- Volatility score (ATR)
+- Trend score  
+- Recent signal quality
 
-### A. Rebuild Provider Chains for Region-Restricted Deployments
+```python
+def rank_assets_for_analysis(assets: list[str], top_n: int = 10) -> list[str]:
+    """Rank assets and return top N for analysis.
+    
+    On Railway, analyze less assets but with better data.
+    """
+    # Score each asset
+    scores = []
+    for asset in assets:
+        score = (
+            liquidity_score(asset) +
+            volatility_score(asset) +
+            trend_score(asset) +
+            recent_signal_quality(asset)
+        scores.append((asset, score))
+    
+    # Sort by score descending
+    scores.sort(key=lambda x: x[1], reverse=True)
+    
+    # Return top N
+    return [a for a, _ in scores[:top_n]]
+```
 
-For Railway Hobby (Binance blocked regions):
+## Files to Modify
 
-**File**: `data/fetcher_router.py` or `data/connector_registry.py`
+1. `data/fetcher_router.py` - ✅ Already has good provider chains - verify
+2. `engine/core.py` - Add data quality gates before strategy execution  
+3. `data/market_hours.py` - Add is_tradeable_now()
+4. `data/pair_discovery.py` - Add ranking function
 
-**Current Chain**:
-- Crypto: Binance → Bybit → CryptoCompare → CoinGecko
+## Testing
 
-**Recommended Chain**:
-- Crypto: Bybit → CryptoCompare → CoinGecko → AlphaVantage
-  - Bybit works in Nigeria (no geo-block)
-  - CryptoCompare free tier with API key
-  - CoinGecko free tier (rate limited)
-  - AlphaVantage premium fallback
+After implementation, verify:
+1. Logs show provider fallback working
+2. Data quality gates reject bad data with clear reason
+3. Signals generated > 0
+4. Asset analysis limited on Railway
 
-### B. Add Commodity-Specific Providers
+## Monitoring
 
-**Current Issue**: BRENT and WTI failing across all providers
-
-**Recommended**:
-- TwelveData → Yahoo Finance → Stooq (for commodities)
-- Note: Crypto providers should NOT be used for commodities (causes ghost prices)
-
-### C. Asset Ranking for Railway Hobby
-
-On Railway Hobby with limited compute:
-- Analyze top 10 assets instead of all 20
-- Rank by: liquidity + volatility + trend + recent_signal_quality
-
----
-
-## Verification Steps
-
-After deployment, verify fixes by checking:
-
-1. **Quality gate logs**:
-   ```
-   [fetcher][QUALITY GATE] REJECTED X: insufficient_candles_Y_need_150
-   ```
-
-2. **Provider fallback logs**:
-   ```
-   [data] crypto_provider=bybit symbol=BTCUSDT tf=1h candles=200
-   [data] forward-filled cached candles symbol=ETHUSDT tf=1h
-   ```
-
-3. **Engine pipeline stats**:
-   ```
-   strategy_signals=5 normalized=3 consensus=2 risk_passed=1 stored=1
-   ```
-
----
-
-## Summary
-
-| Issue | Status | File |
-|-------|--------|------|
-| Data quality gate (150 candles min, 5% NaN max) | ✅ DONE | data/fetcher.py |
-| Forward-fill cache | ✅ EXISTS | data/fetcher.py |
-| Provider health tracking | ✅ EXISTS | data/fetcher.py |
-| Bybit primary for crypto | ⚠️ EXISTING | get_crypto_candles() |
-| Commodity separateproviders | ⚠️ RECOMMEND | connector_registry.py |
-
-The critical fix (data quality gate) is now in place. This directly addresses WHY `generated_signals=0` despite assets being scanned - the data was too poor quality for strategies to generate signals.
+Add to engine logs:
+- `data_quality_rejected`: count of assets rejected by quality gates
+- `provider_fallbacks`: count of times each provider used as fallback
+- `market_session_quality`: count of assets skipped due to poor liquidity
