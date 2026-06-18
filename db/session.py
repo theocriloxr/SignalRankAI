@@ -89,12 +89,13 @@ def _effective_pool_settings() -> tuple[int, int]:
         return 0, 0
 
     # FIX: Check Railway environment - use smaller pool to avoid exhaustion
-    # Railway hobby tier has ~20 connection limit, exceed causes "FATAL: too many clients"
+    # Railway hobby tier has ~25 connection limit, exceed causes "FATAL: too many clients"
     if _is_railway_runtime():
-        # Railway: 5 + 2 = 7 total (safe for hobby tier)
+        # Railway: 8 + 3 = 11 async max (safe under 25 limit)
+        # FIX: Updated from 5+2 to 8+3 for better concurrency
         # Also enable pool_recycle and pool_pre_ping to prevent stale connections
-        logger.info("[db] Railway runtime detected - using reduced pool (5+2=7)")
-        return 5, 2
+        logger.info("[db] Railway runtime detected - using reduced pool (8+3=11)")
+        return 8, 3
 
     # FIX: Increase pool size for concurrent operations
     # Default to 10 connections with 20 overflow for production workloads
@@ -324,10 +325,12 @@ def _create_sync_engine() -> Optional[Any]:
 
     from sqlalchemy import create_engine
 
+    # FIX: Lower sync pool to prevent "too many clients" errors
+    # Combined with async pool (8+3=11), total = 16 max (safely under 25)
     return create_engine(
         sync_url,
-        pool_size=_pool_int("DB_SYNC_POOL_SIZE", 10, minimum=1),
-        max_overflow=_pool_int("DB_SYNC_MAX_OVERFLOW", 10, minimum=0),
+        pool_size=_pool_int("DB_SYNC_POOL_SIZE", 3, minimum=1),
+        max_overflow=_pool_int("DB_SYNC_MAX_OVERFLOW", 2, minimum=0),
         pool_timeout=_pool_int("DB_SYNC_POOL_TIMEOUT_SECONDS", 60, minimum=1),
         pool_recycle=_pool_int("DB_SYNC_POOL_RECYCLE_SECONDS", 1800, minimum=30),
         pool_pre_ping=_pool_bool("DB_SYNC_POOL_PRE_PING", True),

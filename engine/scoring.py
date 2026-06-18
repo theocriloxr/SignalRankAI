@@ -160,15 +160,16 @@ def score_signal(signal):
         rr_bonus = 1.15
         score = score * 1.15
     
-    # PHASE 1 FIX: Soft cap to prevent score collapse to 100
+# PHASE 1 FIX: Soft cap to prevent score collapse to 100
     # Store raw_score before cap for debugging
     raw_score = score
     
     # Soft-cap: exponential decay prevents collapse while preserving ordering
-    # At raw_score=75, soft_score≈63; At raw_score=150, soft_score≈86
+    # FIX: Changed divisor from 75.0 -> 50.0 for better score mapping
+    # At raw_score=75, soft_score≈78; At raw_score=100, soft_score≈86.5
     # This prevents all scores from collapsing to 100
     import math
-    soft_score = 100.0 * (1.0 - math.exp(-raw_score / 75.0))
+    soft_score = 100.0 * (1.0 - math.exp(-raw_score / 50.0))
     display_score = round(min(soft_score, 99.5), 2)
     
 # Store component breakdown in signal for debugging

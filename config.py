@@ -181,8 +181,23 @@ class Config:
 					self.DISABLED_ASSETS.add(a)
 		# Minimum % price change to warrant an edit notification
 		self.SIGNAL_UPDATE_THRESHOLD_PCT = self._env_float("SIGNAL_UPDATE_THRESHOLD_PCT", 0.1)
-		# Enable signal orchestrator for editMessageText support
+# Enable signal orchestrator for editMessageText support
 		self.SIGNAL_ORCHESTRATOR_ENABLED = self._env_bool("SIGNAL_ORCHESTRATOR_ENABLED", True)
+
+		# Database pool settings (FIXED for Railway to prevent "too many clients" errors)
+		# Async pool: pool_size + max_overflow (total = pool_size + max_overflow)
+		self.DB_POOL_SIZE = self._env_int("DB_POOL_SIZE", 8)  # Increased from default for production
+		self.DB_MAX_OVERFLOW = self._env_int("DB_MAX_OVERFLOW", 3)  # Reduced from 20 for Railway
+		# Sync pool for background tasks
+		self.DB_SYNC_POOL_SIZE = self._env_int("DB_SYNC_POOL_SIZE", 3)  # Reduced from 10
+		self.DB_SYNC_MAX_OVERFLOW = self._env_int("DB_SYNC_MAX_OVERFLOW", 2)  # Reduced from 10
+
+		# Data provider cache TTL (prevent stale prices from blocking signals)
+		# FIX: Added to fix stale price issue where same entry price repeats
+		self.YFINANCE_CACHE_TTL = self._env_int("YFINANCE_CACHE_TTL", 60)  # 60 seconds default
+
+		# Score threshold force mode (bypass score checks for testing)
+		self.PREMIUM_SCORE_THRESHOLD_FORCE = self._env_bool("PREMIUM_SCORE_THRESHOLD_FORCE", False)
 
 	def _env_int(self, name: str, default: int = 0) -> int:
 		raw = os.getenv(name)

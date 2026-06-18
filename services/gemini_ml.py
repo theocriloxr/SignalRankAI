@@ -404,11 +404,11 @@ async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dic
     if not GEMINI_API_KEY or client is None:
         return {"ok": False, "error": "GEMINI_API_KEY not configured"}
     
-    from db.session import AsyncSessionLocal as SessionLocal
+    from db.session import get_session as _get_session_ctx
     from db.models import Signal, Outcome, MLRejectedSignal, MLShadowPrediction
     
     try:
-        async with SessionLocal() as db_session:
+        async with _get_session_ctx() as db_session:
             # Collect aggregates based on scope
             from datetime import timedelta
             from utils.timeutils import now_utc_naive
