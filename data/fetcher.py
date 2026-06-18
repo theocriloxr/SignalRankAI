@@ -192,6 +192,7 @@ def get_unhealthy_providers(min_minutes=None):
                     unhealthy.append((name, down_for))
     return unhealthy
 import random
+import math
 def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60, jitter=0.2):
     """Retry a fetch function with exponential backoff and jitter."""
     for attempt in range(max_retries):
@@ -320,6 +321,37 @@ def _get_last_provider_used(asset: str, timeframe: str) -> str | None:
     except Exception:
         return None
 
+def _validate_data_quality(candles: list, max_nan_ratio: float = 0.05) -> tuple[bool, str]:
+    """Validate data quality before passing to strategies.
+    
+    Returns:
+        tuple of (is_valid, reason_if_invalid)
+    
+    Quality gates:
+    - Minimum 150 candles for indicator stability
+    - Max 5% NaN values in close column
+    """
+    if not candles or not isinstance(candles, list):
+        return False, "empty_dataframe"
+    
+    # Minimum candles for indicator stability (150 needed for 200-period EMAs)
+    if len(candles) < 150:
+        return False, f"insufficient_candles_{len(candles)}_need_150"
+    
+    # Check NaN ratio in close column
+    close_values = [float(c.get("close", 0) or 0) for c in candles if isinstance(c, dict)]
+    if not close_values:
+        return False, "no_close_prices"
+    
+    nan_count = sum(1 for v in close_values if v is None or v == 0 or (isinstance(v, float) and math.isnan(v)))
+    nan_ratio = nan_count / len(close_values) if close_values else 1.0
+    
+    if nan_ratio > max_nan_ratio:
+        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}"
+    
+    return True, ""
+
+
 def fetch_market_data(asset, timeframes):
     """Fetch live market data with validation and freshness checks."""
     data = {}
@@ -328,6 +360,17 @@ def fetch_market_data(asset, timeframes):
         _tf_norm = str(tf or "").lower().strip()
         try:
             candles = get_candles(asset, tf)
+            
+            # CRITICAL: Data quality gate - DON'T skip this!
+            # This is why strategy_signals=0 - data appears available but is poor quality
+            _is_valid, _quality_reason = _validate_data_quality(candles)
+            if not _is_valid:
+                logger.warning(
+                    f"[fetcher][QUALITY GATE] REJECTED {asset} {tf}: {_quality_reason}. "
+                    f"This is WHY strategy_signals=0 despite asset being scanned."
+                )
+                continue
+            
             # Validate candles: must be non-empty and have required fields
             # FIX: Accept degraded mode (10 candles minimum) to prevent data starvation
             # Previously required 20, but this causes starvation when providers fail

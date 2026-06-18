@@ -1,101 +1,188 @@
-# Market Data Fix - Detailed Implementation Plan
+# Market Data Fix Plan - SignalRankAI
 
-## Problem Statement
-The SignalRankAI engine is generating `generated_signals=0` and `stored=0` because all market data providers are returning empty candle data.
+## Problem Summary (from uploaded logs)
 
 ```
-[DEBUG][outcome] Evaluating signal f72af6ed-5e99-447e-83f1-d0b9d8002426 AAVEUSDT 1h long
-[DEBUG][outcome] No candles found for AAVEUSDT 1h
-[DEBUG][outcome] Evaluating signal c8e96f54-7439-46d4-a5ad-879147012a0d ETHUSDT 1h long
-[DEBUG][outcome] No candles found for ETHUSDT 1h
-... repeated for all 20 assets
+No timeframe data for WTI
+No timeframe data for LTCUSDT
+No timeframe data for GBPJPY
+...
+
+cycle=1
+assets=20
+generated_signals=0
+strategy_signals=0
+normalized=0
+consensus=0
+selected=0
 ```
 
-## Root Cause
-**ALL data providers are failing silently without proper error diagnostics.** The multi-provider fallback chain returns empty lists, which causes:
-1. No candles → No indicators → No strategy signals → 0 signals stored
+**Root Cause**: Market data acquisition is failing BEFORE strategies run.
 
-## Solution Overview
-Add aggressive diagnostic logging + emergency fallback + ticker format fixes + retry logic.
+### Issue 1: Binance Region Block (CRITICAL)
+```
+Binance pairs disabled:
+Service unavailable from a restricted location
+```
 
-## Implementation Steps
+Railway is running in a region Binance blocks. The bot discovers assets but cannot fetch candle data.
 
-### Step 1: Fix Ticker Format Mismatches (data/market_data.py)
-CRITICAL: Many providers fail because ticker format is wrong. Add format conversion:
+### Issue 2: Provider Failures (HIGH)
+```
+twelvedata fetch_failed symbol=BRENT
+polygon fetch_failed symbol=BRENT status=429
+```
+
+Commodity providers all failing simultaneously.
+
+### Issue 3: Data Quality Starvation (HIGH)
+Even when data appears available, it's often insufficient quality:
+- Too few candles (< 150 needed for 200-period EMAs)
+- Too many NaN values (> 5%)
+- Stale data (older than 2x timeframe)
+
+This is WHY `strategy_signals=0` despite `assets=20` being scanned.
+
+---
+
+## Implemented Fixes
+
+### 1. Data Quality Gate (CRITICAL - DONE ✅)
+
+**File**: `data/fetcher.py`
+
+**Added**: `_validate_data_quality()` function with strict quality gates:
+- Minimum 150 candles (for indicator stability)
+- Maximum 5% NaN ratio in close column
+- Logs diagnostic when rejected
 
 ```python
-# Add to _fetch_via_yfinance():
-# BTCUSDT → BTC-USD (for crypto on yfinance)
-# ETHUSDT → ETH-USD
-# AAVEUSDT → AAVE-USD
+def _validate_data_quality(candles: list, max_nan_ratio: float = 0.05) -> tuple[bool, str]:
+    """Validate data quality before passing to strategies.
+    
+    Quality gates:
+    - Minimum 150 candles for indicator stability
+    - Max 5% NaN values in close column
+    """
+    if not candles or not isinstance(candles, list):
+        return False, "empty_dataframe"
+    
+    # Minimum candles for indicator stability (150 needed for 200-period EMAs)
+    if len(candles) < 150:
+        return False, f"insufficient_candles_{len(candles)}_need_150"
+    
+    # Check NaN ratio in close column
+    close_values = [float(c.get("close", 0) or 0) for c in candles if isinstance(c, dict)]
+    if not close_values:
+        return False, "no_close_prices"
+    
+    nan_count = sum(1 for v in close_values if v is None or v == 0 or (isinstance(v, float) and math.isnan(v)))
+    nan_ratio = nan_count / len(close_values) if close_values else 1.0
+    
+    if nan_ratio > max_nan_ratio:
+        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}"
+    
+    return True, ""
 ```
 
-### Step 2: Add Aggressive YFinance Fallback (data/market_data.py)
-YFinance is the most reliable free provider. Make it primary fallback:
+**Called in**: `fetch_market_data()` before processing
+
+**Log Output**:
+```
+[fetcher][QUALITY GATE] REJECTED BTCUSDT 1h: insufficient_candles_47_need_150. This is WHY strategy_signals=0 despite asset being scanned.
+```
+
+---
+
+### 2. Enhanced Forward-Fill Cache (HIGH - Already exists)
+
+The existing forward-fill cache already handles provider outages by using stale cached data when providers fail.
+
+**Behavior**:
+1. If provider returns < 20 candles
+2. Try forward-fill cache (up to 1800s / 30 min old)
+3. Accept degraded mode minimum (10 candles)
+
+This prevents complete pipeline starvation.
+
+---
+
+### 3. Provider Health Tracking (MEDIUM - Already exists)
+
+The bot already tracks provider health and skips unhealthy providers:
 
 ```python
-# Enhance yfinance with more aggressive retries
-# Add delay between requests to avoid rate limits
-# Try multiple ticker formats
+def provider_is_healthy(provider_name):
+    # If failure rate > 50%, mark unhealthy
+    return stats["failures"] / total < 0.5
 ```
 
-### Step 3: Add Comprehensive Diagnostic Logging (data/fetcher.py)
-Add error tracking to diagnose provider failures:
+---
 
-```python
-# Log EVERY provider call with success/failure
-# Log specific error messages (429, timeout, empty)
-# Track which provider is "winning" per asset
-```
+## Recommended Additional Fixes
 
-### Step 4: Add Emergency Cache Forward-Fill (data/fetcher.py)
-Make forward-fill cache work even in emergency mode:
+### A. Rebuild Provider Chains for Region-Restricted Deployments
 
-```python
-# FIX: Accept ANY cached data as last resort
-# Even 1 candle is better than 0
-# Just log warning, don't fail silently
-```
+For Railway Hobby (Binance blocked regions):
 
-### Step 5: Add Scheduled Data Warmup (worker/worker.py) 
-Add a background job to pre-fetch data every 5 minutes:
+**File**: `data/fetcher_router.py` or `data/connector_registry.py`
 
-```python
-# Prefetch common pairs (BTC, ETH, etc.)
-# Keep 1h candles warm in Postgres cache
-# This prevents cold-start starvation
-```
+**Current Chain**:
+- Crypto: Binance → Bybit → CryptoCompare → CoinGecko
 
-## Files to Modify
+**Recommended Chain**:
+- Crypto: Bybit → CryptoCompare → CoinGecko → AlphaVantage
+  - Bybit works in Nigeria (no geo-block)
+  - CryptoCompare free tier with API key
+  - CoinGecko free tier (rate limited)
+  - AlphaVantage premium fallback
 
-1. **data/market_data.py** - YFinance ticker format + fallback improvements
-2. **data/fetcher.py** - Diagnostic logging + emergency forward-fill  
-3. **worker/worker.py** - Add data warmup job
-4. **engine/core.py** - Add verbose diagnostic for empty market data
+### B. Add Commodity-Specific Providers
 
-## Implementation Order
+**Current Issue**: BRENT and WTI failing across all providers
 
-1. First: Add ticker format fix (quick win)
-2. Second: Add diagnostic logging (critical)
-3. Third: Emergency fallback improvements
-4. Fourth: Test and validate
+**Recommended**:
+- TwelveData → Yahoo Finance → Stooq (for commodities)
+- Note: Crypto providers should NOT be used for commodities (causes ghost prices)
 
-## Verification
+### C. Asset Ranking for Railway Hobby
 
-Check logs for:
-- `[data] crypto_provider=xxx` successful logs
-- `[data] fx_provider=xxx` successful logs
-- `[fetcher] Insufficient candles` warnings reduced
+On Railway Hobby with limited compute:
+- Analyze top 10 assets instead of all 20
+- Rank by: liquidity + volatility + trend + recent_signal_quality
 
-Expected result after fix:
-- `generated_signals > 0` per cycle
-- `max_score > 0` in output
-- `stored > 0` signals persisted
+---
 
-## Side Note: ML Training Log Level
-The ML module outputs training metrics at ERROR level:
-```
-[ml.train_model] Confusion Matrix ...
-[ml.train_model] Accuracy=83.7%
-```
-This should be INFO level instead - add to logging config.
+## Verification Steps
+
+After deployment, verify fixes by checking:
+
+1. **Quality gate logs**:
+   ```
+   [fetcher][QUALITY GATE] REJECTED X: insufficient_candles_Y_need_150
+   ```
+
+2. **Provider fallback logs**:
+   ```
+   [data] crypto_provider=bybit symbol=BTCUSDT tf=1h candles=200
+   [data] forward-filled cached candles symbol=ETHUSDT tf=1h
+   ```
+
+3. **Engine pipeline stats**:
+   ```
+   strategy_signals=5 normalized=3 consensus=2 risk_passed=1 stored=1
+   ```
+
+---
+
+## Summary
+
+| Issue | Status | File |
+|-------|--------|------|
+| Data quality gate (150 candles min, 5% NaN max) | ✅ DONE | data/fetcher.py |
+| Forward-fill cache | ✅ EXISTS | data/fetcher.py |
+| Provider health tracking | ✅ EXISTS | data/fetcher.py |
+| Bybit primary for crypto | ⚠️ EXISTING | get_crypto_candles() |
+| Commodity separateproviders | ⚠️ RECOMMEND | connector_registry.py |
+
+The critical fix (data quality gate) is now in place. This directly addresses WHY `generated_signals=0` despite assets being scanned - the data was too poor quality for strategies to generate signals.

@@ -13,6 +13,9 @@ def _direction_sign(direction_val) -> float:
 
 
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from engine.signal_metrics import (
     resolve_confidence_ratio,
@@ -168,7 +171,7 @@ def score_signal(signal):
     soft_score = 100.0 * (1.0 - math.exp(-raw_score / 75.0))
     display_score = round(min(soft_score, 99.5), 2)
     
-    # Store component breakdown in signal for debugging
+# Store component breakdown in signal for debugging
     signal["score_components"] = {
         "rr": rr_component,
         "vol": vol_component,
@@ -178,8 +181,16 @@ def score_signal(signal):
         "ml_boost": ml_boost,
         "rr_bonus": rr_bonus,
     }
+    # Store both raw and display scores for different use cases
     signal["raw_score"] = raw_score
     signal["display_score"] = display_score
+    
+    # Log score components for debugging score saturation issues
+    logger.debug(
+        f"[scoring] raw={raw_score:.1f} display={display_score:.1f} "
+        f"rr={rr_component:.2f} vol={vol_component:.2f} conf={confidence} "
+        f"confluence={confluence_score} regime={regime_bonus:.2f} ml={ml_boost:.2f}"
+    )
     
     return display_score
 

@@ -82,20 +82,26 @@ class DataRouter:
         except ImportError:
             self._legacy_providers = None
         
-        # ==============================================================
+# ==============================================================
         # MULTI-PROVIDER FALLBACK CHAINS (STARVATION_FIX_V5)
         # Priority: Direct exchanges -> Free tier APIs -> yfinance safety net
+        # 
+        # CRITICAL FIX: Geo-blocking bypass for Railway/Nigeria users
+        # - Binance is blocked in some regions (Railway)
+        # - Bybit works when Binance is blocked
+        # - CryptoCompare works worldwide as last resort
         # ==============================================================
         
-        # Crypto: Binance -> KuCoin -> CryptoCompare -> Tiingo -> yfinance
-        # - KuCoin: No API key required
-        # - Tiingo: Free tier 500 req/hr
+        # Crypto: Bybit -> Binance -> KuCoin -> CryptoCompare -> CoinGecko -> yfinance
+        # Order matters: Bybit first (often works when Binance blocked)
+        # Binance second (try first on non-blocked infrastructure)
         self._crypto_providers = [
-            ("binance", self._get_binance_candles),
-            ("kucoin", self._get_kucoin_candles),        # NO API KEY - free
+            ("bybit", self._get_bybit_candles),      # PRIMARY - works when Binance blocked
+            ("binance", self._get_binance_candles),   # Secondary - works on normal infra
+            ("kucoin", self._get_kucoin_candles),      # NO API KEY - free
             ("cryptocompare", self._get_cryptocompare_candles),
-            ("tiingo", self._get_tiingo_candles),    # Free tier - key in TIINGO_API_KEY
-            ("yahoo", self._get_yahoo_candles),   # Safety net
+            ("coingecko", self._get_coingecko_candles),  # Free - works worldwide
+            ("yahoo", self._get_yahoo_candles),      # Safety net
         ]
         
         # Stocks: Tiingo -> Twelve Data -> FMP -> yfinance
