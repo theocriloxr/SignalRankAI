@@ -73,7 +73,12 @@ def _pool_bool(name: str, default: bool = True) -> bool:
 
 
 def _is_railway_runtime() -> bool:
-    return bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    """Detect if running on Railway deployment."""
+    return bool(
+        (os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or 
+        (os.getenv("RAILWAY_ENVIRONMENT") or "").strip() or
+        (os.getenv("RAILWAY") or "").strip()
+    )
 
 
 def _effective_pool_settings() -> tuple[int, int]:
@@ -82,6 +87,14 @@ def _effective_pool_settings() -> tuple[int, int]:
     if use_nullpool in ("1", "true", "yes", "on", "y"):
         logger.info("[db] Using NullPool - connection pooling disabled")
         return 0, 0
+
+    # FIX: Check Railway environment - use smaller pool to avoid exhaustion
+    # Railway hobby tier has ~20 connection limit, exceed causes "FATAL: too many clients"
+    if _is_railway_runtime():
+        # Railway: 5 + 2 = 7 total (safe for hobby tier)
+        # Also enable pool_recycle and pool_pre_ping to prevent stale connections
+        logger.info("[db] Railway runtime detected - using reduced pool (5+2=7)")
+        return 5, 2
 
     # FIX: Increase pool size for concurrent operations
     # Default to 10 connections with 20 overflow for production workloads

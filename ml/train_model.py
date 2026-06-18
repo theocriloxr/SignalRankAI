@@ -827,7 +827,17 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
-    # Train model
+    # FIX: Calculate scale_pos_weight to address class imbalance
+    # Dataset has ~5x more losers (0) than winners (1)
+    neg_count = int((y_tr == 0).sum())
+    pos_count = int((y_tr == 1).sum())
+    scale_pos_weight = 1.0
+    if pos_count > 0 and neg_count > 0:
+        scale_pos_weight = float(neg_count) / float(pos_count)
+        logger.info(f"[ml] Class imbalance: neg=%s pos=%s scale_pos_weight=%.2f", 
+                    neg_count, pos_count, scale_pos_weight)
+    
+    # Train model with class imbalance handling
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
@@ -835,6 +845,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         subsample=0.8,
         colsample_bytree=0.8,
         objective='binary:logistic',
+        scale_pos_weight=scale_pos_weight,  # FIX: Handle class imbalance
         random_state=42,
         verbosity=1,
     )

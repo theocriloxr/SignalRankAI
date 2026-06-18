@@ -135,7 +135,9 @@ async def _resend_unsent_signals_async():
             logger.info("[resend] no active signals found in last 24h")
             return
 
-        resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
+# FIX: Lowered from 75 to 70 to allow signals scoring ~75 to be delivered
+        # Engine scores hover around 75.04 which were being filtered out
+        resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "70") or 70)
         resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "8") or 8)
 
         # Keep highest-quality signals only to avoid flooding users.
