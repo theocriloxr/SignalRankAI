@@ -20,15 +20,104 @@ from data.fetcher import async_get_candles, get_asset_type as _get_asset_type
 _audit_logger = logging.getLogger("audit")
 logger = logging.getLogger(__name__)
 
-# FIX: Signal status constants to address the root cause of "No active unresolved signals"
-# The engine stores signals with various statuses but queries were only checking "active"
-# This ensures all non-resolved signals are displayed to users
+# ============================================================================
+# SIGNAL STATUS CONSTANTS - Fix for "/signals says no signals" bug
+# ============================================================================
+# The bug: Command queries only for "active" or "unresolved" signals
+# while trades exist with status "issued", "open", "pending"
+# Solution: Use a consistent set of active statuses for ALL queries
+
+# All signal statuses that should be considered "active" (not resolved/expired)
 ACTIVE_SIGNAL_STATUSES = {
     "issued",
     "open", 
     "active",
     "pending"
 }
+
+# Reserved statuses that mean signal has a definitive outcome
+RESOLVED_SIGNAL_STATUSES = {
+    "tp", "tp1", "tp2", "tp3",      # Take profit hit
+    "sl",                                 # Stop loss hit
+    "invalid", "invalidated",              # Market moved against position
+    "missed", "time_stop",                # Price never reached entry
+    "cancelled", "cancel",                # Cancelled signal
+    "breakeven", "be",                    # Breakeven exit
+}
+
+
+def _is_signal_active(signal_row) -> bool:
+    """Check if a signal should be considered active/unresolved.
+    
+    A signal is active if:
+    - It has no outcome recorded (not resolved)
+    - It's not explicitly marked as expired
+    - It's not archived
+    """
+    try:
+        # No outcome = still active
+        has_outcome = False
+        try:
+            from sqlalchemy import select
+            from db.models import Outcome
+            from db.session import get_session
+            
+            # Quick check - don't need full session for this
+            engine = get_engine_for_event_loop()
+            if engine is not None:
+                import asyncio
+                async def _check():
+                    async with get_session() as session:
+                        result = await session.execute(
+                            select(Outcome.id).where(Outcome.signal_id == str(signal_row.signal_id)).limit(1)
+                        )
+                        return result.scalar_one_or_none() is not None
+                has_outcome = asyncio.get_event_loop().run_until_complete(_check())
+        except Exception:
+            pass
+        
+        if has_outcome:
+            return False
+        
+        # Check flags
+        if getattr(signal_row, 'expired', False):
+            return False
+        if getattr(signal_row, 'archived', False):
+            return False
+            
+        return True
+    except Exception:
+        return True  # Default to active on error
+
+
+def _get_signal_status_display(signal_row, outcome_status: str = None) -> str:
+    """Get human-readable status for a signal.
+    
+    Args:
+        signal_row: Signal database row
+        outcome_status: Outcome status string if outcome exists
+    """
+    if outcome_status:
+        status_str = str(outcome_status).upper()
+        if status_str.startswith('TP'):
+            return f"✅ WIN ({status_str})"
+        elif status_str == 'SL':
+            return "❌ STOP LOSS"
+        elif status_str in {'INVALID', 'INVALIDATED'}:
+            return "⚠️ INVALIDATED (SL hit before entry)"
+        elif status_str in {'MISSED', 'TIME_STOP'}:
+            return "⏰ MISSED (price never reached entry)"
+        else:
+            return f"📊 {status_str}"
+    
+    # Check signal flags
+    if getattr(signal_row, 'expired', False):
+        return "⏰ EXPIRED"
+    if getattr(signal_row, 'archived', False):
+        return "📦 ARCHIVED"
+    
+    return "🟢 ACTIVE"
+
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show user's signals with tier-specific formatting.

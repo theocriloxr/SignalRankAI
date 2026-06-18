@@ -1,101 +1,164 @@
-# SignalRank AI Command Surface Fix Implementation TODO
+# SignalRankAI Command Fix Implementation Plan
 
-## Overview
-Fix the large command surface issues identified:
-- Commands registered but returning no data ("No active unresolved signals")
-- Missing startup command audit
-- No delivery telemetry
-- AUDUSD pricing bug
+## Executive Summary
 
-## Root Cause Analysis - COMPLETED
+Based on comprehensive codebase analysis, the following critical issues have been identified:
 
-### 1. /signals "No active unresolved signals" Bug ✅ FIXED
-**Root Cause:** The query in `signal_commands.py` used `SignalDelivery.sent_ok.is_(True)` which filters
-to only signals where delivery SUCCEEDED. Signals can exist in DB without successful delivery.
+1. **Root Cause of "/signals says no signals"**: Signal query filters by `sent_ok=True` but signals exist even when delivery failed
+2. **Command Audit Missing**: No startup verification that all /help commands are registered
+3. **Missing /diag command**: No health verification command
+4. **Delivery Telemetry**: No visibility into where signals die in the pipeline
+5. **AUDUSD Pricing Bug**: No explicit sanity check for AUDUSD (0.60-0.85 range)
+6. **Duplicate Telegram Stacks**: Found legacy stub in `telegram/` (already disabled)
 
-**Location:** `signalrank_telegram/signal_commands.py` - `signals_command()` function
-- Bug location: `.where(SignalDelivery.sent_ok.is_(True))`
-- **FIX APPLIED:** Removed the sent_ok filter to show ALL delivered signals
+---
 
-**Evidence from code:**
-```python
-# OLD (buggy) - filters by sent_ok
-.where(SignalDelivery.user_id == user_row.id,
-       SignalDelivery.sent_ok.is_(True),  # <-- REMOVED
-       SignalDelivery.delivered_at >= cutoff)
+## Implementation Plan
 
-# NEW (fixed) - show all delivered signals
-.where(SignalDelivery.user_id == user_row.id,
-       SignalDelivery.delivered_at >= cutoff)  # No sent_ok filter
-```
+### Phase 1: Fix Signal Status Query (CRITICAL)
 
-### 2. Database Function Also Fixed ✅
-**Location:** `db/pg_features.py` - `list_unresolved_signals_for_user()` function
-- **FIX APPLIED:** Removed sent_ok filter in this fallback function too
+**Problem**: `/signals` command shows "No active unresolved signals" while trades exist
 
-### 3. Duplicate Telegram Stacks ❌ FALSE ALARM
-- `signalrank_telegram/` = Main implementation (ACTIVE)
-- `telegram/` = Legacy stub - already disabled via ALLOW_LEGACY_TELEGRAM_BOT
-- No action needed
+**Root Cause**: 
+- `list_unresolved_signals_for_user()` filters by `sent_ok.is_(True)`
+- Signals can exist without being marked as successfully delivered
 
-### 4. Startup Command Audit ✅ ALREADY EXISTS
-- Located in `bot.py` - runs in `run_bot()` after handler registration
-- Logs: `[bot] command registry mismatch: missing=...`
-- Logs: Missing handlers at startup
-- Already adequate
+**Solution**:
+1. Create ACTIVE_SIGNAL_STATUSES constant
+2. Update signal_commands.py to query ALL delivered signals (not just sent_ok=True)
+3. Include resolved/expired signals in history
 
-## Implementation Progress
+**Files to Edit**:
+- `signalrank_telegram/signal_commands.py`
+- `db/pg_features.py` (for `list_unresolved_signals_for_user`)
 
-### Phase 1: Signal Status Fix ✅ COMPLETED
-- [x] Fix /signals command to remove sent_ok filter
-- [x] Fix fallback function list_unresolved_signals_for_user()
-- [x] Test with users who have signals but see "no signals"
+### Phase 2: Add Startup Command Audit
 
-### Phase 2: Startup Command Audit ✅ READY
-- [x] Already exists in bot.py
-- [x] Logs missing handlers at startup
+**Problem**: No verification that commands in /help are actually registered
 
-### Phase 3: /diag Command 📋 NOT STARTED
-- [ ] Add /diag command for health verification
-- [ ] Include command registration status
-- [ ] Include subsystem health checks
+**Solution**:
+1. Add logging at bot startup that compares:
+   - EXPECTED_COMMANDS (from /help text)
+   - REGISTERED_COMMANDS (from bot handlers)
+   - IMPLEMENTED_COMMANDS (functions with working DB queries)
 
-### Phase 4: Delivery Telemetry 📋 NOT STARTED
-- [ ] Track delivery stages: GENERATED → STORED → QUEUED → TELEGRAM_SENT → DELIVERED
-- [ ] Log where signals die in the pipeline
+2. Log missing handlers with ERROR level
 
-### Phase 5: Price Validation (AUDUSD Bug) 📋 NOT STARTED
-- [ ] Add AUDUSD sanity check (0.60-0.85 range)
-- [ ] Apply to validate_price_sanity() in engine/validators.py
+**Files to Edit**:
+- `signalrank_telegram/bot.py` (in run_bot() function)
 
-### Phase 6: Threshold Persistence 📋 NOT STARTED
-- [ ] Save dynamic thresholds to DB/Redis instead of recalculating each cycle
+### Phase 3: Add /diag Command
 
-## Command Audit Status
-- Expected commands: ~85+ (from COMMAND_TIERS)
-- Help entries: Multiple per tier
-- Registration: Happens in bot.py run_bot()
+**Problem**: No admin diagnostic command for health verification
 
-## Files Modified
-1. signalrank_telegram/signal_commands.py - FIXED sent_ok filter
-2. db/pg_features.py - FIXED list_unresolved_signals_for_user
-3. signalrank_telegram/command_access.py - Already has COMMAND_TIERS
-4. signalrank_telegram/bot.py - Has startup audit
+**Solution**:
+1. Create new diagnostic command that checks:
+   - Database connectivity
+   - Redis connectivity
+   - Provider health status
+   - Recent signal generation count
+   - Command registration status
+   - Delivery pipeline status
+
+**Files to Create/Edit**:
+- `signalrank_telegram/commands.py` (add diag_command)
+- `signalrank_telegram/bot.py` (register /diag handler)
+
+### Phase 4: Add Delivery-Stage Telemetry
+
+**Problem**: "stored=5 but users received nothing" - no visibility
+
+**Solution**:
+1. Add delivery_stage field to signal tracking:
+   - GENERATED → STORED → QUEUED → TELEGRAM_SENT → DELIVERED
+
+2. Log each stage transition
+
+**Files to Edit**:
+- `db/pg_features.py`
+- `engine/core.py`
+- `signalrank_telegram/tier_delivery.py`
+
+### Phase 5: Fix AUDUSD Price Sanity
+
+**Problem**: 4430% drift (0.01570 vs 0.71124) - provider returns inverse rate
+
+**Solution**:
+1. Add explicit AUDUSD sanity check in validate_price_sanity()
+2. Check: AUDUSD should be in 0.60-0.85 range
+3. Reject corrupted prices before they corrupt outcome tracking
+
+**Files to Edit**:
+- `data/fetcher.py` (update validate_price_sanity)
+
+### Phase 6: Add Threshold Persistence
+
+**Problem**: Dynamic thresholds recalculated every cycle, no persistence
+
+**Solution**:
+1. Save thresholds to Redis or DB
+2. Load on startup
+3. Only recalculate when stale
+
+**Files to Edit**:
+- `core/redis_state.py`
+- `engine/core.py`
+
+---
+
+## Command Categories (85 total)
+
+### Core Commands (Always Available)
+- /start, /help, /pricing, /upgrade, /status, /signals, /signal, /performance, /invite, /support
+
+### Premium Commands (Tier-gated)
+- /stats, /history, /simulate, /risk, /alerts, /quality
+- /portfolio, /market, /assets, /liveprice, /apikey, /language
+- /account, /dashboard, /notify, /feedback, /analyze, /filter
+
+### VIP Commands (Tier-gated)
+- /elite, /early, /report, /setrisk
+
+### Admin/Owner Commands (Silent)
+- /unlock, /dev_pause, /dev_resume, /dev_force_signal, /dev_invalidate
+- /owner_users, /owner_revenue, /provider_status, /correct_signal
+- /admin, /admin_dashboard, /admin_broadcast, /force_market_scan
+- /gemini, /gemini_review, /gemini_analyze, /gemini_predict, /gemini_audit
+- /referral, /referral_leaderboard, /referral_rewards
+- /selfcheck, /ops_health, /myid
+
+### MT5 Commands
+- /mt5, /mt5_link, /mt5_status, /setlot, /setwebhook
+- /drawdown, /execution, /tiers, /mystats, /cancel
+
+---
+
+## High-Risk Commands (Need Audit First)
+
+These are the commands most likely to be broken:
+
+1. **/portfolio** - May have missing DB query
+2. **/quality** - May rely on ML subsystem
+3. **/reports** / **/report** - Analytics commands
+4. **/outcome** - May have wrong status mapping
+5. **/provider_status** - May not be wired correctly
+6. **/assets** - Asset discovery
+7. **/market** - Market data
+8. **/gemini_review** / **/gemini_predict** - Gemini commands
+9. **/referral_rewards** / **/referral_leaderboard** - Referral system
+10. **/alerts** / **/notify** - Notification system
+
+---
+
+## Status: Ready for Implementation
+
+The implementation plan is confirmed. Ready to proceed with fixes.
 
 ## Next Steps
-1. ✅ Core fix completed - /signals should now show signals
-2. Consider adding /diag command
-3. Consider adding price validation
-4. Consider adding delivery telemetry
 
-## Summary of Changes Made
-```
-1. signalrank_telegram/signal_commands.py:
-   - REMOVED: SignalDelivery.sent_ok.is_(True) filter
-   - Added clear comments explaining the fix
-   - Now shows ALL delivered signals regardless of delivery success
-
-2. db/pg_features.py - list_unresolved_signals_for_user():
-   - REMOVED: SignalDelivery.sent_ok.is_(True) filter
-   - Added documentation explaining the fix
-   - Now shows ALL signals, not just successfully delivered ones
+1. Implement Phase 1 (Signal Status Fix) - CRITICAL
+2. Add /diag command
+3. Add startup audit
+4. Test all high-risk commands
+5. Deploy to Railway
+6. Verify /signals shows signals correctly
