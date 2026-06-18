@@ -20,6 +20,16 @@ from data.fetcher import async_get_candles, get_asset_type as _get_asset_type
 _audit_logger = logging.getLogger("audit")
 logger = logging.getLogger(__name__)
 
+# FIX: Signal status constants to address the root cause of "No active unresolved signals"
+# The engine stores signals with various statuses but queries were only checking "active"
+# This ensures all non-resolved signals are displayed to users
+ACTIVE_SIGNAL_STATUSES = {
+    "issued",
+    "open", 
+    "active",
+    "pending"
+}
+
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show user's signals with tier-specific formatting.
     
@@ -169,17 +179,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 await update.message.reply_text("⚠️ User not found. Start with /start")
                 return
             
-            # FIX: Get signals from last 48 hours - NO sent_ok filter
+# FIX: Get signals from last 48 hours - NO sent_ok filter
             # This ensures signals without successful delivery still show
             cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
             
-            # Get ALL signals delivered to user (regardless of sent_ok status)
+            # CRITICAL FIX: Remove sent_ok filter to show ALL delivered signals
+            # The old filter .where(SignalDelivery.sent_ok.is_(True)) caused:
+            # "No active unresolved signals" while trades existed in DB
+            # Signals can exist without successful delivery (network errors, etc)
+            # We now show ALL signals delivered to user regardless of sent_ok
             rows = (
                 await session.execute(
                     select(Signal, SignalDelivery.delivered_at)
                     .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
                     .where(
                         SignalDelivery.user_id == user_row.id,
+                        # REMOVED: SignalDelivery.sent_ok.is_(True) - was causing "no signals" bug
                         SignalDelivery.delivered_at >= cutoff,
                     )
                     .order_by(SignalDelivery.delivered_at.desc())

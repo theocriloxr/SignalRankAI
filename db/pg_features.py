@@ -1800,7 +1800,12 @@ async def list_unresolved_signals_for_user(
     telegram_user_id: int,
     lookback_days: int = 1,
 ) -> list[Signal]:
-    """Return unresolved signals delivered to this user in the configured lookback window."""
+    """Return unresolved signals delivered to this user in the configured lookback window.
+    
+    FIX: Removed sent_ok filter - signals can exist without successful delivery
+    (network errors, user blocked bot, etc). We show ALL delivered signals
+    to fix "no signals found" bug when signals actually exist.
+    """
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
@@ -1809,12 +1814,14 @@ async def list_unresolved_signals_for_user(
     cutoff_days = max(1, int(lookback_days or 1))
     cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
 
+    # CRITICAL FIX: Remove sent_ok filter - was causing "no signals despite trades exist" bug
+    # Show ALL delivered signals regardless of delivery success status
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(
             SignalDelivery.user_id == user.id,
-            SignalDelivery.sent_ok.is_(True),
+            # REMOVED: SignalDelivery.sent_ok.is_(True) - was filtering out valid signals
             Signal.archived == False,
             Signal.expired == False,
             Signal.created_at >= cutoff,
