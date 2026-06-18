@@ -169,9 +169,10 @@ class Config:
 		# Cooldown between signal updates for the same signal_id (seconds)
 		self.SIGNAL_NOTIFY_COOLDOWN_SECONDS = self._env_int("SIGNAL_NOTIFY_COOLDOWN_SECONDS", 900)  # 15 min default
 
-		# FIX: Disabled assets - temporarily disable BRENT due to provider failures
+# FIX: Disabled assets - temporarily disable BRENT due to provider failures
 		# BRENT has polygon 429 and twelvedata failed, causing noisy errors
-		self.DISABLED_ASSETS: set[str] = set()
+		# Add BRENT to disabled by default to prevent noisy errors until providers stabilize
+		self.DISABLED_ASSETS: set[str] = {"BRENT"}
 		_disabled_raw = os.getenv("DISABLED_ASSETS", "").strip().upper()
 		if _disabled_raw:
 			for a in _disabled_raw.split(","):
