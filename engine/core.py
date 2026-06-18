@@ -2526,7 +2526,7 @@ def main_loop(DRY_RUN: bool = False):
                         logger.info(f"[engine] collapsed {dropped_variants} lower-ROI signal variants before storage")
                     final_signals = collapsed_signals
 
-pipeline_stats["final_signals"] += len(final_signals)
+                    pipeline_stats["final_signals"] += len(final_signals)
 
                     # === DELIVERY STAGE LOGGING ===
                     # Track signal lifecycle stages for debugging delivery issues
