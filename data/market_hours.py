@@ -268,7 +268,10 @@ def is_market_session_open(symbol: str) -> bool:
 # =============================================================================
 
 # Minimum candles required for strategy indicators to work properly
-MIN_CANDLES_REQUIRED = 150
+# FIX: Lowered from 150 to 100 to allow more signals through on Railway
+# Many providers won't consistently return 150+ candles across all assets
+# Using 100 as a balance between data quality and signal generation
+MIN_CANDLES_REQUIRED = 100
 
 # Maximum allowed NaN ratio in close prices
 MAX_NAN_RATIO = 0.05
@@ -312,9 +315,17 @@ def validate_data_quality(market_data: dict, asset: str, min_candles: int = MIN_
             
         candles = tf_data.get('candles', [])
         
-        # Check minimum candles (lenient - allow any timeframe with enough data)
+# Check minimum candles (lenient - allow any timeframe with enough data)
         if len(candles) < min_candles:
-            logger.debug(f"[data_quality] {asset} {tf}: only {len(candles)} candles (need {min_candles})")
+            # FIX: Add warning-level log to identify root cause of signal starvation
+            logger.warning(
+                "[QUALITY GATE] %s %s candles=%s valid=%s reason=need_%s",
+                asset,
+                tf,
+                len(candles),
+                False,
+                min_candles,
+            )
             continue
             
         # Check NaN ratio in close prices

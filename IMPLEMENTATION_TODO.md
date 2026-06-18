@@ -1,24 +1,54 @@
-# Implementation TODO: Price Sanity Check & Command Audit
+# SignalRankAI Implementation Plan - Post-Risk Pipeline Fixes
 
-## Phase 1: Price Sanity Check (Multi-Source Validation) - COMPLETED
-- [x] 1.1 Enhanced validate_price_sanity() in data/fetcher.py to fetch from multiple providers
-- [x] 1.2 Added median price calculation with outlier detection
-- [x] 1.3 Returns confidence score instead of hard-coded values
-- [x] 1.4 Multi-source validation function: validate_price_multi_source()
+## Task Analysis Summary
 
-## Phase 2: Command Registration Audit - COMPLETED
-All commands verified in bot.py with proper handlers:
-- Core Commands: ✓ All 10 commands properly registered
-- Premium Commands: ✓ All 25 commands properly registered  
-- VIP Commands: ✓ All 4 commands properly registered
-- Admin/Owner Commands: ✓ All 24 commands properly registered
-- MT5 Commands: ✓ All 11 commands properly registered
+Based on the diagnostic logs, the current state is:
+- Market Data: Working ✓
+- Strategies: Generating signals (233) ✓  
+- Consensus: Working (61) ✓
+- Risk Engine: Evaluating (17 passed) ✓
+- Final Signals: 0 ✗ (PRIMARY ISSUE)
 
-Command registration audit runs at bot startup with error logging.
+The bottleneck is now AFTER risk_passed=17, between risk evaluation and storage.
 
-## Status: COMPLETED
+## Identified Issues
 
-Implementation completed:
-1. Multi-source price validation using independent providers (Binance, Bybit, CryptoCompare, Yahoo, AlphaVantage, Polygon)
-2. Confidence score calculation using statistical deviation detection
-3. All 85+ commands verified as registered with proper tier gating
+### 1. Primary: Post-Risk Pipeline Blocking (highest priority)
+```
+risk_passed=17 → final_signals=0 → stored=0
+```
+Need to add audit logging to identify which gate is rejecting signals.
+
+### 2. Secondary: Stale Signal Validator
+- Current threshold: 1.5% 
+- May be too aggressive for crypto volatility
+- Need to add [STALE_AUDIT] logging
+
+### 3. PostgreSQL Pool Size
+- Already reduced to 5+2 in db/session.py for Railway ✓
+
+### 4. BRENT Disabled
+- Already in DISABLED_ASSETS in config.py ✓
+
+### 5. Data Quality Gate
+- Already lowered to 20 candles in config.py ✓
+
+## Implementation Steps
+
+### Step 1: Add Post-Risk Audit Logging
+Files to modify:
+- engine/core.py or engine/engine.py
+- Add comprehensive [POST_RISK_AUDIT] logging
+
+### Step 2: Add Stale Signal Audit Logging  
+Files to modify:
+- engine/stale_signal_validator.py
+- Add [STALE_AUDIT] logging with entry/live/drift/threshold
+
+### Step 3: Adjust Stale Threshold
+Files to modify:
+- config.py or stale_signal_validator.py
+- Increase default from 1.5% to 2.5% for crypto
+
+### Step 4: Verify Disabled Assets
+Ensure BRENT is in DISABLED_ASSETS

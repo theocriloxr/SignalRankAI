@@ -165,9 +165,19 @@ class Config:
 		self.AI_JOURNAL_WEEKLY_DAY = os.getenv("AI_JOURNAL_WEEKLY_DAY", "sunday").strip().lower() or "sunday"
 		self.CORRELATION_FILTER_MODE = os.getenv("CORRELATION_FILTER_MODE", "best_per_cluster").strip().lower() or "best_per_cluster"
 
-		# Signal Orchestrator / Spam Prevention
+# Signal Orchestrator / Spam Prevention
 		# Cooldown between signal updates for the same signal_id (seconds)
 		self.SIGNAL_NOTIFY_COOLDOWN_SECONDS = self._env_int("SIGNAL_NOTIFY_COOLDOWN_SECONDS", 900)  # 15 min default
+
+		# FIX: Disabled assets - temporarily disable BRENT due to provider failures
+		# BRENT has polygon 429 and twelvedata failed, causing noisy errors
+		self.DISABLED_ASSETS: set[str] = set()
+		_disabled_raw = os.getenv("DISABLED_ASSETS", "").strip().upper()
+		if _disabled_raw:
+			for a in _disabled_raw.split(","):
+				a = a.strip()
+				if a:
+					self.DISABLED_ASSETS.add(a)
 		# Minimum % price change to warrant an edit notification
 		self.SIGNAL_UPDATE_THRESHOLD_PCT = self._env_float("SIGNAL_UPDATE_THRESHOLD_PCT", 0.1)
 		# Enable signal orchestrator for editMessageText support

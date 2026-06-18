@@ -710,7 +710,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
 
     out: dict = {}
     
-    # 1. Try yfinance first (primary source)
+# 1. Try yfinance first (primary source)
     if use_yfinance and _yf_available():
         for tf in tfs:
             try:
@@ -731,6 +731,12 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     }
                     logger.info(f"[market_data] yfinance success for {asset} {tf}: {len(yf_candles)} candles")
                 else:
+                    # FIX: Add QUALITY_GATE logging for visibility into data rejection reasons
+                    got_candles = len(yf_candles) if yf_candles else 0
+                    reason = f"need_{want}" if got_candles > 0 else "no_data"
+                    logger.warning(
+                        f"[QUALITY_GATE] {asset} {tf} candles={got_candles} valid=False reason={reason}"
+                    )
                     logger.warning(f"yfinance failed/insufficient for {asset} {tf}, falling back to cache/REST")
             except Exception as e:
                 logger.warning(f"yfinance exception for {asset} {tf}: {e}")

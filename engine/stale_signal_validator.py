@@ -86,9 +86,9 @@ class StaleSignalValidator:
         """
         if signal_price <= 0 or live_price <= 0:
             return True  # Can't validate, assume OK
-        
+
         drift = abs(signal_price - live_price) / signal_price
-        
+
         if drift > self.default_threshold:
             logger.info(
                 f"[StaleSignalValidator] Signal INVALIDATED: drift={drift*100:.2f}% > "
@@ -102,10 +102,12 @@ class StaleSignalValidator:
 _validator = StaleSignalValidator()
 
 # Asset-class defaults when STALE_PRICE_THRESHOLD_PCT is not set.
+# FIX: Increased crypto threshold from 3.5% to 2.5% and commodity from 1.0% to 1.5%
+# This fixes signal starvation after risk_passed (17 signals passing but final_signals=0)
 _CLASS_THRESHOLDS: dict[str, float] = {
-    "crypto":     3.5,   # 3.5% (increased for crypto volatility)
+    "crypto":     2.5,   # 2.5% (was 3.5% - lowered to allow more signals through)
     "stock":      0.5,   # 0.5% (stocks)
-    "commodity":  1.0,   # 1.0% (Gold/Silver - widened for more signals)
+    "commodity":  1.5,   # 1.5% (was 1.0% - Gold/Silver need more room)
     "fx":         0.8,   # 0.8% / ~80 pips (increased for realistic FX latency)
 }
 
@@ -424,7 +426,7 @@ async def validate_signal_freshness(
     if threshold < 1.0:
         threshold = threshold * 100.0
 
-    # Check drift percentage
+# Check drift percentage
     drift_pct = abs(live - entry) / entry * 100.0
 
     if drift_pct > threshold:
@@ -434,17 +436,31 @@ async def validate_signal_freshness(
                 f"[stale_validator] Drift {drift_pct:.2f}% exceeds {threshold:.1f}% "
                 f"but in entry zone for {symbol} — allowing signal"
             )
+            # FIX: Add STALE_AUDIT logging for accepted signals via entry zone
+            logger.warning(
+                f"[STALE_AUDIT] ACCEPTED %s entry=%.5f live=%.5f diff=%.2f%% threshold=%.2f%% zone_entry",
+                symbol, entry, live, drift_pct, threshold
+            )
         else:
             reason = (
                 f"stale: entry={entry:.5f} live={live:.5f} "
                 f"drift={drift_pct:.2f}% > threshold={threshold:.1f}%"
             )
             logger.info("[stale_validator] Signal INVALIDATED for %s: %s", symbol, reason)
+            # FIX: Add STALE_AUDIT logging for rejected signals
+            logger.warning(
+                f"[STALE_AUDIT] REJECTED %s entry=%.5f live=%.5f diff=%.2f%% threshold=%.2f%% reason=stale",
+                symbol, entry, live, drift_pct, threshold
+            )
             return False, reason, live
 
     logger.debug(
         "[stale_validator] Signal FRESH for %s: entry=%.5f live=%.5f drift=%.3f%% threshold=%.3f%%",
         symbol, entry, live, drift_pct, threshold,
+    )
+    # FIX: Add STALE_AUDIT logging for fresh signals
+    logger.warning(
+        f"[STALE_AUDIT] ACCEPTED {symbol} entry={entry:.5f} live={live:.5f} diff={drift_pct:.2f}% threshold={threshold:.2f}%"
     )
     return True, f"fresh: drift={drift_pct:.3f}%", live
 
