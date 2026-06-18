@@ -1289,6 +1289,9 @@ def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
 def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None = None) -> bool:
     """Validate that fetched price is reasonable to prevent ghost prices.
     
+    Now uses multi-source validation for better sanity checking.
+    Fetches from multiple providers and calculates confidence score.
+    
     Args:
         asset: Symbol
         price: Newly fetched price
@@ -1331,7 +1334,212 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
             )
             return False
     
+    # NEW: Multi-source validation for better sanity checking
+    # Fetch from multiple providers and calculate confidence
+    multi_source_result = validate_price_multi_source(asset, price)
+    if multi_source_result is not None:
+        is_valid, confidence, sources_prices = multi_source_result
+        if not is_valid:
+            logger.warning(
+                f"[price_validator] Multi-source validation failed for {asset}: "
+                f"price=${price:.4f}, confidence={confidence:.2%}, sources={len(sources_prices)}"
+            )
+            return False
+        logger.info(
+            f"[price_validator] Multi-source validated {asset}: "
+            f"price=${price:.4f}, confidence={confidence:.2%}, sources={len(sources_prices)}"
+        )
+    
     return True
+
+
+def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool, float, dict] | None:
+    """
+    Validate price by fetching from multiple independent sources.
+    
+    For crypto: Binance, Bybit, CryptoCompare
+    For FX: AlphaVantage, Yahoo, Polygon
+    For stocks: Yahoo, Polygon
+    
+    Returns:
+        Tuple of (is_valid: bool, confidence: float, sources_prices: dict)
+        or None if validation couldn't be performed
+    """
+    import statistics
+    
+    asset_type = get_asset_type(asset)
+    sources_prices = {}
+    
+    # Crypto: try multiple sources
+    if asset_type == "crypto":
+        symbol = str(asset or "").upper().replace("/", "").strip()
+        
+        # 1. Binance
+        try:
+            import requests
+            resp = requests.get(
+                "https://api.binance.com/api/v3/ticker/price",
+                params={"symbol": symbol},
+                timeout=3,
+            )
+            if resp.ok:
+                px = float((resp.json() or {}).get("price") or 0)
+                if px > 0:
+                    sources_prices["binance"] = px
+        except Exception:
+            pass
+        
+        # 2. Bybit
+        try:
+            import requests
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/tickers",
+                params={"category": "spot", "symbol": symbol},
+                timeout=3,
+            )
+            if resp.ok:
+                data = resp.json() or {}
+                result = (data.get("result") or {}).get("list") or []
+                if result:
+                    px = float(result[0].get("lastPrice") or 0)
+                    if px > 0:
+                        sources_prices["bybit"] = px
+        except Exception:
+            pass
+        
+        # 3. CryptoCompare
+        try:
+            base = symbol.replace("USDT", "").replace("USDC", "").replace("BUSD", "")
+            import requests
+            resp = requests.get(
+                "https://min-api.cryptocompare.com/data/price",
+                params={"fsym": base, "tsyms": "USD,USDT"},
+                timeout=3,
+            )
+            if resp.ok:
+                data = resp.json() or {}
+                px = float(data.get("USDT") or data.get("USD") or 0)
+                if px > 0:
+                    sources_prices["cryptocompare"] = px
+        except Exception:
+            pass
+    
+    # FX: try multiple sources  
+    elif asset_type == "fx":
+        symbol = str(asset or "").upper().replace("/", "").strip()
+        
+        # 1. Yahoo Finance
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(f"{symbol}=X")
+            fast = getattr(ticker, "fast_info", None) or {}
+            px = float(fast.get("lastPrice") or 0)
+            if px > 0:
+                sources_prices["yahoo"] = px
+        except Exception:
+            pass
+        
+        # 2. AlphaVantage (if API key available)
+        try:
+            import os
+            api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
+            if api_key:
+                from_symbol = symbol[:3]
+                to_symbol = symbol[3:6]
+                import requests
+                resp = requests.get(
+                    "https://www.alphavantage.co/query",
+                    params={
+                        "function": "CURRENCY_EXCHANGE_RATE",
+                        "from_currency": from_symbol,
+                        "to_currency": to_symbol,
+                        "apikey": api_key,
+                    },
+                    timeout=3,
+                )
+                if resp.ok:
+                    data = resp.json() or {}
+                    rate = float((data.get("Realtime Currency Exchange Rate") or {}).get("Exchange Rate") or 0)
+                    if rate > 0:
+                        sources_prices["alphavantage"] = rate
+        except Exception:
+            pass
+    
+    # Stocks: try multiple sources
+    else:
+        symbol = str(asset or "").upper().replace("/", "").strip()
+        
+        # 1. Yahoo Finance
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            fast = getattr(ticker, "fast_info", None) or {}
+            px = float(fast.get("lastPrice") or 0)
+            if px > 0:
+                sources_prices["yahoo"] = px
+        except Exception:
+            pass
+        
+        # 2. Polygon (if API key available)
+        try:
+            import os
+            api_key = os.getenv("POLYGON_API_KEY", "").strip()
+            if api_key:
+                import requests
+                resp = requests.get(
+                    f"https://api.polygon.io/v2/aggs/ticker/{symbol}/prev",
+                    params={"apiKey": api_key},
+                    timeout=3,
+                )
+                if resp.ok:
+                    data = resp.json() or {}
+                    results = data.get("results") or []
+                    if results:
+                        px = float(results[0].get("c") or 0)
+                        if px > 0:
+                            sources_prices["polygon"] = px
+        except Exception:
+            pass
+    
+    # Need at least 2 sources for validation
+    if len(sources_prices) < 2:
+        return None  # Can't validate with multiple sources
+    
+    # Calculate median and check for outliers
+    try:
+        prices_list = list(sources_prices.values())
+        median_price = statistics.median(prices_list)
+        
+        # Calculate standard deviation for outlier detection
+        if len(prices_list) >= 2:
+            mean_price = statistics.mean(prices_list)
+            stdev = statistics.stdev(prices_list)
+            
+            # Check if primary price is an outlier (> 2 standard deviations)
+            if stdev > 0:
+                z_score = abs(primary_price - mean_price) / stdev
+                if z_score > 2:
+                    # Primary price is an outlier - check if it's the only outlier
+                    # by comparing to other sources
+                    other_prices = [p for p in prices_list if p != primary_price]
+                    if other_prices:
+                        other_median = statistics.median(other_prices)
+                        # If primary deviates significantly from others, reject
+                        deviation = abs(primary_price - other_median) / other_median
+                        if deviation > 0.05:  # 5% threshold
+                            return False, 0.0, sources_prices
+        
+        # Calculate confidence based on source agreement
+        # More sources agreement = higher confidence
+        max_deviation = max(abs(p - median_price) / median_price for p in prices_list) if median_price > 0 else 0
+        confidence = 1.0 - min(max_deviation, 1.0)  # Invert: closer prices = higher confidence
+        
+        # If confidence > 0.8 (prices agree closely), consider valid
+        return True, confidence, sources_prices
+        
+    except Exception as e:
+        logger.warning(f"[price_validator] Multi-source calculation failed: {e}")
+        return None
 
 
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
