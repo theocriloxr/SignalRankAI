@@ -710,7 +710,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
 
     out: dict = {}
     
-# 1. Try yfinance first (primary source)
+    # 1. Try yfinance first (primary source)
     if use_yfinance and _yf_available():
         for tf in tfs:
             try:
