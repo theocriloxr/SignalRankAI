@@ -71,10 +71,11 @@ COMMAND_TIERS = {
     "connect_broker":      "PREMIUM",
     "cancel":              "PREMIUM",
 
-    # ── VIP ───────────────────────────────────────────────────────────────────
+# ── VIP ───────────────────────────────────────────────────────────────────
     "elite":               "VIP",
     "early":               "VIP",
     "report":              "VIP",
+    "mode":               "VIP",           # Trading mode (manual/auto/none)
 
     # ── ADMIN ─────────────────────────────────────────────────────────────────
     "admin":               "ADMIN",

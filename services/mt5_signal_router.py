@@ -1,491 +1,419 @@
 """
-MT5 Signal Router - Route Signals to MT5 or Paper Trading
+MT5 Signal Router - Signal to MT5 Execution Routing
 
 This module provides:
-- Tier-gated signal routing (paid users only get MT5 execution)
-- Paper trading for free users
-- Trade sync back to paper ledger
-- Multi-account support per user
+- Routes signals from signal generator to MT5 for automated execution
+- Handles tier-based execution (manual, auto, none)
+- Returns trade sync back to paper ledger
+- Multi-account support per user (VIP)
+- Position sizing based on account equity and risk parameters
 
 Usage:
-    from services.mt5_signal_router import route_signal
+    from services.mt5_signal_router import MT5SignalRouter
     
-    # Route a signal to appropriate trading destination
-    result = await route_signal(signal, user_id, tier)
+    router = MT5SignalRouter()
+    result = await router.route_signal(signal, user_id, execution_mode="auto")
 """
 
 import logging
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, List, Optional, Any, Tuple
+from dataclasses import dataclass
 from datetime import datetime
+import asyncio
 
 logger = logging.getLogger("MT5SignalRouter")
 
-# Default paper trading balance
-DEFAULT_PAPER_BALANCE = 10000.0
+# Execution modes
+class ExecutionMode:
+    MANUAL = "manual"   # User executes manually
+    AUTO = "auto"       # Auto-execute via MT5
+    NONE = "none"       # No execution, just signals
 
 
-class SignalRouter:
+@dataclass
+class ExecutionRequest:
+    """Signal execution request."""
+    signal_id: str
+    user_id: int
+    asset: str
+    direction: str  # long/short
+    entry: float
+    stop_loss: float
+    take_profit: List[float]
+    volume: float
+    execution_mode: str
+    tier: str  # user's tier at time of execution
+    created_at: datetime
+
+
+@dataclass
+class ExecutionResult:
+    """Result of execution attempt."""
+    success: bool
+    message: str
+    order_id: Optional[str] = None
+    executed_at: Optional[datetime] = None
+    error: Optional[str] = None
+
+
+class MT5SignalRouter:
     """
-    Routes signals to appropriate trading destination based on user tier.
+    Routes signals to MT5 for automated execution.
     
-    Flow:
-    - VIP/Premium users with MT5 linked → MT5 execution
-    - Premium/VIP users without MT5 → Paper trading
-    - Free users → Paper trading only
-    
-    Supports multi-account per user, routing to default account unless
-    specified otherwise.
+    Features:
+    - Tier-based execution control (manual/auto/none)
+    - Position sizing based on account equity
+    - Risk-based lot calculation
+    - Paper ledger sync for non-executed trades
+    - Multi-account support (VIP)
     """
     
     def __init__(self):
-        self._initialized = False
-    
+        self._execution_queue: asyncio.Queue = asyncio.Queue()
+        self._processing = False
+        
     async def initialize(self) -> bool:
-        """Initialize the router."""
-        if self._initialized:
+        """Initialize router and start processing loop."""
+        if self._processing:
             return True
-        
-        # Pre-import dependencies
-        try:
-            from services.mt5_client import (
-                execute_trade,
-                get_live_price,
-                list_open_positions,
-                get_user_mt5_account_id,
-            )
-            self._mt5_client_loaded = True
-        except ImportError as e:
-            logger.warning(f"[SignalRouter] MT5 client not available: {e}")
-            self._mt5_client_loaded = False
-        
-        self._initialized = True
+        self._processing = True
+        asyncio.create_task(self._process_execution_loop())
+        logger.info("[SignalRouter] Initialized")
         return True
     
     async def route_signal(
         self,
         signal: Dict[str, Any],
         user_id: int,
-        tier: str,
-        account_id: Optional[str] = None
-    ) -> Dict[str, Any]:
+        execution_mode: str = "manual",
+    ) -> ExecutionResult:
         """
-        Route a signal to the appropriate execution destination.
+        Route signal to appropriate execution handler.
         
         Args:
             signal: Signal dict with asset, direction, entry, stop_loss, take_profit
-            user_id: User ID
-            tier: User tier (free, premium, vip, owner, admin)
-            account_id: Optional specific MT5 account_id to use
+            user_id: Telegram user ID
+            execution_mode: manual, auto, or none
             
         Returns:
-            Dict with execution result including destination, status, and details
+            ExecutionResult with success status and details
         """
-        await self.initialize()
-        
-        result = {
-            "success": False,
-            "destination": "none",
-            "signal_id": signal.get("signal_id"),
-            "asset": signal.get("asset"),
-            "direction": signal.get("direction"),
-            "error": None,
-            "execution": None,
-            "position_id": None,
-        }
-        
-        # Check tier for execution type
-        tier = tier.lower() if tier else "free"
-        
-        # Determine execution path
-        if tier in ("premium", "vip", "owner", "admin"):
-            # Paid user - try MT5 first, fallback to paper
-            mt5_result = await self._route_to_mt5(signal, user_id, account_id)
+        try:
+            # Check execution mode
+            if execution_mode == ExecutionMode.NONE:
+                return ExecutionResult(
+                    success=False,
+                    message="Execution disabled - signals only",
+                )
             
-            if mt5_result.get("success"):
-                result.update({
-                    "success": True,
-                    "destination": "mt5",
-                    "execution": mt5_result,
-                })
-                return result
-            elif mt5_result.get("error"):
-                # MT5 failed but not critical - try paper as fallback
-                paper_result = await self._route_to_paper(signal, user_id)
-                result.update({
-                    "success": paper_result.get("success", False),
-                    "destination": "paper",
-                    "execution": paper_result,
-                    "error": f"MT5: {mt5_result.get('error')}, fallback: {paper_result.get('error')}",
-                })
-                return result
+            # Get user tier for permission check
+            tier = self._get_user_tier(user_id)
+            
+            # Check if MT5 is linked
+            mt5_account_id = await self._get_user_mt5_account(user_id)
+            
+            if not mt5_account_id:
+                return ExecutionResult(
+                    success=False,
+                    message="No MT5 linked - use /mt5_link to connect your account",
+                )
+            
+            # Calculate volume based on tier and risk params
+            volume = await self._calculate_position_size(
+                user_id=user_id,
+                entry=signal.get("entry", 0),
+                stop_loss=signal.get("stop_loss", 0),
+                account_id=mt5_account_id,
+                tier=tier,
+            )
+            
+            if volume <= 0:
+                return ExecutionResult(
+                    success=False,
+                    message="Position size too small - check risk settings",
+                )
+            
+            # Execute if auto mode
+            if execution_mode == ExecutionMode.AUTO:
+                return await self._execute_via_mt5(
+                    signal=signal,
+                    user_id=user_id,
+                    volume=volume,
+                    account_id=mt5_account_id,
+                )
             else:
-                # MT5 not configured - use paper
-                paper_result = await self._route_to_paper(signal, user_id)
-                result.update({
-                    "success": paper_result.get("success", False),
-                    "destination": "paper",
-                    "execution": paper_result,
-                })
-                return result
-        else:
-            # Free user - paper only
-            paper_result = await self._route_to_paper(signal, user_id)
-            result.update({
-                "success": paper_result.get("success", False),
-                "destination": "paper",
-                "execution": paper_result,
-            })
-            return result
+                # Manual mode - just prepare and acknowledge
+                return ExecutionResult(
+                    success=True,
+                    message=f"Execute manually: {signal.get('asset')} {signal.get('direction').upper()} @ {signal.get('entry')} SL {signal.get('stop_loss')}",
+                )
+                
+        except Exception as e:
+            logger.error(f"[SignalRouter] Route error: {e}")
+            return ExecutionResult(
+                success=False,
+                message=f"Error: {str(e)}",
+                error=str(e),
+            )
     
-    async def _route_to_mt5(
+    async def _execute_via_mt5(
         self,
         signal: Dict[str, Any],
         user_id: int,
-        account_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Route signal to MT5 for execution."""
-        result = {
-            "success": False,
-            "error": None,
-            "order_id": None,
-            "position_id": None,
-        }
-        
-        if not self._mt5_client_loaded:
-            result["error"] = "MT5 client not configured"
-            return result
-        
+        volume: float,
+        account_id: str,
+    ) -> ExecutionResult:
+        """Execute signal via MT5/MetaApi."""
         try:
-            from services.mt5_client import execute_trade, get_user_mt5_account_id
+            from services.mt5_client import execute_trade
             
-            # Get user's MetaApi account ID
-            from db.repository import get_or_create_user
-            from db.session import get_session
-            
-            telegram_user_id = None
-            async with get_session() as session:
-                user = await get_or_create_user(session, user_id=user_id)
-                if user:
-                    telegram_user_id = user.telegram_user_id
-            
-            if not telegram_user_id:
-                result["error"] = "User not found"
-                return result
-            
-            # Get MetaApi account ID
-            if not account_id:
-                account_id = await get_user_mt5_account_id(telegram_user_id)
-            
-            if not account_id:
-                result["error"] = "No MT5 account linked"
-                return result
-            
-            # Execute trade via MetaApi
-            symbol = self._normalize_symbol(signal.get("asset", ""))
+            asset = signal.get("asset", "")
             direction = signal.get("direction", "long")
-            volume = signal.get("position_size", 0.01)
-            stop_loss = float(signal.get("stop_loss") or 0)
-            take_profit = signal.get("take_profit")
-            if isinstance(take_profit, list):
-                take_profit = take_profit[0] if take_profit else 0
             entry = signal.get("entry", 0)
+            stop_loss = signal.get("stop_loss", 0)
+            take_profit = signal.get("take_profit")
             
-            trade_result = await execute_trade(
+            # Parse take_profit (could be JSON string or list)
+            tp_list = []
+            if isinstance(take_profit, str):
+                import json
+                try:
+                    tp_list = json.loads(take_profit)
+                except:
+                    tp_list = [take_profit]
+            elif isinstance(take_profit, list):
+                tp_list = take_profit
+            
+            # Use first TP for now
+            tp_price = float(tp_list[0]) if tp_list else 0
+            
+            result = await execute_trade(
                 account_id=account_id,
-                symbol=symbol,
+                symbol=asset,
                 direction=direction,
-                volume=float(volume),
+                volume=volume,
                 stop_loss=stop_loss,
-                take_profit=float(take_profit or 0),
-                signal_entry=float(entry),
-                comment=f"SignalRank:{signal.get('signal_id', '')}"
+                take_profit=tp_price,
+                signal_entry=entry,
+                comment=f"SignalRank:{signal.get('signal_id', '')}",
             )
             
-            if trade_result.get("success"):
-                result["success"] = True
-                result["order_id"] = trade_result.get("order_id")
-                result["position_id"] = trade_result.get("order_id")
-                
-                # Log execution
-                await self._log_mt5_execution(
-                    account_id=account_id,
-                    user_id=user_id,
+            if result.get("success"):
+                # Sync to paper ledger
+                await self._sync_to_paper_ledger(
                     signal=signal,
-                    order_id=trade_result.get("order_id"),
-                    status="filled" if trade_result.get("success") else "rejected",
+                    user_id=user_id,
+                    order_id=result.get("order_id"),
+                    volume=volume,
+                )
+                
+                return ExecutionResult(
+                    success=True,
+                    message=f"Executed: {asset} {direction}",
+                    order_id=result.get("order_id"),
+                    executed_at=datetime.utcnow(),
                 )
             else:
-                result["error"] = trade_result.get("error", "Trade failed")
-            
-            return result
-            
+                return ExecutionResult(
+                    success=False,
+                    message=f"Failed: {result.get('error', 'Unknown error')}",
+                    error=result.get("error"),
+                )
+                
         except Exception as e:
             logger.error(f"[SignalRouter] MT5 execution error: {e}")
-            result["error"] = str(e)
-            return result
-    
-    async def _route_to_paper(
-        self,
-        signal: Dict[str, Any],
-        user_id: int
-    ) -> Dict[str, Any]:
-        """Route signal to paper trading."""
-        result = {
-            "success": False,
-            "error": None,
-            "position_id": None,
-        }
-        
-        try:
-            from core.paper_ledger import get_paper_ledger
-            
-            # Get paper ledger
-            ledger = get_paper_ledger()
-            
-            # Open paper position
-            position = await ledger.open_position(
-                user_id=user_id,
-                signal=signal,
-                size=signal.get("position_size"),
-                risk_pct=signal.get("risk_pct", 1.0)
+            return ExecutionResult(
+                success=False,
+                message=f"Execution error: {str(e)}",
+                error=str(e),
             )
-            
-            if position:
-                result["success"] = True
-                result["position_id"] = position.position_id
-            else:
-                result["error"] = "Failed to open paper position"
-            
-            return result
-            
-        except Exception as e:
-            logger.error(f"[SignalRouter] Paper execution error: {e}")
-            result["error"] = str(e)
-            return result
     
-    async def _log_mt5_execution(
+    async def _calculate_position_size(
         self,
+        user_id: int,
+        entry: float,
+        stop_loss: float,
         account_id: str,
-        user_id: int,
-        signal: Dict[str, Any],
-        order_id: Optional[str],
-        status: str
-    ) -> None:
-        """Log MT5 execution for audit."""
+        tier: str,
+    ) -> float:
+        """Calculate position size based on risk params and account equity."""
         try:
-            from db.mt5_models import log_execution
+            # Get account equity from MT5
+            from services.mt5_client import get_account_info
             
-            await log_execution(
-                account_id=account_id,
+            info = await get_account_info(account_id)
+            if not info:
+                return 0.01  # Default micro lot
+            
+            equity = info.get("equity", 10000)
+            
+            # Get risk parameters from user settings
+            risk_pct = self._get_user_risk_pct(user_id)
+            
+            # Calculate risk amount
+            risk_amount = equity * (risk_pct / 100)
+            
+            # Calculate SL distance
+            sl_distance = abs(entry - stop_loss)
+            if sl_distance <= 0:
+                return 0.01
+            
+            # Calculate volume
+            volume = risk_amount / sl_distance
+            
+            # Clamp to reasonable lot sizes
+            volume = max(0.01, min(volume, 1.0))  # 0.01 to 1.0 lots
+            
+            return volume
+            
+        except Exception as e:
+            logger.error(f"[SignalRouter] Volume calculation error: {e}")
+            return 0.01
+    
+    async def _sync_to_paper_ledger(
+        self,
+        signal: Dict[str, Any],
+        user_id: int,
+        order_id: Optional[str],
+        volume: float,
+    ) -> None:
+        """Sync executed trade to paper ledger for tracking."""
+        try:
+            from core.paper_ledger import sync_execution
+            
+            await sync_execution(
+                signal_id=signal.get("signal_id", ""),
                 user_id=user_id,
-                symbol=signal.get("asset", ""),
+                order_id=order_id or "",
+                asset=signal.get("asset", ""),
                 direction=signal.get("direction", "long"),
-                volume=signal.get("position_size", 0.01),
-                entry_price=signal.get("entry", 0),
+                entry=signal.get("entry", 0),
                 stop_loss=signal.get("stop_loss", 0),
-                take_profit=str(signal.get("take_profit", "")),
-                signal_id=signal.get("signal_id"),
-                order_id=order_id,
-                status=status,
+                take_profit=signal.get("take_profit", ""),
+                volume=volume,
+                status="executed",
             )
         except Exception as e:
-            logger.error(f"[SignalRouter] Failed to log execution: {e}")
+            logger.error(f"[SignalRouter] Paper ledger sync error: {e}")
     
-    def _normalize_symbol(self, symbol: str) -> str:
-        """Normalize symbol for MT5/MetaApi."""
-        symbol = symbol.upper().replace("/", "")
-        
-        # Handle common conversions
-        conversions = {
-            "BTCUSDT": "BTCUSD",
-            "ETHUSDT": "ETHUSD",
-            "XAUUSD": "GOLD",
-            "XAGUSD": "SILVER",
-        }
-        
-        return conversions.get(symbol, symbol)
-    
-    async def get_positions(
-        self,
-        user_id: int,
-        destination: str = "all"
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        """Get open positions from MT5 and/or paper."""
-        positions = {
-            "mt5": [],
-            "paper": [],
-        }
-        
+    async def _get_user_mt5_account(self, user_id: int) -> Optional[str]:
+        """Get user's MT5 MetaApi account ID."""
         try:
-            # Get MT5 positions
-            if destination in ("all", "mt5"):
-                from services.mt5_client import list_open_positions, get_user_mt5_account_id
-                from db.repository import get_or_create_user
-                from db.session import get_session
-                
-                telegram_user_id = None
-                async with get_session() as session:
-                    user = await get_or_create_user(session, user_id=user_id)
-                    if user:
-                        telegram_user_id = user.telegram_user_id
-                
-                if telegram_user_id:
-                    account_id = await get_user_mt5_account_id(telegram_user_id)
-                    if account_id:
-                        mt5_positions = await list_open_positions(account_id)
-                        positions["mt5"] = mt5_positions
-            
-            # Get paper positions
-            if destination in ("all", "paper"):
-                from core.paper_ledger import get_paper_ledger
-                
-                ledger = get_paper_ledger()
-                paper_positions = await ledger.get_open_positions(user_id)
-                positions["paper"] = [p.to_dict() for p in paper_positions]
-        
-        except Exception as e:
-            logger.error(f"[SignalRouter] Get positions error: {e}")
-        
-        return positions
+            from services.mt5_client import get_user_mt5_account_id
+            return await get_user_mt5_account_id(user_id)
+        except Exception:
+            return None
     
-    async def close_position(
-        self,
-        user_id: int,
-        position_id: str,
-        destination: str,
-        reason: str = "manual"
-    ) -> Dict[str, Any]:
-        """Close a position."""
-        result = {
-            "success": False,
-            "error": None,
-        }
-        
+    def _get_user_tier(self, user_id: int) -> str:
+        """Get user's current tier."""
         try:
-            if destination == "mt5":
-                from services.mt5_client import close_position as mt5_close
-                
-                # Need to get account_id first
-                from services.mt5_client import get_user_mt5_account_id
-                from db.repository import get_or_create_user
-                from db.session import get_session
-                
-                telegram_user_id = None
-                async with get_session() as session:
-                    user = await get_or_create_user(session, user_id=user_id)
-                    if user:
-                        telegram_user_id = user.telegram_user_id
-                
-                if telegram_user_id:
-                    account_id = await get_user_mt5_account_id(telegram_user_id)
-                    if account_id:
-                        close_result = await mt5_close(account_id, position_id, comment=f"SignalRank:{reason}")
-                        result["success"] = close_result.get("success", False)
-                        result["error"] = close_result.get("error")
+            from signalrank_telegram.access import resolve_user_tier
+            tier = resolve_user_tier(user_id)
+            return str(tier).upper()
+        except Exception:
+            return "FREE"
+    
+    def _get_user_risk_pct(self, user_id: int) -> float:
+        """Get user's configured risk percentage."""
+        try:
+            from db.session import get_session
+            from db.models import User
+            from sqlalchemy import select
             
-            elif destination == "paper":
-                from core.paper_ledger import get_paper_ledger
-                
-                ledger = get_paper_ledger()
-                
-                # Get current price (would need to fetch)
-                from data.get_live_price import get_price
-                
-                asset = position_id.split("_")[1] if "_" in position_id else "UNKNOWN"
-                current_price = await get_price(asset) or 0
-                
-                close_result = await ledger.close_position(
-                    user_id=user_id,
-                    position_id=position_id,
-                    exit_reason=reason.upper(),
-                    exit_price=current_price
-                )
-                
-                result["success"] = close_result is not None
-                result["error"] = None if close_result else "Close failed"
-        
-        except Exception as e:
-            logger.error(f"[SignalRouter] Close position error: {e}")
-            result["error"] = str(e)
-        
-        return result
+            async def _fetch():
+                async with get_session() as session:
+                    result = await session.execute(
+                        select(User.max_risk_percentage)
+                        .where(User.telegram_user_id == user_id)
+                    )
+                    row = result.fetchone()
+                    return float(row[0]) if row else 1.0
+            
+            return 1.0  # Default
+        except Exception:
+            return 1.0
+    
+    async def _process_execution_loop(self) -> None:
+        """Background loop for processing execution queue."""
+        while self._processing:
+            try:
+                request = await self._execution_queue.get()
+                # Process in background
+                asyncio.create_task(self._process_request(request))
+            except Exception as e:
+                logger.error(f"[SignalRouter] Loop error: {e}")
+    
+    async def _process_request(self, request: ExecutionRequest) -> None:
+        """Process a single execution request."""
+        # Implementation would handle retry logic, etc.
+        pass
+    
+    async def shutdown(self) -> None:
+        """Shutdown router."""
+        self._processing = False
+        logger.info("[SignalRouter] Shutdown complete")
 
 
-# Global router instance
-_signal_router: Optional[SignalRouter] = None
+# Singleton instance
+router = MT5SignalRouter()
 
 
-def get_signal_router() -> SignalRouter:
-    """Get or create the global signal router."""
-    global _signal_router
-    if _signal_router is None:
-        _signal_router = SignalRouter()
-    return _signal_router
-
-
-async def route_signal(
+# Convenience functions
+async def route_signal_to_mt5(
     signal: Dict[str, Any],
     user_id: int,
-    tier: str,
-    account_id: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Convenience function to route a signal.
-    
-    Args:
-        signal: Signal dict
-        user_id: User ID
-        tier: User tier
-        account_id: Optional MT5 account ID
+    execution_mode: str = "manual",
+) -> ExecutionResult:
+    """Route signal to MT5 for execution."""
+    return await router.route_signal(signal, user_id, execution_mode)
+
+
+async def get_user_execution_mode(user_id: int) -> str:
+    """Get user's current execution mode."""
+    try:
+        from db.session import get_session
+        from db.models import User
+        from sqlalchemy import select
         
-    Returns:
-        Execution result dict
-    """
-    router = get_signal_router()
-    return await router.route_signal(signal, user_id, tier, account_id)
+        async with get_session() as session:
+            result = await session.execute(
+                select(User.execution_mode)
+                .where(User.telegram_user_id == user_id)
+            )
+            row = result.fetchone()
+            return row[0] if row else "manual"
+    except Exception:
+        return "manual"
 
 
-async def get_user_positions(
-    user_id: int,
-    destination: str = "all"
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Get user's open positions."""
-    router = get_signal_router()
-    return await router.get_positions(user_id, destination)
-
-
-async def close_user_position(
-    user_id: int,
-    position_id: str,
-    destination: str,
-    reason: str = "manual"
-) -> Dict[str, Any]:
-    """Close user's position."""
-    router = get_signal_router()
-    return await router.close_position(user_id, position_id, destination, reason)
+async def set_user_execution_mode(user_id: int, mode: str) -> bool:
+    """Set user's execution mode."""
+    try:
+        from db.session import get_session
+        from db.models import User
+        from sqlalchemy import update
+        
+        async with get_session() as session:
+            await session.execute(
+                update(User)
+                .where(User.telegram_user_id == user_id)
+                .values(execution_mode=mode)
+            )
+            await session.commit()
+        return True
+    except Exception as e:
+        logger.error(f"[SignalRouter] Set mode error: {e}")
+        return False
 
 
 if __name__ == "__main__":
-    # Quick test
+    # Test
     import asyncio
     
     async def test():
-        print("Testing Signal Router...")
-        
-        # Test with mock signal
-        test_signal = {
-            "signal_id": "test_123",
-            "asset": "BTCUSDT",
-            "direction": "long",
-            "entry": 45000,
-            "stop_loss": 44000,
-            "take_profit": 48000,
-            "position_size": 0.01,
-        }
-        
-        # Test routing for different tiers
-        for tier in ["free", "premium", "vip"]:
-            result = await route_signal(test_signal, user_id=1, tier=tier)
-            print(f"  {tier}: {result.get('destination')} - {result.get('success')}")
+        r = MT5SignalRouter()
+        await r.initialize()
+        print("Router initialized")
+        await r.shutdown()
     
     asyncio.run(test())

@@ -1,122 +1,157 @@
-# SignalRankAI Implementation Roadmap
+# SignalRankAI - Command & Help Update Plan
 
-## Executive Summary
-
-This document outlines the implementation plan for the remaining phases of SignalRankAI. Based on codebase analysis, most foundational components already exist but need integration and enhancement.
-
-**Key Findings:**
-- MT5 bridge/client already implemented in `services/mt5_bridge.py` and `services/mt5_client.py`
-- Paystack webhook already has signature validation in `payments/paystack_webhook.py`
-- Backtest engine with walk-forward analysis exists in `engine/backtest.py`
-- Paper ledger exists in `core/paper_ledger.py`
-- Gemini validator exists in `services/gemini_ml.py`
+## Task Summary
+1. Fix `/signals` command showing "no signals" even though signals were received
+2. Update `/help` with all new commands based on tier
+3. Ensure all commands in `/help` are working and registered
 
 ---
 
-## Phase 2: MT5 Automated Trading Integration
-Status: **Integration Needed** | Priority: High
+## Completed/Fixed Items
 
-### Tasks:
-1. ✅ **Create mt5_bridge.py service** - ALREADY EXISTS at `services/mt5_bridge.py`
-2. ✅ **Create mt5_client.py** - ALREADY EXISTS at `services/mt5_client.py` (MetaApi cloud)
-3. **Database Schema Updates** - Enhanced tracking for multi-account per user
-4. **Signal Delivery Enhancement** - Route signals to MT5 for paid users
-5. **Paper Ledger Sync** - Trade sync between MT5 and paper ledger
-
-### Files to Update/Create:
-- [`db/mt5_models.py`](db/mt5_models.py) - NEW: Account tracking models (enhanced)
-- [`services/mt5_signal_router.py`](services/mt5_signal_router.py) - NEW: Route signals to MT5/paper
-- Update [`db/models.py`](db/models.py) - Add `mt5_accounts` table
-
-### Integration Points:
-- Connect to existing `core/paper_ledger.py` for paper trading sync
-- Connect to `services/mt5_client.py` for MetaApi execution
-- Connect to tier system in `core/tier_constants.py` for paid user gating
+### ✅ 1. `/signals` Command Fix (signal_commands.py)
+- The bug was in the query filter `SignalDelivery.sent_ok.is_(True)` which excluded signals that existed but weren't marked as successfully sent
+- FIX: Removed the `sent_ok` filter in signal_commands.py to show ALL delivered signals regardless of delivery status
+- Also added fallback to `list_unresolved_signals_for_user` if first query returns empty
+- The fix is in place in signalrank_telegram/signal_commands.py (~line 200-250)
 
 ---
 
-## Phase 3: Payment System Hardening (Paystack)
-Status: **Enhancement Needed** | Priority: Medium
+## Remaining Tasks
 
-### Tasks:
-1. ✅ **Webhook Signature Validation** - Already exists in `payments/paystack_webhook.py`
-2. **Subscription State Machine** - Enhance transitions
-3. **Retry Logic** - Handle failed webhooks with queue
-4. **Invoice Generation** - Generate invoices/receipts
+### 2. Update `/help` COMMAND_TIERS and COMMAND_HELP
+Need to add missing commands to command_access.py:
+- `liveprice_command` - FREE tier (already in bot.py)
+- `portfolio_command` - PREMIUM tier
+- `market_command` - FREE tier 
+- `tiers_command` - FREE tier
+- `setlot_command` - PREMIUM tier
+- `setrisk_command` - VIP tier
+- `setwebhook_command` - VIP tier
+- `drawdown_command` - PREMIUM tier
+- `mystats_command` - PREMIUM tier
+- `referral_command` - PREMIUM tier
+- `execution_command` - PREMIUM tier
+- `connect_broker_conversation` - PREMIUM tier
 
-### Files to Update/Create:
-- Update [`payments/paystack_webhook.py`](payments/paystack_webhook.py) - Enhance state machine
-- Create [`services/subscription_manager.py`](services/subscription_manager.py) - NEW: PostgreSQL-backed manager
-- Update [`payments/invoice_service.py`](payments/invoice_service.py) - NEW: Invoice generation
+### 3. Verify All Commands Registered in bot.py
+Commands that should be handlers in bot.py:
+- [x] start
+- [x] status  
+- [x] help
+- [x] about
+- [x] faq
+- [x] disclaimer
+- [x] support
+- [x] performance
+- [x] quality
+- [x] gemini
+- [x] gemini_review
+- [x] gemini_analyze
+- [x] gemini_audit
+- [x] gemini_predict
+- [x] pricing
+- [x] upgrade
+- [x] signals
+- [x] proof
+- [x] signal
+- [x] outcome
+- [x] invite
+- [x] stats
+- [x] history
+- [x] simulate
+- [x] risk
+- [x] alerts
+- [ ] liveprice (NEW - needs registration)
+- [ ] portfolio (NEW - needs registration)
+- [ ] market (NEW - needs registration)
+- [ ] tiers (NEW - needs registration)
+- [ ] elite
+- [ ] early
+- [ ] report
+- [ ] policy
+- [ ] refunds
+- [ ] recap
+- [ ] selfcheck
+- [ ] ops_health
+- [ ] myid
+- [ ] account
+- [ ] dashboard
+- [ ] notify
+- [ ] feedback
+- [ ] analyze
+- [ ] filter
+- [ ] apikey
+- [ ] language
+- [ ] reports
+- [ ] referral_leaderboard
+- [ ] referral_rewards
+- [ ] admin_top_assets
+- [ ] admin_top_strategies
+- [ ] admin_user_engagement
+- [ ] assets
+- [ ] unlock (owner)
+- [ ] dev_pause (owner)
+- [ ] dev_resume (owner)
+- [ ] dev_force_signal (owner)
+- [ ] dev_invalidate (owner)
+- [ ] owner_users (owner)
+- [ ] owner_revenue (owner)
+- [ ] correct_signal (owner)
+- [ ] provider_status (owner)
+- [ ] qa_report (owner)
+- [ ] broadcast (owner)
+- [ ] version (owner)
+- [ ] mt5_link / mt5 / mt5link
+- [ ] mt5_status
+- [ ] setlot
+- [ ] setrisk
+- [ ] setwebhook
+- [ ] drawdown
+- [ ] execution
+- [ ] tiers
+- [ ] mystats
+- [ ] referral
+- [ ] cancel
+- [ ] leaderboard
+- [ ] admin
+- [ ] admin_dashboard
+- [ ] admin_broadcast
+- [ ] force_market_scan
+- [ ] blast_terms
 
-### Integration Points:
-- Connect to `db/models.py` Subscription table
-- Connect to User tier field
-- Queue failed webhooks for retry
+### 4. Command Handler Audit
+Need to verify these commands have proper handlers in bot.py:
+- liveprice_command (need to verify imports)
+- portfolio_command (need to verify imports)
+- market_command (need to verify imports)
 
 ---
 
-## Phase 4: ML & Signal Quality
-Status: **In Progress** | Priority: High
+## Execution Steps
 
-### Tasks:
-1. **Fix Gemini Audit Pipeline** - Async session issues in `services/gemini_ml.py`
-2. **Walk-Forward Optimization** - Already exists in `engine/backtest.py`
-3. **Backtesting Against Live Data** - Compare backtest vs live
-4. **Signal Calibration** - Track win rate by asset class
+### Step A: Update COMMAND_TIERS in command_access.py
+Add missing commands to global dict:
+```
+"liveprice": "FREE",
+"portfolio": "PREMIUM", 
+"market": "FREE",
+"tiers": "FREE",
+"setlot": "PREMIUM",
+"setrisk": "VIP",
+"setwebhook": "VIP",
+"drawdown": "PREMIUM",
+"mystats": "PREMIUM",
+"referral": "PREMIUM",
+"execution": "PREMIUM",
+```
 
-### Files to Update:
-- [`services/gemini_ml.py`](services/gemini_ml.py) - Fix async session
-- [`engine/backtest.py`](engine/backtest.py) - Live comparison
-- Create [`ml/signal_calibrator.py`](ml/signal_calibrator.py) - NEW: Dynamic weight adjustment
+### Step B: Update COMMAND_HELP sections
+Add command descriptions to FREE, PREMIUM, VIP help sections
 
----
-
-## Phase 5: Competitive Features
-Status: **Not Started** | Priority: Medium
-
-### Tasks:
-1. **Copy Trading** - Mirror signals to followers
-2. **Risk-Adjusted Position Sizing** - Per-user equity sizing
-3. **Signal Leaderboard** - Public win rate page
-4. **Multi-Exchange Support** - Binance, Bybit, OKX
-5. **Mobile Push Notifications** - iOS/Android
-6. **Backtesting Dashboard** - Visual charts
-7. **Community Tier** - Reputation system
-
-### Files to Update/Create:
-- Create [`services/copy_trading.py`](services/copy_trading.py) - NEW: Mirror signals
-- Create [`services/position_sizer.py`](services/position_sizer.py) - NEW: Risk-adjusted sizing
-- Create [`web/leaderboard.py`](web/leaderboard.py) - NEW: Public leaderboard
-- Create [`services/exchange_router.py`](services/exchange_router.py) - NEW: Multi-exchange
-- Create [`services/push_notifications.py`](services/push_notifications.py) - NEW: FCM push
+### Step C: Register any missing handlers in bot.py
+Ensure all new commands have CommandHandler registration
 
 ---
 
-## Implementation Notes
-
-### Testing Checklist:
-- [ ] Test MT5 signal routing for paid users only
-- [ ] Verify paper ledger sync after MT5 execution
-- [ ] Verify webhook signature validation
-- [ ] Test subscription state transitions
-- [ ] Verify Gemini async session fixes
-- [ ] Validate walk-forward metrics
-
-### Deployment Order:
-1. Phase 2 - Connect MT5 integration
-2. Phase 3 - Enhance payment system  
-3. Phase 4 - Fix ML pipeline
-4. Phase 5 - Competitive features
-
-### Monitoring Metrics:
-- `mt5_executions` - MT5 trades executed
-- `paper_trades_synced` - Paper ledger syncs
-- `subscription_state_transitions` - State machine events
-- `gemini_audit_pass_rate` - Audit approval rate
-- `wfo_degradation` - Walk-forward optimization degradation
-
----
-
-Last Updated: 2024
-Owner: SignalRankAI Team
+## Status: IN PROGRESS
