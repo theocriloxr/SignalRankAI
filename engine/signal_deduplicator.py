@@ -325,6 +325,7 @@ class MLRejectionTracker:
                         ml_probability=float(ml_probability) if ml_probability else 0.0,
                         rejection_reason=str(rejection_reason)[:128],
                         features=dict(features) if features else {},
+                        rejection_type=str(rejection_type)[:32],
                     )
                     session.add(rejection)
                     await session.commit()
