@@ -262,6 +262,163 @@ class StrictSignalDedup:
 default_dedup = SignalDeduplicator()
 
 
+class MLRejectionTracker:
+    """
+    Tracks ML-rejected signals for adaptive learning and outcome tracking.
+    
+    Stores rejected signals to the database so the ML pipeline can observe
+    engine-rejected candidates without waiting for decision_log backfill.
+    """
+    
+    def __init__(self):
+        self._enabled = True
+    
+    async def persist_rejection(
+        self,
+        asset: str,
+        timeframe: str,
+        direction: str,
+        entry_price: float,
+        stop_loss: float,
+        take_profit_levels: Any,
+        ml_probability: float,
+        rejection_reason: str,
+        features: Optional[Dict[str, Any]] = None,
+        rejection_type: str = "ml",
+    ) -> bool:
+        """
+        Persist a rejected signal to the MLRejectedSignal table.
+        
+        Args:
+            asset: Asset symbol (e.g., "BTCUSDT")
+            timeframe: Timeframe (e.g., "1h")
+            direction: "long" or "short"
+            entry_price: Entry price
+            stop_loss: Stop loss price
+            take_profit_levels: Take profit levels (list or string)
+            ml_probability: ML model probability score
+            rejection_reason: Reason for rejection (e.g., "ml_filter")
+            features: Signal features dict for training data
+            rejection_type: Type of rejection ("ml", "engine", "score", etc.)
+            
+        Returns:
+            True if persisted successfully, False otherwise
+        """
+        try:
+            from db.session import get_session
+            from db.models import MLRejectedSignal
+            from uuid import uuid4
+            
+            # Handle take_profit_levels (could be list or string)
+            tp_str = str(take_profit_levels) if take_profit_levels else ""
+            
+            async def _do_persist():
+                async with get_session() as session:
+                    rejection = MLRejectedSignal(
+                        signal_id=str(uuid4()),
+                        asset=str(asset).upper(),
+                        timeframe=str(timeframe),
+                        direction=str(direction).lower(),
+                        entry=float(entry_price) if entry_price else 0.0,
+                        stop_loss=float(stop_loss) if stop_loss else 0.0,
+                        take_profit=tp_str,
+                        ml_probability=float(ml_probability) if ml_probability else 0.0,
+                        rejection_reason=str(rejection_reason)[:128],
+                        features=dict(features) if features else {},
+                    )
+                    session.add(rejection)
+                    await session.commit()
+            
+            # Run in a new async task
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If loop is running, create task
+                    asyncio.create_task(_do_persist())
+                    return True
+                else:
+                    loop.run_until_complete(_do_persist())
+                    return True
+            except RuntimeError:
+                # No event loop, create new one
+                asyncio.run(_do_persist())
+                return True
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"[MLRejectionTracker] persist_rejection failed: {e}")
+            return False
+    
+    async def get_recent_rejections(
+        self,
+        hours: int = 24,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get recent rejections for analysis.
+        
+        Args:
+            hours: How many hours back to look
+            limit: Maximum number of records
+            
+        Returns:
+            List of rejection records
+        """
+        try:
+            from db.session import get_session
+            from db.models import MLRejectedSignal
+            from sqlalchemy import select, desc
+            from datetime import datetime, timedelta
+            
+            cutoff = datetime.utcnow() - timedelta(hours=hours)
+            
+            async def _do_fetch():
+                async with get_session() as session:
+                    result = await session.execute(
+                        select(MLRejectedSignal)
+                        .where(MLRejectedSignal.created_at >= cutoff)
+                        .order_by(desc(MLRejectedSignal.created_at))
+                        .limit(limit)
+                    )
+                    rows = result.scalars().all()
+                    return [
+                        {
+                            "id": r.id,
+                            "signal_id": r.signal_id,
+                            "asset": r.asset,
+                            "timeframe": r.timeframe,
+                            "direction": r.direction,
+                            "entry": r.entry,
+                            "stop_loss": r.stop_loss,
+                            "take_profit": r.take_profit,
+                            "ml_probability": r.ml_probability,
+                            "rejection_reason": r.rejection_reason,
+                            "features": r.features,
+                            "actual_outcome": r.actual_outcome,
+                            "created_at": r.created_at,
+                        }
+                        for r in rows
+                    ]
+            
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    return asyncio.create_task(_do_fetch())
+                else:
+                    return loop.run_until_complete(_do_fetch())
+            except RuntimeError:
+                return asyncio.run(_do_fetch())
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"[MLRejectionTracker] get_recent_rejections failed: {e}")
+            return []
+
+
 # Helper functions
 async def is_signal_duplicate(signal: Dict[str, Any]) -> bool:
     """Check if signal is duplicate using default dedup."""
