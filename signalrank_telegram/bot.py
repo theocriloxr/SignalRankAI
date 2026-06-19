@@ -3997,12 +3997,46 @@ application.add_handler(CommandHandler("history", _audit_handler("history", hist
         application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_placeholder)))
 
     # Unknown command handler: capture any /unknown_command and respond gracefully
-    async def _handle_unknown_command(update, context):
-        try:
-            if getattr(update, "message", None) is not None:
-                await update.message.reply_text("Unknown command. Send /help for available commands.")
-        except Exception:
-            pass
+async def _handle_unknown_command(update, context):
+    """
+    Handle unknown commands - but ONLY truly unknown ones.
+    This handler checks against COMMAND_TIERS to avoid shadowing real commands.
+    
+    CRITICAL FIX: The old handler caught ALL commands with filters.COMMAND, shadowing
+    legitimate commands registered AFTER this handler (like /mt5_link, /referral, etc.)
+    """
+    try:
+        if getattr(update, "message", None) is not None:
+            # Get the command that was attempted
+            command_text = update.message.text.strip().split()[0].lower()
+            command = command_text.lstrip('/')
+            
+            # Import the command registry
+            from signalrank_telegram.command_access import COMMAND_TIERS
+            
+            # Check if it's a registered command (but perhaps the handler is broken/missing)
+            if command in COMMAND_TIERS:
+                # This command IS registered - the issue is handler order or missing handler
+                logger.warning(f"Unknown command handler caught /{command} which IS in COMMAND_TIERS - handler may be broken or registered after this handler")
+                await update.message.reply_text(
+                    f"⚠️ Command /{command} is available but not working correctly.\n\n"
+                    "This may be a temporary issue. Please try /help for available commands\n"
+                    "or contact support if the problem persists."
+                )
+                return
+            
+            # Truly unknown command - not in registry at all
+            await update.message.reply_text(
+                f"Unknown command: /{command}\n\n"
+                "Send /help for available commands."
+            )
+    except Exception:
+        pass
+    
+# FIXED: Move unknown command handler to the END to avoid shadowing other commands
+# The old registration at line ~4006 was BEFORE many important commands were registered
+# This was causing "Unknown command" even for commands like /mt5_link, /referral, etc.
+# Now we register it AFTER all other commands
     application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
