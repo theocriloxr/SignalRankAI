@@ -112,7 +112,68 @@ def _is_railway_runtime() -> bool:
     )
 
 
+def _is_pgbouncer_url(url: str) -> bool:
+    """Detect if URL is connecting to PgBouncer (transaction pooling mode).
+    
+    PgBouncer typically runs on port 6432 (vs raw PostgreSQL on 5432).
+    When using PgBouncer with transaction pooling, we must use NullPool
+    to prevent holding connections locally.
+    """
+    if not url:
+        return False
+    try:
+        from sqlalchemy.engine.url import make_url
+        sa_url = make_url(url)
+        port = int(sa_url.port or 5432)
+        # PgBouncer default port is 6432
+        return port == 6432
+    except Exception:
+        return False
+
+
+def _get_pgbouncer_url() -> str | None:
+    """Get PgBouncer URL from config or environment.
+    
+    Priority:
+    1. PGBOUNCER_URL environment variable (explicit override)
+    2. DATABASE_URL if it points to port 6432 (auto-detect)
+    3. DATABASE_PRIVATE_URL if it points to port 6432 (auto-detect)
+    """
+    from config import config
+    
+    # Check explicit PgBouncer URL first
+    pgbouncer_url = getattr(config, 'PGBOUNCER_URL', None) or os.getenv("PGBOUNCER_URL", "").strip()
+    if pgbouncer_url:
+        return pgbouncer_url
+    
+    # Auto-detect from database URLs
+    for env_key in ("DATABASE_URL", "DATABASE_PRIVATE_URL", "DATABASE_PUBLIC_URL"):
+        url = os.getenv(env_key, "").strip()
+        if url and _is_pgbouncer_url(url):
+            logger.info(f"[db] Auto-detected PgBouncer from {env_key}")
+            return url
+    
+    return None
+
+
 def _effective_pool_settings() -> tuple[int, int]:
+    """Get effective pool settings based on connection type and environment.
+    
+    When using PgBouncer (transaction pooling), NullPool is automatically enabled
+    to ensure connections are released immediately back to the pool.
+    
+    Returns:
+        tuple of (pool_size, max_overflow) - (0, 0) means NullPool mode
+    """
+    # Check if using PgBouncer first (auto-detect takes precedence)
+    pgbouncer_url = _get_pgbouncer_url()
+    if pgbouncer_url:
+        logger.info(
+            "[db] PgBouncer detected - using NullPool for transaction pooling. "
+            "Connections will be released immediately after each query."
+        )
+        return 0, 0
+    
     # Force NullPool only when explicitly requested
     use_nullpool = os.getenv("DB_USE_NULLPOOL", "").strip().lower()
     if use_nullpool in ("1", "true", "yes", "on", "y"):

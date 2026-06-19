@@ -184,13 +184,19 @@ class Config:
 # Enable signal orchestrator for editMessageText support
 		self.SIGNAL_ORCHESTRATOR_ENABLED = self._env_bool("SIGNAL_ORCHESTRATOR_ENABLED", True)
 
-		# Database pool settings (FIXED for Railway to prevent "too many clients" errors)
+# Database pool settings (FIXED for Railway to prevent "too many clients" errors)
 		# Async pool: pool_size + max_overflow (total = pool_size + max_overflow)
 		self.DB_POOL_SIZE = self._env_int("DB_POOL_SIZE", 8)  # Increased from default for production
 		self.DB_MAX_OVERFLOW = self._env_int("DB_MAX_OVERFLOW", 3)  # Reduced from 20 for Railway
 		# Sync pool for background tasks
 		self.DB_SYNC_POOL_SIZE = self._env_int("DB_SYNC_POOL_SIZE", 3)  # Reduced from 10
 		self.DB_SYNC_MAX_OVERFLOW = self._env_int("DB_SYNC_MAX_OVERFLOW", 2)  # Reduced from 10
+
+		# PgBouncer connection pooling support
+		# Set PGBOUNCER_URL to use PgBouncer for transaction pooling (port 6432)
+		# When using PgBouncer, NullPool is automatically enabled
+		# Example: postgresql+asyncpg://user:password@host:6432/dbname
+		self.PGBOUNCER_URL = os.getenv("PGBOUNCER_URL", "").strip()
 
 		# Data provider cache TTL (prevent stale prices from blocking signals)
 		# FIX: Added to fix stale price issue where same entry price repeats
