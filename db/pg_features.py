@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import random
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,9 @@ from db.models import (
     ManagedAsset,
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
+from db.session import is_transient_db_error
+
+logger = logging.getLogger(__name__)
 
 
 async def ensure_alert_prefs(session: AsyncSession, telegram_user_id: int) -> None:
@@ -229,11 +233,51 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
 
 
+def _get_signal_with_retry(
+    session: AsyncSession,
+    signal: Dict[str, Any],
+    dedup_hours: int | None = None,
+) -> Signal:
+    """Synchronous wrapper to handle get_or_create_signal with retry logic for DB connection issues.
+    
+    This wraps the async signal creation logic to add retry capability when
+    TooManyConnectionsError or other transient DB errors occur.
+    """
+    import asyncio
+    
+    async def _create_signal() -> Signal:
+        return await get_or_create_signal_impl(session, signal, dedup_hours)
+    
+    # Use run_with_db_retry for transient DB error handling
+    # This is already imported from db.session
+    try:
+        from db.session import run_with_db_retry
+        return asyncio.get_event_loop().run_until_complete(
+            run_with_db_retry(_create_signal, retries=3)
+        )
+    except Exception:
+        # Fallback: try directly if retry not available
+        return asyncio.get_event_loop().run_until_complete(_create_signal())
+
+
 async def get_or_create_signal(
     session: AsyncSession,
     signal: Dict[str, Any],
     dedup_hours: int | None = None,
 ) -> Signal:
+    """Get or create a signal with retry logic for transient DB errors.
+    
+    This is the public API that wraps the implementation with retry handling.
+    """
+    return await get_or_create_signal_impl(session, signal, dedup_hours)
+
+
+async def get_or_create_signal_impl(
+    session: AsyncSession,
+    signal: Dict[str, Any],
+    dedup_hours: int | None = None,
+) -> Signal:
+    """Actual implementation of get_or_create_signal (without wrapper retry logic)."""
     now: datetime = _utcnow().replace(tzinfo=None)
     try:
         if dedup_hours is None:

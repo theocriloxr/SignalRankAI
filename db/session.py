@@ -371,3 +371,101 @@ def get_sync_session():
         )
 
     return _sync_sessionmaker
+
+
+# =============================================================================
+# CONNECTION POOL MONITORING - Prevent TooManyConnectionsError
+# =============================================================================
+
+def get_pool_status() -> dict[str, Any]:
+    """Get current connection pool status for monitoring.
+    
+    Returns:
+        dict with keys:
+            - pool_size: configured pool size
+            - max_overflow: configured max overflow  
+            - checked_out: number of connections currently in use
+            - overflow_count: number of overflow connections in use
+            - total_used: checked_out + overflow_count
+            - available: pool_size - checked_out
+            - near_exhaustion: bool indicating if pool is near exhaustion
+    """
+    engine = get_engine_for_event_loop()
+    if engine is None:
+        return {"error": "no engine"}
+    
+    pool_size, max_overflow = _effective_pool_settings()
+    
+    try:
+        pool = engine.pool
+        # Get pool metrics
+        checked_out = pool.checkedout() if hasattr(pool, 'checkedout') else 0
+        overflow_count = pool.overflow() if hasattr(pool, 'overflow') else 0
+        total_used = checked_out + overflow_count
+        available = pool_size - checked_out
+        
+        # Calculate warning threshold (default 80% of max capacity)
+        warning_threshold = _pool_int("DB_POOL_WARNING_THRESHOLD", 80, minimum=1, maximum=100)
+        max_capacity = pool_size + max_overflow
+        warning_count = int(max_capacity * (warning_threshold / 100.0))
+        near_exhaustion = total_used >= warning_count
+        
+        return {
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
+            "max_capacity": max_capacity,
+            "checked_out": checked_out,
+            "overflow_count": overflow_count,
+            "total_used": total_used,
+            "available": available,
+            "warning_threshold": warning_threshold,
+            "warning_count": warning_count,
+            "near_exhaustion": near_exhaustion,
+        }
+    except Exception as e:
+        logger.debug("[db] get_pool_status error: %s", e)
+        return {"error": str(e)}
+
+
+def is_pool_near_exhaustion() -> bool:
+    """Check if the connection pool is near exhaustion.
+    
+    Returns True when the number of used connections exceeds the 
+    warning threshold. This can be used to:
+    - Log warnings
+    - Skip non-critical DB operations
+    - Implement circuit breaker behavior
+    
+    Returns:
+        True if pool is near exhaustion, False otherwise
+    """
+    status = get_pool_status()
+    if "error" in status:
+        return False
+    return status.get("near_exhaustion", False)
+
+
+def log_pool_status_if_warn() -> None:
+    """Log pool status at WARNING level if near exhaustion."""
+    status = get_pool_status()
+    if "error" in status:
+        return
+    
+    if status.get("near_exhaustion"):
+        logger.warning(
+            "[db] CONNECTION POOL NEAR EXHAUSTION: "
+            "used=%s/%s (checked_out=%s overflow=%s) available=%s",
+            status["total_used"],
+            status["max_capacity"],
+            status["checked_out"],
+            status["overflow_count"],
+            status["available"],
+        )
+    elif status.get("total_used", 0) > 0 and status.get("total_used", 0) >= status.get("pool_size", 0) * 0.5:
+        # Log info when using >50% of pool
+        logger.info(
+            "[db] pool status: used=%s/%s available=%s",
+            status["total_used"],
+            status["max_capacity"],
+            status["available"],
+        )
