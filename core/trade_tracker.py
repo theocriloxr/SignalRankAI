@@ -236,15 +236,23 @@ open_trades_list = []
 
 
 def _trade_key(signal: dict) -> tuple:
+    """Generate unique key for trade tracking.
+    
+    FIX: Changed to exclude timeframe from the key.
+    Previously, same asset+direction on different timeframes was treated as different trades,
+    causing duplicate "Trade opened" entries. Now we use only symbol+direction for deduplication.
+    This allows the same trading idea on multiple timeframes to share one trade record.
+    """
     signal_id = signal.get("id") or signal.get("signal_id")
     if signal_id:
         return ("signal_id", str(signal_id))
     symbol = str(signal.get("symbol") or signal.get("asset") or "").upper().strip()
     direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
-    timeframe = str(signal.get("timeframe") or signal.get("tf") or "").lower().strip()
+    # Remove timeframe from key to prevent duplicate trades across timeframes
+    # The same asset+direction should be tracked as ONE trade, regardless of timeframe
     entry = signal.get("entry") or signal.get("price") or signal.get("entry_price")
     stop = signal.get("stop") or signal.get("stop_loss") or signal.get("stopLoss")
-    return ("fallback", symbol, direction, timeframe, str(entry), str(stop))
+    return ("fallback", symbol, direction, str(entry), str(stop))
 
 def open_trades():
     try:

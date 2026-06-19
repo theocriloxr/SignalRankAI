@@ -5075,6 +5075,134 @@ async def alerts_command(update, context) -> None:
 		await update.message.reply_text("Usage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
 
 
+# -------- MODE COMMAND --------
+
+async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set user execution mode for signals.
+    
+    Usage:
+      /mode signals_only  - Receive signals only, no execution
+      /mode copy_trade   - Manual copy trade with confirmation
+      /mode auto        - Auto-execute on signal (VIP only)
+      /mode paper       - Paper trading mode
+    """
+    if update.effective_user is None or update.message is None:
+        return
+    
+    user_id = update.effective_user.id
+    args = list(context.args or [])
+    
+    if not args:
+        # Show current mode
+        try:
+            from db.session import get_session
+            from db.models import User
+            from sqlalchemy import select
+            
+            async with get_session() as session:
+                user_row = (await session.execute(
+                    select(User).where(User.telegram_user_id == int(user_id))
+                )).scalar_one_or_none()
+                
+                if user_row is not None:
+                    current_mode = str(getattr(user_row, "execution_mode", "manual") or "manual").lower()
+                    tier = str(getattr(user_row, "tier", "free") or "free").upper()
+                else:
+                    current_mode = "manual"
+                    tier = "FREE"
+            
+            await session.commit()
+        except Exception:
+            current_mode = "manual"
+            tier = "FREE"
+        
+        tier_emoji = {"FREE": "🆓", "PREMIUM": "⭐", "VIP": "💎", "OWNER": "👑", "ADMIN": "🔧"}.get(tier, "🆓")
+        
+        available_modes = ["signals_only", "copy_trade", "manual"]
+        if tier in ("VIP", "OWNER", "ADMIN"):
+            available_modes.append("auto")
+        
+        current_emoji = "📡" if current_mode == "signals_only" else "📋" if current_mode == "copy_trade" else "⚡" if current_mode == "auto" else "📝"
+        
+        msg = (
+            f"⚙️ <b>Execution Mode</b>\n\n"
+            f"Current: {current_emoji} <b>{current_mode.upper()}</b>\n"
+            f"Your tier: {tier_emoji} {tier}\n\n"
+            f"Available modes:\n"
+            f"• /mode signals_only — Signal alerts only\n"
+            f"• /mode copy_trade — Confirm before executing\n"
+            f"• /mode manual — Manual trade (default)\n"
+        )
+        
+        if tier in ("VIP", "OWNER", "ADMIN"):
+            msg += f"• /mode auto — Auto-execute signals\n"
+        
+        msg += (
+            f"\nUsage: /mode <mode>\n"
+            f"Example: /mode auto"
+        )
+        
+        await update.message.reply_text(msg, parse_mode="HTML")
+        return
+    
+    mode_arg = str(args[0]).lower().strip()
+    
+    # Validate mode
+    valid_modes = {"signals_only", "copy_trade", "manual", "none", "auto", "paper"}
+    if mode_arg not in valid_modes:
+        await update.message.reply_text(
+            f"Invalid mode. Use: {', '.join(sorted(valid_modes))}\n"
+            f"Example: /mode auto"
+        )
+        return
+    
+    # Map aliases
+    mode_map = {
+        "none": "signals_only",
+        "paper": "paper",
+    }
+    final_mode = mode_map.get(mode_arg, mode_arg)
+    
+    # Check tier requirements for auto mode
+    if final_mode == "auto":
+        try:
+            from .access import resolve_user_tier
+            user_tier = str(resolve_user_tier(int(user_id)) or "free").upper()
+            if user_tier not in ("VIP", "OWNER", "ADMIN"):
+                await update.message.reply_text(
+                    "🔒 Auto-execution is only available for VIP users.\n"
+                    "Use /upgrade to unlock this feature."
+                )
+                return
+        except Exception:
+            pass
+    
+    # Update mode in DB
+    try:
+        from db.session import get_session
+        from db.models import User
+        from sqlalchemy import select, update as sa_update
+        
+        async with get_session() as session:
+            await session.execute(
+                sa_update(User)
+                .where(User.telegram_user_id == int(user_id))
+                .values(execution_mode=final_mode)
+            )
+            await session.commit()
+    except Exception as e:
+        await update.message.reply_text(f"Could not update mode: {e}")
+        return
+    
+    mode_emoji = "📡" if final_mode == "signals_only" else "📋" if final_mode == "copy_trade" else "⚡" if final_mode == "auto" else "📝"
+    
+    await update.message.reply_text(
+        f"✅ Mode updated\n\n"
+        f"New mode: {mode_emoji} <b>{final_mode.upper()}</b>",
+        parse_mode="HTML"
+    )
+
+
 # -------- VIP commands (hidden from BotFather) --------
 @require_tier("VIP")
 async def elite_command(update, context) -> None:

@@ -3955,10 +3955,14 @@ def run_bot() -> None:
 
     # Premium (not advertised)
     application.add_handler(CommandHandler("stats", _audit_handler("stats", stats_command)))
-    application.add_handler(CommandHandler("history", _audit_handler("history", history_command)))
+application.add_handler(CommandHandler("history", _audit_handler("history", history_command)))
     application.add_handler(CommandHandler("simulate", _audit_handler("simulate", simulate_command)))
     application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
     application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
+    
+    # Mode command - set user execution mode
+    from .commands import mode_command
+    application.add_handler(CommandHandler("mode", _audit_handler("mode", mode_command)))
     
     # New commands for live prices and portfolio
     application.add_handler(CommandHandler("liveprice", _audit_handler("liveprice", liveprice_command)))
