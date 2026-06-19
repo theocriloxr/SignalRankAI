@@ -65,6 +65,37 @@ def _pool_int(name: str, default: int, minimum: int = 0) -> int:
         return default
 
 
+def _reduce_pool_for_stability() -> tuple[int, int]:
+    """Reduce pool sizes for high-concurrency workloads to prevent TooManyConnectionsError.
+    
+    This is called when the application has many concurrent workers/tasks that rapidly
+    query the database. The reduced pool prevents connection exhaustion while maintaining
+    reasonable performance.
+    
+    Returns:
+        tuple of (pool_size, max_overflow) - reduced from defaults
+    """
+    # Check if we have high concurrency workload indicators
+    high_concurrency = (
+        os.getenv("OUTCOME_TRACKER_MAX_CONCURRENCY") or
+        os.getenv("WORKER_CONCURRENT_TASKS") or
+        os.getenv("MAX_CONCURRENT_OPERATIONS")
+    )
+    
+    if high_concurrency:
+        try:
+            concurrency = int(high_concurrency)
+            if concurrency >= 10:
+                # High concurrency: use smaller pool (5+5=10 max)
+                logger.info("[db] High concurrency detected (>=10) - using reduced pool (5+5=10)")
+                return 5, 5
+        except Exception:
+            pass
+    
+    # Default: use moderate pool (5+10=15 max) - safer than 10+20
+    return 5, 10
+
+
 def _pool_bool(name: str, default: bool = True) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -97,10 +128,11 @@ def _effective_pool_settings() -> tuple[int, int]:
         logger.info("[db] Railway runtime detected - using reduced pool (8+3=11)")
         return 8, 3
 
-    # FIX: Increase pool size for concurrent operations
-    # Default to 10 connections with 20 overflow for production workloads
-    pool_size = _pool_int("DB_POOL_SIZE", 10, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 20, minimum=0)
+# FIX: Reduce pool size for better stability under high concurrency
+    # Default to 5 connections with 10 overflow to prevent connection exhaustion
+    # Previous 10+20 was too aggressive and caused TooManyConnectionsError
+    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 10, minimum=0)
 
     # Removed Railway-specific limit - hobby tier now supports 20 connections
     # If Railway needs smaller pool, they can set env vars explicitly
