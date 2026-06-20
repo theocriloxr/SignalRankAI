@@ -26,6 +26,28 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
+# Timeframe-specific cooldowns (CRITICAL FIX for SOLUSDT signal spam)
+# 4H signals need 90+ min cooldown to prevent spam
+TIMEFRAME_COOLDOWNS = {
+    "4h": 90 * 60,      # 90 minutes - SOLUSDT uses this
+    "1d": 6 * 60 * 60, # 6 hours
+    "1h": 20 * 60,     # 20 minutes
+    "15m": 10 * 60,    # 10 minutes
+    "5m": 5 * 60,     # 5 minutes
+    "30m": 15 * 60,    # 15 minutes
+}
+
+
+def get_timeframe_cooldown(timeframe: str) -> int:
+    """Get cooldown seconds for a specific timeframe.
+    
+    CRITICAL FIX: 4H timeframe requires 90+ minute cooldown
+    to prevent SOLUSDT and other 4H signals from spamming.
+    """
+    tf = str(timeframe).lower().strip()
+    return TIMEFRAME_COOLDOWNS.get(tf, 900)  # Default 15 minutes
+
+
 @dataclass
 class SignalFingerprint:
     """Signal fingerprint for deduplication."""
@@ -85,13 +107,15 @@ class SignalDeduplicator:
         direction = str(signal.get("direction", "long")).lower()
         timeframe = str(signal.get("timeframe", "1h")).lower()
         
-        # Calculate entry zone (rounded to tolerance)
-        entry = float(signal.get("entry", 0) or 0)
-        if entry > 0:
-            zone_size = entry * self.config.entry_zone_tolerance
-            entry_zone = round(entry / zone_size) * zone_size
-        else:
-            entry_zone = 0.0
+        # FIXED: Use fixed decimal rounding for entry zone tolerance
+        # Round to 3 decimal places for crypto/forex (handles minor price drift)
+        entry = round(float(signal.get("entry", 0) or 0), 3)
+        
+        # For high-value assets (stocks, indices), round to 2 decimals
+        if entry >= 1000:
+            entry = round(entry, 2)
+        
+        entry_zone = str(entry)  # Convert to string for consistent fingerprint
         
         # Strategy group
         strategy = signal.get("strategy_name", "")
@@ -115,6 +139,11 @@ class SignalDeduplicator:
         fp = self._generate_fingerprint(signal)
         key = fp.to_key()
         
+        # CRITICAL FIX: Use timeframe-specific cooldown instead of fixed config
+        # This prevents SOLUSDT 4H signal spam (90 min cooldown for 4H)
+        timeframe = fp.timeframe
+        cooldown_seconds = get_timeframe_cooldown(timeframe)
+        
         # Check breakthrough conditions first (fresh signals get priority)
         if self.config.allow_fresh_breakthrough:
             score = float(signal.get("score", 0) or 0)
@@ -129,8 +158,9 @@ class SignalDeduplicator:
             created = self._seen_signals.get(key)
             if created:
                 age = (datetime.utcnow() - created).total_seconds()
-                if age < self.config.cooldown_seconds:
-                    logger.debug(f"[Dedup] Duplicate in memory: {key} age={age:.0f}s")
+                # FIX: Use timeframe-specific cooldown_seconds
+                if age < cooldown_seconds:
+                    logger.debug(f"[Dedup] Duplicate in memory: {key} age={age:.0f}s cooldown={cooldown_seconds}s (tf={timeframe})")
                     return True
         
         # Check Redis if available
@@ -142,8 +172,9 @@ class SignalDeduplicator:
                     try:
                         ts = float(last_seen)
                         age = time.time() - ts
-                        if age < self.config.cooldown_seconds:
-                            logger.debug(f"[Dedup] Duplicate in Redis: {key} age={age:.0f}s")
+                        # FIX: Use timeframe-specific cooldown_seconds
+                        if age < cooldown_seconds:
+                            logger.debug(f"[Dedup] Duplicate in Redis: {key} age={age:.0f}s cooldown={cooldown_seconds}s (tf={timeframe})")
                             return True
                     except Exception:
                         pass
@@ -182,6 +213,10 @@ class SignalDeduplicator:
         key = fp.to_key()
         now = datetime.utcnow()
         
+        # CRITICAL: Use timeframe-specific cooldown for TTL
+        tf = fp.timeframe
+        cooldown_seconds = get_timeframe_cooldown(tf)
+        
         # Store in memory
         self._seen_signals[key] = now
         
@@ -189,14 +224,15 @@ class SignalDeduplicator:
         if self._redis_client:
             try:
                 redis_key = self._generate_key(fp)
-                self._redis_client.set_str_sync(redis_key, str(now.timestamp()), ttl=self.config.cooldown_seconds + 60)
+                self._redis_client.set_str_sync(redis_key, str(now.timestamp()), ttl=cooldown_seconds + 60)
             except Exception as e:
                 logger.debug(f"[Dedup] Redis store failed: {e}")
         
-        logger.debug(f"[Dedup] Marked seen: {key}")
+        logger.debug(f"[Dedup] Marked seen: {key} (cooldown={cooldown_seconds}s)")
     
     async def clear_old_entries(self) -> int:
         """Clear expired entries from memory."""
+        # Use default config cooldown for cleanup
         cutoff = datetime.utcnow() - timedelta(seconds=self.config.cooldown_seconds)
         to_remove = []
         
@@ -325,6 +361,7 @@ class MLRejectionTracker:
                         ml_probability=float(ml_probability) if ml_probability else 0.0,
                         rejection_reason=str(rejection_reason)[:128],
                         features=dict(features) if features else {},
+                        rejection_type=str(rejection_type)[:32],
                     )
                     session.add(rejection)
                     await session.commit()
