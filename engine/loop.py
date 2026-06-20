@@ -153,7 +153,23 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
             ml_threshold = 0.3
         
         for sig in strategy_signals:
-            is_dup = await dedup.is_duplicate(asset, timeframe, sig.direction, sig.entry)
+            # FIX: Build signal dict BEFORE dedup check with ALL required fingerprint fields
+            # This is critical - the dedup API expects a complete signal dict
+            signal_dict = {
+                "asset": asset,
+                "timeframe": timeframe,
+                "direction": sig.direction,
+                "entry": round(sig.entry, 3),  # Round to 3 decimals for consistent fingerprint
+                "stop_loss": round(sig.stop_loss, 3),  # Round to 3 decimals
+                "take_profit": sig.take_profit,
+                "score": sig.score,
+                "strategy_name": sig.strategy_name,
+                "strategy_group": sig.strategy_group,
+                "created_at": datetime.utcnow(),
+            }
+            # FIX: Use correct API - is_duplicate expects signal dict with all fingerprint fields
+            # The dict must have: asset, timeframe, direction, entry, stop_loss, strategy_name
+            is_dup = await dedup.is_duplicate(signal_dict)
             if is_dup:
                 logger.debug("Duplicate signal skipped: %s %s %s", asset, timeframe, sig.direction)
                 continue
@@ -202,7 +218,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     ml_probability=ml_prob_value,
                     rejection_reason="low_ml_score",
                     features=sig.ml_features,
-                )
+)
                 await persist_decision_log(
                     None,
                     asset,
@@ -212,6 +228,8 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     meta={"ml_probability": ml_prob_value, "ml_threshold": ml_threshold},
                 )
                 continue
+            
+            # Valid signal - persist and track
             try:
                 adjusted_confidence, drift_meta = _apply_drift_confidence_adjustment(sig.confidence)
                 if adjusted_confidence is not None:
@@ -234,7 +252,8 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                 if signal_obj:
                     signals.append(signal_obj)
                     observe_signal_generated(asset, timeframe)
-                    await dedup.register_signal(asset, timeframe, sig.direction, sig.entry)
+                    # FIX: Use correct mark_seen API - register_signal doesn't exist
+                    await dedup.mark_seen(signal_dict)
                     if drift_meta:
                         await persist_decision_log(
                             signal_obj.signal_id,
