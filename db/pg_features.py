@@ -333,7 +333,12 @@ async def get_or_create_signal_impl(
         default=2.0,
         env_names=("SIGNAL_MIN_INTERVAL_HOURS", "SIGNAL_MIN_INTERVAL"),
     )
-    price_buffer_pct: float = max(0.0, _env_float("SIGNAL_PRICE_BUFFER_PCT", 0.5))
+# FIXED: Increased buffer from 0.5% to 2.0% to prevent duplicate signals
+    # from being created when live price fluctuates slightly between engine cycles.
+    # This prevents the "same signal sent 3 times" issue where slight price
+    # differences (due to floating point or live price changes) cause
+    # different fingerprints to be generated.
+    price_buffer_pct: float = max(0.0, _env_float("SIGNAL_PRICE_BUFFER_PCT", 2.0))
 
     active_signal_id: str | None = None
     try:
