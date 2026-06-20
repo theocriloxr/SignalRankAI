@@ -74,7 +74,37 @@ def _parse_callback_data(data: str) -> Dict[str, Any]:
     if not data:
         return {"action": None, "payload": None}
     
-    # Split on first underscore
+    # Compound prefixes that use underscore in the prefix (e.g., signal_reaction_, monitor_signal_)
+    # Must check these FIRST before simple split
+    compound_prefixes = [
+        "signal_reaction",
+        "monitor_signal", 
+        "check_outcome",
+        "open_signal",
+    ]
+    
+    for prefix in compound_prefixes:
+        if data.startswith(prefix + "_"):
+            action = prefix
+            payload = data[len(prefix) + 1:]  # Skip prefix + underscore
+            return {"action": action, "payload": payload}
+    
+    # Simple prefixes (no compound)
+    simple_prefixes = [
+        "mt5_trade",
+        "nav",
+        "trade_now",
+        "locked",
+        "admin",
+    ]
+    
+    for prefix in simple_prefixes:
+        if data.startswith(prefix + "_"):
+            action = prefix
+            payload = data[len(prefix) + 1:]
+            return {"action": action, "payload": payload}
+    
+    # Fallback: split on first underscore for unknown patterns
     parts = data.split("_", 1)
     if len(parts) < 2:
         return {"action": parts[0] if parts else None, "payload": None}
