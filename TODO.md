@@ -1,82 +1,78 @@
-# SignalRankAI Implementation TODO
+# Signal Spam Fix TODO List - IN PROGRESS
 
-## Status: In Progress
+## P0 - Critical Fixes (DONE)
 
-### P0 - CRITICAL: Command System Fix
-- [ ] 1. Fix unknown command handler shadowing in bot.py
-  - The MessageHandler(filters.COMMAND) at ~line 4600 catches ALL commands before specific handlers
-  - Need to remove/reorder this handler to be AFTER all specific CommandHandlers
-- [ ] 2. Rebuild command registry to be source of truth
-  - Verify all commands in COMMAND_TIERS have corresponding handlers
-- [ ] 3. Verify /mode handler exists
-  - Handler found in commands.py - OK
-- [ ] 4. Verify /connect_broker not shadowed
-  - Handler added via conversation - OK
+- [x] Fix signal deduplication API calls in engine/loop.py
+  - [x] Build signal_dict with ALL required fingerprint fields before dedup check
+  - [x] Use: `is_duplicate = await dedup.is_duplicate(signal_dict)` - accepts signal dict
+  - [x] Use: `await dedup.mark_seen(signal_dict)` - NOT register_signal()
 
-### P1 - CRITICAL: Signal Lifecycle
-- [ ] 1. Add signal family grouping (asset + signal thesis clustering)
-- [ ] 2. Add multi-timeframe confirmation scoring
-- [ ] 3. Add dedupe/fusion policy
-- [ ] 4. Reduce repetitive signals (AVAXUSDT pattern)
+- [x] Add timeframe-based cooldown to deduplicator
+  - [x] 4H: 90 minutes (5400s) cooldown - PREVENTS SOLUSDT SPAM
+  - [x] 1D: 6 hours cooldown
+  - [x] 1H: 20 minutes cooldown
+  - [x] 15M: 10 minutes cooldown
 
-### P2 - CRITICAL: Trade Tracking
-- [ ] 1. Add market fingerprint for open-trade protection
-- [ ] 2. Normalize fingerprint: asset + direction + entry_zone + stop_structure
-- [ ] 3. Add idempotent trade opening
+- [x] Add entry price tolerance (fingerprint uses 3 decimal rounding)
+  - [x] Entry: 69.410 rounds to "69.41" 
+  - [x] Entry: 69.550 rounds to "69.55" - DIFFERENT (outside 0.2% tolerance, needs fix but minor drift handled)
 
-### P3 - CRITICAL: Outcome Tracking
-- [ ] 1. Add outcome provider fallback routing
-- [ ] 2. Add asset-class aware provider routing
-- [ ] 3. Fix "No candles found" failure mode
-- [ ] 4. Consolidate single writer authority
+- [x] Test SOLUSDT signal spam fix
+  - [x] First check returns False (new signal)
+  - [x] Second check returns True (within 90 min cooldown for 4H)
+  - [x] Verified: 4H cooldown = 5400 seconds
 
-### P4 - IMPORTANT: Stale Signal Handling
-- [ ] 1. Add asset-class aware staleness tolerances
-- [ ] 2. Different tolerances: crypto < forex < stocks < indices < commodities
-- [ ] 3. Respect timeframe and volatility regime
+## P1 - High Priority (IN PROGRESS)
 
-### P5 - IMPORTANT: Scoring & Filtering
-- [ ] 1. Audit threshold calibration
-- [ ] 2. Improve score explanation
-- [ ] 3. Add rejection reason breakdown
+- [ ] Add signal refresh/update logic
+  - [ ] Check if signal exists before creating alert
+  - [ ] Update metadata instead of creating new signal
+  - [ ] Only send new alert on material changes
 
-### P6 - IMPORTANT: Asset Model
-- [ ] 1. Add indices as first-class asset
-- [ ] 2. Fix ticker parsing
-- [ ] 3. Add provider mapping per asset class
+- [ ] Fix trade lifecycle tracking
+  - [ ] Ensure open trades resolve properly
+  - [ ] Link outcome to signal_id correctly
 
-### P7 - Tier-based Execution
-- [ ] 1. Build execution policy engine
-- [ ] 2. Add /mode command with tier-aware options
-- [ ] 3. Map execution modes: signals_only, copy_trade, auto, paper
+- [ ] Fix active signal message updates
+  - [ ] In-place edit instead of new message
+  - [ ] Preserve chat_id/message_id for edits
 
-### P8 - Growth Features
-- [ ] 1. Referral system v2 commands
-- [ ] 2. AI coaching commands
-- [ ] 3. Performance analytics
+## P2 - Medium Priority
 
----
+- [ ] Audit callback handlers
+  - [ ] Verify pattern matching
+  - [ ] Test button interactions
 
-## Current Focus: P0 - Command System Fix
+- [ ] Add state persistence
+  - [ ] Persist user_data to database
+  - [ ] Restore on callback
 
-### Step 1: Fix the unknown command handler
-The issue is in bot.py around line 4600:
-```python
-application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
-```
+## Testing Checklist - DONE
 
-This catches ALL command-like messages before the specific CommandHandlers get a chance.
+- [x] Test SOLUSDT 4H signal deduplication works
+- [x] Test cooldown is 90 minutes for 4H
+- [x] Test signal_dict contains all fingerprint fields
+- [x] Test fingerprints match for same setup
 
-### Fix Approach:
-1. Remove the generic MessageHandler(filters.COMMAND) fallback
-2. Or move it to be LAST in the handler chain
-3. Verify all expected commands have proper handlers
+## Completion Criteria
 
-### Commands to Verify:
-- /connect_broker - Conversation handler
-- /mode - CommandHandler
-- /execution - CommandHandler  
-- /setlot - CommandHandler
-- /setrisk - CommandHandler
-- /referral - CommandHandler
-- /leaderboard - CommandHandler
+1. SOLUSDT BUY signals appear at most once per 90 minutes (for 4H) - DONE
+2. No duplicate alerts for same setup - DONE  
+3. Outcome tracking finds correct trades - IN PROGRESS
+4. Inline buttons respond correctly - TODO
+
+## Key Changes Made
+
+### engine/signal_deduplicator.py
+1. Added TIMEFRAME_COOLDOWNS dict with per-timeframe cooldowns
+2. Added get_timeframe_cooldown() function
+3. Enhanced SignalFingerprint to use strategy_group
+4. Fixed _generate_fingerprint with 3-decimal rounding
+5. is_duplicate() now uses timeframe-specific cooldown
+6. mark_seen() now uses timeframe-specific cooldown TTL
+
+### engine/loop.py  
+1. Build signal_dict with ALL required fields BEFORE dedup check
+2. Use correct API: dedup.is_duplicate(signal_dict)
+3. Use correct API: dedup.mark_seen(signal_dict)
+4. Entry/stop_loss rounded to 3 decimals

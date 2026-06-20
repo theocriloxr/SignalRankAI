@@ -50,17 +50,37 @@ def get_timeframe_cooldown(timeframe: str) -> int:
 
 @dataclass
 class SignalFingerprint:
-    """Signal fingerprint for deduplication."""
+    """Signal fingerprint for deduplication.
+    
+    CRITICAL FIX: Do NOT include entry_zone in the dedup key!
+    Entry price changes every scan (SL/TP/confluence change), 
+    which defeats deduplication completely.
+    
+    The fingerprint should identify the TRADE THESIS, not the specific targets.
+    """
     asset: str
     direction: str
     timeframe: str
-    entry_zone: str  # Entry price zone (rounded)
+    entry_zone: str  # Kept for compatibility, but NOT used in to_key
     strategy_group: str
     created_at: datetime
     
     def to_key(self) -> str:
-        """Generate dedup key."""
-        return f"{self.asset}:{self.direction}:{self.timeframe}:{self.entry_zone}"
+        """Generate dedup key.
+        
+        FIXED: Only use (asset, direction, timeframe, strategy_group)
+        This identifies the trade thesis, not the changing price targets.
+        
+        Why this works:
+        - asset + direction = what asset and which way
+        - timeframe = what time horizon
+        - strategy_group = what strategy generated it
+        
+        This prevents SOLUSDT spam while allowing genuinely
+        new trade opportunities (new timeframe, new direction,
+        or new strategy) to pass through.
+        """
+        return f"{self.asset}:{self.direction}:{self.timeframe}:{self.strategy_group}"
 
 
 @dataclass
@@ -138,6 +158,12 @@ class SignalDeduplicator:
         """Check if signal is duplicate."""
         fp = self._generate_fingerprint(signal)
         key = fp.to_key()
+        
+        # DEBUG LOGGING: Critical to verify dedup is working
+        logger.info(
+            f"[DEDUP CHECK] fingerprint={key} "
+            f"entry_zone={fp.entry_zone} "  # Shown for debugging but NOT used in key
+        )
         
         # CRITICAL FIX: Use timeframe-specific cooldown instead of fixed config
         # This prevents SOLUSDT 4H signal spam (90 min cooldown for 4H)
@@ -228,7 +254,7 @@ class SignalDeduplicator:
             except Exception as e:
                 logger.debug(f"[Dedup] Redis store failed: {e}")
         
-        logger.debug(f"[Dedup] Marked seen: {key} (cooldown={cooldown_seconds}s)")
+        logger.info(f"[DEDUP SAVE] fingerprint={key}")
     
     async def clear_old_entries(self) -> int:
         """Clear expired entries from memory."""
