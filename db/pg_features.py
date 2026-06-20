@@ -176,61 +176,216 @@ def _active_trade_has_asset(active_trades: Any, asset: str) -> bool:
 
 
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
+    """Compute signal fingerprint for deduplication.
+    
+    CRITICAL FIX V2: Simplified fingerprint to prevent duplicate signals.
+    
+    The fingerprint identifies the TRADE THESIS, not specific price targets.
+    This prevents SOLUSDT spam while allowing genuinely new opportunities.
+    
+    Fingerprint = asset + direction + timeframe + strategy_group
+    (entry, SL, TP intentionally excluded as they change frequently)
+    """
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()
     direction: str = str(signal.get("direction") or "").lower().strip()
-
-    def _normalize_timestamp(value: Any) -> str:
-        if value is None:
-            return ""
-        if isinstance(value, datetime):
-            dt = value.replace(tzinfo=None) if value.tzinfo else value
-            return dt.isoformat(timespec="seconds")
-        try:
-            if isinstance(value, (int, float)):
-                if float(value) > 10_000_000_000:
-                    dt = datetime.utcfromtimestamp(float(value) / 1000.0)
-                else:
-                    dt = datetime.utcfromtimestamp(float(value))
-                return dt.replace(microsecond=0).isoformat()
-        except Exception:
-            pass
-        text = str(value).strip()
-        if not text:
-            return ""
-        try:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-            if parsed.tzinfo is not None:
-                parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-            return parsed.replace(microsecond=0).isoformat()
-        except Exception:
-            return text
-
-    def _round(v: Any) -> str:
-        try:
-            return f"{float(v):.6f}"
-        except Exception:
-            return str(v)
-
-    entry: str = _round(signal.get("entry"))
-    sl: str = _round(signal.get("stop_loss") or signal.get("stop"))
-    tp: Any | None = signal.get("take_profit") or signal.get("targets")
-    if isinstance(tp, (list, tuple)):
-        tp_norm: str = ",".join(_round(x) for x in tp)  # type: ignore
-    else:
-        tp_norm: str = _round(tp)
-
     strategy_group: str = str(signal.get("strategy_group") or "").lower().strip()
-    strategy_name: str = str(signal.get("strategy_name") or signal.get("strategy") or "").lower().strip()
-    candle_timestamp: str = _normalize_timestamp(
-        signal.get("candle_timestamp")
-        or signal.get("candle_time")
-        or signal.get("source_candle_timestamp")
-        or signal.get("bar_timestamp")
-    )
 
-    raw: str = f"{asset}|{timeframe}|{direction}|{entry}|{sl}|{tp_norm}|{strategy_group}|{strategy_name}|{candle_timestamp}"
+    # SIMPLIFIED: Only core trade thesis fields - NOT entry/SL/TP/candle_timestamp
+    raw: str = f"{asset}|{direction}|{timeframe}|{strategy_group}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
+
+
+async def check_active_signal_exists(
+    session: AsyncSession,
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> bool:
+    """Check if an active signal already exists for this asset/direction/timeframe.
+    
+    Prevents duplicate signal generation for the same trade thesis.
+    Uses Redis lock + DB check for redundancy.
+    """
+    from sqlalchemy import and_, select
+    from db.models import Signal, Outcome
+    
+    asset_upper = str(asset).upper().strip()
+    direction_lower = str(direction).lower().strip()
+    timeframe_lower = str(timeframe).lower().strip()
+    
+    # Check Redis first (fast path)
+    redis_key = f"signal_active:{asset_upper}:{direction_lower}:{timeframe_lower}"
+    try:
+        from core.redis_state import state
+        if state.has_redis_sync():
+            if state.get_str_sync(redis_key):
+                return True
+    except Exception:
+        pass
+    
+    # Check DB for active signal (no outcome yet)
+    try:
+        # First check: any non-expired, non-archived signal
+        stmt = (
+            select(Signal)
+            .where(
+                and_(
+                    Signal.asset == asset_upper,
+                    Signal.direction == direction_lower,
+                    Signal.timeframe == timeframe_lower,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+            )
+            .order_by(Signal.created_at.desc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        signal = result.scalar_one_or_none()
+        
+        if signal is not None:
+            # Check if it has an outcome (resolved trades are OK to overwrite)
+            outcome_stmt = (
+                select(Outcome)
+                .where(Outcome.signal_id == signal.signal_id)
+                .limit(1)
+            )
+            outcome_result = await session.execute(outcome_stmt)
+            outcome = outcome_result.scalar_one_or_none()
+            
+            if outcome is None:
+                # Active signal with no outcome - block duplicate
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+async def acquire_signal_lock(
+    asset: str,
+    direction: str,
+    timeframe: str,
+    ttl_seconds: int = 14400,  # 4 hours default
+) -> bool:
+    """Acquire Redis lock for signal generation.
+    
+    Prevents race conditions when multiple engine cycles
+    try to generate signals for the same asset.
+    
+    Key format: signal_lock:{ASSET}:{DIRECTION}:{TIMEFRAME}
+    TTL: 4 hours (configurable)
+    """
+    redis_key = f"signal_lock:{asset.upper()}:{direction.lower()}:{timeframe.lower()}"
+    
+    try:
+        from core.redis_state import state
+        if state.has_redis_sync():
+            # Try to acquire lock (atomic set if not exists)
+            existing = state.get_str_sync(redis_key)
+            if existing:
+                # Lock already held
+                return False
+            # Acquire lock
+            state.set_str_sync(redis_key, "1", ex=ttl_seconds)
+            return True
+    except Exception:
+        pass
+    
+    return True  # Allow if Redis unavailable
+
+
+async def release_signal_lock(
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> None:
+    """Release Redis lock after signal generation."""
+    redis_key = f"signal_lock:{asset.upper()}:{direction.lower()}:{timeframe.lower()}"
+    
+    try:
+        from core.redis_state import state
+        if state.has_redis_sync():
+            state.delete_sync(redis_key)
+    except Exception:
+        pass
+
+
+# Delivery cooldown TTL by tier (in seconds)
+DELIVERY_COOLDOWN_TTL = {
+    "vip": 4 * 3600,      # 4 hours
+    "premium": 6 * 3600,   # 6 hours  
+    "free": 12 * 3600,     # 12 hours
+}
+
+
+def check_delivery_cooldown(
+    user_id: int,
+    asset: str,
+    direction: str,
+) -> bool:
+    """Check if user is in delivery cooldown for this asset/direction.
+    
+    Returns True if cooldown active (should skip delivery).
+    Key format: delivery:{USER_ID}:{ASSET}:{DIRECTION}
+    TTL: VIP=4h, Premium=6h, Free=12h
+    """
+    from core.redis_state import state
+    
+    uid = int(user_id)
+    asset = str(asset).upper().strip()
+    direction = str(direction).lower().strip()
+    
+    # Get user tier for TTL lookup
+    tier_name: str = "free"
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        tier_name = resolve_user_tier(uid).lower()
+    except Exception:
+        tier_name = "free"
+    
+    ttl = DELIVERY_COOLDOWN_TTL.get(tier_name, DELIVERY_COOLDOWN_TTL["free"])
+    redis_key = f"delivery:{uid}:{asset}:{direction}"
+    
+    try:
+        if state.has_redis_sync():
+            if state.get_str_sync(redis_key):
+                return True  # Cooldown active
+    except Exception:
+        pass
+    
+    return False
+
+
+def set_delivery_cooldown(
+    user_id: int,
+    asset: str,
+    direction: str,
+) -> None:
+    """Set delivery cooldown for user/asset/direction."""
+    from core.redis_state import state
+    
+    uid = int(user_id)
+    asset = str(asset).upper().strip()
+    direction = str(direction).lower().strip()
+    
+    # Get user tier for TTL lookup
+    tier_name: str = "free"
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        tier_name = resolve_user_tier(uid).lower()
+    except Exception:
+        tier_name = "free"
+    
+    ttl = DELIVERY_COOLDOWN_TTL.get(tier_name, DELIVERY_COOLDOWN_TTL["free"])
+    redis_key = f"delivery:{uid}:{asset}:{direction}"
+    
+    try:
+        if state.has_redis_sync():
+            state.set_str_sync(redis_key, "1", ex=ttl)
+    except Exception:
+        pass
 
 
 def _get_signal_with_retry(

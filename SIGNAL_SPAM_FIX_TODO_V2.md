@@ -1,120 +1,144 @@
-# Signal Spam Fix TODO v2 - Implementation Checklist
+# SignalRankAI Fix Implementation Plan V2
 
-## P0 - Critical Fixes (Immediate)
+## Executive Summary
+This document outlines the comprehensive fixes for 4 critical issues identified in the SignalRankAI codebase.
 
-### TODO 1: Fix SignalDeduplicator API and Timeframe Cooldown
-- [ ] Add TIMEFRAME_COOLDOWNS constant in `engine/signal_deduplicator.py`
-- [ ] Modify `get_cooldown_seconds()` to use timeframe-specific cooldowns
-- [ ] Add entry zone tolerance for fingerprint matching
-- [ ] Ensure timeframe is in fingerprint key
+---
 
-### TODO 2: Fix loop.py Dedup API Calls  
-- [ ] Change: `is_dup = await dedup.is_duplicate(asset, timeframe, sig.direction, sig.entry)`
-- [ ] To: `is_dup = await dedup.is_duplicate(signal_dict)` (pass full dict)
-- [ ] Change: `await dedup.register_signal(asset, timeframe, sig.direction, sig.entry)`
-- [ ] To: `await dedup.mark_seen(signal_dict)` (correct method)
+## ISSUE 1: Button Callback Consolidation
 
-### TODO 3: Build Proper Signal Dict Before Dedup Check
-- [ ] Create complete signal_dict with all fingerprint fields BEFORE dedup check
-- [ ] Include: asset, timeframe, direction, entry, stop_loss, strategy_name, score
-- [ ] Round entry and stop_loss to 3 decimals for consistency
+### Current State:
+- bot.py has inline handlers (_build_signal_keyboard + per-button handlers)
+- callback_handlers.py has global router
+- Duplication causes "button does nothing" bugs
 
-## P1 - High Priority
+### Fix Plan:
+1. Keep ONLY callback_handlers.py global router as single source of truth
+2. Remove duplicate handlers from bot.py
+3. Make every callback answer immediately, then do real work
+4. Implement real MT5 execution flow or hide button
+5. Fix check_outcome to query canonical Outcome table
 
-### TODO 4: Add Signal Update Logic
-- [ ] Query for existing active signal before creating new
-- [ ] If exists and no material change → skip (just refresh timestamp)
-- [ ] If material change → update metadata only (no new alert)
-- [ ] Only send new alert for NEW signals or material updates
+### Files to Edit:
+- signalrank_telegram/bot.py → Remove duplicate callback handlers, keep keyboard building
+- signalrank_telegram/callback_handlers.py → Enhance global router
 
-### TODO 5: Add Entry Zone Tolerance
-- [ ] Modify fingerprint to use entry with ±0.2% tolerance
-- [ ] Implement rounded entry for fingerprint key
+---
 
-### TODO 6: Test Comprehensive
-- [ ] Test SOLUSDT 4H doesn't spam (should be once per 90 min)
-- [ ] Test different entry prices in same zone treated as duplicate
-- [ ] Test outcome tracking resolves correctly
+## ISSUE 2: Signal Deduplication Fix (ALREADY PARTIALLY DONE)
 
-## P2 - Medium Priority
+### Current State:
+✅ candle_timestamp REMOVED from fingerprint in db/pg_features.py
+⚠️ Need: engine/core.py to use signal_deduplicator.py path
+⚠️ Need: Redis-backed dedup lock with timeframe TTL
 
-### TODO 7: Signal State Machine
-- [ ] Add state tracking: NEW → ACTIVE → UPDATE → RESOLVED → ARCHIVED
-- [ ] Track entry_touched, TP1, TP2, TP3 events
+### Fix Plan:
+1. Route engine/core.py through signal_deduplicator.py policy
+2. Add Redis dedup lock with timeframe-specific TTL:
+   - 4H signal: 4 hour lock
+   - 1H signal: 1 hour lock
+   - Prevent same asset+direction+timeframe spam
 
-### TODO 8: Callback Handler Audit
-- [ ] Verify all button callback_data matches handler patterns
-- [ ] Test inline button interactions
+### Files to Edit:
+- engine/core.py → Integrate signal_deduplicator.py
+- Add Redis dedup layer
 
-## Implementation Notes
+---
 
-### Timeframe Cooldown Mapping
-```python
-TIMEFRAME_COOLDOWNS = {
-    "4h": 5400,    # 90 minutes - for SOLUSDT, XAUUSD, etc.
-    "1d": 21600,   # 6 hours
-    "1h": 1200,    # 20 minutes  
-    "15m": 600,    # 10 minutes
-    "5m": 300,     # 5 minutes
-}
+## ISSUE 3: Outcome Tracking Unification
+
+### Current State:
+- engine/realtime_outcome_tracker.py - live tracker
+- engine/core.py - writes outcome data
+- engine/shadow_outcome_worker.py - ML-rejected signals
+- callback /check_outcome - reads from Outcome table
+
+### Fix Plan:
+1. Choose ONE canonical writer (realtime_outcome_tracker)
+2. Make engine/core only persist trade-open/trade-close events
+3. Ensure every delivered signal has delivery row
+4. Add reconciliation job
+
+### Files to Edit:
+- engine/realtime_outcome_tracker.py
+- engine/core.py
+
+---
+
+## ISSUE 4: Three-Layer Dedup Protection
+
+### Layer 1: Global Signal Deduplication (Engine Level)
+```
+Logic: One active signal per (asset + direction + timeframe)
+- Redis key: dedup:global:{asset}:{direction}:{timeframe}
+- TTL: Based on timeframe (1h=1h, 4h=4h, 1d=24h)
+- Block if exists and not resolved
 ```
 
-### Signal Dict Structure for Dedup
-```python
-signal_dict = {
-    "asset": "SOLUSDT",
-    "timeframe": "4h",
-    "direction": "long",
-    "entry": 69.410,  # rounded to 3 decimals
-    "stop_loss": 66.629, 
-    "strategy_name": "EMA_Trend",
-    "score": 75.0,
-    "created_at": datetime.utcnow()
-}
+### Layer 2: User Delivery Cooldown (Tier-Based)
+```
+Tier    | Cooldown
+--------|--------
+Free   | 12 hours
+Premium| 6 hours
+VIP    | 4 hours
+
+Redis key: dedup:user:{user_id}:{asset}:{direction}
 ```
 
-## Test Commands
-
-```bash
-# Test dedup manually
-python -c "
-import asyncio
-from engine.signal_deduplicator import SignalDeduplicator
-
-async def test():
-    dedup = SignalDeduplicator()
-    
-    # Test signal
-    sig = {
-        'asset': 'SOLUSDT',
-        'timeframe': '4h', 
-        'direction': 'long',
-        'entry': 69.410,
-        'stop_loss': 66.629,
-        'strategy_name': 'EMA_Trend',
-        'score': 75,
-        'created_at': datetime.utcnow()
-    }
-    
-    # First check - should be False
-    is_dup = await dedup.is_duplicate(sig)
-    print(f'First check: {is_dup}')
-    
-    # Mark seen
-    await dedup.mark_seen(sig)
-    
-    # Second check - should be True  
-    is_dup = await dedup.is_duplicate(sig)
-    print(f'Second check: {is_dup}')
-
-asyncio.run(test())
-"
+### Layer 3: Smart Asset Cooldown (Same Direction Only)
+```
+Key: dedup:user:{user_id}:{asset}:{direction}
+- Allow SOL SELL if SOL BUY was sent
+- Block SOL BUY for 4h after SOL BUY
 ```
 
-## Completion Criteria
+---
 
-1. ✅ SOLUSDT BUY signals appear at most once per 90 minutes (for 4H)
-2. ✅ No duplicate alerts for same trading setup  
-3. ✅ Outcome tracking finds and resolves trades
-4. ✅ Inline buttons respond correctly
-5. ✅ Signal updates don't create new alerts
+## Implementation TODO:
+
+### Phase 1: Button Fixes (Priority: HIGH)
+- [ ] 1.1 Remove duplicate callback handlers from bot.py
+- [ ] 1.2 Enhance callback_handlers.py global router
+- [ ] 1.3 Fix check_outcome to query Outcome table properly
+- [ ] 1.4 Replace MT5 placeholder or hide button
+
+### Phase 2: Dedup Fixes (Priority: CRITICAL)
+- [ ] 2.1 Add Redis dedup lock to engine/core.py
+- [ ] 2.2 Integrate signal_deduplicator.py path
+- [ ] 2.3 Implement 3-layer cooldown system
+
+### Phase 3: Outcome Unification (Priority: MEDIUM)
+- [ ] 3.1 Make realtime_outcome_tracker canonical
+- [ ] 3.2 Remove duplicate outcome logic from core.py
+- [ ] 3.3 Add reconciliation job
+
+### Phase 4: UX Enhancements (Priority: LOW)
+- [ ] 4.1 Material change override (signal upgrade)
+- [ ] 4.2 Smart edit vs new message
+
+---
+
+## Migration Notes:
+
+### After applying these fixes:
+1. Restart engine to pick up new dedup logic
+2. Restart worker for outcome tracker changes
+3. Monitor logs for "dedup" messages
+4. Verify button clicks work immediately
+
+---
+
+## Risk Assessment:
+
+### Low Risk:
+- Button consolidation (well-tested patterns)
+- Outcome tracking fixes
+
+### Medium Risk:
+- Dedup changes may block signals initially
+- Monitor closely after deploy
+
+### Mitigation:
+- Add environment toggle to disable if needed
+- Watch dedup hit rate in first 24h
