@@ -26,28 +26,6 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
-# Timeframe-specific cooldowns (critical fix for SOLUSDT signal spam)
-# 4H signals need 90+ min cooldown to prevent spam
-TIMEFRAME_COOLDOWNS = {
-    "4h": 90 * 60,      # 90 minutes - SOLUSDT uses this
-    "1d": 6 * 60 * 60,  # 6 hours
-    "1h": 20 * 60,    # 20 minutes
-    "15m": 10 * 60,   # 10 minutes
-    "5m": 5 * 60,     # 5 minutes
-    "30m": 15 * 60,   # 15 minutes
-}
-
-
-def get_timeframe_cooldown(timeframe: str) -> int:
-    """Get cooldown seconds for a specific timeframe.
-    
-    CRITICAL FIX: 4H timeframe requires 90+ minute cooldown
-    to prevent SOLUSDT and other 4H signals from spamming.
-    """
-    tf = str(timeframe).lower().strip()
-    return TIMEFRAME_COOLDOWNS.get(tf, 900)  # Default 15 minutes
-
-
 @dataclass
 class SignalFingerprint:
     """Signal fingerprint for deduplication."""
@@ -132,15 +110,10 @@ class SignalDeduplicator:
         """Generate Redis key."""
         return f"dedup:signal:{fp.to_key()}"
     
-async def is_duplicate(self, signal: Dict[str, Any]) -> bool:
+    async def is_duplicate(self, signal: Dict[str, Any]) -> bool:
         """Check if signal is duplicate."""
         fp = self._generate_fingerprint(signal)
         key = fp.to_key()
-        
-        # FIX: Use timeframe-specific cooldown instead of fixed config
-        # CRITICAL: This prevents SOLUSDT 4H signal spam
-        timeframe = fp.timeframe
-        cooldown_seconds = get_timeframe_cooldown(timeframe)
         
         # Check breakthrough conditions first (fresh signals get priority)
         if self.config.allow_fresh_breakthrough:
