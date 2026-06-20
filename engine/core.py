@@ -70,6 +70,147 @@ except Exception:
     exposure_manager = _DummyExposureManager()
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from db.repository import persist_decision_log, persist_signal
+
+# ============================================================================
+# PRIORITY 1 FIX: Signal Deduplication Lock (Redis + PostgreSQL)
+# Prevents duplicate signals from being created in multi-process engine deployments
+# ============================================================================
+def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
+    """
+    Check if signal lock exists for asset+direction+timeframe.
+    Returns True if locked (should skip), False if not locked (can proceed).
+    
+    This implements a Redis-backed lock with key format: signal_lock:SOLUSDT:BUY:4H
+    TTL matches the timeframe cooldown (4h for 4H signals = 4 hours)
+    """
+    import os
+    import time
+    
+    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe}"
+    tf_seconds = {
+        "4h": 4 * 3600,      # 4 hours for 4H
+        "1h": 90 * 60,       # 90 minutes for 1H
+        "1d": 6 * 3600,      # 6 hours for 1D
+        "15m": 30 * 60,      # 30 minutes for 15m
+        "5m": 15 * 60,       # 15 minutes for 5m
+    }
+    ttl_seconds = tf_seconds.get(timeframe.lower(), 90 * 60)  # Default 90 min
+    
+    try:
+        if state.has_redis_sync():
+            # Check Redis for existing lock
+            existing = state.get_str_sync(lock_key)
+            if existing:
+                # Lock exists - check if still valid
+                try:
+                    lock_time = float(existing)
+                    age = time.time() - lock_time
+                    if age < ttl_seconds:
+                        logger.info(f"[signal_lock] Locked {asset} {direction} {timeframe} - age={age:.0f}s ttl={ttl_seconds}s")
+                        return True  # Still locked
+                except Exception:
+                    pass
+            # Set new lock with TTL
+            state.set_str_sync(lock_key, str(time.time()), ttl=ttl_seconds + 60)
+            logger.info(f"[signal_lock] Acquired {asset} {direction} {timeframe} ttl={ttl_seconds}s")
+            return False  # Not locked, proceed
+    except Exception as e:
+        logger.debug(f"[signal_lock] Redis check failed: {e}")
+    
+    # Fallback: Check PostgreSQL for recent signal
+    try:
+        from db.session import get_session
+        from db.models import Signal
+        from sqlalchemy import select, and_
+        
+        cutoff = int(ttl_seconds)
+        from datetime import datetime, timedelta
+        cutoff_dt = datetime.utcnow() - timedelta(seconds=cutoff)
+        
+        async def _check_db():
+            async with get_session() as session:
+                result = await session.execute(
+                    select(Signal.signal_id).where(
+                        and_(
+                            Signal.asset == asset.upper(),
+                            Signal.timeframe == timeframe.lower(),
+                            Signal.direction == direction.lower(),
+                            Signal.created_at >= cutoff_dt,
+                            Signal.expired.is_(False),
+                            Signal.archived.is_(False),
+                        )
+                    ).limit(1)
+                )
+                return result.scalar_one_or_none() is not None
+        
+        from utils.async_runner import run_sync
+        if run_sync(_check_db()):
+            logger.info(f"[signal_lock] DB locked {asset} {direction} {timeframe}")
+            return True  # Locked by recent signal
+    except Exception as e:
+        logger.debug(f"[signal_lock] DB check failed: {e}")
+    
+    return False  # Not locked, proceed
+
+
+def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
+    """Release signal lock after successful storage."""
+    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe}"
+    try:
+        if state.has_redis_sync():
+            state.delete_sync(lock_key)
+            logger.info(f"[signal_lock] Released {asset} {direction} {timeframe}")
+    except Exception as e:
+        logger.debug(f"[signal_lock] Release failed: {e}")
+
+
+# ============================================================================
+# PRIORITY 1.3 FIX: Telegram Delivery Cooldown
+# Prevents same signal being sent multiple times to same user
+# ============================================================================
+def _check_delivery_cooldown(user_id: int, asset: str, direction: str, timeframe: str, tier: str = "free") -> bool:
+    """
+    Check if user has delivery cooldown for this asset.
+    Returns True if should skip (in cooldown), False if can send.
+    
+    TTL by tier:
+    - VIP = 4 hours
+    - Premium = 6 hours  
+    - Free = 12 hours
+    """
+    import os
+    import time
+    
+    tier_cooldown_hours = {
+        "vip": 4,
+        "premium": 6,
+        "free": 12,
+    }
+    cooldown_hours = tier_cooldown_hours.get(tier.lower(), 12)
+    cooldown_seconds = cooldown_hours * 3600
+    
+    # Build key: delivery:user_id:asset:direction
+    delivery_key = f"delivery:{user_id}:{asset.upper()}:{direction.upper()}"
+    
+    try:
+        if state.has_redis_sync():
+            existing = state.get_str_sync(delivery_key)
+            if existing:
+                try:
+                    ts = float(existing)
+                    age = time.time() - ts
+                    if age < cooldown_seconds:
+                        logger.info(f"[delivery_cooldown] User {user_id} cooldown for {asset} {direction} - age={age:.0f}s cooldown={cooldown_seconds}s")
+                        return True  # In cooldown, skip
+                except Exception:
+                    pass
+            # Set new cooldown
+            state.set_str_sync(delivery_key, str(time.time()), ttl=cooldown_seconds + 60)
+            return False  # No cooldown, can send
+    except Exception as e:
+        logger.debug(f"[delivery_cooldown] Check failed: {e}")
+    
+    return False  # No cooldown, can send
 from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals_async
@@ -2698,6 +2839,21 @@ def main_loop(DRY_RUN: bool = False):
                                         continue
                             except Exception as _pex:
                                 logger.debug(f"[engine] portfolio exposure check failed: {_pex}")
+
+# === PRIORITY 1.1 FIX: Signal Lock Check ===
+                            # Check if signal lock exists for this asset+direction+timeframe
+                            # This prevents duplicate signal generation within cooldown window
+                            _sig_asset = str(sig.get('asset') or '').upper().strip()
+                            _sig_direction = str(sig.get('direction') or 'long').lower().strip()
+                            _sig_timeframe = str(sig.get('timeframe') or '1h').lower().strip()
+                            try:
+                                if _check_signal_lock(_sig_asset, _sig_direction, _sig_timeframe):
+                                    pipeline_stats["skipped_signal_lock"] = int(pipeline_stats.get("skipped_signal_lock", 0) or 0) + 1
+                                    logger.info(f"[signal_lock] skipping {_sig_asset} {sig.get('direction')} {sig.get('timeframe')} - lock exists")
+                                    continue
+                            except Exception as _sl_err:
+                                logger.debug(f"[signal_lock] check failed: {_sl_err}")
+                            # === END PRIORITY 1.1 FIX ===
 
                             # Stamp created_at
                             # store_signal_compat sets it on the DB row but doesn't write it back

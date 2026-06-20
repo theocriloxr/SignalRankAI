@@ -25,8 +25,61 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+# Redis signal lock key prefix - prevents same signal generation within cooldown window
+# Format: signal_lock:{asset}:{direction}:{timeframe}
+# TTL: 4 hours (configurable per tier)
+SIGNAL_LOCK_PREFIX = "signal_lock"
 
-# Timeframe-specific cooldowns (CRITICAL FIX for SOLUSDT signal spam)
+
+def get_signal_lock_key(asset: str, direction: str, timeframe: str) -> str:
+    """Generate Redis lock key for signal generation.
+    
+    Args:
+        asset: Asset symbol (e.g., "BTCUSDT")
+        direction: "long" or "short"
+        timeframe: Timeframe (e.g., "1h", "4h")
+    
+    Returns:
+        Redis key string: signal_lock:BTCUSDT:LONG:4h
+    """
+    return f"{SIGNAL_LOCK_PREFIX}:{asset.upper()}:{direction.upper()}:{timeframe.upper()}"
+
+
+def get_signal_lock_ttl_seconds(timeframe: str, tier: str = "free") -> int:
+    """Get TTL for signal lock based on timeframe and user tier.
+    
+    Priority 1 - Telegram Delivery Cooldown:
+    - VIP = 4 hours
+    - Premium = 6 hours  
+    - Free = 12 hours
+    
+    Args:
+        timeframe: Timeframe (e.g., "1h", "4h")
+        tier: User tier ("vip", "premium", "free")
+    
+    Returns:
+        TTL in seconds
+    """
+    # Base TTL by timeframe
+    base_ttl = {
+        "4h": 4 * 60 * 60,    # 4 hours
+        "1d": 4 * 60 * 60,    # 4 hours
+        "1h": 2 * 60 * 60,    # 2 hours
+        "15m": 60 * 60,      # 1 hour
+        "5m": 30 * 60,       # 30 minutes
+    }.get(str(timeframe).lower(), 60 * 60)  # Default 1 hour
+    
+    # Tier-based multiplier (Priority 1 fix)
+    tier_multiplier = {
+        "vip": 1,       # 4h base
+        "premium": 1.5,   # 6h  
+        "free": 3,       # 12h
+    }.get(str(tier).lower(), 3)
+    
+    return int(base_ttl * tier_multiplier)
+
+
+# Timeframe-specific cooldowns
 # 4H signals need 90+ min cooldown to prevent spam
 TIMEFRAME_COOLDOWNS = {
     "4h": 90 * 60,      # 90 minutes - SOLUSDT uses this
@@ -483,6 +536,124 @@ class MLRejectionTracker:
             logger = logging.getLogger(__name__)
             logger.debug(f"[MLRejectionTracker] get_recent_rejections failed: {e}")
             return []
+
+
+# Priority 1 Fix: Signal Lock Functions
+
+def check_and_acquire_signal_lock(
+    asset: str,
+    direction: str,
+    timeframe: str,
+    tier: str = "free",
+) -> bool:
+    """Check and acquire Redis lock for signal generation.
+    
+    Priority 1 - Redis Lock for Signal:
+    - Prevents duplicate signal generation within cooldown window
+    - Format: signal_lock:SOLUSDT:BUY:4H
+    - TTL: 4 hours
+    
+    Args:
+        asset: Asset symbol (e.g., "SOLUSDT")
+        direction: "long" or "short" (or "buy"/"sell")
+        timeframe: Timeframe (e.g., "4h", "1h")
+        tier: User tier for TTL calculation
+    
+    Returns:
+        True if lock acquired, False if already locked
+    """
+    try:
+        from core.redis_state import state
+        
+        lock_key = get_signal_lock_key(asset, direction, timeframe)
+        ttl_seconds = get_signal_lock_ttl_seconds(timeframe, tier)
+        
+        # Try to acquire lock with SETNX (set if not exists)
+        if state.has_redis_sync():
+            # Use SETNX pattern - only set if not exists
+            acquired = state.set_nx_sync(lock_key, "1", ttl=ttl_seconds)
+            if acquired:
+                logger.info(f"[SignalLock] Acquired: {lock_key} ttl={ttl_seconds}s tier={tier}")
+                return True
+            else:
+                logger.debug(f"[SignalLock] Already locked: {lock_key}")
+                return False
+    except Exception as e:
+        logger.debug(f"[SignalLock] Failed to acquire lock: {e}")
+        # Allow through if Redis fails (fail-open)
+        return True
+
+
+def release_signal_lock(
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> None:
+    """Release Redis lock for signal generation.
+    
+    Args:
+        asset: Asset symbol
+        direction: "long" or "short"
+        timeframe: Timeframe
+    """
+    try:
+        from core.redis_state import state
+        
+        lock_key = get_signal_lock_key(asset, direction, timeframe)
+        
+        if state.has_redis_sync():
+            state.delete_sync(lock_key)
+            logger.info(f"[SignalLock] Released: {lock_key}")
+    except Exception as e:
+        logger.debug(f"[SignalLock] Failed to release lock: {e}")
+
+
+def check_active_signal_exists(
+    session,
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> bool:
+    """Check if active signal already exists for asset/direction/timeframe.
+    
+    Priority 1 - Active Signal Protection:
+    - Check if active (non-expired, non-archived) signal exists
+    - If true, skip signal generation
+    
+    Args:
+        session: Database session
+        asset: Asset symbol
+        direction: "long" or "short"
+        timeframe: Timeframe
+    
+    Returns:
+        True if active signal exists, False otherwise
+    """
+    try:
+        from db.models import Signal
+        from sqlalchemy import select, and_
+        
+        # Check for active signal with same asset, direction, timeframe
+        result = session.execute(
+            select(Signal.signal_id).where(
+                and_(
+                    Signal.asset == str(asset).upper(),
+                    Signal.direction == str(direction).lower(),
+                    Signal.timeframe == str(timeframe).lower(),
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+            ).limit(1)
+        )
+        exists = result.scalar_one_or_none()
+        
+        if exists:
+            logger.info(f"[ActiveSignal] Exists: {asset} {direction} {timeframe}")
+            return True
+        return False
+    except Exception as e:
+        logger.debug(f"[ActiveSignal] Check failed: {e}")
+        return False
 
 
 # Helper functions

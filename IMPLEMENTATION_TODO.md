@@ -1,55 +1,110 @@
-# SignalRankAI Fix Implementation TODO
+# SignalRankAI All Priority Implementations Detailed Plan
 
-## Progress: Priority 1 is DONE ✅
+## Priority 1: Critical Production Bugs (START HERE)
 
-### PRIORITY 1: CRITICAL PRODUCTION BUGS - COMPLETE ✓
-- [x] 1.1 Signal Deduplication - Fixed fingerprint in db/pg_features.py
-- [x] 1.2 Active Signal Protection - Added active_trade check in core.py  
-- [x] 1.3 Telegram Delivery Cooldown - Added _is_asset_delivery_locked() in bot.py
+### 1.1 Signal Deduplication - Fingerprint Fix + Redis Lock
+**Files:** engine/signal_deduplicator.py, db/pg_features.py
 
-### PRIORITY 2: BUTTONS NOT WORKING
-- [~] 2.1 Consolidate callback handlers
-  - callback_handlers.py has global handler - GOOD ✓
-  - bot.py still has inline handlers - CONFLICT
-  - Need: Remove duplicate handlers from bot.py OR verify routing works
+**Current State:**
+- db/pg_features.py already removed candle_timestamp from fingerprint ✅
+- engine/signal_deduplicator.py uses fingerprint with asset, direction, timeframe, strategy_group
 
-- [ ] 2.2 Add button press logging to all handlers
+**Still Needed:**
+- Add Redis lock: signal_lock:{asset}:{direction}:{timeframe}
+- TTL: 4 hours for 4H signals
+- Add PostgreSQL uniqueness check
 
-### PRIORITY 3: OUTCOME TRACKING  
-- [ ] 3.1 Unify outcome ownership to RealtimeOutcomeTracker
-- [ ] 3.2 Add signal_state enum
+**Implementation:**
+```python
+# In engine/signal_deduplicator.py or db/pg_features.py
+async def check_active_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
+    """Check if active signal exists for asset+direction+timeframe"""
+    key = f"signal_lock:{asset}:{direction}:{timeframe}"
+    return await state.cache_exists(key)
 
-### PRIORITY 4: FRESHNESS BUG
-- [ ] 4.1 Fix signal.created_at vs candle.timestamp conflict
+async def acquire_active_signal_lock(asset: str, direction: str, timeframe: str, ttl_seconds: int = 14400) -> bool:
+    """Acquire lock with 4h default TTL"""
+    key = f"signal_lock:{asset}:{direction}:{timeframe}"
+    # Only set if not exists (atomic)
+    return await state.cache_set_if_not_exists(key, "1", ex=ttl_seconds)
+```
 
-### PRIORITY 5: STALE SIGNAL LOGIC
-- [ ] 5.1 Refactor validate() to single result
+### 1.2 Active Signal Protection
+**Files:** engine/core.py, db/pg_features.py
 
-### PRIORITY 6: RAILWAY STABILITY
-- [ ] 6.1 Redis health monitor (PING every minute)
-- [ ] 6.2 PostgreSQL health monitor (SELECT 1 every minute)
-- [ ] 6.3 Engine heartbeat table
+**Current:** Already has active_trade check in engine/core.py but at storage stage.
 
-### PRIORITY 7: DATABASE INDEXES
-- [ ] 7.1 Add indexes to Signals, Outcomes, Deliveries tables
+**Needed:** Check BEFORE generating new signal
+- Query for active signal with same asset+direction+timeframe
+- Skip generation if active signal exists
 
-### PRIORITY 8: SIGNAL LIFECYCLE
-- [ ] 8.1 Implement message thread updates (NEW → UPDATED → TP1 → TP2 → CLOSED)
+### 1.3 Telegram Delivery Cooldown (Per-User Redis Key)
+**Files:** signalrank_telegram/bot.py, signalrank_telegram/delivery.py
 
-### PRIORITY 9: ML SYSTEM  
-- [ ] 9.1 Add confidence calibration tracking
+**Implementation:**
+```python
+# Delivery cooldown per user per asset
+# Key: delivery:{user_id}:{asset}:{direction}
+# TTL by tier:
+#   VIP = 4h (14400s)
+#   Premium = 6h (21600s)
+#   Free = 12h (43200s)
 
-### PRIORITY 10: ADVANCED FEATURES
-- [ ] 10.1 Trade Journal
-- [ ] 10.2 Portfolio Exposure Engine
-- [ ] 10.3 Market Regime Detection
-- [ ] 10.4 Institutional Scoring
+TIER_DELIVERY_COOLDOWN_SECONDS = {
+    "vip": 4 * 3600,
+    "premium": 6 * 3600, 
+    "free": 12 * 3600,
+}
 
----
+async def check_delivery_cooldown(user_id: int, asset: str, direction: str) -> bool:
+    """Check if delivery cooldown is active"""
+    key = f"delivery:{user_id}:{asset}:{direction}"
+    return await state.cache_exists(key)
 
-## Next Steps:
+async def set_delivery_cooldown(user_id: int, asset: str, direction: str, tier: str) -> None:
+    """Set delivery cooldown"""
+    ttl = TIER_DELIVERY_COOLDOWN_SECONDS.get(tier, 12 * 3600)
+    key = f"delivery:{user_id}:{asset}:{direction}"
+    await state.cache_set(key, "1", ex=ttl)
+```
 
-1. First verify the callback consolidation is working - check bot.py has callback_handlers.py imported and added
-2. Add logging to all callback handlers  
-3. Address outcome ownership in realtime_outcome_tracker.py
-4. Continue with Priorities 4-10
+## Priority 2: Buttons Not Working
+**Current:** callback_handlers.py already has global callback router ✅
+
+## Priority 3: Outcome Tracking
+**Current:** realtime_outcome_tracker.py is already implemented ✅
+**Still Needed:** signal_state enum and unify ownership
+
+## Priority 4: Freshness Bug
+**Files:** engine/signal_formatter.py, engine/freshness.py
+**Needed:** Use one timestamp source
+
+## Priority 5: Stale Signal Logic
+**File:** engine/stale_signal_validator.py
+**Needed:** Refactor validate() to single result
+
+## Priority 6: Railway Stability
+**Files:** railway_main.py, worker/worker.py, db/session.py
+**Needed:**
+- Redis Health Monitor (PING every minute)
+- PostgreSQL Health Monitor (SELECT 1 every minute)
+- Engine Heartbeat Table
+
+## Priority 7: Database Indexes
+**Files:** db/models.py, alembic/versions/
+**Needed:** Add indexes
+
+## Priority 8: Signal Lifecycle
+**Files:** engine/core.py, signalrank_telegram/bot.py
+**Needed:** Message threading (UPDATE vs NEW SIGNAL thread)
+
+## Priority 9: ML System Confidence Calibration
+**Files:** ml/*, engine/core.py
+**Needed:** Store predicted_probability and actual_result
+
+## Priority 10: Features (Future)
+- Trade Journal
+- Signal Replay
+- Portfolio Exposure Engine
+- Market Regime Detection
+- Institutional Scoring
