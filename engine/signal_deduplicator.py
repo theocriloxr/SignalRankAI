@@ -88,8 +88,11 @@ class DedupConfig:
     """Deduplication configuration."""
     cooldown_seconds: int = 900  # 15 min default
     entry_zone_tolerance: float = 0.002  # 0.2% entry price tolerance
-    allow_fresh_breakthrough: bool = True  # Allow high-quality fresh signals
-    min_score_for_breakthrough: float = 85.0  # Score threshold for breakthrough
+    # CRITICAL FIX: Disable fresh breakthrough to prevent SOLUSDT signal spam
+    # The breakthrough feature was bypassing cooldown for high-score signals,
+    # causing the same signal to be re-sent every few minutes
+    allow_fresh_breakthrough: bool = False  # DISABLED - was causing spam
+    min_score_for_breakthrough: float = 99.0  # Set to near-perfect to effectively disable
     max_age_for_breakthrough_hours: int = 2  # Max age for breakthrough
 
 
