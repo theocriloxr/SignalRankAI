@@ -28,24 +28,17 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SignalFingerprint:
-    """Signal fingerprint for deduplication.
-    
-    FIX: Removed timeframe from the fingerprint.
-    Previously, same asset+direction on different timeframes was treated as duplicate signals,
-    causing AVAX SELL 1D and AVAX SELL 4H to be sent as separate alerts.
-    Now we treat them as the SAME signal idea with multi-timeframe confirmation.
-    This allows the engine to merge them into one signal with higher confidence.
-    """
+    """Signal fingerprint for deduplication."""
     asset: str
     direction: str
-    # FIX: Removed timeframe from fingerprint - same idea on different TF = merge, not duplicate
+    timeframe: str
     entry_zone: str  # Entry price zone (rounded)
     strategy_group: str
     created_at: datetime
     
     def to_key(self) -> str:
-        """Generate dedup key WITHOUT timeframe for fusion across timeframes."""
-        return f"{self.asset}:{self.direction}:{self.entry_zone}"
+        """Generate dedup key."""
+        return f"{self.asset}:{self.direction}:{self.timeframe}:{self.entry_zone}"
 
 
 @dataclass
@@ -332,7 +325,6 @@ class MLRejectionTracker:
                         ml_probability=float(ml_probability) if ml_probability else 0.0,
                         rejection_reason=str(rejection_reason)[:128],
                         features=dict(features) if features else {},
-                        rejection_type=str(rejection_type)[:32],
                     )
                     session.add(rejection)
                     await session.commit()
