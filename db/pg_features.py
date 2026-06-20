@@ -427,6 +427,49 @@ async def get_or_create_signal(
     return await get_or_create_signal_impl(session, signal, dedup_hours)
 
 
+async def active_signal_exists(
+    session: AsyncSession,
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> bool:
+    """Check if an active signal already exists for this asset/direction/timeframe.
+    
+    This prevents creating duplicate signals for the same trading opportunity.
+    Used before generating new signals.
+    
+    Returns True if an active (non-expired, non-archived) signal exists.
+    """
+    asset_normalized = str(asset or "").upper().strip()[:32]
+    direction_normalized = str(direction or "long").lower().strip()[:8]
+    timeframe_normalized = str(timeframe or "1h").lower().strip()[:8]
+    
+    try:
+        # Check for non-expired, non-archived signals with same asset/direction/timeframe
+        result = await session.execute(
+            select(Signal.signal_id).where(
+                and_(
+                    Signal.asset == asset_normalized,
+                    Signal.direction == direction_normalized,
+                    Signal.timeframe == timeframe_normalized,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+            ).limit(1)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            logger.info(
+                f"[active_signal_exists] Found active signal for {asset_normalized} "
+                f"{direction_normalized} {timeframe_normalized}"
+            )
+            return True
+        return False
+    except Exception as e:
+        logger.debug(f"[active_signal_exists] Check failed: {e}")
+        return False
+
+
 async def get_or_create_signal_impl(
     session: AsyncSession,
     signal: Dict[str, Any],

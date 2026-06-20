@@ -1,176 +1,55 @@
-# SignalRankAI Implementation Roadmap
+# SignalRankAI Fix Implementation TODO
 
-## Phase 1: Stability & Signal Flow (FIXES)
-Status: ✅ COMPLETED - Most fixes already applied in codebase
+## Progress: Priority 1 is DONE ✅
 
-### ✅ ALREADY APPLIED (Code-level fixes):
-1. **Engine Scoring Fix** (`engine/scoring.py`):
-   - Soft-cap divisor: 75.0 → 50.0 
-   - CONFIDENCE_MIN: 0.35 → 0.20
-   - MIN_RR: 1.5 (restored from 1.0)
+### PRIORITY 1: CRITICAL PRODUCTION BUGS - COMPLETE ✓
+- [x] 1.1 Signal Deduplication - Fixed fingerprint in db/pg_features.py
+- [x] 1.2 Active Signal Protection - Added active_trade check in core.py  
+- [x] 1.3 Telegram Delivery Cooldown - Added _is_asset_delivery_locked() in bot.py
 
-2. **DB Pool Settings** (`config.py`):
-   - DB_POOL_SIZE=8
-   - DB_MAX_OVERFLOW=3
-   - DB_SYNC_POOL_SIZE=3
-   - DB_SYNC_MAX_OVERFLOW=2
-   - YFINANCE_CACHE_TTL=60
+### PRIORITY 2: BUTTONS NOT WORKING
+- [~] 2.1 Consolidate callback handlers
+  - callback_handlers.py has global handler - GOOD ✓
+  - bot.py still has inline handlers - CONFLICT
+  - Need: Remove duplicate handlers from bot.py OR verify routing works
 
-3. **Tier Thresholds** (`core/tier_constants.py`):
-   - FREE: 75.0 (lowered from 80.0)
-   - PREMIUM: 73.0 (lowered from 80.0)
-   - VIP: 73.0 (lowered from 80.0)
+- [ ] 2.2 Add button press logging to all handlers
 
-4. **ML Threshold** (`config.py`):
-   - ML_PROB_THRESHOLD=0.15 (lowered from 0.25)
-   - PREMIUM_SCORE_THRESHOLD=25.0 (lowered from 35.0)
+### PRIORITY 3: OUTCOME TRACKING  
+- [ ] 3.1 Unify outcome ownership to RealtimeOutcomeTracker
+- [ ] 3.2 Add signal_state enum
 
-### ✅ ALREADY CONFIGURED (Environment variables to set):
-Add to Railway .env:
-```
-DB_POOL_SIZE=8
-DB_MAX_OVERFLOW=3
-DB_SYNC_POOL_SIZE=3
-DB_SYNC_MAX_OVERFLOW=2
-PREMIUM_SCORE_THRESHOLD=0
-PREMIUM_SCORE_THRESHOLD_FORCE=1
-YFINANCE_CACHE_TTL=60
-```
+### PRIORITY 4: FRESHNESS BUG
+- [ ] 4.1 Fix signal.created_at vs candle.timestamp conflict
 
----
+### PRIORITY 5: STALE SIGNAL LOGIC
+- [ ] 5.1 Refactor validate() to single result
 
-## Phase 2: MT5 Automated Trading Integration
-Status: Not Started | Priority: High
+### PRIORITY 6: RAILWAY STABILITY
+- [ ] 6.1 Redis health monitor (PING every minute)
+- [ ] 6.2 PostgreSQL health monitor (SELECT 1 every minute)
+- [ ] 6.3 Engine heartbeat table
 
-### Tasks:
-1. **Create mt5_bridge.py service**
-   - Connect to MetaTrader 5 via `MetaTrader5` Python library
-   - Implement `signal → order_send()` conversion
-   - Support multiple MT5 accounts per user
+### PRIORITY 7: DATABASE INDEXES
+- [ ] 7.1 Add indexes to Signals, Outcomes, Deliveries tables
 
-2. **Database Schema Updates**
-   - Add `mt5_accounts` table
-   - Track linked accounts per user
+### PRIORITY 8: SIGNAL LIFECYCLE
+- [ ] 8.1 Implement message thread updates (NEW → UPDATED → TP1 → TP2 → CLOSED)
 
-3. **Signal Delivery Enhancement**
-   - Route signals to MT5 for automated execution
-   - Return trade sync to paper ledger
+### PRIORITY 9: ML SYSTEM  
+- [ ] 9.1 Add confidence calibration tracking
 
-### Files to create:
-- `services/mt5_bridge.py` - Main MT5 integration
-- `db/mt5_models.py` - Account tracking models
+### PRIORITY 10: ADVANCED FEATURES
+- [ ] 10.1 Trade Journal
+- [ ] 10.2 Portfolio Exposure Engine
+- [ ] 10.3 Market Regime Detection
+- [ ] 10.4 Institutional Scoring
 
 ---
 
-## Phase 3: Payment System Hardening (Paystack)
-Status: Not Started | Priority: Medium
+## Next Steps:
 
-### Tasks:
-1. **Webhook Signature Validation**
-   - Verify Paystack webhook signatures
-   - Prevent replay attacks
-
-2. **Subscription State Machine**
-   - Implement: active → expired → grace period → downgrade
-   - Add proper transitions
-
-3. **Retry Logic**
-   - Handle failed payment webhooks
-   - Queue and retry机制
-
-4. **Invoice Generation**
-   - Generate invoices for purchases
-   - Email receipts
-
-### Files to update:
-- `payments/paystack_webhook.py`
-- `services/subscription_manager.py`
-
----
-
-## Phase 4: ML & Signal Quality
-Status: In Progress | Priority: High
-
-### Tasks:
-1. **Fix Gemini Audit Pipeline**
-   - Current: Has issues with async session
-   - Already partially fixed
-
-2. **Walk-Forward Optimization**
-   - Implement rolling window optimization
-   - Track performance over time
-
-3. **Backtesting Against Live Data**
-   - Compare backtest vs live outcomes
-   - Identify overfitting
-
-4. **Signal Calibration**
-   - Track win rate by asset class
-   - Adjust weights dynamically
-
-### Files to update:
-- `ml/model_optimizer.py`
-- `engine/backtest.py`
-
----
-
-## Phase 5: Competitive Features
-Status: Not Started | Priority: Medium
-
-### Tasks:
-1. **Copy Trading**
-   - Mirror signals to follower accounts
-   - Track leader performance
-
-2. **Risk-Adjusted Position Sizing**
-   - Size positions per user account equity
-   - Implement portfolio-level risk
-
-3. **Signal Leaderboard**
-   - Public win rate page
-   - Transparent performance tracking
-
-4. **Multi-Exchange Support**
-   - Binance, Bybit, OKX direct execution
-   - Unified execution layer
-
-5. **Mobile Push Notifications**
-   - iOS/Android push alongside Telegram
-   - Use FCM or similar
-
-6. **Backtesting Dashboard**
-   - Visual equity curve per strategy
-   - Performance charts
-
-7. **Community Tier**
-   - Users vote on signal quality
-   - Reputation system
-
----
-
-## Implementation Notes
-
-### Testing Checklist:
-- [ ] Test signal generation flow
-- [ ] Verify score distribution
-- [ ] Check ML filter pass rate
-- [ ] Validate delivery pipeline
-- [ ] Test tier gating
-
-### Deployment Steps:
-1. Apply Phase 1 fixes first
-2. Monitor signal generation for 24h
-3. Adjust thresholds as needed
-4. Begin Phase 2 (MT5) after stabilization
-
-### Monitoring Metrics:
-- `generated_signals` - Total signals generated per cycle
-- `final_signals` - Signals passing all filters
-- `max_score` - Highest scoring signal
-- `delivery_rate` - Signals delivered vs stored
-- `win_rate` - Outcome tracking
-
----
-
-Last Updated: 2024
-Owner: SignalRankAI Team
+1. First verify the callback consolidation is working - check bot.py has callback_handlers.py imported and added
+2. Add logging to all callback handlers  
+3. Address outcome ownership in realtime_outcome_tracker.py
+4. Continue with Priorities 4-10
