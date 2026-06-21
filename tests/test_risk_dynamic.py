@@ -7,8 +7,11 @@ import sys
 sys.path.insert(0, '..')
 from engine.risk import (
     calculate_dynamic_risk,
+    calculate_position_size_by_asset_class,
+    calculate_stop_loss_by_asset_class,
     risk_check,
     calculate_position_size,
+    get_asset_class,
     soft_throttle_active,
     hard_stop_active,
     get_max_volatility
@@ -43,12 +46,13 @@ def account_state_hard():
     return MagicMock(drawdown=0.15)  # > hard
 
 def test_calculate_position_size(sample_signal):
+    sample_signal = dict(sample_signal, asset="AAPL", asset_class="stock", entry=100.0, stop_loss=95.0)
     balance = 100000.0
-    size = calculate_position_size(sample_signal, balance, risk_pct=1.0)
+    size = calculate_position_size(sample_signal, balance, risk_pct=0.01)
     assert size is not None
     assert size > 0
     risk_dist = abs(sample_signal['entry'] - sample_signal['stop_loss'])
-    expected = (balance * 0.01) / risk_dist
+    expected = (balance * 0.0001) / risk_dist
     assert abs(size - expected) < 0.01
 
 def test_soft_throttle_active(account_state_soft):
@@ -89,4 +93,39 @@ def test_position_size_bounds(sample_signal):
     balance = 10000.0
     size = calculate_position_size(sample_signal, balance)
     assert 0.01 <= size <= balance * 0.1  # min/max bounds
+
+
+def test_asset_class_detection():
+    assert get_asset_class("BTCUSDT") == "crypto"
+    assert get_asset_class("EURUSD") == "forex"
+    assert get_asset_class("AAPL") == "stock"
+
+
+def test_asset_class_risk_sizing_changes_by_market_type():
+    signal = {"asset": "BTCUSDT", "entry": 100.0, "direction": "long"}
+    market_data = {"atr": 2.0}
+
+    crypto_sl = calculate_stop_loss_by_asset_class(signal, market_data, "crypto")
+    stock_sl = calculate_stop_loss_by_asset_class(signal, market_data, "stock")
+
+    assert crypto_sl == 95.0
+    assert stock_sl == 97.0
+
+    crypto_size = calculate_position_size_by_asset_class(
+        account_balance=10_000.0,
+        signal_entry=100.0,
+        signal_sl=99.0,
+        risk_amount=500.0,
+        asset_class="crypto",
+    )
+    stock_size = calculate_position_size_by_asset_class(
+        account_balance=10_000.0,
+        signal_entry=100.0,
+        signal_sl=99.0,
+        risk_amount=500.0,
+        asset_class="stock",
+    )
+
+    assert crypto_size is not None and stock_size is not None
+    assert crypto_size > stock_size
 
