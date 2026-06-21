@@ -111,6 +111,9 @@ class Signal(Base):
     mfe_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # MAE = Maximum Adverse Excursion (how far into loss before closing)
     mae_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # PHASE 3: Asset class classification for differentiated risk sizing
+    # Values: "crypto" (high vol, wide stops), "forex" (standard), "stock" (low vol, tight stops)
+    asset_class: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
 
@@ -137,6 +140,11 @@ class Outcome(Base):
     canonical_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     vip_fill_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     sentiment_outcome: Mapped[Optional[str]] = mapped_column(String(16))
+    
+    # PHASE 2: Strategy performance tracking columns for regime-specific weighting
+    strategy_name: Mapped[Optional[str]] = mapped_column(String(64), index=True)
+    asset_class: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    regime: Mapped[Optional[str]] = mapped_column(String(32), index=True)
 
     signal: Mapped[Signal] = relationship(back_populates="outcomes")
 

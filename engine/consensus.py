@@ -22,14 +22,29 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def consensus_filter(signals, min_score=None):
+def consensus_filter(signals, min_score=None, regime_info=None):
     """
     Robust, weighted, and configurable ensemble consensus logic.
     - Groups signals by (symbol, timeframe, direction)
     - Sums weighted confidence across all strategies
     - Requires minimum total confidence and minimum unique strategy groups
     - Integrates ML adjustments (if present in signal)
-    - Guarantees one unique signal per asset/timeframe/candle/consensus
+    
+    PHASE 2 ENHANCEMENT:
+    - Accepts regime_info dict with market regime and stability info
+    - Applies regime-specific strategy weighting via get_boosted_weight()
+    - Discounts scores based on regime confidence and stability
+    
+    Args:
+        signals: List of signal dicts
+        min_score: Minimum consensus score threshold
+        regime_info: PHASE 2 - Optional dict with:
+            {
+                "regime": "TRENDING" | "RANGING" | "VOLATILE",
+                "confidence": 0.0-1.0,  # Regime vote agreement confidence
+                "stability": 0.0-1.0,   # Regime stability score
+                "strategy_preferences": {...}  # Strategy boost/penalty mapping
+            }
     """
     if not signals:
         return []
@@ -49,6 +64,17 @@ def consensus_filter(signals, min_score=None):
         min_groups = 1
         # TEMPORARILY lowered from 3 to 2 for debugging
         min_groups = max(2, int(min_groups))
+
+    # PHASE 2: Regime confidence and stability multiplier
+    # Used to discount scores if market regime is uncertain or unstable
+    regime_multiplier = 1.0
+    if regime_info:
+        regime_conf = float(regime_info.get("confidence", 1.0))
+        regime_stab = float(regime_info.get("stability", 1.0))
+        # Multiply confidence and stability to get combined regime quality score
+        # High confidence + stable regime = 1.0x multiplier
+        # Low confidence or unstable = 0.5x or lower multiplier
+        regime_multiplier = regime_conf * regime_stab
 
     grouped_score: dict[tuple[str, str, str], float] = {}
     grouped_groups: dict[tuple[str, str, str], set[str]] = {}
@@ -85,13 +111,39 @@ def consensus_filter(signals, min_score=None):
             w = s.get("weight")
             if w is None:
                 w = 1.0
+            
+            # PHASE 2: Apply regime-specific boost to weight
+            if regime_info:
+                try:
+                    from engine.ml_weighting import MLWeightingLayer
+                    strategy = s.get("strategy_name") or s.get("strategy", "unknown")
+                    asset_class = s.get("asset_class")  # Optional filter
+                    signal_regime = regime_info.get("regime", "TRENDING")
+                    
+                    # Get boosted weight from ML weighting layer
+                    ml_weighting = MLWeightingLayer()
+                    regime_weight = ml_weighting.get_boosted_weight(
+                        strategy=strategy,
+                        signal_regime=signal_regime,
+                        asset_class=asset_class,
+                    )
+                    
+                    # Apply regime weight to strategy weight
+                    w = float(w or 1.0) * regime_weight
+                except Exception:
+                    # Fall back to original weight if ML weighting unavailable
+                    pass
+            
             # ML adjustment: if ml_probability is present, use as a multiplier (advisory only)
             ml_prob = resolve_ml_probability(s)
             if ml_prob is not None:
                 boost_min = _env_float("CONSENSUS_ML_BOOST_MIN", 0.8)
                 boost_range = _env_float("CONSENSUS_ML_BOOST_RANGE", 0.4)
                 conf = float(conf or 0.0) * (boost_min + (boost_range * float(ml_prob)))
-            grouped_score[key] += float(conf or 0.0) * float(w or 1.0)
+            
+            # Apply regime multiplier to final score
+            final_contribution = float(conf or 0.0) * float(w or 1.0) * regime_multiplier
+            grouped_score[key] += final_contribution
         except Exception:
             pass
         try:

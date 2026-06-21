@@ -329,12 +329,12 @@ async def _handle_default_callback(
     except Exception:
         pass
     
-    logger.debug(f"[callback] Unknown action: {action}, payload: {payload}")
+    logger.warning(f"[callback] Unknown action: {action}, payload: {payload}")
 
 
-async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Main global callback handler.
+    Main global callback router.
     
     This is the CORE FIX - calls query.answer() IMMEDIATELY
     to stop the loading circle timeout bug.
@@ -417,12 +417,16 @@ def create_global_callback_handler() -> CallbackQueryHandler:
     any unmatched callback queries.
     """
     return CallbackQueryHandler(
-        _global_callback_handler,
+        callback_router,
         pattern=None,  # Catch all callbacks
     )
 
 
 __all__ = [
     "create_global_callback_handler",
-    "_global_callback_handler",
+    "callback_router",
 ]
+
+
+# Backward compatibility for older imports.
+_global_callback_handler = callback_router

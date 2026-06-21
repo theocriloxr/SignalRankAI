@@ -1896,7 +1896,8 @@ def main_loop(DRY_RUN: bool = False):
 
                     # Consensus filter - NO FALLBACK IN PROD
                     try:
-                        consensus_signals = apply_consensus_filter(normalized)
+                        # PHASE 2: Pass regime_info to consensus filter for regime-aware weighting
+                        consensus_signals = apply_consensus_filter(normalized, regime_info=regime)
                         _block_on_empty_consensus = _env_bool(
                             "CONSENSUS_BLOCK_ON_EMPTY",
                             _env_bool("PROD_MODE", False),
@@ -2488,7 +2489,15 @@ def main_loop(DRY_RUN: bool = False):
                             sig['stop_loss'] = sl
                             sig['take_profit'] = tp
 
-                            # ML-driven dynamic risk sizing hint (for formatters/executors).
+                            # PHASE 3: Detect and assign asset class for differentiated risk sizing
+                            try:
+                                from engine.risk import get_asset_class
+                                asset_class = get_asset_class(sig.get("asset", ""))
+                                sig["asset_class"] = asset_class
+                                logger.debug(f"[engine] Signal enriched: asset={sig.get('asset')} asset_class={asset_class}")
+                            except Exception as e:
+                                logger.warning(f"[engine] Failed to detect asset class: {e}")
+                                sig["asset_class"] = "stock"  # Default fallback
                             try:
                                 _mlp = float(sig.get('ml_probability') or 0.0)
                                 if _mlp >= float(os.getenv('ML_HIGH_CONFIDENCE', '0.75') or 0.75):

@@ -303,6 +303,251 @@ class MLWeightingLayer:
         # Clamp
         return max(0.0, min(1.0, weight))
     
+    # ========================================================================
+    # PHASE 2: Regime-Specific Performance Methods
+    # ========================================================================
+    
+    def get_strategy_performance_by_regime(
+        self,
+        strategy: str,
+        regime: str,
+    ) -> Dict[str, any]:
+        """
+        Get strategy performance filtered by regime ONLY (not by asset_class/timeframe).
+        
+        PHASE 2 FEATURE: Aggregates all outcomes for a strategy across all assets/timeframes,
+        filtered by market regime. Useful for understanding how a strategy performs in
+        each regime type (TRENDING, RANGING, VOLATILE).
+        
+        Returns:
+        {
+            "trades": N,
+            "win_rate": 0.0-1.0,  
+            "avg_rr": float,       # Average risk/reward
+            "expectancy": float,
+            "confidence_interval": float,  # Credibility score 0.0-1.0
+        }
+        """
+        # Filter records by strategy and regime only
+        matches = [
+            r for r in self.records
+            if r.strategy == strategy and r.regime == regime
+        ]
+        
+        if not matches:
+            return {
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_rr": 0.0,
+                "expectancy": 0.0,
+                "confidence_interval": 0.0,
+            }
+        
+        total = len(matches)
+        wins = sum(1 for r in matches if r.result == 'win')
+        losses = sum(1 for r in matches if r.result == 'loss')
+        
+        wins_list = [r.pnl_pct for r in matches if r.result == 'win']
+        losses_list = [r.pnl_pct for r in matches if r.result == 'loss']
+        
+        avg_win = sum(wins_list) / len(wins_list) if wins_list else 0
+        avg_loss = abs(sum(losses_list) / len(losses_list)) if losses_list else 0
+        
+        win_rate = (wins / total) if total > 0 else 0
+        
+        # Calculate avg R/R ratio
+        avg_rr = 0.0
+        if losses_list and wins_list:
+            avg_rr = avg_win / avg_loss if avg_loss > 0 else 0
+        
+        # Expectancy: (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        
+        # PHASE 2: Bayesian Credibility Interval
+        # Small sample = lower credibility. Used for ML weighting calibration.
+        # Formula: min(trades / 100, 1.0)  -- 100 trades = full credibility
+        credibility = min(total / 100.0, 1.0)
+        
+        return {
+            "trades": total,
+            "win_rate": float(win_rate),
+            "avg_rr": float(avg_rr),
+            "expectancy": float(expectancy),
+            "confidence_interval": float(credibility),
+        }
+    
+    def get_asset_class_strategy_performance(
+        self,
+        strategy: str,
+        asset_class: str,
+        regime: str,
+    ) -> Dict[str, any]:
+        """
+        Get strategy performance for a specific asset class + regime combination.
+        
+        PHASE 2 FEATURE: Returns performance specific to one asset class in one regime.
+        Useful for understanding if a strategy works well for crypto but not forex, etc.
+        
+        Args:
+            strategy: Strategy name (e.g., "rsi", "supertrend")
+            asset_class: "crypto", "forex", "stock", "commodity"
+            regime: "TRENDING", "RANGING", "VOLATILE"
+        
+        Returns: Same as get_strategy_performance_by_regime()
+        """
+        matches = [
+            r for r in self.records
+            if r.strategy == strategy 
+            and r.asset_class == asset_class 
+            and r.regime == regime
+        ]
+        
+        if not matches:
+            return {
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_rr": 0.0,
+                "expectancy": 0.0,
+                "confidence_interval": 0.0,
+            }
+        
+        total = len(matches)
+        wins = sum(1 for r in matches if r.result == 'win')
+        losses = sum(1 for r in matches if r.result == 'loss')
+        
+        wins_list = [r.pnl_pct for r in matches if r.result == 'win']
+        losses_list = [r.pnl_pct for r in matches if r.result == 'loss']
+        
+        avg_win = sum(wins_list) / len(wins_list) if wins_list else 0
+        avg_loss = abs(sum(losses_list) / len(losses_list)) if losses_list else 0
+        
+        win_rate = (wins / total) if total > 0 else 0
+        
+        avg_rr = 0.0
+        if losses_list and wins_list:
+            avg_rr = avg_win / avg_loss if avg_loss > 0 else 0
+        
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        credibility = min(total / 100.0, 1.0)
+        
+        return {
+            "trades": total,
+            "win_rate": float(win_rate),
+            "avg_rr": float(avg_rr),
+            "expectancy": float(expectancy),
+            "confidence_interval": float(credibility),
+        }
+    
+    def get_weight_for_regime(
+        self,
+        strategy: str,
+        regime: str,
+        asset_class: Optional[str] = None,
+    ) -> float:
+        """
+        Get regime-specific weight for a strategy.
+        
+        PHASE 2 FEATURE: Calculates weight using Bayesian credibility adjustment.
+        - Strategies with small samples get lower weights
+        - Strategies with large, profitable samples get higher weights
+        - Returns value in 0.25-2.0 range for use in signal weighting
+        
+        Formula:
+        1. Get performance filtered by regime (+ asset_class if provided)
+        2. Base weight from: (win_rate * 1.5) + (avg_rr * 0.5) / 2
+        3. Apply credibility discount: 0.5 + (credibility * (base_weight - 0.5))
+        4. Clamp to 0.25-2.0
+        
+        Args:
+            strategy: Strategy name
+            regime: "TRENDING", "RANGING", "VOLATILE"
+            asset_class: Optional filter (e.g., "crypto")
+        
+        Returns: Weight 0.25-2.0 (1.0 = neutral, >1.0 = outperforming, <1.0 = underperforming)
+        """
+        if asset_class:
+            perf = self.get_asset_class_strategy_performance(strategy, asset_class, regime)
+        else:
+            perf = self.get_strategy_performance_by_regime(strategy, regime)
+        
+        # Extract performance metrics
+        trades = perf.get('trades', 0)
+        win_rate = perf.get('win_rate', 0.0)
+        avg_rr = perf.get('avg_rr', 0.0)
+        credibility = perf.get('confidence_interval', 0.0)
+        
+        # Handle no data case
+        if trades < 3:
+            return 1.0  # Neutral weight if insufficient data
+        
+        # PHASE 2: Bayesian credibility calculation
+        # Small samples get lower weight, even if they appear profitable
+        # Credibility ranges 0.0 (1 trade) to 1.0 (100+ trades)
+        
+        # Base weight calculation
+        # - Win rate contribution: weight = win_rate * 1.5 (50% win rate = 0.75 contribution)
+        # - Risk/reward contribution: weight = avg_rr * 0.5 (2.0 RR = 1.0 contribution)
+        # - Average them: (weight1 + weight2) / 2
+        win_rate_weight = win_rate * 1.5
+        rr_weight = avg_rr * 0.5
+        base_weight = (win_rate_weight + rr_weight) / 2.0
+        
+        # Apply credibility discount for small samples
+        # Formula: weighted_average = neutral_point + (credibility * (base - neutral))
+        # If credibility = 0, result = 0.5 (neutral)
+        # If credibility = 1.0, result = base_weight
+        final_weight = 0.5 + (credibility * (base_weight - 0.5))
+        
+        # Clamp to 0.25-2.0 range
+        return max(0.25, min(2.0, final_weight))
+    
+    def get_boosted_weight(
+        self,
+        strategy: str,
+        signal_regime: str,
+        asset_class: Optional[str] = None,
+    ) -> float:
+        """
+        Get regime-aware weight with strategy preference boost.
+        
+        PHASE 2 FEATURE: Applies regime-strategy mapping to boost/penalize weights.
+        - If strategy is in regime's "high_confidence" list, boost it
+        - If strategy is in regime's "low_confidence" list, penalize it
+        - Uses REGIME_STRATEGY_PREFERENCE mapping
+        
+        Args:
+            strategy: Strategy name
+            signal_regime: "TRENDING", "RANGING", "VOLATILE"
+            asset_class: Optional filter
+        
+        Returns: Boosted weight 0.25-2.0
+        """
+        from engine.regime import REGIME_STRATEGY_PREFERENCE
+        
+        # Get base regime-specific weight
+        base_weight = self.get_weight_for_regime(strategy, signal_regime, asset_class)
+        
+        # Apply regime preference boost/penalty
+        prefs = REGIME_STRATEGY_PREFERENCE.get(signal_regime, {})
+        high_conf_strategies = prefs.get("high_confidence", [])
+        low_conf_strategies = prefs.get("low_confidence", [])
+        weight_boost = prefs.get("weight_boost", 1.0)
+        
+        # Check if strategy is in high or low confidence list
+        if strategy in high_conf_strategies:
+            # Strategy excels in this regime - boost it
+            final_weight = base_weight * weight_boost * 1.1
+        elif strategy in low_conf_strategies:
+            # Strategy underperforms in this regime - penalize it
+            final_weight = base_weight * weight_boost * 0.9
+        else:
+            # Strategy has no specific preference - apply base boost
+            final_weight = base_weight * weight_boost
+        
+        # Clamp to 0.25-2.0 range
+        return max(0.25, min(2.0, final_weight))
+
+    
     def get_weights_for_orchestrator(
         self,
         asset_class: str,
