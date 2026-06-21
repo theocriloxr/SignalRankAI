@@ -1,110 +1,82 @@
-# SignalRankAI All Priority Implementations Detailed Plan
+# SignalRankAI Codex Audit - Implementation TODO
 
-## Priority 1: Critical Production Bugs (START HERE)
+## Status: PHASE 1 & 2 COMPLETE
 
-### 1.1 Signal Deduplication - Fingerprint Fix + Redis Lock
-**Files:** engine/signal_deduplicator.py, db/pg_features.py
+## Phase 1: P0 - Must Be Done Before Production
 
-**Current State:**
-- db/pg_features.py already removed candle_timestamp from fingerprint ✅
-- engine/signal_deduplicator.py uses fingerprint with asset, direction, timeframe, strategy_group
+### 1.1 Symbol Normalization ✅
+- [x] Create `utils/symbol_normalizer.py`
+- [x] Normalize: BTCUSD, BTCUSDT, BTC/USD → BTCUSDT
+- [x] Support: Crypto, Forex, Stocks, Commodities, Indices
 
-**Still Needed:**
-- Add Redis lock: signal_lock:{asset}:{direction}:{timeframe}
-- TTL: 4 hours for 4H signals
-- Add PostgreSQL uniqueness check
+### 1.2 Command Registry ✅
+- [x] Create `utils/command_registry.py`
+- [x] Single source of truth for commands
+- [x] Generate /help, menus, permissions, handlers
 
-**Implementation:**
-```python
-# In engine/signal_deduplicator.py or db/pg_features.py
-async def check_active_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
-    """Check if active signal exists for asset+direction+timeframe"""
-    key = f"signal_lock:{asset}:{direction}:{timeframe}"
-    return await state.cache_exists(key)
+### 1.3 Active Signal Registry ✅
+- [x] Create database migration (`migrations/versions/active_signal_registry.py`)
+- [x] Fields: signal_id, fingerprint, asset, direction, timeframe, status, message_id, chat_id
+- [x] Track: entry_hit, tp1_hit, tp2_hit, tp3_hit, sl_hit, expiry
+- [x] SQL script: `ADD_ACTIVE_SIGNALS_TABLE.sql`
 
-async def acquire_active_signal_lock(asset: str, direction: str, timeframe: str, ttl_seconds: int = 14400) -> bool:
-    """Acquire lock with 4h default TTL"""
-    key = f"signal_lock:{asset}:{direction}:{timeframe}"
-    # Only set if not exists (atomic)
-    return await state.cache_set_if_not_exists(key, "1", ex=ttl_seconds)
-```
+### 1.4 Message Editing Engine
+- [ ] Update signal delivery to use editMessageText
+- [ ] Signal lifecycle: SIGNAL CREATED → ENTRY HIT → TP1 HIT → TP2 HIT
+- [ ] Replace "NEW SIGNAL" spam with edits
 
-### 1.2 Active Signal Protection
-**Files:** engine/core.py, db/pg_features.py
+### 1.5 Universal Outcome Tracking
+- [ ] Every signal must end as: TP1/TP2/TP3/SL/Expired/Cancelled
+- [ ] No signal should remain ACTIVE forever
 
-**Current:** Already has active_trade check in engine/core.py but at storage stage.
+## Phase 2: P1 - Signal Quality
 
-**Needed:** Check BEFORE generating new signal
-- Query for active signal with same asset+direction+timeframe
-- Skip generation if active signal exists
+### 2.1 Correlation Engine ✅
+- [x] Create `engine/correlation_engine.py`
+- [x] Track: JPY, USD, Gold, Oil, Indices, Crypto exposure
+- [x] Prevent: AUDJPY SELL + CADJPY SELL + NZDJPY SELL
 
-### 1.3 Telegram Delivery Cooldown (Per-User Redis Key)
-**Files:** signalrank_telegram/bot.py, signalrank_telegram/delivery.py
+### 2.2 Multi-Timeframe Fusion
+- [ ] Combine: BTC 1H BUY + 4H BUY + 1D BUY
+- [ ] Output: BTC BUY (1D Bullish, 4H Bullish, 1H Pullback)
 
-**Implementation:**
-```python
-# Delivery cooldown per user per asset
-# Key: delivery:{user_id}:{asset}:{direction}
-# TTL by tier:
-#   VIP = 4h (14400s)
-#   Premium = 6h (21600s)
-#   Free = 12h (43200s)
+### 2.3 Regime Detection
+- [ ] Detect: Trending, Ranging, Volatile, Accumulation, Distribution
+- [ ] Use before strategy selection
 
-TIER_DELIVERY_COOLDOWN_SECONDS = {
-    "vip": 4 * 3600,
-    "premium": 6 * 3600, 
-    "free": 12 * 3600,
-}
+## Phase 3: P1.5 - Dynamic Strategy Vision
 
-async def check_delivery_cooldown(user_id: int, asset: str, direction: str) -> bool:
-    """Check if delivery cooldown is active"""
-    key = f"delivery:{user_id}:{asset}:{direction}"
-    return await state.cache_exists(key)
+### 3.1 Strategy Orchestrator
+- [ ] Create `strategy_orchestrator.py`
+- [ ] Inputs: Asset, Timeframe, Volatility, Regime, Session, Spread
+- [ ] Output: Strategy Weighting
 
-async def set_delivery_cooldown(user_id: int, asset: str, direction: str, tier: str) -> None:
-    """Set delivery cooldown"""
-    ttl = TIER_DELIVERY_COOLDOWN_SECONDS.get(tier, 12 * 3600)
-    key = f"delivery:{user_id}:{asset}:{direction}"
-    await state.cache_set(key, "1", ex=ttl)
-```
+### 3.2 ML Weighting Layer
+- [ ] Store: Strategy, Asset, Timeframe, Regime, Result
+- [ ] Self-adjust based on performance
 
-## Priority 2: Buttons Not Working
-**Current:** callback_handlers.py already has global callback router ✅
+## Phase 4: P2 - Revenue Features
 
-## Priority 3: Outcome Tracking
-**Current:** realtime_outcome_tracker.py is already implemented ✅
-**Still Needed:** signal_state enum and unify ownership
+### 4.1 Portfolio Intelligence
+- [ ] Commands: /portfolio, /risk, /exposure
+- [ ] Show: Crypto, Forex, Commodity Exposure, Total Risk
 
-## Priority 4: Freshness Bug
-**Files:** engine/signal_formatter.py, engine/freshness.py
-**Needed:** Use one timestamp source
+### 4.2 AI Coach
+- [ ] Commands: /coach
+- [ ] Explain: Why trade won, Why trade lost, How to improve
 
-## Priority 5: Stale Signal Logic
-**File:** engine/stale_signal_validator.py
-**Needed:** Refactor validate() to single result
+### 4.3 Public Track Record
+- [ ] Show: 30-day win rate, 90-day win rate, Profit factor, Drawdown
+- [ ] Per asset class
 
-## Priority 6: Railway Stability
-**Files:** railway_main.py, worker/worker.py, db/session.py
-**Needed:**
-- Redis Health Monitor (PING every minute)
-- PostgreSQL Health Monitor (SELECT 1 every minute)
-- Engine Heartbeat Table
+## Phase 5: P3 - Copy Trading
 
-## Priority 7: Database Indexes
-**Files:** db/models.py, alembic/versions/
-**Needed:** Add indexes
+### 5.1 Tier-Based Execution
+- [ ] Free: Delayed Signals
+- [ ] Premium: Live Signals
+- [ ] VIP: Copy Trade
+- [ ] Elite: Auto Execute
 
-## Priority 8: Signal Lifecycle
-**Files:** engine/core.py, signalrank_telegram/bot.py
-**Needed:** Message threading (UPDATE vs NEW SIGNAL thread)
-
-## Priority 9: ML System Confidence Calibration
-**Files:** ml/*, engine/core.py
-**Needed:** Store predicted_probability and actual_result
-
-## Priority 10: Features (Future)
-- Trade Journal
-- Signal Replay
-- Portfolio Exposure Engine
-- Market Regime Detection
-- Institutional Scoring
+### 5.2 Risk Profiles
+- [ ] Users choose: Conservative, Balanced, Aggressive
+- [ ] Sizing changes automatically
