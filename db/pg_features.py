@@ -183,8 +183,9 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     The fingerprint identifies the TRADE THESIS, not specific price targets.
     This prevents SOLUSDT spam while allowing genuinely new opportunities.
     
-    Fingerprint = asset + direction + timeframe + strategy_group
+    Fingerprint = asset + direction + timeframe + strategy_group + candle_timestamp
     (entry, SL, TP intentionally excluded as they change frequently)
+    candle_timestamp falls back to generated_at/created_at when unavailable.
     """
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()
