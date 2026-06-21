@@ -234,11 +234,12 @@ def score_signal(signal):
     entry_logic_used = signal.get("strategy_name") or signal.get("entry_logic") or "unknown"
     
     # PHASE 1 FIX #5: Log all component information for post-analysis
+    confluence_display = f"{confluence_score:.1f}%" if confluence_score is not None else "None"
     logger.info(
         f"[scoring][components] asset={signal.get('asset')} direction={signal.get('direction')} "
         f"timeframe={signal.get('timeframe')} | "
         f"entry={entry:.2f} stop_loss={stop:.2f} tp_1={tp_1} tp_2={tp_2} tp_3={tp_3} | "
-        f"entry_logic={entry_logic_used} confluence={confluence_score:.1f}% rr={rr:.2f} "
+        f"entry_logic={entry_logic_used} confluence={confluence_display} rr={rr:.2f} "
         f"ml_confidence={ml_val if ml_val else 'None'} regime={signal.get('regime', 'unknown')} | "
         f"final_score={display_score:.2f} (raw={raw_score:.2f})"
     )
