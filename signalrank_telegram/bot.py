@@ -1939,6 +1939,7 @@ async def _send_signal_with_engagement_async(
         )
         try:
             from web.app import telegram_dispatch_latency_seconds
+            
             telegram_dispatch_latency_seconds.labels(status="ok").observe(
                 max(0.0, time.perf_counter() - _dispatch_started)
             )
@@ -4580,7 +4581,7 @@ async def _handle_unknown_command(update, context):
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 
     # 🔗 Open latest active signal message for this signal
-async def _open_signal_callback(update, context):
+    async def _open_signal_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
         
