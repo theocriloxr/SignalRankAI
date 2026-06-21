@@ -1,4 +1,25 @@
 def structure_strategy(asset, timeframe, market_data):
+    """Run structure strategies with stale data consistency check."""
+    # PHASE 1 FIX #4: Stale Data Consistency - 24-hour check
+    # Verify data is recent (not stale) - last candle should be within reasonable time
+    if not market_data or 'candles' not in market_data or 'indicators' not in market_data:
+        return []
+    
+    candles = market_data.get('candles', [])
+    if not candles or len(candles) < 20:
+        return []  # Insufficient data for reliable signals
+    
+    # Check data freshness - reject if older than 24 hours
+    try:
+        from datetime import datetime, timedelta, timezone
+        last_ts = candles[-1].get('timestamp', 0)
+        if last_ts > 0:
+            last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
+            if datetime.now(timezone.utc) - last_time > timedelta(hours=24):
+                return []  # Stale data, skip signal
+    except Exception:
+        pass  # If timestamp check fails, proceed anyway
+    
     strat = StructureStrategy()
     signal = strat.evaluate(market_data)
     return [signal] if signal else []

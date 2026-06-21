@@ -219,6 +219,8 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
     - H1 must pull back to 50 EMA.
     - Trigger requires engulfing/pin bar + RSI cross around 50.
     - Uses ATR stop model and asset-class-specific RR.
+    
+    PHASE 1 FIX #4: Includes stale data consistency check (24-hour freshness).
     """
     if not isinstance(market_data, dict):
         return []
@@ -232,6 +234,24 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
     h1_candles = list(h1.get("candles") or [])
     h4_ind = dict(h4.get("indicators") or {})
     h1_ind = dict(h1.get("indicators") or {})
+    
+    # PHASE 1 FIX #4: Stale Data Consistency - Check both H4 and H1 data freshness
+    for tf_name, candles in [("4h", h4_candles), ("1h", h1_candles)]:
+        if candles and len(candles) > 0:
+            try:
+                from datetime import datetime, timedelta, timezone
+                last_ts = candles[-1].get('timestamp', 0)
+                if last_ts > 0:
+                    last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
+                    age = datetime.now(timezone.utc) - last_time
+                    if age > timedelta(hours=24):
+                        import logging
+                        logging.getLogger(__name__).debug(
+                            f"[imp] Stale data for {asset} {tf_name}: {age.total_seconds()/3600:.1f} hours old"
+                        )
+                        return []  # Stale data, skip signal
+            except Exception:
+                pass  # If timestamp check fails, proceed anyway
 
     # FIX: Reduced from 220/120 to 50/30 for degraded mode operation
     # The fetcher only gets 200 candles max, so 220 requirement always fails
