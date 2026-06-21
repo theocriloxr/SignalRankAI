@@ -482,12 +482,12 @@ def price_hit_tp(trade, market_data=None):
 
 def price_hit_sl(trade, market_data=None):
     """
-    Check if stop loss is hit AFTER confirming entry was reached.
-    For LONG: Price must have reached entry level before SL can trigger
-    For SHORT: Price must have reached entry level before SL can trigger
-    
-    This prevents "SL-before-entry" invalidations where the price hits
-    the stop loss before ever reaching the entry price.
+    Check if stop loss is hit based on current price versus stop level.
+    For LONG: Stop-loss triggers when current price <= stop.
+    For SHORT: Stop-loss triggers when current price >= stop.
+
+    This direct comparison intentionally counts gap moves beyond stop
+    as stop-loss hits even if entry was not reached first.
     """
     # Get current price from market_data or fetch it
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
