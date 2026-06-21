@@ -82,18 +82,8 @@ async def is_signal_locked(asset: str, direction: str, timeframe: str, strategy_
             result = state.get_str_sync(key)
             if result:
                 logger.info(f"[signal_lock] Lock exists: {key}")
-                return True
     except Exception as e:
         logger.debug(f"[signal_lock] Redis check failed: {e}")
-    
-# Also check PostgreSQL as backup
-    try:
-        exists = await active_signal_exists_for_asset(asset, direction, timeframe)
-        if exists:
-            logger.info(f"[signal_lock] PostgreSQL lock exists: asset={asset} tf={timeframe}")
-            return True
-    except Exception as e:
-        logger.debug(f"[signal_lock] PostgreSQL check failed: {e}")
     
     return False
 
