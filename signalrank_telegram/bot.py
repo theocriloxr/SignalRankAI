@@ -4166,7 +4166,7 @@ async def _handle_unknown_command(update, context):
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
-async def _signal_reaction_callback(update, context):
+    async def _signal_reaction_callback(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
         if user_id is None:
@@ -4228,7 +4228,7 @@ async def _signal_reaction_callback(update, context):
 
     application.add_handler(_CQH(_signal_reaction_callback, pattern=r"^signal_reaction_"))
 
-async def _signal_monitor_callback(update, context):
+    async def _signal_monitor_callback(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
         chat_id = update.effective_chat.id if update.effective_chat else None
