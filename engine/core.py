@@ -86,7 +86,7 @@ def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
     import os
     import time
     
-    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe}"
+    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe.upper()}"
     tf_seconds = {
         "4h": 4 * 3600,      # 4 hours for 4H
         "1h": 90 * 60,       # 90 minutes for 1H
@@ -97,23 +97,20 @@ def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
     ttl_seconds = tf_seconds.get(timeframe.lower(), 90 * 60)  # Default 90 min
     
     try:
-        if state.has_redis_sync():
-            # Check Redis for existing lock
-            existing = state.get_str_sync(lock_key)
-            if existing:
-                # Lock exists - check if still valid
-                try:
-                    lock_time = float(existing)
-                    age = time.time() - lock_time
-                    if age < ttl_seconds:
-                        logger.info(f"[signal_lock] Locked {asset} {direction} {timeframe} - age={age:.0f}s ttl={ttl_seconds}s")
-                        return True  # Still locked
-                except Exception:
-                    pass
-            # Set new lock with TTL
-            state.set_str_sync(lock_key, str(time.time()), ttl=ttl_seconds + 60)
-            logger.info(f"[signal_lock] Acquired {asset} {direction} {timeframe} ttl={ttl_seconds}s")
-            return False  # Not locked, proceed
+        existing = state.get_sync(lock_key)
+        if existing:
+            try:
+                lock_time = float(existing)
+                age = time.time() - lock_time
+                if age < ttl_seconds:
+                    logger.info(f"[signal_lock] Locked {asset} {direction} {timeframe} - age={age:.0f}s ttl={ttl_seconds}s")
+                    return True
+            except Exception:
+                logger.info(f"[signal_lock] Locked {asset} {direction} {timeframe} by state key")
+                return True
+        state.set_sync(lock_key, str(time.time()), ex=ttl_seconds + 60)
+        logger.info(f"[signal_lock] Acquired {asset} {direction} {timeframe} ttl={ttl_seconds}s")
+        return False
     except Exception as e:
         logger.debug(f"[signal_lock] Redis check failed: {e}")
     
@@ -155,11 +152,10 @@ def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
 
 def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
     """Release signal lock after successful storage."""
-    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe}"
+    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe.upper()}"
     try:
-        if state.has_redis_sync():
-            state.delete_sync(lock_key)
-            logger.info(f"[signal_lock] Released {asset} {direction} {timeframe}")
+        state.set_sync(lock_key, "", ex=1)
+        logger.info(f"[signal_lock] Released {asset} {direction} {timeframe}")
     except Exception as e:
         logger.debug(f"[signal_lock] Release failed: {e}")
 

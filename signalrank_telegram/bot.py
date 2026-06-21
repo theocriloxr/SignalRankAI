@@ -4322,17 +4322,6 @@ async def _handle_unknown_command(update, context):
 
     application.add_handler(_CQH(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
-    # ── Global callback handler ─────────────────────────────────────────────
-    # This catches ALL callback queries and calls query.answer() immediately
-    # to prevent the "loading circle timeout" bug.
-    # Must be added AFTER all other specific handlers.
-    try:
-        from signalrank_telegram.callback_handlers import create_global_callback_handler
-        application.add_handler(create_global_callback_handler())
-        logger.info("[bot] Global callback handler added")
-    except Exception as _cb_err:
-        logger.warning(f"[bot] Failed to add global callback handler: {_cb_err}")
-
     # ⚡ Take Trade — one-click MT5 execution (PREMIUM/VIP) or upsell (FREE)
     # Callback data: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
     async def _mt5_trade_callback(update, context):
@@ -4683,6 +4672,15 @@ async def _handle_unknown_command(update, context):
             await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
+
+    # Final callback safety net. Specific signal callbacks above own the real
+    # behavior; this only answers unknown callbacks so Telegram buttons do not spin.
+    try:
+        from signalrank_telegram.callback_handlers import create_global_callback_handler
+        application.add_handler(create_global_callback_handler())
+        logger.info("[bot] Global callback safety net added")
+    except Exception as _cb_err:
+        logger.warning(f"[bot] Failed to add global callback handler: {_cb_err}")
 
     # In webhook mode, handlers are now fully registered. Mark readiness here so
     # railway_main can begin processing updates while non-critical jobs continue

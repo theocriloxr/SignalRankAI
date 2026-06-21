@@ -565,7 +565,11 @@ async def get_or_create_signal_impl(
                 select(Signal).where(
                     and_(
                         Signal.asset == asset,
+                        Signal.timeframe == timeframe,
+                        Signal.direction == direction,
                         Signal.created_at >= min_interval_cutoff,
+                        Signal.expired.is_(False),
+                        Signal.archived.is_(False),
                     )
                 ).order_by(Signal.created_at.desc())
             )
@@ -636,10 +640,17 @@ async def get_or_create_signal_impl(
         }
     )
 
+    # Resolve expires_at before the dedupe update path so reused active
+    # signals keep the latest validity window.
+    _raw_expires = signal.get('expires_at')
+    if isinstance(_raw_expires, datetime):
+        signal_expires_at: datetime | None = _raw_expires.replace(tzinfo=None) if _raw_expires.tzinfo else _raw_expires
+    else:
+        signal_expires_at = now + timedelta(hours=12)
 
     existing: Signal | None = None
-    # Strict deduplication: match by fingerprint AND all key fields
-    # (asset, timeframe, direction, entry, stop_loss, take_profit, strategy_group, strategy_name).
+    # Thesis-level deduplication: match by the canonical fingerprint and active state.
+    # Price targets are intentionally excluded because they drift on every scan.
     # When dedup_hours=0, skip dedupe and always insert a new signal row.
     if cutoff is not None:
         res: Result[Tuple[Signal]] = await session.execute(
@@ -649,28 +660,42 @@ async def get_or_create_signal_impl(
                     Signal.asset == asset,
                     Signal.timeframe == timeframe,
                     Signal.direction == direction,
-                    Signal.entry == entry,
-                    Signal.stop_loss == stop_loss,
-                    Signal.take_profit == tp_str,
                     Signal.strategy_group == strategy_group,
-                    Signal.strategy_name == strategy_name,
-                    Signal.created_at >= cutoff
+                    Signal.created_at >= cutoff,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
                 )
-            )
+            ).order_by(Signal.created_at.desc())
         )
-        existing = res.scalars().first()
+        for candidate in res.scalars().all():
+            outcome_res: Result[Tuple[Outcome]] = await session.execute(
+                select(Outcome)
+                .where(Outcome.signal_id == candidate.signal_id)
+                .limit(1)
+            )
+            outcome = outcome_res.scalar_one_or_none()
+            if outcome is None or str(getattr(outcome, "status", "") or "").lower() in {"active", "tp1", "tp2"}:
+                existing = candidate
+                break
     if existing is not None:
-        # Best-effort update score/strength (keep newest info)
+        # Best-effort update score/strength and improve message freshness without
+        # creating a new signal row for the same trade thesis.
         try:
             existing.score = max(float(existing.score or 0), float(score or 0))
             existing.strength = max(float(existing.strength or 0), float(strength or 0))
+            existing.entry = float(entry)
+            existing.stop_loss = float(stop_loss)
+            existing.take_profit = tp_str
+            existing.strategy_name = strategy_name
+            existing.expires_at = signal_expires_at
+            existing.status = "active"
         except Exception:
             pass
         await session.flush()
         # Debug log for dedup hit
         try:
             import logging
-            logging.getLogger(__name__).info(f"[dedup] Existing signal found: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
+            logging.getLogger(__name__).info(f"[dedup] Existing active thesis found: asset={asset} tf={timeframe} dir={direction} strat={strategy_group} fp={fingerprint} signal_id={existing.signal_id}")
         except Exception:
             pass
         return existing
@@ -681,13 +706,6 @@ async def get_or_create_signal_impl(
         logging.getLogger(__name__).info(f"[dedup] Creating new signal: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
     except Exception:
         pass
-
-    # Resolve expires_at: honour engine-set value (12h) or fall back to 12h from now
-    _raw_expires = signal.get('expires_at')
-    if isinstance(_raw_expires, datetime):
-        signal_expires_at: datetime | None = _raw_expires.replace(tzinfo=None) if _raw_expires.tzinfo else _raw_expires
-    else:
-        signal_expires_at = now + timedelta(hours=12)
 
     signal_near_ob: bool = bool(signal.get('is_near_order_block', False))
 
@@ -708,6 +726,7 @@ async def get_or_create_signal_impl(
             strategy_group=strategy_group,
             strength=strength,
             fingerprint=fingerprint,
+            status="active",
             created_at=now,
             expires_at=signal_expires_at,
             is_near_order_block=signal_near_ob,
@@ -728,6 +747,7 @@ async def get_or_create_signal_impl(
             strategy_group=strategy_group,
             strength=strength,
             fingerprint=fingerprint,
+            status="active",
             created_at=now,
         )
     session.add(s)
@@ -796,10 +816,21 @@ async def record_signal_delivery(
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
+                _tier_cooldown_defaults = {
+                    "vip": 4.0,
+                    "admin": 4.0,
+                    "owner": 4.0,
+                    "premium": 6.0,
+                    "free": 12.0,
+                }
                 try:
-                    asset_cooldown_hours = float((os.getenv("DELIVERY_SAME_ASSET_COOLDOWN_HOURS") or "12").strip())
+                    _cooldown_raw = os.getenv("DELIVERY_SAME_ASSET_COOLDOWN_HOURS")
+                    asset_cooldown_hours = float(
+                        (_cooldown_raw.strip() if _cooldown_raw else "")
+                        or _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
+                    )
                 except Exception:
-                    asset_cooldown_hours = 12.0
+                    asset_cooldown_hours = _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
 
                 def _tier_rank(_t: str | None) -> int:
                     _base = str(_t or "free").split("_", 1)[0].strip().lower()
@@ -812,8 +843,8 @@ async def record_signal_delivery(
                     }
                     return int(ranks.get(_base, 0))
 
-                # Same-asset gate:
-                # Block new delivery for this user+asset if previous asset delivery is
+                # Same-asset+direction gate:
+                # Block new delivery for this user+asset+direction if previous delivery is
                 #   (a) younger than cooldown OR
                 #   (b) still has no resolved outcome.
                 # Exception: allow first post-upgrade send when tier rank increased.
@@ -831,6 +862,7 @@ async def record_signal_delivery(
                         .where(
                             SignalDelivery.user_id == user.id,
                             Signal.asset == sig.asset,
+                            Signal.direction == sig.direction,
                         )
                         .order_by(SignalDelivery.delivered_at.desc())
                         .limit(1)
@@ -867,7 +899,7 @@ async def record_signal_delivery(
                             import logging
                             logging.getLogger(__name__).info(
                                 f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
-                                f"age_h={age_hours:.2f} resolved={is_resolved} "
+                                f"direction={sig.direction} age_h={age_hours:.2f} resolved={is_resolved} "
                                 f"cooldown_h={float(asset_cooldown_hours):.2f} unresolved_block_h={float(unresolved_block_hours):.2f}"
                             )
                         except Exception:
@@ -900,7 +932,8 @@ async def record_signal_delivery(
                             pass
                         return False
 
-                # Strict deduplication: match by user, asset, entry, stop_loss, take_profit, timeframe, direction, strategy_group, strategy_name
+                # Thesis delivery dedupe: regenerated signal ids and tiny price
+                # changes should not reach the same user as a new signal.
                 res_u: Result[Tuple[int]] = await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
@@ -908,13 +941,10 @@ async def record_signal_delivery(
                     .where(
                         SignalDelivery.user_id == user.id,
                         Signal.asset == sig.asset,
-                        Signal.entry == sig.entry,
-                        Signal.stop_loss == sig.stop_loss,
-                        Signal.take_profit == sig.take_profit,
                         Signal.timeframe == sig.timeframe,
                         Signal.direction == sig.direction,
                         Signal.strategy_group == sig.strategy_group,
-                        Signal.strategy_name == sig.strategy_name,
+                        Signal.fingerprint == sig.fingerprint,
                         SignalDelivery.delivered_at >= cutoff,
                     )
                 )
@@ -922,7 +952,7 @@ async def record_signal_delivery(
                     # Debug log for dedup hit
                     try:
                         import logging
-                        logging.getLogger(__name__).info(f"[dedup] Existing delivery found: user={user.id} asset={sig.asset} tf={sig.timeframe} dir={sig.direction} entry={sig.entry} sl={sig.stop_loss} tp={sig.take_profit} strat={sig.strategy_group}/{sig.strategy_name}")
+                        logging.getLogger(__name__).info(f"[dedup] Existing thesis delivery found: user={user.id} asset={sig.asset} tf={sig.timeframe} dir={sig.direction} strat={sig.strategy_group} fp={sig.fingerprint}")
                     except Exception:
                         pass
                     return False

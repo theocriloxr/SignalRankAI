@@ -1,55 +1,55 @@
 # SignalRankAI All Priority Bug Fixes Implementation
 
-## Progress Tracking
+## Priority 1: Critical Production Bugs (IN PROGRESS)
 
-- [x] 1.1 Remove candle_timestamp from fingerprint (CRITICAL) ✅
-- [x] 1.2 Add Redis dedup lock layer (Partial - already in signal_deduplicator.py)
-- [ ] 1.3 Integrate delivery cooldown into bot.py
-- [ ] 1.4 Add PostgreSQL uniqueness check
-- [x] 2.1 Unify callback handlers ✅
-- [x] 3.1 RealtimeOutcomeTracker as sole owner ✅
-- [ ] 4.1 Fix freshness bug (single timestamp source)
-- [ ] 5.1 Refactor stale signal validator
-- [ ] 6.1 Add health monitors (Redis/PostgreSQL)
-- [ ] 7.1 Add database indexes
-- [ ] 8.1 Signal lifecycle updates
-- [ ] 9.1 ML confidence calibration
+### 1.1 Signal Deduplication ✅ STARTED
+- [x] Remove candle_timestamp from fingerprint (db/pg_features.py)
+- [x] Remove generated_at, created_at from fingerprint
+- [ ] Add Redis dedup lock layer (signal_lock:SOLUSDT:BUY:4H, 4h TTL)
+- [ ] Add PostgreSQL uniqueness constraint
 
-## Implementation Status
+### 1.2 Active Signal Protection
+- [ ] Check active signal exists before creating new signal
+- [ ] Check (asset, direction, timeframe, status='active')
 
-### Priority 1: Critical Production Bugs (In Progress)
-1. Signal Deduplication - PARTIALLY DONE (needs Postgres uniqueness)
-2. Active Signal Protection - INTEGRATED in engine/core.py
-3. Telegram Delivery Cooldown - NEEDS INTEGRATION into bot.py
+### 1.3 Telegram Delivery Cooldown
+- [ ] Add Redis key: delivery:user_id:ASSET:DIRECTION
+- [ ] TTL by tier: VIP=4h, Premium=6h, Free=12h
 
-### Priority 2: Buttons Not Working ✅
-- Global callback router implemented in callback_handlers.py
-- All buttons go through handle_callback() with logging
+## Priority 2: Buttons Not Working ✅ PARTIALLY DONE
+- [x] Global callback router in callback_handlers.py
+- [ ] Add logging for button presses
 
-### Priority 3: Outcome Tracking ✅
-- RealtimeOutcomeTracker is sole owner
-- Engine is read-only
+## Priority 3: Outcome Tracking ✅ DONE
+- [x] RealtimeOutcomeTracker is sole owner
+- [x] engine/core.py and worker.py read-only
 
-### Priority 4: Freshness Bug (Pending)
-- Needs single timestamp source
+## Priority 4: Freshness Bug
+- [ ] Unify signal.created_at vs candle.timestamp source
 
-### Priority 5: Stale Signal Logic (Pending)
-- Refactor validate() to return single result
+## Priority 5: Stale Signal Logic ✅ PARTIALLY DONE
+- [x] stale_signal_validator.py exists
+- [ ] Refactor validate() to return single result
 
-### Priority 6: Railway Stability (Pending)
-- Add health monitors
+## Priority 6: Railway Stability
+- [ ] Redis health monitor (PING every minute)
+- [ ] PostgreSQL health monitor (SELECT 1)
+- [ ] Engine heartbeat table
 
-### Priority 7: Database (In Progress)
-- Add indexes to signals table
+## Priority 7: Database Indexes
+- [ ] Add indexes to signals table
+- [ ] Add indexes to outcomes table
+- [ ] Add indexes to deliveries table
 
-### Priority 8: Signal Lifecycle (Pending)
-- Single message thread updates
+## Priority 8: Signal Lifecycle
+- [ ] Update NEW SIGNAL → UPDATED → TP1 HIT flow
 
-### Priority 9: ML System (Pending)
-- Add confidence calibration
+## Priority 9: ML System
+- [ ] Confidence calibration
+- [ ] Store predicted_probability and actual_result
 
-### Priority 10: Features (Future)
-- Trade Journal
-- Portfolio Exposure Engine
-- Market Regime Detection
-- Institutional Scoring
+## Priority 10: Advanced Features
+- [ ] Trade Journal
+- [ ] Portfolio Exposure Engine
+- [ ] Market Regime Detection
+- [ ] Institutional Scoring

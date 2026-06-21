@@ -120,6 +120,9 @@ logger.info("✅ Signal model defined successfully")
 
 class Outcome(Base):
     __tablename__ = "outcomes"
+    __table_args__ = (
+        UniqueConstraint("signal_id", name="uq_outcomes_signal_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)

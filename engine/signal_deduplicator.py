@@ -105,18 +105,20 @@ def get_timeframe_cooldown(timeframe: str) -> int:
 class SignalFingerprint:
     """Signal fingerprint for deduplication.
     
-    CRITICAL FIX: Do NOT include entry_zone in the dedup key!
+    CRITICAL FIX: Do NOT include entry_zone or timestamps in the dedup key!
     Entry price changes every scan (SL/TP/confluence change), 
-    which defeats deduplication completely.
+    and timestamps make same trade thesis appear as different signals.
     
-    The fingerprint should identify the TRADE THESIS, not the specific targets.
+    The fingerprint should identify the TRADE THESIS, not the specific entry or timing.
+    
+    Key format: asset|direction|timeframe|strategy_group
+    Optional: +entry_zone_bucket for more granular deduplication
     """
     asset: str
     direction: str
     timeframe: str
-    entry_zone: str  # Kept for compatibility, but NOT used in to_key
-    strategy_group: str
-    created_at: datetime
+    entry_zone_bucket: str = ""  # Optional bucketed entry for finer control
+    strategy_group: str = ""
     
     def to_key(self) -> str:
         """Generate dedup key.
@@ -124,16 +126,24 @@ class SignalFingerprint:
         FIXED: Only use (asset, direction, timeframe, strategy_group)
         This identifies the trade thesis, not the changing price targets.
         
-        Why this works:
-        - asset + direction = what asset and which way
-        - timeframe = what time horizon
-        - strategy_group = what strategy generated it
-        
         This prevents SOLUSDT spam while allowing genuinely
         new trade opportunities (new timeframe, new direction,
         or new strategy) to pass through.
+        
+        Priority 1 Fix: Removed created_at, generated_at, candle_timestamp
+        from fingerprint - same trade thesis = same key regardless of when generated.
         """
+        if self.entry_zone_bucket:
+            return f"{self.asset}:{self.direction}:{self.timeframe}:{self.strategy_group}:{self.entry_zone_bucket}"
         return f"{self.asset}:{self.direction}:{self.timeframe}:{self.strategy_group}"
+    
+    def to_lock_key(self) -> str:
+        """Generate Redis lock key for active signal protection.
+        
+        Format: signal_lock:SOLUSDT:BUY:4H
+        TTL: 4 hours (matches 4H signal lifetime)
+        """
+        return f"signal_lock:{self.asset}:{self.direction}:{self.timeframe}"
 
 
 @dataclass
@@ -171,11 +181,10 @@ class SignalDeduplicator:
         """Initialize Redis client if available."""
         try:
             from core.redis_state import state
-            if state.has_redis_sync():
-                self._redis_client = state
-                logger.info("[Dedup] Using Redis for dedup state")
+            self._redis_client = state
+            logger.info("[Dedup] Using shared runtime state for dedup state")
         except Exception as e:
-            logger.debug(f"[Dedup] Redis not available: {e}")
+            logger.debug(f"[Dedup] Shared runtime state not available: {e}")
     
     def _generate_fingerprint(self, signal: Dict[str, Any]) -> SignalFingerprint:
         """Generate fingerprint from signal."""
@@ -183,27 +192,16 @@ class SignalDeduplicator:
         direction = str(signal.get("direction", "long")).lower()
         timeframe = str(signal.get("timeframe", "1h")).lower()
         
-        # FIXED: Use fixed decimal rounding for entry zone tolerance
-        # Round to 3 decimal places for crypto/forex (handles minor price drift)
-        entry = round(float(signal.get("entry", 0) or 0), 3)
-        
-        # For high-value assets (stocks, indices), round to 2 decimals
-        if entry >= 1000:
-            entry = round(entry, 2)
-        
-        entry_zone = str(entry)  # Convert to string for consistent fingerprint
-        
-        # Strategy group
-        strategy = signal.get("strategy_name", "")
-        strategy_group = strategy.split("_")[0] if strategy else "unknown"
+        strategy_group = str(signal.get("strategy_group") or "").strip().lower()
+        if not strategy_group:
+            strategy = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
+            strategy_group = strategy.split("_", 1)[0] if strategy else "unknown"
         
         return SignalFingerprint(
             asset=asset,
             direction=direction,
             timeframe=timeframe,
-            entry_zone=entry_zone,
             strategy_group=strategy_group,
-            created_at=datetime.utcnow()
         )
     
     def _generate_key(self, fp: SignalFingerprint) -> str:
@@ -218,7 +216,6 @@ class SignalDeduplicator:
         # DEBUG LOGGING: Critical to verify dedup is working
         logger.info(
             f"[DEDUP CHECK] fingerprint={key} "
-            f"entry_zone={fp.entry_zone} "  # Shown for debugging but NOT used in key
         )
         
         # CRITICAL FIX: Use timeframe-specific cooldown instead of fixed config
@@ -249,7 +246,7 @@ class SignalDeduplicator:
         if self._redis_client:
             try:
                 redis_key = self._generate_key(fp)
-                last_seen = self._redis_client.get_str_sync(redis_key)
+                last_seen = self._redis_client.get_sync(redis_key)
                 if last_seen:
                     try:
                         ts = float(last_seen)
@@ -306,11 +303,50 @@ class SignalDeduplicator:
         if self._redis_client:
             try:
                 redis_key = self._generate_key(fp)
-                self._redis_client.set_str_sync(redis_key, str(now.timestamp()), ttl=cooldown_seconds + 60)
+                self._redis_client.set_sync(redis_key, str(now.timestamp()), ex=cooldown_seconds + 60)
             except Exception as e:
                 logger.debug(f"[Dedup] Redis store failed: {e}")
         
         logger.info(f"[DEDUP SAVE] fingerprint={key}")
+
+    def _signal_similarity(self, left: Dict[str, Any], right: Dict[str, Any]) -> float:
+        """Return semantic similarity for two trade theses.
+
+        Timestamps, signal ids, and small entry/target drift are intentionally ignored.
+        The score is high only for the same asset, timeframe, direction, and strategy group.
+        """
+        left_fp = self._generate_fingerprint(left)
+        right_fp = self._generate_fingerprint(right)
+        if left_fp.asset != right_fp.asset:
+            return 0.0
+        if left_fp.timeframe != right_fp.timeframe:
+            return 0.0
+        if left_fp.direction != right_fp.direction:
+            return 0.0
+        if left_fp.strategy_group != right_fp.strategy_group:
+            return 0.0
+        return 1.0
+
+    async def dedupe_batch(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Collapse a batch to the best representative per thesis key."""
+        best_by_key: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
+        for signal in signals or []:
+            fp = self._generate_fingerprint(signal)
+            key = fp.to_key()
+            current = best_by_key.get(key)
+            if current is None:
+                best_by_key[key] = signal
+                order.append(key)
+                continue
+            try:
+                current_score = float(current.get("score", 0) or 0)
+                new_score = float(signal.get("score", 0) or 0)
+            except Exception:
+                current_score = new_score = 0.0
+            if new_score >= current_score:
+                best_by_key[key] = signal
+        return [best_by_key[key] for key in order if key in best_by_key]
     
     async def clear_old_entries(self) -> int:
         """Clear expired entries from memory."""

@@ -323,6 +323,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         from db.models import Signal
         from db.pg_features import upsert_outcome
         from db.pg_features import queue_outcome_notifications_for_outcome
+        from core.signal_lifecycle import lifecycle_state_for_outcome
         from sqlalchemy import update as sa_update
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         pct: Optional[float] = None
@@ -375,12 +376,17 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     sentiment_outcome=sentiment_outcome,
                     meta={"close_price": float(price)},
                 )
+                lifecycle_status = lifecycle_state_for_outcome(status_l)
+                signal_values: dict[str, Any] = {"status": lifecycle_status}
                 if terminal:
-                    await session.execute(
-                        sa_update(Signal)
-                        .where(Signal.signal_id == signal_id)
-                        .values(archived=True)
-                    )
+                    signal_values["archived"] = True
+                    if status_l == "time_stop":
+                        signal_values["expired"] = True
+                await session.execute(
+                    sa_update(Signal)
+                    .where(Signal.signal_id == signal_id)
+                    .values(**signal_values)
+                )
                 await queue_outcome_notifications_for_outcome(
                     session,
                     int(getattr(_outcome, "id")),
