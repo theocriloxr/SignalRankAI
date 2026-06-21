@@ -3731,6 +3731,28 @@ def run_bot() -> None:
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
         err_text = str(err or "")
+        
+    # FIX: For callback queries, ALWAYS answer to stop the loading circle
+        # even if there's an error. This prevents buttons from spinning forever.
+        query = getattr(update, "callback_query", None)
+        if query is not None:
+            is_stale = (
+                "Query is too old" in err_text
+                or "response timeout expired" in err_text
+                or "query id is invalid" in err_text
+            )
+            if not is_stale:
+                # For non-stale errors, try to answer with an error message
+                # This is CRITICAL to stop the button from spinning
+                try:
+                    await query.answer("Something went wrong. Please try again.", show_alert=True)
+                except Exception:
+                    pass  # Already answered or can't answer
+                logger.warning(f"[bot] callback error handled: {err}")
+            else:
+                logger.info("[bot] stale callback ignored: %s", err_text)
+            return  # Don't proceed with error handler for callbacks
+        
         # Harmless Telegram callback race: user tapped an old button and the
         # callback query answer window already expired.
         if (
@@ -3741,7 +3763,7 @@ def run_bot() -> None:
             logger.info("[bot] stale callback ignored: %s", err_text)
             return
         print(f"[bot] error: {err}", flush=True)
-        # Alert all owners about every unhandled exception so nothing is silent
+            # Alert all owners about every unhandled exception so nothing is silent
         try:
             import traceback
             tb = "".join(traceback.format_exception(type(err), err, err.__traceback__)) if err else "(no traceback)"
