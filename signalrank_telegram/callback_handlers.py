@@ -71,18 +71,19 @@ def _parse_callback_data(data: str) -> Dict[str, Any]:
     Returns:
         Dict with 'action' and 'payload' keys
     """
+    logger.debug(f"[callback] parsing callback data: {data}")
     if not data:
         return {"action": None, "payload": None}
-    
+
     # Compound prefixes that use underscore in the prefix (e.g., signal_reaction_, monitor_signal_)
     # Must check these FIRST before simple split
     compound_prefixes = [
         "signal_reaction",
-        "monitor_signal", 
+        "monitor_signal",
         "check_outcome",
         "open_signal",
     ]
-    
+
     for prefix in compound_prefixes:
         if data.startswith(prefix + "_"):
             action = prefix
@@ -339,29 +340,41 @@ async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT
     to stop the loading circle timeout bug.
     """
     query = update.callback_query
-    
+
+    # Log incoming callback meta for debugging (user/chat/message/data)
+    try:
+        user_id = getattr(query.from_user, "id", None)
+        chat = getattr(getattr(query, "message", None), "chat", None)
+        chat_id = chat.id if chat is not None else getattr(getattr(query, "message", None), "chat_id", None)
+        msg_id = getattr(getattr(query, "message", None), "message_id", None)
+        logger.info(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
+    except Exception:
+        logger.debug("[callback] failed to read query metadata")
+
     # CRITICAL: Answer immediately to stop loading circle
     try:
         await query.answer()
     except Exception:
         pass  # May error if already answered
-    
+
     data = query.data
     if not data:
+        logger.debug("[callback] no data in callback query, ignoring")
         return
-    
+
     # Parse the callback
     parsed = _parse_callback_data(data)
     action = parsed.get("action")
     payload = parsed.get("payload")
-    
+    logger.debug(f"[callback] parsed action={action} payload={payload}")
+
     # Route to appropriate handler
     try:
         if action == "mt5_trade":
             # Handle MT5 trade
             signal_id = payload
             await _handle_mt5_trade(update, context, signal_id)
-            
+
         elif action == "signal_reaction":
             # Parse signal_id|reaction format
             if "|" in payload:
@@ -369,25 +382,27 @@ async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT
                 await _handle_signal_reaction(update, context, signal_id, reaction)
             else:
                 await _handle_default_callback(update, context, action, payload)
-                
+
         elif action == "monitor_signal":
             await _handle_monitor_signal(update, context, payload)
-            
+
         elif action == "check_outcome":
             await _handle_check_outcome(update, context, payload)
-            
+
         elif action == "open_signal":
             # Open signal link
             await query.answer()
-            
+
         elif action and action.startswith("nav"):
             await query.answer()
-            
+
         else:
             await _handle_default_callback(update, context, action, payload)
-            
+
+        logger.debug(f"[callback] dispatched action={action} payload={payload}")
+
     except Exception as e:
-        logger.warning(f"[callback] Global handler error: {e}")
+        logger.exception(f"[callback] Global handler error: {e}")
         try:
             await query.answer("Error processing request.", show_alert=True)
         except Exception:
