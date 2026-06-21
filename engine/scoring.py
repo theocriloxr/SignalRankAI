@@ -210,7 +210,7 @@ def score_signal(signal):
         "confidence": confidence,
         "ml_confidence": ml_val,
         "confluence": confluence_score,
-        "confluence_weight": confidence_weight,
+        "confluence_weight": confluence_weight,
         "regime_bonus": regime_bonus,
         "ml_boost": ml_boost,
         "rr_bonus": rr_bonus,
