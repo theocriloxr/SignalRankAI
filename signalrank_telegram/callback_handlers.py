@@ -414,13 +414,13 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Log incoming callback meta for debugging (user/chat/message/data)
     try:
-                user_id = getattr(getattr(query, "from_user", None), "id", None)
-                message = getattr(query, "message", None)
-                chat_id = getattr(getattr(message, "chat", None), "id", None) or getattr(message, "chat_id", None)
-                msg_id = getattr(message, "message_id", None)
-                logger.info(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
-        except Exception:
-                logger.debug("[callback] failed to read query metadata")
+        user_id = getattr(getattr(query, "from_user", None), "id", None)
+        message = getattr(query, "message", None)
+        chat_id = getattr(getattr(message, "chat", None), "id", None) or getattr(message, "chat_id", None)
+        msg_id = getattr(message, "message_id", None)
+        logger.info(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
+    except Exception:
+        logger.debug("[callback] failed to read query metadata")
 
     # CRITICAL: Answer immediately to stop loading circle
     try:
