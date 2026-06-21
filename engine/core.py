@@ -951,7 +951,7 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                 if not data or not any(data.values()):
                     # FIX: Add explicit error logging to diagnose WHY providers failed
                     logger.error(
-                        "[engine][FATAL] All providers failed for %s timeframes=%s - "
+                        "[engine][FATAL] All providers failed for %s, skipping... timeframes=%s - "
                         "This is why strategy_signals=0 and max_score=None",
                         asset,
                         tfs,

@@ -39,6 +39,9 @@ CALLBACK_PATTERNS = {
     
     # Open signal
     "open_signal": r"^open_signal_(.+)$",
+
+    # Signal chart
+    "signal_chart": r"^signal_chart_(.+)$",
     
     # Navigation buttons
     "nav": r"^nav_(.+)$",
@@ -82,6 +85,7 @@ def _parse_callback_data(data: str) -> Dict[str, Any]:
         "monitor_signal",
         "check_outcome",
         "open_signal",
+        "signal_chart",
     ]
 
     for prefix in compound_prefixes:
@@ -315,6 +319,73 @@ async def _handle_check_outcome(
         await query.answer("Error checking outcome.", show_alert=True)
 
 
+async def _handle_signal_chart(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    signal_id: str,
+) -> None:
+    query = update.callback_query
+
+    try:
+        await query.answer("Rendering chart...")
+
+        from db.session import get_session
+        from db.models import Signal
+        from sqlalchemy import select
+
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    select(Signal).where(Signal.signal_id == signal_id).limit(1)
+                )
+            ).scalar_one_or_none()
+
+        if row is None:
+            await query.answer("Signal not found.", show_alert=True)
+            return
+
+        signal_payload = {
+            "signal_id": row.signal_id,
+            "asset": row.asset,
+            "timeframe": row.timeframe,
+            "direction": row.direction,
+            "entry": row.entry,
+            "stop_loss": row.stop_loss,
+            "take_profit": row.take_profit,
+            "rr_ratio": getattr(row, "rr_estimate", None),
+            "score": row.score,
+            "regime": getattr(row, "regime", None),
+            "strategy_name": getattr(row, "strategy_name", None),
+            "strategy_group": getattr(row, "strategy_group", None),
+            "recent_ohlcv": getattr(row, "recent_ohlcv", None),
+        }
+
+        from signalrank_telegram.signal_charts import build_signal_chart
+
+        chart_bytes = await build_signal_chart(signal_payload)
+        if chart_bytes is None:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⚠️ Chart data is not available for this signal yet.",
+            )
+            return
+
+        from telegram import InputFile
+        from signalrank_telegram.commands import _build_signal_action_keyboard
+
+        caption = f"📊 {row.asset} {str(row.direction or '').upper()} · {row.timeframe}"
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=InputFile(chart_bytes, filename=getattr(chart_bytes, 'name', f'{signal_id}.png')),
+            caption=caption,
+            reply_markup=_build_signal_action_keyboard(signal_payload),
+        )
+
+    except Exception as e:
+        logger.warning(f"[callback] signal_chart error: {e}")
+        await query.answer("Could not render chart.", show_alert=True)
+
+
 async def _handle_default_callback(
     update: Update, 
     context: ContextTypes.DEFAULT_TYPE, 
@@ -343,9 +414,13 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Log incoming callback meta for debugging (user/chat/message/data)
     try:
-        logger.debug(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
-    except Exception:
-        logger.debug("[callback] failed to read query metadata")
+                user_id = getattr(getattr(query, "from_user", None), "id", None)
+                message = getattr(query, "message", None)
+                chat_id = getattr(getattr(message, "chat", None), "id", None) or getattr(message, "chat_id", None)
+                msg_id = getattr(message, "message_id", None)
+                logger.info(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
+        except Exception:
+                logger.debug("[callback] failed to read query metadata")
 
     # CRITICAL: Answer immediately to stop loading circle
     try:
@@ -384,6 +459,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         elif action == "check_outcome":
             await _handle_check_outcome(update, context, payload)
+
+        elif action == "signal_chart":
+            await _handle_signal_chart(update, context, payload)
 
         elif action == "open_signal":
             # Open signal link
