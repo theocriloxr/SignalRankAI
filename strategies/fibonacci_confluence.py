@@ -146,7 +146,7 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
                 last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
                 age = datetime.now(timezone.utc) - last_time
                 if age > timedelta(hours=24):
-                    logger.debug(
+                    logging.getLogger(__name__).debug(
                         f"[fibonacci] Stale data for {asset} {exec_tf}: {age.total_seconds()/3600:.1f} hours old"
                     )
                     return []  # Stale data, skip signal
