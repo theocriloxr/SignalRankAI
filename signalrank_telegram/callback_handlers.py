@@ -343,11 +343,7 @@ async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT
 
     # Log incoming callback meta for debugging (user/chat/message/data)
     try:
-        user_id = getattr(query.from_user, "id", None)
-        chat = getattr(getattr(query, "message", None), "chat", None)
-        chat_id = chat.id if chat is not None else getattr(getattr(query, "message", None), "chat_id", None)
-        msg_id = getattr(getattr(query, "message", None), "message_id", None)
-        logger.info(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
+        logger.debug(f"[callback] received callback from_user={user_id} chat_id={chat_id} message_id={msg_id}")
     except Exception:
         logger.debug("[callback] failed to read query metadata")
 
