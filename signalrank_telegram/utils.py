@@ -151,11 +151,14 @@ def _build_signal_action_keyboard(signal: Optional[Dict[str, Any]] = None) -> Op
         
         signal_id = str((signal or {}).get("signal_id") or "")[:36]
         trade_cb = f"mt5_trade_{signal_id}" if signal_id else "mt5_trade"
+        chart_cb = f"signal_chart_{signal_id}" if signal_id else None
         
         rows = [[
             InlineKeyboardButton("📈 TradingView Chart", url=chart_url),
             InlineKeyboardButton("⚡ Execute", callback_data=trade_cb),
         ]]
+        if chart_cb:
+            rows[0].insert(0, InlineKeyboardButton("🖼 Chart", callback_data=chart_cb))
         
         if signal_id:
             rows.append([

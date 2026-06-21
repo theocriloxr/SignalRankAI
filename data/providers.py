@@ -235,6 +235,58 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
     except Exception:
         return []
 
+    try:
+        proxy_url = (
+            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
+            or proxy_manager.get_proxy_sync()
+        )
+        exchange_config: dict = {
+            "enableRateLimit": True,
+            "timeout": 2500,
+        }
+        if proxy_url:
+            exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
+            exchange_config["proxy"] = proxy_url
+
+        exchange = ccxt.binance(exchange_config)
+        try:
+            rows = exchange.fetch_ohlcv(
+                _normalize_binance_symbol(symbol),
+                timeframe=_map_binance_timeframe(timeframe),
+                limit=max(20, int(limit or 200)),
+            )
+        finally:
+            try:
+                close = getattr(exchange, "close", None)
+                if callable(close):
+                    maybe = close()
+                    if asyncio.iscoroutine(maybe):
+                        try:
+                            asyncio.run(maybe)
+                        except RuntimeError:
+                            pass
+            except Exception:
+                pass
+
+        out: List[Dict] = []
+        for row in rows or []:
+            try:
+                out.append(
+                    {
+                        "timestamp": int(row[0]),
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    }
+                )
+            except Exception:
+                continue
+        return out
+    except Exception:
+        return []
+
 
 _COINGECKO_ID_CACHE: dict[str, str] = {}
 

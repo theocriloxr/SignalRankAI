@@ -203,6 +203,7 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		signal_id = str((signal or {}).get("signal_id") or "")[:36]
 		trade_cb = f"mt5_trade_{signal_id}" if signal_id else "mt5_trade"
 		rows = [[
+			InlineKeyboardButton("🖼 Chart", callback_data=f"signal_chart_{signal_id}" if signal_id else "signal_chart"),
 			InlineKeyboardButton("📈 View Chart", url=chart_url),
 			InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
 		]]
@@ -4614,7 +4615,8 @@ async def gemini_audit_command(update, context) -> None:
 	from services.gemini_ml import audit_recent
 
 	try:
-		res = await audit_recent_signals(session, limit=limit)
+		async with get_session() as session:
+			res = await audit_recent(session, limit=limit)
 		if not bool(res.get("ok", True)):
 			await update.message.reply_text(f"Audit failed: {res.get('error')}")
 			return

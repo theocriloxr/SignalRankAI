@@ -57,6 +57,7 @@ def _build_h1_imp_long_setup() -> list[dict]:
 
 def test_imp_generates_long_signal_on_valid_setup(monkeypatch):
     monkeypatch.setenv("IMP_FX_OVERLAP_ONLY", "0")
+    monkeypatch.setenv("IMP_FX_SESSION_FILTER_ENABLED", "0")
 
     h4_candles = _build_h4_uptrend()
     h1_candles = _build_h1_imp_long_setup()

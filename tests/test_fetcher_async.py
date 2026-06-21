@@ -38,6 +38,9 @@ class TestAsyncFetcher(unittest.TestCase):
             return []
 
         async def run_test():
+            import data.fetcher as fetcher
+
+            fetcher._CANDLE_CACHE.clear()
             with patch("data.connector_registry.get_async_providers_for_asset", return_value=[("mock", provider_empty)]):
                 from data.fetcher import async_get_candles
                 out = await async_get_candles("BTCUSDT", "1h")

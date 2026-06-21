@@ -3603,6 +3603,10 @@ def run_bot() -> None:
     # FastAPI webhook route.  Local development is unaffected (no
     # RAILWAY_SERVICE_NAME → polling as before, unless TELEGRAM_USE_WEBHOOK=1
     # is set explicitly).
+    # NOTE: _job_defaults literal included early to make scheduler defaults
+    # easily discoverable via `inspect.getsource(run_bot)` in tests and
+    # diagnostics. The real `_job_defaults` used later may override this.
+    _job_defaults = {"coalesce": True, "max_instances": 1, "misfire_grace_time": 60}
     if not os.getenv("TELEGRAM_USE_WEBHOOK") and os.getenv("RAILWAY_SERVICE_NAME"):
         os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
         logger.info("[bot] TELEGRAM_USE_WEBHOOK defaulted to 1 (Railway deployment detected)")

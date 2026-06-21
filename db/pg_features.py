@@ -12,7 +12,7 @@ def to_naive_utc(dt: datetime) -> datetime:
     return dt
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete
+from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -178,13 +178,16 @@ def _active_trade_has_asset(active_trades: Any, asset: str) -> bool:
 def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     """Compute signal fingerprint for deduplication.
     
-    CRITICAL FIX V2: Simplified fingerprint to prevent duplicate signals.
-    
-    The fingerprint identifies the TRADE THESIS, not specific price targets.
-    This prevents SOLUSDT spam while allowing genuinely new opportunities.
-    
-    Fingerprint = asset + direction + timeframe + strategy_group
-    (entry, SL, TP intentionally excluded as they change frequently)
+    The fingerprint identifies the TRADE THESIS, not a single candle.
+
+    Canonical fields:
+    asset + direction + timeframe + strategy_group
+
+    Optional fields:
+    entry_zone_bucket (if the caller has already bucketed the entry zone)
+
+    Candle timestamps are intentionally excluded so the same thesis does not
+    reappear as a "new" signal on every candle.
     """
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()
@@ -194,8 +197,11 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
         strategy = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
         strategy_group = strategy.split("_", 1)[0] if strategy else "unknown"
 
-    # SIMPLIFIED: Only core trade thesis fields - NOT entry/SL/TP/candle_timestamp
-    raw: str = f"{asset}|{direction}|{timeframe}|{strategy_group}"
+    entry_zone_bucket = str(signal.get("entry_zone_bucket") or "").strip().lower()
+    raw_parts = [asset, direction, timeframe, strategy_group]
+    if entry_zone_bucket:
+        raw_parts.append(entry_zone_bucket)
+    raw: str = "|".join(raw_parts)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
 
 
@@ -2719,3 +2725,177 @@ async def update_managed_asset_last_analyzed(
         .where(ManagedAsset.symbol.in_(normalized))
         .values(last_analyzed_at=datetime.utcnow())
     )
+
+
+# ============================================================================
+# PHASE 2: Regime-Specific Strategy Performance Queries
+# ============================================================================
+
+async def get_strategy_performance_by_regime(
+    session: AsyncSession,
+    strategy_name: str,
+    regime: str,
+) -> Dict[str, Any]:
+    """
+    Query strategy performance filtered by regime only.
+    
+    PHASE 2 FEATURE: Aggregates all outcomes for a strategy across all assets/timeframes,
+    filtered by market regime. Returns performance metrics for ML weighting calculations.
+    
+    Args:
+        session: AsyncSession for database queries
+        strategy_name: Strategy name (e.g., "rsi", "supertrend")
+        regime: Market regime ("TRENDING", "RANGING", "VOLATILE")
+    
+    Returns:
+    {
+        "trades": int,                    # Total trades
+        "win_rate": 0.0-1.0,              # Percentage of winning trades
+        "avg_rr": float,                  # Average risk/reward ratio
+        "expectancy": float,              # Average profit per trade
+        "confidence_interval": float,     # Bayesian credibility 0.0-1.0
+    }
+    """
+    # Query outcomes where the associated signal has matching strategy_name and regime
+    query = (
+        select(
+            func.count(Outcome.id).label('total'),
+            func.sum(case((Outcome.status == 'win', 1), else_=0)).label('wins'),
+            func.sum(case((Outcome.status == 'loss', 1), else_=0)).label('losses'),
+            func.avg(case((Outcome.status == 'win', Outcome.pnl_pct), else_=None)).label('avg_win_pct'),
+            func.avg(case((Outcome.status == 'loss', Outcome.pnl_pct), else_=None)).label('avg_loss_pct'),
+        )
+        .join(Signal, Outcome.signal_id == Signal.signal_id)
+        .where(
+            and_(
+                Signal.strategy_name == strategy_name,
+                Outcome.regime == regime,
+            )
+        )
+    )
+    
+    try:
+        result = await session.execute(query)
+        row = result.one_or_none()
+        
+        if not row or row.total == 0:
+            return {
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_rr": 0.0,
+                "expectancy": 0.0,
+                "confidence_interval": 0.0,
+            }
+        
+        total = row.total or 0
+        wins = row.wins or 0
+        losses = row.losses or 0
+        avg_win = float(row.avg_win_pct or 0.0)
+        avg_loss = abs(float(row.avg_loss_pct or 0.0))
+        
+        win_rate = wins / total if total > 0 else 0.0
+        avg_rr = avg_win / avg_loss if avg_loss > 0 else 0.0
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        
+        # Bayesian credibility: min(trades / 100, 1.0)
+        # 100 trades = full credibility, fewer trades = proportionally lower
+        confidence = min(total / 100.0, 1.0)
+        
+        return {
+            "trades": int(total),
+            "win_rate": float(win_rate),
+            "avg_rr": float(avg_rr),
+            "expectancy": float(expectancy),
+            "confidence_interval": float(confidence),
+        }
+    
+    except Exception as e:
+        logger.debug(f"[get_strategy_performance_by_regime] Query failed: {e}")
+        return {
+            "trades": 0,
+            "win_rate": 0.0,
+            "avg_rr": 0.0,
+            "expectancy": 0.0,
+            "confidence_interval": 0.0,
+        }
+
+
+async def get_asset_class_strategy_performance(
+    session: AsyncSession,
+    strategy_name: str,
+    asset_class: str,
+    regime: str,
+) -> Dict[str, Any]:
+    """
+    Query strategy performance for a specific asset class + regime combination.
+    
+    PHASE 2 FEATURE: Returns performance specific to one asset class in one regime.
+    Useful for understanding if a strategy works well for crypto but not forex, etc.
+    
+    Args:
+        session: AsyncSession for database queries
+        strategy_name: Strategy name
+        asset_class: "crypto", "forex", "stock", "commodity"
+        regime: "TRENDING", "RANGING", "VOLATILE"
+    
+    Returns: Same as get_strategy_performance_by_regime()
+    """
+    query = (
+        select(
+            func.count(Outcome.id).label('total'),
+            func.sum(case((Outcome.status == 'win', 1), else_=0)).label('wins'),
+            func.sum(case((Outcome.status == 'loss', 1), else_=0)).label('losses'),
+            func.avg(case((Outcome.status == 'win', Outcome.pnl_pct), else_=None)).label('avg_win_pct'),
+            func.avg(case((Outcome.status == 'loss', Outcome.pnl_pct), else_=None)).label('avg_loss_pct'),
+        )
+        .join(Signal, Outcome.signal_id == Signal.signal_id)
+        .where(
+            and_(
+                Signal.strategy_name == strategy_name,
+                Outcome.asset_class == asset_class,
+                Outcome.regime == regime,
+            )
+        )
+    )
+    
+    try:
+        result = await session.execute(query)
+        row = result.one_or_none()
+        
+        if not row or row.total == 0:
+            return {
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_rr": 0.0,
+                "expectancy": 0.0,
+                "confidence_interval": 0.0,
+            }
+        
+        total = row.total or 0
+        wins = row.wins or 0
+        losses = row.losses or 0
+        avg_win = float(row.avg_win_pct or 0.0)
+        avg_loss = abs(float(row.avg_loss_pct or 0.0))
+        
+        win_rate = wins / total if total > 0 else 0.0
+        avg_rr = avg_win / avg_loss if avg_loss > 0 else 0.0
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        confidence = min(total / 100.0, 1.0)
+        
+        return {
+            "trades": int(total),
+            "win_rate": float(win_rate),
+            "avg_rr": float(avg_rr),
+            "expectancy": float(expectancy),
+            "confidence_interval": float(confidence),
+        }
+    
+    except Exception as e:
+        logger.debug(f"[get_asset_class_strategy_performance] Query failed: {e}")
+        return {
+            "trades": 0,
+            "win_rate": 0.0,
+            "avg_rr": 0.0,
+            "expectancy": 0.0,
+            "confidence_interval": 0.0,
+        }

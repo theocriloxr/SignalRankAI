@@ -124,6 +124,8 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
 
     The strategy works on the execution timeframe (5m/15m/1h) while using
     4h/1d for directional bias.
+    
+    PHASE 1 FIX #4: Includes stale data consistency check (24-hour freshness).
     """
     try:
         cfg = _FibConfig()
@@ -135,6 +137,21 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
         candles = list(tf_data.get("candles") or [])
         if len(candles) < cfg.lookback:
             return []
+        
+        # PHASE 1 FIX #4: Stale Data Consistency - Check data freshness
+        try:
+            from datetime import datetime, timedelta, timezone
+            last_ts = candles[-1].get('timestamp', 0)
+            if last_ts > 0:
+                last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
+                age = datetime.now(timezone.utc) - last_time
+                if age > timedelta(hours=24):
+                    logging.getLogger(__name__).debug(
+                        f"[fibonacci] Stale data for {asset} {exec_tf}: {age.total_seconds()/3600:.1f} hours old"
+                    )
+                    return []  # Stale data, skip signal
+        except Exception:
+            pass  # If timestamp check fails, proceed anyway
 
         _, highs, lows, closes, volumes = _to_arrays(candles[-cfg.lookback:])
         if closes.size < cfg.lookback:

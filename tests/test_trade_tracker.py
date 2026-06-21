@@ -100,8 +100,9 @@ class TestTradeTracker(unittest.TestCase):
         self.assertEqual(len(open_trades_list), 1)
 
     @patch.dict(os.environ, {"REDIS_URL": "redis://example"}, clear=False)
+    @patch("core.trade_tracker.state.set_active_trade_sync", return_value=None)
     @patch("core.trade_tracker.state.get_active_trades_sync", return_value={})
-    def test_open_trades_clears_stale_cache_when_state_empty(self, mock_state):
+    def test_open_trades_clears_stale_cache_when_state_empty(self, mock_state, mock_set_state):
         signal = {
             "id": "sig_stale",
             "symbol": "BTCUSDT",

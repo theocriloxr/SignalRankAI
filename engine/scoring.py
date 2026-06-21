@@ -42,32 +42,17 @@ def score_signal(signal):
     5. Market regime fit (trending/ranging)
     
     Returns 0-100 score.
+    
+    PHASE 1 CHANGES:
+    - RR is now a hard gate (checked before scoring)
+    - Confluence uses graduated weight (not binary gate)
+    - ML scoring simplified (multiply only, not in components)
     """
-    # CONFLUENCE REQUIREMENT: Multiple signals must align
-    # ORIGINAL VALUE: 25.0 (restored from 15.0)
-    confluence_min = _env_float("CONFLUENCE_MIN", 25.0)
-    confluence_score = resolve_confluence_percent(signal)
-    if confluence_score is None:
-        confluence_score = calculate_confluence(signal)
-    if confluence_score is not None and confluence_score < confluence_min:
-        return 0.0
-    
-    # Target: 0..100 score
-    confidence = resolve_confidence_ratio(signal)
-    if confidence is None:
-        confidence = resolve_ml_probability(signal)
-    
-# LOWERED from 0.35 to 0.20 to allow more signals through
-    # This fixes "generated_signals=0" when ML probability is moderate
-    # ORIGINAL VALUE: 0.35 (restored from 0.25)
-    confidence_min = _env_float("CONFIDENCE_MIN", 0.20)
-    if confidence is not None and confidence < confidence_min:
-        return 0.0
-
-    # === FIX: Handle both 'stop' and 'stop_loss' keys - with proper None handling ===
+    # ========================================================================
+    # PHASE 1.1: CALCULATE RR FIRST FOR HARD GATE CHECK
+    # ========================================================================
     entry_raw = signal.get("entry")
     stop_raw = signal.get("stop") if signal.get("stop") is not None else signal.get("stop_loss")
-    # Handle 'targets' being either a list (multiple TPs) or a single float
     target_raw = signal.get("targets")
     if isinstance(target_raw, list) and target_raw:
         target = float(target_raw[-1])  # Use the final/last target from the list
@@ -94,6 +79,48 @@ def score_signal(signal):
             rr = abs(target - entry) / denominator
         else:
             rr = 0.0
+    
+    # PHASE 1 FIX #1: HARD RR GATE - Reject before any scoring if RR < 1.5
+    # This is now the FIRST check, ensuring poor-RR signals never get scored
+    min_rr = _env_float("MIN_RR", 1.5)
+    if rr < min_rr:
+        logger.info(
+            f"[scoring][rr_hard_gate] {signal.get('asset')} {signal.get('direction')} "
+            f"RR={rr:.2f} < MIN_RR={min_rr} - REJECTED"
+        )
+        return 0.0
+    
+    # ========================================================================
+    # PHASE 1.2: CONFLUENCE GRADUATED WEIGHT (NOT BINARY GATE)
+    # ========================================================================
+    # ORIGINAL VALUE: 25.0 (restored from 15.0)
+    confluence_min = _env_float("CONFLUENCE_MIN", 25.0)
+    confluence_score = resolve_confluence_percent(signal)
+    if confluence_score is None:
+        confluence_score = calculate_confluence(signal)
+    
+    # PHASE 1 FIX #3: Graduated confluence weight instead of hard rejection
+    # If confluence < 25%, multiply score by (confluence / 50)
+    # This allows near-consensus signals through at reduced strength
+    confluence_weight = 1.0
+    if confluence_score is not None and confluence_score < confluence_min:
+        confluence_weight = max(0.0, confluence_score / 50.0)  # Linear scale from 0 to 50
+        logger.debug(
+            f"[scoring][confluence_graduated] {signal.get('asset')} confluence={confluence_score:.1f}% "
+            f"< min={confluence_min}% - applying weight={confluence_weight:.3f}"
+        )
+    
+    # Target: 0..100 score
+    confidence = resolve_confidence_ratio(signal)
+    if confidence is None:
+        confidence = resolve_ml_probability(signal)
+    
+    # LOWERED from 0.35 to 0.20 to allow more signals through
+    # This fixes "generated_signals=0" when ML probability is moderate
+    # ORIGINAL VALUE: 0.35 (restored from 0.25)
+    confidence_min = _env_float("CONFIDENCE_MIN", 0.20)
+    if confidence is not None and confidence < confidence_min:
+        return 0.0
 
     rr_component = rr_score(rr)
     vol_component = volatility_quality_score(signal)
@@ -118,11 +145,8 @@ def score_signal(signal):
         return 0.0
     score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
-# ORIGINAL VALUE: 1.5 (restored from 1.0)
-    min_rr = _env_float("MIN_RR", 1.5)
-    # Hard rejection for poor R/R
-    if rr < min_rr:
-        return 0.0
+    # Apply confluence weight (from PHASE 1 FIX #3)
+    score = score * confluence_weight
     
     # REGIME ALIGNMENT BONUS
     regime_fit = signal.get("regime_fit") or signal.get("htf_alignment")
@@ -138,7 +162,8 @@ def score_signal(signal):
     except Exception:
         pass
     
-    # ML PROBABILITY BOOST
+    # PHASE 1 FIX #2: ML PROBABILITY SIMPLIFIED - MULTIPLY ONLY (not in components)
+    # Removed ML from score components to simplify - now only multiply method
     ml_val = resolve_ml_probability(signal)
     ml_boost = 1.0
     if ml_val is not None:
@@ -148,6 +173,10 @@ def score_signal(signal):
             ml_boost_range = _env_float("ML_SCORE_BOOST_RANGE", 0.4)
             ml_boost = ml_boost_min + (ml_val * ml_boost_range)
             score = score * ml_boost
+            logger.debug(
+                f"[scoring][ml_boost] {signal.get('asset')} ml_confidence={ml_val:.3f} "
+                f"boost={ml_boost:.3f} score_after={score:.2f}"
+            )
         except Exception:
             pass
     
@@ -172,12 +201,16 @@ def score_signal(signal):
     soft_score = 100.0 * (1.0 - math.exp(-raw_score / 50.0))
     display_score = round(min(soft_score, 99.5), 2)
     
-# Store component breakdown in signal for debugging
+    # PHASE 1 FIX #5: ENHANCED COMPONENT LOGGING
+    # Store comprehensive breakdown for post-analysis without logic changes
     signal["score_components"] = {
         "rr": rr_component,
+        "rr_ratio": round(rr, 2),
         "vol": vol_component,
         "confidence": confidence,
+        "ml_confidence": ml_val,
         "confluence": confluence_score,
+        "confluence_weight": confluence_weight,
         "regime_bonus": regime_bonus,
         "ml_boost": ml_boost,
         "rr_bonus": rr_bonus,
@@ -186,9 +219,34 @@ def score_signal(signal):
     signal["raw_score"] = raw_score
     signal["display_score"] = display_score
     
+    # Calculate take profit levels for logging (support multi-level TPs)
+    tp_levels = signal.get("targets")
+    if isinstance(tp_levels, list):
+        tp_1 = tp_levels[0] if len(tp_levels) > 0 else None
+        tp_2 = tp_levels[1] if len(tp_levels) > 1 else None
+        tp_3 = tp_levels[2] if len(tp_levels) > 2 else None
+    else:
+        tp_1 = tp_levels if tp_levels else None
+        tp_2 = None
+        tp_3 = None
+    
+    # Get entry logic (strategy name or entry_logic field)
+    entry_logic_used = signal.get("strategy_name") or signal.get("entry_logic") or "unknown"
+    
+    # PHASE 1 FIX #5: Log all component information for post-analysis
+    confluence_display = f"{confluence_score:.1f}%" if confluence_score is not None else "None"
+    logger.info(
+        f"[scoring][components] asset={signal.get('asset')} direction={signal.get('direction')} "
+        f"timeframe={signal.get('timeframe')} | "
+        f"entry={entry:.2f} stop_loss={stop:.2f} tp_1={tp_1} tp_2={tp_2} tp_3={tp_3} | "
+        f"entry_logic={entry_logic_used} confluence={confluence_display} rr={rr:.2f} "
+        f"ml_confidence={ml_val if ml_val else 'None'} regime={signal.get('regime', 'unknown')} | "
+        f"final_score={display_score:.2f} (raw={raw_score:.2f})"
+    )
+    
     # Log score components for debugging score saturation issues
     logger.debug(
-        f"[scoring] raw={raw_score:.1f} display={display_score:.1f} "
+        f"[scoring][breakdown] raw={raw_score:.1f} display={display_score:.1f} "
         f"rr={rr_component:.2f} vol={vol_component:.2f} conf={confidence} "
         f"confluence={confluence_score} regime={regime_bonus:.2f} ml={ml_boost:.2f}"
     )

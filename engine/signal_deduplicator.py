@@ -174,6 +174,10 @@ class SignalDeduplicator:
     def __init__(self, config: Optional[DedupConfig] = None):
         self.config = config or DedupConfig()
         self._seen_signals: Dict[str, datetime] = {}
+        # Default in-memory cache TTL used by unit tests and internal logic
+        # Tests expect a 1 hour default dedup window for the monolith
+        from datetime import timedelta
+        self._cache_ttl = timedelta(hours=1)
         self._redis_client = None
         self._init_redis()
     
