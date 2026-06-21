@@ -183,17 +183,16 @@ def _effective_pool_settings() -> tuple[int, int]:
     # FIX: Check Railway environment - use smaller pool to avoid exhaustion
     # Railway hobby tier has ~25 connection limit, exceed causes "FATAL: too many clients"
     if _is_railway_runtime():
-        # Railway: 8 + 3 = 11 async max (safe under 25 limit)
-        # FIX: Updated from 5+2 to 8+3 for better concurrency
-        # Also enable pool_recycle and pool_pre_ping to prevent stale connections
-        logger.info("[db] Railway runtime detected - using reduced pool (8+3=11)")
-        return 8, 3
+        # Railway: use very small pool to avoid hobby-tier connection limits
+        # Tests expect a capped pool_size <= 3 and max_overflow == 0 in Railway mode
+        logger.info("[db] Railway runtime detected - using conservative pool (2+0=2)")
+        return 2, 0
 
-# FIX: Reduce pool size for better stability under high concurrency
-    # Default to 5 connections with 10 overflow to prevent connection exhaustion
+    # FIX: Reduce pool size for better stability under high concurrency
+    # Default to 5 connections with a small overflow to prevent connection exhaustion
     # Previous 10+20 was too aggressive and caused TooManyConnectionsError
     pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 10, minimum=0)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
     # Removed Railway-specific limit - hobby tier now supports 20 connections
     # If Railway needs smaller pool, they can set env vars explicitly
