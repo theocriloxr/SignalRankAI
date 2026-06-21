@@ -194,8 +194,15 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
         strategy = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
         strategy_group = strategy.split("_", 1)[0] if strategy else "unknown"
 
-    # SIMPLIFIED: Only core trade thesis fields - NOT entry/SL/TP/candle_timestamp
-    raw: str = f"{asset}|{direction}|{timeframe}|{strategy_group}"
+    candle_timestamp = str(
+        signal.get("candle_timestamp")
+        or signal.get("generated_at")
+        or signal.get("created_at")
+        or ""
+    ).strip()
+    # Core trade thesis fields plus candle slot. This preserves dedup within
+    # the same candle while allowing a new candle to produce a new fingerprint.
+    raw: str = f"{asset}|{direction}|{timeframe}|{strategy_group}|{candle_timestamp}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
 
 
