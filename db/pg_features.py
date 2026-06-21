@@ -180,8 +180,9 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     
     CRITICAL FIX V2: Simplified fingerprint to prevent duplicate signals.
     
-    The fingerprint identifies the TRADE THESIS, not specific price targets.
-    This prevents SOLUSDT spam while allowing genuinely new opportunities.
+    The fingerprint identifies the trade thesis within a candle slot.
+    This prevents duplicate alerts in the same candle while allowing a new
+    candle to produce a new fingerprint for the same setup.
     
     Fingerprint = asset + direction + timeframe + strategy_group + candle_timestamp
     (entry, SL, TP intentionally excluded as they change frequently)
