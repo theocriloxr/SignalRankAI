@@ -1522,6 +1522,9 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
 
         bot = Bot(token=_require_telegram_token())
         asset = str(signal.get("asset") or "")
+        detail = str(detail or "N/A")
+        ok = bool(ok)
+        reason_code = str(reason_code or "unknown").lower().strip()
         if ok:
             # Send a clean execution receipt after successful AUTO placement.
             _send_message_with_retry_sync(

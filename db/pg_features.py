@@ -189,7 +189,10 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()
     direction: str = str(signal.get("direction") or "").lower().strip()
-    strategy_group: str = str(signal.get("strategy_group") or "").lower().strip()
+    strategy_group: str = str(signal.get("strategy_group") or "").strip().lower()
+    if not strategy_group:
+        strategy = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
+        strategy_group = strategy.split("_", 1)[0] if strategy else "unknown"
 
     # SIMPLIFIED: Only core trade thesis fields - NOT entry/SL/TP/candle_timestamp
     raw: str = f"{asset}|{direction}|{timeframe}|{strategy_group}"

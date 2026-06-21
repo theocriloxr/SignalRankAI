@@ -159,8 +159,8 @@ def _build_signal_action_keyboard(signal: Optional[Dict[str, Any]] = None) -> Op
         
         if signal_id:
             rows.append([
-                InlineKeyboardButton("🔥 Taking Position", callback_data=f"reaction_{signal_id}_taking"),
-                InlineKeyboardButton("👀 Watching", callback_data=f"reaction_{signal_id}_watching"),
+                InlineKeyboardButton("🔥 Taking Position", callback_data=f"signal_reaction_{signal_id}|taking_it"),
+                InlineKeyboardButton("👀 Watching", callback_data=f"signal_reaction_{signal_id}|watching"),
             ])
         
         return InlineKeyboardMarkup(rows)

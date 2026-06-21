@@ -102,8 +102,8 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
         
-        # Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = str(os.getenv("WORKER_SHADOW_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+# Start shadow outcome tracker for ML-rejected signals
+        _enable_shadow = str(os.getenv("WORKER_SHADOW_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
@@ -112,7 +112,7 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
         else:
-            logger.info("[worker] RealtimeOutcomeTracker disabled for this worker instance")
+            logger.info("[worker] ShadowOutcomeTracker disabled for this worker instance")
 
         # Start market monitor for NO TRADE alerts
         if config.MARKET_MONITOR_ENABLED:
