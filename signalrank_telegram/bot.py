@@ -4166,11 +4166,16 @@ async def _handle_unknown_command(update, context):
 
     # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
-    async def _signal_reaction_callback(update, context):
+async def _signal_reaction_callback(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
         if user_id is None:
             return
+        
+        # CRITICAL FIX: Add diagnostic logging and answer immediately
+        logger.info("CALLBACK HIT: data=%s user=%s", query.data, user_id)
+        await query.answer()  # Stop loading circle IMMEDIATELY
+        
         try:
             # Callback data: signal_reaction_<signal_id>|<reaction>
             data = (query.data or "").replace("signal_reaction_", "", 1)
@@ -4223,18 +4228,21 @@ async def _handle_unknown_command(update, context):
 
     application.add_handler(_CQH(_signal_reaction_callback, pattern=r"^signal_reaction_"))
 
-    async def _signal_monitor_callback(update, context):
+async def _signal_monitor_callback(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
         chat_id = update.effective_chat.id if update.effective_chat else None
-        if user_id is None or chat_id is None:
-            await query.answer()
-            return
         signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
+        
+        # CRITICAL FIX: Answer immediately + log callback hit
+        logger.info("CALLBACK HIT: data=%s user=%s", query.data, user_id)
+        await query.answer("Refreshing monitor…", show_alert=False)
+        
+        if user_id is None or chat_id is None:
+            return
         if not signal_id:
             await query.answer("No signal selected.", show_alert=True)
             return
-        await query.answer("Refreshing monitor…", show_alert=False)
         try:
             text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
             from db.session import get_session as _gs_mon
@@ -4572,9 +4580,13 @@ async def _handle_unknown_command(update, context):
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 
     # 🔗 Open latest active signal message for this signal
-    async def _open_signal_callback(update, context):
+async def _open_signal_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
+        
+        # CRITICAL FIX: Add diagnostic logging and answer immediately
+        logger.info("CALLBACK HIT: data=%s user=%s", query.data, update.effective_user.id)
+        
         if not raw:
             await query.answer("Signal reference missing.", show_alert=True)
             return
