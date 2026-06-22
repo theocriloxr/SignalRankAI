@@ -1595,6 +1595,8 @@ async def _telegram_webhook_route(req: Request) -> dict:
     PTB's Application.process_update() dispatches the update to the
     correct CommandHandler on uvicorn's event loop — no polling conflict.
     """
+    # Layer 1: Raw webhook entry - confirm Telegram is delivering updates
+    logger.warning("[WEBHOOK RECEIVED]")
     logger.debug("[webhook] Telegram webhook endpoint hit")
     logger.debug(
         "[webhook] incoming update — content_type=%s",
@@ -1629,6 +1631,15 @@ async def _telegram_webhook_route(req: Request) -> dict:
         update_id = (data or {}).get("update_id", "?")
         update_type = next(
             (k for k in (data or {}) if k not in ("update_id",)), "unknown"
+        )
+        # Layer 2: Raw payload type - detect if this is callback_query or message
+        has_callback = "callback_query" in (data or {})
+        has_message = "message" in (data or {})
+        logger.warning(
+            "[WEBHOOK UPDATE TYPE] callback=%s message=%s update_id=%s",
+            has_callback,
+            has_message,
+            update_id,
         )
         logger.info("[webhook] ingress received update_id=%s type=%s", update_id, update_type)
         logger.debug("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
