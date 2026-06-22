@@ -93,6 +93,9 @@ def _parse_callback_data(data: str) -> Dict[str, Any]:
             action = prefix
             payload = data[len(prefix) + 1:]  # Skip prefix + underscore
             return {"action": action, "payload": payload}
+
+    if data == "mt5_status":
+        return {"action": "mt5_status", "payload": None}
     
     # Simple prefixes (no compound)
     simple_prefixes = [
@@ -462,6 +465,16 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         elif action == "signal_chart":
             await _handle_signal_chart(update, context, payload)
+
+        elif action == "mt5_status":
+            from types import SimpleNamespace
+            from signalrank_telegram.commands import mt5_status_command
+
+            proxy_update = SimpleNamespace(
+                effective_user=update.effective_user,
+                message=query.message,
+            )
+            await mt5_status_command(proxy_update, context)
 
         elif action == "open_signal":
             # Open signal link
