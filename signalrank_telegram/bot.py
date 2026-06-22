@@ -4239,7 +4239,7 @@ async def _handle_unknown_command(update, context):
             return
         
         # CRITICAL FIX: Add diagnostic logging and answer immediately
-        logger.info("CALLBACK HIT: data=%s user=%s", query.data, user_id)
+        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, user_id)
         await query.answer()  # Stop loading circle IMMEDIATELY
         
         try:
@@ -4301,7 +4301,7 @@ async def _handle_unknown_command(update, context):
         signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
         
         # CRITICAL FIX: Answer immediately + log callback hit
-        logger.info("CALLBACK HIT: data=%s user=%s", query.data, user_id)
+        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, user_id)
         await query.answer("Refreshing monitor…", show_alert=False)
         
         if user_id is None or chat_id is None:
@@ -4651,7 +4651,7 @@ async def _handle_unknown_command(update, context):
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
         
         # CRITICAL FIX: Add diagnostic logging and answer immediately
-        logger.info("CALLBACK HIT: data=%s user=%s", query.data, update.effective_user.id)
+        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, update.effective_user.id)
         
         if not raw:
             await query.answer("Signal reference missing.", show_alert=True)
