@@ -135,6 +135,49 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         bullets.extend(drivers[:3])
     if invalidation_text:
         bullets.append(f"Invalidation: {invalidation_text[:120]}")
+    
+    # Add confidence components from ranking if available
+    conf_components = signal.get("confidence_components") or signal.get("score_breakdown") or {}
+    if conf_components.get("trend_confidence") is not None:
+        bullets.append(f"Trend Score: {conf_components.get('trend_confidence'):.0f}")
+    if conf_components.get("liquidity_confidence") is not None:
+        bullets.append(f"Liquidity Score: {conf_components.get('liquidity_confidence'):.0f}")
+    if conf_components.get("volume_confidence") is not None:
+        bullets.append(f"Volume Score: {conf_components.get('volume_confidence'):.0f}")
+    if conf_components.get("ml_confidence") is not None:
+        bullets.append(f"ML Score: {conf_components.get('ml_confidence'):.0f}")
+    if conf_components.get("regime_confidence") is not None:
+        bullets.append(f"Regime Score: {conf_components.get('regime_confidence'):.0f}")
+    if conf_components.get("composite_score") is not None:
+        bullets.append(f"Composite: {conf_components.get('composite_score'):.0f}")
+
+    # Why this signal was generated
+    why_generated = []
+    if technical_reason:
+        why_generated.append(technical_reason)
+    if regime:
+        why_generated.append(f"Market in {regime} regime")
+    if confluence and confluence > 60:
+        why_generated.append("Strong confluence detected")
+    if ml_probability and ml_probability > 0.7:
+        why_generated.append("High ML conviction")
+    
+    # What confirms/invalidates it
+    confirms = []
+    if confluence and confluence > 50:
+        confirms.append("Strong confluence")
+    if ml_probability and ml_probability > 0.6:
+        confirms.append("ML validates")
+    if regime and regime != "RANGING":
+        confirms.append(f"Favorable {regime} regime")
+    
+    invalidates = []
+    if invalidation_text:
+        invalidates.append(invalidation_text[:80])
+    if regime == "RANGING":
+        invalidates.append("Sideways market")
+    if confluence and confluence < 30:
+        invalidates.append("Weak confluence")
 
     return {
         "score": float(score or 0.0),
@@ -149,4 +192,7 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         "drivers": drivers,
         "invalidation": invalidation_text or None,
         "score_components": score_components,
+        "why_generated": why_generated,
+        "confirms": confirms,
+        "invalidates": invalidates,
     }

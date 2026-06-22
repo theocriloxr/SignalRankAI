@@ -167,6 +167,78 @@ class RiskManager:
             trailing_stop = current_price + (trail_mult * atr)
             return min(trailing_stop, entry_price + (2 * atr))
     
+# Break-Even stop after TP1
+    def calculate_breakeven_stop(
+        self,
+        entry: float,
+        tp1_price: float,
+        direction: int = 1,
+        lock_profit_pct: float = 0.5
+    ) -> float:
+        """
+        Calculate Break-Even stop after TP1 is hit.
+        
+        When TP1 is hit, move stop loss to break-even minus a small buffer
+        to lock in profit and make the trade risk-free.
+        
+        Args:
+            entry: Entry price
+            tp1_price: TP1 price 
+            direction: 1 for Long, -1 for Short
+            lock_profit_pct: % of profit to lock (0.5 = 50%)
+            
+        Returns:
+            Break-even stop price
+        """
+        if direction == 1:  # Long
+            profit_per_unit = tp1_price - entry
+            locked_profit = profit_per_unit * lock_profit_pct
+            # Break-even = entry + (50% of profit to TP1)
+            # This makes the trade risk-free
+            breakeven = entry + (locked_profit * 2)
+            # Ensure we don't go below entry (would be loss)
+            return max(entry, breakeven)
+        else:  # Short
+            profit_per_unit = entry - tp1_price
+            locked_profit = profit_per_unit * lock_profit_pct
+            breakeven = entry - (locked_profit * 2)
+            return min(entry, breakeven)
+    
+    # Volatility-adjusted position sizing
+    def calculate_volatility_adjustment(
+        self,
+        atr: float,
+        atr20: float,
+        current_price: float
+    ) -> float:
+        """
+        Calculate volatility-adjusted position size multiplier.
+        
+        Uses ATR ratio to adjust for current volatility regime.
+        High volatility = smaller positions
+        Low volatility = larger positions
+        
+        Returns:
+            Multiplier from 0.5 to 1.2
+        """
+        if atr20 <= 0:
+            return 1.0
+        
+        atr_ratio = atr / atr20
+        
+        if atr_ratio > 1.5:
+            # High volatility - reduce position
+            return 0.5
+        elif atr_ratio > 1.2:
+            return 0.7
+        elif atr_ratio > 1.0:
+            return 0.85
+        elif atr_ratio > 0.8:
+            return 1.0
+        else:
+            # Low volatility - increase position
+            return 1.2
+    
     # Partial exits
     def calculate_partial_exit_levels(
         self,
