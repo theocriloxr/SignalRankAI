@@ -14,10 +14,12 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    Index,
     String,
     Text,
     JSON,
     UniqueConstraint,
+    text,
 )
 # Lazy-load PostgreSQL UUID dialect to avoid Railway startup crashes
 try:
@@ -85,6 +87,16 @@ User.subscriptions = relationship("Subscription", back_populates="user")
 
 class Signal(Base):
     __tablename__ = "signals"
+    __table_args__ = (
+        Index(
+            "ix_signals_active_thesis",
+            "asset",
+            "direction",
+            "timeframe",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+        ),
+    )
 
     signal_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     asset: Mapped[str] = mapped_column(String(32), index=True)
