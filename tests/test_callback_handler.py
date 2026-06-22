@@ -36,6 +36,7 @@ class DummyCallbackQuery:
 class DummyUpdate:
     def __init__(self, cq: DummyCallbackQuery):
         self.callback_query = cq
+        self.effective_user = cq.from_user
 
 
 class DummyContext:
@@ -60,6 +61,7 @@ def test_global_callback_handler_routing(monkeypatch):
         monkeypatch.setattr(mod, "_handle_signal_reaction", make_stub("signal_reaction"))
         monkeypatch.setattr(mod, "_handle_monitor_signal", make_stub("monitor_signal"))
         monkeypatch.setattr(mod, "_handle_check_outcome", make_stub("check_outcome"))
+        monkeypatch.setattr("signalrank_telegram.commands.mt5_status_command", make_stub("mt5_status"))
         monkeypatch.setattr(mod, "_handle_default_callback", make_stub("default"))
 
         ctx = DummyContext()
@@ -88,6 +90,12 @@ def test_global_callback_handler_routing(monkeypatch):
         await mod._global_callback_handler(upd4, ctx)
         assert any(c[0] == "check_outcome" for c in calls)
 
+        # Test mt5_status routing
+        cq4b = DummyCallbackQuery("mt5_status", user_id=45)
+        upd4b = DummyUpdate(cq4b)
+        await mod._global_callback_handler(upd4b, ctx)
+        assert any(c[0] == "mt5_status" for c in calls)
+
         # Test unknown callback falls back to default handler
         cq5 = DummyCallbackQuery("unknown_foobar", user_id=46)
         upd5 = DummyUpdate(cq5)
@@ -95,6 +103,28 @@ def test_global_callback_handler_routing(monkeypatch):
         assert any(c[0] == "default" for c in calls)
 
         # Ensure all CallbackQuery.answer() were called to stop the spinner
-        assert cq.answered and cq2.answered and cq3.answered and cq4.answered and cq5.answered
+        assert cq.answered and cq2.answered and cq3.answered and cq4.answered and cq4b.answered and cq5.answered
+
+    asyncio.run(_runner())
+
+
+def test_button_click_handler_routes_nav_execution(monkeypatch):
+    async def _runner():
+        mod = importlib.import_module("signalrank_telegram.commands")
+
+        calls = []
+
+        async def execution_stub(update, context):
+            calls.append(("execution", update, context))
+
+        monkeypatch.setattr(mod, "execution_command", execution_stub)
+
+        ctx = DummyContext()
+        cq = DummyCallbackQuery("nav_execution", user_id=42)
+        upd = DummyUpdate(cq)
+        await mod.button_click_handler(upd, ctx)
+
+        assert any(c[0] == "execution" for c in calls)
+        assert cq.answered
 
     asyncio.run(_runner())

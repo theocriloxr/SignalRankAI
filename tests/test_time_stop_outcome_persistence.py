@@ -5,6 +5,18 @@ import pytest
 import engine.realtime_outcome_tracker as rt
 
 
+def test_parse_tp_levels_supports_dict_entries():
+    tp_levels = rt._parse_tp_levels(
+        [
+            {"price": 101.25, "exit_percent": 33},
+            {"tp": "102.5", "exit_percent": 33},
+            {"target": 103.75, "exit_percent": 34},
+        ]
+    )
+
+    assert tp_levels == [101.25, 102.5, 103.75]
+
+
 @pytest.mark.asyncio
 async def test_persist_outcome_maps_time_stop_channels(monkeypatch):
     captured = {}

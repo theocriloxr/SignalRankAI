@@ -24,6 +24,17 @@ def test_buy_extra_signals_removed_from_command_access() -> None:
     assert "buy_extra_signals" not in source
 
 
+def test_signal_action_keyboard_omits_dead_callbacks_without_signal_id() -> None:
+    from signalrank_telegram.commands import _build_signal_action_keyboard
+
+    keyboard = _build_signal_action_keyboard({"asset": "BTCUSDT", "direction": "long"})
+    assert keyboard is not None
+    first_row = keyboard.inline_keyboard[0]
+    callback_payloads = [button.callback_data for button in first_row if getattr(button, "callback_data", None)]
+    assert callback_payloads == []
+    assert any(getattr(button, "url", None) for button in first_row)
+
+
 @pytest.mark.asyncio
 async def test_gemini_audit_command_uses_session_and_helper() -> None:
     from signalrank_telegram.commands import gemini_audit_command

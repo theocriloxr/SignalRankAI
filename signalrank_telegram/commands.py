@@ -200,13 +200,13 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		chart_url = "https://www.tradingview.com/chart/"
 		if _chart_symbol:
 			chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{_chart_symbol}"
-		signal_id = str((signal or {}).get("signal_id") or "")[:36]
-		trade_cb = f"mt5_trade_{signal_id}" if signal_id else "mt5_trade"
-		rows = [[
-			InlineKeyboardButton("🖼 Chart", callback_data=f"signal_chart_{signal_id}" if signal_id else "signal_chart"),
-			InlineKeyboardButton("📈 View Chart", url=chart_url),
-			InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
-		]]
+		signal_id = str((signal or {}).get("signal_id") or "").strip()[:36]
+		rows = [[]]
+		if signal_id:
+			rows[0].append(InlineKeyboardButton("🖼 Chart", callback_data=f"signal_chart_{signal_id}"))
+		rows[0].append(InlineKeyboardButton("📈 View Chart", url=chart_url))
+		if signal_id:
+			rows[0].append(InlineKeyboardButton("⚡ Trade Now", callback_data=f"mt5_trade_{signal_id}"))
 		if signal_id:
 			rows.append([
 				InlineKeyboardButton("🔥 Taking It", callback_data=f"signal_reaction_{signal_id}|taking_it"),
@@ -216,6 +216,8 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 				InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
 				InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{signal_id}"),
 			])
+		elif not rows[0]:
+			rows[0].append(InlineKeyboardButton("📈 View Chart", url=chart_url))
 		keyboard = InlineKeyboardMarkup(rows)
 		return keyboard
 	except Exception:
@@ -587,6 +589,25 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			except Exception:
 				pass
 			return
+	if data == "nav_execution":
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			from types import SimpleNamespace
+			proxy_update = SimpleNamespace(
+				effective_user=update.effective_user,
+				message=query.message,
+			)
+			await execution_command(proxy_update, context)
+			return
+		except Exception as _e:
+			logger.exception("[button_click] nav_execution failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
+			return
 	if data == "nav_upgrade":
 		try:
 			uid = update.effective_user.id if update.effective_user else None
@@ -623,6 +644,25 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 		except Exception:
 			pass
 		return
+	if data == "mt5_status":
+		try:
+			uid = update.effective_user.id if update.effective_user else None
+			if uid is None:
+				return
+			from types import SimpleNamespace
+			proxy_update = SimpleNamespace(
+				effective_user=update.effective_user,
+				message=query.message,
+			)
+			await mt5_status_command(proxy_update, context)
+			return
+		except Exception as _e:
+			logger.exception("[button_click] mt5_status failed: %s", _e)
+			try:
+				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
+			return
 	# Admin dashboard shortcut
 	if data == "admin_dashboard":
 		return await admin_dashboard(update, context)

@@ -155,8 +155,38 @@ async def _get_live_price(symbol: str) -> Optional[float]:
 
 def _parse_tp_levels(take_profit_raw: Any) -> List[float]:
     """Parse take_profit field which may be a JSON list, comma string, or float."""
+    def _coerce_tp_value(item: Any) -> Optional[float]:
+        if item is None:
+            return None
+        if isinstance(item, dict):
+            for key in ("price", "tp", "target", "level"):
+                try:
+                    raw = item.get(key)
+                except Exception:
+                    raw = None
+                if raw is None:
+                    continue
+                try:
+                    value = float(raw)
+                except Exception:
+                    continue
+                if value:
+                    return value
+            return None
+        if isinstance(item, (list, tuple)):
+            for nested in item:
+                value = _coerce_tp_value(nested)
+                if value is not None:
+                    return value
+            return None
+        try:
+            value = float(item)
+        except Exception:
+            return None
+        return value if value else None
+
     if isinstance(take_profit_raw, list):
-        return [float(x) for x in take_profit_raw if x]
+        return [value for value in (_coerce_tp_value(x) for x in take_profit_raw) if value]
     if isinstance(take_profit_raw, (int, float)):
         return [float(take_profit_raw)]
     s = str(take_profit_raw).strip()
@@ -164,8 +194,9 @@ def _parse_tp_levels(take_profit_raw: Any) -> List[float]:
     try:
         parsed = json.loads(s)
         if isinstance(parsed, list):
-            return [float(x) for x in parsed if x]
-        return [float(parsed)]
+            return [value for value in (_coerce_tp_value(x) for x in parsed) if value]
+        value = _coerce_tp_value(parsed)
+        return [value] if value else []
     except Exception:
         pass
     # Comma-separated
@@ -173,7 +204,9 @@ def _parse_tp_levels(take_profit_raw: Any) -> List[float]:
     out = []
     for p in parts:
         try:
-            out.append(float(p))
+            value = float(p)
+            if value:
+                out.append(value)
         except Exception:
             pass
     return out or []

@@ -4148,7 +4148,7 @@ async def _handle_unknown_command(update, context):
     # ── Help/Navigation buttons ─────────────────────────────────────────────
     from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
-    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|trade_now.*|mt5_link_guide|mt5_settings|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
+    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|trade_now.*|mt5_link_guide|mt5_settings|mt5_status|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
     from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard, force_market_scan_command
