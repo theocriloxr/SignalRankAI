@@ -22,6 +22,7 @@ from engine.signal_metrics import (
     resolve_confluence_percent,
     resolve_ml_probability,
 )
+from engine.signal_explainability import build_signal_explanation
 
 
 def _env_float(name: str, default: float) -> float:
@@ -215,6 +216,11 @@ def score_signal(signal):
         "ml_boost": ml_boost,
         "rr_bonus": rr_bonus,
     }
+    explanation = build_signal_explanation(signal)
+    signal["technical_reason"] = explanation.get("summary") or signal.get("technical_reason")
+    signal["explanation"] = explanation
+    if explanation.get("invalidation") and not signal.get("invalidation"):
+        signal["invalidation"] = explanation["invalidation"]
     # Store both raw and display scores for different use cases
     signal["raw_score"] = raw_score
     signal["display_score"] = display_score

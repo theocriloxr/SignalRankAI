@@ -11,6 +11,8 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from engine.signal_explainability import build_signal_explanation
+
 
 def generate_webhook_payload(
     signal: Dict[str, Any],
@@ -92,6 +94,8 @@ def generate_webhook_payload(
         "strategy": str(signal.get('strategy_name') or ''),
         "score": float(signal.get('score') or 0),
         "confidence": float(signal.get('confidence') or 0),
+        "technical_reason": str(signal.get('technical_reason') or ''),
+        "explanation": build_signal_explanation(signal),
     }
     
     # Add broker-specific fields

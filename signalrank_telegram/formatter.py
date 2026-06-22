@@ -2,6 +2,7 @@ from engine.tier_notifications import TierNotificationManager
 from datetime import datetime, timezone
 import os
 from core.tier_constants import TIER_SCORE_THRESHOLDS
+from engine.signal_explainability import build_signal_explanation
 from engine.signal_metrics import (
 	resolve_confidence_ratio,
 	resolve_confluence_percent,
@@ -784,6 +785,7 @@ def format_signal_premium_new(signal: dict) -> str:
 	signal_age = enhanced.get('signal_age_minutes')
 	price_indicator = enhanced.get('price_status_indicator', 'ℹ️')
 	current_price = signal.get('current_price')
+	explanation = build_signal_explanation(signal)
 	
 	# Use calculated RR if available
 	if rr_calculated:
@@ -881,6 +883,12 @@ def format_signal_premium_new(signal: dict) -> str:
 		lines.append(f"┃ AI Confluence: {int(_cv)}/{int(_ct)} agree")
 		if _cdr:
 			lines.append(f"┃ Drivers: {', '.join(str(d) for d in _cdr[:3])}")
+	if explanation.get('summary'):
+		lines.append(f"┃ Why: {str(explanation['summary'])[:90]}")
+	for bullet in explanation.get('bullets', [])[:2]:
+		lines.append(f"┃ • {str(bullet)[:90]}")
+	if explanation.get('invalidation'):
+		lines.append(f"┃ Invalidation: {str(explanation['invalidation'])[:90]}")
 
 	# Add signal age if available
 	if signal_age is not None:
@@ -961,6 +969,7 @@ def format_signal_vip_new(signal: dict) -> str:
 	
 	# Score explanation
 	score_explanation = _get_score_explanation(signal)
+	explanation = build_signal_explanation(signal)
 
 	# Entry zone: only show low–high range if they differ meaningfully (>0.01%)
 	try:
@@ -1086,6 +1095,12 @@ def format_signal_vip_new(signal: dict) -> str:
 		_sv = signal.get('short_votes', 0)
 		if _lv or _sv:
 			lines.append(f"┃ Votes: ⬆️{_lv} LONG / ⬇️{_sv} SHORT")
+	if explanation.get('summary'):
+		lines.append(f"┃ Why: {str(explanation['summary'])[:90]}")
+	for bullet in explanation.get('bullets', [])[:3]:
+		lines.append(f"┃ • {str(bullet)[:90]}")
+	if explanation.get('invalidation'):
+		lines.append(f"┃ Invalidation: {str(explanation['invalidation'])[:90]}")
 
 	# Add signal age if available
 	if signal_age is not None:
