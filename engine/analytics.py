@@ -383,3 +383,178 @@ def calculate_mfe_mae(
         direction=direction,
         price_history_df=price_history_df
     )
+
+
+class RegimeAnalytics:
+    """
+    Tracks performance analytics by market regime, asset, and timeframe.
+    
+    Used to:
+    - Identify which strategies perform best in each regime
+    - Optimize signal generation based on historical performance
+    - Self-learning: automatically reduce weight of poor performers
+    """
+    
+    def __init__(self):
+        self._results: list = []
+        self._max_results = 5000
+    
+    def record_result(
+        self,
+        asset: str,
+        timeframe: str,
+        regime: str,
+        direction: str,
+        entry_price: float,
+        exit_price: float,
+        outcome: str,  # WIN, LOSS, EXPIRED, CANCELLED
+    ) -> None:
+        """Record a trade result for regime analytics."""
+        if not outcome:
+            return
+            
+        is_win = outcome.upper() == "WIN"
+        pnl_pct = 0.0
+        if entry_price > 0:
+            if direction.upper() == "LONG":
+                pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+            else:
+                pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+        
+        result = {
+            "asset": asset.upper() if asset else "",
+            "timeframe": timeframe.lower() if timeframe else "",
+            "regime": regime.upper() if regime else "NEUTRAL",
+            "direction": direction.upper() if direction else "",
+            "outcome": outcome.upper(),
+            "is_win": is_win,
+            "pnl_pct": pnl_pct,
+        }
+        
+        self._results.append(result)
+        
+        if len(self._results) > self._max_results:
+            self._results = self._results[-self._max_results:]
+    
+    def get_win_rate_by_regime(self, regime: str) -> float:
+        """Get win rate for a specific market regime."""
+        if not self._results:
+            return 0.0
+        
+        regime_results = [
+            r for r in self._results 
+            if r.get("regime", "").upper() == regime.upper()
+        ]
+        
+        if not regime_results:
+            return 0.0
+        
+        wins = sum(1 for r in regime_results if r.get("is_win"))
+        return (wins / len(regime_results)) * 100
+    
+    def get_win_rate_by_asset(self, asset: str) -> float:
+        """Get win rate for a specific asset."""
+        if not self._results:
+            return 0.0
+        
+        asset_results = [
+            r for r in self._results 
+            if r.get("asset", "").upper() == asset.upper()
+        ]
+        
+        if not asset_results:
+            return 0.0
+        
+        wins = sum(1 for r in asset_results if r.get("is_win"))
+        return (wins / len(asset_results)) * 100
+    
+    def get_win_rate_by_timeframe(self, timeframe: str) -> float:
+        """Get win rate for a specific timeframe."""
+        if not self._results:
+            return 0.0
+        
+        tf_results = [
+            r for r in self._results 
+            if r.get("timeframe", "").lower() == timeframe.lower()
+        ]
+        
+        if not tf_results:
+            return 0.0
+        
+        wins = sum(1 for r in tf_results if r.get("is_win"))
+        return (wins / len(tf_results)) * 100
+    
+    def get_profit_factor_by_regime(self, regime: str) -> float:
+        """Get profit factor (gross profit / gross loss) for a regime."""
+        if not self._results:
+            return 0.0
+        
+        regime_results = [
+            r for r in self._results 
+            if r.get("regime", "").upper() == regime.upper()
+        ]
+        
+        if not regime_results:
+            return 0.0
+        
+        gross_profit = sum(r.get("pnl_pct", 0) for r in regime_results if r.get("pnl_pct", 0) > 0)
+        gross_loss = abs(sum(r.get("pnl_pct", 0) for r in regime_results if r.get("pnl_pct", 0) < 0))
+        
+        if gross_loss == 0:
+            return gross_profit if gross_profit > 0 else 0.0
+        
+        return gross_profit / gross_loss
+    
+    def get_regime_statistics(self) -> dict:
+        """Get comprehensive regime statistics."""
+        regimes = ["TRENDING", "RANGING", "VOLATILE", "NEUTRAL"]
+        stats = {}
+        
+        for regime in regimes:
+            wr = self.get_win_rate_by_regime(regime)
+            pf = self.get_profit_factor_by_regime(regime)
+            
+            if wr > 0 or pf > 0:
+                stats[regime] = {
+                    "win_rate": round(wr, 2),
+                    "profit_factor": round(pf, 2),
+                }
+        
+        return stats
+    
+    def get_asset_statistics(self) -> dict:
+        """Get statistics grouped by asset."""
+        asset_stats = {}
+        
+        for r in self._results:
+            asset = r.get("asset", "")
+            if not asset or asset in asset_stats:
+                continue
+            
+            wr = self.get_win_rate_by_asset(asset)
+            asset_stats[asset] = {"win_rate": round(wr, 2)}
+        
+        return asset_stats
+    
+    def get_timeframe_statistics(self) -> dict:
+        """Get statistics grouped by timeframe."""
+        tf_stats = {}
+        
+        for r in self._results:
+            tf = r.get("timeframe", "")
+            if not tf or tf in tf_stats:
+                continue
+            
+            wr = self.get_win_rate_by_timeframe(tf)
+            tf_stats[tf] = {"win_rate": round(wr, 2)}
+        
+        return tf_stats
+
+
+# Singleton instance for regime analytics
+_regime_analytics = RegimeAnalytics()
+
+
+def get_regime_analytics() -> RegimeAnalytics:
+    """Get the global regime analytics instance."""
+    return _regime_analytics

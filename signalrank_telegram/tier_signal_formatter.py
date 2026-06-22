@@ -15,6 +15,7 @@ from engine.signal_metrics import (
     resolve_ml_probability,
     resolve_score_percent,
 )
+from engine.signal_explainability import build_signal_explanation
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +439,14 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         f"⚠️ Volatility: {volatility}",
     ]
 
+    explanation = build_signal_explanation(signal)
+    if explanation.get("summary"):
+        lines.append(f"🧠 Why: {_h(str(explanation['summary'])[:120])}")
+    for bullet in explanation.get("bullets", [])[:3]:
+        lines.append(f"• {_h(str(bullet))}")
+    if explanation.get("invalidation"):
+        lines.append(f"❌ Invalidation: {_h(str(explanation['invalidation'])[:100])}")
+
     # Optional: ML probability
     ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
@@ -597,6 +606,10 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         f"🤖 Conviction Score: {score_val:.1f}%",
     ]
 
+    explanation = build_signal_explanation(signal)
+    if explanation.get("summary"):
+        lines.append(f"🧠 Why: {_h(str(explanation['summary'])[:120])}")
+
     # Order Block — VIP exclusive
     if order_block:
         lines.append(f"🧱 Order Block: {_h(order_block)}")
@@ -635,6 +648,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     confluence = resolve_confluence_percent(signal)
     if confluence is not None:
         lines.append(f"📊 Confluence: {int(confluence)}%")
+    for bullet in explanation.get("bullets", [])[:4]:
+        lines.append(f"• {_h(str(bullet))}")
 
     lines += [
         "",

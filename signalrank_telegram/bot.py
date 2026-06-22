@@ -1124,6 +1124,11 @@ async def _deliver_or_update_signal_async(
 ) -> bool:
     """Prefer editing existing active message over sending a near-duplicate new one."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    try:
+        from signalrank_telegram.delivery_cooldown import check_delivery_cooldown, set_delivery_cooldown
+    except Exception:
+        check_delivery_cooldown = None
+        set_delivery_cooldown = None
 
     signal_id = str(signal.get("signal_id") or "").strip()
     text = format_signal(signal, display_tier=display_tier)
@@ -1180,6 +1185,16 @@ async def _deliver_or_update_signal_async(
                 f"asset={signal_asset} signal={signal_id or signal.get('id')}"
             )
             return True
+
+        if check_delivery_cooldown is not None and signal_asset:
+            raw_direction = str(signal.get("direction") or "").strip().lower()
+            cooldown_direction = "BUY" if raw_direction in {"long", "buy"} else "SELL" if raw_direction in {"short", "sell"} else raw_direction.upper()
+            if cooldown_direction and check_delivery_cooldown(int(telegram_user_id), signal_asset, cooldown_direction):
+                logger.info(
+                    f"[delivery_cooldown] skipped duplicate delivery: user={telegram_user_id} "
+                    f"asset={signal_asset} direction={cooldown_direction} signal={signal_id or signal.get('id')}"
+                )
+                return True
     except Exception as exc:
         logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
 
@@ -1191,6 +1206,17 @@ async def _deliver_or_update_signal_async(
         telegram_user_id=int(telegram_user_id),
         signal=signal,
     )
+
+    try:
+        if set_delivery_cooldown is not None:
+            signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+            raw_direction = str(signal.get("direction") or "").strip().lower()
+            cooldown_direction = "BUY" if raw_direction in {"long", "buy"} else "SELL" if raw_direction in {"short", "sell"} else raw_direction.upper()
+            if signal_asset and cooldown_direction:
+                set_delivery_cooldown(int(telegram_user_id), signal_asset, cooldown_direction, str(display_tier or "free"))
+    except Exception as exc:
+        logger.debug(f"[delivery_cooldown] set failed for user={telegram_user_id}: {exc}")
+
     return True
 
 
@@ -1216,6 +1242,16 @@ def _deliver_or_update_signal_sync(
                 sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
                 if sig_id:
                     mark_signal_delivered_sync(int(telegram_user_id), sig_id)
+                try:
+                    from signalrank_telegram.delivery_cooldown import set_delivery_cooldown
+
+                    signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+                    raw_direction = str(signal.get("direction") or "").strip().lower()
+                    cooldown_direction = "BUY" if raw_direction in {"long", "buy"} else "SELL" if raw_direction in {"short", "sell"} else raw_direction.upper()
+                    if signal_asset and cooldown_direction:
+                        set_delivery_cooldown(int(telegram_user_id), signal_asset, cooldown_direction, str(display_tier or "free"))
+                except Exception as cooldown_err:
+                    logger.debug(f"[delivery_cooldown] sync set failed: {cooldown_err}")
             except Exception as redis_err:
                 logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {redis_err}")
         return ok
@@ -4203,7 +4239,7 @@ async def _handle_unknown_command(update, context):
             return
         
         # CRITICAL FIX: Add diagnostic logging and answer immediately
-        logger.info("CALLBACK HIT: data=%s user=%s", query.data, user_id)
+        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, user_id)
         await query.answer()  # Stop loading circle IMMEDIATELY
         
         try:
@@ -4265,7 +4301,7 @@ async def _handle_unknown_command(update, context):
         signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
         
         # CRITICAL FIX: Answer immediately + log callback hit
-        logger.info("CALLBACK HIT: data=%s user=%s", query.data, user_id)
+        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, user_id)
         await query.answer("Refreshing monitor…", show_alert=False)
         
         if user_id is None or chat_id is None:
@@ -4615,7 +4651,7 @@ async def _handle_unknown_command(update, context):
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
         
         # CRITICAL FIX: Add diagnostic logging and answer immediately
-        logger.info("CALLBACK HIT: data=%s user=%s", query.data, update.effective_user.id)
+        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, update.effective_user.id)
         
         if not raw:
             await query.answer("Signal reference missing.", show_alert=True)
