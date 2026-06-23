@@ -1,7 +1,7 @@
 """engine/cycle_queue.py — Round-robin asset scanner queue.
 
 Guarantees every discovered (and manually-configured) asset is processed
-exactly once per round before any asset is repeated.  A new round begins
+exactly once per round before any asset is repeated. A new round begins
 automatically when the queue drains.
 
 Designed for the engine main_loop::
@@ -25,10 +25,12 @@ CYCLE_UNIVERSE_REFRESH_INTERVAL
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
+import traceback
 from collections import deque
-from typing import List
+from typing import Deque, List
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,7 @@ class AssetCycleQueue:
     * ``refresh_universe(assets)`` — update the canonical asset universe;
       newly-discovered assets are appended to the *tail* of the current queue
       so they are included in this round without discarding already-queued
-      work.  Runs at most once per ``CYCLE_UNIVERSE_REFRESH_INTERVAL`` seconds
+      work. Runs at most once per ``CYCLE_UNIVERSE_REFRESH_INTERVAL`` seconds
       unless *force=True*.
 
     * ``pop_batch(n)`` — pop up to *n* assets for processing; triggers a new
@@ -53,15 +55,14 @@ class AssetCycleQueue:
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._queue: deque[str] = deque()
+        self._queue: Deque[str] = deque()
         self._done_this_round: set[str] = set()
         self._universe: list[str] = []
         self._round_no: int = 0
         self._last_refresh: float = 0.0
-        import os
-        self._refresh_interval: float = float(
-            os.getenv("CYCLE_UNIVERSE_REFRESH_INTERVAL", "3600") or "3600"
-        )
+
+        self._refresh_interval: float = self._read_refresh_interval_seconds()
+
         # Round-level stats
         self._round_signals: int = 0
         self._round_assets_done: int = 0
@@ -72,38 +73,35 @@ class AssetCycleQueue:
         """Merge *assets* into the canonical universe.
 
         New assets not yet seen this round are appended to the queue tail.
-        Already-queued and already-done assets are left untouched.  The rebuild
+        Already-queued and already-done assets are left untouched. The rebuild
         only fires once per ``_refresh_interval`` unless *force=True*.
         """
         now = time.monotonic()
-        with self._lock:
-            if not force and (now - self._last_refresh) < self._refresh_interval:
-                return
-            self._last_refresh = now
+        try:
+            with self._lock:
+                if not force and (now - self._last_refresh) < self._refresh_interval:
+                    return
+                self._last_refresh = now
 
-            # De-duplicate while preserving order.
-            ordered: list[str] = []
-            seen: set[str] = set()
-            for a in (assets or []):
-                a = str(a or "").strip()
-                if a and a not in seen:
-                    ordered.append(a)
-                    seen.add(a)
+                ordered = self._normalize_assets(assets)
 
-            # Append assets brand-new to this round.
-            existing = set(self._queue) | self._done_this_round
-            added = 0
-            for a in ordered:
-                if a not in existing:
-                    self._queue.append(a)
-                    added += 1
+                # Append assets brand-new to this round.
+                existing = set(self._queue) | self._done_this_round
+                added = 0
+                for asset in ordered:
+                    if asset not in existing:
+                        self._queue.append(asset)
+                        existing.add(asset)
+                        added += 1
 
-            self._universe = ordered
-            logger.info(
-                "[cycle_queue] universe updated: %d assets total, "
-                "+%d new appended, queue_remaining=%d, round=%d",
-                len(ordered), added, len(self._queue), self._round_no,
-            )
+                self._universe = ordered
+                logger.info(
+                    "[cycle_queue] universe updated: %d assets total, "
+                    "+%d new appended, queue_remaining=%d, round=%d",
+                    len(ordered), added, len(self._queue), self._round_no,
+                )
+        except Exception:
+            logger.error("[cycle_queue] refresh_universe failed: %s", traceback.format_exc())
 
     def pop_batch(self, size: int = 10) -> List[str]:
         """Pop up to *size* assets from the queue.
@@ -115,8 +113,10 @@ class AssetCycleQueue:
         with self._lock:
             if not self._queue:
                 self._start_new_round()
+
+            safe_size = self._normalize_batch_size(size)
             batch: List[str] = []
-            for _ in range(max(1, int(size))):
+            for _ in range(safe_size):
                 if not self._queue:
                     break
                 batch.append(self._queue.popleft())
@@ -125,9 +125,15 @@ class AssetCycleQueue:
     def mark_done(self, assets: List[str], signals_generated: int = 0) -> None:
         """Record *assets* as processed this round and accumulate stats."""
         with self._lock:
-            for a in (assets or []):
-                self._done_this_round.add(str(a or "").strip())
-            self._round_assets_done += len(assets)
+            normalized = self._normalize_assets(assets)
+
+            newly_done = 0
+            for asset in normalized:
+                if asset not in self._done_this_round:
+                    self._done_this_round.add(asset)
+                    newly_done += 1
+
+            self._round_assets_done += newly_done
             self._round_signals += max(0, int(signals_generated))
 
     def remove_from_queue(self, assets: List[str]) -> int:
@@ -138,11 +144,11 @@ class AssetCycleQueue:
         current cycle batch and wants to avoid duplicates later in round.
         """
         with self._lock:
-            targets = {str(a or "").strip() for a in (assets or []) if str(a or "").strip()}
+            targets = set(self._normalize_assets(assets))
             if not targets:
                 return 0
             before = len(self._queue)
-            self._queue = deque([a for a in self._queue if a not in targets])
+            self._queue = deque([asset for asset in self._queue if asset not in targets])
             return max(0, before - len(self._queue))
 
     # ─────────────────────────── properties ───────────────────────────
@@ -160,6 +166,12 @@ class AssetCycleQueue:
     def universe_size(self) -> int:
         with self._lock:
             return len(self._universe)
+
+    @property
+    def pending_assets_snapshot(self) -> List[str]:
+        """Snapshot of currently queued assets, preserving queue order."""
+        with self._lock:
+            return list(self._queue)
 
     @property
     def round_progress(self) -> str:
@@ -189,3 +201,41 @@ class AssetCycleQueue:
             "(prev round: %d assets processed, %d signals generated)",
             self._round_no, len(self._queue), prev_done, prev_sigs,
         )
+
+    @staticmethod
+    def _normalize_assets(assets: List[str] | None) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for raw in (assets or []):
+            asset = str(raw or "").strip()
+            if asset and asset not in seen:
+                ordered.append(asset)
+                seen.add(asset)
+        return ordered
+
+    @staticmethod
+    def _normalize_batch_size(size: int) -> int:
+        try:
+            normalized = int(size)
+        except Exception:
+            normalized = 10
+        return max(1, normalized)
+
+    @staticmethod
+    def _read_refresh_interval_seconds() -> float:
+        raw = os.getenv("CYCLE_UNIVERSE_REFRESH_INTERVAL", "3600")
+        try:
+            parsed = float(str(raw).strip() or "3600")
+        except Exception:
+            logger.warning(
+                "[cycle_queue] invalid CYCLE_UNIVERSE_REFRESH_INTERVAL=%r; defaulting to 3600",
+                raw,
+            )
+            return 3600.0
+        if parsed <= 0:
+            logger.warning(
+                "[cycle_queue] non-positive CYCLE_UNIVERSE_REFRESH_INTERVAL=%s; defaulting to 3600",
+                parsed,
+            )
+            return 3600.0
+        return parsed

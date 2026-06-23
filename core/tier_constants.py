@@ -18,7 +18,7 @@ Subscription tiers:
 from __future__ import annotations
 
 import os
-from typing import Dict, Optional
+from typing import Dict
 
 
 # ─── Daily signal limits per tier ─────────────────────────────────────────────
@@ -199,9 +199,29 @@ TIER_ASSET_COOLDOWN_HOURS: Dict[str, int] = {
 }
 
 
+# ─── Engine / strategy compatibility constants ────────────────────────────────
+# Backward-compatible export used by strategies.dynamic_targets and related
+# expectancy/risk gates. This value is intentionally env-configurable.
+EXPECTANCY_MIN: float = float(os.getenv("EXPECTANCY_MIN", "0.0") or 0.0)
+
+
+# ─── Candle freshness / staleness constants ───────────────────────────────────
+# Used by engine core data-age gate: max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
+CANDLE_STALENESS_MULTIPLIER: float = float(
+    os.getenv("CANDLE_STALENESS_MULTIPLIER", "2.0") or 2.0
+)
+
+
+# ─── News / sentiment gating constants ────────────────────────────────────────
+# Strong opposing sentiment threshold used by engine news confirmation gate.
+STRONG_SENTIMENT_THRESHOLD: float = float(
+    os.getenv("STRONG_SENTIMENT_THRESHOLD", "2.0") or 2.0
+)
+
+
 # ─── VIP capacity cap ─────────────────────────────────────────────────────────
 
-VIP_MAX_CAPACITY: int = int(os.getenv("VIP_MAX_CAPACITY", "100") or 100)
+VIP_MAX_CAPACITY: int = int(os.getenv("VIP_MAX_CAPACITY", "30") or 30)
 
 
 __all__ = [
@@ -215,6 +235,9 @@ __all__ = [
     "TIER_DISPLAY_NAMES",
     "TIER_EMOJIS",
     "TIER_ASSET_COOLDOWN_HOURS",
+    "EXPECTANCY_MIN",
+    "CANDLE_STALENESS_MULTIPLIER",
+    "STRONG_SENTIMENT_THRESHOLD",
     "VIP_MAX_CAPACITY",
     "tier_rank",
     "normalize_tier",
