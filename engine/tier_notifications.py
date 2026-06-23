@@ -1,405 +1,409 @@
 """
-Tier-Based Notification System
-- Premium/VIP: Detailed TP/SL advice, partial exit suggestions, position management
-- Free: Basic TP/SL hit notifications only (for their 3 daily signals)
+SignalRankAI — Tier Notification Manager (PERFECTED)
+
+Formats and dispatches all outcome notifications with tier-specific content:
+  - FREE: Teaser format, drives upgrade CTA
+  - PREMIUM: Full detail, entry/exit/pct, no TP3
+  - VIP/ADMIN/OWNER: Full detail + R-multiple + regime + Gemini insight + TP3
+
+One Signal = One Lifecycle:
+  BUY BTC → ENTRY HIT → TP1 HIT → TP2 HIT → CLOSED
+
+Every message is edited in-place where possible (edit_message_text)
+or sent as a follow-up notification.
 """
 
-import os
+from __future__ import annotations
+
 import logging
-from typing import Dict, List, Optional
-from datetime import datetime
+import os
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 
+def _fmt(value, decimals: int = 5) -> str:
+    """Format a price/float value nicely."""
+    try:
+        v = float(value)
+        if v == 0:
+            return "N/A"
+        # Auto-adjust decimal places based on magnitude
+        if v >= 1000:
+            return f"{v:,.2f}"
+        elif v >= 1:
+            return f"{v:.{min(decimals, 4)}f}"
+        else:
+            return f"{v:.{decimals}f}"
+    except Exception:
+        return str(value) if value else "N/A"
+
+
+def _pct_str(pct: Optional[float]) -> str:
+    """Format a percentage value."""
+    if pct is None:
+        return "N/A"
+    try:
+        return f"{float(pct):+.2f}%"
+    except Exception:
+        return "N/A"
+
+
+def _r_str(r: Optional[float]) -> str:
+    """Format an R-multiple value."""
+    if r is None:
+        return "N/A"
+    try:
+        return f"{float(r):.2f}R"
+    except Exception:
+        return "N/A"
+
+
 class TierNotificationManager:
-    """Manages tier-based notifications."""
-    
-    def __init__(self):
-        self.tier_limits = {
-            'free': {
-                'signals_per_day': 2,
-                'detailed_notifications': False,
-                'partial_exit_advice': False,
-                'position_sizing': False,
-                'win_rate_stats': False
-            },
-            'premium': {
-                'signals_per_day': 20,
-                'detailed_notifications': True,
-                'partial_exit_advice': True,
-                'position_sizing': True,
-                'win_rate_stats': True
-            },
-            'vip': {
-                'signals_per_day': 100,
-                'detailed_notifications': True,
-                'partial_exit_advice': True,
-                'position_sizing': True,
-                'win_rate_stats': True,
-                'priority_support': True
-            }
-        }
-    
-    def format_new_signal(
-        self,
-        signal: Dict,
-        user_tier: str,
-        entry_zone: Dict,
-        htf_bias: Dict,
-        mtf_confluence: Dict,
-        session: str
-    ) -> str:
-        """
-        Format new signal alert based on user tier.
-        
-        Premium/VIP: Full details
-        Free: Basic details
-        """
-        is_premium = user_tier in ['premium', 'vip']
-        
-        # Confidence badge
-        score = signal.get('score', 0)
-        if score >= 80:
-            badge = "🔥 STRONG"
-        elif score >= 60:
-            badge = "⚠️ MODERATE"
-        else:
-            badge = "⚙️ WEAK"
-        
-        # Session emoji
-        session_emoji = {
-            'ASIA': '🌏',
-            'LONDON': '🇬🇧',
-            'NY': '🇺🇸',
-            'LONDON_NY_OVERLAP': '🔥'
-        }
-        
-        direction = signal.get('direction', 'long').upper()
-        symbol = signal.get('symbol')
-        timeframe = signal.get('timeframe', '1h')
-        
-        # Header
-        msg = f"{badge} {direction} SIGNAL | {session_emoji.get(session, '')} {session.replace('_', ' ')}\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        msg += f"📊 {symbol} | {timeframe}\n"
-        
-        # Entry zone
-        zone_low = entry_zone.get('zone_low', 0)
-        zone_high = entry_zone.get('zone_high', 0)
-        current_price = signal.get('entry_price', 0)
-        entry_status = entry_zone.get('status', 'WAIT')
-        
-        msg += f"Entry Zone: ${zone_low:,.2f} - ${zone_high:,.2f}\n"
-        msg += f"Current: ${current_price:,.2f} {self._get_status_emoji(entry_status)}\n\n"
-        
-        # SL/TP
-        sl_price = signal.get('sl_price', 0)
-        sl_pct = signal.get('sl_pct', 0)
-        
-        msg += f"SL: ${sl_price:,.2f} ({sl_pct:+.2f}%)\n"
-        
-        # TP levels
-        tp_levels = signal.get('tp_levels', [])
-        for i, tp in enumerate(tp_levels, 1):
-            tp_price = tp.get('price', 0)
-            tp_pct = tp.get('pct', 0)
-            
-            if is_premium:
-                exit_pct = tp.get('exit_percent', 33)
-                msg += f"TP{i}: ${tp_price:,.2f} (+{tp_pct:.2f}%) → Exit {exit_pct}%\n"
-            else:
-                msg += f"TP{i}: ${tp_price:,.2f} (+{tp_pct:.2f}%)\n"
-        
-        msg += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        # Details (Premium only)
-        if is_premium:
-            # Score & confluence
-            confluence_count = signal.get('confluence_count', 0)
-            confluence_total = signal.get('confluence_total', 5)
-            msg += f"🎯 Score: {score}/100 | Confluence: {confluence_count}/{confluence_total} "
-            msg += "✅\n" if confluence_count >= 4 else "⚠️\n"
-            
-            # HTF bias
-            htf_tf = htf_bias.get('tf', '4h')
-            htf_direction = htf_bias.get('bias', 'neutral').upper()
-            htf_conf = htf_bias.get('confidence', 0)
-            msg += f"📈 HTF Bias: {htf_direction} ({htf_tf}, {htf_conf}% conf)\n"
-            
-            # MTF alignment
-            aligned = mtf_confluence.get('score', 0)
-            msg += f"📊 MTF Alignment: {aligned}% of timeframes aligned\n"
-            
-            # R:R and risk
-            rr_ratio = signal.get('rr_ratio', 0)
-            risk_pct = signal.get('risk_pct', 5)
-            risk_amount = signal.get('suggested_risk_amount', 0)
-            
-            msg += f"💪 R:R: {rr_ratio:.1f}:1 | Risk: {risk_pct}% (${risk_amount:,.0f})\n\n"
-            
-            # Position sizing suggestion
-            position_size = signal.get('position_size', 0)
-            msg += f"💼 Suggested Position: {position_size:,.4f} units\n\n"
-            
-            # Reason
-            reason = signal.get('reason', 'Multiple confluence factors')
-            msg += f"Reason: {reason}\n\n"
-            
-            # Validity
-            expires_at = signal.get('expires_at')
-            if expires_at:
-                msg += f"⚠️ Valid for: {self._format_time_remaining(expires_at)}\n"
-            
-            invalidate_price = signal.get('invalid_if_price')
-            if invalidate_price:
-                msg += f"❌ Invalidate if: Price closes "
-                if direction == 'LONG':
-                    msg += f"below ${invalidate_price:,.2f}\n"
-                else:
-                    msg += f"above ${invalidate_price:,.2f}\n"
-        
-        else:
-            # Free tier - minimal info
-            msg += f"Score: {score}/100\n"
-            msg += f"R:R: {signal.get('rr_ratio', 0):.1f}:1\n"
-        
-        # Signal ID
-        signal_id = signal.get('id', 'N/A')
-        msg += f"\n📋 Ref: {signal_id[:8]}\n"
-        
-        return msg
-    
+    """
+    Formats outcome notifications tailored to each subscription tier.
+
+    Tier visibility matrix:
+    ┌─────────────┬──────┬─────────┬─────┐
+    │ Field       │ FREE │ PREMIUM │ VIP │
+    ├─────────────┼──────┼─────────┼─────┤
+    │ Asset       │  ✓   │    ✓    │  ✓  │
+    │ Direction   │  ✓   │    ✓    │  ✓  │
+    │ Entry       │  -   │    ✓    │  ✓  │
+    │ TP Level    │  ✓   │    ✓    │  ✓  │
+    │ Pct gain    │  -   │    ✓    │  ✓  │
+    │ R-Multiple  │  -   │    ✓    │  ✓  │
+    │ Current px  │  -   │    ✓    │  ✓  │
+    │ TP3 target  │  -   │    -    │  ✓  │
+    │ Regime      │  -   │    -    │  ✓  │
+    │ AI insight  │  -   │    -    │  ✓  │
+    └─────────────┴──────┴─────────┴─────┘
+    """
+
     def format_tp_hit_notification(
         self,
-        signal: Dict,
-        user_tier: str,
+        signal: dict,
+        tier: str,
         tp_level: int,
-        current_profit_pct: float,
-        current_market_price: float = None
+        profit_pct: float,
+        current_price: Optional[float] = None,
     ) -> str:
-        """
-        Enhanced TP hit notification: includes full signal data, which TP was hit, current market price, and partial profit advice.
-        """
-        is_premium = user_tier in ['premium', 'vip', 'admin', 'owner']
-        symbol = signal.get('symbol')
-        direction = signal.get('direction', '').upper()
-        entry = signal.get('entry')
-        stop = signal.get('stop') or signal.get('stop_loss') or signal.get('sl')
-        tps = signal.get('targets') or signal.get('tp_levels') or []
-        if isinstance(tps, (float, int)):
-            tps = [tps]
-        timeframe = signal.get('timeframe', '')
-        msg = f"🎯 TP{tp_level} HIT: {symbol} ({timeframe})\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        msg += f"Direction: {direction}\nEntry: {entry}\nStop Loss: {stop}\n"
-        if tps:
-            for i, tp in enumerate(tps, 1):
-                if isinstance(tp, dict):
-                    price = tp.get('price', tp.get('tp', ''))
-                else:
-                    price = tp
-                msg += f"TP{i}: {price}\n"
-        msg += f"\nTP HIT: TP{tp_level}\n"
-        if current_market_price is not None:
-            msg += f"Current Market Price: {current_market_price}\n"
-        msg += f"Profit: +{current_profit_pct:.2f}%\n"
-        # Partial profit advice
-        if is_premium:
-            percent = 33 if tp_level == 1 else 50 if tp_level == 2 else 100
-            msg += f"\n💡 Suggestion: Take {percent}% partial profit at TP{tp_level}."
-            if tp_level == 1:
-                msg += " Move SL to break-even."
-            elif tp_level == 2:
-                msg += " Tighten SL to TP1 level."
-            elif tp_level == 3:
-                msg += " Consider closing the rest of your position."
+        """Format a TP hit notification for the given tier."""
+        tier_l = str(tier or "free").lower()
+        if tier_l in ("owner", "admin"):
+            tier_l = "vip"
+
+        asset     = str(signal.get("asset") or "?").upper()
+        direction = str(signal.get("direction") or "long").upper()
+        entry     = signal.get("entry")
+        sl        = signal.get("stop_loss")
+        strategy  = str(signal.get("strategy_name") or signal.get("strategy") or "")
+        regime    = str(signal.get("regime") or "")
+        score     = signal.get("score")
+        r_mult    = signal.get("r_multiple")
+
+        # Derive R-multiple if not provided
+        if r_mult is None and entry and sl:
+            try:
+                risk = abs(float(entry) - float(sl))
+                if risk > 0 and profit_pct:
+                    if direction == "LONG":
+                        reward = float(entry) * abs(float(profit_pct)) / 100
+                    else:
+                        reward = float(entry) * abs(float(profit_pct)) / 100
+                    r_mult = reward / risk
+            except Exception:
+                r_mult = None
+
+        tp_emoji_map = {1: "🟢", 2: "💛", 3: "✅"}
+        tp_emoji = tp_emoji_map.get(tp_level, "✅")
+
+        tp_label_map = {1: "TP1 HIT", 2: "TP2 HIT", 3: "ALL TARGETS HIT"}
+        tp_label = tp_label_map.get(tp_level, f"TP{tp_level} HIT")
+
+        if tier_l == "free":
+            return self._format_tp_free(
+                asset, direction, tp_level, tp_label, tp_emoji, profit_pct
+            )
+        elif tier_l == "premium":
+            return self._format_tp_premium(
+                asset, direction, tp_level, tp_label, tp_emoji,
+                profit_pct, entry, current_price, r_mult
+            )
+        else:  # vip
+            return self._format_tp_vip(
+                asset, direction, tp_level, tp_label, tp_emoji,
+                profit_pct, entry, current_price, r_mult,
+                strategy, regime, score
+            )
+
+    def _format_tp_free(
+        self,
+        asset: str,
+        direction: str,
+        tp_level: int,
+        tp_label: str,
+        tp_emoji: str,
+        profit_pct: float,
+    ) -> str:
+        """FREE tier: minimal info, strong upgrade CTA."""
+        lines = [
+            f"{tp_emoji} <b>{tp_label}</b>",
+            "",
+            f"<b>{asset}</b> {direction}",
+            "",
+            "🔒 <i>Profit details unlocked for Premium & VIP members.</i>",
+            "",
+            "📈 Want exact entries, exits & live tracking?",
+            "→ Use /upgrade to see the full trade.",
+        ]
+        return "\n".join(lines)
+
+    def _format_tp_premium(
+        self,
+        asset: str,
+        direction: str,
+        tp_level: int,
+        tp_label: str,
+        tp_emoji: str,
+        profit_pct: float,
+        entry: Optional[float],
+        current_price: Optional[float],
+        r_mult: Optional[float],
+    ) -> str:
+        """PREMIUM tier: full detail with P&L, no regime/AI insight."""
+        pct_display = _pct_str(profit_pct)
+        r_display = _r_str(r_mult)
+        entry_display = _fmt(entry) if entry else "—"
+        price_display = _fmt(current_price) if current_price else "—"
+
+        lines = [
+            f"{tp_emoji} <b>{tp_label}</b>",
+            "",
+            f"Asset: <b>{asset}</b>",
+            f"Direction: <b>{direction}</b>",
+            f"Entry: <b>{entry_display}</b>",
+            f"Exit Price: <b>{price_display}</b>",
+            "",
+            f"Gain: <b>{pct_display}</b>",
+            f"Result: <b>{r_display}</b>",
+        ]
+
+        if tp_level < 3:
+            lines += [
+                "",
+                "⚡ <i>Position partial-closed. Stop moved to Break-Even.</i>",
+                "🎯 <i>Remaining position tracking next target.</i>",
+            ]
         else:
-            msg += "\nUpgrade to Premium for detailed advice."
-        # Remaining TPs
-        if tps and tp_level < len(tps):
-            remaining_tps = []
-            for i, tp in enumerate(tps, 1):
-                if i > tp_level:
-                    price = tp.get('price', tp.get('tp', '')) if isinstance(tp, dict) else tp
-                    remaining_tps.append(f"TP{i} {price}")
-            if remaining_tps:
-                msg += f"\n📊 Remaining TPs: {' | '.join(remaining_tps)}"
-        msg += f"\n\n📋 Ref: {signal.get('id', 'N/A')[:8]}"
-        return msg
-    
+            lines += [
+                "",
+                "🏆 <b>All targets hit — trade fully closed.</b>",
+                "Well-managed ✔",
+            ]
+
+        return "\n".join(lines)
+
+    def _format_tp_vip(
+        self,
+        asset: str,
+        direction: str,
+        tp_level: int,
+        tp_label: str,
+        tp_emoji: str,
+        profit_pct: float,
+        entry: Optional[float],
+        current_price: Optional[float],
+        r_mult: Optional[float],
+        strategy: str,
+        regime: str,
+        score: Optional[float],
+    ) -> str:
+        """VIP tier: full detail + strategy + regime + R-multiple."""
+        pct_display = _pct_str(profit_pct)
+        r_display = _r_str(r_mult)
+        entry_display = _fmt(entry) if entry else "—"
+        price_display = _fmt(current_price) if current_price else "—"
+        score_display = f"{float(score):.0f}/100" if score is not None else "—"
+
+        lines = [
+            f"{tp_emoji} <b>👑 VIP SIGNAL — {tp_label}</b>",
+            "",
+            f"Asset: <b>{asset}</b> | Direction: <b>{direction}</b>",
+            f"Entry: <b>{entry_display}</b> → Exit: <b>{price_display}</b>",
+            "",
+            f"📊 Gain: <b>{pct_display}</b> | Result: <b>{r_display}</b>",
+            f"Score: <b>{score_display}</b>",
+        ]
+
+        if strategy:
+            lines.append(f"Strategy: <b>{strategy}</b>")
+        if regime:
+            lines.append(f"Regime: <b>{regime}</b>")
+
+        if tp_level < 3:
+            lines += [
+                "",
+                "⚡ <b>Partial exit executed.</b>",
+                "🛡️ Stop Loss moved to Break-Even.",
+                "🎯 Remainder tracking next level.",
+            ]
+        else:
+            lines += [
+                "",
+                "🏆 <b>FULL CLOSE — ALL TARGETS HIT</b>",
+                "Exceptional execution. Profit secured. ✅",
+            ]
+
+        return "\n".join(lines)
+
     def format_sl_hit_notification(
         self,
-        signal: Dict,
-        user_tier: str,
-        loss_pct: float
+        signal: dict,
+        tier: str,
+        loss_pct: float,
+        is_break_even: bool = False,
     ) -> str:
-        """
-        Format SL hit notification.
-        
-        Premium: Analysis + advice
-        Free: Basic notification
-        """
-        is_premium = user_tier in ['premium', 'vip']
-        
-        symbol = signal.get('symbol')
-        
-        if is_premium:
-            msg = f"🛑 STOP LOSS HIT: {symbol}\n"
-            msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            msg += f"Loss: {loss_pct:.2f}%\n\n"
-            
-            # Brief analysis
-            msg += "💡 Analysis:\n"
-            msg += "- Risk management protected capital\n"
-            msg += "- Wait for new setup before re-entering\n"
-            msg += "- Review market conditions\n"
-            
-            msg += f"\n📋 Ref: {signal.get('id', 'N/A')[:8]}"
-        
-        else:
-            # Free tier
-            msg = f"❌ SL HIT: {symbol} ({loss_pct:.2f}%)"
-        
-        return msg
-    
+        """Format a stop loss / break-even hit notification."""
+        tier_l = str(tier or "free").lower()
+        if tier_l in ("owner", "admin"):
+            tier_l = "vip"
+
+        asset     = str(signal.get("asset") or "?").upper()
+        direction = str(signal.get("direction") or "long").upper()
+        entry     = signal.get("entry")
+        sl        = signal.get("stop_loss")
+
+        if is_break_even:
+            # Break-even hit after TP1 — this is actually a positive outcome
+            return (
+                "🛡️ <b>Break-Even Stop Hit</b>\n\n"
+                f"<b>{asset}</b> {direction}\n\n"
+                "TP1 was already captured.\n"
+                "Remaining position closed at break-even.\n"
+                "<b>Capital fully protected. ✅</b>"
+            )
+
+        if tier_l == "free":
+            return (
+                f"❌ <b>Stop Loss Hit</b>\n\n"
+                f"<b>{asset}</b> {direction}\n\n"
+                "🔒 Upgrade to see full trade details and P&L.\n"
+                "→ /upgrade"
+            )
+
+        loss_display = _pct_str(abs(loss_pct) * -1)
+        entry_display = _fmt(entry) if entry else "—"
+        sl_display = _fmt(sl) if sl else "—"
+
+        return (
+            f"❌ <b>Stop Loss Hit</b>\n\n"
+            f"Asset: <b>{asset}</b> | Direction: <b>{direction}</b>\n"
+            f"Entry: <b>{entry_display}</b>\n"
+            f"Stop Loss: <b>{sl_display}</b>\n"
+            f"\nLoss: <b>{loss_display}</b>\n\n"
+            "Risk was predefined and controlled.\n"
+            "<i>Awaiting next high-probability setup.</i>"
+        )
+
     def format_signal_update(
         self,
-        signal: Dict,
-        user_tier: str,
+        signal: dict,
+        tier: str,
         update_type: str,
-        update_data: Dict
+        data: dict,
     ) -> str:
-        """
-        Format signal update notification.
-        
-        Updates: 
-        - SL moved to break-even
-        - Trailing stop activated
-        - Signal invalidated
-        - HTF bias flip
-        
-        Premium only.
-        """
-        if user_tier not in ['premium', 'vip']:
-            return ""  # No updates for free tier
-        
-        symbol = signal.get('symbol')
-        
-        if update_type == 'sl_to_breakeven':
-            msg = f"🔒 BREAK-EVEN: {symbol}\n"
-            msg += "Stop loss moved to entry price.\n"
-            msg += "Risk eliminated - position now risk-free!\n"
-        
-        elif update_type == 'trailing_stop':
-            new_sl = update_data.get('new_sl', 0)
-            profit_locked = update_data.get('profit_locked_pct', 0)
-            msg = f"📈 TRAILING STOP: {symbol}\n"
-            msg += f"SL moved to ${new_sl:,.2f}\n"
-            msg += f"Profit locked: +{profit_locked:.2f}%\n"
-        
-        elif update_type == 'invalidated':
-            reason = update_data.get('reason', 'Unknown')
-            msg = f"❌ SIGNAL INVALIDATED: {symbol}\n"
-            msg += f"Reason: {reason}\n"
-            msg += "Exit position if still holding.\n"
-        
-        elif update_type == 'htf_bias_flip':
-            old_bias = update_data.get('old_bias', 'N/A')
-            new_bias = update_data.get('new_bias', 'N/A')
-            msg = f"⚠️ HTF BIAS FLIP: {symbol}\n"
-            msg += f"Changed: {old_bias} → {new_bias}\n"
-            msg += "Consider reducing position size.\n"
-        
-        else:
-            msg = f"ℹ️ UPDATE: {symbol}\n"
-            msg += str(update_data)
-        
-        msg += f"\n📋 Ref: {signal.get('id', 'N/A')[:8]}"
-        return msg
-    
-    def format_no_trade_alert(
+        """Format a general signal update notification (invalidation, price update, etc.)."""
+        asset     = str(signal.get("asset") or "?").upper()
+        direction = str(signal.get("direction") or "long").upper()
+
+        if update_type == "invalidated":
+            reason = str(data.get("reason") or "Market conditions changed")
+            return (
+                f"⚠️ <b>Signal Invalidated</b>\n\n"
+                f"<b>{asset}</b> {direction}\n\n"
+                f"Reason: {reason}\n\n"
+                "<i>Risk management: trade closed at market, no loss incurred.</i>"
+            )
+
+        if update_type == "entry_filled":
+            fill_price = data.get("fill_price")
+            sl = signal.get("stop_loss")
+            return (
+                f"⚡ <b>Entry Filled</b>\n\n"
+                f"<b>{asset}</b> {direction}\n"
+                f"Entry: <b>{_fmt(fill_price)}</b>\n"
+                f"Stop Loss: <b>{_fmt(sl)}</b>\n\n"
+                "<i>Trade is now live. Monitoring targets.</i>"
+            )
+
+        if update_type == "be_moved":
+            new_sl = data.get("new_sl")
+            return (
+                f"🛡️ <b>Stop Moved to Break-Even</b>\n\n"
+                f"<b>{asset}</b> {direction}\n"
+                f"New Stop: <b>{_fmt(new_sl)}</b> (Break-Even)\n\n"
+                "<i>TP1 secured. Capital now protected.</i>"
+            )
+
+        return f"ℹ️ Signal update: {asset} {direction} — {update_type}"
+
+    def format_entry_filled_notification(
         self,
-        reasons: List[str],
-        session: str
+        signal: dict,
+        tier: str,
+        fill_price: float,
     ) -> str:
-        """
-        Format NO TRADE alert.
-        
-        Sent to all tiers.
-        """
-        msg = "⚠️ NO TRADE ALERT\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        msg += "Market conditions not ideal:\n\n"
-        
-        for reason in reasons:
-            msg += f"• {reason}\n"
-        
-        msg += f"\n📊 Session: {session}\n"
-        msg += "\n💡 Recommendation: Wait for better setup"
-        
-        return msg
-    
-    def format_performance_update(
+        """Format entry-filled notification."""
+        return self.format_signal_update(
+            signal, tier, "entry_filled",
+            {"fill_price": fill_price}
+        )
+
+    def format_daily_performance_summary(
         self,
-        user_tier: str,
-        stats: Dict
+        stats: dict,
+        tier: str,
     ) -> str:
-        """
-        Format performance stats update.
-        
-        Premium only.
-        """
-        if user_tier not in ['premium', 'vip']:
-            return ""
-        
-        msg = "📊 PERFORMANCE UPDATE\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        win_rate = stats.get('win_rate', 0)
-        total_signals = stats.get('total_signals', 0)
-        wins = stats.get('wins', 0)
-        losses = stats.get('losses', 0)
-        
-        msg += f"Win Rate: {win_rate:.1f}% ({wins}W / {losses}L)\n"
-        msg += f"Total Signals: {total_signals}\n\n"
-        
-        # Top pairs
-        top_pairs = stats.get('top_pairs', [])
-        if top_pairs:
-            msg += "🏆 Top Performers:\n"
-            for pair in top_pairs[:3]:
-                msg += f"• {pair['symbol']}: {pair['win_rate']:.0f}%\n"
-        
-        # Worst pairs
-        worst_pairs = stats.get('worst_pairs', [])
-        if worst_pairs:
-            msg += "\n⚠️ Avoid:\n"
-            for pair in worst_pairs[:2]:
-                msg += f"• {pair['symbol']}: {pair['win_rate']:.0f}%\n"
-        
-        return msg
-    
-    def _get_status_emoji(self, status: str) -> str:
-        """Get emoji for entry status."""
-        if 'BUY' in status:
-            return '✅ BUY'
-        elif 'SELL' in status:
-            return '✅ SELL'
-        else:
-            return '⏳ WAIT'
-    
-    def _format_time_remaining(self, expires_at: datetime) -> str:
-        """Format time remaining until expiration."""
-        remaining = expires_at - datetime.utcnow()
-        
-        if remaining.total_seconds() < 0:
-            return "EXPIRED"
-        
-        minutes = int(remaining.total_seconds() / 60)
-        
-        if minutes < 60:
-            return f"{minutes}m"
-        else:
-            hours = minutes // 60
-            return f"{hours}h"
+        """Format daily performance summary."""
+        tier_l = str(tier or "free").lower()
+        total = int(stats.get("total") or 0)
+        wins  = int(stats.get("wins") or 0)
+        losses = int(stats.get("losses") or 0)
+        win_rate = float(stats.get("win_rate") or 0) * 100
+        net_r = float(stats.get("net_r") or 0)
+        best_asset = str(stats.get("best_asset") or "—")
+        profit_loss_pct = float(stats.get("profit_loss_pct") or 0)
+
+        if total == 0:
+            return (
+                "📊 <b>Daily Performance Summary</b>\n\n"
+                "No signal outcomes recorded today.\n\n"
+                "<i>Quality over quantity.</i>"
+            )
+
+        if tier_l == "free":
+            return (
+                "📊 <b>Signal Update</b>\n\n"
+                f"Signals active today: <b>{total}</b>\n\n"
+                "🔒 Upgrade for detailed win rate, P&L & strategy breakdown.\n"
+                "→ /upgrade"
+            )
+
+        lines = [
+            "📊 <b>Daily Performance Summary</b>",
+            "",
+            f"Signals: <b>{total}</b> | Wins: <b>{wins}</b> | Losses: <b>{losses}</b>",
+            f"Win Rate: <b>{win_rate:.1f}%</b>",
+            f"Net Result: <b>{_r_str(net_r)}</b>",
+            f"P/L: <b>{_pct_str(profit_loss_pct)}</b>",
+        ]
+
+        if tier_l in ("vip",) and best_asset:
+            lines.append(f"Best Asset: <b>{best_asset}</b>")
+
+        lines += ["", "<i>Consistency over frequency.</i>"]
+        return "\n".join(lines)
+
+
+__all__ = ["TierNotificationManager"]

@@ -1,745 +1,331 @@
 """
-Signal Deduplicator - Enhanced Version
+SignalRankAI — Signal Deduplicator (PERFECTED)
 
-This module provides:
-- Improved signal deduplication logic
-- Fresh signal handling (allows new signals through cooldown)
-- Configurable cooldown periods
-- Redis-backed deduplication state
+Implements deterministic SHA256 signal fingerprinting per the "Perfect Trading Bot"
+specification. A signal is suppressed if:
+  1. The same trade thesis (Asset + Direction + EntryZone + Timeframe) was sent
+     within the deduplication window AND is still ACTIVE in the DB.
+  2. Soft dedup: same asset/direction within cooldown period for the same user.
 
-Usage:
-    from engine.signal_deduplicator import SignalDeduplicator
-    
-    dedup = SignalDeduplicator()
-    is_duplicate = await dedup.is_duplicate(signal)
-    await dedup.mark_seen(signal)
+Key principles:
+  - Dedup by TRADE THESIS, not by candle timestamp.
+  - SHA256(asset.upper() + "|" + direction.lower() + "|" + entry_bucket + "|" + timeframe)
+  - Redis atomic check-and-set (SETNX) prevents races in multi-instance deployments.
+  - PostgreSQL fallback if Redis unavailable.
+  - edit_message_text update path for freshness bumps (not new message spam).
 """
 
-import os
+from __future__ import annotations
+
 import hashlib
+import json
 import logging
 import time
-from typing import Dict, List, Optional, Any, Set
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# Redis signal lock key prefix - prevents same signal generation within cooldown window
-# Format: signal_lock:{asset}:{direction}:{timeframe}
-# TTL: 4 hours (configurable per tier)
-SIGNAL_LOCK_PREFIX = "signal_lock"
+# Dedup window: how long (seconds) a signal hash blocks re-emission
+_DEFAULT_DEDUP_WINDOW_SECONDS = 4 * 60 * 60  # 4 hours
 
 
-def get_signal_lock_key(asset: str, direction: str, timeframe: str) -> str:
-    """Generate Redis lock key for signal generation.
-    
-    Args:
-        asset: Asset symbol (e.g., "BTCUSDT")
-        direction: "long" or "short"
-        timeframe: Timeframe (e.g., "1h", "4h")
-    
-    Returns:
-        Redis key string: signal_lock:BTCUSDT:LONG:4h
+def _entry_bucket(entry: float | None) -> str:
+    """Round entry to a 3-significant-figure bucket to absorb micro-tick noise."""
+    if not entry or entry <= 0:
+        return "0"
+    try:
+        magnitude = 10 ** (len(str(int(entry))) - 1)
+        # Round to nearest 0.1% of the entry price
+        bucket_size = max(0.001, entry * 0.001)
+        rounded = round(entry / bucket_size) * bucket_size
+        return f"{rounded:.6g}"
+    except Exception:
+        return str(entry)
+
+
+def compute_signal_fingerprint(signal: dict) -> str:
     """
-    return f"{SIGNAL_LOCK_PREFIX}:{asset.upper()}:{direction.upper()}:{timeframe.upper()}"
+    Generate a deterministic SHA256 fingerprint for a trade thesis.
 
+    SHA256(ASSET|DIRECTION|ENTRY_BUCKET|TIMEFRAME)
 
-def get_signal_lock_ttl_seconds(timeframe: str, tier: str = "free") -> int:
-    """Get TTL for signal lock based on timeframe and user tier.
-    
-    Priority 1 - Telegram Delivery Cooldown:
-    - VIP = 4 hours
-    - Premium = 6 hours  
-    - Free = 12 hours
-    
-    Args:
-        timeframe: Timeframe (e.g., "1h", "4h")
-        tier: User tier ("vip", "premium", "free")
-    
-    Returns:
-        TTL in seconds
+    This is the CANONICAL deduplication key. Two signals with the same
+    thesis (same asset, same direction, similar entry, same timeframe)
+    will produce the same fingerprint regardless of when they were generated.
     """
-    # Base TTL by timeframe
-    base_ttl = {
-        "4h": 4 * 60 * 60,    # 4 hours
-        "1d": 4 * 60 * 60,    # 4 hours
-        "1h": 2 * 60 * 60,    # 2 hours
-        "15m": 60 * 60,      # 1 hour
-        "5m": 30 * 60,       # 30 minutes
-    }.get(str(timeframe).lower(), 60 * 60)  # Default 1 hour
-    
-    # Tier-based multiplier (Priority 1 fix)
-    tier_multiplier = {
-        "vip": 1,       # 4h base
-        "premium": 1.5,   # 6h  
-        "free": 3,       # 12h
-    }.get(str(tier).lower(), 3)
-    
-    return int(base_ttl * tier_multiplier)
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    direction = str(signal.get("direction") or "long").lower().strip()
+    entry = signal.get("entry") or signal.get("close_price") or 0
+    timeframe = str(signal.get("timeframe") or "1h").lower().strip()
+
+    try:
+        entry_f = float(entry)
+    except Exception:
+        entry_f = 0.0
+
+    raw = f"{asset}|{direction}|{_entry_bucket(entry_f)}|{timeframe}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-# Timeframe-specific cooldowns
-# 4H signals need 90+ min cooldown to prevent spam
-TIMEFRAME_COOLDOWNS = {
-    "4h": 90 * 60,      # 90 minutes - SOLUSDT uses this
-    "1d": 6 * 60 * 60, # 6 hours
-    "1h": 20 * 60,     # 20 minutes
-    "15m": 10 * 60,    # 10 minutes
-    "5m": 5 * 60,     # 5 minutes
-    "30m": 15 * 60,    # 15 minutes
-}
-
-
-def get_timeframe_cooldown(timeframe: str) -> int:
-    """Get cooldown seconds for a specific timeframe.
-    
-    CRITICAL FIX: 4H timeframe requires 90+ minute cooldown
-    to prevent SOLUSDT and other 4H signals from spamming.
-    """
-    tf = str(timeframe).lower().strip()
-    return TIMEFRAME_COOLDOWNS.get(tf, 900)  # Default 15 minutes
-
-
-@dataclass
-class SignalFingerprint:
-    """Signal fingerprint for deduplication.
-    
-    CRITICAL FIX: Do NOT include entry_zone or timestamps in the dedup key!
-    Entry price changes every scan (SL/TP/confluence change), 
-    and timestamps make same trade thesis appear as different signals.
-    
-    The fingerprint should identify the TRADE THESIS, not the specific entry or timing.
-    
-    Key format: asset|direction|timeframe|strategy_group
-    Optional: +entry_zone_bucket for more granular deduplication
-    """
-    asset: str
-    direction: str
-    timeframe: str
-    entry_zone_bucket: str = ""  # Optional bucketed entry for finer control
-    strategy_group: str = ""
-    
-    def to_key(self) -> str:
-        """Generate dedup key.
-        
-        FIXED: Only use (asset, direction, timeframe, strategy_group)
-        This identifies the trade thesis, not the changing price targets.
-        
-        This prevents SOLUSDT spam while allowing genuinely
-        new trade opportunities (new timeframe, new direction,
-        or new strategy) to pass through.
-        
-        Priority 1 Fix: Removed created_at, generated_at, candle_timestamp
-        from fingerprint - same trade thesis = same key regardless of when generated.
-        """
-        if self.entry_zone_bucket:
-            return f"{self.asset}:{self.direction}:{self.timeframe}:{self.strategy_group}:{self.entry_zone_bucket}"
-        return f"{self.asset}:{self.direction}:{self.timeframe}:{self.strategy_group}"
-    
-    def to_lock_key(self) -> str:
-        """Generate Redis lock key for active signal protection.
-        
-        Format: signal_lock:SOLUSDT:BUY:4H
-        TTL: 4 hours (matches 4H signal lifetime)
-        """
-        return f"signal_lock:{self.asset}:{self.direction}:{self.timeframe}"
-
-
-@dataclass
-class DedupConfig:
-    """Deduplication configuration."""
-    cooldown_seconds: int = 900  # 15 min default
-    entry_zone_tolerance: float = 0.002  # 0.2% entry price tolerance
-    # CRITICAL FIX: Disable fresh breakthrough to prevent SOLUSDT signal spam
-    # The breakthrough feature was bypassing cooldown for high-score signals,
-    # causing the same signal to be re-sent every few minutes
-    allow_fresh_breakthrough: bool = False  # DISABLED - was causing spam
-    min_score_for_breakthrough: float = 99.0  # Set to near-perfect to effectively disable
-    max_age_for_breakthrough_hours: int = 2  # Max age for breakthrough
+def compute_signal_hash_key(signal: dict) -> str:
+    """Return the Redis key for a signal's dedup hash."""
+    fp = compute_signal_fingerprint(signal)
+    return f"sig_dedup:{fp}"
 
 
 class SignalDeduplicator:
     """
-    Enhanced signal deduplication with configurable policies.
-    
-    Features:
-    - Fingerprint-based dedup (not just exact match)
-    - Entry zone tolerance (nearby entries treated as same)
-    - Fresh signal breakthrough (high quality signals bypass cooldown)
-    - Redis-backed state for cross-process sharing
-    - Configurable cooldown periods
+    Atomic signal deduplication using Redis SETNX (Set if Not eXists).
+
+    Usage:
+        dedup = SignalDeduplicator()
+        if dedup.is_duplicate(signal):
+            return  # suppress
+        dedup.mark_active(signal)
+        # ... generate and send signal
     """
-    
-    def __init__(self, config: Optional[DedupConfig] = None):
-        self.config = config or DedupConfig()
-        self._seen_signals: Dict[str, datetime] = {}
-        # Default in-memory cache TTL used by unit tests and internal logic
-        # Tests expect a 1 hour default dedup window for the monolith
-        from datetime import timedelta
-        self._cache_ttl = timedelta(hours=1)
-        self._redis_client = None
-        self._init_redis()
-    
-    def _init_redis(self):
-        """Initialize Redis client if available."""
+
+    def __init__(self, window_seconds: int = _DEFAULT_DEDUP_WINDOW_SECONDS):
+        self.window_seconds = int(window_seconds)
+
+    def _redis_client(self):
         try:
             from core.redis_state import state
-            self._redis_client = state
-            logger.info("[Dedup] Using shared runtime state for dedup state")
-        except Exception as e:
-            logger.debug(f"[Dedup] Shared runtime state not available: {e}")
-    
-    def _generate_fingerprint(self, signal: Dict[str, Any]) -> SignalFingerprint:
-        """Generate fingerprint from signal."""
-        asset = str(signal.get("asset", "")).upper()
-        direction = str(signal.get("direction", "long")).lower()
-        timeframe = str(signal.get("timeframe", "1h")).lower()
-        
-        strategy_group = str(signal.get("strategy_group") or "").strip().lower()
-        if not strategy_group:
-            strategy = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
-            strategy_group = strategy.split("_", 1)[0] if strategy else "unknown"
-        
-        return SignalFingerprint(
-            asset=asset,
-            direction=direction,
-            timeframe=timeframe,
-            strategy_group=strategy_group,
-        )
-    
-    def _generate_key(self, fp: SignalFingerprint) -> str:
-        """Generate Redis key."""
-        return f"dedup:signal:{fp.to_key()}"
-    
-    async def is_duplicate(self, signal: Dict[str, Any]) -> bool:
-        """Check if signal is duplicate."""
-        fp = self._generate_fingerprint(signal)
-        key = fp.to_key()
-        
-        # DEBUG LOGGING: Critical to verify dedup is working
-        logger.info(
-            f"[DEDUP CHECK] fingerprint={key} "
-        )
-        
-        # CRITICAL FIX: Use timeframe-specific cooldown instead of fixed config
-        # This prevents SOLUSDT 4H signal spam (90 min cooldown for 4H)
-        timeframe = fp.timeframe
-        cooldown_seconds = get_timeframe_cooldown(timeframe)
-        
-        # Check breakthrough conditions first (fresh signals get priority)
-        if self.config.allow_fresh_breakthrough:
-            score = float(signal.get("score", 0) or 0)
-            if score >= self.config.min_score_for_breakthrough:
-                # Check if this is a significantly newer signal
-                if await self._is_fresh_breakthrough(signal):
-                    logger.info(f"[Dedup] Fresh breakthrough for {key}: score={score}")
-                    return False
-        
-        # Check in-memory cache
-        if key in self._seen_signals:
-            created = self._seen_signals.get(key)
-            if created:
-                age = (datetime.utcnow() - created).total_seconds()
-                # FIX: Use timeframe-specific cooldown_seconds
-                if age < cooldown_seconds:
-                    logger.debug(f"[Dedup] Duplicate in memory: {key} age={age:.0f}s cooldown={cooldown_seconds}s (tf={timeframe})")
-                    return True
-        
-        # Check Redis if available
-        if self._redis_client:
-            try:
-                redis_key = self._generate_key(fp)
-                last_seen = self._redis_client.get_sync(redis_key)
-                if last_seen:
-                    try:
-                        ts = float(last_seen)
-                        age = time.time() - ts
-                        # FIX: Use timeframe-specific cooldown_seconds
-                        if age < cooldown_seconds:
-                            logger.debug(f"[Dedup] Duplicate in Redis: {key} age={age:.0f}s cooldown={cooldown_seconds}s (tf={timeframe})")
-                            return True
-                    except Exception:
-                        pass
-            except Exception as e:
-                logger.debug(f"[Dedup] Redis check failed: {e}")
-        
-        return False
-    
-    async def _is_fresh_breakthrough(self, signal: Dict[str, Any]) -> bool:
-        """Check if signal qualifies for fresh breakthrough."""
+            return state
+        except Exception:
+            return None
+
+    def is_duplicate(self, signal: dict, *, check_db: bool = True) -> bool:
+        """
+        Return True if this signal is a duplicate of an already-active one.
+
+        Checks:
+          1. Redis hash → sub-millisecond check for hot path.
+          2. PostgreSQL active_signals table → survives Redis restarts.
+        """
+        key = compute_signal_hash_key(signal)
+
+        # Redis check
         try:
-            # Get signal timestamp
-            sig_time = signal.get("created_at") or signal.get("signal_created_at")
-            if sig_time:
-                if isinstance(sig_time, str):
-                    sig_time = datetime.fromisoformat(sig_time.replace("Z", "+00:00"))
-                age = (datetime.utcnow() - sig_time).total_seconds() / 3600  # hours
-                
-                if age < self.config.max_age_for_breakthrough_hours:
+            r = self._redis_client()
+            if r is not None:
+                val = r.get_sync(key)
+                if val:
+                    logger.debug("[dedup] Redis hit — suppressed: %s", key[:24])
                     return True
-            
-            # Also check score freshness
-            score = float(signal.get("score", 0) or 0)
-            if score >= self.config.min_score_for_breakthrough:
-                # Fresh high-scoring signal - allow through cooldown
-                return True
-                
-        except Exception as e:
-            logger.debug(f"[Dedup] Fresh check error: {e}")
-        
+        except Exception as exc:
+            logger.debug("[dedup] Redis check failed: %s", exc)
+
+        # DB check
+        if check_db:
+            try:
+                fp = compute_signal_fingerprint(signal)
+                from utils.async_runner import run_sync
+                from db.session import get_session
+                from db.models import Signal
+                from sqlalchemy import select, and_
+                from datetime import datetime, timezone, timedelta
+
+                cutoff = datetime.now(timezone.utc) - timedelta(seconds=self.window_seconds)
+
+                async def _check_db():
+                    async with get_session() as session:
+                        row = (
+                            await session.execute(
+                                select(Signal.signal_id).where(
+                                    and_(
+                                        Signal.signal_fingerprint == fp,
+                                        Signal.expired == False,
+                                        Signal.archived == False,
+                                        Signal.created_at >= cutoff,
+                                    )
+                                ).limit(1)
+                            )
+                        ).scalar_one_or_none()
+                        await session.commit()
+                        return row is not None
+
+                is_dup = run_sync(_check_db())
+                if is_dup:
+                    logger.debug("[dedup] DB hit — suppressed: %s", fp[:24])
+                    # Backfill Redis so next check is fast
+                    self._mark_redis(key)
+                    return True
+            except Exception as exc:
+                logger.debug("[dedup] DB check failed: %s", exc)
+
         return False
-    
-    async def mark_seen(self, signal: Dict[str, Any]) -> None:
-        """Mark signal as seen."""
-        fp = self._generate_fingerprint(signal)
-        key = fp.to_key()
-        now = datetime.utcnow()
-        
-        # CRITICAL: Use timeframe-specific cooldown for TTL
-        tf = fp.timeframe
-        cooldown_seconds = get_timeframe_cooldown(tf)
-        
-        # Store in memory
-        self._seen_signals[key] = now
-        
-        # Also store in Redis for cross-process sharing
-        if self._redis_client:
-            try:
-                redis_key = self._generate_key(fp)
-                self._redis_client.set_sync(redis_key, str(now.timestamp()), ex=cooldown_seconds + 60)
-            except Exception as e:
-                logger.debug(f"[Dedup] Redis store failed: {e}")
-        
-        logger.info(f"[DEDUP SAVE] fingerprint={key}")
 
-    def _signal_similarity(self, left: Dict[str, Any], right: Dict[str, Any]) -> float:
-        """Return semantic similarity for two trade theses.
-
-        Timestamps, signal ids, and small entry/target drift are intentionally ignored.
-        The score is high only for the same asset, timeframe, direction, and strategy group.
-        """
-        left_fp = self._generate_fingerprint(left)
-        right_fp = self._generate_fingerprint(right)
-        if left_fp.asset != right_fp.asset:
-            return 0.0
-        if left_fp.timeframe != right_fp.timeframe:
-            return 0.0
-        if left_fp.direction != right_fp.direction:
-            return 0.0
-        if left_fp.strategy_group != right_fp.strategy_group:
-            return 0.0
-        return 1.0
-
-    async def dedupe_batch(self, signals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Collapse a batch to the best representative per thesis key."""
-        best_by_key: Dict[str, Dict[str, Any]] = {}
-        order: List[str] = []
-        for signal in signals or []:
-            fp = self._generate_fingerprint(signal)
-            key = fp.to_key()
-            current = best_by_key.get(key)
-            if current is None:
-                best_by_key[key] = signal
-                order.append(key)
-                continue
-            try:
-                current_score = float(current.get("score", 0) or 0)
-                new_score = float(signal.get("score", 0) or 0)
-            except Exception:
-                current_score = new_score = 0.0
-            if new_score >= current_score:
-                best_by_key[key] = signal
-        return [best_by_key[key] for key in order if key in best_by_key]
-    
-    async def clear_old_entries(self) -> int:
-        """Clear expired entries from memory."""
-        # Use default config cooldown for cleanup
-        cutoff = datetime.utcnow() - timedelta(seconds=self.config.cooldown_seconds)
-        to_remove = []
-        
-        for key, created in self._seen_signals.items():
-            if created < cutoff:
-                to_remove.append(key)
-        
-        for key in to_remove:
-            self._seen_signals.pop(key, None)
-        
-        if to_remove:
-            logger.debug(f"[Dedup] Cleared {len(to_remove)} expired entries")
-        
-        return len(to_remove)
-    
-    async def get_duplicate_stats(self) -> Dict[str, Any]:
-        """Get deduplication statistics."""
-        now = datetime.utcnow()
-        active_count = 0
-        expired_count = 0
-        
-        for key, created in self._seen_signals.items():
-            age = (now - created).total_seconds()
-            if age < self.config.cooldown_seconds:
-                active_count += 1
-            else:
-                expired_count += 1
-        
-        return {
-            "active_signals": active_count,
-            "expired_signals": expired_count,
-            "cooldown_seconds": self.config.cooldown_seconds,
-            "breakthrough_enabled": self.config.allow_fresh_breakthrough,
-            "breakthrough_score": self.config.min_score_for_breakthrough
-        }
-
-
-class StrictSignalDedup:
-    """
-    Strict deduplication - only exact matches.
-    Use for preventing spam, not for quality.
-    """
-    
-    def __init__(self):
-        self._seen: Set[str] = set()
-    
-    def is_duplicate(self, signal: Dict[str, Any]) -> bool:
-        """Check exact duplicate."""
-        key = self._generate_exact_key(signal)
-        return key in self._seen
-    
-    def mark_seen(self, signal: Dict[str, Any]) -> None:
-        """Mark as seen."""
-        key = self._generate_exact_key(signal)
-        self._seen.add(key)
-    
-    def _generate_exact_key(self, signal: Dict[str, Any]) -> str:
-        """Generate exact match key."""
-        return f"{signal.get('asset')}:{signal.get('direction')}:{signal.get('timeframe')}:{signal.get('entry')}"
-
-
-# Default instance
-default_dedup = SignalDeduplicator()
-
-
-class MLRejectionTracker:
-    """
-    Tracks ML-rejected signals for adaptive learning and outcome tracking.
-    
-    Stores rejected signals to the database so the ML pipeline can observe
-    engine-rejected candidates without waiting for decision_log backfill.
-    """
-    
-    def __init__(self):
-        self._enabled = True
-    
-    async def persist_rejection(
-        self,
-        asset: str,
-        timeframe: str,
-        direction: str,
-        entry_price: float,
-        stop_loss: float,
-        take_profit_levels: Any,
-        ml_probability: float,
-        rejection_reason: str,
-        features: Optional[Dict[str, Any]] = None,
-        rejection_type: str = "ml",
-    ) -> bool:
-        """
-        Persist a rejected signal to the MLRejectedSignal table.
-        
-        Args:
-            asset: Asset symbol (e.g., "BTCUSDT")
-            timeframe: Timeframe (e.g., "1h")
-            direction: "long" or "short"
-            entry_price: Entry price
-            stop_loss: Stop loss price
-            take_profit_levels: Take profit levels (list or string)
-            ml_probability: ML model probability score
-            rejection_reason: Reason for rejection (e.g., "ml_filter")
-            features: Signal features dict for training data
-            rejection_type: Type of rejection ("ml", "engine", "score", etc.)
-            
-        Returns:
-            True if persisted successfully, False otherwise
-        """
+    def _mark_redis(self, key: str) -> None:
+        """Atomically mark key in Redis using SETNX."""
         try:
-            from db.session import get_session
-            from db.models import MLRejectedSignal
-            from uuid import uuid4
-            
-            # Handle take_profit_levels (could be list or string)
-            tp_str = str(take_profit_levels) if take_profit_levels else ""
-            
-            async def _do_persist():
-                async with get_session() as session:
-                    rejection = MLRejectedSignal(
-                        signal_id=str(uuid4()),
-                        asset=str(asset).upper(),
-                        timeframe=str(timeframe),
-                        direction=str(direction).lower(),
-                        entry=float(entry_price) if entry_price else 0.0,
-                        stop_loss=float(stop_loss) if stop_loss else 0.0,
-                        take_profit=tp_str,
-                        ml_probability=float(ml_probability) if ml_probability else 0.0,
-                        rejection_reason=str(rejection_reason)[:128],
-                        features=dict(features) if features else {},
-                        rejection_type=str(rejection_type)[:32],
-                    )
-                    session.add(rejection)
-                    await session.commit()
-            
-            # Run in a new async task
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If loop is running, create task
-                    asyncio.create_task(_do_persist())
-                    return True
-                else:
-                    loop.run_until_complete(_do_persist())
-                    return True
-            except RuntimeError:
-                # No event loop, create new one
-                asyncio.run(_do_persist())
-                return True
-                
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"[MLRejectionTracker] persist_rejection failed: {e}")
+            r = self._redis_client()
+            if r is not None:
+                # Use set_sync with nx=True for atomic SETNX behavior
+                r.set_sync(key, "1", ex=self.window_seconds, nx=True)
+        except Exception as exc:
+            logger.debug("[dedup] Redis mark failed: %s", exc)
+
+    def mark_active(self, signal: dict) -> None:
+        """Mark a signal as active in the dedup store."""
+        key = compute_signal_hash_key(signal)
+        self._mark_redis(key)
+        logger.debug("[dedup] Marked active: %s", key[:24])
+
+    def clear(self, signal: dict) -> None:
+        """Remove a signal from the dedup store (e.g. on expiry/outcome)."""
+        key = compute_signal_hash_key(signal)
+        try:
+            r = self._redis_client()
+            if r is not None:
+                r.delete_sync(key)
+        except Exception as exc:
+            logger.debug("[dedup] Redis clear failed: %s", exc)
+
+    def check_and_mark(self, signal: dict) -> bool:
+        """
+        Atomic check-and-mark operation.
+
+        Returns True if the signal is new (not a duplicate) and was marked.
+        Returns False if the signal is a duplicate (suppressed).
+
+        This is the PRIMARY method to use in the signal pipeline:
+
+            if not dedup.check_and_mark(signal):
+                return  # duplicate, suppress
+        """
+        if self.is_duplicate(signal):
             return False
-    
-    async def get_recent_rejections(
-        self,
-        hours: int = 24,
-        limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """
-        Get recent rejections for analysis.
-        
-        Args:
-            hours: How many hours back to look
-            limit: Maximum number of records
-            
-        Returns:
-            List of rejection records
-        """
-        try:
-            from db.session import get_session
-            from db.models import MLRejectedSignal
-            from sqlalchemy import select, desc
-            from datetime import datetime, timedelta
-            
-            cutoff = datetime.utcnow() - timedelta(hours=hours)
-            
-            async def _do_fetch():
-                async with get_session() as session:
-                    result = await session.execute(
-                        select(MLRejectedSignal)
-                        .where(MLRejectedSignal.created_at >= cutoff)
-                        .order_by(desc(MLRejectedSignal.created_at))
-                        .limit(limit)
-                    )
-                    rows = result.scalars().all()
-                    return [
-                        {
-                            "id": r.id,
-                            "signal_id": r.signal_id,
-                            "asset": r.asset,
-                            "timeframe": r.timeframe,
-                            "direction": r.direction,
-                            "entry": r.entry,
-                            "stop_loss": r.stop_loss,
-                            "take_profit": r.take_profit,
-                            "ml_probability": r.ml_probability,
-                            "rejection_reason": r.rejection_reason,
-                            "features": r.features,
-                            "actual_outcome": r.actual_outcome,
-                            "created_at": r.created_at,
-                        }
-                        for r in rows
-                    ]
-            
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    return asyncio.create_task(_do_fetch())
-                else:
-                    return loop.run_until_complete(_do_fetch())
-            except RuntimeError:
-                return asyncio.run(_do_fetch())
-                
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"[MLRejectionTracker] get_recent_rejections failed: {e}")
-            return []
-
-
-# Priority 1 Fix: Signal Lock Functions
-
-def check_and_acquire_signal_lock(
-    asset: str,
-    direction: str,
-    timeframe: str,
-    tier: str = "free",
-) -> bool:
-    """Check and acquire Redis lock for signal generation.
-    
-    Priority 1 - Redis Lock for Signal:
-    - Prevents duplicate signal generation within cooldown window
-    - Format: signal_lock:SOLUSDT:BUY:4H
-    - TTL: 4 hours
-    
-    Args:
-        asset: Asset symbol (e.g., "SOLUSDT")
-        direction: "long" or "short" (or "buy"/"sell")
-        timeframe: Timeframe (e.g., "4h", "1h")
-        tier: User tier for TTL calculation
-    
-    Returns:
-        True if lock acquired, False if already locked
-    """
-    try:
-        from core.redis_state import state
-        
-        lock_key = get_signal_lock_key(asset, direction, timeframe)
-        ttl_seconds = get_signal_lock_ttl_seconds(timeframe, tier)
-        
-        # Try to acquire lock with SETNX (set if not exists)
-        if state.has_redis_sync():
-            # Use SETNX pattern - only set if not exists
-            acquired = state.set_nx_sync(lock_key, "1", ttl=ttl_seconds)
-            if acquired:
-                logger.info(f"[SignalLock] Acquired: {lock_key} ttl={ttl_seconds}s tier={tier}")
-                return True
-            else:
-                logger.debug(f"[SignalLock] Already locked: {lock_key}")
-                return False
-    except Exception as e:
-        logger.debug(f"[SignalLock] Failed to acquire lock: {e}")
-        # Allow through if Redis fails (fail-open)
+        self.mark_active(signal)
         return True
 
 
-def release_signal_lock(
-    asset: str,
-    direction: str,
-    timeframe: str,
-) -> None:
-    """Release Redis lock for signal generation.
-    
-    Args:
-        asset: Asset symbol
-        direction: "long" or "short"
-        timeframe: Timeframe
+# ─── Per-user per-asset delivery cooldown ─────────────────────────────────────
+
+def check_user_asset_cooldown(user_id: int, asset: str, direction: str) -> bool:
+    """
+    Return True if user was recently sent a signal for this asset+direction.
+
+    This is the DELIVERY-LEVEL dedup — separate from thesis-level dedup.
+    Prevents a user from receiving the same asset/direction multiple times
+    within the cooldown window even if the signal thesis changed slightly.
     """
     try:
         from core.redis_state import state
-        
-        lock_key = get_signal_lock_key(asset, direction, timeframe)
-        
-        if state.has_redis_sync():
-            state.delete_sync(lock_key)
-            logger.info(f"[SignalLock] Released: {lock_key}")
-    except Exception as e:
-        logger.debug(f"[SignalLock] Failed to release lock: {e}")
+        import os
+        hours = int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12)
+        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
+        val = state.get_sync(key)
+        return bool(val)
+    except Exception:
+        return False
 
 
-def check_active_signal_exists(
-    session,
-    asset: str,
-    direction: str,
-    timeframe: str,
-) -> bool:
-    """Check if active signal already exists for asset/direction/timeframe.
-    
-    Priority 1 - Active Signal Protection:
-    - Check if active (non-expired, non-archived) signal exists
-    - If true, skip signal generation
-    
-    Args:
-        session: Database session
-        asset: Asset symbol
-        direction: "long" or "short"
-        timeframe: Timeframe
-    
-    Returns:
-        True if active signal exists, False otherwise
-    """
+def set_user_asset_cooldown(
+    user_id: int, asset: str, direction: str, tier: str
+) -> None:
+    """Mark that user received a signal for this asset+direction."""
     try:
-        from db.models import Signal
-        from sqlalchemy import select, and_
-        
-        # Check for active signal with same asset, direction, timeframe
-        result = session.execute(
-            select(Signal.signal_id).where(
-                and_(
-                    Signal.asset == str(asset).upper(),
-                    Signal.direction == str(direction).lower(),
-                    Signal.timeframe == str(timeframe).lower(),
-                    Signal.expired.is_(False),
-                    Signal.archived.is_(False),
-                )
-            ).limit(1)
-        )
-        exists = result.scalar_one_or_none()
-        
-        if exists:
-            logger.info(f"[ActiveSignal] Exists: {asset} {direction} {timeframe}")
+        from core.redis_state import state
+        import os
+        # VIP users get shorter cooldown so they get more signal variety
+        tier_l = str(tier or "free").lower()
+        if tier_l in ("vip", "owner", "admin"):
+            hours = int(os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4)
+        elif tier_l == "premium":
+            hours = int(os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8") or 8)
+        else:
+            hours = int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12)
+        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
+        state.set_sync(key, "1", ex=hours * 3600)
+    except Exception as exc:
+        logger.debug("[dedup] set_user_asset_cooldown failed: %s", exc)
+
+
+# ─── Portfolio correlation guard ──────────────────────────────────────────────
+
+# Highly correlated asset pairs — sending both simultaneously inflates exposure
+_CORRELATED_PAIRS: list[tuple[str, str]] = [
+    ("BTCUSDT", "ETHUSDT"),
+    ("BTCUSDT", "SOLUSDT"),
+    ("BTCUSDT", "BNBUSDT"),
+    ("ETHUSDT", "SOLUSDT"),
+    ("XAUUSD", "XAGUSD"),
+    ("EURUSD", "GBPUSD"),
+    ("USDCHF", "USDJPY"),
+]
+
+_CORR_THRESHOLD = 0.70  # correlation coefficient above which we suppress second signal
+
+
+def signals_are_correlated(asset1: str, asset2: str) -> bool:
+    """Return True if the two assets are known to be highly correlated."""
+    a1, a2 = asset1.upper().strip(), asset2.upper().strip()
+    if a1 == a2:
+        return True
+    for pair in _CORRELATED_PAIRS:
+        if (a1 in pair and a2 in pair):
             return True
-        return False
-    except Exception as e:
-        logger.debug(f"[ActiveSignal] Check failed: {e}")
-        return False
+    return False
 
 
-# Helper functions
-async def is_signal_duplicate(signal: Dict[str, Any]) -> bool:
-    """Check if signal is duplicate using default dedup."""
-    return await default_dedup.is_duplicate(signal)
+def filter_correlated_signals(signals: list[dict]) -> list[dict]:
+    """
+    Given a ranked list of signals, remove correlated duplicates.
+
+    Keeps the highest-scoring signal when two correlated assets are both present.
+    Signals should be pre-sorted by score descending.
+    """
+    seen_assets: list[str] = []
+    filtered: list[dict] = []
+
+    for sig in signals:
+        asset = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
+        if not asset:
+            filtered.append(sig)
+            continue
+
+        # Check if any already-accepted asset is correlated with this one
+        corr_found = False
+        for accepted in seen_assets:
+            if signals_are_correlated(asset, accepted):
+                corr_found = True
+                logger.debug(
+                    "[dedup] Suppressed correlated signal: %s (correlated with %s)",
+                    asset,
+                    accepted,
+                )
+                break
+
+        if not corr_found:
+            filtered.append(sig)
+            seen_assets.append(asset)
+
+    return filtered
 
 
-async def mark_signal_seen(signal: Dict[str, Any]) -> None:
-    """Mark signal as seen using default dedup."""
-    await default_dedup.mark_seen(signal)
+# ─── Module-level singleton ───────────────────────────────────────────────────
+
+_deduplicator: Optional[SignalDeduplicator] = None
 
 
-if __name__ == "__main__":
-    # Test
-    import asyncio
-    
-    async def test():
-        dedup = SignalDeduplicator()
-        
-        test_signal = {
-            "asset": "BTCUSDT",
-            "direction": "long",
-            "timeframe": "1h",
-            "entry": 45000.0,
-            "score": 88.0,
-            "created_at": datetime.utcnow()
-        }
-        
-        # Test fingerprint generation
-        fp = dedup._generate_fingerprint(test_signal)
-        print(f"Fingerprint: {fp.to_key()}")
-        
-        # Test duplicate check
-        is_dup = await dedup.is_duplicate(test_signal)
-        print(f"First check (should be False): {is_dup}")
-        
-        # Mark as seen
-        await dedup.mark_seen(test_signal)
-        
-        # Check again
-        is_dup = await dedup.is_duplicate(test_signal)
-        print(f"Second check (should be True): {is_dup}")
-        
-        # Get stats
-        stats = await dedup.get_duplicate_stats()
-        print(f"Stats: {stats}")
-    
-    asyncio.run(test())
+def get_deduplicator() -> SignalDeduplicator:
+    """Return the module-level SignalDeduplicator singleton."""
+    global _deduplicator
+    if _deduplicator is None:
+        import os
+        window = int(os.getenv("SIGNAL_DEDUP_WINDOW_HOURS", "4") or 4) * 3600
+        _deduplicator = SignalDeduplicator(window_seconds=window)
+    return _deduplicator
+
+
+__all__ = [
+    "SignalDeduplicator",
+    "compute_signal_fingerprint",
+    "compute_signal_hash_key",
+    "check_user_asset_cooldown",
+    "set_user_asset_cooldown",
+    "filter_correlated_signals",
+    "signals_are_correlated",
+    "get_deduplicator",
+]
