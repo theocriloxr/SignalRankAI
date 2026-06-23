@@ -4103,7 +4103,6 @@ async def _handle_unknown_command(update, context):
 # The old registration at line ~4006 was BEFORE many important commands were registered
 # This was causing "Unknown command" even for commands like /mt5_link, /referral, etc.
 # Now we register it AFTER all other commands
-    application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
@@ -4193,8 +4192,7 @@ async def _handle_unknown_command(update, context):
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
     application.add_handler(CommandHandler("force_market_scan", _audit_handler("force_market_scan", force_market_scan_command)))
     application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
-
-    # NOTE: Commands are intentionally registered once above. Avoid duplicate
+# NOTE: Commands are intentionally registered once above. Avoid duplicate
     # add_handler calls, which can execute the same command twice per update.
 
     # Lightweight command registry audit to catch missing handlers.
@@ -4751,16 +4749,186 @@ async def _handle_unknown_command(update, context):
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
 
-    # Final callback safety net. Specific signal callbacks above own the real
-    # behavior; this only answers unknown callbacks so Telegram buttons do not spin.
-    try:
-        from signalrank_telegram.callback_handlers import create_global_callback_handler
-        application.add_handler(create_global_callback_handler())
-        logger.info("[bot] Global callback safety net added")
-    except Exception as _cb_err:
-        logger.warning(f"[bot] Failed to add global callback handler: {_cb_err}")
+# ── GUARANTEED CATCH-ALL CALLBACK HANDLER ─────────────────────────────────────
+    # MUST be registered LAST. Catches any callback_data not matched above.
+    # Calls query.answer() immediately (stops spinner), then routes to specific logic.
+    # This is self-contained — no external imports that could silently fail.
 
-    # In webhook mode, handlers are now fully registered. Mark readiness here so
+    async def _global_callback_safety_net(update, context):
+        """
+        Safety net for ALL inline keyboard callbacks.
+
+        This handler answers the query FIRST (stops the loading spinner)
+        then routes to the appropriate handler logic.
+
+        WHY THIS EXISTS: If any specific CallbackQueryHandler above fails to match
+        a callback_data string (e.g. due to regex mismatch or import error),
+        Telegram waits 30s for query.answer() that never comes. The button spins
+        forever and nothing appears in logs.
+        """
+        query = update.callback_query
+        if query is None:
+            return
+
+        data = getattr(query, "data", "") or ""
+        user_id = getattr(getattr(query, "from_user", None), "id", None)
+
+        # STEP 1: LOG (before any await — proves handler was reached)
+        logger.warning(
+            "[CALLBACK_SAFETY_NET] data=%r user=%s msg_id=%s",
+            data,
+            user_id,
+            getattr(getattr(query, "message", None), "message_id", None),
+        )
+
+        # STEP 2: ANSWER IMMEDIATELY — stops spinner regardless of what follows
+        try:
+            await query.answer()
+        except Exception:
+            pass  # Already answered or expired
+
+        if not data:
+            return
+
+        # STEP 3: Route to appropriate handler
+        try:
+            chat_id = getattr(getattr(query.message, "chat", None), "id", None) if query.message else None
+
+            if data.startswith("signal_reaction_"):
+                # Parse: signal_reaction_<signal_id>|<reaction>
+                payload = data[len("signal_reaction_"):]
+                if "|" in payload:
+                    signal_id, reaction = payload.split("|", 1)
+                    if reaction in ("taking_it", "watching"):
+                        try:
+                            from db.session import get_session
+                            from db.models import SignalEngagement
+                            from db.pg_features import get_or_create_user
+                            from sqlalchemy import select
+                            async with get_session() as session:
+                                user = await get_or_create_user(session, telegram_user_id=int(user_id or 0))
+                                existing = (await session.execute(
+                                    select(SignalEngagement).where(
+                                        SignalEngagement.user_id == user.id,
+                                        SignalEngagement.signal_id == signal_id.strip(),
+                                    )
+                                )).scalar_one_or_none()
+                                if existing:
+                                    existing.reaction = reaction
+                                else:
+                                    session.add(SignalEngagement(user_id=user.id, signal_id=signal_id.strip(), reaction=reaction))
+                                await session.commit()
+                            emoji = "🔥" if reaction == "taking_it" else "👀"
+                            await query.answer(f"{emoji} Noted!")
+                        except Exception as _e:
+                            logger.debug("[safety_net] reaction error: %s", _e)
+
+            elif data.startswith("monitor_signal_"):
+                signal_id = data[len("monitor_signal_"):].strip()
+                try:
+                    text, _, expires_at = await _build_monitor_snapshot(signal_id)
+                    keyboard = _build_monitor_keyboard(signal_id)
+                    if chat_id:
+                        await context.bot.send_message(
+                            chat_id=int(chat_id), text=text,
+                            parse_mode="HTML", reply_markup=keyboard,
+                        )
+                except Exception as _e:
+                    logger.debug("[safety_net] monitor error: %s", _e)
+                    if chat_id:
+                        await context.bot.send_message(chat_id=int(chat_id), text="⚠️ Could not load monitor.")
+
+            elif data.startswith("check_outcome_"):
+                signal_id = data[len("check_outcome_"):].strip()
+                try:
+                    from db.session import get_session
+                    from db.models import Signal, Outcome
+                    from sqlalchemy import select
+                    async with get_session() as session:
+                        sig = (await session.execute(select(Signal).where(Signal.signal_id == signal_id).limit(1))).scalar_one_or_none()
+                        out = (await session.execute(select(Outcome).where(Outcome.signal_id == signal_id).limit(1))).scalar_one_or_none() if sig else None
+                        await session.commit()
+                    if sig:
+                        status = str(getattr(out, "status", None) or ("expired" if getattr(sig, "expired", False) else "active")).upper()
+                        await query.answer(f"{getattr(sig, 'asset', '?')} {str(getattr(sig, 'direction', '?')).upper()}: {status}", show_alert=True)
+                    else:
+                        await query.answer("Signal not found.", show_alert=True)
+                except Exception as _e:
+                    logger.debug("[safety_net] check_outcome error: %s", _e)
+
+            elif data.startswith("ask_gemini_"):
+                signal_id = data[len("ask_gemini_"):].strip()
+                try:
+                    from db.session import get_session
+                    from db.models import Signal
+                    from sqlalchemy import select
+                    async with get_session() as session:
+                        sig = (await session.execute(select(Signal).where(Signal.signal_id == signal_id).limit(1))).scalar_one_or_none()
+                        await session.commit()
+                    if sig and chat_id:
+                        asset = str(getattr(sig, "asset", "?")).upper()
+                        direction = str(getattr(sig, "direction", "?")).upper()
+                        score = getattr(sig, "score", 0)
+                        strategy = str(getattr(sig, "strategy_name", "") or "")
+
+                        explanation = (
+                            f"🤖 <b>Why This Signal?</b>\n\n"
+                            f"<b>{asset}</b> {direction}\n"
+                            f"Score: <b>{score:.0f}/100</b>\n"
+                            + (f"Strategy: <b>{strategy}</b>\n" if strategy else "") +
+                            "\n<i>Generated from technical confluence, ML validation, and market structure analysis.</i>"
+                        )
+                        try:
+                            from services.gemini_ml import ask_gemini_signal_explanation
+                            sig_dict = {"asset": asset, "direction": direction, "score": score, "strategy_name": strategy}
+                            gemini_text = await ask_gemini_signal_explanation(sig_dict)
+                            if gemini_text:
+                                explanation = f"🤖 <b>Gemini: {asset} {direction}</b>\n\n{gemini_text}"
+                        except Exception:
+                            pass
+                        await context.bot.send_message(chat_id=int(chat_id), text=explanation, parse_mode="HTML")
+                except Exception as _e:
+                    logger.debug("[safety_net] ask_gemini error: %s", _e)
+
+            elif data.startswith("signal_chart_"):
+                signal_id = data[len("signal_chart_"):].strip()
+                if chat_id:
+                    await context.bot.send_message(
+                        chat_id=int(chat_id),
+                        text="📊 Chart generation requires the signal chart module. Coming soon.",
+                    )
+
+            elif data.startswith("locked_"):
+                feature = data[len("locked_"):].strip().replace("_", " ").title()
+                if chat_id:
+                    await context.bot.send_message(
+                        chat_id=int(chat_id),
+                        text=(
+                            f"🔒 <b>{feature} — Premium Feature</b>\n\n"
+                            "Upgrade to access full signal details.\n"
+                            "→ /upgrade"
+                        ),
+                        parse_mode="HTML",
+                    )
+
+            else:
+                logger.info("[safety_net] unrouted callback: %r", data)
+
+        except Exception as _route_err:
+            logger.exception("[CALLBACK_SAFETY_NET] routing error for data=%r: %s", data, _route_err)
+
+# ALSO move the MessageHandler(filters.COMMAND) to HERE — at the very END
+    # so it never shadows the specific CommandHandlers registered above.
+    # (Removed it from the middle of handler registration)
+    application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
+    logger.info("[bot] Unknown command handler registered (last, correct position)")
+
+    # Register catch-all LAST with pattern=None (matches every callback_data)
+    from telegram.ext import CallbackQueryHandler as _CQH_safety
+    application.add_handler(_CQH_safety(_global_callback_safety_net, pattern=None))
+    logger.info("[bot] Global callback safety net registered (catch-all)")
+
+    # In webhook mode, handlers are now fully registered.
     # railway_main can begin processing updates while non-critical jobs continue
     # bootstrapping in this thread.
     _refresh_webhook_handlers_ready("post_handler_registration")
