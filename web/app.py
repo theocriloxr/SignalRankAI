@@ -43,7 +43,7 @@ from db.models import ApiToken, User, Signal
 from sqlalchemy import select
 from core.redis_state import state
 from core.redis_cache import cache_stats
-from core.tier_constants import TIER_SCORE_THRESHOLDS
+from core.tier_constants import TIER_MIN_SCORES
 from core.telemetry import (
     init_tracer,
     observe_http_request,

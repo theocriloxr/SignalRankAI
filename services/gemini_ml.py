@@ -1,757 +1,384 @@
 """
-Gemini Agentic Trade Validator - AI-Powered Fundamental Risk Check
+SignalRankAI — Gemini AI Integration (PERFECTED)
 
-This module upgrades Gemini from a simple chatbot into an Agentic Co-Pilot.
-Instead of just analyzing on command, it integrates directly into the algorithmic trading loop.
+AI must ASSIST, not replace. Gemini is a filter and validator:
+  1. Confluence check: validates technical signal against macro news
+  2. Smart filtering: suppresses SHADOW signals when macro conflicts with setup
+  3. Signal explanation: "Why this trade?" in plain English
+  4. News sentiment quantization: converts headlines to numeric score
 
-Before a signal is officially saved and sent to users, the engine asks Gemini to:
-1. Read the live chart data and fundamental news
-2. Act as a Chief Risk Officer
-3. Veto the trade if it spots a macroeconomic red flag
-
-Usage:
-    from services.gemini_ml import gemini_confluence_check
-    
-    # Before dispatch to MT5 and Telegram:
-    latest_news = await fetch_recent_headlines(asset)
-    gemini_approved = await gemini_confluence_check(signal, latest_news)
-    
-    if not gemini_approved:
-        continue  # Drop the trade, Gemini thinks it's a trap
+Gemini's role:
+  ✓ Input: Technical BUY signal + recent news
+  ✓ Output: APPROVED / SHADOW + confidence_delta + reason
+  
+If Gemini outputs SHADOW → signal saved but NOT broadcast (risk protection).
+If Gemini APPROVED → signal proceeds to delivery pipeline.
 """
 
-import os
+from __future__ import annotations
+
 import logging
-from typing import Dict, List, Any, Optional, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger("GeminiValidator")
+logger = logging.getLogger(__name__)
 
-# Setup Client (New SDK: google-genai)
-client = None
+# ─── Gemini client ────────────────────────────────────────────────────────────
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-pro").strip()
+MODEL_ID       = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
-# Try to import google.genai (new SDK), fallback gracefully
-try:
-    from google import genai
-    
-    if GEMINI_API_KEY:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        logger.info(f"[GeminiValidator] Configured with model: {MODEL_ID}")
-    else:
-        logger.warning("[GeminiValidator] No GEMINI_API_KEY - will use fallback")
-except ImportError:
-    client = None
-    logger.warning("[GeminiValidator] google-genai not installed - will use fallback")
+_client = None
 
-
-# Try to import news fetching
-try:
-    from data.news import get_news_sentiment as _fetch_news_sentiment, fetch_news_headlines
-except Exception:
-    async def _fetch_news_sentiment(asset: str):
-        return 0.0
-    
-    async def fetch_news_headlines(asset: str, limit: int = 5) -> List[Dict[str, Any]]:
-        return []
+def _get_client():
+    global _client
+    if _client is not None:
+        return _client
+    if not GEMINI_API_KEY:
+        return None
+    try:
+        from google import genai
+        _client = genai.Client(api_key=GEMINI_API_KEY)
+        logger.info("[gemini] Client initialized with model: %s", MODEL_ID)
+        return _client
+    except ImportError:
+        logger.warning("[gemini] google-genai not installed — Gemini features disabled")
+        return None
+    except Exception as exc:
+        logger.warning("[gemini] Client init failed: %s", exc)
+        return None
 
 
-async def get_news_sentiment(asset: str, headlines: list) -> str:
+def gemini_available() -> bool:
+    """Return True if Gemini is configured and the client is available."""
+    return _get_client() is not None
+
+
+async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
+    """Make a Gemini API call. Returns response text or None on failure."""
+    client = _get_client()
+    if client is None:
+        return None
+
+    try:
+        import asyncio
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model=MODEL_ID,
+            contents=prompt,
+        )
+        text = (response.text or "").strip()
+        return text if text else None
+    except Exception as exc:
+        logger.debug("[gemini] API call failed: %s", exc)
+        return None
+
+
+# ─── Confluence validator ─────────────────────────────────────────────────────
+
+STRONG_SENTIMENT_THRESHOLD = float(os.getenv("GEMINI_SENTIMENT_THRESHOLD", "2.0") or 2.0)
+
+async def gemini_confluence_check(
+    signal: dict,
+    news_headlines: List[str],
+) -> Tuple[bool, str, Optional[float]]:
     """
-    Analyzes news headlines using Gemini to determine sentiment direction.
-    
-    Args:
-        asset: The asset symbol to check (e.g., "BTCUSDT", "EURUSD")
-        headlines: List of news headlines (strings)
+    Validate a technical signal against macro news sentiment.
     
     Returns:
-        'BULLISH', 'BEARISH', or 'NEUTRAL'
-    """
-    if not GEMINI_API_KEY or client is None:
-        # Fallback: return NEUTRAL when Gemini unavailable
-        return "NEUTRAL"
-    
-    if not headlines:
-        return "NEUTRAL"
-    
-    try:
-        # Format headlines for prompt
-        headlines_text = "\n".join([f"- {h}" for h in headlines[:10]])
+        (approved: bool, status: str, confidence_delta: float | None)
         
-        prompt = f"""Analyze these news headlines for {asset} and determine the market sentiment.
+        approved=True  → proceed to delivery
+        approved=False → set signal to SHADOW mode (don't broadcast)
+        status         → "APPROVED" | "SHADOW" | "FALLBACK_APPROVED"
+        confidence_delta → score adjustment (-1.0 to +1.0), or None
+    
+    SHADOW conditions:
+      - High-conviction BUY but strongly bearish macro news
+      - High-conviction SELL but strongly bullish macro news
+    """
+    if not gemini_available():
+        return True, "FALLBACK_APPROVED", None
+
+    asset     = str(signal.get("asset") or "?").upper()
+    direction = str(signal.get("direction") or "long").upper()
+    score     = float(signal.get("score") or signal.get("display_score") or 0)
+    strategy  = str(signal.get("strategy_name") or "")
+    timeframe = str(signal.get("timeframe") or "")
+
+    if not news_headlines:
+        return True, "APPROVED_NO_NEWS", None
+
+    headlines_text = "\n".join(f"- {h}" for h in news_headlines[:8])
+
+    prompt = f"""You are a Chief Risk Officer for a trading firm.
+
+A trading algorithm has generated a {direction} signal for {asset}:
+- Score: {score:.0f}/100
+- Timeframe: {timeframe}
+- Strategy: {strategy}
+
+Recent news headlines:
+{headlines_text}
+
+Your job: Does the current macro/news environment SUPPORT or CONFLICT with this {direction} trade?
+
+Rules:
+- SHADOW if news contains: interest rate surprises, geopolitical shocks, major regulatory actions, or financial crises that DIRECTLY oppose the trade direction
+- APPROVED if news is neutral or aligns with the trade direction
+- Only SHADOW if the conflict is STRONG and DIRECT (not minor uncertainty)
+
+Reply in EXACTLY this format:
+DECISION: [APPROVED or SHADOW]
+REASON: [one sentence]
+CONFIDENCE_DELTA: [number from -0.3 to +0.3, negative means reduce signal confidence]"""
+
+    response = await _call_gemini(prompt, max_tokens=150)
+
+    if not response:
+        return True, "FALLBACK_APPROVED", None
+
+    try:
+        lines = response.strip().split("\n")
+        decision  = "APPROVED"
+        reason    = ""
+        conf_delta: Optional[float] = None
+
+        for line in lines:
+            line = line.strip()
+            if line.upper().startswith("DECISION:"):
+                val = line.split(":", 1)[1].strip().upper()
+                if "SHADOW" in val:
+                    decision = "SHADOW"
+            elif line.upper().startswith("REASON:"):
+                reason = line.split(":", 1)[1].strip()
+            elif line.upper().startswith("CONFIDENCE_DELTA:"):
+                try:
+                    conf_delta = float(line.split(":", 1)[1].strip())
+                    conf_delta = max(-0.3, min(0.3, conf_delta))
+                except Exception:
+                    conf_delta = None
+
+        approved = (decision == "APPROVED")
+
+        if not approved:
+            logger.info(
+                "[gemini] SHADOW: %s %s — %s",
+                asset, direction, reason or "macro conflict"
+            )
+        else:
+            logger.debug("[gemini] APPROVED: %s %s", asset, direction)
+
+        return approved, decision, conf_delta
+
+    except Exception as exc:
+        logger.debug("[gemini] confluence parse failed: %s", exc)
+        return True, "FALLBACK_APPROVED", None
+
+
+# ─── News sentiment ───────────────────────────────────────────────────────────
+
+async def get_news_sentiment(asset: str, headlines: List[str]) -> str:
+    """
+    Analyze news headlines for directional sentiment.
+    
+    Returns: 'BULLISH', 'BEARISH', or 'NEUTRAL'
+    """
+    if not gemini_available() or not headlines:
+        return "NEUTRAL"
+
+    headlines_text = "\n".join(f"- {h}" for h in headlines[:10])
+
+    prompt = f"""Analyze these news headlines for {asset} and determine the market sentiment.
 
 Headlines:
 {headlines_text}
 
 Reply ONLY with one of these exact words:
-- BULLISH (if news is positive/optimistic for price going up)
-- BEARISH (if news is negative/pessimistic for price going down)
+- BULLISH (if news is positive for price going up)
+- BEARISH (if news is negative for price going down)
 - NEUTRAL (if news is mixed or neutral)
 
 Do not explain. Just reply with one word."""
-        
-        # New SDK: client.models.generate_content()
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt
-        )
-        
-        decision = response.text.strip().upper()
-        
-        if "BULLISH" in decision:
-            return "BULLISH"
-        elif "BEARISH" in decision:
-            return "BEARISH"
-        else:
-            return "NEUTRAL"
-            
-    except Exception as e:
-        logger.error(f"[GeminiValidator] get_news_sentiment failed: {e}")
+
+    response = await _call_gemini(prompt, max_tokens=10)
+
+    if not response:
         return "NEUTRAL"
 
+    upper = response.strip().upper()
+    if "BULLISH" in upper:
+        return "BULLISH"
+    elif "BEARISH" in upper:
+        return "BEARISH"
+    return "NEUTRAL"
 
-async def gemini_confluence_check_with_tech_context(
-    signal: Dict[str, Any],
-    news_headlines: list,
-    tech_context: Dict[str, Any]
-) -> bool:
+
+async def quantize_news_sentiment(asset: str, headlines: List[str]) -> float:
     """
-    Gemini Chief Risk Officer (CRO) with Chain-of-Thought reasoning.
-    
-    This upgraded version feeds Gemini technical context (RSI, Trend, ATR) so it can
-    spot "Overbought" retail traps before they happen.
-    
-    Args:
-        signal: Signal dict with asset, direction, etc.
-        news_headlines: List of news headline strings
-        tech_context: Dict with 'rsi', 'trend', 'atr' keys
-    
-    Returns:
-        True if APPROVED, False if VETOED
+    Convert news sentiment to a numeric score (-1.0 = strongly bearish, +1.0 = strongly bullish).
     """
-    if not GEMINI_API_KEY or client is None:
-        return True
-    
-    try:
-        asset = signal.get('asset', 'UNKNOWN')
-        direction = signal.get('direction', 'long').upper()
-        
-        # Format news headlines
-        headlines_text = ""
-        if news_headlines:
-            if news_headlines and isinstance(news_headlines[0], str):
-                headlines_text = "\n".join([f"- {h}" for h in news_headlines[:10]])
-            else:
-                headlines_text = "\n".join([f"- {h.get('title', h.get('headline', ''))}" for h in news_headlines[:10]])
-        else:
-            headlines_text = "No recent news."
-        
-        # Build technical context
-        rsi = tech_context.get('rsi', 'N/A')
-        trend = tech_context.get('trend', 'N/A')
-        atr = tech_context.get('atr', 'N/A')
-        
-        # Chain-of-Thought prompt
-        prompt = f"""ROLE: Institutional Chief Risk Officer (CRO).
-ASSET: {asset} | DIRECTION: {direction}
+    if not gemini_available() or not headlines:
+        return 0.0
 
-MARKET PULSE:
-- RSI(14): {rsi}
-- Trend: {trend} (EMA 200)
-- ATR (Volatility): {atr}
+    headlines_text = "\n".join(f"- {h}" for h in headlines[:8])
 
-HEADLINES:
+    prompt = f"""Rate the overall news sentiment for {asset} from -3 to +3.
+
+Headlines:
 {headlines_text}
 
-TASK: Perform a Confluence Audit. 
-1. Does the news conflict with the technical direction?
-2. Is the RSI indicating a 'Retail Trap' (e.g. Longing into 80+ RSI)?
-3. Is the volatility too high for a safe entry?
+Scale:
+-3 = Extremely bearish (crash, ban, crisis)
+-2 = Strongly bearish
+-1 = Mildly bearish
+ 0 = Neutral
++1 = Mildly bullish
++2 = Strongly bullish
++3 = Extremely bullish
 
-THOUGHT PROCESS: (Briefly explain your reasoning)
-FINAL DECISION: [APPROVE] or [VETO]"""
+Reply with ONLY the number (e.g.: -2 or 1.5)."""
 
-        # New SDK call
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt
-        )
-        
-        decision = response.text.strip().upper()
-        
-        if "VETO" in decision:
-            logger.warning(
-                f"🛑 GEMINI CRO VETO: {asset} {direction} rejected. "
-                f"RSI={rsi}, Trend={trend}, ATR={atr}"
-            )
-            return False
-        
-        logger.info(f"✅ GEMINI CRO APPROVE: {asset} {direction} approved")
-        return True
-        
-    except Exception as e:
-        logger.error(f"[GeminiValidator] CRO check failed: {e}")
-        return True  # Default to approve if AI fails
+    response = await _call_gemini(prompt, max_tokens=10)
 
+    if not response:
+        return 0.0
 
-async def gemini_confluence_check(
-    signal: Dict[str, Any],
-    live_news_headlines: Optional[List[Dict[str, Any]]] = None
-) -> bool:
-    """
-    Ask Gemini 2.5 Pro to act as a Chief Risk Officer.
-    
-    This function acts as a fundamental risk gate. It evaluates:
-    - The technical signal (direction, entry, SL, TP)
-    - ML confidence probability
-    - Recent fundamental news
-    
-    Returns True if the trade makes fundamental sense.
-    Returns False if it should be vetoed due to fundamental risk.
-    
-    Args:
-        signal: The signal dict with asset, direction, entry, etc.
-        live_news_headlines: Optional list of recent news headlines.
-                           If None, will fetch automatically.
-    
-    Returns:
-        True if approved, False if vetoed.
-    """
-    # Check if Gemini is available
-    if not GEMINI_API_KEY or client is None:
-        logger.debug("[GeminiValidator] No API key - defaulting to APPROVE")
-        return True
-    
     try:
-        # Fetch news headlines if not provided
-        if live_news_headlines is None:
-            try:
-                asset = signal.get('asset', '')
-                live_news_headlines = await fetch_news_headlines(asset, limit=5)
-            except Exception as e:
-                logger.debug(f"[GeminiValidator] Failed to fetch news: {e}")
-                live_news_headlines = []
-        
-        # Format news headlines for prompt
-        news_text = ""
-        if live_news_headlines:
-            headlines = []
-            for item in live_news_headlines:
-                title = item.get('title', item.get('headline', ''))
-                if title:
-                    headlines.append(f"- {title}")
-            news_text = "\n".join(headlines) if headlines else "No recent news."
-        else:
-            news_text = "No recent news available."
-        
-        # Build the prompt
-        asset = signal.get('asset', 'UNKNOWN')
-        direction = signal.get('direction', 'long').upper()
-        entry = signal.get('entry', 0)
-        ml_prob = signal.get('ml_probability', 0)
-        ml_prob_pct = float(ml_prob or 0) * 100 if ml_prob else 0
-        
-        # Format stop loss and take profit
-        sl = signal.get('stop_loss') or signal.get('stop', 'N/A')
-        tp = signal.get('take_profit') or signal.get('targets', 'N/A')
-        if isinstance(tp, list):
-            tp = ", ".join([str(x) for x in tp[:3]])
-        
-        prompt = f"""You are an institutional Chief Risk Officer with 20 years of experience in macro trading.
+        cleaned = response.strip().replace("+", "")
+        return max(-3.0, min(3.0, float(cleaned)))
+    except Exception:
+        return 0.0
 
-Our algorithmic engine wants to take a {direction} position on {asset} at entry price {entry}.
-The ML Engine confidence is {ml_prob_pct:.1f}%.
-Stop Loss: {sl}
-Take Profit: {tp}
 
-Recent fundamental news headlines:
-{news_text}
+# ─── Signal explainability ────────────────────────────────────────────────────
 
-Analyze the trade considering:
-1. Is this a "crowded trade" that could reverse suddenly?
-2. Does the news suggest macroeconomic headwinds?
-3. Is this a "late entry" after a big move that might reverse?
-4. Are we near a major resistance/support level that could be tested?
+async def ask_gemini_signal_explanation(signal: dict) -> Optional[str]:
+    """
+    Generate a human-readable explanation of why a signal was generated.
+    
+    Returns a 2-4 sentence explanation suitable for display in Telegram.
+    Returns None if Gemini is unavailable.
+    """
+    if not gemini_available():
+        return None
 
-Based on the technicals and fundamentals, is this trade fundamentally dangerous right now?
+    asset      = str(signal.get("asset") or "?").upper()
+    direction  = str(signal.get("direction") or "long").upper()
+    score      = float(signal.get("score") or signal.get("display_score") or 0)
+    timeframe  = str(signal.get("timeframe") or "?")
+    strategy   = str(signal.get("strategy_name") or signal.get("strategy") or "technical")
+    regime     = str(signal.get("regime") or "")
+    ml_prob    = signal.get("ml_probability") or signal.get("ml_prob")
+    entry      = signal.get("entry")
+    sl         = signal.get("stop_loss")
+    rr         = signal.get("rr_ratio") or signal.get("rr_estimate")
 
-Reply ONLY with one of these exact responses:
-- "APPROVE" - if the trade is fundamentally sound
-- "VETO" - if there are serious fundamental concerns
+    # Build context string
+    context_parts = [
+        f"Asset: {asset}",
+        f"Direction: {direction}",
+        f"Timeframe: {timeframe}",
+        f"Score: {score:.0f}/100",
+        f"Strategy: {strategy}",
+    ]
+    if regime:
+        context_parts.append(f"Market Regime: {regime}")
+    if ml_prob:
+        context_parts.append(f"ML Probability: {float(ml_prob)*100:.0f}%")
+    if entry and sl:
+        try:
+            r = float(rr) if rr else abs(float(entry) - float(entry) * 1.02) / abs(float(entry) - float(sl))
+            context_parts.append(f"Risk/Reward: {r:.2f}R")
+        except Exception:
+            pass
 
-Do not explain. Just reply with APPROVE or VETO."""
-        
-        # New SDK call
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt
+    context = "\n".join(context_parts)
+
+    prompt = f"""You are a professional trading analyst for SignalRankAI.
+
+Signal Details:
+{context}
+
+Explain in 2-4 clear sentences why this {direction} trade was identified for {asset}. 
+Include:
+1. The key technical reason (what pattern/indicator triggered it)
+2. Why the timing is good (market structure, volume, or momentum)
+3. What would invalidate this trade (briefly)
+
+Write for a retail trader. Be specific, not vague. No hype. Plain English."""
+
+    response = await _call_gemini(prompt, max_tokens=200)
+    return response
+
+
+async def ask_gemini_custom_question(
+    user_question: str,
+    signal: Optional[dict] = None,
+    context: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Answer a user's custom question about a signal or market.
+    Used for the [🤖 Ask Gemini] button in Telegram.
+    """
+    if not gemini_available():
+        return "Gemini AI is not currently available. Please try again later."
+
+    signal_context = ""
+    if signal:
+        asset     = str(signal.get("asset") or "?").upper()
+        direction = str(signal.get("direction") or "?").upper()
+        score     = signal.get("score") or signal.get("display_score")
+        signal_context = (
+            f"\nSignal context: {asset} {direction}"
+            + (f" | Score: {score:.0f}/100" if score else "")
         )
-        
-        decision = response.text.strip().upper()
-        
-        if "VETO" in decision:
-            logger.warning(
-                f"🛑 GEMINI VETO: AI rejected {asset} {direction} "
-                f"at {entry} due to fundamental risk. ML confidence: {ml_prob_pct:.1f}%"
-            )
-            return False
-        
-        if "APPROVE" in decision:
-            logger.info(
-                f"✅ GEMINI APPROVE: {asset} {direction} approved. "
-                f"ML confidence: {ml_prob_pct:.1f}%"
-            )
-        
-        # Default to approve for ambiguous responses
-        return True
-        
-    except Exception as e:
-        logger.error(f"[GeminiValidator] API failed: {e}")
-        # If Gemini is down, trust the math engine and allow the trade
-        return True
+
+    extra_context = f"\nAdditional context: {context}" if context else ""
+
+    prompt = f"""You are a trading assistant for SignalRankAI.
+{signal_context}{extra_context}
+
+User question: {user_question}
+
+Answer in 3-5 sentences. Be specific and professional. Do not give financial advice to buy or sell."""
+
+    response = await _call_gemini(prompt, max_tokens=300)
+    return response or "Could not generate a response. Please try again."
 
 
-async def gemini_risk_review(
-    signal: Dict[str, Any],
-    market_context: Optional[Dict[str, Any]] = None
-) -> Tuple[bool, float, str]:
+# ─── Market regime analysis ───────────────────────────────────────────────────
+
+async def analyze_market_regime(
+    asset: str,
+    candle_summary: str,
+    recent_price: float,
+) -> Optional[str]:
     """
-    Get a more detailed risk review from Gemini.
-    
-    Returns approval, risk score (0-10), and reasoning.
-    
-    Args:
-        signal: The signal dict.
-        market_context: Optional market data for context.
-    
-    Returns:
-        Tuple of (approved, risk_score, reasoning)
+    Use Gemini to describe the current market regime for an asset.
+    Returns a brief regime description or None.
     """
-    if not GEMINI_API_KEY or client is None:
-        return True, 5.0, "No API key - using default"
-    
-    try:
-        asset = signal.get('asset', 'UNKNOWN')
-        direction = signal.get('direction', 'long').upper()
-        entry = signal.get('entry', 0)
-        ml_prob = float(signal.get('ml_probability', 0) or 0) * 100
-        
-        # Build enhanced prompt
-        prompt = f"""Analyze this trade for risk. Rate 1-10 (10 = highest risk).
+    if not gemini_available():
+        return None
 
-Asset: {asset}
-Direction: {direction}
-Entry: {entry}
-ML Confidence: {ml_prob:.1f}%
+    prompt = f"""Briefly describe the current market regime for {asset}.
 
-Consider:
-- Macro conditions (Fed, inflation, geopolitics)
-- Technical setup quality
-- Risk/reward ratio
-- Current market regime
+Price: {recent_price}
+Recent candle data: {candle_summary}
 
-Reply in format:
-RATE: [1-10]
-REASON: [brief reason]
-DECISION: [APPROVE/VETO]"""
+Answer in one sentence: Is the market trending up, trending down, ranging, or volatile?
+Do not recommend trades. Just describe the current condition."""
 
-        # New SDK call
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt
-        )
-        
-        text = response.text.strip()
-        
-        # Parse response
-        risk_score = 5.0
-        approved = True
-        reasoning = "Reviewed by Gemini"
-        
-        for line in text.split('\n'):
-            if line.startswith('RATE:'):
-                try:
-                    risk_score = float(line.split(':')[1].strip())
-                except:
-                    pass
-            elif line.startswith('REASON:'):
-                reasoning = line.split(':', 1)[1].strip()
-            elif line.startswith('DECISION:'):
-                decision = line.split(':', 1)[1].strip().upper()
-                approved = "APPROVE" in decision
-        
-        return approved, risk_score, reasoning
-        
-    except Exception as e:
-        logger.error(f"[GeminiValidator] Risk review failed: {e}")
-        return True, 5.0, f"Review failed: {e}"
+    return await _call_gemini(prompt, max_tokens=100)
 
 
-async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dict[str, Any]:
-    """
-    Run a comprehensive Gemini review pipeline for automated analytics.
-    
-    This collects DB aggregates and uses Gemini to analyze cycle performance,
-    identifying patterns in rejected signals and potential improvements.
-    
-    Args:
-        trigger: Identifier for what triggered this review (e.g., "automated_cycle_20")
-        scope: Time scope for analysis (e.g., "daily", "weekly", "monthly")
-    
-    Returns:
-        Dict with analysis results including ok status and insights
-    """
-    if not GEMINI_API_KEY or client is None:
-        return {"ok": False, "error": "GEMINI_API_KEY not configured"}
-    
-    from db.session import get_session as _get_session_ctx
-    from db.models import Signal, Outcome, MLRejectedSignal, MLShadowPrediction
-    
-    try:
-        async with _get_session_ctx() as db_session:
-            # Collect aggregates based on scope
-            from datetime import timedelta
-            from utils.timeutils import now_utc_naive
-            
-            cutoff = now_utc_naive()
-            if scope == "daily":
-                cutoff = cutoff - timedelta(days=1)
-            elif scope == "weekly":
-                cutoff = cutoff - timedelta(days=7)
-            elif scope == "monthly":
-                cutoff = cutoff - timedelta(days=30)
-            else:
-                cutoff = cutoff - timedelta(days=7)
-            
-            # Query signal counts
-            signals_generated = 0
-            signals_stored = 0
-            ml_rejected_count = 0
-            outcomes_count = 0
-            wins = 0
-            losses = 0
-            
-            try:
-                # Count generated signals
-                from sqlalchemy import select, func
-                signals_generated = await db_session.scalar(
-                    select(func.count(Signal.signal_id)).where(Signal.created_at >= cutoff)
-                ) or 0
-                
-                # Count stored signals (status='issued' or similar)
-                signals_stored = await db_session.scalar(
-                    select(func.count(Signal.signal_id)).where(
-                        Signal.created_at >= cutoff,
-                        Signal.status == "issued"
-                    )
-                ) or 0
-                
-                # Count ML rejected signals
-                ml_rejected_count = await db_session.scalar(
-                    select(func.count(MLRejectedSignal.id)).where(
-                        MLRejectedSignal.created_at >= cutoff
-                    )
-                ) or 0
-                
-                # Count outcomes with results
-                outcomes_count = await db_session.scalar(
-                    select(func.count(Outcome.id)).where(
-                        Outcome.closed_at >= cutoff,
-                        Outcome.status.isnot(None)
-                    )
-                ) or 0
-                
-                # Count wins and losses
-                wins = await db_session.scalar(
-                    select(func.count(Outcome.id)).where(
-                        Outcome.closed_at >= cutoff,
-                        Outcome.status == "win"
-                    )
-                ) or 0
-                
-                losses = await db_session.scalar(
-                    select(func.count(Outcome.id)).where(
-                        Outcome.closed_at >= cutoff,
-                        Outcome.status.in_(["loss", "timeout"])
-                    )
-                ) or 0
-            except Exception as e:
-                logger.warning(f"[GeminiValidator] DB query failed: {e}")
-            
-            # Get recent ML rejection reasons
-            rejection_reasons = []
-            try:
-                from sqlalchemy import select
-                rejected_query = await db_session.execute(
-                    select(MLRejectedSignal.rejection_reason, MLRejectedSignal.asset)
-                    .order_by(MLRejectedSignal.created_at.desc())
-                    .limit(10)
-                )
-                for row in rejected_query:
-                    rejection_reasons.append(f"{row[1]}: {row[0]}")
-            except Exception as e:
-                logger.debug(f"[GeminiValidator] Could not fetch rejection reasons: {e}")
-            
-            # Build the review prompt
-            win_rate = (wins / outcomes_count * 100) if outcomes_count > 0 else 0
-            
-            prompt = f"""You are an Institutional Trading Analyst reviewing cycle performance.
-
-TRIGGER: {trigger}
-SCOPE: {scope} (cutoff: {cutoff.isoformat()})
-
-PERFORMANCE METRICS:
-- Signals Generated: {signals_generated}
-- Signals Stored (issued): {signals_stored}
-- ML Rejected (before storage): {ml_rejected_count}
-- Outcomes Tracked: {outcomes_count}
-- Wins: {wins}
-- Losses: {losses}
-- Win Rate: {win_rate:.1f}%
-
-RECENT ML REJECTION REASONS:
-{chr(10).join(rejection_reasons) if rejection_reasons else "No recent rejections recorded."}
-
-TASK: Analyze these metrics and provide:
-1. A brief assessment of how the ML model is performing
-2. Any patterns you notice in the rejections
-3. Suggestions for improving signal quality
-
-Respond in this format:
-ASSESSMENT: [1-2 sentence summary]
-PATTERNS: [What you observe in the data]
-RECOMMENDATIONS: [Specific suggestions]
-"""
-            
-            # Call Gemini
-            try:
-                response = client.models.generate_content(
-                    model=MODEL_ID,
-                    contents=prompt
-                )
-                
-                analysis = response.text.strip()
-                
-                return {
-                    "ok": True,
-                    "trigger": trigger,
-                    "scope": scope,
-                    "metrics": {
-                        "signals_generated": signals_generated,
-                        "signals_stored": signals_stored,
-                        "ml_rejected": ml_rejected_count,
-                        "outcomes": outcomes_count,
-                        "wins": wins,
-                        "losses": losses,
-                        "win_rate": win_rate,
-                    },
-                    "analysis": analysis,
-                }
-            except Exception as e:
-                logger.error(f"[GeminiValidator] Pipeline API call failed: {e}")
-                return {
-                    "ok": False,
-                    "error": f"API call failed: {e}",
-                    "metrics": {
-                        "signals_generated": signals_generated,
-                        "signals_stored": signals_stored,
-                        "ml_rejected": ml_rejected_count,
-                    }
-                }
-                
-    except Exception as e:
-        logger.exception("[GeminiValidator] Pipeline failed: %s", e)
-        return {"ok": False, "error": str(e)}
-
-
-# Quick check without news (for simpler integration)
-async def quick_approve(signal: Dict[str, Any]) -> bool:
-    """
-    Quick approval without full news context.
-    
-    Use this for simpler integration where you don't have live news.
-    The AI will still evaluate the technical setup.
-    """
-    return await gemini_confluence_check(signal, live_news_headlines=None)
-
-
-async def gemini_final_veto(signal_data: dict, market_context: str) -> bool:
-    """
-    Acts as the final human-like filter (Agentic Chief Risk Officer).
-    
-    This function is designed to act as the final "CRO" check before a signal
-    is dispatched. It looks for "Liquidity Traps" or "Inducement"
-    patterns that might indicate a retail trap.
-    
-    Args:
-        signal_data: Dict containing the signal details with keys:
-                   - direction: 'long' or 'short'
-                   - asset: asset symbol
-                   - entry_price: entry price
-        market_context: String describing market context (e.g., "DXY is pumping, crypto might dump")
-    
-    Returns:
-        True to APPROVE the trade, False to VETO it.
-    """
-    # Check if Gemini is available
-    if not GEMINI_API_KEY or client is None:
-        logger.debug("[GeminiCRO] No API key - defaulting to APPROVE")
-        return True
-    
-    try:
-        # Build the signal details - handle both 'entry' and 'entry_price' keys
-        direction = signal_data.get('direction', 'long').upper()
-        asset = signal_data.get('asset', 'UNKNOWN')
-        entry = signal_data.get('entry_price', signal_data.get('entry', 0))
-        
-        # Build the prompt for institutional risk analysis
-        prompt = f"""
-SYSTEM: Institutional Risk Manager.
-TRADE: {direction} {asset} @ {entry}
-CONTEXT: {market_context}
-
-TASK: Look for "Liquidity Traps" or "Inducement". 
-If the technicals look like a 'retail trap', respond 'VETO'. 
-Otherwise, respond 'PROCEED'.
-
-Response must be one word only.
-"""
-        # New SDK call
-        response = client.models.generate_content(
-            model=MODEL_ID,
-            contents=prompt
-        )
-        
-        decision = response.text.strip().upper()
-        
-        if "VETO" in decision:
-            logger.warning(
-                f"🛑 GEMINI CRO VETO: {asset} {direction} vetoed. "
-                f"Context: {market_context}"
-            )
-            return False
-        
-        logger.info(f"✅ GEMINI CRO APPROVE: {asset} {direction} approved")
-        return True
-        
-    except Exception as e:
-        logger.error(f"[GeminiCRO] API failed: {e}")
-        # If Gemini is down, default to approve so engine doesn't stall
-        return True
-
-
-# Example integration code (commented out):
-"""
-# INTEGRATION EXAMPLE - Add to engine/core.py pipeline:
-
-# Right before you dispatch to MT5 and Telegram:
-try:
-    from services.gemini_ml import gemini_confluence_check
-    
-    # 1. Math/Risk Gates passed...
-    # 2. Correlation passed...
-    # 3. News Killswitch passed...
-    # 4. Final AI Confluence Check:
-    latest_news = await fetch_news_headlines(signal['asset'])
-    gemini_approved = await gemini_confluence_check(signal, latest_news)
-    
-    if not gemini_approved:
-        logger.warning(f"[engine] GEMINI VETO blocked {signal['asset']}")
-        pipeline_stats["skipped_gemini_veto"] += 1
-        continue
-except Exception as e:
-    logger.debug(f"[engine] Gemini check failed: {e}")
-    # Default to allowing if check fails
-    pass
-"""
-
-
-# Issue 1 & 7 fix: Add the missing audit_recent_signals function
-async def audit_recent_signals(session, limit: int = 10) -> Dict[str, Any]:
-    """
-    Quick audit of recent losses and rejections for the /gemini_audit command.
-    
-    Args:
-        session: Database session
-        limit: Number of recent records to fetch
-    
-    Returns:
-        Dict with recent_losses, recent_rejections, and metadata
-    """
-    from sqlalchemy import select, desc
-    from db.models import Outcome, MLRejectedSignal
-    
-    recent_losses = []
-    recent_rejections = []
-    
-    try:
-        # Fetch recent losses (outcomes with status 'loss' or 'sl')
-        loss_query = (
-            select(Outcome)
-            .order_by(desc(Outcome.closed_at))
-            .limit(limit)
-        )
-        loss_result = await session.execute(loss_query)
-        for row in loss_result.scalars().all():
-            recent_losses.append({
-                "signal_id": str(row.signal_id),
-                "asset": getattr(row, 'asset', None),
-                "status": str(row.status),
-                "closed_at": str(row.closed_at) if row.closed_at else None,
-            })
-    except Exception as e:
-        logger.debug(f"[audit] Could not fetch recent losses: {e}")
-    
-    try:
-        # Fetch recent ML rejections
-        rej_query = (
-            select(MLRejectedSignal)
-            .order_by(desc(MLRejectedSignal.created_at))
-            .limit(limit)
-        )
-        rej_result = await session.execute(rej_query)
-        for row in rej_result.scalars().all():
-            recent_rejections.append({
-                "asset": getattr(row, 'asset', None),
-                "rejection_reason": getattr(row, 'rejection_reason', None),
-                "created_at": str(row.created_at) if row.created_at else None,
-            })
-    except Exception as e:
-        logger.debug(f"[audit] Could not fetch recent rejections: {e}")
-    
-    return {
-        "ok": True,
-        "recent_losses": recent_losses,
-        "recent_rejections": recent_rejections,
-        "total_losses": len(recent_losses),
-        "total_rejections": len(recent_rejections),
-    }
-
-
-# Backwards compatibility alias - Issue 1 & 7 fix
-# Add alias to preserve backwards compatibility with /gemini_audit command
-audit_recent = audit_recent_signals
-
-
-if __name__ == "__main__":
-    # Quick test
-    import asyncio
-    
-    async def test():
-        print("Testing Gemini Agentic Validator...")
-        
-        test_signal = {
-            'asset': 'BTCUSDT',
-            'direction': 'long',
-            'entry': 45000,
-            'stop_loss': 44000,
-            'take_profit': 48000,
-            'ml_probability': 0.72,
-        }
-        
-        result = await gemini_confluence_check(test_signal, [])
-        print(f"Test result: {'APPROVED' if result else 'VETOED'}")
-        
-        print("Done!")
-    
-    asyncio.run(test())
+__all__ = [
+    "gemini_available",
+    "gemini_confluence_check",
+    "get_news_sentiment",
+    "quantize_news_sentiment",
+    "ask_gemini_signal_explanation",
+    "ask_gemini_custom_question",
+    "analyze_market_regime",
+    "STRONG_SENTIMENT_THRESHOLD",
+]
