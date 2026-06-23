@@ -42,6 +42,9 @@ TIER_MIN_SCORES: Dict[str, float] = {
     "owner":   float(os.getenv("VIP_MIN_SCORE",     "72") or 72),
 }
 
+# Backward-compatible alias expected by multiple modules/tests
+TIER_SCORE_THRESHOLDS: Dict[str, float] = TIER_MIN_SCORES
+
 
 # ─── Tier feature flags ────────────────────────────────────────────────────────
 
@@ -205,6 +208,12 @@ TIER_ASSET_COOLDOWN_HOURS: Dict[str, int] = {
 EXPECTANCY_MIN: float = float(os.getenv("EXPECTANCY_MIN", "0.0") or 0.0)
 
 
+# ─── Risk drawdown controls / compatibility constants ─────────────────────────
+# Backward-compatible exports used by engine.risk and related risk governance.
+DD_SOFT_THROTTLE: float = float(os.getenv("DD_SOFT_THROTTLE", "0.10") or 0.10)
+DD_HARD_LIMIT: float = float(os.getenv("DD_HARD_LIMIT", "0.20") or 0.20)
+
+
 # ─── Candle freshness / staleness constants ───────────────────────────────────
 # Used by engine core data-age gate: max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
 CANDLE_STALENESS_MULTIPLIER: float = float(
@@ -227,6 +236,7 @@ VIP_MAX_CAPACITY: int = int(os.getenv("VIP_MAX_CAPACITY", "30") or 30)
 __all__ = [
     "TIER_DAILY_LIMITS",
     "TIER_MIN_SCORES",
+    "TIER_SCORE_THRESHOLDS",
     "TIER_FEATURES",
     "TIER_RANK",
     "TIER_PRICES_NGN",
@@ -236,6 +246,8 @@ __all__ = [
     "TIER_EMOJIS",
     "TIER_ASSET_COOLDOWN_HOURS",
     "EXPECTANCY_MIN",
+    "DD_SOFT_THROTTLE",
+    "DD_HARD_LIMIT",
     "CANDLE_STALENESS_MULTIPLIER",
     "STRONG_SENTIMENT_THRESHOLD",
     "VIP_MAX_CAPACITY",

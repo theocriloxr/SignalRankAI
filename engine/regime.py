@@ -377,6 +377,13 @@ def detect_regime(candles: list, asset: str = "", timeframe: str = "") -> str:
     return regime_detector.detect(candles, asset=asset, timeframe=timeframe)
 
 
+def detect_market_regime(candles: list, asset: str = "", timeframe: str = "") -> str:
+    """
+    Backward-compatible alias expected by existing engine/test paths.
+    """
+    return detect_regime(candles, asset=asset, timeframe=timeframe)
+
+
 def is_strategy_allowed(strategy_name: str, regime: str) -> bool:
     """Check if a strategy is allowed in the given regime."""
     return regime_detector.is_strategy_allowed(strategy_name, regime)
@@ -387,5 +394,6 @@ __all__ = [
     "RegimeDetector",
     "regime_detector",
     "detect_regime",
+    "detect_market_regime",
     "is_strategy_allowed",
 ]
