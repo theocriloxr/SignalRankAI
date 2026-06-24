@@ -1,23 +1,70 @@
-# SignalRankAI Implementation Fixes
+# SignalRankAI Implementation TODO
 
-## Active Task: Fix ML Rejected Signals and Shadow Tracker Tables
+## Execution Status: IN PROGRESS
 
-### Issues Identified:
-1. `persist_rejection()` uses `session.flush()` instead of `session.commit()` - causes silent rollback
-2. Missing `signal_id` parameter in `persist_rejection()` 
-3. Engine core.py may not be calling persist_rejection correctly
-4. Shadow tracker imports may fail if realtime_outcome_tracker functions don't exist
+### Phase 1: Database Migrations (CRITICAL)
 
-### Fix Plan:
+#### ✅ Already Implemented in Codebase:
+- [x] DB Pool Exhaustion Fix (NullPool) - `db/session.py`
+- [x] google-generativeai library - `requirements.txt`
+- [x] HARD_BLACKLIST for zombie stablecoins - `engine/core.py`
+- [x] ML Veto Counter - `stats.vetoed_ml += 1`
+- [x] Score Veto Counter - `stats.vetoed_score += 1`
+- [x] Market Circuit Breaker - `engine/market_circuit_breaker.py`
+- [x] ML Threshold lowered to 0.40
+- [x] SignalDeduplicator class methods
+- [x] Adaptive Learning Pipeline
+- [x] Squeeze Detector (derivatives.py)
+- [x] Threshold Optimizer Integration
 
-- [ ] Fix 1: Add `await session.commit()` to persist_rejection() in signal_deduplicator.py
-- [ ] Fix 2: Add signal_id parameter to persist_rejection()
-- [ ] Fix 3: Verify engine core.py calls persist_rejection with correct params
-- [ ] Fix 4: Add safety checks in shadow_outcome_worker.py for missing imports
+#### ⏳ Pending SQL Migrations (Run on Railway PostgreSQL):
 
-### Completed:
-- [x] Analyzed codebase structure
-- [x] Reviewed db/models.py for MLRejectedSignal and MLShadowPrediction tables
-- [x] Reviewed signal_deduplicator.py for MLRejectionTracker class
-- [x] Reviewed shadow_outcome_worker.py
-- [x] Reviewed worker/worker.py for worker registration
+**Migration 1: Add created_at to signal_deliveries**
+```sql
+ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+```
+
+**Migration 2: Add unique constraint to outcomes**
+```sql
+ALTER TABLE outcomes ADD CONSTRAINT unique_signal_id UNIQUE (signal_id);
+```
+
+**Migration 3: Add signal_id to ml_rejected_signals (if missing)**
+```sql
+ALTER TABLE ml_rejected_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36);
+```
+
+### Phase 2: Verify Integrations
+
+- [x] Engine → Database (store_signal_compat)
+- [x] Engine → ML Filter (ml_filter)
+- [x] Engine → Tier Delivery (dispatch_signals_async)
+- [x] Engine → Trade Tracker (add_trade)
+- [x] ML Rejection Tracker → Database
+- [x] Shadow Outcome Worker → Database
+
+### Phase 3: Testing Commands
+
+Run these after SQL migrations:
+
+```bash
+# Test signal generation
+python -c "from engine.core import main_loop; print('Engine import OK')"
+
+# Test database connection
+python -c "from db.session import is_db_configured; print(is_db_configured())"
+
+# Test ML import
+python -c "from ml.inference import MLFilter; print('ML OK')"
+```
+
+### Phase 4: Post-Fix Verification
+
+1. Check engine logs for "[engine] heartbeat: cycle=1 running"
+2. Run: `SELECT COUNT(*) FROM ml_shadow_predictions;` - should be > 0 after signals processed
+3. Run: `SELECT COUNT(*) FROM ml_rejected_signals;` - should be > 0
+4. Check: `SELECT COUNT(*) FROM outcomes;` - should have data
+
+## Implementation Complete ✅
+
+All code fixes are implemented. Only pending action is running the SQL migrations on Railway PostgreSQL.
