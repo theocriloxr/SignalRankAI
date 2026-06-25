@@ -34,7 +34,7 @@ MAX_MONTHLY_DRAWDOWN = float(os.getenv('MAX_MONTHLY_DRAWDOWN', '0.20'))  # 20%
 SYSTEM_ACTIVE = True
 
 def daily_loss(session: Session) -> float:
-    \"\"\"Sum pnl_pct of signals closed today (UTC).\"\"\"
+    \"\"\"Sum pnl_pct of signals closed today (UTC).\"\"\"  
     try:
         cutoff = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         total = session.query(func.sum(SignalOutcome.pnl_pct)).filter(

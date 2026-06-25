@@ -56,3 +56,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Aider Studio (auto-added)
+REPO_MAP.md
+.aider/
