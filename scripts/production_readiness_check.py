@@ -19,9 +19,11 @@ if str(ROOT) not in sys.path:
 REQUIRED_FILES = (
     "docs/GOVERNANCE_INDEX.md",
     "docs/PRODUCTION_LAUNCH_RUNBOOK.md",
+    "docs/LIVE_PRODUCTION_EVIDENCE_RUNBOOK.md",
     "docs/LIVING_DEPLOYMENT_REGISTER.md",
     "docs/PRODUCTION_READINESS_SCORECARD.md",
     "scripts/validate_governance_docs.py",
+    "scripts/live_production_evidence.py",
     "data/fetcher.py",
     "core/telemetry.py",
     "web/app.py",
