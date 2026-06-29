@@ -141,7 +141,22 @@ def _outage_alert_interval_minutes() -> float:
         return float(_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES)
 
 
+def _optional_outage_providers() -> set[str]:
+    raw = os.getenv(
+        "PROVIDER_OUTAGE_OPTIONAL_PROVIDERS",
+        "polygon_connector,polygon_legacy,alphavantage_connector,alphavantage_legacy,tradingview_connector,tradingview_legacy",
+    )
+    return {str(item or "").strip().lower() for item in str(raw or "").split(",") if str(item or "").strip()}
+
+
+def _alert_optional_provider_outages() -> bool:
+    return str(os.getenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def should_alert_provider_outage(provider_name: str, minutes_down: float) -> bool:
+    provider_key = str(provider_name or "").strip().lower()
+    if provider_key in _optional_outage_providers() and not _alert_optional_provider_outages():
+        return False
     min_minutes = _outage_threshold_minutes()
     if minutes_down < float(min_minutes):
         return False
@@ -195,6 +210,7 @@ import requests
 import asyncio
 from core.circuit_breaker import provider_breaker
 
+MARKET_DATA_CONTRACT = "real chart candles; no demo/synthetic generation"
 _PROVIDER_ERRORS: dict[tuple[str, str], list[str]] = {}
 
 
@@ -1867,23 +1883,11 @@ def get_tradingview_candles(asset: str, timeframe: str) -> list[dict]:
             # to validate the asset exists and get indicator-based analysis
             # For candle data, we fetch from primary source and validate with TradingView
             
-            # If we got here, asset exists on TradingView - return indicator summary
-            indicators = getattr(analysis, 'indicators', {})
-            
-            # Create a single synthetic candle with analysis metadata
-            # This is used to enrich other data sources
-            candle_meta = {
-                'timestamp': datetime.utcnow().isoformat(),
-                'open': 0.0,  # Placeholder - actual candles come from other sources
-                'high': 0.0,
-                'low': 0.0,
-                'close': 0.0,
-                'volume': 0.0,
-                'tradingview_verified': True,
-                'indicators_count': len([k for k in indicators.keys() if k != 'summary']),
-            }
             logger.info(f"[data] tradingview_candles source=tradingview asset={asset_upper} tf={timeframe} verified=True")
-            return [candle_meta]
+            # TradingView analysis is not OHLCV data. Do not emit placeholder
+            # candles into the live signal pipeline; callers must use real
+            # candle providers for price-bearing market data.
+            return candles
         
         except Exception as e:
             # Asset might not exist on TradingView - that's OK

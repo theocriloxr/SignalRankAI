@@ -248,34 +248,82 @@ class StatsAdapter:
     @property
     def scanned(self) -> int:
         return global_stats.get_scanned()
+
+    @scanned.setter
+    def scanned(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats.get_scanned())
+        if delta:
+            global_stats.increment_scanned(delta)
     
     @property
     def delivered(self) -> int:
         return global_stats.get_delivered()
+
+    @delivered.setter
+    def delivered(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats.get_delivered())
+        if delta:
+            global_stats.increment_delivered(delta)
     
     @property
     def vetoed_regime(self) -> int:
         return global_stats._get_value("vetoed_regime")
+
+    @vetoed_regime.setter
+    def vetoed_regime(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats._get_value("vetoed_regime"))
+        if delta:
+            global_stats._increment("vetoed_regime", delta)
     
     @property
     def vetoed_squeeze(self) -> int:
         return global_stats._get_value("vetoed_squeeze")
+
+    @vetoed_squeeze.setter
+    def vetoed_squeeze(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats._get_value("vetoed_squeeze"))
+        if delta:
+            global_stats._increment("vetoed_squeeze", delta)
     
     @property
     def vetoed_microstructure(self) -> int:
         return global_stats._get_value("vetoed_microstructure")
+
+    @vetoed_microstructure.setter
+    def vetoed_microstructure(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats._get_value("vetoed_microstructure"))
+        if delta:
+            global_stats._increment("vetoed_microstructure", delta)
     
     @property
     def vetoed_score(self) -> int:
         return global_stats._get_value("vetoed_score")
+
+    @vetoed_score.setter
+    def vetoed_score(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats._get_value("vetoed_score"))
+        if delta:
+            global_stats._increment("vetoed_score", delta)
     
     @property
     def vetoed_ml(self) -> int:
         return global_stats._get_value("vetoed_ml")
+
+    @vetoed_ml.setter
+    def vetoed_ml(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats._get_value("vetoed_ml"))
+        if delta:
+            global_stats._increment("vetoed_ml", delta)
     
     @property
     def vetoed_other(self) -> int:
         return global_stats._get_value("vetoed_other")
+
+    @vetoed_other.setter
+    def vetoed_other(self, value: int) -> None:
+        delta = int(value or 0) - int(global_stats._get_value("vetoed_other"))
+        if delta:
+            global_stats._increment("vetoed_other", delta)
     
     def increment_scanned(self, amount: int = 1) -> None:
         global_stats.increment_scanned(amount)

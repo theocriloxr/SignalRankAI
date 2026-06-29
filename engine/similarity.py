@@ -242,7 +242,7 @@ def check_historical_similarity_sync(
         return True, 0.0, 0, f"error: {str(e)[:50]}"
 
 
-def get_historical_winrate(
+async def get_historical_winrate(
     asset: str,
     direction: str = "long",
     timeframe: str = "1h",

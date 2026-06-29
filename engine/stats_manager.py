@@ -113,5 +113,10 @@ class GlobalStats:
             )
 
 
-# Global instance for easy import
-stats = GlobalStats()
+# Global instance for easy import. Prefer the Redis-backed adapter so the engine
+# and admin pulse can share counters across Railway tasks/processes. Keep
+# GlobalStats as a safe local fallback for tests or minimal installs.
+try:
+    from core.redis_global_stats import stats as stats
+except Exception:
+    stats = GlobalStats()

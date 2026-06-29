@@ -8,9 +8,9 @@ when tests, docs, monitoring, or production evidence improves.
 
 | Subsystem | Architecture | Code Quality | Test Coverage | Performance | Security | Scalability | Reliability | Observability | Documentation | UX | AI/ML Maturity | Trading Intelligence | News Intelligence | Score |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Core engine | 82 | 80 | 88 | 70 | 72 | 72 | 78 | 55 | 78 | N/A | 72 | 82 | 65 | 75 |
+| Core engine | 83 | 81 | 89 | 70 | 72 | 72 | 80 | 60 | 79 | N/A | 72 | 82 | 65 | 76 |
 | Telegram product | 76 | 76 | 72 | 65 | 70 | 68 | 72 | 50 | 68 | 60 | N/A | 70 | N/A | 68 |
-| Data providers | 74 | 74 | 70 | 65 | 65 | 65 | 70 | 45 | 65 | N/A | N/A | 70 | 68 | 66 |
+| Data providers | 76 | 76 | 74 | 66 | 66 | 65 | 73 | 50 | 68 | N/A | N/A | 72 | 68 | 69 |
 | News intelligence | 76 | 80 | 78 | 70 | 68 | 70 | 72 | 45 | 72 | N/A | 65 | 70 | 74 | 70 |
 | ML/Gemini | 72 | 74 | 68 | 55 | 65 | 62 | 66 | 45 | 68 | N/A | 62 | 68 | 62 | 64 |
 | Payments/subscriptions | 76 | 76 | 72 | 65 | 76 | 68 | 72 | 50 | 68 | 62 | N/A | N/A | N/A | 68 |

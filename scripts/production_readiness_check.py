@@ -22,6 +22,7 @@ REQUIRED_FILES = (
     "docs/LIVING_DEPLOYMENT_REGISTER.md",
     "docs/PRODUCTION_READINESS_SCORECARD.md",
     "scripts/validate_governance_docs.py",
+    "data/fetcher.py",
     "core/telemetry.py",
     "web/app.py",
     "signalrank_telegram/bot.py",
@@ -55,6 +56,11 @@ REQUIRED_TELEGRAM_COMMAND_MARKERS = (
     'CommandHandler("signals"',
     'CommandHandler("upgrade"',
     'CommandHandler("ops_health"',
+)
+
+REQUIRED_REAL_DATA_MARKERS = (
+    "real chart candles",
+    "no demo/synthetic generation",
 )
 
 
@@ -103,6 +109,14 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
     bot_text = _read(root, "signalrank_telegram/bot.py")
     missing_commands = [marker for marker in REQUIRED_TELEGRAM_COMMAND_MARKERS if marker not in bot_text]
     add("telegram_core_commands", not missing_commands, "missing=" + ",".join(missing_commands) if missing_commands else "core commands registered")
+
+    fetcher_text = _read(root, "data/fetcher.py").lower()
+    missing_real_data = [marker for marker in REQUIRED_REAL_DATA_MARKERS if marker not in fetcher_text]
+    add(
+        "actual_market_data_contract",
+        not missing_real_data,
+        "missing=" + ",".join(missing_real_data) if missing_real_data else "fetcher declares real chart candles with no demo/synthetic generation",
+    )
 
     open_blockers = []
     for rel in ("docs/LIVING_TECHNICAL_DEBT_REGISTER.md", "docs/LIVING_RISK_REGISTER.md"):

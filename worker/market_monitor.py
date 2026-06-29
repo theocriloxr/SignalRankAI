@@ -73,8 +73,8 @@ class MarketMonitor:
                     current_price = candles[-1]['close']
                     atr_percent = (atr / current_price * 100) if current_price > 0 else 0
                     
-                    # Simple ADX approximation (for demo, would need full calculation)
-                    # Using range as proxy: tight range = low ADX
+                    # Lightweight ADX approximation. Uses range as proxy:
+                    # tight range = low ADX.
                     recent_highs = [c['high'] for c in candles[-20:]]
                     recent_lows = [c['low'] for c in candles[-20:]]
                     price_range = max(recent_highs) - min(recent_lows)

@@ -14,12 +14,14 @@ be validated in the deployment environment.
 3. Run governance check: `.venv/Scripts/python.exe scripts/validate_governance_docs.py`.
 4. Run offline readiness check: `.venv/Scripts/python.exe scripts/production_readiness_check.py`.
 5. Verify `/health`, `/healthz`, and `/metrics/prometheus` in the deployed web process.
-6. Verify `/ops_health` from an admin Telegram account.
-7. Verify Telegram sandbox command/callback workflow before public webhook routing.
-8. Verify payment sandbox upgrade and webhook reconciliation.
-9. Confirm production secrets are set in the hosting provider, not committed files.
-10. Confirm migration plan, backup plan, and rollback owner.
-11. Update `docs/PRODUCTION_READINESS_SCORECARD.md` with final evidence.
+6. Verify first admin pulse after deploy shows non-zero scanned evidence when DB has recent `signals`, `decision_log`, or `signal_deliveries`.
+7. Verify no duplicate risk-free updates are sent for the same user/asset/direction/timeframe cooldown window.
+8. Verify `/ops_health` from an admin Telegram account.
+9. Verify Telegram sandbox command/callback workflow before public webhook routing.
+10. Verify payment sandbox upgrade and webhook reconciliation.
+11. Confirm production secrets are set in the hosting provider, not committed files.
+12. Confirm migration plan, backup plan, and rollback owner.
+13. Update `docs/PRODUCTION_READINESS_SCORECARD.md` with final evidence.
 
 ## Launch Sequence
 

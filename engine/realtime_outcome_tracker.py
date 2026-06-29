@@ -435,6 +435,13 @@ def _risk_free_cache_key(signal_id: str) -> str:
     return f"risk_free_half_tp1:{str(signal_id)}"
 
 
+def _risk_free_recipient_cache_key(telegram_user_id: int, signal: Dict[str, Any]) -> str:
+    asset = str(signal.get("asset") or "").upper().strip()
+    direction = str(signal.get("direction") or "long").lower().strip()
+    timeframe = str(signal.get("timeframe") or "").lower().strip()
+    return f"risk_free_half_tp1_user:{int(telegram_user_id)}:{asset}:{direction}:{timeframe}"
+
+
 def _tp_progress_cache_key(signal_id: str) -> str:
     return f"tp_progress:{str(signal_id)}"
 
@@ -455,6 +462,25 @@ async def _mark_risk_free_triggered(signal_id: str, ttl_seconds: int = 7 * 24 * 
     except Exception:
         # Warning: allows duplicate notifications if Redis is down.
         # Accepted trade-off — missing a notification is worse than a duplicate.
+        return True
+
+
+async def _mark_risk_free_recipient_triggered(
+    telegram_user_id: int,
+    signal: Dict[str, Any],
+    ttl_seconds: int | None = None,
+) -> bool:
+    """Returns True once per user+asset+direction+timeframe cooldown window."""
+    try:
+        from core.redis_state import state
+
+        ttl = int(ttl_seconds or os.getenv("RISK_FREE_USER_COOLDOWN_SECONDS", str(12 * 3600)) or 12 * 3600)
+        key = _risk_free_recipient_cache_key(int(telegram_user_id), signal)
+        if await state.cache_get(key):
+            return False
+        await state.cache_set(key, "1", ex=max(300, int(ttl)))
+        return True
+    except Exception:
         return True
 
 
@@ -981,6 +1007,15 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
                     if _tier_at_send not in {"premium", "vip", "admin", "owner", "free_fomo"}:
                         continue
                     if _tier_at_send == "free":
+                        continue
+                    if not await _mark_risk_free_recipient_triggered(int(user.telegram_user_id), signal):
+                        logger.debug(
+                            "[outcome_tracker] risk-free user cooldown user=%s asset=%s tf=%s direction=%s",
+                            getattr(user, "telegram_user_id", "?"),
+                            asset,
+                            timeframe,
+                            direction,
+                        )
                         continue
                     _send_message_sync(bot, chat_id=int(user.telegram_user_id), text=text, parse_mode="HTML")
                 except Exception as exc:

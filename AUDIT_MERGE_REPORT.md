@@ -102,6 +102,22 @@ Verification:
 - Project-owned compile check: passed with `.venv`, `.git`, `__pycache__`, and `.pytest_cache` excluded.
 - Full test suite: `263 passed, 34 warnings`.
 
+## Deployment Log Remediation Pass
+
+Completed on 2026-06-29 after reviewing Railway/Telegram production logs:
+
+- Fixed Engine Pulse zero reporting by merging cold GlobalStats with real DB evidence from `decision_log`, `signals`, and `signal_deliveries.delivered_at`.
+- Switched `engine.stats_manager.stats` to prefer the Redis-backed global stats adapter and made the adapter compatible with legacy `stats.scanned += 1` mutations.
+- Suppressed noisy optional provider outage alerts for fallback feeds such as `polygon_connector` unless `PROVIDER_OUTAGE_ALERT_OPTIONAL=1` is set.
+- Added recipient-level risk-free notification idempotency keyed by user, asset, direction, and timeframe to prevent duplicate AAVEUSDT-style notification bursts.
+- Removed the TradingView zero-price placeholder candle path; TradingView analysis can validate a symbol, but it no longer emits synthetic OHLCV data.
+- Added an offline readiness check for the actual market-data contract: real chart candles and no demo/synthetic generation.
+
+Verification:
+
+- Offline readiness checker: `overall=PASS checks=8`.
+- Deployment-log regression tests: `8 passed`.
+
 ## Architecture
 
 ```mermaid
