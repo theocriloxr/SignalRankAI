@@ -1,3 +1,13 @@
+import json
+import os
+
+from engine.signal_metrics import (
+    resolve_confidence_ratio,
+    resolve_confluence_percent,
+    resolve_ml_probability,
+)
+
+
 def _direction_sign(direction_val) -> float:
     """Normalize direction to numeric sign (+1 long, -1 short, 0 neutral)."""
     try:
@@ -12,15 +22,6 @@ def _direction_sign(direction_val) -> float:
         return 0.0
 
 
-import os
-
-from engine.signal_metrics import (
-    resolve_confidence_ratio,
-    resolve_confluence_percent,
-    resolve_ml_probability,
-)
-
-
 def _env_float(name: str, default: float) -> float:
     try:
         return float((os.getenv(name) or str(default)).strip())
@@ -33,6 +34,56 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if raw is None:
         return bool(default)
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _extract_target_price(signal: dict) -> float | None:
+    """Extract the first valid numeric target price from various formats."""
+    for key in ("take_profit", "tp", "targets", "tp_levels"):
+        val = signal.get(key)
+        if val is None:
+            continue
+        
+        # 1. Handle string representations (JSON lists/dicts or comma-separated strings)
+        if isinstance(val, str):
+            val_clean = val.strip()
+            if val_clean.startswith(("[", "{")):
+                try:
+                    val = json.loads(val_clean)
+                except Exception:
+                    pass
+            elif "," in val_clean:
+                val = [v.strip() for v in val_clean.split(",") if v.strip()]
+
+        # 2. Handle dictionary formats (e.g., {"tp1": 100} or {"1": 1.15})
+        if isinstance(val, dict):
+            for sub_key in ("tp1", "1", "target1", "first"):
+                if sub_key in val:
+                    try:
+                        return float(val[sub_key])
+                    except (ValueError, TypeError):
+                        pass
+            # Fallback: take the first convertible value in the dict
+            for k, v in val.items():
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    continue
+
+        # 3. Handle list, tuple, or set formats
+        if isinstance(val, (list, tuple, set)):
+            for item in val:
+                try:
+                    return float(item)
+                except (ValueError, TypeError):
+                    continue
+
+        # 4. Handle direct numeric values or plain numeric strings
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            continue
+
+    return None
 
 
 def trend_alignment_score(signal: dict) -> float | None:
@@ -121,7 +172,6 @@ def score_signal(signal):
     Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
-    # LOWERED from 25.0 to 15.0 to allow more signals through (fixes "Zero Signal")
     confluence_min = _env_float("CONFLUENCE_MIN", 15.0)
     confluence_score = resolve_confluence_percent(signal)
     if confluence_score is None:
@@ -134,15 +184,25 @@ def score_signal(signal):
     if confidence is None:
         confidence = resolve_ml_probability(signal)
     
-    # LOWERED from 0.35 to 0.25 to allow more signals through (fixes "Zero Signal")
     confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
     if confidence is not None and confidence < confidence_min:
         return 0.0
 
-    entry = signal.get("entry")
-    stop = signal.get("stop") or signal.get("stop_loss")
-    target = signal.get("targets", entry)
-    rr = abs(target - entry) / abs(entry - stop) if entry and stop and abs(entry - stop) > 0 else 0
+    # Safely convert and normalize entry, stop, and target fields
+    try:
+        entry = float(signal.get("entry")) if signal.get("entry") is not None else None
+        stop = float(signal.get("stop") or signal.get("stop_loss")) if (signal.get("stop") or signal.get("stop_loss")) is not None else None
+        target_parsed = _extract_target_price(signal)
+        target = float(target_parsed) if target_parsed is not None else entry
+    except Exception:
+        entry = None
+        stop = None
+        target = None
+
+    if entry is not None and stop is not None and target is not None and abs(entry - stop) > 0:
+        rr = abs(target - entry) / abs(entry - stop)
+    else:
+        rr = 0.0
 
     rr_component = rr_score(rr)
     vol_component = volatility_quality_score(signal)
@@ -167,10 +227,10 @@ def score_signal(signal):
         return 0.0
     score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
-    # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
     min_rr = _env_float("MIN_RR", 1.0)
     # Hard rejection for poor R/R
     if rr < min_rr:
+        print(f"[scoring_rejection] Asset: {signal.get('asset', 'Unknown')} | Reason: Poor R/R ({rr:.2f} < {min_rr:.2f}) | Entry: {entry}, Stop: {stop}, Target: {target}")
         return 0.0
     
     # REGIME ALIGNMENT BONUS
@@ -213,17 +273,7 @@ def calculate_signal_score(signal, risk_profile=None, regime=None):
 
 
 def calculate_confluence(signal: dict) -> float | None:
-    """Calculate confluence score (0-100) based on multiple signal confirmations.
-    
-    Checks:
-    1. Trend alignment (EMA/SMA golden cross)
-    2. Momentum confirmation (RSI + MACD)
-    3. Volume confirmation (above average)
-    4. Support/Resistance respect
-    5. Market regime alignment
-    
-    All factors weighted equally. Score = % of confirmations met.
-    """
+    """Calculate confluence score (0-100) based on multiple signal confirmations."""
     confirmations = 0
     total_checks = 0
     
@@ -245,11 +295,9 @@ def calculate_confluence(signal: dict) -> float | None:
     if rsi is not None and macd_trend is not None:
         total_checks += 1
         if direction > 0:
-            # For longs: RSI > 50 (upward momentum) and MACD positive
             if rsi > 50 and macd_trend > 0:
                 confirmations += 1
         elif direction < 0:
-            # For shorts: RSI < 50 (downward momentum) and MACD negative
             if rsi < 50 and macd_trend < 0:
                 confirmations += 1
     
@@ -257,7 +305,7 @@ def calculate_confluence(signal: dict) -> float | None:
     volume_ratio = signal.get("volume_ratio")
     if volume_ratio is not None:
         total_checks += 1
-        if volume_ratio > _env_float("VOLUME_RATIO_MIN", 1.2):  # Above average volume
+        if volume_ratio > _env_float("VOLUME_RATIO_MIN", 1.2):
             confirmations += 1
     
     # 4. Support/Resistance respect
@@ -268,9 +316,9 @@ def calculate_confluence(signal: dict) -> float | None:
     if current_price is not None and (nearest_support is not None or nearest_resistance is not None):
         total_checks += 1
         if nearest_support is not None and direction > 0 and current_price > nearest_support:
-            confirmations += 1  # Price is above support
+            confirmations += 1
         elif nearest_resistance is not None and direction < 0 and current_price < nearest_resistance:
-            confirmations += 1  # Price is below resistance
+            confirmations += 1
     
     # 5. Market regime alignment
     regime = signal.get("regime")
@@ -283,42 +331,27 @@ def calculate_confluence(signal: dict) -> float | None:
         elif regime == "ranging" and adx_strength == "weak":
             confirmations += 1
     
-    # Calculate percentage
     if total_checks <= 0:
         return None
     confluence_pct = (confirmations / total_checks) * 100
     return confluence_pct
 
 
-# --- Helper scoring components (lightweight defaults) ---
 def strategy_agreement_score(signal):
     return float(signal.get("agreement", 0.5) or 0.5)
 
 
 def rr_score(rr):
-    """Score risk/reward ratio. Higher RR is better (optimal: 2.5:1 to 3:1).
-    
-    ULTRA-STRICT for win rate recovery:
-    - <2.0:1 = 0.0 (reject - need minimum 2:1 edge)
-    - 2.0:1 = 0.50 (minimum acceptable)
-    - 2.5:1 = 0.75 (good quality setup)
-    - 3.0:1 = 1.00 (excellent - ideal setup)
-    - >3.0:1 = 1.0 (capped)
-    
-    Rationale: 16% win rate requires MASSIVE R/R advantage to be profitable
-    """
+    """Score risk/reward ratio. Higher RR is better (optimal: 2.5:1 to 3:1)."""
     try:
         rr = float(rr)
     except Exception:
         rr = 0.0
     
-    # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
     min_rr = _env_float("MIN_RR", 1.0)
-    # Hard floor: reject RR below configured minimum
     if rr < min_rr:
         return 0.0
     
-    # Scale: 2.0 is 50%, 3.0 is 100%
     base = max(min_rr, 1.0)
     scale = max(0.5, 3.0 - base)
     return float(min(max((rr - base) / scale, 0.0), 1.0))
@@ -333,29 +366,20 @@ def regime_fit_score(signal, regime=None):
 
 
 def volatility_quality_score(signal):
-    """Score volatility quality (lower volatility = better conditions = higher score).
-    
-    LOWERED to allow more signals through (fixes "Zero Signal"):
-    - vol <= 0.10 (10%): score 1.0 (ideal low-volatility)
-    - vol = 0.15 (15%): score 0.50 (marginal)
-    - vol >= 0.20 (20%): score 0.0 (reject - too volatile for reliable execution)
-    """
+    """Score volatility quality (lower volatility = better conditions = higher score)."""
     vol = signal.get("volatility", 0.0)
     try:
         vol = float(vol)
     except Exception:
         vol = 0.0
     
-    # LOWERED from 0.16 to 0.20 to allow more signals through
     max_vol = _env_float("MAX_VOLATILITY", 0.20)
-    # LOWERED from 0.10 to 0.12 to allow more signals through
     ideal_vol = _env_float("IDEAL_VOLATILITY", 0.12)
     if vol <= ideal_vol:
-        return 1.0  # Perfect
+        return 1.0
     elif vol >= max_vol:
-        return 0.0  # Hard reject: too volatile
+        return 0.0
     else:
-        # Linear scale: ideal_vol→max_vol maps to 1.0→0.0
         return float((max_vol - vol) / max(1e-9, (max_vol - ideal_vol)))
 
 
