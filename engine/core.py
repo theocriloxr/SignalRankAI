@@ -628,6 +628,27 @@ def _signal_roi_score(signal: Dict[str, Any]) -> float:
     return reward / risk
 
 
+def _signal_display_score(signal: Dict[str, Any]) -> float:
+    """Resolve the best available signal score for logs, storage, and promotion."""
+    best = 0.0
+    for value in (
+        signal.get("score"),
+        signal.get("score_total"),
+        signal.get("score_composite"),
+        signal.get("composite_score"),
+        signal.get("_preview_score"),
+        signal.get("rank_score"),
+        signal.get("quality_score"),
+    ):
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if math.isfinite(numeric):
+            best = max(best, numeric)
+    return best
+
+
 def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:
     asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
@@ -702,12 +723,12 @@ def _collapse_signal_variants(signals: List[Dict[str, Any]]) -> List[Dict[str, A
 
         candidate_rank = (
             _signal_roi_score(signal),
-            _safe_float(signal.get("score")),
+            _signal_display_score(signal),
             _safe_float(signal.get("ml_probability")),
         )
         incumbent_rank = (
             _signal_roi_score(incumbent),
-            _safe_float(incumbent.get("score")),
+            _signal_display_score(incumbent),
             _safe_float(incumbent.get("ml_probability")),
         )
         if candidate_rank > incumbent_rank:
@@ -2452,6 +2473,9 @@ def main_loop(DRY_RUN: bool = False):
                             # store_signal_compat sets it on the DB row but doesn't write it back
                             # to the dict; without this every is_signal_fresh() call returns False.
                             sig.setdefault('created_at', datetime.utcnow())
+                            _resolved_score = _signal_display_score(sig)
+                            if _resolved_score > 0 and _safe_float(sig.get("score"), 0.0) <= 0:
+                                sig["score"] = _resolved_score
                             logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
                             stored_signal_id = store_signal_compat(sig)
                             if stored_signal_id:
@@ -3010,7 +3034,7 @@ def main_loop(DRY_RUN: bool = False):
             # cycle logging
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 try:
-                    top_score = max((s.get('score', 0) for s in scored_signals_all), default=None)
+                    top_score = max((_signal_display_score(s) for s in scored_signals_all), default=None)
                     if top_score is None:
                         top_score = max_candidate_score
                     if _env_bool("ENGINE_PIPELINE_DEBUG", True):
@@ -3056,7 +3080,7 @@ def main_loop(DRY_RUN: bool = False):
                     _candidates: list[str] = []
                     for _sig in scored_signals_all:
                         try:
-                            _score = _safe_float(_sig.get("score"), 0.0)
+                            _score = _signal_display_score(_sig)
                             _rr = _signal_roi_score(_sig)
                             _asset = _normalize_asset_symbol(str(_sig.get("asset") or "").upper())
                             if not _asset:

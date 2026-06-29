@@ -32,6 +32,19 @@ TRADING_MODE_BOTH = "both"
 EXEC_MODE_SIGNALS_ONLY = "signals_only"
 EXEC_MODE_AUTO = "auto"
 EXEC_MODE_SEMI_AUTO = "semi_auto"
+EXEC_MODE_COPY_TRADE = "copy_trade"
+EXEC_MODE_MANUAL = "manual"
+
+
+def _normalize_execution_mode(mode: str | None) -> str:
+    normalized = str(mode or EXEC_MODE_SIGNALS_ONLY).strip().lower()
+    aliases = {
+        "none": EXEC_MODE_SIGNALS_ONLY,
+        "manual": EXEC_MODE_MANUAL,
+        "paper": EXEC_MODE_SEMI_AUTO,
+        "copy": EXEC_MODE_COPY_TRADE,
+    }
+    return aliases.get(normalized, normalized)
 
 
 class TradingModeManager:
@@ -77,7 +90,7 @@ class TradingModeManager:
     
     async def should_auto_execute(self, user_id: int) -> bool:
         """Check if user wants auto-execution."""
-        exec_mode = await self.get_execution_mode(user_id)
+        exec_mode = _normalize_execution_mode(await self.get_execution_mode(user_id))
         return exec_mode == EXEC_MODE_AUTO
     
     async def execute_signal(
@@ -110,6 +123,12 @@ class TradingModeManager:
         }
         
         # Handle based on mode
+        if exec_mode == EXEC_MODE_SIGNALS_ONLY:
+            result["success"] = True
+            result["destination"] = "signals"
+            result["note"] = "Signal delivered only; execution disabled."
+            return result
+
         if mode == TRADING_MODE_PAPER:
             result = await self._execute_paper(signal, user_id)
             result["mode"] = TRADING_MODE_PAPER
@@ -117,7 +136,7 @@ class TradingModeManager:
             return result
             
         elif mode == TRADING_MODE_LIVE:
-            result = await self._execute_live(signal, user_id)
+            result = await self._execute_live(signal, user_id, exec_mode)
             result["mode"] = TRADING_MODE_LIVE
             result["execution_mode"] = exec_mode
             return result
@@ -125,21 +144,15 @@ class TradingModeManager:
         elif mode == TRADING_MODE_BOTH:
             # For "both" mode, default to paper but allow user to choose
             # This is where semi_auto could ask for confirmation
-            if exec_mode == EXEC_MODE_SIGNALS_ONLY:
-                # Just provide signals, no execution
-                result["success"] = True
-                result["destination"] = "signals"
-                result["note"] = "Signals delivered - execute manually inapp"
-                return result
-            elif exec_mode == EXEC_MODE_SEMI_AUTO:
+            if exec_mode in {EXEC_MODE_SEMI_AUTO, EXEC_MODE_MANUAL}:
                 # Need user confirmation
                 result = await self._execute_paper(signal, user_id)
-                result["note"] = "Executed on paper - switch to live to use MT5"
+                result["note"] = "Mirrored to paper; use live AUTO/COPY mode for broker execution."
                 return result
-            else:
+            elif exec_mode in {EXEC_MODE_AUTO, EXEC_MODE_COPY_TRADE}:
                 # Auto - execute on live
-                result = await self._execute_live(signal, user_id)
-                result["note"] = "Auto-executed on live account"
+                result = await self._execute_live(signal, user_id, exec_mode)
+                result["note"] = "Auto/copy execution attempted on linked live account."
                 return result
         
         result["error"] = f"Unknown mode: {mode}"
@@ -187,11 +200,12 @@ class TradingModeManager:
     async def _execute_live(
         self,
         signal: Dict[str, Any],
-        user_id: int
+        user_id: int,
+        execution_mode: str = EXEC_MODE_MANUAL,
     ) -> Dict[str, Any]:
         """Execute on live MT5 account."""
         try:
-            from services.mt5_signal_router import route_signal
+            from services.mt5_signal_router import route_signal_to_mt5
             from services.subscription_manager import SubscriptionManager
             
             # Check if user has active subscription
@@ -211,9 +225,25 @@ class TradingModeManager:
             
             prefs = await get_user_preferences(user_id)
             account_id = prefs.default_mt5_account_id
+            if not account_id:
+                return {
+                    "success": False,
+                    "destination": "mt5",
+                    "error": "No MT5 account linked. Use /mt5_link or /connect_broker first.",
+                }
             
             # Execute via MT5 router
-            return await route_signal(signal, user_id, tier, account_id)
+            router_mode = "auto" if execution_mode in {EXEC_MODE_AUTO, EXEC_MODE_COPY_TRADE} else "manual"
+            routed = await route_signal_to_mt5(signal, user_id, router_mode)
+            if hasattr(routed, "__dict__"):
+                return {
+                    "success": bool(getattr(routed, "success", False)),
+                    "destination": "mt5",
+                    "message": getattr(routed, "message", ""),
+                    "order_id": getattr(routed, "order_id", None),
+                    "error": getattr(routed, "error", None),
+                }
+            return dict(routed or {})
             
         except Exception as e:
             logger.error(f"[TradingModeManager] Live execution error: {e}")

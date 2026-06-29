@@ -16,10 +16,12 @@ Usage:
 """
 
 import logging
+import os
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
+import json
 
 logger = logging.getLogger("MT5SignalRouter")
 
@@ -71,6 +73,86 @@ class MT5SignalRouter:
     def __init__(self):
         self._execution_queue: asyncio.Queue = asyncio.Queue()
         self._processing = False
+
+    @staticmethod
+    def _utc_now_naive() -> datetime:
+        return datetime.now(timezone.utc).replace(tzinfo=None)
+
+    @staticmethod
+    def _parse_take_profit(value: Any) -> list[float]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            try:
+                return MT5SignalRouter._parse_take_profit(json.loads(raw))
+            except Exception:
+                parts = [p.strip() for p in raw.split(",") if p.strip()]
+                out = []
+                for part in parts:
+                    try:
+                        out.append(float(part))
+                    except Exception:
+                        continue
+                return out
+        if isinstance(value, dict):
+            candidate = value.get("price") or value.get("tp") or value.get("target") or value.get("value")
+            try:
+                return [float(candidate)] if candidate is not None else []
+            except Exception:
+                return []
+        if isinstance(value, (list, tuple)):
+            out: list[float] = []
+            for item in value:
+                out.extend(MT5SignalRouter._parse_take_profit(item))
+            return out
+        try:
+            return [float(value)]
+        except Exception:
+            return []
+
+    @staticmethod
+    def _validate_signal(signal: Dict[str, Any]) -> tuple[bool, str]:
+        asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        direction = str(signal.get("direction") or signal.get("side") or "").lower().strip()
+        try:
+            entry = float(signal.get("entry") or 0)
+            stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
+        except Exception:
+            return False, "entry and stop_loss must be numeric"
+        tps = MT5SignalRouter._parse_take_profit(signal.get("take_profit") or signal.get("targets"))
+        if not asset:
+            return False, "asset is required"
+        if direction not in {"long", "short", "buy", "sell"}:
+            return False, "direction must be long/short"
+        if entry <= 0:
+            return False, "entry must be positive"
+        if stop_loss <= 0:
+            return False, "broker execution requires a hard stop_loss"
+        if not tps or tps[0] <= 0:
+            return False, "at least one take_profit is required"
+        if direction in {"long", "buy"} and stop_loss >= entry:
+            return False, "long stop_loss must be below entry"
+        if direction in {"short", "sell"} and stop_loss <= entry:
+            return False, "short stop_loss must be above entry"
+        return True, ""
+
+    async def _mark_execution_once(self, user_id: int, signal: Dict[str, Any]) -> bool:
+        signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
+        if not signal_id:
+            return True
+        key = f"broker_exec_once:{int(user_id)}:{signal_id}"
+        try:
+            from core.redis_state import state
+            existing = await state.cache_get(key)
+            if existing:
+                return False
+            await state.cache_set(key, "1", ex=max(300, int(os.getenv("BROKER_EXEC_IDEMPOTENCY_SECONDS", "86400") or 86400)))
+        except Exception:
+            logger.debug("[SignalRouter] execution idempotency cache unavailable", exc_info=True)
+        return True
         
     async def initialize(self) -> bool:
         """Initialize router and start processing loop."""
@@ -99,6 +181,10 @@ class MT5SignalRouter:
             ExecutionResult with success status and details
         """
         try:
+            valid, reason = self._validate_signal(signal or {})
+            if not valid:
+                return ExecutionResult(success=False, message=reason, error=reason)
+
             # Check execution mode
             if execution_mode == ExecutionMode.NONE:
                 return ExecutionResult(
@@ -135,6 +221,12 @@ class MT5SignalRouter:
             
             # Execute if auto mode
             if execution_mode == ExecutionMode.AUTO:
+                if not await self._mark_execution_once(user_id, signal):
+                    return ExecutionResult(
+                        success=False,
+                        message="Duplicate broker execution suppressed for this signal",
+                        error="duplicate_execution",
+                    )
                 return await self._execute_via_mt5(
                     signal=signal,
                     user_id=user_id,
@@ -173,16 +265,7 @@ class MT5SignalRouter:
             stop_loss = signal.get("stop_loss", 0)
             take_profit = signal.get("take_profit")
             
-            # Parse take_profit (could be JSON string or list)
-            tp_list = []
-            if isinstance(take_profit, str):
-                import json
-                try:
-                    tp_list = json.loads(take_profit)
-                except:
-                    tp_list = [take_profit]
-            elif isinstance(take_profit, list):
-                tp_list = take_profit
+            tp_list = self._parse_take_profit(take_profit)
             
             # Use first TP for now
             tp_price = float(tp_list[0]) if tp_list else 0
@@ -211,7 +294,7 @@ class MT5SignalRouter:
                     success=True,
                     message=f"Executed: {asset} {direction}",
                     order_id=result.get("order_id"),
-                    executed_at=datetime.utcnow(),
+                    executed_at=self._utc_now_naive(),
                 )
             else:
                 return ExecutionResult(
