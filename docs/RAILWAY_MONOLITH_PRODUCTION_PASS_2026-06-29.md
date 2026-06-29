@@ -327,6 +327,48 @@ python -m pytest tests\test_score_calibration.py tests\test_production_quality_g
 
 Result: `12 passed`.
 
+## 2026-06-29 Follow-Up: Active Signals, Leaderboard Proof, Score Logs
+
+Latest live symptoms:
+
+- A user could receive a signal, then `/signals` did not list all still-active
+  received signals.
+- `/leaderboard` ranked users even when every listed profile had poor win rate
+  and negative Avg R.
+- Engine cycle logs could still print `max_score=100.0` because the log line
+  printed raw candidate values directly.
+
+Implemented:
+
+- `/signals` now uses the received/unresolved signal feed for FREE users too,
+  with a 30-day lookback, instead of only showing signals sent since UTC
+  midnight.
+- Received/unresolved signal lookup no longer hides a signal just because
+  `signals.expired` or `signals.archived` is stale. An outcome row is now the
+  authority for whether a received signal is resolved.
+- Engine cycle logs now split display and raw scores:
+  - `max_score`
+  - `max_score_pre_threshold`
+  - `max_score_raw`
+  - `max_score_raw_pre_threshold`
+- Display score logs use `SCORE_DISPLAY_MAX` and should not pin at exact
+  `100.0` unless `SCORE_ALLOW_HARD_100=1`.
+- `/leaderboard` now requires positive, qualified performance before publishing
+  entries. Defaults:
+  - `LEADERBOARD_MIN_TRACKED_TRADES=5`
+  - `LEADERBOARD_MIN_WIN_RATE=45`
+  - `LEADERBOARD_MIN_AVG_R=0.05`
+- When no entries qualify, the leaderboard sends an honest no-qualified-data
+  message rather than ranking negative expectancy accounts.
+
+Verification added:
+
+```powershell
+python -m pytest tests\test_signal_visibility_and_proof_quality.py tests\test_score_calibration.py tests\test_production_quality_guard.py tests\test_delivery_limit_guard.py tests\test_mt5_link_state_contract.py -q
+```
+
+Result: `16 passed`.
+
 ## 2026-06-29 Railway Log Follow-Up: Zero Scores / No Owner Signals
 
 The latest Railway logs showed the main blocker:

@@ -665,6 +665,19 @@ def _signal_display_score(signal: Dict[str, Any]) -> float:
     return max(0.0, min(best, 100.0))
 
 
+def _diagnostic_score(value: Any) -> float | None:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    display_max = _env_float("SCORE_DISPLAY_MAX", 99.5)
+    if not _env_bool("SCORE_ALLOW_HARD_100", False):
+        display_max = min(display_max, 99.5)
+    return round(max(0.0, min(numeric, display_max)), 2)
+
+
 def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:
     asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
@@ -3244,16 +3257,19 @@ def main_loop(DRY_RUN: bool = False):
             # cycle logging
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 try:
-                    top_score = max((_signal_display_score(s) for s in scored_signals_all), default=None)
-                    if top_score is None:
-                        top_score = max_candidate_score
+                    top_score_raw = max((_signal_display_score(s) for s in scored_signals_all), default=None)
+                    if top_score_raw is None:
+                        top_score_raw = max_candidate_score
+                    top_score = _diagnostic_score(top_score_raw)
+                    max_candidate_score_display = _diagnostic_score(max_candidate_score)
                     if _env_bool("ENGINE_PIPELINE_DEBUG", True):
                         stats_str = " ".join([f"{k}={v}" for k, v in pipeline_stats.items()])
                     else:
                         stats_str = ""
                     print(
                         f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} "
-                        f"max_score={top_score} max_score_pre_threshold={max_candidate_score} {stats_str}",
+                        f"max_score={top_score} max_score_pre_threshold={max_candidate_score_display} "
+                        f"max_score_raw={top_score_raw} max_score_raw_pre_threshold={max_candidate_score} {stats_str}",
                         flush=True,
                     )
                 except Exception as e:

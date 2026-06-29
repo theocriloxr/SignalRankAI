@@ -4430,6 +4430,15 @@ async def quality_command(update, context) -> None:
 
 		if not rows:
 			await update.message.reply_text(
+				"<b>Weekly Leaderboard</b>\n\n"
+				"No positive-expectancy leaderboard entries qualify yet this week.\n\n"
+				f"Minimum standard: {min_trades}+ tracked trades, {min_win_rate:.0f}%+ WR, "
+				f"and Avg R >= {min_avg_r:.2f}R.\n\n"
+				"Leaderboard will publish only when performance is strong enough to be useful.",
+				parse_mode="HTML",
+			)
+			return
+			await update.message.reply_text(
 				"📉 Quality (last 24h)\n\nNo decision data yet. Check again after more cycles.",
 			)
 			return
@@ -6342,8 +6351,10 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			await update.message.reply_text("⚠️ Database not configured.")
 			return
 
-		since = datetime.utcnow()
-		# Use last 7 days
+		min_trades = max(3, int(os.getenv("LEADERBOARD_MIN_TRACKED_TRADES", "5") or 5))
+		min_win_rate = max(0.0, min(float(os.getenv("LEADERBOARD_MIN_WIN_RATE", "45") or 45), 100.0))
+		min_avg_r = float(os.getenv("LEADERBOARD_MIN_AVG_R", "0.05") or 0.05)
+		# Use last 7 days. Only show positive, qualified performance.
 		query = text("""
 			SELECT
 				u.username,
@@ -6357,13 +6368,28 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			JOIN outcomes o ON o.signal_id = sd.signal_id
 			WHERE o.closed_at >= NOW() - INTERVAL '7 days'
 			GROUP BY u.id, u.username, u.tier
-			HAVING COUNT(o.id) >= 2
+			HAVING COUNT(o.id) >= :min_trades
+			   AND AVG(o.r_multiple) >= :min_avg_r
+			   AND (
+			       SUM(CASE WHEN o.status LIKE 'tp%' THEN 1 ELSE 0 END)::float
+			       / NULLIF(
+			           SUM(CASE WHEN o.status LIKE 'tp%' OR o.status = 'sl' THEN 1 ELSE 0 END),
+			           0
+			       )
+			   ) * 100.0 >= :min_win_rate
 			ORDER BY avg_r DESC NULLS LAST, wins DESC
 			LIMIT 15
 		""")
 
 		async with get_session() as session:
-			rows = (await session.execute(query)).fetchall()
+			rows = (await session.execute(
+				query,
+				{
+					"min_trades": min_trades,
+					"min_win_rate": min_win_rate,
+					"min_avg_r": min_avg_r,
+				},
+			)).fetchall()
 			await session.commit()
 
 		if not rows:

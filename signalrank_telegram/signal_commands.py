@@ -141,9 +141,13 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # FREE tier: show last 5 delivered signals from today
     if tier_rank(tier) < tier_rank("PREMIUM"):
         try:
-            from db.pg_features import list_signals_sent_today
+            from db.pg_features import list_unresolved_signals_for_user
             async with get_session() as session:
-                rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+                rows = await list_unresolved_signals_for_user(
+                    session,
+                    telegram_user_id=int(user_id),
+                    lookback_days=30,
+                )
                 signals_list = []
                 for r in rows:
                     sig_dict = {

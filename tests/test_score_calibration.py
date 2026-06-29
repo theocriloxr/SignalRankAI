@@ -59,3 +59,13 @@ def test_resolve_score_percent_prefers_calibrated_and_avoids_exact_100(monkeypat
 
     assert resolve_score_percent({"score": 100.0}) == 99.5
     assert resolve_score_percent({"score": 100.0, "score_calibrated": 98.7}) == 98.7
+
+
+def test_engine_cycle_log_reports_display_and_raw_scores():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "engine" / "core.py").read_text(encoding="utf-8")
+
+    assert "max_score_raw=" in source
+    assert "max_score_raw_pre_threshold=" in source
+    assert "_diagnostic_score(max_candidate_score)" in source

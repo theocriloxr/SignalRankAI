@@ -2265,8 +2265,6 @@ async def list_unresolved_signals_for_user(
         .where(
             SignalDelivery.user_id == user.id,
             # REMOVED: SignalDelivery.sent_ok.is_(True) - was filtering out valid signals
-            Signal.archived == False,
-            Signal.expired == False,
             Signal.created_at >= cutoff,
             ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
         )
