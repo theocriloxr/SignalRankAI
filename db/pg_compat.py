@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Dict
 
 from db.session import get_session
 from db.session import get_database_url_or_none
 from utils.async_runner import run_sync
+
+logger = logging.getLogger(__name__)
 
 
 def _run(coro):
@@ -62,6 +65,14 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
             try:
                 s = await get_or_create_signal(session, signal, dedup_hours=dedup_hours)
             except SignalDedupBlocked as exc:
+                logger.warning(
+                    "[store_signal] blocked reason=%s asset=%s timeframe=%s direction=%s signal_id=%s",
+                    getattr(exc, "reason", str(exc)),
+                    signal.get("asset") or signal.get("symbol"),
+                    signal.get("timeframe"),
+                    signal.get("direction"),
+                    getattr(exc, "signal_id", None),
+                )
                 return str(exc.signal_id or "")
             await session.commit()
             return s.signal_id

@@ -285,3 +285,48 @@ If Postgres is still connection-limited, keep `ML_TRAIN_ENABLED=0` until the liv
 3. The shadow outcome tracker must not be restarted every second.
 4. The first Engine Pulse may still be quiet during startup delay, but later cycles must show DB/runtime evidence.
 5. If `generated_signals=0` persists, read the new engine counters to identify whether the bottleneck is provider candles, strategy generation, validation, risk, TP structure, advanced filters, or score thresholding.
+
+## 2026-06-29 Full Log Follow-Up: Final Candidates Failed Storage
+
+The full Railway logs showed the next bottleneck after scoring was fixed:
+
+```text
+generated_signals=0 max_score=88.87 max_score_pre_threshold=88.87
+strategy_signals=143 ... final_signals=8 stored=0 ... store_failed=8
+```
+
+This means the strategy/scoring pipeline was alive and producing final candidates. The delivery path stayed silent because every final candidate failed at signal storage. No Telegram delivery can happen until a signal row is stored and receives a `signal_id`.
+
+### Implemented in this follow-up
+
+- Active-trade dedup now validates Redis active-trade entries against Postgres before blocking storage.
+- If Redis points to a real unresolved DB signal, the existing signal is reused and duplicate storage remains blocked.
+- If Redis points to a missing, closed, archived, or expired signal, the stale Redis active-trade entry is removed and the new candidate is allowed to store.
+- Orphan Redis active-trade entries without a usable DB-backed signal ID no longer silently starve storage by default.
+- `store_signal_compat(...)` now logs the block reason, asset, timeframe, direction, and signal ID when a dedup block still happens.
+- Railway DB pooling now also detects Railway from DB URLs containing `railway`, not only Railway-specific env names.
+- Added absolute Railway pool caps so accidental env values like `DB_POOL_SIZE_RAILWAY=16` cannot undo the safety cap:
+  - `DB_POOL_RAILWAY_ABSOLUTE_CAP=2`
+  - `DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP=0`
+
+### Expected post-deploy cycle
+
+After redeploy, the engine cycle should move from:
+
+```text
+final_signals=8 stored=0 store_failed=8
+```
+
+to at least some stored candidates, for example:
+
+```text
+final_signals=8 stored=3 store_failed=0 generated_signals=3
+```
+
+If storage is still blocked, the logs should now include a specific line like:
+
+```text
+[store_signal] blocked reason=active_trade asset=... timeframe=... direction=... signal_id=...
+```
+
+That line is the next diagnostic hook.

@@ -144,3 +144,43 @@ def test_get_or_create_signal_reuses_nearby_entry_within_buffer(monkeypatch):
 
     assert result.signal_id == "sig-asset-1"
     assert session.added == []
+
+
+def test_get_or_create_signal_clears_orphan_redis_active_trade(monkeypatch):
+    session = _FakeSession([])
+    removed: list[str] = []
+
+    monkeypatch.setattr(
+        "core.redis_state.state.get_active_trades_sync",
+        lambda: {
+            "missing-signal-id": {
+                "signal_id": "missing-signal-id",
+                "symbol": "SOLUSDT",
+                "asset": "SOLUSDT",
+                "updated_at": 1,
+            }
+        },
+    )
+    monkeypatch.setattr("core.redis_state.state.remove_active_trade_sync", lambda signal_id: removed.append(signal_id) or True)
+    monkeypatch.setenv("SIGNAL_MIN_INTERVAL_HOURS", "0")
+
+    result = run_sync(get_or_create_signal(
+        session,
+        {
+            "asset": "SOLUSDT",
+            "timeframe": "15m",
+            "direction": "long",
+            "entry": 82.34,
+            "stop_loss": 81.2,
+            "take_profit": [83.5],
+            "score": 80,
+            "confidence": 0.8,
+            "strategy_group": "momentum",
+            "strategy_name": "breakout",
+        },
+        dedup_hours=0,
+    ))
+
+    assert removed == ["missing-signal-id"]
+    assert result in session.added
+    assert result.asset == "SOLUSDT"

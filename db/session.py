@@ -83,7 +83,16 @@ def _is_railway_runtime() -> bool:
         "RAILWAY_PUBLIC_DOMAIN",
         "RAILWAY_PRIVATE_DOMAIN",
     )
-    return any(bool((os.getenv(name) or "").strip()) for name in railway_markers)
+    if any(bool((os.getenv(name) or "").strip()) for name in railway_markers):
+        return True
+    db_markers = (
+        "DATABASE_URL",
+        "DATABASE_PRIVATE_URL",
+        "DATABASE_PUBLIC_URL",
+        "POSTGRES_URL",
+        "POSTGRES_PRIVATE_URL",
+    )
+    return any("railway" in (os.getenv(name) or "").strip().lower() for name in db_markers)
 
 
 def _effective_pool_settings() -> tuple[int, int]:
@@ -108,8 +117,14 @@ def _effective_pool_settings() -> tuple[int, int]:
             logger.warning("[db] Railway DB pool cap disabled by explicit operator override")
             return pool_size, max_overflow
 
-        railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1)
-        railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0)
+        railway_pool_cap = min(
+            _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1),
+            _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1),
+        )
+        railway_overflow_cap = min(
+            _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0),
+            _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0),
+        )
         original_pool_size = pool_size
         original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)

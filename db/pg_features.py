@@ -163,6 +163,52 @@ def _active_trade_signal_id_for_asset(active_trades: Any, asset: str) -> str | N
     return None
 
 
+def _active_trade_payload_for_asset(active_trades: Any, asset: str) -> tuple[str | None, dict[str, Any] | None, str | None]:
+    for trade_key, payload in (active_trades or {}).items():
+        if not isinstance(payload, dict):
+            continue
+        signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else payload
+        if not isinstance(signal, dict):
+            continue
+        if not _asset_matches(asset, signal.get("asset") or signal.get("symbol") or ""):
+            continue
+        signal_id = signal.get("signal_id") or signal.get("id") or payload.get("signal_id") or trade_key
+        return str(trade_key) if trade_key is not None else None, payload, str(signal_id) if signal_id else None
+    return None, None, None
+
+
+def _active_trade_payload_age_hours(payload: dict[str, Any] | None, now: datetime) -> float | None:
+    if not isinstance(payload, dict):
+        return None
+    candidates = (
+        payload.get("updated_at"),
+        payload.get("open_time"),
+        (payload.get("signal") or {}).get("created_at") if isinstance(payload.get("signal"), dict) else None,
+    )
+    for raw in candidates:
+        try:
+            if raw is None:
+                continue
+            if isinstance(raw, (int, float)):
+                ts = float(raw)
+                if ts > 10_000_000_000:
+                    ts = ts / 1000.0
+                dt = datetime.utcfromtimestamp(ts)
+            elif isinstance(raw, datetime):
+                dt = raw.astimezone(timezone.utc).replace(tzinfo=None) if raw.tzinfo else raw
+            else:
+                text = str(raw).strip()
+                if not text:
+                    continue
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                if dt.tzinfo is not None:
+                    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return max(0.0, (now - dt.replace(tzinfo=None)).total_seconds() / 3600.0)
+        except Exception:
+            continue
+    return None
+
+
 def _active_trade_has_asset(active_trades: Any, asset: str) -> bool:
     for payload in (active_trades or {}).values():
         if not isinstance(payload, dict):
@@ -580,16 +626,73 @@ async def get_or_create_signal_impl(
         from core.redis_state import state
 
         active_trades = state.get_active_trades_sync() or {}
-        if _active_trade_has_asset(active_trades, asset):
-            active_signal_id = _active_trade_signal_id_for_asset(active_trades, asset)
+        active_trade_key, active_payload, active_signal_id = _active_trade_payload_for_asset(active_trades, asset)
+        if active_payload is not None:
+            orphan_max_hours = max(0.0, _env_float("ACTIVE_TRADE_ORPHAN_MAX_HOURS", 12.0))
             if active_signal_id:
                 res_active: Result[Tuple[Signal]] = await session.execute(
                     select(Signal).where(Signal.signal_id == active_signal_id)
                 )
                 existing_active = res_active.scalar_one_or_none()
                 if existing_active is not None:
-                    return existing_active
-            raise SignalDedupBlocked("active_trade", signal_id=active_signal_id)
+                    if bool(getattr(existing_active, "archived", False)) or bool(getattr(existing_active, "expired", False)):
+                        try:
+                            state.remove_active_trade_sync(active_signal_id)
+                            logger.warning(
+                                "[dedup] removed stale redis active trade for %s: signal_id=%s archived=%s expired=%s",
+                                asset,
+                                active_signal_id,
+                                bool(getattr(existing_active, "archived", False)),
+                                bool(getattr(existing_active, "expired", False)),
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        outcome_res: Result[Tuple[Outcome]] = await session.execute(
+                            select(Outcome.status)
+                            .where(Outcome.signal_id == active_signal_id)
+                            .order_by(Outcome.closed_at.desc().nullslast(), Outcome.id.desc())
+                            .limit(1)
+                        )
+                        outcome_status = str(outcome_res.scalar_one_or_none() or "").lower().strip()
+                        if outcome_status and outcome_status not in {"active", "tp1", "tp2"}:
+                            try:
+                                state.remove_active_trade_sync(active_signal_id)
+                                logger.warning(
+                                    "[dedup] removed closed redis active trade for %s: signal_id=%s outcome=%s",
+                                    asset,
+                                    active_signal_id,
+                                    outcome_status,
+                                )
+                            except Exception:
+                                pass
+                        else:
+                            return existing_active
+                else:
+                    try:
+                        state.remove_active_trade_sync(active_signal_id)
+                        logger.warning(
+                            "[dedup] removed orphan redis active trade for %s: signal_id=%s missing_in_db",
+                            asset,
+                            active_signal_id,
+                        )
+                    except Exception:
+                        pass
+            else:
+                age_hours = _active_trade_payload_age_hours(active_payload, now)
+                if age_hours is None or age_hours >= orphan_max_hours:
+                    try:
+                        if active_trade_key:
+                            state.remove_active_trade_sync(active_trade_key)
+                        logger.warning(
+                            "[dedup] removed orphan redis active trade for %s: no_signal_id age_h=%s",
+                            asset,
+                            f"{age_hours:.1f}" if age_hours is not None else "unknown",
+                        )
+                    except Exception:
+                        pass
+                elif str(os.getenv("SIGNAL_DEDUP_BLOCK_ORPHAN_ACTIVE_TRADE", "0")).strip().lower() in {"1", "true", "yes", "on"}:
+                    raise SignalDedupBlocked("active_trade_orphan", signal_id=active_trade_key)
     except SignalDedupBlocked:
         raise
     except Exception:
