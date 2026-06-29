@@ -20,6 +20,19 @@ def is_owner(telegram_user_id: int) -> bool:
     return bool(oid) and telegram_user_id == oid
 
 
+async def _try_sync_owner_tier(telegram_user_id: int) -> None:
+    """Best-effort owner tier synchronization in DB."""
+    try:
+        async with get_session() as session:
+            res_user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
+            user = res_user.scalar_one_or_none()
+            if user is not None and str(getattr(user, "tier", "") or "").strip().lower() != "owner":
+                user.tier = "owner"
+                await session.commit()
+    except Exception:
+        pass
+
+
 async def resolve_user_tier(telegram_user_id: int) -> str:
     """Resolve tier from Postgres if configured.
 
@@ -28,15 +41,7 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
 
     if is_owner(telegram_user_id):
         # Ensure DB reflects owner tier when possible.
-        try:
-            async with get_session() as session:
-                res_user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
-                user = res_user.scalar_one_or_none()
-                if user is not None and str(getattr(user, "tier", "") or "").strip().lower() != "owner":
-                    user.tier = "owner"
-                    await session.commit()
-        except Exception:
-            pass
+        await _try_sync_owner_tier(telegram_user_id)
         return "owner"
 
     if not is_db_configured():

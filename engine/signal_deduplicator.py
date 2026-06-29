@@ -1,6 +1,7 @@
 """
 Signal deduplication, caching, and ML rejection tracking.
 """
+import hashlib
 import logging
 import os
 import json
@@ -14,6 +15,117 @@ from sqlalchemy import select, text
 from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_DEDUP_WINDOW_SECONDS = 4 * 60 * 60
+
+
+def _entry_bucket(entry: float | None) -> str:
+    """Round entry to a stable bucket so tiny tick noise does not bypass dedup."""
+    if not entry or entry <= 0:
+        return "0"
+    try:
+        bucket_size = max(0.001, float(entry) * 0.001)
+        rounded = round(float(entry) / bucket_size) * bucket_size
+        return f"{rounded:.6g}"
+    except Exception:
+        return str(entry)
+
+
+def compute_signal_fingerprint(signal: dict) -> str:
+    """Generate a deterministic fingerprint for a trade thesis."""
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    direction = str(signal.get("direction") or "long").lower().strip()
+    timeframe = str(signal.get("timeframe") or "1h").lower().strip()
+    try:
+        entry = float(signal.get("entry") or signal.get("close_price") or 0.0)
+    except Exception:
+        entry = 0.0
+    raw = f"{asset}|{direction}|{_entry_bucket(entry)}|{timeframe}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def compute_signal_hash_key(signal: dict) -> str:
+    """Return the Redis key for a signal's dedup fingerprint."""
+    return f"sig_dedup:{compute_signal_fingerprint(signal)}"
+
+
+def check_user_asset_cooldown(user_id: int, asset: str, direction: str) -> bool:
+    """Return True when a user recently received this asset/direction."""
+    try:
+        from core.redis_state import state
+
+        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
+        return bool(state.get_sync(key))
+    except Exception:
+        return False
+
+
+def set_user_asset_cooldown(user_id: int, asset: str, direction: str, tier: str) -> None:
+    """Mark that a user received a signal for this asset/direction."""
+    try:
+        from core.redis_state import state
+
+        tier_l = str(tier or "free").lower()
+        if tier_l in {"vip", "owner", "admin"}:
+            hours = int(os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4)
+        elif tier_l == "premium":
+            hours = int(os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8") or 8)
+        else:
+            hours = int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12)
+        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
+        state.set_sync(key, "1", ex=hours * 3600)
+    except Exception as exc:
+        logger.debug("[dedup] set_user_asset_cooldown failed: %s", exc)
+
+
+_CORRELATED_PAIRS: list[tuple[str, str]] = [
+    ("BTCUSDT", "ETHUSDT"),
+    ("BTCUSDT", "SOLUSDT"),
+    ("BTCUSDT", "BNBUSDT"),
+    ("ETHUSDT", "SOLUSDT"),
+    ("XAUUSD", "XAGUSD"),
+    ("EURUSD", "GBPUSD"),
+    ("USDCHF", "USDJPY"),
+]
+_CORR_THRESHOLD = 0.70
+
+
+def signals_are_correlated(asset1: str, asset2: str) -> bool:
+    """Return True when two symbols are known to be highly correlated."""
+    a1 = str(asset1 or "").upper().strip()
+    a2 = str(asset2 or "").upper().strip()
+    if not a1 or not a2:
+        return False
+    if a1 == a2:
+        return True
+    return any(a1 in pair and a2 in pair for pair in _CORRELATED_PAIRS)
+
+
+def filter_correlated_signals(signals: list[dict]) -> list[dict]:
+    """Remove lower-ranked signals that duplicate known correlated exposure."""
+    seen_assets: list[str] = []
+    filtered: list[dict] = []
+    for signal in signals or []:
+        asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        if asset and any(signals_are_correlated(asset, accepted) for accepted in seen_assets):
+            logger.debug("[dedup] suppressed correlated signal: %s", asset)
+            continue
+        filtered.append(signal)
+        if asset:
+            seen_assets.append(asset)
+    return filtered
+
+
+_deduplicator: "SignalDeduplicator | None" = None
+
+
+def get_deduplicator() -> "SignalDeduplicator":
+    """Return the module-level SignalDeduplicator singleton."""
+    global _deduplicator
+    if _deduplicator is None:
+        _deduplicator = SignalDeduplicator()
+    return _deduplicator
+
 
 class SignalDeduplicator:
     """Prevent duplicate signals with semantic similarity and time decay."""

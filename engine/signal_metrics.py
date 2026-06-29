@@ -71,6 +71,17 @@ def resolve_confluence_percent(signal: Mapping[str, Any]) -> Optional[float]:
             return max(0.0, min(score_norm * 100.0, 100.0))
         return max(0.0, min(score_norm, 100.0))
 
+    for container_key in ("score_components", "confidence_components", "score_breakdown"):
+        container = signal.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        for key in ("confluence", "confluence_score", "confluence_pct", "confluence_percent"):
+            val = _safe_float(container.get(key))
+            if val is not None:
+                if val <= 1.0:
+                    return max(0.0, min(val * 100.0, 100.0))
+                return max(0.0, min(val, 100.0))
+
     long_votes = _safe_float(signal.get("long_votes"))
     short_votes = _safe_float(signal.get("short_votes"))
     total_votes = _safe_float(signal.get("total_votes") or signal.get("confluence_total"))

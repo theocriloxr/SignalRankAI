@@ -201,12 +201,12 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		if _chart_symbol:
 			chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{_chart_symbol}"
 		signal_id = str((signal or {}).get("signal_id") or "")[:36]
-		trade_cb = f"mt5_trade_{signal_id}" if signal_id else "mt5_trade"
+		trade_cb = f"mt5_trade_{signal_id}" if signal_id else None
 		rows = [[
 			InlineKeyboardButton("📈 View Chart", url=chart_url),
-			InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb),
 		]]
 		if signal_id:
+			rows[0].append(InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb))
 			rows.append([
 				InlineKeyboardButton("🔥 Taking It", callback_data=f"signal_reaction_{signal_id}|taking_it"),
 				InlineKeyboardButton("👀 Watching", callback_data=f"signal_reaction_{signal_id}|watching"),
@@ -583,6 +583,17 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			logger.exception("[button_click] nav_performance failed: %s", _e)
 			try:
 				await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+			except Exception:
+				pass
+			return
+	if data == "nav_execution":
+		try:
+			await execution_command(update, context)
+			return
+		except Exception as _e:
+			logger.exception("[button_click] nav_execution failed: %s", _e)
+			try:
+				await query.answer("Something went wrong. Please try again.", show_alert=True)
 			except Exception:
 				pass
 			return
@@ -4614,7 +4625,8 @@ async def gemini_audit_command(update, context) -> None:
 	from services.gemini_ml import audit_recent
 
 	try:
-		res = await audit_recent(limit=limit)
+		async with get_session() as session:
+			res = await audit_recent(session, limit=limit)
 		if not bool(res.get("ok", True)):
 			await update.message.reply_text(f"Audit failed: {res.get('error')}")
 			return
@@ -5073,6 +5085,56 @@ async def alerts_command(update, context) -> None:
 			pass
 	if update.message is not None:
 		await update.message.reply_text("Usage: /alerts on|off or /alerts quiet <start_hour> <end_hour>")
+
+
+async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Set user execution mode for signals."""
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = int(update.effective_user.id)
+	args = list(getattr(context, "args", []) or [])
+	valid_modes = {"signals_only", "copy_trade", "manual", "none", "auto", "paper"}
+
+	if not args:
+		await update.message.reply_text(
+			"Execution mode\n\n"
+			"Use /mode signals_only, /mode copy_trade, /mode manual, /mode paper, or /mode auto."
+		)
+		return
+
+	mode_arg = str(args[0]).strip().lower()
+	if mode_arg not in valid_modes:
+		await update.message.reply_text(f"Invalid mode. Use: {', '.join(sorted(valid_modes))}")
+		return
+
+	final_mode = {"none": "signals_only"}.get(mode_arg, mode_arg)
+	if final_mode == "auto":
+		try:
+			from .access import resolve_user_tier
+			user_tier = str(resolve_user_tier(user_id) or "free").lower()
+			if user_tier not in {"vip", "owner", "admin"}:
+				await update.message.reply_text("Auto-execution is only available for VIP users.")
+				return
+		except Exception:
+			pass
+
+	try:
+		from db.session import get_session
+		from db.models import User
+		from sqlalchemy import update as sa_update
+
+		async with get_session() as session:
+			await session.execute(
+				sa_update(User)
+				.where(User.telegram_user_id == user_id)
+				.values(execution_mode=final_mode)
+			)
+			await session.commit()
+	except Exception as exc:
+		await update.message.reply_text(f"Could not update mode: {exc}")
+		return
+
+	await update.message.reply_text(f"Mode updated: {final_mode.upper()}")
 
 
 # -------- VIP commands (hidden from BotFather) --------

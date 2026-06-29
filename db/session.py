@@ -12,7 +12,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from config import config, resolve_database_url, prefer_ipv4_database_url
+from config import config, resolve_database_url as _config_resolve_database_url, prefer_ipv4_database_url
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def _prefer_ipv4_url(url: str) -> str:
 
 
 def get_database_url() -> Optional[str]:
-    url = resolve_database_url(async_driver=True)
+    url = _config_resolve_database_url(async_driver=True)
     if not url:
         raise ValueError(
             "DATABASE_URL is not set. Set DATABASE_URL (or DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL) "
@@ -79,8 +79,9 @@ def _effective_pool_settings() -> tuple[int, int]:
     pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
     max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
 
-    # NullPool mode: If enabled, return dummy values (pool handling is disabled)
-    if _pool_bool("DB_USE_NULLPOOL", True):
+    # NullPool remains available for pgbouncer/transient debugging, but pooled
+    # connections are the default so caps can be enforced explicitly.
+    if _pool_bool("DB_USE_NULLPOOL", False):
         logger.info("[db] Using NullPool - connection pooling disabled for Railway compatibility")
         return 0, 0
 
@@ -93,11 +94,14 @@ def _effective_pool_settings() -> tuple[int, int]:
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
     else:
-        # Safety cap for non-Railway or when Railway cap is disabled
-        # Limit to 3 total connections to prevent exceeding typical shared plan limits
-        global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", 3, minimum=1)
-        pool_size = min(pool_size, global_pool_cap)
-        max_overflow = min(max_overflow, 1)
+        global_pool_cap_raw = os.getenv("DB_POOL_GLOBAL_CAP")
+        if global_pool_cap_raw:
+            global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", pool_size, minimum=1)
+            pool_size = min(pool_size, global_pool_cap)
+        global_overflow_cap_raw = os.getenv("DB_MAX_OVERFLOW_GLOBAL_CAP")
+        if global_overflow_cap_raw:
+            global_overflow_cap = _pool_int("DB_MAX_OVERFLOW_GLOBAL_CAP", max_overflow, minimum=0)
+            max_overflow = min(max_overflow, global_overflow_cap)
 
     return pool_size, max_overflow
 
@@ -134,6 +138,7 @@ def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]
 _engines_by_loop: dict[int, AsyncEngine] = {}
 _sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
+_sync_thread_local = threading.local()
 
 # Backward compatibility for legacy call-sites that still import
 # `_get_global_engine` / `_global_engine` from this module.
@@ -291,3 +296,127 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def async_session() -> AsyncIterator[AsyncSession]:
     async with get_session() as session:
         yield session
+
+
+def _normalize_database_url(raw: str, *, async_driver: bool) -> str:
+    raw = str(raw or "").strip()
+    if not raw:
+        return ""
+    async_scheme = "postgresql+asyncpg://"
+    sync_scheme = "postgresql+psycopg2://"
+    if raw.startswith(async_scheme):
+        return raw if async_driver else raw.replace(async_scheme, sync_scheme, 1)
+    if raw.startswith(sync_scheme):
+        return raw if not async_driver else raw.replace(sync_scheme, async_scheme, 1)
+    if raw.startswith("postgres://"):
+        return raw.replace("postgres://", async_scheme if async_driver else sync_scheme, 1)
+    if raw.startswith("postgresql://"):
+        return raw.replace("postgresql://", async_scheme if async_driver else sync_scheme, 1)
+    return raw
+
+
+def _build_pg_dsn_from_parts(*, async_driver: bool) -> Optional[str]:
+    host = (os.getenv("PGHOST") or os.getenv("POSTGRES_HOST") or os.getenv("DATABASE_HOST") or "").strip()
+    user = (os.getenv("PGUSER") or os.getenv("POSTGRES_USER") or os.getenv("DATABASE_USER") or "").strip()
+    password = (os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD") or os.getenv("DATABASE_PASSWORD") or "").strip()
+    database = (os.getenv("PGDATABASE") or os.getenv("POSTGRES_DB") or os.getenv("DATABASE_NAME") or "").strip()
+    port = (os.getenv("PGPORT") or os.getenv("POSTGRES_PORT") or os.getenv("DATABASE_PORT") or "").strip()
+    if not host or not user or not database:
+        return None
+    from urllib.parse import quote_plus
+
+    scheme = "postgresql+asyncpg" if async_driver else "postgresql+psycopg2"
+    auth = quote_plus(user) if not password else f"{quote_plus(user)}:{quote_plus(password)}"
+    netloc = f"{auth}@{host}"
+    if port:
+        netloc = f"{netloc}:{port}"
+    dsn = f"{scheme}://{netloc}/{quote_plus(database)}"
+    sslmode = (os.getenv("PGSSLMODE") or os.getenv("DATABASE_SSLMODE") or os.getenv("DB_SSLMODE") or "").strip()
+    if sslmode:
+        dsn += f"?sslmode={quote_plus(sslmode)}"
+    return dsn
+
+
+def resolve_database_url(*, async_driver: bool = True) -> str:
+    """Resolve DB URL for legacy callers, including PG* env var fallback."""
+    configured = _config_resolve_database_url(async_driver=async_driver)
+    if configured:
+        return _normalize_database_url(configured, async_driver=async_driver)
+    built = _build_pg_dsn_from_parts(async_driver=async_driver)
+    return built or ""
+
+
+def _create_engine_from_url(url: str) -> AsyncEngine:
+    pool_size, max_overflow = _effective_pool_settings()
+    if pool_size == 0 and max_overflow == 0:
+        return create_async_engine(url, poolclass=NullPool, connect_args=_engine_connect_args())
+    return create_async_engine(
+        url,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+        pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
+        pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
+        connect_args=_engine_connect_args(),
+    )
+
+
+def get_sync_session():
+    """Return a synchronous SQLAlchemy session for worker/maintenance paths."""
+    from sqlalchemy import create_engine as create_sync_engine
+    from sqlalchemy.orm import sessionmaker as sync_sessionmaker
+    from sqlalchemy.pool import NullPool as SyncNullPool
+
+    if not hasattr(_sync_thread_local, "sync_engine"):
+        url = resolve_database_url(async_driver=False)
+        if not url:
+            raise RuntimeError("DATABASE_URL not configured")
+        connect_args: dict[str, Any] = {}
+        ssl_mode = os.getenv("PGSSLMODE", "prefer").lower()
+        if ssl_mode == "require":
+            connect_args["sslmode"] = "require"
+        _sync_thread_local.sync_engine = create_sync_engine(
+            url,
+            poolclass=SyncNullPool,
+            echo=_pool_bool("DB_ECHO", False),
+            connect_args=connect_args,
+        )
+    Session = sync_sessionmaker(bind=_sync_thread_local.sync_engine, expire_on_commit=False)
+    return Session()
+
+
+async def init_db() -> None:
+    """Create database tables from ORM metadata when an engine is configured."""
+    engine = get_engine_for_event_loop()
+    if engine is None:
+        logger.warning("[db] Cannot init_db: engine not created")
+        return
+    from db.models import Base
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+async def dispose_engine() -> None:
+    """Dispose all cached async engines and the thread-local sync engine."""
+    global _global_engine
+    with _engine_lock:
+        engines = list(_engines_by_loop.values())
+        _engines_by_loop.clear()
+        _sessionmakers_by_loop.clear()
+        _global_engine = None
+    for engine in engines:
+        try:
+            await engine.dispose()
+        except Exception as exc:
+            logger.debug("[db] dispose failed: %s", exc)
+    sync_engine = getattr(_sync_thread_local, "sync_engine", None)
+    if sync_engine is not None:
+        try:
+            sync_engine.dispose()
+        except Exception as exc:
+            logger.debug("[db] sync dispose failed: %s", exc)
+        try:
+            delattr(_sync_thread_local, "sync_engine")
+        except Exception:
+            pass

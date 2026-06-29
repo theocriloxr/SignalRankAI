@@ -43,6 +43,42 @@ MODEL_PATH = _resolve_model_path()
 logger = logging.getLogger(__name__)
 
 
+def calculate_dynamic_threshold(base_threshold: float, current_auc: float, target_auc: float = 0.85) -> float:
+    """Adjust an ML threshold based on current model AUC."""
+    try:
+        base_threshold = float(base_threshold)
+        current_auc = float(current_auc)
+        target_auc = float(target_auc)
+    except Exception:
+        return float(base_threshold or 0.5)
+    if current_auc <= 0.50:
+        logger.warning("[ml] Model AUC %.3f <= 0.50; using strict threshold", current_auc)
+        return 0.99
+    if current_auc >= 0.95:
+        return max(0.10, base_threshold * 0.8)
+    dynamic_threshold = base_threshold * (target_auc / max(current_auc, 1e-9))
+    return max(max(0.10, base_threshold * 0.5), min(min(0.70, base_threshold * 1.5), dynamic_threshold))
+
+
+def get_current_model_auc() -> float | None:
+    """Fetch the latest model AUC from Redis if configured."""
+    try:
+        import redis as redis_client
+
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            return None
+        client = redis_client.from_url(redis_url, decode_responses=True)
+        try:
+            auc = client.get("ml:model:auc")
+        finally:
+            client.close()
+        return float(auc) if auc is not None else None
+    except Exception as exc:
+        logger.debug("[ml] failed to fetch model AUC: %s", exc)
+        return None
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:

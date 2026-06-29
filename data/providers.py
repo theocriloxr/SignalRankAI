@@ -35,6 +35,16 @@ except Exception:
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
 _CANDLES_CACHE: dict[str, tuple[float, list]] = {}
+_MACRO_LAST_CALL: dict[str, float] = {}
+_MACRO_MIN_DELAY: dict[str, float] = {
+    "DXY": 12.0,
+    "VIX": 12.0,
+    "US10Y": 12.0,
+    "US02Y": 12.0,
+    "^GSPC": 3.0,
+    "^DJI": 3.0,
+    "^IXIC": 3.0,
+}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -70,6 +80,27 @@ def _rate_limit(provider: str, wait: float) -> None:
         pass
     finally:
         _PROVIDER_LAST_CALL[provider] = time.monotonic()
+
+
+def _macro_rate_limit(symbol: str) -> float:
+    """Rate-limit macro index fetches to reduce 429s from free data APIs."""
+    import random
+
+    sym = str(symbol or "").upper().strip()
+    min_delay = float(_MACRO_MIN_DELAY.get(sym, 0.0) or 0.0)
+    if min_delay <= 0:
+        return 0.0
+    now = time.monotonic()
+    last_call = float(_MACRO_LAST_CALL.get(sym, 0.0) or 0.0)
+    elapsed = now - last_call if last_call else min_delay
+    if elapsed >= min_delay:
+        _MACRO_LAST_CALL[sym] = now
+        return 0.0
+    delay = (min_delay - elapsed) * (1.0 + random.random() * 0.5)
+    logger.debug("[macro_rate_limit] sleeping %.1fs before fetching %s", delay, sym)
+    time.sleep(delay)
+    _MACRO_LAST_CALL[sym] = time.monotonic()
+    return delay
 
 
 def _cache_key(symbol: str, timeframe: str) -> str:
@@ -165,6 +196,43 @@ def _map_binance_timeframe(timeframe: str) -> str:
 def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
     try:
         import ccxt  # type: ignore
+    except Exception:
+        return []
+
+    try:
+        proxy_url = (
+            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
+            or proxy_manager.get_proxy_sync()
+        )
+        exchange_config: dict = {
+            "enableRateLimit": True,
+            "timeout": 2500,
+        }
+        if proxy_url:
+            exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
+            exchange_config["proxy"] = proxy_url
+        exchange = ccxt.binance(exchange_config)
+        rows = exchange.fetch_ohlcv(
+            _normalize_binance_symbol(symbol),
+            timeframe=_map_binance_timeframe(timeframe),
+            limit=max(20, int(limit or 200)),
+        )
+        out: List[Dict] = []
+        for row in rows or []:
+            try:
+                out.append(
+                    {
+                        "timestamp": int(row[0]),
+                        "open": float(row[1]),
+                        "high": float(row[2]),
+                        "low": float(row[3]),
+                        "close": float(row[4]),
+                        "volume": float(row[5]),
+                    }
+                )
+            except Exception:
+                continue
+        return out
     except Exception:
         return []
 
@@ -285,44 +353,6 @@ def fetch_cryptopanic_news(limit: int = 10, currencies: Optional[List[str]] = No
         return out
     except Exception:
         return []
-
-    try:
-        proxy_url = (
-            (os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY") or "").strip()
-            or proxy_manager.get_proxy_sync()
-        )
-        exchange_config: dict = {
-            "enableRateLimit": True,
-            "timeout": 2500,
-        }
-        if proxy_url:
-            exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
-            exchange_config["proxy"] = proxy_url
-        exchange = ccxt.binance(exchange_config)
-        rows = exchange.fetch_ohlcv(
-            _normalize_binance_symbol(symbol),
-            timeframe=_map_binance_timeframe(timeframe),
-            limit=max(20, int(limit or 200)),
-        )
-        out: List[Dict] = []
-        for row in rows or []:
-            try:
-                out.append(
-                    {
-                        "timestamp": int(row[0]),
-                        "open": float(row[1]),
-                        "high": float(row[2]),
-                        "low": float(row[3]),
-                        "close": float(row[4]),
-                        "volume": float(row[5]),
-                    }
-                )
-            except Exception:
-                continue
-        return out
-    except Exception:
-        return []
-
 
 async def _fetch_binance_ccxt_async(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
     """Async CCXT adapter using ccxt.async_support with optional proxy support.
@@ -965,3 +995,43 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
         pass
 
     return []
+
+
+async def get_today_high_impact_news() -> List[Dict]:
+    """Fetch today's high-impact USD economic events for news/risk gates."""
+    try:
+        from services.economic_calendar import fetch_economic_events
+
+        events = await fetch_economic_events(force_refresh=False)
+        out: List[Dict] = []
+        for event in events or []:
+            if str(event.get("impact") or "").lower() == "high" and str(event.get("currency") or "").upper() == "USD":
+                out.append(
+                    {
+                        "title": event.get("title", ""),
+                        "currency": event.get("currency", "USD"),
+                        "impact": event.get("impact", "high"),
+                        "timestamp": event.get("event_time") or event.get("timestamp"),
+                        "source": event.get("source", "economic_calendar"),
+                    }
+                )
+        return out
+    except Exception:
+        pass
+
+    try:
+        from worker.news_sync_worker import get_cached_high_impact_events
+
+        events = await get_cached_high_impact_events(hours=24)
+        return [
+            {
+                "title": event.get("title", ""),
+                "currency": event.get("currency", "USD"),
+                "impact": event.get("impact", "high"),
+                "timestamp": event.get("event_time") or event.get("timestamp"),
+                "source": event.get("source", "cache"),
+            }
+            for event in (events or [])
+        ]
+    except Exception:
+        return []

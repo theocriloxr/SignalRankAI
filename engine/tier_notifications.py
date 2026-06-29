@@ -12,6 +12,35 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def _fmt(value, decimals: int = 5) -> str:
+    """Format a numeric price/float for notifications."""
+    try:
+        v = float(value)
+        if v == 0:
+            return "N/A"
+        if v >= 1000:
+            return f"{v:,.2f}"
+        if v >= 1:
+            return f"{v:.{min(decimals, 4)}f}"
+        return f"{v:.{decimals}f}"
+    except Exception:
+        return str(value) if value else "N/A"
+
+
+def _pct_str(pct: Optional[float]) -> str:
+    try:
+        return "N/A" if pct is None else f"{float(pct):+.2f}%"
+    except Exception:
+        return "N/A"
+
+
+def _r_str(r: Optional[float]) -> str:
+    try:
+        return "N/A" if r is None else f"{float(r):.2f}R"
+    except Exception:
+        return "N/A"
+
+
 class TierNotificationManager:
     """Manages tier-based notifications."""
     

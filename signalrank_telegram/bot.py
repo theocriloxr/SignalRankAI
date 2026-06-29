@@ -4,6 +4,16 @@ from core.redis_state import state, mark_signal_delivered_sync
 from core.telemetry import observe_signal_dispatch
 from apscheduler.schedulers.background import BackgroundScheduler
 
+
+async def _handle_unknown_command(update, context):
+    """Reply gracefully to unsupported Telegram commands."""
+    try:
+        if getattr(update, "message", None) is not None:
+            await update.message.reply_text("Unknown command. Send /help for available commands.")
+    except Exception:
+        pass
+
+
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
 
@@ -535,6 +545,7 @@ from .commands import (
     analyze_command,
     risk_command,
     alerts_command,
+    mode_command,
     elite_command,
     early_command,
     report_command,
@@ -3957,6 +3968,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("simulate", _audit_handler("simulate", simulate_command)))
     application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
     application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
+    application.add_handler(CommandHandler("mode", _audit_handler("mode", mode_command)))
     
     # New commands for live prices and portfolio
     application.add_handler(CommandHandler("liveprice", _audit_handler("liveprice", liveprice_command)))
@@ -3990,14 +4002,6 @@ def run_bot() -> None:
                 pass
         application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_placeholder)))
 
-    # Unknown command handler: capture any /unknown_command and respond gracefully
-    async def _handle_unknown_command(update, context):
-        try:
-            if getattr(update, "message", None) is not None:
-                await update.message.reply_text("Unknown command. Send /help for available commands.")
-        except Exception:
-            pass
-    application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
@@ -4632,6 +4636,10 @@ def run_bot() -> None:
             await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
+
+    # True fallback: keep this after every concrete CommandHandler so it does
+    # not shadow valid commands registered later in the setup flow.
+    application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
 
     # In webhook mode, handlers are now fully registered. Mark readiness here so
     # railway_main can begin processing updates while non-critical jobs continue

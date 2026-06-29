@@ -20,6 +20,56 @@ from data.fetcher import async_get_candles, get_asset_type as _get_asset_type
 _audit_logger = logging.getLogger("audit")
 logger = logging.getLogger(__name__)
 
+ACTIVE_SIGNAL_STATUSES = {"issued", "open", "active", "pending"}
+RESOLVED_SIGNAL_STATUSES = {
+    "tp",
+    "tp1",
+    "tp2",
+    "tp3",
+    "sl",
+    "invalid",
+    "invalidated",
+    "missed",
+    "time_stop",
+    "cancelled",
+    "cancel",
+    "breakeven",
+    "be",
+}
+
+
+def _is_signal_active(signal_row) -> bool:
+    """Return whether a signal row should be treated as active/unresolved."""
+    try:
+        if getattr(signal_row, "expired", False) or getattr(signal_row, "archived", False):
+            return False
+        status = str(getattr(signal_row, "status", "") or "").strip().lower()
+        if status in RESOLVED_SIGNAL_STATUSES:
+            return False
+        return True
+    except Exception:
+        return True
+
+
+def _get_signal_status_display(signal_row, outcome_status: str = None) -> str:
+    """Return a compact human-readable signal status."""
+    if outcome_status:
+        status = str(outcome_status or "").upper()
+        if status.startswith("TP"):
+            return f"WIN ({status})"
+        if status == "SL":
+            return "STOP LOSS"
+        if status in {"INVALID", "INVALIDATED"}:
+            return "INVALIDATED"
+        if status in {"MISSED", "TIME_STOP"}:
+            return "MISSED"
+        return status
+    if getattr(signal_row, "expired", False):
+        return "EXPIRED"
+    if getattr(signal_row, "archived", False):
+        return "ARCHIVED"
+    return "ACTIVE"
+
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show user's signals with tier-specific formatting."""
     if await _public_guard(update):

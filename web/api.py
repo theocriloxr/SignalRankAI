@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -18,6 +19,7 @@ from db.repository import (
 from db.session import get_session, is_db_configured
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
 
@@ -95,18 +97,24 @@ async def rotate_api_token(payload: dict):
     raw = generate_api_key()
     expires = _now_utc() + timedelta(days=ttl_days)
 
-    async with get_session() as session:
-        old_token = str(payload.get("old_token") or "").strip()
-        if old_token:
-            await revoke_api_token(session, old_token)
-        await create_api_token(
-            session,
-            telegram_user_id=telegram_user_id,
-            raw_token=raw,
-            scope=scope,
-            expires_at=expires,
-        )
-        await session.commit()
+    try:
+        async with get_session() as session:
+            old_token = str(payload.get("old_token") or "").strip()
+            if old_token:
+                await revoke_api_token(session, old_token)
+            await create_api_token(
+                session,
+                telegram_user_id=telegram_user_id,
+                raw_token=raw,
+                scope=scope,
+                expires_at=expires,
+            )
+            await session.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("[api] token rotation unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"token": raw, "expires_at": expires.isoformat(), "scope": scope}
 
 
@@ -117,9 +125,15 @@ async def revoke_token(payload: dict):
     raw = str(payload.get("token") or "").strip()
     if not raw:
         raise HTTPException(status_code=400, detail="token required")
-    async with get_session() as session:
-        revoked = await revoke_api_token(session, raw)
-        await session.commit()
+    try:
+        async with get_session() as session:
+            revoked = await revoke_api_token(session, raw)
+            await session.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("[api] token revoke unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"revoked": revoked}
 
 

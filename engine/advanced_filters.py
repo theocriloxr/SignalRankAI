@@ -297,6 +297,40 @@ class LiquiditySweepDetector:
         return False, 0.0
 
 
+class LowVolatilityFilter:
+    """Filter signals when market ATR is too low."""
+
+    def __init__(self):
+        self.atr_multiplier_threshold = 0.5
+
+    def is_low_volatility(self, current_atr: float, average_atr_14d: float) -> Tuple[bool, str]:
+        if current_atr <= 0 or average_atr_14d <= 0:
+            return False, ""
+        ratio = current_atr / average_atr_14d
+        if ratio < self.atr_multiplier_threshold:
+            return True, f"Market Volatility Too Low (ATR ratio: {ratio:.2%})"
+        return False, ""
+
+    def calculate_atr_ratio(self, candles_1h: List[Dict], candles_14d: List[Dict]) -> Tuple[float, float]:
+        def _calc_atr(candles: List[Dict]) -> float:
+            if not candles or len(candles) < 2:
+                return 0.0
+            true_ranges = []
+            for idx in range(1, len(candles)):
+                try:
+                    high = float(candles[idx].get("high", 0))
+                    low = float(candles[idx].get("low", 0))
+                    prev_close = float(candles[idx - 1].get("close", 0))
+                    true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+                except Exception:
+                    continue
+            return statistics.mean(true_ranges) if true_ranges else 0.0
+
+        current_atr = _calc_atr(candles_1h)
+        avg_atr = _calc_atr(candles_14d)
+        return current_atr, avg_atr
+
+
 class SessionVolatilityFilter:
     """Filter signals based on session volatility patterns."""
     

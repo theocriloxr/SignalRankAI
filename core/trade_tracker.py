@@ -112,6 +112,11 @@ def _allow_external_price_fallback() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _allow_provider_waterfall() -> bool:
+    raw = str(_env_get("TRADE_TRACKER_ALLOW_PROVIDER_WATERFALL", "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _latest_tick_price(symbol: str):
     try:
         payload = state.get_latest_tick_sync(symbol)
@@ -137,6 +142,7 @@ def _trade_state_payload(trade) -> dict:
         "direction": trade.direction,
         "open_time": trade.open_time,
         "targets_hit": list(getattr(trade, "targets_hit", []) or []),
+        "entry_reached": bool(getattr(trade, "entry_reached", True)),
         "signal": dict(getattr(trade, "signal", {}) or {}),
     }
 
@@ -167,6 +173,8 @@ def _load_open_trades_from_state(force: bool = False) -> None:
             targets_hit = payload.get("targets_hit") if isinstance(payload, dict) else None
             if isinstance(targets_hit, list):
                 trade.targets_hit = list(targets_hit)
+            if isinstance(payload, dict) and "entry_reached" in payload:
+                trade.entry_reached = bool(payload.get("entry_reached"))
             open_trades_list.append(trade)
             existing_keys.add(key)
         except Exception:
@@ -218,6 +226,7 @@ class TradeRecord:
         self.close_time = None
         self.outcome = None  # "TP" | "SL"
         self.signal = signal  # Keep reference to original signal
+        self.entry_reached = bool(signal.get("entry_reached", True))
         # Helper: ensure targets list for easier checks
         if self.target is None:
             self.targets = []
@@ -361,24 +370,23 @@ def _get_current_price(symbol):
         except Exception as e:
             logger.debug(f"Binance API failed for {symbol}: {e}")
     
-    # Last-resort: try unified providers waterfall for recent candles
-    try:
-        from data.providers import fetch_candles_waterfall
-        candles = fetch_candles_waterfall(symbol, "1h", limit=5)
-        if candles:
-            # Use the last close
-            last = candles[-1]
-            price = float(last.get("close") or last.get("c") or 0)
-            if price and price > 0:
-                try:
-                    _set_price_cache(symbol, price)
-                except Exception:
-                    pass
-                logger.debug(f"Got price for {symbol} from providers.waterfall: {price}")
-                _record_price_success(symbol)
-                return price
-    except Exception:
-        pass
+    if _allow_provider_waterfall():
+        try:
+            from data.providers import fetch_candles_waterfall
+            candles = fetch_candles_waterfall(symbol, "1h", limit=5)
+            if candles:
+                last = candles[-1]
+                price = float(last.get("close") or last.get("c") or 0)
+                if price and price > 0:
+                    try:
+                        _set_price_cache(symbol, price)
+                    except Exception:
+                        pass
+                    logger.debug(f"Got price for {symbol} from providers.waterfall: {price}")
+                    _record_price_success(symbol)
+                    return price
+        except Exception:
+            pass
 
     next_retry_ts = _record_price_failure(symbol)
     state = _get_backoff_state(symbol)
@@ -497,9 +505,9 @@ def price_hit_sl(trade, market_data=None):
     except Exception:
         return False
 
-    # NEW: Check if entry was ever reached before checking SL
-    # This is the critical fix for "SL-before-entry" invalidations
-    if entry is not None:
+    # Queued trades can opt into entry gating with entry_reached=False. Active
+    # trades default to True so legacy/open-position SL accounting remains valid.
+    if entry is not None and not bool(getattr(trade, "entry_reached", True)):
         try:
             entry_val = float(entry)
             if direction == "LONG":
@@ -509,7 +517,10 @@ def price_hit_sl(trade, market_data=None):
                 # For SHORT: price should have reached or dropped to entry level
                 entry_reached = current_price <= entry_val
             
-            if not entry_reached:
+            if entry_reached:
+                trade.entry_reached = True
+                _persist_trade_state(trade)
+            else:
                 # Price hasn't reached entry yet - don't check SL
                 logger.debug(
                     f"Entry not yet reached for {trade.symbol} {direction}: "

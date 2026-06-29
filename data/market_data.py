@@ -336,6 +336,24 @@ def _convert_to_yfinance_symbol(symbol: str) -> str:
     return format_ticker(symbol, "yfinance")
 
 
+def _get_yfinance_symbol_variants(symbol: str) -> list:
+    """Generate yfinance ticker variants for crypto/FX fallback fetches."""
+    if not symbol:
+        return [symbol]
+    s = str(symbol).upper().strip()
+    if s.endswith(("USDT", "BUSD", "USDC")):
+        base = s[:-4]
+        return [f"{base}-USD", f"{base}=X", base, s]
+    if len(s) == 6 and s[:3].isalpha() and s[3:].isalpha():
+        return [f"{s}=X", f"{s[:3]}-{s[3:]}", s]
+    converted = format_ticker(symbol, "yfinance")
+    out = []
+    for item in (converted, s):
+        if item not in out:
+            out.append(item)
+    return out
+
+
 def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
     """Fetch OHLCV data synchronously from yfinance and return list of candles.
 

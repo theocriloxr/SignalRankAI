@@ -14,12 +14,24 @@ from __future__ import annotations
 
 from db.session import (
     get_session,
-    get_database_url,
-    get_database_url_or_none,
-    create_engine,
+    get_database_url as _session_get_database_url,
+    get_database_url_or_none as _session_get_database_url_or_none,
+    create_engine as _session_create_engine,
     is_db_configured,
     get_engine_for_event_loop,
 )
+
+
+def get_database_url():
+    return _session_get_database_url()
+
+
+def get_database_url_or_none():
+    return _session_get_database_url_or_none()
+
+
+def create_engine():
+    return _session_create_engine()
 
 __all__ = [
     "get_session",

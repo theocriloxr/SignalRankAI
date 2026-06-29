@@ -16,6 +16,11 @@ from engine.signal_metrics import (
     resolve_score_percent,
 )
 
+try:
+    from engine.signal_explainability import build_signal_explanation
+except Exception:  # pragma: no cover - keep formatting available in lean runtimes.
+    build_signal_explanation = None
+
 
 # ---------------------------------------------------------------------------
 # HTML helpers
@@ -635,6 +640,21 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     confluence = resolve_confluence_percent(signal)
     if confluence is not None:
         lines.append(f"📊 Confluence: {int(confluence)}%")
+
+    explanation = {}
+    if build_signal_explanation is not None:
+        try:
+            explanation = build_signal_explanation(signal)
+        except Exception:
+            explanation = {}
+    why = (
+        explanation.get("summary")
+        or signal.get("technical_reason")
+        or signal.get("trade_logic")
+        or signal.get("setup_rationale")
+    )
+    if why:
+        lines.append(f"Why: {_h(str(why)[:180])}")
 
     lines += [
         "",

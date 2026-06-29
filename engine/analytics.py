@@ -383,3 +383,102 @@ def calculate_mfe_mae(
         direction=direction,
         price_history_df=price_history_df
     )
+
+
+class RegimeAnalytics:
+    """In-memory performance analytics grouped by regime, asset, and timeframe."""
+
+    def __init__(self):
+        self._results: list[dict] = []
+        self._max_results = 5000
+
+    def record_result(
+        self,
+        asset: str,
+        timeframe: str,
+        regime: str,
+        direction: str,
+        entry_price: float,
+        exit_price: float,
+        outcome: str,
+    ) -> None:
+        if not outcome:
+            return
+        try:
+            entry = float(entry_price)
+            exit_ = float(exit_price)
+        except Exception:
+            entry = 0.0
+            exit_ = 0.0
+        pnl_pct = 0.0
+        if entry > 0:
+            if str(direction or "").upper() == "SHORT":
+                pnl_pct = ((entry - exit_) / entry) * 100.0
+            else:
+                pnl_pct = ((exit_ - entry) / entry) * 100.0
+        self._results.append(
+            {
+                "asset": str(asset or "").upper(),
+                "timeframe": str(timeframe or "").lower(),
+                "regime": str(regime or "NEUTRAL").upper(),
+                "direction": str(direction or "").upper(),
+                "outcome": str(outcome or "").upper(),
+                "is_win": str(outcome or "").upper() == "WIN",
+                "pnl_pct": pnl_pct,
+            }
+        )
+        if len(self._results) > self._max_results:
+            self._results = self._results[-self._max_results:]
+
+    def _filtered(self, key: str, value: str) -> list[dict]:
+        value_norm = str(value or "").upper()
+        return [row for row in self._results if str(row.get(key, "")).upper() == value_norm]
+
+    @staticmethod
+    def _win_rate(rows: list[dict]) -> float:
+        if not rows:
+            return 0.0
+        return sum(1 for row in rows if row.get("is_win")) / len(rows) * 100.0
+
+    def get_win_rate_by_regime(self, regime: str) -> float:
+        return self._win_rate(self._filtered("regime", regime))
+
+    def get_win_rate_by_asset(self, asset: str) -> float:
+        return self._win_rate(self._filtered("asset", asset))
+
+    def get_win_rate_by_timeframe(self, timeframe: str) -> float:
+        return self._win_rate([row for row in self._results if row.get("timeframe") == str(timeframe or "").lower()])
+
+    def get_profit_factor_by_regime(self, regime: str) -> float:
+        rows = self._filtered("regime", regime)
+        gross_profit = sum(float(row.get("pnl_pct", 0) or 0) for row in rows if float(row.get("pnl_pct", 0) or 0) > 0)
+        gross_loss = abs(sum(float(row.get("pnl_pct", 0) or 0) for row in rows if float(row.get("pnl_pct", 0) or 0) < 0))
+        return gross_profit / gross_loss if gross_loss else (gross_profit if gross_profit > 0 else 0.0)
+
+    def get_regime_statistics(self) -> dict:
+        stats = {}
+        for regime in sorted({row.get("regime", "NEUTRAL") for row in self._results} | {"TRENDING", "RANGING", "VOLATILE", "NEUTRAL"}):
+            win_rate = self.get_win_rate_by_regime(regime)
+            profit_factor = self.get_profit_factor_by_regime(regime)
+            if win_rate > 0 or profit_factor > 0:
+                stats[regime] = {"win_rate": round(win_rate, 2), "profit_factor": round(profit_factor, 2)}
+        return stats
+
+    def get_asset_statistics(self) -> dict:
+        return {
+            asset: {"win_rate": round(self.get_win_rate_by_asset(asset), 2)}
+            for asset in sorted({row.get("asset", "") for row in self._results if row.get("asset")})
+        }
+
+    def get_timeframe_statistics(self) -> dict:
+        return {
+            timeframe: {"win_rate": round(self.get_win_rate_by_timeframe(timeframe), 2)}
+            for timeframe in sorted({row.get("timeframe", "") for row in self._results if row.get("timeframe")})
+        }
+
+
+_regime_analytics = RegimeAnalytics()
+
+
+def get_regime_analytics() -> RegimeAnalytics:
+    return _regime_analytics

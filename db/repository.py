@@ -5,7 +5,7 @@ import json
 import hmac
 import hashlib
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -458,3 +458,24 @@ async def mark_webhook_event_processed(
     except IntegrityError:
         await session.rollback()
         return False
+
+
+async def get_economic_events(session, hours_ahead: int = 168) -> List["EconomicEvent"]:
+    """Get upcoming medium/high-impact economic events from DB."""
+    from db.models import EconomicEvent
+
+    now = datetime.utcnow()
+    window_end = now + timedelta(hours=max(0, int(hours_ahead or 0)))
+    try:
+        result = await session.execute(
+            select(EconomicEvent)
+            .where(
+                EconomicEvent.event_date >= now,
+                EconomicEvent.event_date <= window_end,
+                EconomicEvent.impact.in_(["high", "medium"]),
+            )
+            .order_by(EconomicEvent.event_date)
+        )
+        return list(result.scalars().all())
+    except Exception:
+        return []

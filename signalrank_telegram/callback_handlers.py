@@ -22,6 +22,26 @@ from telegram.ext import (
 
 logger = logging.getLogger(__name__)
 
+CB_SIGNAL_REACTION = "signal_reaction_"
+CB_MONITOR_SIGNAL = "monitor_signal_"
+CB_CHECK_OUTCOME = "check_outcome_"
+CB_OPEN_SIGNAL = "open_signal_"
+CB_SIGNAL_CHART = "signal_chart_"
+CB_MT5_TRADE = "mt5_trade_"
+CB_MT5_STATUS = "mt5_status"
+CB_ASK_GEMINI = "ask_gemini_"
+CB_AGREE_TERMS = "agree_terms"
+CB_DECLINE_TERMS = "decline_terms"
+CB_VIP_WAITLIST = "vip_waitlist_join"
+CB_CANCEL_CONFIRM = "cancel_confirm"
+CB_CANCEL_NEVERMIND = "cancel_nevermind"
+CB_HELP_PAGE = "help_page_"
+CB_NAV = "nav_"
+CB_TRADE_NOW = "trade_now"
+CB_LOCKED = "locked_"
+CB_ADMIN = "admin_"
+CB_VIP_SOLD_OUT = "vip_sold_out"
+
 
 # Global callback patterns
 CALLBACK_PATTERNS = {
@@ -39,6 +59,10 @@ CALLBACK_PATTERNS = {
     
     # Open signal
     "open_signal": r"^open_signal_(.+)$",
+
+    # Signal chart / Gemini explanation
+    "signal_chart": r"^signal_chart_(.+)$",
+    "ask_gemini": r"^ask_gemini_(.+)$",
     
     # Navigation buttons
     "nav": r"^nav_(.+)$",
@@ -49,6 +73,7 @@ CALLBACK_PATTERNS = {
     # MT5 link/guide
     "mt5_link_guide": r"^mt5_link_guide$",
     "mt5_settings": r"^mt5_settings$",
+    "mt5_status": r"^mt5_status$",
     
     # Admin buttons
     "admin": r"^admin_(.+)$",
@@ -58,6 +83,14 @@ CALLBACK_PATTERNS = {
     
     # Locked buttons
     "locked": r"^locked_(.+)$",
+
+    # Static agreement/help/waitlist callbacks
+    "agree_terms": r"^agree_terms$",
+    "decline_terms": r"^decline_terms$",
+    "vip_waitlist": r"^vip_waitlist_join$",
+    "cancel_confirm": r"^cancel_confirm$",
+    "cancel_nevermind": r"^cancel_nevermind$",
+    "help_page": r"^help_page_(.+)$",
 }
 
 
@@ -74,15 +107,21 @@ def _parse_callback_data(data: str) -> Dict[str, Any]:
     if not data:
         return {"action": None, "payload": None}
     
-    # Split on first underscore
+    for action, pattern in CALLBACK_PATTERNS.items():
+        match = re.match(pattern, data)
+        if not match:
+            continue
+        groups = match.groups()
+        if action == "signal_reaction" and len(groups) >= 2:
+            return {"action": action, "payload": f"{groups[0]}|{groups[1]}"}
+        if groups:
+            return {"action": action, "payload": groups[0]}
+        return {"action": action, "payload": None}
+
     parts = data.split("_", 1)
     if len(parts) < 2:
         return {"action": parts[0] if parts else None, "payload": None}
-    
-    action = parts[0]
-    payload = parts[1]
-    
-    return {"action": action, "payload": payload}
+    return {"action": parts[0], "payload": parts[1]}
 
 
 async def _handle_mt5_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
@@ -345,10 +384,23 @@ async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT
             
         elif action == "check_outcome":
             await _handle_check_outcome(update, context, payload)
+
+        elif action == "mt5_status":
+            from signalrank_telegram.commands import mt5_status_command
+
+            await mt5_status_command(update, context)
             
         elif action == "open_signal":
-            # Open signal link
-            await query.answer()
+            await _handle_open_signal(update, context, payload)
+
+        elif action == "signal_chart":
+            await _handle_signal_chart(update, context, payload)
+
+        elif action == "ask_gemini":
+            await _handle_ask_gemini(update, context, payload)
+
+        elif action == "locked":
+            await _handle_locked(update, context, payload)
             
         elif action and action.startswith("nav"):
             await query.answer()
@@ -362,6 +414,37 @@ async def _global_callback_handler(update: Update, context: ContextTypes.DEFAULT
             await query.answer("Error processing request.", show_alert=True)
         except Exception:
             pass
+
+
+async def _safe_answer(query, text: str = "", show_alert: bool = False) -> None:
+    try:
+        await query.answer(text=text or None, show_alert=show_alert)
+    except Exception:
+        pass
+
+
+async def _handle_signal_chart(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
+    query = update.callback_query
+    await _safe_answer(query, "Chart view is not available yet.", show_alert=False)
+
+
+async def _handle_ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
+    query = update.callback_query
+    await _safe_answer(query, "Gemini analysis is being prepared.", show_alert=False)
+
+
+async def _handle_open_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
+    query = update.callback_query
+    await _safe_answer(query, show_alert=False)
+
+
+async def _handle_locked(update: Update, context: ContextTypes.DEFAULT_TYPE, feature: str) -> None:
+    query = update.callback_query
+    await _safe_answer(query, "Upgrade required for this feature.", show_alert=True)
+
+
+async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await _global_callback_handler(update, context)
 
 
 def create_global_callback_handler() -> CallbackQueryHandler:
@@ -384,4 +467,24 @@ def create_global_callback_handler() -> CallbackQueryHandler:
 __all__ = [
     "create_global_callback_handler",
     "_global_callback_handler",
+    "callback_router",
+    "CB_SIGNAL_REACTION",
+    "CB_MONITOR_SIGNAL",
+    "CB_CHECK_OUTCOME",
+    "CB_OPEN_SIGNAL",
+    "CB_SIGNAL_CHART",
+    "CB_MT5_TRADE",
+    "CB_MT5_STATUS",
+    "CB_ASK_GEMINI",
+    "CB_AGREE_TERMS",
+    "CB_DECLINE_TERMS",
+    "CB_VIP_WAITLIST",
+    "CB_CANCEL_CONFIRM",
+    "CB_CANCEL_NEVERMIND",
+    "CB_HELP_PAGE",
+    "CB_NAV",
+    "CB_TRADE_NOW",
+    "CB_LOCKED",
+    "CB_ADMIN",
+    "CB_VIP_SOLD_OUT",
 ]

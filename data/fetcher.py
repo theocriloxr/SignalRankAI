@@ -172,6 +172,7 @@ def get_unhealthy_providers(min_minutes=None):
                     unhealthy.append((name, down_for))
     return unhealthy
 import random
+import math
 def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60, jitter=0.2):
     """Retry a fetch function with exponential backoff and jitter."""
     for attempt in range(max_retries):
@@ -193,6 +194,21 @@ from datetime import datetime
 import requests
 import asyncio
 from core.circuit_breaker import provider_breaker
+
+_PROVIDER_ERRORS: dict[tuple[str, str], list[str]] = {}
+
+
+def _track_provider_error(asset: str, tf: str, error_msg: str) -> None:
+    """Track provider errors for per-asset diagnostics."""
+    key = (str(asset or "").upper().strip(), str(tf or "").lower().strip())
+    _PROVIDER_ERRORS.setdefault(key, []).append(str(error_msg or "")[:500])
+    _PROVIDER_ERRORS[key] = _PROVIDER_ERRORS[key][-5:]
+
+
+def _get_provider_errors(asset: str, tf: str) -> list[str]:
+    """Return recently tracked provider errors for an asset/timeframe."""
+    key = (str(asset or "").upper().strip(), str(tf or "").lower().strip())
+    return list(_PROVIDER_ERRORS.get(key, []))
 
 # Import market hours module for holiday checks
 try:
@@ -235,6 +251,160 @@ _ALPHA_LAST_CALL_TS = 0.0
 _ALPHA_COOLDOWN_UNTIL = 0.0
 _BINANCE_BLOCKED_REASON: str | None = None
 _LAST_PROVIDER_USED: dict[tuple[str, str], str] = {}
+
+_QUALITY_METRICS = {
+    "short_history": 0,
+    "nan_ratio": 0,
+    "stale_data": 0,
+    "empty": 0,
+    "total_checked": 0,
+}
+
+_STALENESS_THRESHOLDS = {
+    "5m": 20 * 60,
+    "15m": 45 * 60,
+    "1h": 3 * 3600,
+    "4h": 12 * 3600,
+    "1d": 2 * 86400,
+}
+
+_MIN_CANDLES_NORMAL = 150
+_MIN_EMERGENCY_BARS = 50
+
+
+def _get_degraded_mode_min_candles() -> int:
+    """Minimum candles accepted when the system is operating in degraded mode."""
+    try:
+        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "10").strip())
+    except Exception:
+        return 10
+
+
+def reset_quality_metrics() -> None:
+    """Reset market-data quality counters for a new engine cycle."""
+    global _QUALITY_METRICS
+    _QUALITY_METRICS = {key: 0 for key in _QUALITY_METRICS}
+
+
+def get_quality_metrics() -> dict:
+    """Return a snapshot of market-data quality counters."""
+    return dict(_QUALITY_METRICS)
+
+
+def _calculate_quality_score(candles: list, nan_ratio: float, stale_minutes: float, asset_type: str) -> int:
+    """Calculate an overall data-quality score from 0 to 100."""
+    candle_count = len(candles or [])
+    score = 0
+    if candle_count >= 200:
+        score += 40
+    elif candle_count >= 150:
+        score += 35
+    elif candle_count >= 100:
+        score += 25
+    elif candle_count >= 50:
+        score += 10
+
+    if nan_ratio <= 0.01:
+        score += 30
+    elif nan_ratio <= 0.03:
+        score += 25
+    elif nan_ratio <= 0.05:
+        score += 20
+    elif nan_ratio <= 0.10:
+        score += 10
+
+    asset_type = str(asset_type or "crypto").lower()
+    if asset_type == "crypto":
+        score += 30
+    elif asset_type == "stock":
+        if stale_minutes <= 5:
+            score += 30
+        elif stale_minutes <= 60:
+            score += 20
+        elif stale_minutes <= 360:
+            score += 10
+    else:
+        if stale_minutes <= 30:
+            score += 30
+        elif stale_minutes <= 120:
+            score += 20
+        elif stale_minutes <= 360:
+            score += 10
+    return min(100, int(score))
+
+
+def _validate_data_quality(
+    candles: list,
+    max_nan_ratio: float = 0.05,
+    asset_type: str = "crypto",
+    timeframe: str = "1h",
+    latest_candle_timestamp: float | None = None,
+) -> tuple[bool, str, dict]:
+    """Validate candle history before it is passed into strategies."""
+    report = {
+        "asset_type": asset_type,
+        "timeframe": timeframe,
+        "candles": 0,
+        "nan_ratio": 0.0,
+        "stale_minutes": 0.0,
+        "quality_score": 0,
+        "tier": "PREMIUM",
+    }
+    if not candles or not isinstance(candles, list):
+        _QUALITY_METRICS["empty"] += 1
+        return False, "empty_dataframe", report
+
+    candle_count = len(candles)
+    report["candles"] = candle_count
+    if candle_count < _MIN_EMERGENCY_BARS:
+        _QUALITY_METRICS["short_history"] += 1
+        report["tier"] = "BASIC"
+        return False, f"insufficient_candles_{candle_count}_need_{_MIN_EMERGENCY_BARS}_emergency", report
+    if candle_count < _MIN_CANDLES_NORMAL:
+        report["tier"] = "STANDARD"
+
+    close_values: list[float] = []
+    for candle in candles:
+        if not isinstance(candle, dict):
+            continue
+        try:
+            close_values.append(float(candle.get("close", 0) or 0))
+        except Exception:
+            close_values.append(float("nan"))
+    if not close_values:
+        _QUALITY_METRICS["nan_ratio"] += 1
+        return False, "no_close_prices", report
+
+    nan_count = sum(1 for value in close_values if value == 0 or math.isnan(value))
+    nan_ratio = nan_count / len(close_values)
+    report["nan_ratio"] = nan_ratio
+    if nan_ratio > max_nan_ratio:
+        _QUALITY_METRICS["nan_ratio"] += 1
+        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}", report
+
+    stale_minutes = 0.0
+    if latest_candle_timestamp:
+        age_seconds = max(0.0, time.time() - float(latest_candle_timestamp))
+        stale_minutes = age_seconds / 60.0
+        report["stale_minutes"] = stale_minutes
+        max_stale = _STALENESS_THRESHOLDS.get(str(timeframe).lower(), 3600)
+        if str(asset_type).lower() == "crypto":
+            max_stale *= 2
+        elif str(asset_type).lower() == "stock":
+            now_utc = datetime.utcnow()
+            if not (now_utc.weekday() < 5 and 14 <= now_utc.hour < 21):
+                max_stale *= 3
+        if age_seconds > max_stale:
+            _QUALITY_METRICS["stale_data"] += 1
+            return False, f"stale_data_{stale_minutes:.0f}min_max_{max_stale/60:.0f}min", report
+
+    report["quality_score"] = _calculate_quality_score(candles, nan_ratio, stale_minutes, asset_type)
+    if report["quality_score"] < 50:
+        report["tier"] = "BASIC"
+    elif report["quality_score"] < 75:
+        report["tier"] = "STANDARD"
+    _QUALITY_METRICS["total_checked"] += 1
+    return True, "", report
 
 
 def is_binance_blocked() -> bool:
@@ -965,6 +1135,74 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
             return False
     
     return True
+
+
+def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool, float, dict] | None:
+    """Validate a price against independent providers when they are reachable."""
+    import statistics
+
+    try:
+        primary_price = float(primary_price)
+    except Exception:
+        return None
+    if primary_price <= 0:
+        return None
+
+    asset_type = get_asset_type(asset)
+    sources_prices: dict[str, float] = {}
+    symbol = str(asset or "").upper().replace("/", "").strip()
+
+    if asset_type == "crypto":
+        try:
+            resp = requests.get(
+                "https://api.binance.com/api/v3/ticker/price",
+                params={"symbol": symbol},
+                timeout=3,
+            )
+            if resp.ok:
+                px = float((resp.json() or {}).get("price") or 0)
+                if px > 0:
+                    sources_prices["binance"] = px
+        except Exception:
+            pass
+        try:
+            resp = requests.get(
+                "https://api.bybit.com/v5/market/tickers",
+                params={"category": "spot", "symbol": symbol},
+                timeout=3,
+            )
+            if resp.ok:
+                rows = ((resp.json() or {}).get("result") or {}).get("list") or []
+                if rows:
+                    px = float(rows[0].get("lastPrice") or 0)
+                    if px > 0:
+                        sources_prices["bybit"] = px
+        except Exception:
+            pass
+    elif asset_type in {"stock", "fx", "commodity"}:
+        try:
+            import yfinance as yf
+
+            hist = yf.Ticker(symbol).history(period="1d", interval="1m")
+            if hist is not None and not hist.empty:
+                px = float(hist["Close"].iloc[-1])
+                if px > 0:
+                    sources_prices["yahoo"] = px
+        except Exception:
+            pass
+
+    if not sources_prices:
+        return None
+
+    all_prices = list(sources_prices.values()) + [primary_price]
+    median_price = statistics.median(all_prices)
+    if median_price <= 0:
+        return None
+
+    deviations = [abs(price - median_price) / median_price for price in all_prices]
+    max_deviation = max(deviations)
+    confidence = max(0.0, 1.0 - max_deviation)
+    return max_deviation <= 0.05, confidence, sources_prices
 
 
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:

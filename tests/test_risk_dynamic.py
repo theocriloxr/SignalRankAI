@@ -7,6 +7,9 @@ import sys
 sys.path.insert(0, '..')
 from engine.risk import (
     calculate_dynamic_risk,
+    calculate_position_size_by_asset_class,
+    calculate_stop_loss_by_asset_class,
+    get_asset_class,
     risk_check,
     calculate_position_size,
     soft_throttle_active,
@@ -89,4 +92,39 @@ def test_position_size_bounds(sample_signal):
     balance = 10000.0
     size = calculate_position_size(sample_signal, balance)
     assert 0.01 <= size <= balance * 0.1  # min/max bounds
+
+
+def test_asset_class_detection():
+    assert get_asset_class("BTCUSDT") == "crypto"
+    assert get_asset_class("EURUSD") == "forex"
+    assert get_asset_class("AAPL") == "stock"
+
+
+def test_asset_class_risk_sizing_changes_by_market_type():
+    signal = {"asset": "BTCUSDT", "entry": 100.0, "direction": "long"}
+    market_data = {"atr": 2.0}
+
+    crypto_sl = calculate_stop_loss_by_asset_class(signal, market_data, "crypto")
+    stock_sl = calculate_stop_loss_by_asset_class(signal, market_data, "stock")
+
+    assert crypto_sl == 95.0
+    assert stock_sl == 97.0
+
+    crypto_size = calculate_position_size_by_asset_class(
+        account_balance=10_000.0,
+        signal_entry=100.0,
+        signal_sl=99.0,
+        risk_amount=500.0,
+        asset_class="crypto",
+    )
+    stock_size = calculate_position_size_by_asset_class(
+        account_balance=10_000.0,
+        signal_entry=100.0,
+        signal_sl=99.0,
+        risk_amount=500.0,
+        asset_class="stock",
+    )
+
+    assert crypto_size is not None and stock_size is not None
+    assert crypto_size > stock_size
 

@@ -185,33 +185,90 @@ except Exception:
 
 _ml_rejection_tracker = MLRejectionTracker()
 
+
+def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
+    """Compatibility wrapper: return True when a signal thesis is already locked."""
+    try:
+        from signalrank_telegram.delivery_cooldown import check_signal_lock, set_signal_lock
+
+        if check_signal_lock(asset, direction, timeframe):
+            return True
+        set_signal_lock(asset, direction, timeframe)
+        return False
+    except Exception:
+        pass
+
+    try:
+        from engine.signal_lock import acquire_signal_lock
+
+        return not bool(run_sync(acquire_signal_lock(asset, direction, timeframe)))
+    except Exception as exc:
+        logger.debug("[signal_lock] compatibility wrapper failed: %s", exc)
+        return False
+
+
+def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
+    """Compatibility wrapper to release a signal thesis lock."""
+    try:
+        from signalrank_telegram.delivery_cooldown import clear_signal_lock
+
+        clear_signal_lock(asset, direction, timeframe)
+        return
+    except Exception:
+        pass
+    try:
+        from engine.signal_lock import release_signal_lock
+
+        run_sync(release_signal_lock(asset, direction, timeframe))
+    except Exception as exc:
+        logger.debug("[signal_lock] release compatibility wrapper failed: %s", exc)
+
+
+def _check_delivery_cooldown(user_id: int, asset: str, direction: str, timeframe: str, tier: str = "free") -> bool:
+    """Compatibility wrapper: return True when a user is in delivery cooldown."""
+    try:
+        from signalrank_telegram.delivery_cooldown import check_delivery_cooldown
+
+        return bool(check_delivery_cooldown(int(user_id), asset, direction))
+    except Exception:
+        pass
+    try:
+        from db.pg_features import check_delivery_cooldown
+
+        return bool(check_delivery_cooldown(int(user_id), asset, direction))
+    except Exception as exc:
+        logger.debug("[delivery_cooldown] compatibility wrapper failed: %s", exc)
+        return False
+
 # Threshold optimizer for auto-adjusting ML confidence thresholds
 _threshold_optimizer = None
+
+
+class _FallbackThresholdOptimizer:
+    """Env-backed threshold optimizer used when the adaptive optimizer is unavailable."""
+
+    def get_threshold(self) -> float:
+        return float(os.getenv('ML_PROB_THRESHOLD', '0.40') or 0.40)
+
+    async def analyze_and_adjust(self, force: bool = False):
+        return None
+
+    def get_config(self):
+        from datetime import datetime
+        return type('Config', (), {
+            'ml_prob_threshold': self.get_threshold(),
+            'min_score_threshold': 48.0,
+            'confluence_min': 0.0,
+            'last_updated': datetime.utcnow(),
+            'source': 'env',
+        })()
+
+
 try:
     from engine.threshold_optimizer import get_threshold_optimizer, refresh_thresholds
     _threshold_optimizer = get_threshold_optimizer()
 except Exception as e:
     logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
-    # Fallback threshold optimizer that uses env var
-    # LOWERED from 0.55 to 0.50 to address ML drift confusion
-    # The model is "confused" during drift events and outputting lower probabilities
-    # This allows ~64 scores to pass through instead of being zeroed out
-    class _FallbackThresholdOptimizer:
-        def get_threshold(self) -> float:
-            # LOWERED to 0.40 to allow drifted model predictions (~56%) through
-            # This addresses the ML drift issue where model outputs 56% but previous threshold was 55%
-            return float(os.getenv('ML_PROB_THRESHOLD', '0.40') or 0.40)
-        async def analyze_and_adjust(self, force: bool = False):
-            return None
-        def get_config(self):
-            from datetime import datetime
-            return type('Config', (), {
-                'ml_prob_threshold': self.get_threshold(),
-                'min_score_threshold': 48.0,  # LOWERED from 60 to allow more signals through
-                'confluence_min': 0.0,
-                'last_updated': datetime.utcnow(),
-                'source': 'env',
-            })()
     _threshold_optimizer = _FallbackThresholdOptimizer()
 # Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
@@ -386,6 +443,70 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
         _meta.setdefault("ml_probability", sig.get("ml_probability"))
         _meta.setdefault("strategy_name", sig.get("strategy_name"))
         _meta.setdefault("strategy_group", sig.get("strategy_group"))
+        try:
+            from services.decision_intelligence import build_decision_record, validate_decision_record
+
+            decision_signal = {
+                "signal_id": sig.get("signal_id"),
+                "asset": sig.get("asset"),
+                "timeframe": sig.get("timeframe"),
+                "direction": sig.get("direction") or _meta.get("direction"),
+                "entry": sig.get("entry") or _meta.get("entry"),
+                "stop_loss": sig.get("stop_loss") or _meta.get("stop_loss"),
+                "take_profit": sig.get("take_profit") or _meta.get("take_profit"),
+                "score": sig.get("score") or _meta.get("score"),
+                "ml_probability": sig.get("ml_probability") or _meta.get("ml_probability"),
+                "strategy_name": sig.get("strategy_name") or _meta.get("strategy_name"),
+                "strategy_group": sig.get("strategy_group") or _meta.get("strategy_group"),
+                "rr_ratio": sig.get("rr_ratio") or sig.get("rr_estimate"),
+                "regime": sig.get("regime") or _meta.get("regime"),
+                "session": sig.get("session") or _meta.get("session"),
+                "decision": decision,
+            }
+            votes_against = []
+            if decision in ("rejected", "skipped", "delayed", "suppressed") and reason:
+                votes_against.append({"gate": "engine", "reason": str(reason)})
+            news_assessment = {}
+            if "news_sentiment" in _meta:
+                news_assessment["sentiment_score"] = _meta.get("news_sentiment")
+            if "news_action" in _meta:
+                news_assessment["signal_action"] = _meta.get("news_action")
+            gemini_summary = {}
+            if "gemini_score" in _meta:
+                gemini_summary["score"] = _meta.get("gemini_score")
+            if "gemini_reason" in _meta:
+                gemini_summary["summary"] = _meta.get("gemini_reason")
+
+            decision_record = build_decision_record(
+                decision_signal,
+                votes_against=votes_against,
+                ml_prediction={
+                    "probability": decision_signal.get("ml_probability"),
+                    "threshold": _meta.get("threshold") or _meta.get("ml_threshold"),
+                    "verdict": "approve" if decision == "issued" else decision,
+                },
+                gemini_summary=gemini_summary,
+                news_assessment=news_assessment,
+                risk={
+                    "risk_reward": decision_signal.get("rr_ratio"),
+                    "stop_loss": decision_signal.get("stop_loss"),
+                    "risk_score": sig.get("risk_score") or _meta.get("risk_score"),
+                },
+                market_context={
+                    "regime": decision_signal.get("regime"),
+                    "session": decision_signal.get("session"),
+                    "volatility": sig.get("volatility") or _meta.get("volatility"),
+                },
+                shadow_prediction={
+                    "available": bool(_meta.get("shadow_prediction") or _meta.get("shadow_agreement")),
+                    "prediction": _meta.get("shadow_prediction"),
+                    "agreement": _meta.get("shadow_agreement"),
+                },
+            )
+            _meta["decision_intelligence"] = decision_record
+            _meta["decision_intelligence_validation"] = validate_decision_record(decision_record)
+        except Exception as exc:
+            logger.debug("[engine] decision intelligence enrichment skipped: %s", exc)
         run_sync(
             persist_decision_log(
                 sig.get("signal_id"),

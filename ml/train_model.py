@@ -794,6 +794,11 @@ def engineer_features(df):
     return X_train, y_train, feature_cols, sample_weights, timestamps
 
 
+async def load_training_data_sync(lookback_days: int = 90):
+    """Backward-compatible alias for the async training data loader."""
+    return await load_training_data(lookback_days)
+
+
 def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
     """Train XGBoost classifier and check for drift."""
     logger.info("Training XGBoost model...")

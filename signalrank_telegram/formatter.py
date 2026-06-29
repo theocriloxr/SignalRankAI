@@ -1141,3 +1141,83 @@ def format_signal_free_limited(signal):
 		"⚠️ Educational only. Not financial advice."
 	]
 	return "\n".join(lines)
+
+
+def _fmt_price(value, asset: str = "") -> str:
+	try:
+		v = float(value)
+		if v <= 0:
+			return "N/A"
+		asset_u = str(asset or "").upper()
+		if "JPY" in asset_u:
+			return f"{v:.3f}"
+		if v >= 10000:
+			return f"{v:,.2f}"
+		if v >= 100:
+			return f"{v:,.3f}"
+		if v >= 1:
+			return f"{v:.4f}"
+		return f"{v:.6f}"
+	except Exception:
+		return str(value) if value else "N/A"
+
+
+def _parse_tp_levels(raw) -> list[float]:
+	return _parse_tp_list(raw)
+
+
+def _calc_pct(entry: float, target: float, direction: str) -> float | None:
+	try:
+		if float(entry) <= 0:
+			return None
+		if str(direction or "").lower() == "short":
+			return ((float(entry) - float(target)) / float(entry)) * 100.0
+		return ((float(target) - float(entry)) / float(entry)) * 100.0
+	except Exception:
+		return None
+
+
+def _calc_r(entry: float, stop: float, target: float, direction: str) -> float | None:
+	try:
+		risk = abs(float(entry) - float(stop))
+		if risk <= 0:
+			return None
+		reward = float(entry) - float(target) if str(direction or "").lower() == "short" else float(target) - float(entry)
+		return reward / risk
+	except Exception:
+		return None
+
+
+def _score_bar(score: float, width: int = 10) -> str:
+	try:
+		width = int(width)
+		filled = max(0, min(width, round((float(score) / 100.0) * width)))
+	except Exception:
+		width = 10
+		filled = 0
+	return "#" * filled + "-" * (width - filled)
+
+
+def _direction_emoji(direction: str) -> str:
+	direction_l = str(direction or "").lower()
+	if direction_l in {"long", "buy"}:
+		return "LONG"
+	if direction_l in {"short", "sell"}:
+		return "SHORT"
+	return "NEUTRAL"
+
+
+def _regime_emoji(regime: str) -> str:
+	return str(regime or "").title() or "Market"
+
+
+def _format_free(signal: dict) -> str:
+	return format_signal_free_new(signal)
+
+
+def _format_premium(signal: dict) -> str:
+	return format_signal_premium_new(signal)
+
+
+def _format_vip(signal: dict) -> str:
+	return format_signal_vip_new(signal)

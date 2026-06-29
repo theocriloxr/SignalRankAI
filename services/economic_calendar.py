@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
@@ -60,6 +61,53 @@ _USD_SENSITIVE_SYMBOLS = {
 
 # Pre-trade buffer: no new signals N minutes before and after a red event
 NO_TRADE_BUFFER_MINUTES = int(os.getenv("NO_TRADE_BUFFER_MINUTES", "30"))
+REDIS_EVENTS_KEY = "signalrankai:economic_events:v1"
+VOLATILITY_BUFFER_MULTIPLIER = float(os.getenv("NEWS_VOLATILITY_BUFFER_MULTIPLIER", "1.0") or 1.0)
+
+
+async def _load_events_from_redis() -> list[dict]:
+    """Load events from the shared Redis cache when available."""
+    try:
+        from core.redis_state import state
+
+        cached = state.get_sync(REDIS_EVENTS_KEY)
+        if cached:
+            events = json.loads(cached)
+            return events if isinstance(events, list) else []
+    except Exception as exc:
+        logger.debug("[economic_calendar] Redis cache unavailable: %s", exc)
+    return []
+
+
+async def _load_events_from_db() -> list[dict]:
+    """Load upcoming economic events from the DB cache when available."""
+    try:
+        from db.repository import get_economic_events
+        from db.session import get_session, run_with_db_retry
+
+        async def _fetch() -> list[dict]:
+            async with get_session() as session:
+                events = await get_economic_events(session, hours_ahead=168)
+                out = []
+                for event in events:
+                    impact = str(getattr(event, "impact", "") or "").lower()
+                    if impact not in {"high", "medium"}:
+                        continue
+                    out.append(
+                        {
+                            "title": getattr(event, "title", ""),
+                            "currency": getattr(event, "currency", ""),
+                            "impact": impact,
+                            "event_time": getattr(event, "event_date", None),
+                            "source": getattr(event, "source", None) or "db",
+                        }
+                    )
+                return out
+
+        return await run_with_db_retry(_fetch)
+    except Exception as exc:
+        logger.debug("[economic_calendar] DB cache unavailable: %s", exc)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +181,18 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
 
     from_dt = now - timedelta(hours=1)
     to_dt = now + timedelta(days=7)
+
+    events = await _load_events_from_redis()
+    if events:
+        _EVENTS_CACHE = events
+        _CACHE_FETCHED_AT = now
+        return events
+
+    events = await _load_events_from_db()
+    if events:
+        _EVENTS_CACHE = events
+        _CACHE_FETCHED_AT = now
+        return events
 
     events = await _fetch_finnhub(from_dt, to_dt)
 
@@ -294,3 +354,27 @@ async def get_upcoming_events_summary(hours_ahead: int = 24) -> str:
         et = e["event_time"]
         lines.append(f"  • {e['title']} ({e['currency']}) — {et.strftime('%d %b %H:%M')} UTC")
     return "\n".join(lines)
+
+
+async def get_volatility_buffer_info() -> dict:
+    """Return SL/position adjustments for current high-impact news windows."""
+    if VOLATILITY_BUFFER_MULTIPLIER <= 1.0:
+        return {"active": False, "sl_multiplier": 1.0, "position_reducer": 1.0, "event": None}
+    now = datetime.now(tz=timezone.utc)
+    events = await fetch_economic_events()
+    for event in events:
+        if event.get("currency") != "USD" or event.get("impact") != "high":
+            continue
+        event_time = event.get("event_time")
+        if event_time is None:
+            continue
+        if event_time.tzinfo is None:
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        if abs((now - event_time).total_seconds()) <= NO_TRADE_BUFFER_MINUTES * 60:
+            return {
+                "active": True,
+                "sl_multiplier": VOLATILITY_BUFFER_MULTIPLIER,
+                "position_reducer": 1.0 / VOLATILITY_BUFFER_MULTIPLIER,
+                "event": event,
+            }
+    return {"active": False, "sl_multiplier": 1.0, "position_reducer": 1.0, "event": None}

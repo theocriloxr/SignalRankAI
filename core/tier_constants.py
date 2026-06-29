@@ -41,6 +41,7 @@ NEW PRODUCTION UPGRADES (2024):
   - CANDLE_STALENESS_MULTIPLIER=1.5 (stricter freshness)
 """
 
+import os as _os
 from typing import Final
 
 # Tier daily signal limits (DELIVERED signals per user)
@@ -119,7 +120,6 @@ PRICE_DRIFT_TOLERANCE: Final[dict[str, float]] = {
 
 # Candle staleness multiplier: max age = timeframe * this value
 # For Railway Hobby tier, use 24x to allow signals even if data is hours behind
-import os as _os
 _is_railway = bool((_os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (_os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
 CANDLE_STALENESS_MULTIPLIER: Final[float] = float(_os.getenv("CANDLE_STALENESS_MULTIPLIER", "24.0" if _is_railway else "1.5"))
 
@@ -138,4 +138,103 @@ ACTIVE_SIGNAL_LOOKBACK_HOURS: Final[int] = 24
 FREE_MIN_SCORE: Final[int] = 80  # Minimum signal score for FREE tier eligibility (upgraded from 60)
 FREE_SIGNAL_DAILY_LIMIT: Final[int] = 3  # Daily signal limit for FREE users
 FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
+
+
+TIER_RANK: Final[dict[str, int]] = {
+    "free": 0,
+    "premium": 1,
+    "vip": 2,
+    "admin": 3,
+    "owner": 4,
+}
+
+TIER_MIN_SCORES: Final[dict[str, float]] = TIER_SCORE_THRESHOLDS
+
+
+TIER_FEATURES: Final[dict[str, set[str]]] = {
+    "free": {"basic_signals", "proof_feed"},
+    "premium": {"basic_signals", "exact_levels", "live_monitoring", "performance_stats"},
+    "vip": {
+        "basic_signals",
+        "exact_levels",
+        "tp3",
+        "gemini_ai",
+        "mt5_execute",
+        "webhook_api",
+        "live_monitoring",
+        "performance_stats",
+        "signal_chart",
+        "priority_delivery",
+    },
+    "admin": {"*"},
+    "owner": {"*"},
+}
+
+TIER_PRICES_NGN: Final[dict[str, int]] = {
+    "premium": int(_os.getenv("PREMIUM_PRICE_NGN", "5000") or 5000),
+    "vip": int(_os.getenv("VIP_PRICE_NGN", "15000") or 15000),
+}
+
+TIER_PRICES_USD: Final[dict[str, float]] = {
+    "premium": float(_os.getenv("PREMIUM_PRICE_USD", "10.0") or 10.0),
+    "vip": float(_os.getenv("VIP_PRICE_USD", "30.0") or 30.0),
+}
+
+TIER_BILLING_PERIODS: Final[dict[str, str]] = {
+    "premium": "monthly",
+    "vip": "monthly",
+}
+
+TIER_DISPLAY_NAMES: Final[dict[str, str]] = {
+    "free": "Free",
+    "premium": "Premium",
+    "vip": "VIP",
+    "admin": "Admin",
+    "owner": "Owner",
+}
+
+TIER_EMOJIS: Final[dict[str, str]] = {
+    "free": "",
+    "premium": "",
+    "vip": "",
+    "admin": "",
+    "owner": "",
+}
+
+TIER_ASSET_COOLDOWN_HOURS: Final[dict[str, int]] = {
+    "free": int(_os.getenv("FREE_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "premium": int(_os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8") or 8),
+    "vip": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4),
+    "admin": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4),
+    "owner": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4),
+}
+
+VIP_MAX_CAPACITY: Final[int] = int(_os.getenv("VIP_MAX_CAPACITY", "30") or 30)
+
+
+def tier_rank(tier: str) -> int:
+    """Return numeric rank for tier comparison; higher means more access."""
+    return TIER_RANK.get(str(tier or "free").strip().lower(), 0)
+
+
+def normalize_tier(tier: str | None) -> str:
+    """Normalize tier labels to canonical lowercase keys."""
+    t = str(tier or "free").strip().lower()
+    return t if t in TIER_RANK else "free"
+
+
+def has_feature(tier: str, feature: str) -> bool:
+    """Return whether a tier has a named feature flag."""
+    features = TIER_FEATURES.get(normalize_tier(tier), TIER_FEATURES["free"])
+    return "*" in features or str(feature or "").strip() in features
+
+
+def get_daily_limit(tier: str) -> float:
+    """Return the daily delivered-signal limit for a tier."""
+    return TIER_DAILY_LIMITS.get(normalize_tier(tier), TIER_DAILY_LIMITS["free"])
+
+
+def get_min_score(tier: str) -> float:
+    """Return the minimum delivery score for a tier."""
+    return TIER_SCORE_THRESHOLDS.get(normalize_tier(tier), TIER_SCORE_THRESHOLDS["free"])
 

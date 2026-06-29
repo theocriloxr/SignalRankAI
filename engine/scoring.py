@@ -28,6 +28,86 @@ def _env_float(name: str, default: float) -> float:
         return float(default)
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def trend_alignment_score(signal: dict) -> float | None:
+    """Score higher-timeframe trend alignment from 0.0 to 1.0."""
+    trend_ema = signal.get("trend_ema")
+    trend_sma = signal.get("trend_sma")
+    htf_bias = signal.get("htf_bias") or signal.get("htf_alignment")
+    direction = _direction_sign(signal.get("direction", 0))
+
+    if trend_ema is not None and trend_sma is not None:
+        try:
+            te = float(trend_ema)
+            ts = float(trend_sma)
+            if direction > 0:
+                return 1.0 if (te > 0 and ts > 0) else (0.5 if te > 0 else 0.0)
+            if direction < 0:
+                return 1.0 if (te < 0 and ts < 0) else (0.5 if te < 0 else 0.0)
+        except Exception:
+            pass
+
+    if htf_bias is not None:
+        try:
+            return min(max(float(htf_bias), 0.0), 1.0)
+        except Exception:
+            pass
+    return None
+
+
+def volume_confirmation_score(signal: dict) -> float | None:
+    """Score volume expansion from 0.0 to 1.0."""
+    volume_ratio = signal.get("volume_ratio") or signal.get("vol_ratio")
+    if volume_ratio is None:
+        return None
+    try:
+        ratio = float(volume_ratio)
+        min_ratio = _env_float("VOLUME_RATIO_MIN", 1.2)
+        ideal_ratio = _env_float("VOLUME_RATIO_IDEAL", 2.0)
+        if ratio <= 0.8:
+            return 0.0
+        if ratio <= 1.0:
+            return 0.3
+        if ratio < min_ratio:
+            return 0.5
+        raw = (ratio - min_ratio) / max(0.1, ideal_ratio - min_ratio)
+        return min(1.0, 0.7 + raw * 0.3)
+    except Exception:
+        return None
+
+
+def liquidity_pool_score(signal: dict) -> float | None:
+    """Normalize liquidity score fields to 0.0-1.0."""
+    value = signal.get("liquidity_score") or signal.get("liquidity")
+    if value is None:
+        return None
+    try:
+        score = float(value)
+        return min(max(score / 100.0 if score > 1 else score, 0.0), 1.0)
+    except Exception:
+        return None
+
+
+def ml_probability_score(signal: dict) -> float | None:
+    """Normalize ML probability/confidence fields to 0.0-1.0."""
+    for key in ("ml_probability", "ml_prob", "ml_confidence", "confidence"):
+        value = signal.get(key)
+        if value is None:
+            continue
+        try:
+            prob = float(value)
+            return min(max(prob if prob <= 1.0 else prob / 100.0, 0.0), 1.0)
+        except Exception:
+            continue
+    return None
+
+
 def score_signal(signal):
     """Score a signal based on multiple factors with confluence validation.
     
@@ -38,7 +118,7 @@ def score_signal(signal):
     4. Support/Resistance respect
     5. Market regime fit (trending/ranging)
     
-    Returns 0-100 score. Also populates signal with detailed score breakdowns.
+    Returns 0-100 score.
     """
     # CONFLUENCE REQUIREMENT: Multiple signals must align
     # LOWERED from 25.0 to 15.0 to allow more signals through (fixes "Zero Signal")
@@ -47,8 +127,6 @@ def score_signal(signal):
     if confluence_score is None:
         confluence_score = calculate_confluence(signal)
     if confluence_score is not None and confluence_score < confluence_min:
-        # Log detailed rejection
-        signal['score_rejection_reason'] = f'confluence {confluence_score:.1f}% < {confluence_min:.1f}%'
         return 0.0
     
     # Target: 0..100 score
@@ -59,7 +137,6 @@ def score_signal(signal):
     # LOWERED from 0.35 to 0.25 to allow more signals through (fixes "Zero Signal")
     confidence_min = _env_float("CONFIDENCE_MIN", 0.25)
     if confidence is not None and confidence < confidence_min:
-        signal['score_rejection_reason'] = f'confidence {confidence:.2f} < {confidence_min:.2f}'
         return 0.0
 
     entry = signal.get("entry")
@@ -87,38 +164,17 @@ def score_signal(signal):
 
     total_weight = sum(weight for _, weight in components.values()) if components else 0.0
     if total_weight <= 0:
-        signal['score_rejection_reason'] = 'no_scoring_components'
         return 0.0
-    score_raw = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
+    score = 100.0 * sum(val * (weight / total_weight) for val, weight in components.values())
     
     # LOWERED from 1.5 to 1.0 to allow more signals through (fixes "Zero Signal")
     min_rr = _env_float("MIN_RR", 1.0)
     # Hard rejection for poor R/R
     if rr < min_rr:
-        signal['score_rejection_reason'] = f'RR {rr:.2f} < {min_rr:.2f}'
         return 0.0
     
-    # === FIX PHASE 1: Log raw scores before any normalization/bonuses ===
-    # Store pre-normalized score components for transparency
-    signal['score_components'] = {
-        'rr': round(rr_component * 100, 2),  # RR component contribution
-        'volatility': round(vol_component * 100, 2),  # Vol component contribution
-    }
-    if confidence is not None:
-        signal['score_components']['confidence'] = round(confidence * 100, 2)
-    if confluence_score is not None:
-        signal['score_components']['confluence'] = round(confluence_score, 2)
-    
-    # === Log raw total before bonuses ===
-    signal['score_raw'] = round(score_raw, 2)
-    signal['score_pre_threshold'] = round(score_raw, 2)
-    
-    # === FIX PHASE 1: Track individual bonuses for transparency ===
-    bonuses_applied = []
-    
-    # REGIME ALIGNMENT BONUS (additive, not multiplicative to preserve normalization)
+    # REGIME ALIGNMENT BONUS
     regime_fit = signal.get("regime_fit") or signal.get("htf_alignment")
-    regime_bonus = 1.0
     try:
         if regime_fit is not None:
             regime_fit = float(regime_fit)
@@ -126,50 +182,29 @@ def score_signal(signal):
             bonus_base = _env_float("REGIME_SCORE_BONUS_BASE", 1.0)
             bonus_scale = _env_float("REGIME_SCORE_BONUS_SCALE", 0.2)
             regime_bonus = bonus_base + (regime_fit * bonus_scale)
-            # Apply as additive bonus instead of multiplicative to preserve normalization
-            regime_bonus_pct = (regime_bonus - 1.0) * 100
-            score_raw = score_raw + (score_raw * regime_bonus_pct / 100)
-            bonuses_applied.append(f'regime:+{regime_bonus_pct:.1f}%')
+            score = score * regime_bonus
     except Exception:
         pass
     
-    signal['score_after_regime'] = round(score_raw, 2)
-    
-    # ML PROBABILITY BOOST (additive to preserve normalization)
+    # ML PROBABILITY BOOST
     ml_val = resolve_ml_probability(signal)
-    ml_boost = 1.0
     if ml_val is not None:
         try:
             ml_val = min(max(float(ml_val), 0.0), 1.0)
             ml_boost_min = _env_float("ML_SCORE_BOOST_MIN", 0.8)
             ml_boost_range = _env_float("ML_SCORE_BOOST_RANGE", 0.4)
             ml_boost = ml_boost_min + (ml_val * ml_boost_range)
-            # Apply as additive bonus instead of multiplicative
-            ml_boost_pct = (ml_boost - 1.0) * 100
-            score_raw = score_raw + (score_raw * ml_boost_pct / 100)
-            bonuses_applied.append(f'ml:+{ml_boost_pct:.1f}%')
+            score = score * ml_boost
         except Exception:
             pass
     
-    signal['score_after_ml'] = round(score_raw, 2)
-    
-    # EXCEPTIONAL R/R REWARD (additive to preserve normalization)
+    # EXCEPTIONAL R/R REWARD
     if rr >= 2.5:
-        score_raw = score_raw + (score_raw * 0.20)  # +20%
-        bonuses_applied.append('rr_exceptional:+20%')
+        score = score * 1.20
     elif rr >= 2.0:
-        score_raw = score_raw + (score_raw * 0.15)  # +15%
-        bonuses_applied.append('rr_good:+15%')
+        score = score * 1.15
     
-    # Store all bonus info for transparency
-    signal['bonuses_applied'] = bonuses_applied
-    
-    # Final score - ensure it stays in 0-100 range (normalize if over)
-    score_final = round(min(score_raw, 100.0), 2)
-    signal['score_post_threshold'] = score_final
-    
-    # Return the final normalized score (0-100)
-    return score_final
+    return round(min(score, 100.0), 2)
 
 
 def calculate_signal_score(signal, risk_profile=None, regime=None):
@@ -330,3 +365,22 @@ def historical_winrate_score(signal):
 
 def liquidity_score(signal):
     return float(signal.get("liquidity", 0.5) or 0.5)
+
+
+def score_to_confidence_label(score: float) -> str:
+    """Convert numeric signal score to a display label."""
+    try:
+        score = float(score)
+    except Exception:
+        score = 0.0
+    if score >= 90:
+        return "Very High"
+    if score >= 80:
+        return "High"
+    if score >= 70:
+        return "Above Average"
+    if score >= 60:
+        return "Moderate"
+    if score >= 50:
+        return "Below Average"
+    return "Low"

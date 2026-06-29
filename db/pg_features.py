@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import random
 from datetime import datetime, timedelta, timezone
@@ -11,7 +12,7 @@ def to_naive_utc(dt: datetime) -> datetime:
     return dt
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete
+from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +34,9 @@ from db.models import (
     ManagedAsset,
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
+from db.session import is_transient_db_error
+
+logger = logging.getLogger(__name__)
 
 
 async def ensure_alert_prefs(session: AsyncSession, telegram_user_id: int) -> None:
@@ -180,15 +184,12 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
         if value is None:
             return ""
         if isinstance(value, datetime):
-            dt = value.replace(tzinfo=None) if value.tzinfo else value
-            return dt.isoformat(timespec="seconds")
+            dt = value.astimezone(timezone.utc).replace(tzinfo=None) if value.tzinfo else value
+            return dt.replace(microsecond=0).isoformat()
         try:
             if isinstance(value, (int, float)):
-                if float(value) > 10_000_000_000:
-                    dt = datetime.utcfromtimestamp(float(value) / 1000.0)
-                else:
-                    dt = datetime.utcfromtimestamp(float(value))
-                return dt.replace(microsecond=0).isoformat()
+                seconds = float(value) / 1000.0 if float(value) > 10_000_000_000 else float(value)
+                return datetime.utcfromtimestamp(seconds).replace(microsecond=0).isoformat()
         except Exception:
             pass
         text = str(value).strip()
@@ -202,22 +203,22 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
         except Exception:
             return text
 
-    def _round(v: Any) -> str:
+    def _round(value: Any) -> str:
         try:
-            return f"{float(v):.6f}"
+            return f"{float(value):.6f}"
         except Exception:
-            return str(v)
+            return str(value)
 
     entry: str = _round(signal.get("entry"))
-    sl: str = _round(signal.get("stop_loss") or signal.get("stop"))
-    tp: Any | None = signal.get("take_profit") or signal.get("targets")
-    if isinstance(tp, (list, tuple)):
-        tp_norm: str = ",".join(_round(x) for x in tp)  # type: ignore
+    stop_loss: str = _round(signal.get("stop_loss") or signal.get("stop"))
+    take_profit: Any = signal.get("take_profit") or signal.get("targets")
+    if isinstance(take_profit, (list, tuple)):
+        take_profit_norm: str = ",".join(_round(item.get("price") if isinstance(item, dict) else item) for item in take_profit)
     else:
-        tp_norm: str = _round(tp)
+        take_profit_norm = _round(take_profit)
 
-    strategy_group: str = str(signal.get("strategy_group") or "").lower().strip()
-    strategy_name: str = str(signal.get("strategy_name") or signal.get("strategy") or "").lower().strip()
+    strategy_group: str = str(signal.get("strategy_group") or "").strip().lower()
+    strategy_name: str = str(signal.get("strategy_name") or signal.get("strategy") or "").strip().lower()
     candle_timestamp: str = _normalize_timestamp(
         signal.get("candle_timestamp")
         or signal.get("candle_time")
@@ -225,8 +226,230 @@ def compute_signal_fingerprint(signal: Dict[str, Any]) -> str:
         or signal.get("bar_timestamp")
     )
 
-    raw: str = f"{asset}|{timeframe}|{direction}|{entry}|{sl}|{tp_norm}|{strategy_group}|{strategy_name}|{candle_timestamp}"
+    raw: str = (
+        f"{asset}|{timeframe}|{direction}|{entry}|{stop_loss}|"
+        f"{take_profit_norm}|{strategy_group}|{strategy_name}|{candle_timestamp}"
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:64]
+
+
+async def check_active_signal_exists(
+    session: AsyncSession,
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> bool:
+    """Check if an active signal already exists for this asset/direction/timeframe.
+    
+    Prevents duplicate signal generation for the same trade thesis.
+    Uses Redis lock + DB check for redundancy.
+    """
+    from sqlalchemy import and_, select
+    from db.models import Signal, Outcome
+    
+    asset_upper = str(asset).upper().strip()
+    direction_lower = str(direction).lower().strip()
+    timeframe_lower = str(timeframe).lower().strip()
+    
+    # Check Redis first (fast path)
+    redis_key = f"signal_active:{asset_upper}:{direction_lower}:{timeframe_lower}"
+    try:
+        from core.redis_state import state
+        if state.has_redis_sync():
+            if state.get_str_sync(redis_key):
+                return True
+    except Exception:
+        pass
+    
+    # Check DB for active signal (no outcome yet)
+    try:
+        # First check: any non-expired, non-archived signal
+        stmt = (
+            select(Signal)
+            .where(
+                and_(
+                    Signal.asset == asset_upper,
+                    Signal.direction == direction_lower,
+                    Signal.timeframe == timeframe_lower,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+            )
+            .order_by(Signal.created_at.desc())
+            .limit(1)
+        )
+        result = await session.execute(stmt)
+        signal = result.scalar_one_or_none()
+        
+        if signal is not None:
+            # Check if it has an outcome (resolved trades are OK to overwrite)
+            outcome_stmt = (
+                select(Outcome)
+                .where(Outcome.signal_id == signal.signal_id)
+                .limit(1)
+            )
+            outcome_result = await session.execute(outcome_stmt)
+            outcome = outcome_result.scalar_one_or_none()
+            
+            if outcome is None:
+                # Active signal with no outcome - block duplicate
+                return True
+    except Exception:
+        pass
+    
+    return False
+
+
+async def acquire_signal_lock(
+    asset: str,
+    direction: str,
+    timeframe: str,
+    ttl_seconds: int = 14400,  # 4 hours default
+) -> bool:
+    """Acquire Redis lock for signal generation.
+    
+    Prevents race conditions when multiple engine cycles
+    try to generate signals for the same asset.
+    
+    Key format: signal_lock:{ASSET}:{DIRECTION}:{TIMEFRAME}
+    TTL: 4 hours (configurable)
+    """
+    redis_key = f"signal_lock:{asset.upper()}:{direction.lower()}:{timeframe.lower()}"
+    
+    try:
+        from core.redis_state import state
+        if state.has_redis_sync():
+            # Try to acquire lock (atomic set if not exists)
+            existing = state.get_str_sync(redis_key)
+            if existing:
+                # Lock already held
+                return False
+            # Acquire lock
+            state.set_str_sync(redis_key, "1", ex=ttl_seconds)
+            return True
+    except Exception:
+        pass
+    
+    return True  # Allow if Redis unavailable
+
+
+async def release_signal_lock(
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> None:
+    """Release Redis lock after signal generation."""
+    redis_key = f"signal_lock:{asset.upper()}:{direction.lower()}:{timeframe.lower()}"
+    
+    try:
+        from core.redis_state import state
+        if state.has_redis_sync():
+            state.delete_sync(redis_key)
+    except Exception:
+        pass
+
+
+# Delivery cooldown TTL by tier (in seconds)
+DELIVERY_COOLDOWN_TTL = {
+    "vip": 4 * 3600,      # 4 hours
+    "premium": 6 * 3600,   # 6 hours  
+    "free": 12 * 3600,     # 12 hours
+}
+
+
+def check_delivery_cooldown(
+    user_id: int,
+    asset: str,
+    direction: str,
+) -> bool:
+    """Check if user is in delivery cooldown for this asset/direction.
+    
+    Returns True if cooldown active (should skip delivery).
+    Key format: delivery:{USER_ID}:{ASSET}:{DIRECTION}
+    TTL: VIP=4h, Premium=6h, Free=12h
+    """
+    from core.redis_state import state
+    
+    uid = int(user_id)
+    asset = str(asset).upper().strip()
+    direction = str(direction).lower().strip()
+    
+    # Get user tier for TTL lookup
+    tier_name: str = "free"
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        tier_name = resolve_user_tier(uid).lower()
+    except Exception:
+        tier_name = "free"
+    
+    ttl = DELIVERY_COOLDOWN_TTL.get(tier_name, DELIVERY_COOLDOWN_TTL["free"])
+    redis_key = f"delivery:{uid}:{asset}:{direction}"
+    
+    try:
+        if state.has_redis_sync():
+            if state.get_str_sync(redis_key):
+                return True  # Cooldown active
+    except Exception:
+        pass
+    
+    return False
+
+
+def set_delivery_cooldown(
+    user_id: int,
+    asset: str,
+    direction: str,
+) -> None:
+    """Set delivery cooldown for user/asset/direction."""
+    from core.redis_state import state
+    
+    uid = int(user_id)
+    asset = str(asset).upper().strip()
+    direction = str(direction).lower().strip()
+    
+    # Get user tier for TTL lookup
+    tier_name: str = "free"
+    try:
+        from signalrank_telegram.access import resolve_user_tier
+        tier_name = resolve_user_tier(uid).lower()
+    except Exception:
+        tier_name = "free"
+    
+    ttl = DELIVERY_COOLDOWN_TTL.get(tier_name, DELIVERY_COOLDOWN_TTL["free"])
+    redis_key = f"delivery:{uid}:{asset}:{direction}"
+    
+    try:
+        if state.has_redis_sync():
+            state.set_str_sync(redis_key, "1", ex=ttl)
+    except Exception:
+        pass
+
+
+def _get_signal_with_retry(
+    session: AsyncSession,
+    signal: Dict[str, Any],
+    dedup_hours: int | None = None,
+) -> Signal:
+    """Synchronous wrapper to handle get_or_create_signal with retry logic for DB connection issues.
+    
+    This wraps the async signal creation logic to add retry capability when
+    TooManyConnectionsError or other transient DB errors occur.
+    """
+    import asyncio
+    
+    async def _create_signal() -> Signal:
+        return await get_or_create_signal_impl(session, signal, dedup_hours)
+    
+    # Use run_with_db_retry for transient DB error handling
+    # This is already imported from db.session
+    try:
+        from db.session import run_with_db_retry
+        return asyncio.get_event_loop().run_until_complete(
+            run_with_db_retry(_create_signal, retries=3)
+        )
+    except Exception:
+        # Fallback: try directly if retry not available
+        return asyncio.get_event_loop().run_until_complete(_create_signal())
 
 
 async def get_or_create_signal(
@@ -234,6 +457,62 @@ async def get_or_create_signal(
     signal: Dict[str, Any],
     dedup_hours: int | None = None,
 ) -> Signal:
+    """Get or create a signal with retry logic for transient DB errors.
+    
+    This is the public API that wraps the implementation with retry handling.
+    """
+    return await get_or_create_signal_impl(session, signal, dedup_hours)
+
+
+async def active_signal_exists(
+    session: AsyncSession,
+    asset: str,
+    direction: str,
+    timeframe: str,
+) -> bool:
+    """Check if an active signal already exists for this asset/direction/timeframe.
+    
+    This prevents creating duplicate signals for the same trading opportunity.
+    Used before generating new signals.
+    
+    Returns True if an active (non-expired, non-archived) signal exists.
+    """
+    asset_normalized = str(asset or "").upper().strip()[:32]
+    direction_normalized = str(direction or "long").lower().strip()[:8]
+    timeframe_normalized = str(timeframe or "1h").lower().strip()[:8]
+    
+    try:
+        # Check for non-expired, non-archived signals with same asset/direction/timeframe
+        result = await session.execute(
+            select(Signal.signal_id).where(
+                and_(
+                    Signal.asset == asset_normalized,
+                    Signal.direction == direction_normalized,
+                    Signal.timeframe == timeframe_normalized,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
+                )
+            ).limit(1)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            logger.info(
+                f"[active_signal_exists] Found active signal for {asset_normalized} "
+                f"{direction_normalized} {timeframe_normalized}"
+            )
+            return True
+        return False
+    except Exception as e:
+        logger.debug(f"[active_signal_exists] Check failed: {e}")
+        return False
+
+
+async def get_or_create_signal_impl(
+    session: AsyncSession,
+    signal: Dict[str, Any],
+    dedup_hours: int | None = None,
+) -> Signal:
+    """Actual implementation of get_or_create_signal (without wrapper retry logic)."""
     now: datetime = _utcnow().replace(tzinfo=None)
     try:
         if dedup_hours is None:
@@ -289,7 +568,12 @@ async def get_or_create_signal(
         default=2.0,
         env_names=("SIGNAL_MIN_INTERVAL_HOURS", "SIGNAL_MIN_INTERVAL"),
     )
-    price_buffer_pct: float = max(0.0, _env_float("SIGNAL_PRICE_BUFFER_PCT", 0.5))
+# FIXED: Increased buffer from 0.5% to 2.0% to prevent duplicate signals
+    # from being created when live price fluctuates slightly between engine cycles.
+    # This prevents the "same signal sent 3 times" issue where slight price
+    # differences (due to floating point or live price changes) cause
+    # different fingerprints to be generated.
+    price_buffer_pct: float = max(0.0, _env_float("SIGNAL_PRICE_BUFFER_PCT", 2.0))
 
     active_signal_id: str | None = None
     try:
@@ -318,7 +602,11 @@ async def get_or_create_signal(
                 select(Signal).where(
                     and_(
                         Signal.asset == asset,
+                        Signal.timeframe == timeframe,
+                        Signal.direction == direction,
                         Signal.created_at >= min_interval_cutoff,
+                        Signal.expired.is_(False),
+                        Signal.archived.is_(False),
                     )
                 ).order_by(Signal.created_at.desc())
             )
@@ -389,10 +677,17 @@ async def get_or_create_signal(
         }
     )
 
+    # Resolve expires_at before the dedupe update path so reused active
+    # signals keep the latest validity window.
+    _raw_expires = signal.get('expires_at')
+    if isinstance(_raw_expires, datetime):
+        signal_expires_at: datetime | None = _raw_expires.replace(tzinfo=None) if _raw_expires.tzinfo else _raw_expires
+    else:
+        signal_expires_at = now + timedelta(hours=12)
 
     existing: Signal | None = None
-    # Strict deduplication: match by fingerprint AND all key fields
-    # (asset, timeframe, direction, entry, stop_loss, take_profit, strategy_group, strategy_name).
+    # Thesis-level deduplication: match by the canonical fingerprint and active state.
+    # Price targets are intentionally excluded because they drift on every scan.
     # When dedup_hours=0, skip dedupe and always insert a new signal row.
     if cutoff is not None:
         res: Result[Tuple[Signal]] = await session.execute(
@@ -402,28 +697,42 @@ async def get_or_create_signal(
                     Signal.asset == asset,
                     Signal.timeframe == timeframe,
                     Signal.direction == direction,
-                    Signal.entry == entry,
-                    Signal.stop_loss == stop_loss,
-                    Signal.take_profit == tp_str,
                     Signal.strategy_group == strategy_group,
-                    Signal.strategy_name == strategy_name,
-                    Signal.created_at >= cutoff
+                    Signal.created_at >= cutoff,
+                    Signal.expired.is_(False),
+                    Signal.archived.is_(False),
                 )
-            )
+            ).order_by(Signal.created_at.desc())
         )
-        existing = res.scalars().first()
+        for candidate in res.scalars().all():
+            outcome_res: Result[Tuple[Outcome]] = await session.execute(
+                select(Outcome)
+                .where(Outcome.signal_id == candidate.signal_id)
+                .limit(1)
+            )
+            outcome = outcome_res.scalar_one_or_none()
+            if outcome is None or str(getattr(outcome, "status", "") or "").lower() in {"active", "tp1", "tp2"}:
+                existing = candidate
+                break
     if existing is not None:
-        # Best-effort update score/strength (keep newest info)
+        # Best-effort update score/strength and improve message freshness without
+        # creating a new signal row for the same trade thesis.
         try:
             existing.score = max(float(existing.score or 0), float(score or 0))
             existing.strength = max(float(existing.strength or 0), float(strength or 0))
+            existing.entry = float(entry)
+            existing.stop_loss = float(stop_loss)
+            existing.take_profit = tp_str
+            existing.strategy_name = strategy_name
+            existing.expires_at = signal_expires_at
+            existing.status = "active"
         except Exception:
             pass
         await session.flush()
         # Debug log for dedup hit
         try:
             import logging
-            logging.getLogger(__name__).info(f"[dedup] Existing signal found: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
+            logging.getLogger(__name__).info(f"[dedup] Existing active thesis found: asset={asset} tf={timeframe} dir={direction} strat={strategy_group} fp={fingerprint} signal_id={existing.signal_id}")
         except Exception:
             pass
         return existing
@@ -434,13 +743,6 @@ async def get_or_create_signal(
         logging.getLogger(__name__).info(f"[dedup] Creating new signal: asset={asset} tf={timeframe} dir={direction} entry={entry} sl={stop_loss} tp={tp_str} strat={strategy_group}/{strategy_name} fp={fingerprint}")
     except Exception:
         pass
-
-    # Resolve expires_at: honour engine-set value (12h) or fall back to 12h from now
-    _raw_expires = signal.get('expires_at')
-    if isinstance(_raw_expires, datetime):
-        signal_expires_at: datetime | None = _raw_expires.replace(tzinfo=None) if _raw_expires.tzinfo else _raw_expires
-    else:
-        signal_expires_at = now + timedelta(hours=12)
 
     signal_near_ob: bool = bool(signal.get('is_near_order_block', False))
 
@@ -461,6 +763,7 @@ async def get_or_create_signal(
             strategy_group=strategy_group,
             strength=strength,
             fingerprint=fingerprint,
+            status="active",
             created_at=now,
             expires_at=signal_expires_at,
             is_near_order_block=signal_near_ob,
@@ -481,6 +784,7 @@ async def get_or_create_signal(
             strategy_group=strategy_group,
             strength=strength,
             fingerprint=fingerprint,
+            status="active",
             created_at=now,
         )
     session.add(s)
@@ -549,10 +853,21 @@ async def record_signal_delivery(
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
+                _tier_cooldown_defaults = {
+                    "vip": 4.0,
+                    "admin": 4.0,
+                    "owner": 4.0,
+                    "premium": 6.0,
+                    "free": 12.0,
+                }
                 try:
-                    asset_cooldown_hours = float((os.getenv("DELIVERY_SAME_ASSET_COOLDOWN_HOURS") or "12").strip())
+                    _cooldown_raw = os.getenv("DELIVERY_SAME_ASSET_COOLDOWN_HOURS")
+                    asset_cooldown_hours = float(
+                        (_cooldown_raw.strip() if _cooldown_raw else "")
+                        or _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
+                    )
                 except Exception:
-                    asset_cooldown_hours = 12.0
+                    asset_cooldown_hours = _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
 
                 def _tier_rank(_t: str | None) -> int:
                     _base = str(_t or "free").split("_", 1)[0].strip().lower()
@@ -565,8 +880,8 @@ async def record_signal_delivery(
                     }
                     return int(ranks.get(_base, 0))
 
-                # Same-asset gate:
-                # Block new delivery for this user+asset if previous asset delivery is
+                # Same-asset+direction gate:
+                # Block new delivery for this user+asset+direction if previous delivery is
                 #   (a) younger than cooldown OR
                 #   (b) still has no resolved outcome.
                 # Exception: allow first post-upgrade send when tier rank increased.
@@ -584,6 +899,7 @@ async def record_signal_delivery(
                         .where(
                             SignalDelivery.user_id == user.id,
                             Signal.asset == sig.asset,
+                            Signal.direction == sig.direction,
                         )
                         .order_by(SignalDelivery.delivered_at.desc())
                         .limit(1)
@@ -620,7 +936,7 @@ async def record_signal_delivery(
                             import logging
                             logging.getLogger(__name__).info(
                                 f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
-                                f"age_h={age_hours:.2f} resolved={is_resolved} "
+                                f"direction={sig.direction} age_h={age_hours:.2f} resolved={is_resolved} "
                                 f"cooldown_h={float(asset_cooldown_hours):.2f} unresolved_block_h={float(unresolved_block_hours):.2f}"
                             )
                         except Exception:
@@ -653,7 +969,8 @@ async def record_signal_delivery(
                             pass
                         return False
 
-                # Strict deduplication: match by user, asset, entry, stop_loss, take_profit, timeframe, direction, strategy_group, strategy_name
+                # Thesis delivery dedupe: regenerated signal ids and tiny price
+                # changes should not reach the same user as a new signal.
                 res_u: Result[Tuple[int]] = await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
@@ -661,13 +978,10 @@ async def record_signal_delivery(
                     .where(
                         SignalDelivery.user_id == user.id,
                         Signal.asset == sig.asset,
-                        Signal.entry == sig.entry,
-                        Signal.stop_loss == sig.stop_loss,
-                        Signal.take_profit == sig.take_profit,
                         Signal.timeframe == sig.timeframe,
                         Signal.direction == sig.direction,
                         Signal.strategy_group == sig.strategy_group,
-                        Signal.strategy_name == sig.strategy_name,
+                        Signal.fingerprint == sig.fingerprint,
                         SignalDelivery.delivered_at >= cutoff,
                     )
                 )
@@ -675,7 +989,7 @@ async def record_signal_delivery(
                     # Debug log for dedup hit
                     try:
                         import logging
-                        logging.getLogger(__name__).info(f"[dedup] Existing delivery found: user={user.id} asset={sig.asset} tf={sig.timeframe} dir={sig.direction} entry={sig.entry} sl={sig.stop_loss} tp={sig.take_profit} strat={sig.strategy_group}/{sig.strategy_name}")
+                        logging.getLogger(__name__).info(f"[dedup] Existing thesis delivery found: user={user.id} asset={sig.asset} tf={sig.timeframe} dir={sig.direction} strat={sig.strategy_group} fp={sig.fingerprint}")
                     except Exception:
                         pass
                     return False
@@ -1800,7 +2114,12 @@ async def list_unresolved_signals_for_user(
     telegram_user_id: int,
     lookback_days: int = 1,
 ) -> list[Signal]:
-    """Return unresolved signals delivered to this user in the configured lookback window."""
+    """Return unresolved signals delivered to this user in the configured lookback window.
+    
+    FIX: Removed sent_ok filter - signals can exist without successful delivery
+    (network errors, user blocked bot, etc). We show ALL delivered signals
+    to fix "no signals found" bug when signals actually exist.
+    """
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
@@ -1809,16 +2128,54 @@ async def list_unresolved_signals_for_user(
     cutoff_days = max(1, int(lookback_days or 1))
     cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
 
+    # CRITICAL FIX: Remove sent_ok filter - was causing "no signals despite trades exist" bug
+    # Show ALL delivered signals regardless of delivery success status
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
         .where(
             SignalDelivery.user_id == user.id,
-            SignalDelivery.sent_ok.is_(True),
+            # REMOVED: SignalDelivery.sent_ok.is_(True) - was filtering out valid signals
             Signal.archived == False,
             Signal.expired == False,
             Signal.created_at >= cutoff,
             ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
+        )
+        .order_by(SignalDelivery.delivered_at.desc())
+    )
+    res2: Result[Tuple[Signal]] = await session.execute(q)
+    return list(res2.scalars().all())
+
+
+async def list_recent_signals_for_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+    lookback_days: int = 30,
+) -> list[Signal]:
+    """Return ALL signals delivered to this user in the lookback window, including resolved/invalidated ones.
+    
+    FIX for /signals command - fetches all signals regardless of:
+    - sent_ok status (shows signals even if delivery marking failed)
+    - outcome status (shows invalidated/missed signals too)
+    
+    This ensures users see all their signals, not just the ones that appear "active".
+    """
+    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
+    user: User | None = res.scalar_one_or_none()
+    if user is None:
+        return []
+
+    cutoff_days = max(1, int(lookback_days or 30))
+    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
+
+    # BROAD query: Include ALL delivered signals, regardless of sent_ok or outcome
+    q: Select[Tuple[Signal]] = (
+        select(Signal)
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .where(
+            SignalDelivery.user_id == user.id,
+            Signal.archived == False,
+            Signal.created_at >= cutoff,
         )
         .order_by(SignalDelivery.delivered_at.desc())
     )
@@ -2396,3 +2753,177 @@ async def update_managed_asset_last_analyzed(
         .where(ManagedAsset.symbol.in_(normalized))
         .values(last_analyzed_at=datetime.utcnow())
     )
+
+
+# ============================================================================
+# PHASE 2: Regime-Specific Strategy Performance Queries
+# ============================================================================
+
+async def get_strategy_performance_by_regime(
+    session: AsyncSession,
+    strategy_name: str,
+    regime: str,
+) -> Dict[str, Any]:
+    """
+    Query strategy performance filtered by regime only.
+    
+    PHASE 2 FEATURE: Aggregates all outcomes for a strategy across all assets/timeframes,
+    filtered by market regime. Returns performance metrics for ML weighting calculations.
+    
+    Args:
+        session: AsyncSession for database queries
+        strategy_name: Strategy name (e.g., "rsi", "supertrend")
+        regime: Market regime ("TRENDING", "RANGING", "VOLATILE")
+    
+    Returns:
+    {
+        "trades": int,                    # Total trades
+        "win_rate": 0.0-1.0,              # Percentage of winning trades
+        "avg_rr": float,                  # Average risk/reward ratio
+        "expectancy": float,              # Average profit per trade
+        "confidence_interval": float,     # Bayesian credibility 0.0-1.0
+    }
+    """
+    # Query outcomes where the associated signal has matching strategy_name and regime
+    query = (
+        select(
+            func.count(Outcome.id).label('total'),
+            func.sum(case((Outcome.status == 'win', 1), else_=0)).label('wins'),
+            func.sum(case((Outcome.status == 'loss', 1), else_=0)).label('losses'),
+            func.avg(case((Outcome.status == 'win', Outcome.pnl_pct), else_=None)).label('avg_win_pct'),
+            func.avg(case((Outcome.status == 'loss', Outcome.pnl_pct), else_=None)).label('avg_loss_pct'),
+        )
+        .join(Signal, Outcome.signal_id == Signal.signal_id)
+        .where(
+            and_(
+                Signal.strategy_name == strategy_name,
+                Outcome.regime == regime,
+            )
+        )
+    )
+    
+    try:
+        result = await session.execute(query)
+        row = result.one_or_none()
+        
+        if not row or row.total == 0:
+            return {
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_rr": 0.0,
+                "expectancy": 0.0,
+                "confidence_interval": 0.0,
+            }
+        
+        total = row.total or 0
+        wins = row.wins or 0
+        losses = row.losses or 0
+        avg_win = float(row.avg_win_pct or 0.0)
+        avg_loss = abs(float(row.avg_loss_pct or 0.0))
+        
+        win_rate = wins / total if total > 0 else 0.0
+        avg_rr = avg_win / avg_loss if avg_loss > 0 else 0.0
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        
+        # Bayesian credibility: min(trades / 100, 1.0)
+        # 100 trades = full credibility, fewer trades = proportionally lower
+        confidence = min(total / 100.0, 1.0)
+        
+        return {
+            "trades": int(total),
+            "win_rate": float(win_rate),
+            "avg_rr": float(avg_rr),
+            "expectancy": float(expectancy),
+            "confidence_interval": float(confidence),
+        }
+    
+    except Exception as e:
+        logger.debug(f"[get_strategy_performance_by_regime] Query failed: {e}")
+        return {
+            "trades": 0,
+            "win_rate": 0.0,
+            "avg_rr": 0.0,
+            "expectancy": 0.0,
+            "confidence_interval": 0.0,
+        }
+
+
+async def get_asset_class_strategy_performance(
+    session: AsyncSession,
+    strategy_name: str,
+    asset_class: str,
+    regime: str,
+) -> Dict[str, Any]:
+    """
+    Query strategy performance for a specific asset class + regime combination.
+    
+    PHASE 2 FEATURE: Returns performance specific to one asset class in one regime.
+    Useful for understanding if a strategy works well for crypto but not forex, etc.
+    
+    Args:
+        session: AsyncSession for database queries
+        strategy_name: Strategy name
+        asset_class: "crypto", "forex", "stock", "commodity"
+        regime: "TRENDING", "RANGING", "VOLATILE"
+    
+    Returns: Same as get_strategy_performance_by_regime()
+    """
+    query = (
+        select(
+            func.count(Outcome.id).label('total'),
+            func.sum(case((Outcome.status == 'win', 1), else_=0)).label('wins'),
+            func.sum(case((Outcome.status == 'loss', 1), else_=0)).label('losses'),
+            func.avg(case((Outcome.status == 'win', Outcome.pnl_pct), else_=None)).label('avg_win_pct'),
+            func.avg(case((Outcome.status == 'loss', Outcome.pnl_pct), else_=None)).label('avg_loss_pct'),
+        )
+        .join(Signal, Outcome.signal_id == Signal.signal_id)
+        .where(
+            and_(
+                Signal.strategy_name == strategy_name,
+                Outcome.asset_class == asset_class,
+                Outcome.regime == regime,
+            )
+        )
+    )
+    
+    try:
+        result = await session.execute(query)
+        row = result.one_or_none()
+        
+        if not row or row.total == 0:
+            return {
+                "trades": 0,
+                "win_rate": 0.0,
+                "avg_rr": 0.0,
+                "expectancy": 0.0,
+                "confidence_interval": 0.0,
+            }
+        
+        total = row.total or 0
+        wins = row.wins or 0
+        losses = row.losses or 0
+        avg_win = float(row.avg_win_pct or 0.0)
+        avg_loss = abs(float(row.avg_loss_pct or 0.0))
+        
+        win_rate = wins / total if total > 0 else 0.0
+        avg_rr = avg_win / avg_loss if avg_loss > 0 else 0.0
+        expectancy = (win_rate * avg_win) - ((1 - win_rate) * avg_loss)
+        confidence = min(total / 100.0, 1.0)
+        
+        return {
+            "trades": int(total),
+            "win_rate": float(win_rate),
+            "avg_rr": float(avg_rr),
+            "expectancy": float(expectancy),
+            "confidence_interval": float(confidence),
+        }
+    
+    except Exception as e:
+        logger.debug(f"[get_asset_class_strategy_performance] Query failed: {e}")
+        return {
+            "trades": 0,
+            "win_rate": 0.0,
+            "avg_rr": 0.0,
+            "expectancy": 0.0,
+            "confidence_interval": 0.0,
+        }

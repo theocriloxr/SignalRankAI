@@ -57,6 +57,89 @@ except Exception:
     async def fetch_news_headlines(asset: str, limit: int = 5) -> List[Dict[str, Any]]:
         return []
 
+STRONG_SENTIMENT_THRESHOLD = float(os.getenv("GEMINI_SENTIMENT_THRESHOLD", "2.0") or 2.0)
+
+
+def _get_client():
+    """Return the configured Gemini client, if available."""
+    return client if GEMINI_API_KEY and client is not None else None
+
+
+def gemini_available() -> bool:
+    """Return True when Gemini is configured and importable."""
+    return _get_client() is not None
+
+
+async def _call_gemini(prompt: str, max_tokens: int = 512) -> Optional[str]:
+    """Call Gemini and return response text; None means unavailable/failed."""
+    active_client = _get_client()
+    if active_client is None:
+        return None
+    try:
+        response = await asyncio.to_thread(
+            active_client.models.generate_content,
+            model=MODEL_ID,
+            contents=prompt,
+        )
+        text = str(getattr(response, "text", "") or "").strip()
+        return text or None
+    except Exception as exc:
+        logger.debug("[GeminiValidator] _call_gemini failed: %s", exc)
+        return None
+
+
+async def quantize_news_sentiment(asset: str, headlines: List[str]) -> float:
+    """Convert news sentiment into a numeric score from -3.0 to 3.0."""
+    if not gemini_available() or not headlines:
+        return 0.0
+    headlines_text = "\n".join(f"- {h}" for h in headlines[:8])
+    response = await _call_gemini(
+        f"Rate the overall news sentiment for {asset} from -3 to +3.\n\n"
+        f"Headlines:\n{headlines_text}\n\nReply with only the number.",
+        max_tokens=10,
+    )
+    if not response:
+        return 0.0
+    try:
+        return max(-3.0, min(3.0, float(response.strip().replace("+", ""))))
+    except Exception:
+        return 0.0
+
+
+async def ask_gemini_signal_explanation(signal: dict) -> Optional[str]:
+    """Generate a short plain-English explanation for a signal."""
+    if not gemini_available():
+        return None
+    prompt = (
+        "Explain this trading signal in 2-4 concise sentences. Include why now, "
+        "what confirms it, and what invalidates it.\n\n"
+        f"Signal: {signal}"
+    )
+    return await _call_gemini(prompt, max_tokens=300)
+
+
+async def ask_gemini_custom_question(question: str, context: Optional[dict] = None) -> Optional[str]:
+    """Answer an operator-supplied Gemini question with optional context."""
+    if not gemini_available():
+        return None
+    prompt = f"Question: {question}\n\nContext: {context or {}}"
+    return await _call_gemini(prompt, max_tokens=500)
+
+
+async def analyze_market_regime(asset: str, market_data: dict) -> dict:
+    """Ask Gemini for market-regime context, falling back to neutral."""
+    fallback = {"regime": "NEUTRAL", "confidence": 0.0, "reason": "gemini_unavailable"}
+    if not gemini_available():
+        return fallback
+    prompt = (
+        f"Classify the current market regime for {asset}. Reply with a short JSON-like "
+        f"summary containing regime, confidence, and reason.\n\nData: {market_data}"
+    )
+    response = await _call_gemini(prompt, max_tokens=250)
+    if not response:
+        return fallback
+    return {"regime": "AI_REVIEWED", "confidence": 0.5, "reason": response[:500]}
+
 
 async def get_news_sentiment(asset: str, headlines: list) -> str:
     """
@@ -666,6 +749,58 @@ except Exception as e:
     # Default to allowing if check fails
     pass
 """
+
+
+async def audit_recent(session, limit: int = 50) -> Dict[str, Any]:
+    """Return recent loss and ML-rejection rows for admin/Gemini audits."""
+    try:
+        from sqlalchemy import desc, select
+        from db.models import MLRejectedSignal, Outcome
+
+        row_limit = max(1, min(500, int(limit or 50)))
+        loss_stmt = (
+            select(Outcome)
+            .where(Outcome.status.in_(["sl", "loss"]))
+            .order_by(desc(Outcome.closed_at), desc(Outcome.id))
+            .limit(row_limit)
+        )
+        rejection_stmt = (
+            select(MLRejectedSignal)
+            .order_by(desc(MLRejectedSignal.created_at), desc(MLRejectedSignal.id))
+            .limit(row_limit)
+        )
+
+        losses = (await session.execute(loss_stmt)).scalars().all()
+        rejections = (await session.execute(rejection_stmt)).scalars().all()
+
+        def _row(obj: Any, fields: tuple[str, ...]) -> Dict[str, Any]:
+            return {field: getattr(obj, field, None) for field in fields}
+
+        return {
+            "ok": True,
+            "recent_losses": [
+                _row(row, ("signal_id", "status", "r_multiple", "percent", "closed_at", "meta"))
+                for row in losses
+            ],
+            "recent_rejections": [
+                _row(
+                    row,
+                    (
+                        "signal_id",
+                        "asset",
+                        "timeframe",
+                        "direction",
+                        "ml_probability",
+                        "rejection_reason",
+                        "created_at",
+                    ),
+                )
+                for row in rejections
+            ],
+        }
+    except Exception as exc:
+        logger.debug("[GeminiValidator] audit_recent failed: %s", exc)
+        return {"ok": False, "error": str(exc), "recent_losses": [], "recent_rejections": []}
 
 
 if __name__ == "__main__":

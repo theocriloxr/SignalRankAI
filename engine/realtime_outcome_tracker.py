@@ -27,6 +27,203 @@ from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+ENTRY_ZONE_PCT = float(os.getenv("ENTRY_ZONE_PCT", "0.003"))
+BE_BUFFER_PCT = float(os.getenv("BE_BUFFER_PCT", "0.001"))
+TICK_INTERVAL = float(os.getenv("TICK_INTERVAL_SECONDS", "30.0"))
+
+
+class SignalState:
+    PENDING = "PENDING"
+    ENTRY_FILLED = "ENTRY_FILLED"
+    PARTIAL_TP1 = "PARTIAL_TP1"
+    PARTIAL_TP2 = "PARTIAL_TP2"
+    CLOSED_TP3 = "CLOSED_TP3"
+    CLOSED_SL = "CLOSED_SL"
+    EXPIRED = "EXPIRED"
+    INVALIDATED = "INVALIDATED"
+
+    TERMINAL = {CLOSED_TP3, CLOSED_SL, EXPIRED, INVALIDATED}
+
+
+class TrackedSignal:
+    """Compact state-machine representation used by tick-level outcome tests."""
+
+    __slots__ = (
+        "signal_id",
+        "asset",
+        "direction",
+        "entry",
+        "stop_loss",
+        "tp_levels",
+        "timeframe",
+        "state",
+        "sl_current",
+        "highest_tp_hit",
+        "entry_filled_at",
+        "created_at",
+        "expires_at",
+    )
+
+    def __init__(self, row: Any) -> None:
+        self.signal_id = str(getattr(row, "signal_id", "") or "")
+        self.asset = str(getattr(row, "asset", "") or "").upper().strip()
+        self.direction = str(getattr(row, "direction", "long") or "long").lower()
+        self.entry = float(getattr(row, "entry", 0) or 0)
+        self.stop_loss = float(getattr(row, "stop_loss", 0) or 0)
+        self.timeframe = str(getattr(row, "timeframe", "1h") or "1h").lower()
+        self.created_at = getattr(row, "created_at", None)
+        self.expires_at = getattr(row, "expires_at", None)
+        self.state = SignalState.PENDING
+        self.sl_current = self.stop_loss
+        self.highest_tp_hit = 0
+        self.entry_filled_at = None
+        self.tp_levels = _parse_tp_levels(getattr(row, "take_profit", None))
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.state in SignalState.TERMINAL
+
+    @property
+    def is_long(self) -> bool:
+        return self.direction == "long"
+
+
+def evaluate_tick(signal: TrackedSignal, price: float) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Evaluate one live tick against a tracked signal's linear lifecycle."""
+    if signal.is_terminal:
+        return None, None
+
+    now = datetime.now(timezone.utc)
+    if signal.expires_at and signal.state == SignalState.PENDING:
+        try:
+            expires_at = signal.expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if now >= expires_at:
+                return SignalState.EXPIRED, {"expired_at": now.isoformat()}
+        except Exception:
+            pass
+
+    try:
+        p = float(price)
+    except Exception:
+        return None, None
+    if p <= 0 or signal.entry <= 0:
+        return None, None
+
+    if signal.state == SignalState.PENDING:
+        entry_tolerance = signal.entry * ENTRY_ZONE_PCT
+        price_at_entry = abs(p - signal.entry) <= entry_tolerance
+        if signal.is_long and p <= signal.sl_current:
+            return SignalState.INVALIDATED, {"price": p, "reason": "SL hit before entry"}
+        if not signal.is_long and p >= signal.sl_current:
+            return SignalState.INVALIDATED, {"price": p, "reason": "SL hit before entry"}
+        if price_at_entry or (signal.is_long and p <= signal.entry) or (not signal.is_long and p >= signal.entry):
+            signal.entry_filled_at = now
+            return SignalState.ENTRY_FILLED, {"fill_price": p, "filled_at": now.isoformat()}
+        return None, None
+
+    if signal.is_long and p <= signal.sl_current:
+        return SignalState.CLOSED_SL, {
+            "exit_price": p,
+            "sl_level": signal.sl_current,
+            "highest_tp_hit": signal.highest_tp_hit,
+            "break_even_stop": signal.sl_current > signal.stop_loss,
+        }
+    if not signal.is_long and p >= signal.sl_current:
+        return SignalState.CLOSED_SL, {
+            "exit_price": p,
+            "sl_level": signal.sl_current,
+            "highest_tp_hit": signal.highest_tp_hit,
+            "break_even_stop": signal.sl_current < signal.stop_loss,
+        }
+
+    for idx in range(signal.highest_tp_hit, len(signal.tp_levels)):
+        tp_price = float(signal.tp_levels[idx])
+        tp_hit = (signal.is_long and p >= tp_price) or (not signal.is_long and p <= tp_price)
+        if not tp_hit:
+            break
+
+        tp_number = idx + 1
+        signal.highest_tp_hit = tp_number
+        if tp_number == 1:
+            if signal.is_long:
+                signal.sl_current = max(signal.sl_current, signal.entry * (1 + BE_BUFFER_PCT))
+            else:
+                signal.sl_current = min(signal.sl_current, signal.entry * (1 - BE_BUFFER_PCT))
+            return SignalState.PARTIAL_TP1, {
+                "tp_number": 1,
+                "tp_price": tp_price,
+                "exit_price": p,
+                "sl_moved_to_be": signal.sl_current,
+            }
+        if tp_number == 2:
+            return SignalState.PARTIAL_TP2, {
+                "tp_number": 2,
+                "tp_price": tp_price,
+                "exit_price": p,
+                "remaining_stop": signal.sl_current,
+            }
+        return SignalState.CLOSED_TP3, {
+            "tp_number": tp_number,
+            "tp_price": tp_price,
+            "exit_price": p,
+            "full_close": True,
+        }
+
+    return None, None
+
+
+def state_to_db_outcome(state: str, highest_tp_hit: int) -> str:
+    if state == SignalState.CLOSED_TP3:
+        return "tp3" if highest_tp_hit >= 3 else ("tp2" if highest_tp_hit == 2 else "tp1")
+    if state == SignalState.CLOSED_SL:
+        return "sl"
+    if state == SignalState.EXPIRED:
+        return "expired"
+    if state == SignalState.INVALIDATED:
+        return "invalidated"
+    if state == SignalState.PARTIAL_TP1:
+        return "tp1"
+    if state == SignalState.PARTIAL_TP2:
+        return "tp2"
+    return "unknown"
+
+
+async def _write_outcome_to_db(signal: TrackedSignal, new_state: str, transition: dict) -> None:
+    """Persist a state-machine transition through the existing outcome writer."""
+    exit_price = float(
+        transition.get("exit_price")
+        or transition.get("tp_price")
+        or transition.get("fill_price")
+        or signal.entry
+    )
+    status = state_to_db_outcome(new_state, signal.highest_tp_hit)
+    if status not in {"unknown", "tp1", "tp2"}:
+        await _persist_outcome(signal.signal_id, status, signal.entry, exit_price)
+
+
+async def _broadcast_state_change(signal: TrackedSignal, new_state: str, transition: dict) -> None:
+    """Broadcast state changes by delegating to the target tracker's notifier."""
+    status = state_to_db_outcome(new_state, signal.highest_tp_hit)
+    if status == "unknown":
+        return
+    signal_dict = {
+        "signal_id": signal.signal_id,
+        "asset": signal.asset,
+        "direction": signal.direction,
+        "entry": signal.entry,
+        "stop_loss": signal.stop_loss,
+        "timeframe": signal.timeframe,
+    }
+    price = float(
+        transition.get("exit_price")
+        or transition.get("tp_price")
+        or transition.get("fill_price")
+        or signal.entry
+    )
+    await _notify_outcome(signal_dict, status, price)
+
 
 def _check_interval() -> int:
     try:
@@ -155,17 +352,30 @@ async def _get_live_price(symbol: str) -> Optional[float]:
 
 def _parse_tp_levels(take_profit_raw: Any) -> List[float]:
     """Parse take_profit field which may be a JSON list, comma string, or float."""
+    def _coerce_tp(value: Any) -> Optional[float]:
+        try:
+            if isinstance(value, dict):
+                value = value.get("price") or value.get("tp") or value.get("target") or value.get("value")
+            if value in (None, ""):
+                return None
+            parsed = float(value)
+            return parsed if parsed > 0 else None
+        except Exception:
+            return None
+
     if isinstance(take_profit_raw, list):
-        return [float(x) for x in take_profit_raw if x]
+        return [v for v in (_coerce_tp(x) for x in take_profit_raw) if v is not None]
     if isinstance(take_profit_raw, (int, float)):
-        return [float(take_profit_raw)]
+        parsed = _coerce_tp(take_profit_raw)
+        return [parsed] if parsed is not None else []
     s = str(take_profit_raw).strip()
     # Try JSON first
     try:
         parsed = json.loads(s)
         if isinstance(parsed, list):
-            return [float(x) for x in parsed if x]
-        return [float(parsed)]
+            return [v for v in (_coerce_tp(x) for x in parsed) if v is not None]
+        coerced = _coerce_tp(parsed)
+        return [coerced] if coerced is not None else []
     except Exception:
         pass
     # Comma-separated

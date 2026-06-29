@@ -54,9 +54,12 @@ import requests
 from utils import proxy_manager
 
 BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
+BYBIT_API = 'https://api.bybit.com/v5/market/tickers'
+BYBIT_CATEGORY = 'linear'
 FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}'
 
 _BINANCE_DISABLED_REASON: str | None = None
+_BYBIT_DISABLED_REASON: str | None = None
 
 
 # Default crypto symbols to pause until reliable intraday providers are configured.
@@ -231,6 +234,45 @@ def _cryptocompare_top_crypto_pairs(top_n: int) -> list[str]:
                 continue
         return _filter_blacklisted(out)
     except Exception:
+        return []
+
+
+def _bybit_top_crypto_pairs(top_n: int) -> list[str]:
+    """Best-effort crypto universe via Bybit, returning Binance-style symbols."""
+    global _BYBIT_DISABLED_REASON
+    if _BYBIT_DISABLED_REASON is not None:
+        return []
+    try:
+        limit = max(1, int(top_n))
+    except Exception:
+        limit = 20
+    try:
+        resp = requests.get(
+            BYBIT_API,
+            params={"category": BYBIT_CATEGORY, "limit": limit, "symbol": ""},
+            timeout=8,
+        )
+        payload = resp.json() if resp.ok else {}
+        if not resp.ok:
+            return []
+        ret_code = payload.get("retCode")
+        if ret_code != 0:
+            msg = str(payload.get("retMsg") or "")
+            if "restricted" in msg.lower() or "location" in msg.lower():
+                _BYBIT_DISABLED_REASON = msg
+                logger.warning("[pair_discovery] Bybit pairs disabled: %s", msg)
+            return []
+        rows = payload.get("result", {}).get("list") or []
+        out: list[str] = []
+        for row in rows:
+            symbol = str((row or {}).get("symbol") or "").upper().strip()
+            if symbol.endswith("USDT") and symbol not in out:
+                out.append(symbol)
+            if len(out) >= limit:
+                break
+        return _filter_blacklisted(out)
+    except Exception as exc:
+        logger.debug("[pair_discovery] Bybit discovery failed: %s", exc)
         return []
 
 # Discover trending crypto pairs from Binance
