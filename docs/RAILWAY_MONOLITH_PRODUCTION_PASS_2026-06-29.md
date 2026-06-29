@@ -255,6 +255,78 @@ python -m pytest tests\test_score_calibration.py tests\test_production_quality_g
 
 Result: `7 passed`.
 
+## 2026-06-29 Production Behavior Follow-Up: Score, MT5, Tier Caps, Tradeability
+
+Latest live symptoms:
+
+- Engine logs still showed `max_score=100.0` and `max_score_pre_threshold=100.0`.
+- VIP Telegram messages showed `Conviction Score: 100.0%`.
+- MT5 link flow said the account was linked, then Trade on MT5 acted as if it was not linked.
+- FREE delivery limits could be bypassed by alternate delivery branches.
+- Several signals prioritized very high RR/ROI while exposing small accounts to excessive stop distance.
+
+Implemented:
+
+- Score display resolution now prefers `score_calibrated`, then `score`, then
+  `score_final`.
+- Legacy exact `score=100` is display-capped by default with
+  `SCORE_DISPLAY_MAX=99.5`.
+- The core score soft cap can no longer be accidentally disabled by
+  `SCORE_SOFT_CAP_ENABLED=0`; exact hard `100` now requires the explicit
+  override `SCORE_ALLOW_HARD_100=1`.
+- Signal explanations now use real score components, confluence, confidence,
+  volatility quality, and R/R instead of falling back to only
+  `High-conviction setup`.
+- Final production quality gate now prioritizes tradeability before ROI:
+  - rejects excessive stop-loss distance by asset class
+  - rejects unrealistic/chase-style RR above an asset-class maximum
+- `record_signal_delivery(...)` now enforces tier daily caps centrally, so
+  resend jobs, FREE FOMO unlocks, direct dispatch, fallback dispatch, and
+  queue-based paths cannot bypass the cap.
+- MT5 link state now distinguishes:
+  - `linked`: encrypted credentials saved
+  - `executable`: MetaApi returned an executable account ID
+- `/mt5_link` no longer says instant execution is ready when only credentials
+  were saved.
+- Live execution mode now falls back to the actual MT5 credentials table when
+  user preferences do not contain `default_mt5_account_id`.
+
+New env knobs:
+
+```env
+SCORE_DISPLAY_MAX=99.5
+SCORE_ALLOW_HARD_100=0
+QUALITY_MAX_STOP_LOSS_PCT_FX=0.80
+QUALITY_MAX_STOP_LOSS_PCT_CRYPTO=2.50
+QUALITY_MAX_STOP_LOSS_PCT_STOCK=2.00
+QUALITY_MAX_STOP_LOSS_PCT_COMMODITY=1.50
+QUALITY_MAX_RR_FX=4.50
+QUALITY_MAX_RR_CRYPTO=4.00
+QUALITY_MAX_RR_STOCK=3.50
+QUALITY_MAX_RR_COMMODITY=3.50
+```
+
+Expected post-deploy behavior:
+
+- Telegram conviction should no longer display as exact `100.0%` unless
+  `SCORE_DISPLAY_MAX` is explicitly raised.
+- The USDJPY-style `1:7.8` signal should be rejected by the max-RR quality
+  guard unless you deliberately loosen `QUALITY_MAX_RR_FX`.
+- The AVAX-style `13-16%` stop-loss exposure should be rejected by the stop
+  distance guard unless you deliberately loosen `QUALITY_MAX_STOP_LOSS_PCT_CRYPTO`.
+- MT5 status should be interpreted as two-stage: credentials can be saved while
+  execution remains disabled until MetaApi provisioning succeeds.
+- FREE users should be capped by `TIER_DAILY_LIMITS["free"]` at the delivery
+  reservation layer.
+
+Verification added:
+
+```powershell
+python -m pytest tests\test_score_calibration.py tests\test_production_quality_guard.py tests\test_delivery_limit_guard.py tests\test_mt5_link_state_contract.py -q
+```
+
+Result: `12 passed`.
+
 ## 2026-06-29 Railway Log Follow-Up: Zero Scores / No Owner Signals
 
 The latest Railway logs showed the main blocker:

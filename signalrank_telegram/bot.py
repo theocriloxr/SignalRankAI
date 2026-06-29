@@ -4609,6 +4609,11 @@ def run_bot() -> None:
             account_id = await get_user_mt5_account_id(user_id)
             if not account_id:
                 await query.edit_message_text(
+                    "No executable MT5 bridge is ready.\n"
+                    "Run /mt5_status to confirm whether credentials are saved and whether MetaApi returned an account ID."
+                )
+                return
+                await query.edit_message_text(
                     "⚠️ No MT5 account linked.\nUse /mt5_link <login> <password> <server> first."
                 )
                 return

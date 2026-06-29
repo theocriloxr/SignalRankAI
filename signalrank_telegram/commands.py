@@ -5603,6 +5603,16 @@ async def mt5_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 				"• /execution none\n"
 				"• /execution auto 5 (VIP)"
 			)
+			if not result.get("executable"):
+				reply = (
+					"MT5 credentials saved, but live execution is not ready yet.\n\n"
+					f"Server: {mt5_server}\n"
+					f"Login: {mt5_login} (credentials encrypted)\n\n"
+					"MetaApi did not return an executable account ID. "
+					"Signals and paper trading can continue, but Trade on MT5 "
+					"will stay disabled until the execution bridge is provisioned.\n\n"
+					"Run /mt5_status to check readiness."
+				)
 		else:
 			err = result.get("error", "Unknown error")
 			reply = (

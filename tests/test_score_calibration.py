@@ -1,4 +1,5 @@
 from engine.core import _signal_display_score
+from engine.signal_metrics import resolve_score_percent
 from engine.scoring import score_signal
 from signalrank_telegram.bot import _delivery_score
 
@@ -51,3 +52,10 @@ def test_signal_display_score_falls_back_when_primary_missing():
 
     assert _signal_display_score(signal) == 98.2
     assert _delivery_score(signal) == 98.2
+
+
+def test_resolve_score_percent_prefers_calibrated_and_avoids_exact_100(monkeypatch):
+    monkeypatch.delenv("SCORE_DISPLAY_MAX", raising=False)
+
+    assert resolve_score_percent({"score": 100.0}) == 99.5
+    assert resolve_score_percent({"score": 100.0, "score_calibrated": 98.7}) == 98.7

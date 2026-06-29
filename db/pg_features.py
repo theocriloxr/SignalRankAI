@@ -35,6 +35,7 @@ from db.models import (
 )
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
 from db.session import is_transient_db_error
+from core.tier_constants import TIER_DAILY_LIMITS
 
 logger = logging.getLogger(__name__)
 
@@ -939,6 +940,29 @@ async def record_signal_delivery(
     tier_s: str = str(tier_at_send or "free").strip().lower()[:16]
     tier_base: str = tier_s.split("_", 1)[0].strip().lower()
     monitoring_tier: bool = tier_base in {"owner", "admin"}
+
+    # Central hard daily cap. Every delivery path reserves through this
+    # function, so enforce limits here instead of relying on each caller.
+    if not monitoring_tier:
+        daily_limit = TIER_DAILY_LIMITS.get(tier_base)
+        if daily_limit is not None and daily_limit != float("inf"):
+            day_start = to_naive_utc(_utcnow()).replace(hour=0, minute=0, second=0, microsecond=0)
+            sent_today_res: Result[Tuple[int]] = await session.execute(
+                select(func.count(SignalDelivery.id)).where(
+                    SignalDelivery.user_id == user.id,
+                    SignalDelivery.delivered_at >= day_start,
+                )
+            )
+            sent_today = int(sent_today_res.scalar() or 0)
+            if sent_today >= int(daily_limit):
+                logger.info(
+                    "[delivery_limit] blocked user=%s tier=%s sent_today=%s limit=%s",
+                    user.id,
+                    tier_base,
+                    sent_today,
+                    int(daily_limit),
+                )
+                return False
 
     try:
         market_cooldown_minutes = int((os.getenv("DELIVERY_MARKET_COOLDOWN_MINUTES") or "180").strip())

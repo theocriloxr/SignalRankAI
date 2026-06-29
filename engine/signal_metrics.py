@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+import os
+
 from typing import Any, Mapping, Optional
 
 
@@ -40,15 +43,42 @@ def resolve_confidence_ratio(signal: Mapping[str, Any]) -> Optional[float]:
 
 def resolve_score_percent(signal: Mapping[str, Any]) -> Optional[float]:
     """Resolve a 0..100 score percent."""
-    score = _safe_float(signal.get("score"))
+    score = None
+    for key in ("score_calibrated", "score", "score_final"):
+        score = _safe_float(signal.get(key))
+        if score is not None:
+            break
+    if score is None:
+        raw_score = _safe_float(signal.get("score_raw"))
+        if raw_score is not None and raw_score > 0:
+            score = _soft_cap_score(raw_score)
     if score is not None:
         if score <= 1.0:
-            return max(0.0, min(score * 100.0, 100.0))
-        return max(0.0, min(score, 100.0))
+            score = score * 100.0
+        display_max = _safe_float(os.getenv("SCORE_DISPLAY_MAX"))
+        if display_max is None:
+            display_max = 99.5
+        return max(0.0, min(score, display_max))
     conf = resolve_confidence_ratio(signal)
     if conf is not None:
-        return max(0.0, min(conf * 100.0, 100.0))
+        return max(0.0, min(conf * 100.0, 99.5))
     return None
+
+
+def _soft_cap_score(raw_score: float) -> float:
+    try:
+        raw_score = float(raw_score)
+    except Exception:
+        return 0.0
+    if not math.isfinite(raw_score):
+        return 0.0
+    raw_score = max(0.0, raw_score)
+    knee = max(50.0, min(_safe_float(os.getenv("SCORE_SOFT_CAP_KNEE")) or 95.0, 99.0))
+    ceiling = max(knee + 0.1, min(_safe_float(os.getenv("SCORE_SOFT_CAP_CEILING")) or 99.5, 100.0))
+    scale = max(1.0, _safe_float(os.getenv("SCORE_SOFT_CAP_SCALE")) or 50.0)
+    if raw_score <= knee:
+        return raw_score
+    return min(knee + ((ceiling - knee) * (1.0 - math.exp(-(raw_score - knee) / scale))), ceiling)
 
 
 def resolve_confluence_percent(signal: Mapping[str, Any]) -> Optional[float]:

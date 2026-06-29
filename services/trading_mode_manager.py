@@ -226,10 +226,19 @@ class TradingModeManager:
             prefs = await get_user_preferences(user_id)
             account_id = prefs.default_mt5_account_id
             if not account_id:
+                try:
+                    from services.mt5_client import get_user_mt5_account_id
+                    account_id = await get_user_mt5_account_id(int(user_id))
+                except Exception:
+                    account_id = None
+            if not account_id:
                 return {
                     "success": False,
                     "destination": "mt5",
-                    "error": "No MT5 account linked. Use /mt5_link or /connect_broker first.",
+                    "error": (
+                        "No executable MT5 account is ready. If /mt5_status shows saved "
+                        "credentials, MetaApi still needs to provision the execution bridge."
+                    ),
                 }
             
             # Execute via MT5 router
@@ -285,6 +294,12 @@ class TradingModeManager:
                 from db.user_preferences import get_user_preferences
                 prefs = await get_user_preferences(user_id)
                 mt5_account_id = prefs.default_mt5_account_id
+                if not mt5_account_id:
+                    try:
+                        from services.mt5_client import get_user_mt5_account_id
+                        mt5_account_id = await get_user_mt5_account_id(int(user_id))
+                    except Exception:
+                        mt5_account_id = None
             
             if not mt5_account_id:
                 return {

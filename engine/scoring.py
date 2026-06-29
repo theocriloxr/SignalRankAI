@@ -408,7 +408,7 @@ def _apply_score_soft_cap(raw_score: float) -> tuple[float, bool]:
         return 0.0, False
 
     raw_score = max(0.0, raw_score)
-    if not _env_bool("SCORE_SOFT_CAP_ENABLED", True):
+    if not _env_bool("SCORE_SOFT_CAP_ENABLED", True) and _env_bool("SCORE_ALLOW_HARD_100", False):
         capped = min(raw_score, 100.0)
         return capped, raw_score > 100.0
 

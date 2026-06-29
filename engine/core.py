@@ -629,6 +629,14 @@ def _signal_roi_score(signal: Dict[str, Any]) -> float:
     return reward / risk
 
 
+def _signal_stop_loss_pct(signal: Dict[str, Any]) -> float:
+    entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+    if entry <= 0 or stop <= 0:
+        return 0.0
+    return abs(entry - stop) / entry * 100.0
+
+
 def _signal_display_score(signal: Dict[str, Any]) -> float:
     """Resolve the calibrated signal score for logs, storage, and promotion."""
     for primary_key in ("score", "score_calibrated", "score_final"):
@@ -714,6 +722,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     asset_class = _asset_class_key(asset)
     score = _signal_display_score(signal)
     rr = _signal_roi_score(signal)
+    stop_loss_pct = _signal_stop_loss_pct(signal)
     ml_probability = _safe_float(signal.get("ml_probability"), 0.0)
     adx = _signal_adx_value(signal)
     timeframe = str(signal.get("timeframe") or "").strip().lower()
@@ -747,16 +756,40 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "commodity": 22.0,
         "other": 22.0,
     }
+    max_stop_loss_pct_defaults = {
+        "fx": 0.80,
+        "crypto": 2.50,
+        "stock": 2.00,
+        "commodity": 1.50,
+        "other": 2.00,
+    }
+    max_rr_defaults = {
+        "fx": 4.50,
+        "crypto": 4.00,
+        "stock": 3.50,
+        "commodity": 3.50,
+        "other": 4.00,
+    }
 
     min_score = _env_float_for_class("QUALITY_MIN_SCORE", asset_class, min_score_defaults.get(asset_class, 90.0))
     min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_defaults.get(asset_class, 2.0))
     min_ml = _env_float_for_class("QUALITY_MIN_ML_PROB", asset_class, min_ml_defaults.get(asset_class, 0.62))
     min_adx = _env_float_for_class("QUALITY_MIN_ADX", asset_class, min_adx_defaults.get(asset_class, 22.0))
+    max_stop_loss_pct = _env_float_for_class(
+        "QUALITY_MAX_STOP_LOSS_PCT",
+        asset_class,
+        max_stop_loss_pct_defaults.get(asset_class, 2.0),
+    )
+    max_rr = _env_float_for_class("QUALITY_MAX_RR", asset_class, max_rr_defaults.get(asset_class, 4.0))
 
     if score < min_score:
         return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
+    if stop_loss_pct > max_stop_loss_pct:
+        return False, f"quality_stop_loss_pct {stop_loss_pct:.2f}% > {max_stop_loss_pct:.2f}% ({asset_class})"
     if rr < min_rr:
         return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class})"
+    if rr > max_rr:
+        return False, f"quality_rr {rr:.2f} > {max_rr:.2f} ({asset_class})"
     if ml_probability > 0 and ml_probability < min_ml:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
     if adx > 0 and adx < min_adx:

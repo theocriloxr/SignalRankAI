@@ -90,13 +90,24 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
         rr = _safe_float(signal.get("rr_ratio") or signal.get("rr_estimate"))
 
     drivers = _unique_texts(signal.get("confluence_drivers") or signal.get("drivers") or [])
+    def _component_value(name: str) -> Optional[float]:
+        value = score_components.get(name)
+        if isinstance(value, dict):
+            value = value.get("value")
+        return _safe_float(value)
+
     metric_drivers: List[str] = []
-    if score_components.get("rr_ratio") is not None:
-        metric_drivers.append(f"R/R {float(score_components['rr_ratio']):.2f}")
-    if score_components.get("confluence") is not None:
-        metric_drivers.append(f"Confluence {float(score_components['confluence']):.0f}%")
-    if score_components.get("ml_confidence") is not None:
-        metric_drivers.append(f"ML {float(score_components['ml_confidence']) * 100:.0f}%")
+    if rr is not None:
+        metric_drivers.append(f"R/R 1:{rr:.2f}")
+    confluence_component = _component_value("confluence")
+    if confluence_component is not None:
+        metric_drivers.append(f"Confluence component {confluence_component * 100.0:.0f}%")
+    confidence_component = _component_value("confidence")
+    if confidence_component is not None:
+        metric_drivers.append(f"Confidence component {confidence_component * 100.0:.0f}%")
+    volatility_component = _component_value("vol")
+    if volatility_component is not None:
+        metric_drivers.append(f"Volatility quality {volatility_component * 100.0:.0f}%")
     if score_components.get("regime_bonus") not in (None, 1, 1.0):
         metric_drivers.append(f"Regime bonus x{float(score_components['regime_bonus']):.2f}")
     if score_components.get("ml_boost") not in (None, 1, 1.0):
@@ -111,16 +122,17 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
     invalidation_text = str(invalidation or "").strip()
 
     summary_parts: List[str] = []
-    if score >= 85:
-        summary_parts.append("High-conviction setup")
-    elif score >= 70:
-        summary_parts.append("Qualified setup")
-    else:
-        summary_parts.append("Lower-conviction setup")
     if technical_reason:
         summary_parts.append(technical_reason)
     elif drivers:
-        summary_parts.append("; ".join(drivers[:2]))
+        summary_parts.append("; ".join(drivers[:3]))
+    if not summary_parts:
+        if score >= 85:
+            summary_parts.append("High-conviction setup")
+        elif score >= 70:
+            summary_parts.append("Qualified setup")
+        else:
+            summary_parts.append("Lower-conviction setup")
 
     bullets: List[str] = []
     if regime:
@@ -181,7 +193,7 @@ def build_signal_explanation(signal: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "score": float(score or 0.0),
-        "label": summary_parts[0],
+        "label": "High-conviction setup" if score >= 85 else "Qualified setup" if score >= 70 else "Lower-conviction setup",
         "summary": ". ".join(summary_parts[:2]),
         "bullets": _unique_texts(bullets, limit=6),
         "technical_reason": technical_reason or None,
