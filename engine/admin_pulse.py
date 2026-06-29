@@ -92,7 +92,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 delivered_row = (
                     await session.execute(
                         text(
-                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE delivered_at >= :since"
+                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE delivered_at >= :since AND sent_ok IS TRUE"
                         ),
                         params,
                     )
@@ -102,9 +102,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 try:
                     delivered_row = (
                         await session.execute(
-                            text(
-                                "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since"
-                            ),
+                        text(
+                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since AND sent_ok IS TRUE"
+                        ),
                             params,
                         )
                     ).first()

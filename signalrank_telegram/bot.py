@@ -14,6 +14,14 @@ async def _handle_unknown_command(update, context):
         pass
 
 
+def _increment_successful_delivery_stat() -> None:
+    try:
+        from engine.stats_manager import stats as _global_stats
+        _global_stats.increment_delivered(1)
+    except Exception:
+        pass
+
+
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
 
@@ -340,6 +348,7 @@ async def _resend_unsent_signals_async():
                                     sent_ok=True,
                                 )
                                 await db_session.commit()
+                            _increment_successful_delivery_stat()
                         except Exception as send_err:
                             try:
                                 async with get_session() as db_session:
@@ -3142,6 +3151,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                             sent_ok=True,
                                         )
                                         await session.commit()
+                                    _increment_successful_delivery_stat()
                                 except Exception as mark_err:
                                     logger.debug("[dispatch] failed to mark delivery success: %s", mark_err)
                             else:
@@ -3211,6 +3221,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                         sent_ok=True,
                                     )
                                     await session.commit()
+                                _increment_successful_delivery_stat()
                             except Exception as mark_err:
                                 logger.debug("[dispatch] failed to mark delivery success: %s", mark_err)
                         else:

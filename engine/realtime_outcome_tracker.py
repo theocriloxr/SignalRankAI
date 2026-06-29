@@ -290,7 +290,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         return []
 
 
-async def _fetch_delivered_untracked_signals(limit: int = 250) -> List[Dict[str, Any]]:
+async def _fetch_delivered_untracked_signals(limit: int = 2500) -> List[Dict[str, Any]]:
     """Find delivered signals that still do not have any outcome row.
 
     This supports outcome backfill and ensures delivered signals are eventually
@@ -302,7 +302,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 250) -> List[Dict[str,
         from sqlalchemy import select
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "720") or 720)
-        limit = max(50, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
+        limit = max(250, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
         async with get_session() as session:
@@ -1123,7 +1123,7 @@ class RealtimeOutcomeTracker:
         signals = await _fetch_active_signals()
         # Backfill previously delivered-but-untracked signals so every delivered
         # signal eventually receives an outcome state for analytics/training.
-        backfill_limit = max(50, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "1000") or 1000))
+        backfill_limit = max(250, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "2500") or 2500))
         backfill = await _fetch_delivered_untracked_signals(limit=backfill_limit)
         if backfill:
             known = {str(s.get("signal_id") or "") for s in signals}

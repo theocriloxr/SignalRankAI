@@ -17,6 +17,7 @@ import logging
 import threading
 import inspect
 import json
+import math
 import pathlib
 import urllib.error
 import urllib.request
@@ -668,6 +669,113 @@ def _asset_class_key(asset: str) -> str:
     return "other"
 
 
+def _env_float_for_class(env_prefix: str, asset_class: str, default: float) -> float:
+    keys = [
+        f"{env_prefix}_{asset_class.upper()}",
+        f"{env_prefix}_DEFAULT",
+    ]
+    for key in keys:
+        raw = os.getenv(key)
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            return float(str(raw).strip())
+        except Exception:
+            continue
+    return float(default)
+
+
+def _signal_adx_value(signal: Dict[str, Any]) -> float:
+    for key in ("adx", "adx_value", "trend_adx"):
+        value = _safe_float(signal.get(key), 0.0)
+        if value > 0:
+            return value
+    trend_text = str(signal.get("adx_trend") or "").lower()
+    if "strong" in trend_text:
+        return 30.0
+    if "weak" in trend_text:
+        return 15.0
+    return 0.0
+
+
+def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
+    """Class-aware final quality guard for production delivery."""
+    if not _env_bool("PRODUCTION_QUALITY_GUARD_ENABLED", True):
+        return True, ""
+
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    asset_class = _asset_class_key(asset)
+    score = _signal_display_score(signal)
+    rr = _signal_roi_score(signal)
+    ml_probability = _safe_float(signal.get("ml_probability"), 0.0)
+    adx = _signal_adx_value(signal)
+    timeframe = str(signal.get("timeframe") or "").strip().lower()
+    direction = str(signal.get("direction") or "").strip().lower()
+
+    min_score_defaults = {
+        "fx": 94.0,
+        "crypto": 90.0,
+        "stock": 88.0,
+        "commodity": 90.0,
+        "other": 90.0,
+    }
+    min_rr_defaults = {
+        "fx": 2.20,
+        "crypto": 2.00,
+        "stock": 1.80,
+        "commodity": 2.00,
+        "other": 2.00,
+    }
+    min_ml_defaults = {
+        "fx": 0.68,
+        "crypto": 0.62,
+        "stock": 0.60,
+        "commodity": 0.62,
+        "other": 0.62,
+    }
+    min_adx_defaults = {
+        "fx": 25.0,
+        "crypto": 22.0,
+        "stock": 20.0,
+        "commodity": 22.0,
+        "other": 22.0,
+    }
+
+    min_score = _env_float_for_class("QUALITY_MIN_SCORE", asset_class, min_score_defaults.get(asset_class, 90.0))
+    min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_defaults.get(asset_class, 2.0))
+    min_ml = _env_float_for_class("QUALITY_MIN_ML_PROB", asset_class, min_ml_defaults.get(asset_class, 0.62))
+    min_adx = _env_float_for_class("QUALITY_MIN_ADX", asset_class, min_adx_defaults.get(asset_class, 22.0))
+
+    if score < min_score:
+        return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
+    if rr < min_rr:
+        return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class})"
+    if ml_probability > 0 and ml_probability < min_ml:
+        return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
+    if adx > 0 and adx < min_adx:
+        return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
+
+    if asset_class == "fx":
+        allowed_fx_tfs = {
+            tf.strip().lower()
+            for tf in str(os.getenv("QUALITY_FX_ALLOWED_TIMEFRAMES", "1h,4h,1d")).split(",")
+            if tf.strip()
+        }
+        if timeframe and timeframe not in allowed_fx_tfs:
+            return False, f"quality_fx_timeframe {timeframe} not in {sorted(allowed_fx_tfs)}"
+
+        if _env_bool("QUALITY_FX_REQUIRE_MTF_ALIGNMENT", True):
+            sign = 1.0 if direction in {"long", "buy"} else -1.0
+            mtf_4h = _safe_float(signal.get("mtf_4h_trend"), 0.0)
+            mtf_1d = _safe_float(signal.get("mtf_1d_trend"), 0.0)
+            if mtf_4h and mtf_4h != sign:
+                return False, f"quality_fx_mtf_4h_mismatch {mtf_4h:+.0f}"
+            if mtf_1d and mtf_1d != sign:
+                return False, f"quality_fx_mtf_1d_mismatch {mtf_1d:+.0f}"
+
+    return True, ""
+
+
 def _latest_candle_timestamp(candles: Any) -> datetime | None:
     if not isinstance(candles, list) or not candles:
         return None
@@ -1279,6 +1387,19 @@ def main_loop(DRY_RUN: bool = False):
                 fx_assets = []
             if not stocks_enabled:
                 stock_assets = []
+            if _env_bool("ENGINE_CYCLE_LOG", True):
+                logger.info(
+                    "[engine] open universe by class: crypto=%s fx=%s stock=%s commodity=%s stocks_enabled=%s",
+                    len(crypto_assets),
+                    len(fx_assets),
+                    len(stock_assets),
+                    len(commodity_assets),
+                    bool(stocks_enabled),
+                )
+                if stocks_enabled and not stock_assets:
+                    logger.warning(
+                        "[engine] stock universe empty while STOCKS_ENABLED=1; check market hours, STOCK_TICKERS, and stock OHLC provider keys"
+                    )
 
             # ── Round-robin queue: cover every open asset once per round ──────────
             # Interleave asset classes so each batch has natural diversity
@@ -1469,6 +1590,7 @@ def main_loop(DRY_RUN: bool = False):
                 "risk_failed": 0,
                 "advanced_filter_failed": 0,
                 "invalid_tp": 0,
+                "quality_rejected": 0,
                 "score_rejected": 0,
                 "skipped_open_limit_asset": 0,
                 "skipped_open_limit_class": 0,
@@ -1478,6 +1600,10 @@ def main_loop(DRY_RUN: bool = False):
                 "skipped_portfolio_exposure": 0,
                 "store_failed": 0,
             }
+            for _cls_name in ("crypto", "fx", "stock", "commodity"):
+                pipeline_stats[f"selected_{_cls_name}_assets"] = int(_selected_counts.get(_cls_name, 0) or 0)
+                pipeline_stats[f"no_candles_{_cls_name}"] = 0
+                pipeline_stats[f"quality_rejected_{_cls_name}"] = 0
 
             open_limit_per_asset = max(1, _env_int("OPEN_SIGNALS_MAX_PER_ASSET", 20))
             open_limit_per_class = max(1, _env_int("OPEN_SIGNALS_MAX_PER_CLASS", 20))
@@ -1568,6 +1694,9 @@ def main_loop(DRY_RUN: bool = False):
                     if not has_candles:
                         logger.warning(f"[engine] No market data for asset={asset}")
                         pipeline_stats["no_candles"] += 1
+                        pipeline_stats[f"no_candles_{_asset_class_key(asset)}"] = int(
+                            pipeline_stats.get(f"no_candles_{_asset_class_key(asset)}", 0) or 0
+                        ) + 1
                         _record_gate_failure(asset, "market_data", "no_candles")
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
@@ -1745,6 +1874,8 @@ def main_loop(DRY_RUN: bool = False):
                                 sig.setdefault('rsi', ind.get('rsi', 50))
                                 sig.setdefault('macd_trend', ind.get('macd_trend', 0))
                                 sig.setdefault('volume_ratio', ind.get('volume_ratio', 1.0))
+                                sig.setdefault('adx', ind.get('adx', 0))
+                                sig.setdefault('atr_percent', ind.get('atr_percent', 0))
                                 sig.setdefault('nearest_support', ind.get('nearest_support', 0))
                                 sig.setdefault('nearest_resistance', ind.get('nearest_resistance', 0))
                                 sig.setdefault('close_price', ind.get('close_price', sig.get('entry', 0)))
@@ -2191,6 +2322,24 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 pass
 
+                            quality_ok, quality_reason = _production_quality_gate(sig)
+                            if not quality_ok:
+                                sig['rejection_reason'] = quality_reason
+                                pipeline_stats["quality_rejected"] += 1
+                                _quality_cls = _asset_class_key(str(sig.get("asset") or asset))
+                                pipeline_stats[f"quality_rejected_{_quality_cls}"] = int(
+                                    pipeline_stats.get(f"quality_rejected_{_quality_cls}", 0) or 0
+                                ) + 1
+                                stats.vetoed_other += 1
+                                _record_gate_failure(asset, "quality", quality_reason)
+                                _log_decision("skipped", sig, reason=quality_reason, meta={
+                                    "score": _signal_display_score(sig),
+                                    "rr": _signal_roi_score(sig),
+                                    "ml_probability": sig.get("ml_probability"),
+                                    "asset_class": _asset_class_key(str(sig.get("asset") or asset)),
+                                })
+                                continue
+
                             # Final gates: score + expectancy
                             live_exp = float(sig.get('live_expectancy', 0.0) or 0.0)
                             if live_exp < 0.0:
@@ -2503,9 +2652,6 @@ def main_loop(DRY_RUN: bool = False):
                                 stored_signals.append(sig)
                                 _cycle_cooldown.add(_asset_tf_key)
                                 pipeline_stats["stored"] += 1
-                                
-                                # === PHASE 1 FIX: Increment delivered when signal is stored ===
-                                stats.delivered += 1
                             else:
                                 pipeline_stats["store_failed"] += 1
                         except Exception as e:

@@ -382,3 +382,95 @@ Results:
 12 passed
 overall=PASS checks=8
 ```
+
+## 2026-06-29 Quality, Stock Coverage, And Pulse Accuracy Follow-Up
+
+Live owner reports showed:
+
+- 30-day tracked win rate was 11.3% on sparse coverage.
+- FX tracked outcomes were 0% wins in both FREE and VIP samples.
+- Owner had not seen stock signals.
+- Engine Pulse showed very high delivered counts while QA showed many reserved-but-not-confirmed rows.
+
+### Implemented in this follow-up
+
+- Added `PRODUCTION_QUALITY_GUARD_ENABLED=1` behavior by default at the final engine gate.
+- Added asset-class-specific production quality defaults:
+  - FX: score >= 94, RR >= 2.20, ML probability >= 0.68 when ML is present, ADX >= 25 when ADX is present.
+  - Crypto: score >= 90, RR >= 2.00, ML probability >= 0.62 when ML is present, ADX >= 22 when ADX is present.
+  - Stock: score >= 88, RR >= 1.80, ML probability >= 0.60 when ML is present, ADX >= 20 when ADX is present.
+  - Commodity: score >= 90, RR >= 2.00, ML probability >= 0.62 when ML is present, ADX >= 22 when ADX is present.
+- Added an FX emergency clamp:
+  - FX signals default to `1h,4h,1d` only via `QUALITY_FX_ALLOWED_TIMEFRAMES`.
+  - FX signals require 4h/1d MTF trend alignment by default via `QUALITY_FX_REQUIRE_MTF_ALIGNMENT=1`.
+- Added per-class cycle diagnostics:
+  - `selected_stock_assets`
+  - `no_candles_stock`
+  - `quality_rejected_stock`
+  - equivalent crypto/fx/commodity counters
+- Added open-universe logging:
+
+```text
+[engine] open universe by class: crypto=... fx=... stock=... commodity=... stocks_enabled=True
+```
+
+If stocks are empty while enabled, the engine now logs a warning pointing at market hours, `STOCK_TICKERS`, and stock OHLC provider keys.
+
+- Removed the incorrect engine increment that counted a stored signal as delivered before Telegram send confirmation.
+- Engine Pulse DB delivery count now only counts `signal_deliveries.sent_ok IS TRUE`.
+- Successful Telegram dispatch paths now increment in-process delivered stats only after delivery confirmation is marked.
+- `/qa_report` now splits unconfirmed rows:
+  - pending
+  - failed
+  - stale
+- Outcome backfill default increased to 2,500 delivered-untracked signals per tracker pass to improve sparse outcome coverage.
+- Fixed a latent `math` import bug used by `_signal_display_score`.
+
+### Tunable environment knobs
+
+```env
+PRODUCTION_QUALITY_GUARD_ENABLED=1
+QUALITY_MIN_SCORE_FX=94
+QUALITY_MIN_RR_FX=2.20
+QUALITY_MIN_ML_PROB_FX=0.68
+QUALITY_MIN_ADX_FX=25
+QUALITY_FX_ALLOWED_TIMEFRAMES=1h,4h,1d
+QUALITY_FX_REQUIRE_MTF_ALIGNMENT=1
+
+QUALITY_MIN_SCORE_CRYPTO=90
+QUALITY_MIN_RR_CRYPTO=2.00
+QUALITY_MIN_SCORE_STOCK=88
+QUALITY_MIN_RR_STOCK=1.80
+QUALITY_MIN_SCORE_COMMODITY=90
+QUALITY_MIN_RR_COMMODITY=2.00
+
+OUTCOME_BACKFILL_SIGNAL_LIMIT=2500
+```
+
+### Expected post-deploy behavior
+
+- Delivered counts in Engine Pulse should drop to confirmed sends only.
+- Signal volume should drop materially, especially FX.
+- FX signals should be rarer and only pass when score/RR/trend alignment are strong.
+- Stock diagnostics should show whether stock tickers are entering the cycle, failing candles, or failing quality.
+- `/qa_report` should make clear whether unconfirmed rows are pending, failed, or stale.
+- Outcome coverage should improve over time as the backfill worker processes the backlog.
+
+### Verification
+
+Local verification passed:
+
+```text
+python -m py_compile engine\core.py engine\admin_pulse.py engine\realtime_outcome_tracker.py signalrank_telegram\bot.py signalrank_telegram\owner_commands.py
+python -m pytest tests\test_production_quality_guard.py tests\test_admin_pulse_delivery_count.py tests\test_callback_handler.py tests\test_signal_dedup_rules.py tests\test_monolith_hardening_defaults.py -q
+python -m pytest tests\test_deploy_log_regressions.py tests\test_realtime_outcome_tracker_user_perf_ids.py tests\test_live_production_evidence.py tests\test_command_contracts.py tests\test_command_tier_contract.py -q
+python scripts\production_readiness_check.py
+```
+
+Results:
+
+```text
+19 passed
+21 passed
+overall=PASS checks=8
+```
