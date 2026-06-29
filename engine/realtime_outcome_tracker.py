@@ -251,6 +251,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         from db.models import Signal, Outcome
         from sqlalchemy import select, or_
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
+        limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with get_session() as session:
             stmt = (
                 select(Signal, Outcome)
@@ -263,7 +264,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                         Outcome.status.in_(["tp1", "tp2"]),
                     )
                 )
-                .limit(200)
+                .limit(limit)
             )
             res = await session.execute(stmt)
             rows = res.all()
@@ -301,6 +302,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 250) -> List[Dict[str,
         from sqlalchemy import select
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "720") or 720)
+        limit = max(50, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
         async with get_session() as session:
@@ -309,6 +311,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 250) -> List[Dict[str,
                 .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
                 .where(Outcome.id.is_(None))
+                .where(SignalDelivery.sent_ok.is_(True))
                 .where(Signal.created_at >= cutoff)
                 .order_by(Signal.created_at.asc())
                 .limit(max(1, int(limit)))
@@ -1120,7 +1123,8 @@ class RealtimeOutcomeTracker:
         signals = await _fetch_active_signals()
         # Backfill previously delivered-but-untracked signals so every delivered
         # signal eventually receives an outcome state for analytics/training.
-        backfill = await _fetch_delivered_untracked_signals(limit=250)
+        backfill_limit = max(50, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "1000") or 1000))
+        backfill = await _fetch_delivered_untracked_signals(limit=backfill_limit)
         if backfill:
             known = {str(s.get("signal_id") or "") for s in signals}
             for item in backfill:
