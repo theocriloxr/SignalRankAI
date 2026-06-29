@@ -2952,8 +2952,9 @@ def main_loop(DRY_RUN: bool = False):
 
                             # Robust eligibility check with logging
                             try:
-                                eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
-                                logger.info(f"[engine] Eligibility for user={user_id} tier={user_tier} score={sig.get('score', 0)}: {eligible}")
+                                delivery_score = _signal_display_score(sig)
+                                eligible = delivery_mgr.should_send_signal(user_tier, delivery_score, user_id=user_id)
+                                logger.info(f"[engine] Eligibility for user={user_id} tier={user_tier} score={delivery_score}: {eligible}")
                                 if eligible:
                                     user_signals.append(sig)
                             except Exception as e:

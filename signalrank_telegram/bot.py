@@ -794,12 +794,12 @@ def _collapse_signal_variants(signals_list: list[dict]) -> list[dict]:
             continue
         candidate_rank = (
             _signal_roi_score(signal),
-            _safe_float(signal.get("score")),
+            _delivery_score(signal),
             _safe_float(signal.get("ml_probability")),
         )
         incumbent_rank = (
             _signal_roi_score(incumbent),
-            _safe_float(incumbent.get("score")),
+            _delivery_score(incumbent),
             _safe_float(incumbent.get("ml_probability")),
         )
         if candidate_rank > incumbent_rank:
@@ -808,7 +808,7 @@ def _collapse_signal_variants(signals_list: list[dict]) -> list[dict]:
     collapsed.sort(
         key=lambda signal: (
             _signal_roi_score(signal),
-            _safe_float(signal.get("score")),
+            _delivery_score(signal),
             _safe_float(signal.get("ml_probability")),
         ),
         reverse=True,
