@@ -16,12 +16,14 @@ be validated in the deployment environment.
 5. Verify `/health`, `/healthz`, and `/metrics/prometheus` in the deployed web process.
 6. Verify first admin pulse after deploy shows non-zero scanned evidence when DB has recent `signals`, `decision_log`, or `signal_deliveries`.
 7. Verify no duplicate risk-free updates are sent for the same user/asset/direction/timeframe cooldown window.
-8. Verify `/ops_health` from an admin Telegram account.
-9. Verify Telegram sandbox command/callback workflow before public webhook routing.
-10. Verify payment sandbox upgrade and webhook reconciliation.
-11. Confirm production secrets are set in the hosting provider, not committed files.
-12. Confirm migration plan, backup plan, and rollback owner.
-13. Update `docs/PRODUCTION_READINESS_SCORECARD.md` with final evidence.
+8. Verify market-data logs show real candle providers filling OHLCV data, with no demo/synthetic candle generation.
+9. Verify weekly admin report includes non-zero Redis shadow counters when shadow tracking has activity.
+10. Verify `/ops_health` from an admin Telegram account.
+11. Verify Telegram sandbox command/callback workflow before public webhook routing.
+12. Verify payment sandbox upgrade and webhook reconciliation.
+13. Confirm production secrets are set in the hosting provider, not committed files.
+14. Confirm migration plan, backup plan, and rollback owner.
+15. Update `docs/PRODUCTION_READINESS_SCORECARD.md` with final evidence.
 
 ## Launch Sequence
 

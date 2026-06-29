@@ -100,7 +100,7 @@ Verification:
 - Governance/readiness tests: `5 passed`.
 - Focused production-pass tests: `12 passed`.
 - Project-owned compile check: passed with `.venv`, `.git`, `__pycache__`, and `.pytest_cache` excluded.
-- Full test suite: `263 passed, 34 warnings`.
+- Full test suite: `273 passed, 31 warnings`.
 
 ## Deployment Log Remediation Pass
 
@@ -112,11 +112,16 @@ Completed on 2026-06-29 after reviewing Railway/Telegram production logs:
 - Added recipient-level risk-free notification idempotency keyed by user, asset, direction, and timeframe to prevent duplicate AAVEUSDT-style notification bursts.
 - Removed the TradingView zero-price placeholder candle path; TradingView analysis can validate a symbol, but it no longer emits synthetic OHLCV data.
 - Added an offline readiness check for the actual market-data contract: real chart candles and no demo/synthetic generation.
+- Fixed weekly admin report shadow counters so they read real Redis shadow metrics instead of silently falling back to zero.
+- Fixed `engine.similarity` async DB access syntax and normalized touched UTC timestamp paths away from deprecated `datetime.utcnow()` calls.
 
 Verification:
 
 - Offline readiness checker: `overall=PASS checks=8`.
+- Governance validator: `17 documents checked`.
+- Project-owned compile check: passed with `.venv`, `.git`, `__pycache__`, and `.pytest_cache` excluded.
 - Deployment-log regression tests: `8 passed`.
+- Full test suite: `273 passed, 31 warnings`.
 
 ## Architecture
 

@@ -32,6 +32,11 @@ BE_BUFFER_PCT = float(os.getenv("BE_BUFFER_PCT", "0.001"))
 TICK_INTERVAL = float(os.getenv("TICK_INTERVAL_SECONDS", "30.0"))
 
 
+def _utc_now_naive() -> datetime:
+    """Naive UTC timestamp for legacy DB columns that store UTC without tzinfo."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class SignalState:
     PENDING = "PENDING"
     ENTRY_FILLED = "ENTRY_FILLED"
@@ -245,7 +250,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         from db.session import get_session
         from db.models import Signal, Outcome
         from sqlalchemy import select, or_
-        cutoff = datetime.utcnow() - timedelta(hours=_lookback_hours())
+        cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         async with get_session() as session:
             stmt = (
                 select(Signal, Outcome)
@@ -296,7 +301,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 250) -> List[Dict[str,
         from sqlalchemy import select
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "720") or 720)
-        cutoff = datetime.utcnow() - timedelta(hours=max(24, lookback_hours))
+        cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
         async with get_session() as session:
             stmt = (
@@ -1156,7 +1161,7 @@ class RealtimeOutcomeTracker:
 
         # Retrain ML periodically (not on every tracking cycle).
         try:
-            now_ts = datetime.utcnow().timestamp()
+            now_ts = datetime.now(timezone.utc).timestamp()
             retrain_interval = int(os.getenv("OUTCOME_TRACKER_ML_RETRAIN_INTERVAL_SECONDS", "21600") or 21600)
             min_interval = max(900, retrain_interval)
             if (now_ts - float(self._last_retrain_ts or 0.0)) >= float(min_interval):
@@ -1283,7 +1288,8 @@ class RealtimeOutcomeTracker:
         created_at = signal.get("created_at")
         try:
             if isinstance(created_at, datetime):
-                age_h = (datetime.utcnow() - created_at).total_seconds() / 3600.0
+                now = datetime.now(timezone.utc) if created_at.tzinfo else _utc_now_naive()
+                age_h = (now - created_at).total_seconds() / 3600.0
             else:
                 age_h = 0.0
         except Exception:

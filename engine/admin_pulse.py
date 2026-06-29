@@ -7,9 +7,10 @@ metrics, and posts to owner/admin Telegram IDs.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         from sqlalchemy import text
         from core.redis_state import state
 
-        since = datetime.utcnow() - timedelta(hours=max(1, int(window_hours or 1)))
+        since = datetime.now(timezone.utc) - timedelta(hours=max(1, int(window_hours or 1)))
         params = {"since": since}
         
         async with get_session() as session:
@@ -165,7 +166,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "partial_win": partial_win,
             "shadow_winner_rate_pct": shadow_winner_rate,
         },
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -255,7 +256,7 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
         try:
             from db.session import get_session
             from sqlalchemy import text
-            since = datetime.utcnow() - timedelta(days=max(1, int(window_days or 7)))
+            since = datetime.now(timezone.utc) - timedelta(days=max(1, int(window_days or 7)))
             async with get_session() as session:
                 row = (await session.execute(
                     text(
@@ -271,6 +272,7 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
 
         # Shadow outcomes: prefer Redis counters, but also try DB ml_rejected_signals if available
         try:
+            from core.redis_state import state
             total_tracked = int(state.get_sync("shadow:counts:total_tracked") or 0)
             false_neg = int(state.get_sync("shadow:counts:false_negative") or 0)
             correct_block = int(state.get_sync("shadow:counts:correct_block") or 0)
@@ -318,11 +320,11 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
             logger.exception("[admin_pulse] loop send failed")
         # Weekly filter-efficacy report: run once per configured weekday/hour
         try:
-            weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", str(datetime.utcnow().weekday())))
+            weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", str(datetime.now(timezone.utc).weekday())))
             # Default weekday env not set -> use current weekday (no-op); recommend ADMIN_WEEKLY_REPORT_WEEKDAY=6 for Sunday
             report_weekday = int(os.getenv("ADMIN_WEEKLY_REPORT_WEEKDAY", "6"))
             report_hour = int(os.getenv("ADMIN_WEEKLY_REPORT_HOUR_UTC", "9"))
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             if now.weekday() == report_weekday and now.hour == report_hour:
                 # Avoid duplicate runs by checking runtime_state key
                 try:
@@ -343,7 +345,7 @@ async def start_pulse_loop(interval_seconds: int = None) -> None:
                             except Exception:
                                 logger.exception("[admin_pulse] weekly report failed")
                             # persist last run
-                            val = f"{now.isoformat()}"
+                            val = json.dumps(now.isoformat())
                             await session.execute(text("INSERT INTO runtime_state(key,value,expires_at,updated_at) VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"), {"k": "admin_pulse_last_weekly_run", "v": val})
                             await session.commit()
                 except Exception:

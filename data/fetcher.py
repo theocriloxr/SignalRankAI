@@ -204,7 +204,7 @@ def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=6
 import os
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 import asyncio
@@ -407,7 +407,7 @@ def _validate_data_quality(
         if str(asset_type).lower() == "crypto":
             max_stale *= 2
         elif str(asset_type).lower() == "stock":
-            now_utc = datetime.utcnow()
+            now_utc = datetime.now(timezone.utc)
             if not (now_utc.weekday() < 5 and 14 <= now_utc.hour < 21):
                 max_stale *= 3
         if age_seconds > max_stale:
@@ -1233,7 +1233,7 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     if is_crypto(asset):
         return None
 
-    now = now_utc or datetime.utcnow()
+    now = now_utc or datetime.now(timezone.utc)
     wd = now.weekday()  # Monday=0 ... Sunday=6
     hr = now.hour
     minute = now.minute

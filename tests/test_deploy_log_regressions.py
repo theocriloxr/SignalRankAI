@@ -163,3 +163,70 @@ async def test_admin_pulse_uses_db_evidence_when_global_stats_are_zero(monkeypat
     assert stats["delivered"] == 2
     assert stats["rejected_by"] == {"rejected": 2, "issued": 1}
     assert stats["sources"]["global_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_weekly_admin_report_includes_real_shadow_counters(monkeypatch):
+    import engine.admin_pulse as pulse
+
+    sent_messages = []
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini")
+    monkeypatch.setitem(sys.modules, "config", types.SimpleNamespace(OWNER_IDS={111}, ADMIN_IDS=set()))
+
+    async def _fake_review(*args, **kwargs):
+        return {
+            "review": "Keep monitoring.",
+            "aggregate": {
+                "issued": 5,
+                "rejected_or_skipped": 2,
+                "outcomes_total": 3,
+                "wins": 2,
+                "losses": 1,
+            },
+        }
+
+    fake_services = types.SimpleNamespace(
+        gemini_ml=types.SimpleNamespace(run_gemini_review_pipeline=_fake_review)
+    )
+    monkeypatch.setitem(sys.modules, "services", fake_services)
+
+    class _Result:
+        def first(self):
+            return (3, 2, 1)
+
+    class _Session:
+        async def execute(self, *args, **kwargs):
+            return _Result()
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _Session()
+
+    monkeypatch.setitem(sys.modules, "db.session", types.SimpleNamespace(get_session=_fake_get_session))
+
+    class _State:
+        values = {
+            "shadow:counts:total_tracked": 8,
+            "shadow:counts:false_negative": 3,
+            "shadow:counts:correct_block": 4,
+            "shadow:counts:partial_win": 1,
+        }
+
+        def get_sync(self, key):
+            return self.values.get(key, 0)
+
+    monkeypatch.setitem(sys.modules, "core.redis_state", types.SimpleNamespace(state=_State()))
+
+    class _Requests:
+        @staticmethod
+        def post(url, json=None, timeout=None):
+            sent_messages.append(json["text"])
+            return types.SimpleNamespace(status_code=200)
+
+    monkeypatch.setitem(sys.modules, "requests", _Requests)
+
+    assert await pulse.send_weekly_filter_efficacy_via_telegram(window_days=7) is True
+    assert sent_messages
+    assert "Shadow (tracked rejects): total=8 | false_negatives=3 | correct_blocks=4 | partial_wins=1" in sent_messages[0]
