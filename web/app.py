@@ -39,7 +39,7 @@ from db.repository import (
     mark_webhook_event_processed,
     count_active_vip_users,
 )
-from db.models import ApiToken, User, Signal
+from db.models import ApiToken, User, Signal, RuntimeState
 from sqlalchemy import select
 from core.redis_state import state
 from core.redis_cache import cache_stats
@@ -95,6 +95,44 @@ class BrokerPermissionRequest(BaseModel):
     withdraw: Optional[bool] = None
     internal_transfer: Optional[bool] = None
     permissions: Optional[list[str]] = None
+
+
+class ExchangeBrokerLinkRequest(BrokerPermissionRequest):
+    api_key: str
+    api_secret: str
+    passphrase: Optional[str] = None
+    sandbox: bool = False
+
+
+def _normalize_exchange_provider(provider: str) -> str:
+    p = str(provider or "").strip().lower().replace("_", "")
+    aliases = {
+        "binance": "binance",
+        "binanceus": "binanceus",
+        "bybit": "bybit",
+    }
+    if p not in aliases:
+        raise HTTPException(400, "Unsupported exchange provider. Supported: binance, binanceus, bybit")
+    return aliases[p]
+
+
+def _broker_permissions_valid(req: BrokerPermissionRequest) -> tuple[bool, str]:
+    perms = {str(p).strip().lower() for p in (req.permissions or []) if str(p).strip()}
+    withdraw_enabled = bool(req.withdraw) or ("withdraw" in perms)
+    transfer_enabled = bool(req.internal_transfer) or ("transfer" in perms) or ("internal_transfer" in perms)
+    trade_enabled = bool(req.trade) or ("trade" in perms)
+    read_enabled = True if req.read is None else bool(req.read) or ("read" in perms)
+    if not read_enabled:
+        return False, "read permission is required"
+    if not trade_enabled:
+        return False, "trade permission is required"
+    if withdraw_enabled or transfer_enabled:
+        return False, "withdraw/transfer must be disabled"
+    return True, ""
+
+
+def _exchange_state_key(user_id: int, provider: str) -> str:
+    return f"broker_exchange:{int(user_id)}:{provider}"
 
 async def verify_api_key(token: str = Depends(security)) -> int:
     """Verify API token → return user_id or raise 401."""
@@ -340,24 +378,95 @@ async def _is_admin_user(user_id: int) -> bool:
 @app.post("/broker/validate-api-permissions")
 async def validate_broker_api_permissions(req: BrokerPermissionRequest):
     """Validate broker API key permissions to enforce trade-only policy."""
-    perms = {str(p).strip().lower() for p in (req.permissions or []) if str(p).strip()}
-    withdraw_enabled = bool(req.withdraw) or ("withdraw" in perms)
-    transfer_enabled = bool(req.internal_transfer) or ("transfer" in perms) or ("internal_transfer" in perms)
-    trade_enabled = bool(req.trade) or ("trade" in perms)
-
-    if not trade_enabled:
+    try:
+        provider = _normalize_exchange_provider(req.provider)
+    except HTTPException:
+        provider = str(req.provider or "").strip().lower()
+    valid, reason = _broker_permissions_valid(req)
+    if not valid:
         return JSONResponse(
             status_code=400,
-            content={"ok": False, "policy": "trade_only_required", "reason": "trade permission is required"},
+            content={"ok": False, "policy": "trade_only_required", "reason": reason},
         )
 
-    if withdraw_enabled or transfer_enabled:
-        return JSONResponse(
-            status_code=400,
-            content={"ok": False, "policy": "trade_only_required", "reason": "withdraw/transfer must be disabled"},
-        )
+    return {"ok": True, "policy": "trade_only_required", "provider": provider}
 
-    return {"ok": True, "policy": "trade_only_required", "provider": req.provider}
+
+@app.post("/broker/exchange/link")
+async def link_exchange_broker(req: ExchangeBrokerLinkRequest, user_id: int = Depends(verify_api_key)):
+    """Persist encrypted Binance/Bybit API credentials after permission validation."""
+    provider = _normalize_exchange_provider(req.provider)
+    valid, reason = _broker_permissions_valid(req)
+    if not valid:
+        raise HTTPException(400, {"ok": False, "policy": "trade_only_required", "reason": reason})
+
+    api_key = str(req.api_key or "").strip()
+    api_secret = str(req.api_secret or "").strip()
+    if len(api_key) < 8 or len(api_secret) < 8:
+        raise HTTPException(400, "API key and secret are required")
+
+    from services.security import encrypt_secret, is_encryption_available
+
+    if not is_encryption_available():
+        raise HTTPException(503, "ENCRYPTION_KEY is required before linking broker credentials")
+
+    enc_key = encrypt_secret(api_key)
+    enc_secret = encrypt_secret(api_secret)
+    enc_passphrase = encrypt_secret(str(req.passphrase or "")) if req.passphrase else None
+    if not enc_key or not enc_secret:
+        raise HTTPException(503, "Broker credential encryption failed")
+
+    masked = f"{api_key[:4]}...{api_key[-4:]}"
+    payload = {
+        "provider": provider,
+        "api_key_enc": enc_key,
+        "api_secret_enc": enc_secret,
+        "passphrase_enc": enc_passphrase,
+        "sandbox": bool(req.sandbox),
+        "permissions": {
+            "read": bool(req.read) if req.read is not None else True,
+            "trade": bool(req.trade),
+            "withdraw": False,
+            "internal_transfer": False,
+        },
+        "masked_key": masked,
+        "linked_at": datetime.utcnow().isoformat(),
+    }
+
+    async with get_session() as session:
+        key = _exchange_state_key(int(user_id), provider)
+        existing = await session.get(RuntimeState, key)
+        if existing is None:
+            session.add(RuntimeState(key=key, value=payload))
+        else:
+            existing.value = payload
+            existing.updated_at = datetime.utcnow()
+        await session.commit()
+
+    return {
+        "ok": True,
+        "provider": provider,
+        "masked_key": masked,
+        "sandbox": bool(req.sandbox),
+        "policy": "trade_only_required",
+    }
+
+
+@app.get("/broker/exchange/status")
+async def exchange_broker_status(provider: str, user_id: int = Depends(verify_api_key)):
+    """Return non-sensitive exchange broker link status."""
+    provider_n = _normalize_exchange_provider(provider)
+    async with get_session() as session:
+        row = await session.get(RuntimeState, _exchange_state_key(int(user_id), provider_n))
+    value = dict(getattr(row, "value", {}) or {}) if row is not None else {}
+    return {
+        "linked": row is not None,
+        "provider": provider_n,
+        "masked_key": value.get("masked_key"),
+        "sandbox": bool(value.get("sandbox", False)),
+        "linked_at": value.get("linked_at"),
+        "policy": "trade_only_required",
+    }
 
 def _payments_enabled() -> bool:
     return str(os.getenv("PAYMENTS_ENABLED", "true")).strip().lower() in {"1", "true", "yes", "on"}
