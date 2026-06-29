@@ -199,6 +199,9 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             f"Partial Wins: {sh.get('partial_win', 0)}\n"
             f"Shadow Winner Rate: {sh.get('shadow_winner_rate_pct', 0.0):.1f}%\n"
         )
+        src = stats.get("sources") or {}
+        if int(src.get("global_total") or 0) == 0 and int(src.get("db_decisions") or 0) == 0 and int(src.get("db_signals") or 0) == 0:
+            txt += "\nNote: no engine/DB activity was observed in this window yet; this may be a cold-start pulse.\n"
 
         import requests
 
@@ -313,6 +316,9 @@ async def send_weekly_filter_efficacy_via_telegram(window_days: int = 7) -> bool
 
 async def start_pulse_loop(interval_seconds: int = None) -> None:
     interval = int(os.getenv("ENGINE_PULSE_INTERVAL_SECONDS", "3600") or 3600) if interval_seconds is None else int(interval_seconds)
+    initial_delay = int(os.getenv("ENGINE_PULSE_INITIAL_DELAY_SECONDS", "300") or 300)
+    if initial_delay > 0:
+        await asyncio.sleep(min(initial_delay, max(60, int(interval))))
     while True:
         try:
             await send_admin_pulse_via_telegram(window_hours=1)

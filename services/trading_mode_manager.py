@@ -110,7 +110,7 @@ class TradingModeManager:
         """
         # Get user's trading mode
         mode = await self.get_mode(user_id)
-        exec_mode = await self.get_execution_mode(user_id)
+        exec_mode = _normalize_execution_mode(await self.get_execution_mode(user_id))
         
         result = {
             "success": False,
@@ -210,7 +210,7 @@ class TradingModeManager:
             
             # Check if user has active subscription
             sub_status = await SubscriptionManager.get_status(user_id)
-            tier = sub_status.get("tier", "free")
+            tier = str(sub_status.get("tier", "free") or "free").strip().lower()
             
             # Only premium+ users can use live trading
             if tier not in ("premium", "vip", "owner", "admin"):

@@ -1084,8 +1084,18 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     stats: dict[tuple[str, str], dict[str, int]] = {}
     total_delivered = 0
+    reserved_not_sent = 0
 
     async with get_session() as session:
+        try:
+            reserved_res = await session.execute(
+                select(func.count(SignalDelivery.id))
+                .where(SignalDelivery.delivered_at >= cutoff, SignalDelivery.sent_ok.is_(False))
+            )
+            reserved_not_sent = int(reserved_res.scalar_one_or_none() or 0)
+        except Exception:
+            reserved_not_sent = 0
+
         totals_res = await session.execute(
             select(
                 SignalDelivery.tier_at_send,
@@ -1136,11 +1146,17 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     total_tracked = sum((v.get("wins", 0) + v.get("losses", 0)) for v in stats.values())
+    coverage_pct = (total_tracked / total_delivered * 100.0) if total_delivered > 0 else 0.0
     tier_order = {"FREE": 0, "PREMIUM": 1, "VIP": 2, "ADMIN": 3, "OWNER": 4}
     asset_order = {"crypto": 0, "fx": 1, "stock": 2, "commodity": 3}
 
     tiers_present = sorted({k[0] for k in stats.keys()}, key=lambda t: tier_order.get(t, 99))
-    lines = [f"QA report (last {days}d)", f"Delivered: {total_delivered}, tracked: {total_tracked}"]
+    lines = [
+        f"QA report (last {days}d)",
+        f"Delivered: {total_delivered}, tracked: {total_tracked}, coverage: {coverage_pct:.1f}%",
+    ]
+    if reserved_not_sent:
+        lines.append(f"Reserved but not confirmed sent: {reserved_not_sent}")
 
     for tier in tiers_present:
         tier_lines = []
@@ -1172,5 +1188,9 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     lines.append("")
     lines.append("Notes: wins=tp/tp1/tp2/tp3/partial_tp; losses=sl")
+    if total_delivered > 0 and coverage_pct < 80.0:
+        lines.append(
+            "Coverage warning: tracked outcomes are too sparse for a reliable expected win-rate estimate."
+        )
     await update.message.reply_text("\n".join(lines))
 

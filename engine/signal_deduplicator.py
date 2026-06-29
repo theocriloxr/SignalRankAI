@@ -44,9 +44,26 @@ def compute_signal_fingerprint(signal: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def compute_cross_timeframe_fingerprint(signal: dict) -> str:
+    """Generate a deterministic fingerprint that ignores timeframe."""
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    direction = str(signal.get("direction") or "long").lower().strip()
+    try:
+        entry = float(signal.get("entry") or signal.get("close_price") or 0.0)
+    except Exception:
+        entry = 0.0
+    raw = f"{asset}|{direction}|{_entry_bucket(entry)}|*"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def compute_signal_hash_key(signal: dict) -> str:
     """Return the Redis key for a signal's dedup fingerprint."""
     return f"sig_dedup:{compute_signal_fingerprint(signal)}"
+
+
+def compute_cross_timeframe_hash_key(signal: dict) -> str:
+    """Return the Redis key for optional cross-timeframe thesis dedupe."""
+    return f"sig_dedup_x_tf:{compute_cross_timeframe_fingerprint(signal)}"
 
 
 def check_user_asset_cooldown(user_id: int, asset: str, direction: str) -> bool:
@@ -223,16 +240,18 @@ class SignalDeduplicator:
         try:
             lookback = self._cache_ttl if lookback_hours is None else timedelta(hours=max(0.0, float(lookback_hours)))
             cutoff = now_utc_naive() - lookback
+            cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
             async with get_session() as session:
                 stmt = (
                     select(Signal)
                     .where(Signal.asset == asset)
-                    .where(Signal.timeframe == timeframe)
                     .where(Signal.direction == direction)
                     .where(Signal.created_at >= cutoff)
                     .order_by(Signal.created_at.desc())
                     .limit(250)
                 )
+                if not cross_timeframe:
+                    stmt = stmt.where(Signal.timeframe == timeframe)
                 result = await session.execute(stmt)
                 rows = list(result.scalars().all())
                 return [cast(Signal, {
@@ -287,12 +306,14 @@ class SignalDeduplicator:
             async with get_session() as session:
                 hard_window = timedelta(hours=self._hard_window_hours) if self._hard_window_hours > 0 else self._cache_ttl
                 cutoff = now_utc_naive() - hard_window
+                cross_timeframe = str(os.getenv("SIGNAL_DEDUP_CROSS_TIMEFRAME", "1") or "1").strip().lower() in {"1", "true", "yes", "on"}
                 stmt = select(Signal).where(
                     Signal.asset == asset,
-                    Signal.timeframe == timeframe,
                     Signal.direction == direction,
                     Signal.created_at >= cutoff,
                 ).order_by(Signal.created_at.desc()).limit(250)
+                if not cross_timeframe:
+                    stmt = stmt.where(Signal.timeframe == timeframe)
                 
                 result = await session.execute(stmt)
                 rows = list(result.scalars().all())

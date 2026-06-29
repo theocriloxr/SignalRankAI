@@ -1,4 +1,6 @@
 import unittest
+import re
+from pathlib import Path
 
 from signalrank_telegram.command_access import COMMAND_TIERS, check_command_access
 from signalrank_telegram.commands import _help_page_definitions
@@ -33,6 +35,20 @@ class TestTierHelpContract(unittest.TestCase):
         }
         intentionally_hidden = {"unlock", "broadcast", "dev_invalidate", "dev_force_signal"}
         self.assertTrue(intentionally_hidden.isdisjoint(paginated_help_commands))
+
+    def test_help_surface_commands_have_bot_handlers(self):
+        pages = _help_page_definitions()
+        help_commands = {
+            str(cmd).strip().lstrip("/").lower()
+            for page in pages.values()
+            for cmd, _desc in page.get("commands", [])
+        }
+        bot_source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "bot.py").read_text(
+            encoding="utf-8"
+        )
+        registered = {m.group(1).lower() for m in re.finditer(r'CommandHandler\("([^"]+)"', bot_source)}
+        missing = sorted(help_commands - registered)
+        self.assertFalse(missing, msg=f"/help lists commands without bot handlers: {missing}")
 
 
 if __name__ == "__main__":
