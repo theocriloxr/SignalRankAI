@@ -16,14 +16,14 @@ when tests, docs, monitoring, or production evidence improves.
 | Payments/subscriptions | 76 | 76 | 72 | 65 | 76 | 68 | 72 | 50 | 68 | 62 | N/A | N/A | N/A | 68 |
 | Web/admin | 68 | 70 | 66 | 60 | 68 | 62 | 64 | 45 | 62 | 55 | N/A | N/A | N/A | 62 |
 | Operations/observability | 65 | 68 | 68 | 55 | 62 | 58 | 65 | 58 | 68 | N/A | N/A | N/A | N/A | 64 |
-| Governance/docs | 82 | 80 | 78 | N/A | 70 | N/A | 78 | 60 | 86 | N/A | 75 | 78 | 76 | 77 |
+| Governance/docs | 84 | 82 | 82 | N/A | 72 | N/A | 80 | 64 | 88 | N/A | 76 | 78 | 76 | 80 |
 
 ## Overall Assessment
 
 - Development completeness: 98
 - Feature completeness relative to merged project: 95
 - Stability: 92
-- Enterprise readiness: 78
+- Enterprise readiness: 79
 - Institutional trading ecosystem maturity: 70
 
 ## Highest-Impact Next Actions

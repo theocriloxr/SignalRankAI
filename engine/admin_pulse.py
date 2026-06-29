@@ -21,7 +21,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     Now uses GlobalStats for real-time engine metrics instead of only DB queries.
     Falls back to DB-only if GlobalStats not available.
     """
-    # Try to get stats from GlobalStats first (real-time from engine)
+    # Try to get stats from GlobalStats first (real-time from engine).
+    # A fresh deploy can legitimately have cold Redis/process counters while DB
+    # rows already prove recent activity, so DB evidence is merged below.
     global_scanned = 0
     global_delivered = 0
     global_vetoed = {}
@@ -83,28 +85,47 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     db_scanned = 0
                     db_rejected_by = {}
 
-            # Check if created_at column exists in signal_deliveries
+                # SignalDelivery uses delivered_at in the ORM; some old tables
+                # may have created_at, so try delivered_at first then fallback.
             try:
                 delivered_row = (
                     await session.execute(
                         text(
-                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since"
+                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE delivered_at >= :since"
                         ),
                         params,
                     )
                 ).first()
                 db_delivered = int(delivered_row[0] or 0) if delivered_row else 0
             except Exception as e:
-                # Fallback if created_at column doesn't exist yet
-                if "created_at" in str(e):
-                    logger.warning("[admin_pulse] created_at column missing in signal_deliveries - using fallback")
+                try:
+                    delivered_row = (
+                        await session.execute(
+                            text(
+                                "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE created_at >= :since"
+                            ),
+                            params,
+                        )
+                    ).first()
+                    db_delivered = int(delivered_row[0] or 0) if delivered_row else 0
+                except Exception:
                     db_delivered = 0
-                else:
-                    db_delivered = 0
+
+            try:
+                issued_row = (
+                    await session.execute(
+                        text("SELECT COUNT(*) FROM signals WHERE created_at >= :since"),
+                        params,
+                    )
+                ).first()
+                db_issued = int(issued_row[0] or 0) if issued_row else 0
+            except Exception:
+                db_issued = 0
     except Exception as db_err:
         logger.debug("[admin_pulse] DB query failed: %s", db_err)
         db_scanned = 0
         db_delivered = 0
+        db_issued = 0
         db_rejected_by = {}
 
     # Get shadow counters from Redis
@@ -119,11 +140,24 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
 
     shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
 
-    # Merge: use GlobalStats if available, otherwise use DB stats
+    global_total = int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
+    db_rejected_total = sum(int(v or 0) for v in (db_rejected_by or {}).values())
+    db_scanned_evidence = max(int(db_scanned or 0), int(db_issued or 0), int(db_delivered or 0), int(db_rejected_total or 0))
+    scanned = max(int(global_scanned or 0), db_scanned_evidence)
+    delivered = max(int(global_delivered or 0), int(db_delivered or 0))
+    rejected_by = global_vetoed if (use_global_stats and global_total > 0) else db_rejected_by
+
     return {
-        "scanned": global_scanned if use_global_stats else db_scanned,
-        "delivered": global_delivered if use_global_stats else db_delivered,
-        "rejected_by": global_vetoed if use_global_stats else db_rejected_by,
+        "scanned": scanned,
+        "delivered": delivered,
+        "rejected_by": rejected_by,
+        "sources": {
+            "global_stats": bool(use_global_stats),
+            "global_total": int(global_total),
+            "db_decisions": int(db_scanned or 0),
+            "db_signals": int(db_issued or 0),
+            "db_deliveries": int(db_delivered or 0),
+        },
         "shadow": {
             "total_tracked": total_tracked,
             "false_negative": false_neg,

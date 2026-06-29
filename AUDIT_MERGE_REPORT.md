@@ -82,6 +82,8 @@ Completed on 2026-06-29:
 - Treated `SignalRankAI1` as the production project and stopped using the sibling reference project as the working target.
 - Added enforceable governance validation: `scripts/validate_governance_docs.py`.
 - Added governance tests: `tests/test_governance_docs.py`.
+- Added offline production readiness validation: `scripts/production_readiness_check.py`.
+- Added readiness tests: `tests/test_production_readiness_check.py`.
 - Added deployment governance and launch operations artifacts:
   - `docs/LIVING_DEPLOYMENT_REGISTER.md`
   - `docs/PRODUCTION_LAUNCH_RUNBOOK.md`
@@ -94,6 +96,8 @@ Completed on 2026-06-29:
 Verification:
 
 - Governance validator: `Governance validation passed: 17 documents checked.`
+- Offline readiness checker: `overall=PASS checks=7`.
+- Governance/readiness tests: `5 passed`.
 - Focused production-pass tests: `12 passed`.
 - Project-owned compile check: passed with `.venv`, `.git`, `__pycache__`, and `.pytest_cache` excluded.
 - Full test suite: `263 passed, 34 warnings`.

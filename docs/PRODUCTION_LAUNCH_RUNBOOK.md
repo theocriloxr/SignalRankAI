@@ -12,13 +12,14 @@ be validated in the deployment environment.
 1. Run project-owned compile check excluding `.venv`, `.git`, `__pycache__`, and `.pytest_cache`.
 2. Run full regression suite: `.venv/Scripts/python.exe -m pytest -q`.
 3. Run governance check: `.venv/Scripts/python.exe scripts/validate_governance_docs.py`.
-4. Verify `/health`, `/healthz`, and `/metrics/prometheus` in the deployed web process.
-5. Verify `/ops_health` from an admin Telegram account.
-6. Verify Telegram sandbox command/callback workflow before public webhook routing.
-7. Verify payment sandbox upgrade and webhook reconciliation.
-8. Confirm production secrets are set in the hosting provider, not committed files.
-9. Confirm migration plan, backup plan, and rollback owner.
-10. Update `docs/PRODUCTION_READINESS_SCORECARD.md` with final evidence.
+4. Run offline readiness check: `.venv/Scripts/python.exe scripts/production_readiness_check.py`.
+5. Verify `/health`, `/healthz`, and `/metrics/prometheus` in the deployed web process.
+6. Verify `/ops_health` from an admin Telegram account.
+7. Verify Telegram sandbox command/callback workflow before public webhook routing.
+8. Verify payment sandbox upgrade and webhook reconciliation.
+9. Confirm production secrets are set in the hosting provider, not committed files.
+10. Confirm migration plan, backup plan, and rollback owner.
+11. Update `docs/PRODUCTION_READINESS_SCORECARD.md` with final evidence.
 
 ## Launch Sequence
 

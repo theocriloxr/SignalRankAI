@@ -21,6 +21,7 @@ rollback paths, operational dependencies, and readiness evidence.
 
 - Full test suite passes.
 - Governance validation passes: `python scripts/validate_governance_docs.py`.
+- Offline production readiness passes: `python scripts/production_readiness_check.py`.
 - Project-owned compile check passes excluding `.venv`, `.git`, caches.
 - Health endpoints return acceptable responses in target environment.
 - Metrics endpoint is reachable by monitoring.
