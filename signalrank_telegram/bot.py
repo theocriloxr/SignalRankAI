@@ -651,9 +651,38 @@ def _mask_db_url_host(url: str) -> str:
 
 def _normalized_delivery_tier(tier: str | None) -> str:
     t = str(tier or "free").strip().lower()
-    if t in ("owner", "admin"):
-        return "vip"
-    return t
+    if t in ("owner", "admin", "vip", "premium", "free"):
+        return t
+    return "free"
+
+
+def _display_tier_for_delivery(tier: str | None) -> str:
+    """Owner/admin use VIP formatting while keeping owner/admin delivery gates."""
+    t = str(tier or "free").strip().lower()
+    return "vip" if t in {"owner", "admin"} else _normalized_delivery_tier(t)
+
+
+def _delivery_score(signal: dict | None) -> float:
+    """Resolve signal score aliases used by engine/ranking paths."""
+    if not isinstance(signal, dict):
+        return 0.0
+    best = 0.0
+    for value in (
+        signal.get("score"),
+        signal.get("score_total"),
+        signal.get("score_composite"),
+        signal.get("composite_score"),
+        signal.get("_preview_score"),
+        signal.get("rank_score"),
+        signal.get("quality_score"),
+    ):
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if numeric > best:
+            best = numeric
+    return best
 
 
 
@@ -2753,7 +2782,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         gated_signals: list[dict] = []
         for _sig in (signals_list or []):
             try:
-                _score = float((_sig or {}).get('score', 0) or 0)
+                _score = _delivery_score(_sig)
                 if delivery_mgr.should_send_signal(routing_tier, _score, user_id=None):
                     gated_signals.append(_sig)
             except Exception:
@@ -2908,15 +2937,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
 
         if engine is not None:
             effective_tier = routing_tier
-            display_tier = routing_tier
+            display_tier = _display_tier_for_delivery(tier)
             
-            # OWNER and ADMIN always get VIP format for ALL notifications
             if tier == 'free' and extra_left > 0:
                 effective_tier = 'premium'
                 display_tier = 'premium'
 
 
-            if effective_tier in ('premium', 'vip'):
+            if effective_tier in ('premium', 'vip', 'admin', 'owner'):
                 bot = Bot(token=_require_telegram_token())
                 limit = TIER_LIMITS.get(routing_tier, 0)
                 if tier == 'free' and extra_left > 0:
@@ -2940,7 +2968,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             if daily_limit != float('inf') and (already_sent_today + len(to_send)) >= int(daily_limit):
                                 break
                             try:
-                                _score = float((signal or {}).get('score', 0) or 0)
+                                _score = _delivery_score(signal)
                                 if delivery_mgr is not None and not delivery_mgr.should_send_signal(
                                     str(effective_tier),
                                     _score,
@@ -3361,7 +3389,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         bot = Bot(token=_require_telegram_token())
         limit = TIER_LIMITS.get(routing_tier, 0)
         sent = 0
-        display_tier = routing_tier
+        display_tier = _display_tier_for_delivery(tier)
         for signal in signals_list:
             # Check if we've hit the daily limit
             if signals_sent_today + sent >= daily_limit:

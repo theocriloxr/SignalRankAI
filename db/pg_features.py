@@ -834,6 +834,8 @@ async def record_signal_delivery(
         cutoff: datetime = max(cutoff, dedupe_reset_at) if cutoff else dedupe_reset_at
 
     tier_s: str = str(tier_at_send or "free").strip().lower()[:16]
+    tier_base: str = tier_s.split("_", 1)[0].strip().lower()
+    monitoring_tier: bool = tier_base in {"owner", "admin"}
 
     try:
         market_cooldown_minutes = int((os.getenv("DELIVERY_MARKET_COOLDOWN_MINUTES") or "180").strip())
@@ -848,7 +850,7 @@ async def record_signal_delivery(
         market_cutoff = max(market_cutoff, dedupe_reset_at) if market_cutoff else dedupe_reset_at
 
 
-    if cutoff is not None:
+    if cutoff is not None and not monitoring_tier:
         try:
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()

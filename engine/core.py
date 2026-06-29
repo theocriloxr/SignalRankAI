@@ -2682,13 +2682,20 @@ def main_loop(DRY_RUN: bool = False):
                     from db.session import get_session, is_db_configured
                     if not is_db_configured():
                         raise RuntimeError("DB not configured")
-                    from db.models import SignalDelivery
+                    from db.models import SignalDelivery, User
                     from sqlalchemy import select
 
                     async with get_session() as session:
+                        user_row = (
+                            await session.execute(
+                                select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
+                            )
+                        ).first()
+                        if not user_row:
+                            return list(signals or [])
                         result = await session.execute(
                             select(SignalDelivery.signal_id).where(
-                                SignalDelivery.user_id == int(user_id),
+                                SignalDelivery.user_id == int(user_row[0]),
                                 SignalDelivery.signal_id.in_(signal_ids),
                             )
                         )
