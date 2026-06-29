@@ -896,6 +896,12 @@ async def _is_asset_delivery_locked(
         symbol = str(asset or "").upper().strip()
         if not symbol:
             return False
+        try:
+            tier = str(resolve_user_tier(int(telegram_user_id)) or "free").strip().lower()
+            if tier in {"owner", "admin"}:
+                return False
+        except Exception:
+            pass
 
         hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
         if hours <= 0:
@@ -3064,6 +3070,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     for signal in signals_list:
                         if sent >= int(limit):
                             break
+                        reserved_signal = None
                         try:
                             reserved_signal = await _reserve_one(signal)
                             if not reserved_signal:
@@ -3090,6 +3097,32 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     )
                                 except Exception:
                                     pass
+                                try:
+                                    from db.pg_features import mark_signal_delivery_result
+                                    async with get_session() as session:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(reserved_signal.get("signal_id") or ""),
+                                            sent_ok=True,
+                                        )
+                                        await session.commit()
+                                except Exception as mark_err:
+                                    logger.debug("[dispatch] failed to mark delivery success: %s", mark_err)
+                            else:
+                                try:
+                                    from db.pg_features import mark_signal_delivery_result
+                                    async with get_session() as session:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(reserved_signal.get("signal_id") or ""),
+                                            sent_ok=False,
+                                            error="deliver_or_update_returned_false",
+                                        )
+                                        await session.commit()
+                                except Exception:
+                                    pass
                             if tier == 'free' and extra_left > 0:
                                 try:
                                     state.consume_extra_signals_sync(int(user_id), 1)
@@ -3097,6 +3130,20 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                     pass
                         except Exception as e:
+                            try:
+                                if reserved_signal:
+                                    from db.pg_features import mark_signal_delivery_result
+                                    async with get_session() as session:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(reserved_signal.get("signal_id") or ""),
+                                            sent_ok=False,
+                                            error=str(e),
+                                        )
+                                        await session.commit()
+                            except Exception:
+                                pass
                             logger.debug(f"[dispatch] Exception in fallback send: {e}")
                             continue
                     return
@@ -3119,6 +3166,32 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 )
                             except Exception:
                                 pass
+                            try:
+                                from db.pg_features import mark_signal_delivery_result
+                                async with get_session() as session:
+                                    await mark_signal_delivery_result(
+                                        session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal.get("signal_id") or ""),
+                                        sent_ok=True,
+                                    )
+                                    await session.commit()
+                            except Exception as mark_err:
+                                logger.debug("[dispatch] failed to mark delivery success: %s", mark_err)
+                        else:
+                            try:
+                                from db.pg_features import mark_signal_delivery_result
+                                async with get_session() as session:
+                                    await mark_signal_delivery_result(
+                                        session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal.get("signal_id") or ""),
+                                        sent_ok=False,
+                                        error="deliver_or_update_returned_false",
+                                    )
+                                    await session.commit()
+                            except Exception:
+                                pass
                         if tier == 'free' and extra_left > 0:
                             try:
                                 state.consume_extra_signals_sync(int(user_id), 1)
@@ -3126,6 +3199,19 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                 pass
                     except Exception as e:
+                        try:
+                            from db.pg_features import mark_signal_delivery_result
+                            async with get_session() as session:
+                                await mark_signal_delivery_result(
+                                    session,
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(signal.get("signal_id") or ""),
+                                    sent_ok=False,
+                                    error=str(e),
+                                )
+                                await session.commit()
+                        except Exception:
+                            pass
                         logger.debug(f"[dispatch] Exception in reserved send: {e}")
                         continue
                 return
