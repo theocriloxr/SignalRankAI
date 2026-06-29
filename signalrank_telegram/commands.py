@@ -191,6 +191,23 @@ def _build_dynamic_menu(user_id: int, tier: str):
 		return None
 
 
+_TELEGRAM_CALLBACK_DATA_MAX_BYTES = 64
+
+
+def _compact_signal_callback_id(signal_id: object) -> str:
+	raw = str(signal_id or "").strip()
+	return raw[:36] if raw else ""
+
+
+def _signal_callback_data(prefix: str, signal_id: object, suffix: str = "") -> str:
+	payload = _compact_signal_callback_id(signal_id)
+	data = f"{prefix}{payload}{suffix}"
+	while payload and len(data.encode("utf-8")) > _TELEGRAM_CALLBACK_DATA_MAX_BYTES:
+		payload = payload[:-1]
+		data = f"{prefix}{payload}{suffix}"
+	return data
+
+
 def _build_signal_action_keyboard(signal: dict | None = None):
 	"""Build inline buttons for /signals output (chart + trade)."""
 	try:
@@ -200,20 +217,20 @@ def _build_signal_action_keyboard(signal: dict | None = None):
 		chart_url = "https://www.tradingview.com/chart/"
 		if _chart_symbol:
 			chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{_chart_symbol}"
-		signal_id = str((signal or {}).get("signal_id") or "")[:36]
-		trade_cb = f"mt5_trade_{signal_id}" if signal_id else None
+		signal_id = _compact_signal_callback_id((signal or {}).get("signal_id"))
+		trade_cb = _signal_callback_data("mt5_trade_", signal_id) if signal_id else None
 		rows = [[
 			InlineKeyboardButton("📈 View Chart", url=chart_url),
 		]]
 		if signal_id:
 			rows[0].append(InlineKeyboardButton("⚡ Trade Now", callback_data=trade_cb))
 			rows.append([
-				InlineKeyboardButton("🔥 Taking It", callback_data=f"signal_reaction_{signal_id}|taking_it"),
-				InlineKeyboardButton("👀 Watching", callback_data=f"signal_reaction_{signal_id}|watching"),
+				InlineKeyboardButton("🔥 Taking It", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|taking_it")),
+				InlineKeyboardButton("👀 Watching", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|watching")),
 			])
 			rows.append([
-				InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
-				InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{signal_id}"),
+				InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
+				InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
 			])
 		keyboard = InlineKeyboardMarkup(rows)
 		return keyboard
@@ -491,10 +508,10 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 			if signal_id:
 				from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 				new_kbd = InlineKeyboardMarkup([
-					[InlineKeyboardButton("⚡ Trade Now", callback_data=f"mt5_trade_{signal_id}")],
+					[InlineKeyboardButton("⚡ Trade Now", callback_data=_signal_callback_data("mt5_trade_", signal_id))],
 					[
-						InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
-						InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{signal_id}"),
+						InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
+						InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
 					],
 				])
 				await query.edit_message_reply_markup(reply_markup=new_kbd)
@@ -747,7 +764,7 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 				await query.message.reply_text(
 					"⚡ Updated action button:",
 					reply_markup=InlineKeyboardMarkup([
-						[InlineKeyboardButton("⚡ Take Trade", callback_data=f"mt5_trade_{signal_id}")]
+						[InlineKeyboardButton("⚡ Take Trade", callback_data=_signal_callback_data("mt5_trade_", signal_id))]
 					]),
 				)
 				return

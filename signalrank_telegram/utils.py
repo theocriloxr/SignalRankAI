@@ -142,6 +142,23 @@ def _build_dynamic_menu(user_id: int, tier: str) -> Optional[InlineKeyboardMarku
     except Exception:
         return None
 
+_TELEGRAM_CALLBACK_DATA_MAX_BYTES = 64
+
+
+def _compact_signal_callback_id(signal_id: object) -> str:
+    raw = str(signal_id or "").strip()
+    return raw[:36] if raw else ""
+
+
+def _signal_callback_data(prefix: str, signal_id: object, suffix: str = "") -> str:
+    payload = _compact_signal_callback_id(signal_id)
+    data = f"{prefix}{payload}{suffix}"
+    while payload and len(data.encode("utf-8")) > _TELEGRAM_CALLBACK_DATA_MAX_BYTES:
+        payload = payload[:-1]
+        data = f"{prefix}{payload}{suffix}"
+    return data
+
+
 def _build_signal_action_keyboard(signal: Optional[Dict[str, Any]] = None) -> Optional[InlineKeyboardMarkup]:
     """Inline buttons for signals: Chart + Trade."""
     try:
@@ -149,18 +166,22 @@ def _build_signal_action_keyboard(signal: Optional[Dict[str, Any]] = None) -> Op
         chart_symbol = asset.replace("/", "").replace(" ", "")
         chart_url = f"https://www.tradingview.com/chart/?symbol={broker_prefix}:{chart_symbol}"
         
-        signal_id = str((signal or {}).get("signal_id") or "")[:36]
-        trade_cb = f"mt5_trade_{signal_id}" if signal_id else "mt5_trade"
+        signal_id = _compact_signal_callback_id((signal or {}).get("signal_id"))
         
         rows = [[
             InlineKeyboardButton("📈 TradingView Chart", url=chart_url),
-            InlineKeyboardButton("⚡ Execute", callback_data=trade_cb),
         ]]
+        if signal_id:
+            rows[0].append(InlineKeyboardButton("⚡ Execute", callback_data=_signal_callback_data("mt5_trade_", signal_id)))
         
         if signal_id:
             rows.append([
-                InlineKeyboardButton("🔥 Taking Position", callback_data=f"reaction_{signal_id}_taking"),
-                InlineKeyboardButton("👀 Watching", callback_data=f"reaction_{signal_id}_watching"),
+                InlineKeyboardButton("🔥 Taking Position", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|taking_it")),
+                InlineKeyboardButton("👀 Watching", callback_data=_signal_callback_data("signal_reaction_", signal_id, "|watching")),
+            ])
+            rows.append([
+                InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", signal_id)),
+                InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", signal_id)),
             ])
         
         return InlineKeyboardMarkup(rows)

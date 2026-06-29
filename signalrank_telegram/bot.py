@@ -1009,37 +1009,65 @@ async def _load_signal_engagement_counts(signal_id: str) -> dict[str, int]:
     return counts
 
 
+_TELEGRAM_CALLBACK_DATA_MAX_BYTES = 64
+
+
+def _compact_signal_callback_id(signal_id: object) -> str:
+    """Return a Telegram callback-safe signal id/reference."""
+    raw = str(signal_id or "").strip()
+    if not raw:
+        return ""
+    return raw[:36]
+
+
+def _signal_callback_data(prefix: str, signal_id: object, suffix: str = "") -> str:
+    payload = _compact_signal_callback_id(signal_id)
+    data = f"{prefix}{payload}{suffix}"
+    while payload and len(data.encode("utf-8")) > _TELEGRAM_CALLBACK_DATA_MAX_BYTES:
+        payload = payload[:-1]
+        data = f"{prefix}{payload}{suffix}"
+    return data
+
+
 def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: dict[str, int] | None = None):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     counts = counts or {}
     taking_it = int(counts.get("taking_it", 0) or 0)
     watching = int(counts.get("watching", 0) or 0)
+    callback_signal_id = _compact_signal_callback_id(signal_id)
     rows = [[
-        InlineKeyboardButton(f"🔥 Taking It ({taking_it})", callback_data=f"signal_reaction_{signal_id}|taking_it"),
-        InlineKeyboardButton(f"👀 Watching ({watching})", callback_data=f"signal_reaction_{signal_id}|watching"),
+        InlineKeyboardButton(
+            f"🔥 Taking It ({taking_it})",
+            callback_data=_signal_callback_data("signal_reaction_", callback_signal_id, "|taking_it"),
+        ),
+        InlineKeyboardButton(
+            f"👀 Watching ({watching})",
+            callback_data=_signal_callback_data("signal_reaction_", callback_signal_id, "|watching"),
+        ),
     ]]
 
     # Always include compact callback payload so button remains available
     # even when detailed numeric payload would exceed Telegram's 64-byte limit.
-    if str(signal_id or "").strip():
+    if callback_signal_id:
         rows.append([
-            InlineKeyboardButton("⚡ Take Trade", callback_data=f"mt5_trade_{str(signal_id)[:36]}")
+            InlineKeyboardButton("⚡ Take Trade", callback_data=_signal_callback_data("mt5_trade_", callback_signal_id))
         ])
 
     rows.append([
-        InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
-        InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{str(signal_id)[:36]}"),
+        InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+        InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ])
     return InlineKeyboardMarkup(rows)
 
 
 def _build_monitor_keyboard(signal_id: str):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    callback_signal_id = _compact_signal_callback_id(signal_id)
 
     return InlineKeyboardMarkup([[ 
-        InlineKeyboardButton("🔄 Refresh", callback_data=f"monitor_signal_{signal_id}"),
-        InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{str(signal_id)[:36]}"),
+        InlineKeyboardButton("🔄 Refresh", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+        InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ]])
 
 
@@ -1204,7 +1232,7 @@ async def _deliver_or_update_signal_async(
                 )
 
                 jump_keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Go to signal", callback_data=f"open_signal_{signal_id[:36]}")]]
+                    [[InlineKeyboardButton("Go to signal", callback_data=_signal_callback_data("open_signal_", signal_id))]]
                 )
                 await bot.send_message(
                     chat_id=int(telegram_user_id),
@@ -2052,7 +2080,14 @@ async def _send_signal_with_engagement_async(
                 await session.commit()
         except Exception as _e:
             logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
-    except Exception:
+    except Exception as send_exc:
+        logger.warning(
+            "[send_signal] keyboard send failed chat_id=%s user=%s signal_id=%s err=%s",
+            chat_id,
+            telegram_user_id,
+            signal_id,
+            send_exc,
+        )
         try:
             from web.app import telegram_dispatch_latency_seconds
             telegram_dispatch_latency_seconds.labels(status="fallback").observe(
@@ -4750,6 +4785,12 @@ def run_bot() -> None:
             await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
+
+    try:
+        from .callback_handlers import create_global_callback_handler
+        application.add_handler(create_global_callback_handler())
+    except Exception as _global_cb_err:
+        logger.warning("[bot] global callback fallback registration failed: %s", _global_cb_err)
 
     # True fallback: keep this after every concrete CommandHandler so it does
     # not shadow valid commands registered later in the setup flow.

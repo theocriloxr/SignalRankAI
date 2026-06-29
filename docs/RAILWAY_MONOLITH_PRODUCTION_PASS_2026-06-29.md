@@ -330,3 +330,55 @@ If storage is still blocked, the logs should now include a specific line like:
 ```
 
 That line is the next diagnostic hook.
+
+## 2026-06-29 Inline Keyboard Follow-Up
+
+The latest Telegram screenshots showed signals reaching the owner, but the inline keyboard actions were not usable. The likely failure mode was Telegram rejecting oversized `callback_data` payloads, after which the send path fell back to a buttonless signal without logging the original failure.
+
+### Implemented in this follow-up
+
+- All live signal keyboards now use compact signal callback references capped for Telegram's 64-byte callback-data limit.
+- `/signals` action keyboards now use the same callback contract as live signal delivery.
+- The legacy utility signal keyboard no longer emits unsupported `reaction_...` callback names; it now uses:
+  - `signal_reaction_<id>|taking_it`
+  - `signal_reaction_<id>|watching`
+  - `monitor_signal_<id>`
+  - `check_outcome_<id>`
+  - `mt5_trade_<id>`
+- `open_signal_<id>` update buttons now use the same safe callback helper.
+- A global callback-query fallback is now registered after concrete callback handlers, so unmatched buttons receive a controlled response instead of spinning indefinitely.
+- The signal send fallback now logs:
+
+```text
+[send_signal] keyboard send failed chat_id=... user=... signal_id=... err=...
+```
+
+If this appears after deploy, the signal still sends, but the error text will identify why Telegram rejected the keyboard.
+
+### Expected post-deploy Telegram behavior
+
+Fresh signals should include working inline buttons:
+
+- Taking It / Watching should update the reaction count and refresh the button row.
+- Take Trade should either open the paid execution flow or show the correct tier/broker gate.
+- Monitor should open or refresh a tracked monitor message.
+- Check Outcome should show a popup with the stored signal status.
+
+### Verification
+
+Local verification passed:
+
+```text
+python -m py_compile signalrank_telegram\bot.py signalrank_telegram\commands.py signalrank_telegram\utils.py signalrank_telegram\callback_handlers.py db\pg_features.py db\pg_compat.py db\session.py engine\core.py
+python -m pytest tests\test_callback_handler.py tests\test_command_contracts.py tests\test_command_tier_contract.py tests\test_signal_dedup_rules.py tests\test_monolith_hardening_defaults.py -q
+python -m pytest tests\test_signal_deduplicator.py tests\test_realtime_outcome_tracker_user_perf_ids.py tests\test_broker_permission_validation.py tests\test_live_production_evidence.py -q
+python scripts\production_readiness_check.py
+```
+
+Results:
+
+```text
+24 passed
+12 passed
+overall=PASS checks=8
+```

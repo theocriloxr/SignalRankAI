@@ -44,6 +44,44 @@ class DummyContext:
         self.bot = types.SimpleNamespace()
 
 
+def _keyboard_callback_payloads(keyboard):
+    payloads = []
+    for row in getattr(keyboard, "inline_keyboard", []) or []:
+        for button in row:
+            payload = getattr(button, "callback_data", None)
+            if payload:
+                payloads.append(payload)
+    return payloads
+
+
+def test_signal_keyboards_use_telegram_safe_callback_data():
+    from signalrank_telegram.bot import _build_monitor_keyboard, _build_signal_keyboard
+    from signalrank_telegram.commands import _build_signal_action_keyboard
+    from signalrank_telegram.utils import _build_signal_action_keyboard as _build_utils_signal_action_keyboard
+
+    long_signal_id = "12345678-1234-1234-1234-123456789abc-extra-payload-that-would-break-telegram"
+    keyboards = [
+        _build_signal_keyboard(long_signal_id),
+        _build_monitor_keyboard(long_signal_id),
+        _build_signal_action_keyboard({"signal_id": long_signal_id, "asset": "BTCUSDT"}),
+        _build_utils_signal_action_keyboard({"signal_id": long_signal_id, "asset": "BTCUSDT"}),
+    ]
+
+    allowed_prefixes = (
+        "mt5_trade_",
+        "signal_reaction_",
+        "monitor_signal_",
+        "check_outcome_",
+    )
+    for keyboard in keyboards:
+        payloads = _keyboard_callback_payloads(keyboard)
+        assert payloads
+        for payload in payloads:
+            assert len(payload.encode("utf-8")) <= 64
+            assert payload.startswith(allowed_prefixes)
+            assert "extra-payload" not in payload
+
+
 def test_global_callback_handler_routing(monkeypatch):
     async def _runner():
         mod = importlib.import_module("signalrank_telegram.callback_handlers")
