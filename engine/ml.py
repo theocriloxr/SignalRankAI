@@ -35,6 +35,12 @@ _STRATEGY_WEIGHT_CACHE: dict[str, Any] = {"loaded": False, "weights": {}, "updat
 
 def _asset_class_to_int(asset: str) -> float:
     a = str(asset or "").upper().strip()
+    try:
+        from data.fetcher import is_index
+        if is_index(a):
+            return 4.0
+    except Exception:
+        pass
     if a.endswith(("USDT", "USDC", "BUSD")) or (a.endswith("USD") and len(a) > 6):
         return 0.0
     clean = a.replace("/", "").replace("-", "")

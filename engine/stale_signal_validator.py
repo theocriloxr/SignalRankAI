@@ -107,6 +107,7 @@ _validator = StaleSignalValidator()
 _CLASS_THRESHOLDS: dict[str, float] = {
     "crypto":     2.5,   # 2.5% (was 3.5% - lowered to allow more signals through)
     "stock":      0.5,   # 0.5% (stocks)
+    "index":      0.8,   # 0.8% for liquid indices/index CFDs
     "commodity":  1.5,   # 1.5% (was 1.0% - Gold/Silver need more room)
     "fx":         0.8,   # 0.8% / ~80 pips (increased for realistic FX latency)
 }
@@ -129,6 +130,12 @@ def _env_bool(name: str, default: bool = False) -> bool:
 def _detect_asset_class(symbol: str) -> str:
     """Identify asset class from the symbol string."""
     sym = symbol.upper()
+    try:
+        from data.fetcher import is_index
+        if is_index(sym):
+            return "index"
+    except Exception:
+        pass
     # Crypto: ends with USDT / USDC / BTC / ETH / BNB suffix
     if sym.endswith(("USDT", "USDC", "BTC", "ETH", "BNB")):
         return "crypto"

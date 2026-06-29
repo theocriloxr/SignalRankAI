@@ -139,6 +139,15 @@ ASSET_CLASS_RISK_CONFIG = {
         # Baseline risk percentage (no boost needed)
         "risk_pct_boost": 1.0,
     },
+    "index": {
+        # Index CFDs/futures move quickly around session opens and macro events.
+        "atr_multiplier_sl": 1.7,
+        "atr_multiplier_tp": 3.0,
+        "max_position_pct": 0.5,
+        "max_portfolio_exposure": 3,
+        "min_rr": 2.0,
+        "risk_pct_boost": 0.8,
+    },
 }
 
 
@@ -169,6 +178,7 @@ def get_asset_class(symbol: str) -> str:
         return "stock"
     
     symbol_upper = str(symbol).upper().strip()
+    clean_symbol = symbol_upper.replace("/", "").replace("_", "").replace("-", "")
     
     # Check crypto pairs first (highest priority - most specific)
     if symbol_upper in CRYPTO_PAIRS:
@@ -179,6 +189,21 @@ def get_asset_class(symbol: str) -> str:
     if symbol_upper in FOREX_PAIRS:
         logger.debug(f"[asset_class] {symbol_upper} classified as FOREX")
         return "forex"
+
+    try:
+        from data.fetcher import is_index
+        if is_index(symbol_upper):
+            logger.debug(f"[asset_class] {symbol_upper} classified as INDEX")
+            return "index"
+    except Exception:
+        index_symbols = {
+            "US500", "SP500", "SPX", "GSPC", "US100", "NAS100", "NDX",
+            "US30", "DJI", "DOW", "GER40", "DAX", "UK100", "JPN225",
+            "JP225", "VIX", "HK50", "FRA40", "EU50", "AUS200",
+        }
+        if symbol_upper.startswith("^") or clean_symbol in index_symbols:
+            logger.debug(f"[asset_class] {symbol_upper} classified as INDEX")
+            return "index"
     
     # Default to stock (lowest priority - catch-all)
     logger.debug(f"[asset_class] {symbol_upper} classified as STOCK (default)")

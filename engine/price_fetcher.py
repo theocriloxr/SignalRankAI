@@ -108,7 +108,7 @@ def get_asset_class(asset: str) -> str:
         asset: Asset ticker (e.g., "BTCUSDT", "AAPL", "EURUSD")
         
     Returns:
-        "crypto", "fx", "stock", or "commodity"
+        "crypto", "fx", "stock", "commodity", or "index"
     """
     a = str(asset or "").upper().strip()
     
@@ -133,6 +133,19 @@ def get_asset_class(asset: str) -> str:
     for kw in commodity_keywords:
         if kw in a:
             return "commodity"
+
+    try:
+        from data.fetcher import is_index
+        if is_index(a):
+            return "index"
+    except Exception:
+        index_symbols = {
+            "US500", "SP500", "SPX", "GSPC", "US100", "NAS100", "NDX",
+            "US30", "DJI", "DOW", "GER40", "DAX", "UK100", "JPN225",
+            "JP225", "VIX", "HK50", "FRA40", "EU50", "AUS200",
+        }
+        if a.startswith("^") or clean in index_symbols:
+            return "index"
     
     # Default to stock
     return "stock"
@@ -172,6 +185,12 @@ def get_routing_providers(asset: str) -> List[Tuple[str, str]]:
             ("alphavantage", "https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE"),
             ("yahoo", "https://query1.finance.yahoo.com/v8/finance/chart"),
             ("polygon", "https://api.polygon.io/v2/aggs/ticker"),
+        ]
+    elif asset_class == "index":
+        return [
+            ("yahoo", "https://query1.finance.yahoo.com/v8/finance/chart"),
+            ("twelvedata", "https://api.twelvedata.com/price"),
+            ("tradingview", "https://scanner.tradingview.com"),
         ]
     else:  # commodity
         return [
@@ -294,8 +313,16 @@ async def _fetch_price_yahoo(symbol: str) -> Optional[float]:
     
     try:
         # Convert to Yahoo format
+        try:
+            from data.fetcher import is_index, normalize_index_symbol
+            if is_index(symbol):
+                symbol = normalize_index_symbol(symbol)
+        except Exception:
+            pass
         if symbol.endswith("USDT"):
             symbol = symbol.replace("USDT", "-USD")
+        elif symbol.startswith("^"):
+            pass
         elif not symbol.endswith(("USD", "EUR", "GBP", "JPY")):
             symbol = f"{symbol}-USD"
         
@@ -379,7 +406,7 @@ async def get_live_price(
                     logger.info(f"[price] {asset} = {price} (cryptocompare failover)")
                     return price
         
-        elif asset_class == "stock":
+        elif asset_class in {"stock", "index"}:
             # Try Yahoo first for stocks
             price = await asyncio.wait_for(
                 _fetch_price_yahoo(asset),

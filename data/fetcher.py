@@ -662,6 +662,8 @@ def get_candles(asset, timeframe):
                     candles = get_crypto_candles(asset, timeframe)
                 elif asset_type == "fx":
                     candles = get_fx_candles(asset, timeframe)
+                elif asset_type == "index":
+                    candles = get_index_candles(asset, timeframe)
                 else:
                     candles = get_stock_candles(asset, timeframe)
                 _write_cached_candles(_cache_key, candles or [])
@@ -672,6 +674,8 @@ def get_candles(asset, timeframe):
                 candles = _fetch_crypto_multi_provider(asset, timeframe)
             elif asset_type == "fx":
                 candles = _fetch_fx_multi_provider(asset, timeframe)
+            elif asset_type == "index":
+                candles = _fetch_index_multi_provider(asset, timeframe)
             else:  # stock
                 candles = _fetch_stock_multi_provider(asset, timeframe)
 
@@ -830,10 +834,49 @@ def _fetch_stock_multi_provider(asset, timeframe):
     return []
 
 
+def _fetch_index_multi_provider(asset, timeframe):
+    """Try index-capable providers in order without routing index CFDs as stocks."""
+    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
+
+    raw = str(asset or "").upper().strip()
+    yahoo_symbol = normalize_index_symbol(raw)
+    tv_symbol = yahoo_symbol.lstrip("^") if yahoo_symbol.startswith("^") else raw.lstrip("^")
+    tv_exchange = (os.getenv("TRADINGVIEW_INDEX_PREFIX") or "TVC").strip() or "TVC"
+    providers = [
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
+        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "index")),
+        ("polygon", lambda timeout=10: fetch_polygon_candles(yahoo_symbol, timeframe, "indices")),
+        ("tradingview", lambda timeout=10: fetch_tradingview_candles(tv_symbol, timeframe, exchange=tv_exchange)),
+    ]
+    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
+    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        try:
+            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            if candles and len(candles) >= 20:
+                mark_provider_result(provider_name, True)
+                _set_last_provider_used(asset, timeframe, provider_name)
+                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)}")
+                return candles
+            mark_provider_result(provider_name, False)
+        except Exception as e:
+            mark_provider_result(provider_name, False)
+            logger.warning(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} failed: {e}")
+            continue
+    logger.warning(f"[data] index_fetched=none symbol={asset} mapped={yahoo_symbol} tf={timeframe} (all providers failed)")
+    return []
+
+
 def get_stock_candles(asset, timeframe):
     """Legacy single-provider stock fetcher - uses Yahoo as default."""
     from .providers import fetch_yahoo_candles
     return fetch_yahoo_candles(asset, timeframe)
+
+
+def get_index_candles(asset, timeframe):
+    """Legacy single-provider index fetcher using Yahoo-compatible symbols."""
+    from .providers import fetch_yahoo_candles
+    return fetch_yahoo_candles(normalize_index_symbol(asset), timeframe)
 
 def is_crypto(asset):
     a = (asset or "").upper().strip()
@@ -871,8 +914,8 @@ def is_fx(asset):
 
 def is_stock(asset):
     """Check if asset is a stock ticker."""
-    # If not crypto and not FX and not commodity, assume stock
-    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset)
+    # If not crypto, FX, commodity, or index, assume stock
+    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset) and not is_index(asset)
 
 
 def is_commodity(asset):
@@ -894,8 +937,20 @@ def is_commodity(asset):
     return False
 
 
+def is_index(asset):
+    """Check if asset is a cash index or broker index-CFD ticker."""
+    namespace, raw_symbol = parse_symbol(asset)
+    if namespace and namespace.upper() in {"INDEX", "INDICES", "IDX"}:
+        return True
+    a = str(raw_symbol or asset or "").upper().strip()
+    clean = a.replace("/", "").replace("_", "").replace("-", "")
+    if a.startswith("^"):
+        return True
+    return clean in INDEX_SYMBOL_ALIASES
+
+
 def get_asset_type(asset):
-    """Determine asset type: 'crypto', 'fx', 'stock', or 'commodity'."""
+    """Determine asset type: 'crypto', 'fx', 'stock', 'commodity', or 'index'."""
     # First check for explicit namespace prefix
     namespace, raw_symbol = parse_symbol(asset)
     if namespace:
@@ -907,6 +962,8 @@ def get_asset_type(asset):
             return "commodity"
         elif namespace.upper() in ("FX", "FOREX"):
             return "fx"
+        elif namespace.upper() in ("INDEX", "INDICES", "IDX"):
+            return "index"
     
     # Fall back to symbol-based detection
     if is_crypto(asset):
@@ -915,6 +972,8 @@ def get_asset_type(asset):
         return "fx"
     elif is_commodity(asset):
         return "commodity"
+    elif is_index(asset):
+        return "index"
     else:
         return "stock"
 
@@ -924,7 +983,7 @@ def get_asset_type(asset):
 # =============================================================================
 
 # Valid namespace prefixes
-ASSET_NAMESPACE_PREFIXES = ("CRYPTO", "EQUITY", "STOCK", "COMMODITY", "CMDT", "FX", "FOREX")
+ASSET_NAMESPACE_PREFIXES = ("CRYPTO", "EQUITY", "STOCK", "COMMODITY", "CMDT", "FX", "FOREX", "INDEX", "INDICES", "IDX")
 
 # Known commodity tickers (to prevent crypto provider from fetching wrong asset)
 KNOWN_COMMODITY_TICKERS = {
@@ -1026,6 +1085,8 @@ def normalize_symbol(symbol: str, force_type: str | None = None) -> str:
         return f"COMMODITY:{sym}"
     elif asset_type in ("fx", "forex"):
         return f"FX:{sym}"
+    elif asset_type in ("index", "indices", "idx"):
+        return f"INDEX:{sym}"
     else:
         # Default to equity for unknown stocks, commodity for known commodities
         if sym in KNOWN_COMMODITY_TICKERS:
@@ -1089,6 +1150,8 @@ def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
             return "commodity", ["twelvedata", "oanda", "yahoo"]
         elif namespace in ("FX", "FOREX"):
             return "fx", ["twelvedata", "polygon", "oanda"]
+        elif namespace in ("INDEX", "INDICES", "IDX"):
+            return "index", ["yahoo", "twelvedata", "polygon", "tradingview"]
     
     # Fall back to symbol-based detection
     asset_type = get_asset_type(asset)
@@ -1101,6 +1164,8 @@ def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
         return "commodity", ["twelvedata", "oanda", "yahoo"]
     elif asset_type == "fx":
         return "fx", ["twelvedata", "polygon", "oanda"]
+    elif asset_type == "index":
+        return "index", ["yahoo", "twelvedata", "polygon", "tradingview"]
     
     return asset_type, []
 
@@ -1129,6 +1194,7 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
         "fx": 0.0001,          # Forex pairs in major currencies
         "stock": 0.01,         # Stocks rarely go below penny
         "commodity": 0.01,     # Commodities in dollars
+        "index": 1.0,          # Index levels / index CFDs should not be penny-priced
     }
     
     min_price = MIN_PRICES.get(asset_type, 0.01)
@@ -1161,6 +1227,48 @@ def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool,
         primary_price = float(primary_price)
     except Exception:
         return None
+
+
+INDEX_SYMBOL_ALIASES = {
+    "US500": "^GSPC",
+    "SP500": "^GSPC",
+    "SPX": "^GSPC",
+    "GSPC": "^GSPC",
+    "US100": "^NDX",
+    "NAS100": "^NDX",
+    "NDX": "^NDX",
+    "NASDAQ100": "^NDX",
+    "US30": "^DJI",
+    "DJI": "^DJI",
+    "DOW": "^DJI",
+    "DJ30": "^DJI",
+    "VIX": "^VIX",
+    "GER40": "^GDAXI",
+    "DAX": "^GDAXI",
+    "DE40": "^GDAXI",
+    "UK100": "^FTSE",
+    "FTSE": "^FTSE",
+    "JPN225": "^N225",
+    "JP225": "^N225",
+    "NIKKEI": "^N225",
+    "HK50": "^HSI",
+    "HSI": "^HSI",
+    "FRA40": "^FCHI",
+    "CAC40": "^FCHI",
+    "EU50": "^STOXX50E",
+    "AUS200": "^AXJO",
+    "ASX200": "^AXJO",
+}
+
+
+def normalize_index_symbol(asset: str) -> str:
+    """Return the Yahoo-compatible ticker for a cash index / index CFD symbol."""
+    namespace, raw_symbol = parse_symbol(asset)
+    raw = str(raw_symbol or asset or "").upper().strip()
+    clean = raw.replace("/", "").replace("_", "").replace("-", "")
+    if raw.startswith("^"):
+        return raw
+    return INDEX_SYMBOL_ALIASES.get(clean, raw)
     if primary_price <= 0:
         return None
 
@@ -1195,11 +1303,12 @@ def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool,
                         sources_prices["bybit"] = px
         except Exception:
             pass
-    elif asset_type in {"stock", "fx", "commodity"}:
+    elif asset_type in {"stock", "fx", "commodity", "index"}:
         try:
             import yfinance as yf
 
-            hist = yf.Ticker(symbol).history(period="1d", interval="1m")
+            hist_symbol = normalize_index_symbol(asset) if asset_type == "index" else symbol
+            hist = yf.Ticker(hist_symbol).history(period="1d", interval="1m")
             if hist is not None and not hist.empty:
                 px = float(hist["Close"].iloc[-1])
                 if px > 0:
@@ -1237,6 +1346,62 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     wd = now.weekday()  # Monday=0 ... Sunday=6
     hr = now.hour
     minute = now.minute
+
+    def _in_hhmm_window(window: str) -> bool:
+        try:
+            start, end = [part.strip() for part in str(window or "").split("-", 1)]
+            sh, sm = [int(x) for x in start.split(":")]
+            eh, em = [int(x) for x in end.split(":")]
+            current = hr * 60 + minute
+            start_min = sh * 60 + sm
+            end_min = eh * 60 + em
+            if start_min <= end_min:
+                return start_min <= current < end_min
+            return current >= start_min or current < end_min
+        except Exception:
+            return False
+
+    # Index schedule:
+    # - Cash index symbols (^GSPC, SPX, NDX, DJI) follow exchange hours by default.
+    # - Broker index CFDs (US500, US100, US30, GER40, UK100, JPN225) default to
+    #   futures/CFD-style 23x5 with a configurable daily maintenance break.
+    if is_index(asset):
+        raw_asset = str(asset or "").upper().strip()
+        clean_asset = raw_asset.replace("/", "").replace("_", "").replace("-", "")
+        explicit_mode = (os.getenv("INDEX_MARKET_MODE") or "").strip().lower()
+        cash_like = raw_asset.startswith("^") or clean_asset in {"SPX", "GSPC", "NDX", "DJI", "IXIC"}
+        mode = explicit_mode or ("cash" if cash_like else "cfd")
+
+        if mode == "cash":
+            holiday = is_stock_holiday(now)
+            if holiday:
+                return holiday
+            try:
+                open_str = (os.getenv("INDEX_OPEN_UTC") or os.getenv("STOCK_OPEN_UTC") or "13:30").strip()
+                close_str = (os.getenv("INDEX_CLOSE_UTC") or os.getenv("STOCK_CLOSE_UTC") or "20:00").strip()
+                oh, om = [int(x) for x in open_str.split(":")]
+                ch, cm = [int(x) for x in close_str.split(":")]
+            except Exception:
+                oh, om = 13, 30
+                ch, cm = 20, 0
+            if wd in (5, 6):
+                return "Indices closed (weekend)"
+            after_open = (hr > oh) or (hr == oh and minute >= om)
+            before_close = (hr < ch) or (hr == ch and minute <= cm)
+            if after_open and before_close:
+                return None
+            return "Indices closed (outside cash-index hours)"
+
+        if wd == 5:
+            return "Indices closed (Saturday)"
+        if wd == 6 and hr < int(_env_float("INDEX_SUNDAY_OPEN_HOUR_UTC", 22)):
+            return "Indices closed (Sunday before index CFD open)"
+        if wd == 4 and hr >= int(_env_float("INDEX_FRIDAY_CLOSE_HOUR_UTC", 22)):
+            return "Indices closed (Friday after index CFD close)"
+        daily_break = (os.getenv("INDEX_DAILY_BREAK_UTC") or "21:00-22:00").strip()
+        if wd in (0, 1, 2, 3) and daily_break and _in_hhmm_window(daily_break):
+            return f"Indices closed (daily maintenance {daily_break} UTC)"
+        return None
 
     # Commodity schedule (CME/COMEX hours)
     # Gold/Silver: Sunday 23:00 UTC - Friday 22:00 UTC (with daily break 21:00-22:00 UTC)

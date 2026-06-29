@@ -37,7 +37,7 @@ from signalrank_telegram.tier_delivery import TierDeliveryManager
 from engine.signal_analytics import signal_analytics
 
 # Data layer
-from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock
+from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock, is_index
 try:
     from data.fetcher import is_commodity
 except Exception:
@@ -690,6 +690,8 @@ def _asset_class_key(asset: str) -> str:
         return "crypto"
     if is_fx(sym):
         return "fx"
+    if is_index(sym):
+        return "index"
     if is_commodity(sym):
         return "commodity"
     if is_stock(sym):
@@ -745,6 +747,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "fx": 94.0,
         "crypto": 90.0,
         "stock": 88.0,
+        "index": 90.0,
         "commodity": 90.0,
         "other": 90.0,
     }
@@ -752,6 +755,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "fx": 2.20,
         "crypto": 2.00,
         "stock": 1.80,
+        "index": 2.00,
         "commodity": 2.00,
         "other": 2.00,
     }
@@ -759,6 +763,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "fx": 0.68,
         "crypto": 0.62,
         "stock": 0.60,
+        "index": 0.62,
         "commodity": 0.62,
         "other": 0.62,
     }
@@ -766,6 +771,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "fx": 25.0,
         "crypto": 22.0,
         "stock": 20.0,
+        "index": 22.0,
         "commodity": 22.0,
         "other": 22.0,
     }
@@ -773,6 +779,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "fx": 0.80,
         "crypto": 2.50,
         "stock": 2.00,
+        "index": 1.20,
         "commodity": 1.50,
         "other": 2.00,
     }
@@ -780,6 +787,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "fx": 4.50,
         "crypto": 4.00,
         "stock": 3.50,
+        "index": 3.50,
         "commodity": 3.50,
         "other": 4.00,
     }
@@ -1324,6 +1332,7 @@ def main_loop(DRY_RUN: bool = False):
     fx_timeframes = _resolve_timeframes('FX_TIMEFRAMES')
     stock_timeframes = _resolve_timeframes('STOCK_TIMEFRAMES')
     commodity_timeframes = _resolve_timeframes('COMMODITY_TIMEFRAMES')
+    index_timeframes = _resolve_timeframes('INDEX_TIMEFRAMES')
 
     cycle_no = 0
 
@@ -1339,6 +1348,7 @@ def main_loop(DRY_RUN: bool = False):
             "crypto": 0,
             "fx": 0,
             "stock": 0,
+            "index": 0,
             "commodity": 0,
         }
 
@@ -1432,22 +1442,28 @@ def main_loop(DRY_RUN: bool = False):
             # Partition
             crypto_assets = [a for a in open_assets if is_crypto(a)]
             fx_assets = [a for a in open_assets if is_fx(a)]
+            index_assets = [a for a in open_assets if is_index(a)]
             stock_assets = [a for a in open_assets if is_stock(a)]
             commodity_assets = [a for a in open_assets if is_commodity(a)]
             fx_enabled = _env_bool('FX_ENABLED', True)
             stocks_enabled = _env_bool('STOCKS_ENABLED', True)
+            indices_enabled = _env_bool('INDICES_ENABLED', _env_bool('INDEX_ENABLED', True))
             if not fx_enabled:
                 fx_assets = []
             if not stocks_enabled:
                 stock_assets = []
+            if not indices_enabled:
+                index_assets = []
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 logger.info(
-                    "[engine] open universe by class: crypto=%s fx=%s stock=%s commodity=%s stocks_enabled=%s",
+                    "[engine] open universe by class: crypto=%s fx=%s stock=%s index=%s commodity=%s stocks_enabled=%s indices_enabled=%s",
                     len(crypto_assets),
                     len(fx_assets),
                     len(stock_assets),
+                    len(index_assets),
                     len(commodity_assets),
                     bool(stocks_enabled),
+                    bool(indices_enabled),
                 )
                 if stocks_enabled and not stock_assets:
                     logger.warning(
@@ -1460,7 +1476,7 @@ def main_loop(DRY_RUN: bool = False):
             _all_open: list[str] = []
             _cat_iters = [
                 iter(c)
-                for c in [crypto_assets, fx_assets, stock_assets, commodity_assets]
+                for c in [crypto_assets, fx_assets, stock_assets, index_assets, commodity_assets]
                 if c
             ]
             while _cat_iters:
@@ -1495,6 +1511,8 @@ def main_loop(DRY_RUN: bool = False):
                     return "crypto"
                 if is_fx(_a):
                     return "fx"
+                if is_index(_a):
+                    return "index"
                 if is_commodity(_a):
                     return "commodity"
                 return "stock"
@@ -1503,6 +1521,7 @@ def main_loop(DRY_RUN: bool = False):
                 "crypto": list(crypto_assets),
                 "fx": list(fx_assets),
                 "stock": list(stock_assets),
+                "index": list(index_assets),
                 "commodity": list(commodity_assets),
             }
             _required_classes = [k for k, v in _open_by_class.items() if v]
@@ -1585,6 +1604,8 @@ def main_loop(DRY_RUN: bool = False):
                     tfs = crypto_timeframes
                 elif is_fx(asset):
                     tfs = fx_timeframes
+                elif is_index(asset):
+                    tfs = index_timeframes or stock_timeframes
                 elif is_stock(asset):
                     tfs = stock_timeframes
                 elif is_commodity(asset):
@@ -1653,7 +1674,7 @@ def main_loop(DRY_RUN: bool = False):
                 "skipped_portfolio_exposure": 0,
                 "store_failed": 0,
             }
-            for _cls_name in ("crypto", "fx", "stock", "commodity"):
+            for _cls_name in ("crypto", "fx", "stock", "index", "commodity"):
                 pipeline_stats[f"selected_{_cls_name}_assets"] = int(_selected_counts.get(_cls_name, 0) or 0)
                 pipeline_stats[f"no_candles_{_cls_name}"] = 0
                 pipeline_stats[f"quality_rejected_{_cls_name}"] = 0
@@ -1940,7 +1961,14 @@ def main_loop(DRY_RUN: bool = False):
                             sig['market_open_confirmed'] = True
                             sig['strategy_coverage_count'] = int(len(strategy_signals or []))
                             sig['news_sentiment'] = market_data.get('news_sentiment')
-                            sig['asset_class_enc'] = 0.0 if _asset_class(asset) == 'crypto' else 1.0 if _asset_class(asset) == 'fx' else 2.0 if _asset_class(asset) == 'commodity' else 3.0
+                            _asset_cls_for_features = _asset_class(asset)
+                            sig['asset_class_enc'] = (
+                                0.0 if _asset_cls_for_features == 'crypto'
+                                else 1.0 if _asset_cls_for_features == 'fx'
+                                else 2.0 if _asset_cls_for_features == 'commodity'
+                                else 4.0 if _asset_cls_for_features == 'index'
+                                else 3.0
+                            )
                             sig['dxy_trend'] = (market_data.get('_macro') or {}).get('dxy_trend', 0.0)
                             sig['vix_trend'] = (market_data.get('_macro') or {}).get('vix_trend', 0.0)
                             sig['us10y_trend'] = (market_data.get('_macro') or {}).get('us10y_trend', 0.0)
@@ -3327,7 +3355,13 @@ def main_loop(DRY_RUN: bool = False):
                             added = 0
                             async with _get_session() as _s:
                                 for _sym in _candidates:
-                                    _atype = "crypto" if is_crypto(_sym) else ("fx" if is_fx(_sym) else ("commodity" if is_commodity(_sym) else "stock"))
+                                    _atype = (
+                                        "crypto" if is_crypto(_sym)
+                                        else "fx" if is_fx(_sym)
+                                        else "index" if is_index(_sym)
+                                        else "commodity" if is_commodity(_sym)
+                                        else "stock"
+                                    )
                                     await _add_managed_asset(
                                         _s,
                                         symbol=_sym,

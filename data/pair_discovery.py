@@ -15,6 +15,32 @@ def get_trending_commodity_tickers(top_n=10):
     default_commodities = ["XAUUSD", "XAGUSD", "WTI", "BRENT"]
     return default_commodities[:top_n]
 
+
+def get_trending_index_tickers(top_n=10):
+    """
+    Return liquid cash-index / index-CFD symbols.
+
+    Manual override:
+      INDEX_TICKERS=US30,US100,US500,GER40,UK100,JPN225
+    """
+    manual = (os.getenv("INDEX_TICKERS") or os.getenv("INDICES_TICKERS") or "").strip()
+    if manual:
+        return _dedupe_limit([t.strip().upper() for t in manual.split(",") if t.strip()], top_n)
+
+    default_indices = [
+        "US500",   # S&P 500 CFD / proxy
+        "US100",   # Nasdaq 100 CFD / proxy
+        "US30",    # Dow Jones CFD / proxy
+        "GER40",   # DAX 40
+        "UK100",   # FTSE 100
+        "JPN225",  # Nikkei 225
+        "VIX",
+        "SPX",
+        "NDX",
+        "DJI",
+    ]
+    return _dedupe_limit(default_indices, top_n)
+
 import logging
 import sys
 import threading
@@ -392,14 +418,16 @@ def get_all_trending_pairs():
     except Exception:
         top_n = 30
     stock_top_n = max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20")))
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    index_top_n = max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "10")))
+    with ThreadPoolExecutor(max_workers=5) as ex:
         futures = {
             "crypto": ex.submit(partial(get_trending_crypto_pairs, top_n=max(1, top_n))),
             "fx": ex.submit(get_trending_fx_pairs),
             "stocks": ex.submit(partial(get_trending_stock_tickers, top_n=stock_top_n)),
             "commodities": ex.submit(partial(get_trending_commodity_tickers, 10)),
+            "indices": ex.submit(partial(get_trending_index_tickers, index_top_n)),
         }
-        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "commodities": []}
+        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "commodities": [], "indices": []}
         for k, fut in futures.items():
             try:
                 out[k] = list(fut.result() or [])
@@ -410,7 +438,8 @@ def get_all_trending_pairs():
     fx = out["fx"]
     stocks = out["stocks"]
     commodities = out["commodities"]
-    return crypto + fx + stocks + commodities
+    indices = out["indices"]
+    return crypto + fx + stocks + commodities + indices
 
 
 def get_trending_stock_tickers(top_n=20):
@@ -498,21 +527,23 @@ def get_trending_stock_tickers(top_n=20):
 
 def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     """
-    Get all tradable assets (crypto + FX + stocks).
+    Get all tradable assets (crypto + FX + stocks + commodities + indices).
     
     Returns:
-        dict with keys: crypto, fx, stocks, commodities
+        dict with keys: crypto, fx, stocks, commodities, indices
     """
     crypto = get_trending_crypto_pairs(crypto_limit)
     fx = get_trending_fx_pairs()
     stocks = get_trending_stock_tickers(stock_limit)
     commodities = get_trending_commodity_tickers(10)
+    indices = get_trending_index_tickers(max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "10"))))
     
     return {
         "crypto": crypto,
         "fx": fx,
         "stocks": stocks,
         "commodities": commodities,
+        "indices": indices,
     }
 
 # Example usage:
