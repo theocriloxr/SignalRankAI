@@ -1454,22 +1454,30 @@ def main_loop(DRY_RUN: bool = False):
             _cycle_cooldown: set = set()
             pipeline_stats = {
                 "strategy_signals": 0,
-            "normalized": 0,
-            "consensus": 0,
-            "selected": 0,
-            "unique": 0,
-            "strict_candidates": 0,
-            "risk_passed": 0,
-            "final_signals": 0,
-            "stored": 0,
-            "skipped_open_limit_asset": 0,
-            "skipped_open_limit_class": 0,
-            "skipped_cycle_cooldown": 0,
-            "skipped_db_cooldown": 0,
-            "skipped_confluence_block": 0,
-            "skipped_portfolio_exposure": 0,
-            "store_failed": 0,
-        }
+                "normalized": 0,
+                "consensus": 0,
+                "selected": 0,
+                "unique": 0,
+                "strict_candidates": 0,
+                "risk_passed": 0,
+                "final_signals": 0,
+                "stored": 0,
+                "no_candles": 0,
+                "stale_data": 0,
+                "no_strategy_signals": 0,
+                "validation_failed": 0,
+                "risk_failed": 0,
+                "advanced_filter_failed": 0,
+                "invalid_tp": 0,
+                "score_rejected": 0,
+                "skipped_open_limit_asset": 0,
+                "skipped_open_limit_class": 0,
+                "skipped_cycle_cooldown": 0,
+                "skipped_db_cooldown": 0,
+                "skipped_confluence_block": 0,
+                "skipped_portfolio_exposure": 0,
+                "store_failed": 0,
+            }
 
             open_limit_per_asset = max(1, _env_int("OPEN_SIGNALS_MAX_PER_ASSET", 20))
             open_limit_per_class = max(1, _env_int("OPEN_SIGNALS_MAX_PER_CLASS", 20))
@@ -1559,6 +1567,7 @@ def main_loop(DRY_RUN: bool = False):
                     has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
                     if not has_candles:
                         logger.warning(f"[engine] No market data for asset={asset}")
+                        pipeline_stats["no_candles"] += 1
                         _record_gate_failure(asset, "market_data", "no_candles")
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
@@ -1586,6 +1595,7 @@ def main_loop(DRY_RUN: bool = False):
                                 tf_data["latency_warning"] = True
                             elif data_age is not None and data_age > max_age:
                                 logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
+                                pipeline_stats["stale_data"] += 1
                                 _record_gate_failure(asset, "stale_data", f"{tf}:{data_age:.0f}s>{max_age:.0f}s")
                                 _maybe_log_heatmap(asset, cycle_no, 0)
                                 stale_data = True
@@ -1642,6 +1652,7 @@ def main_loop(DRY_RUN: bool = False):
 
                     pipeline_stats["strategy_signals"] += len(strategy_signals)
                     if not strategy_signals:
+                        pipeline_stats["no_strategy_signals"] += 1
                         # DEBUG: Log what's happening - regime, available TFs, indicators keys
                         _tf_list = list(market_data.keys()) if market_data else []
                         _ind_keys = list(market_data.get(list(market_data.keys())[0], {}).get('indicators', {}).keys()) if market_data else []
@@ -1769,6 +1780,7 @@ def main_loop(DRY_RUN: bool = False):
                             ok, reason = validate_signal(sig)
                             if not ok:
                                 sig['rejection_reason'] = f"validation:{reason}"
+                                pipeline_stats["validation_failed"] += 1
                                 _record_gate_failure(asset, "trend", reason)
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -1790,6 +1802,7 @@ def main_loop(DRY_RUN: bool = False):
                                 pass
                             if not risk_check(sig, account_state):
                                 sig['rejection_reason'] = 'risk/volatility'
+                                pipeline_stats["risk_failed"] += 1
                                 _record_gate_failure(asset, "risk", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2027,6 +2040,7 @@ def main_loop(DRY_RUN: bool = False):
                             passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, None)
                             if not passed_filters:
                                 sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
+                                pipeline_stats["advanced_filter_failed"] += 1
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2148,6 +2162,7 @@ def main_loop(DRY_RUN: bool = False):
 
                             if not tp:
                                 sig['rejection_reason'] = 'invalid_tp_structure'
+                                pipeline_stats["invalid_tp"] += 1
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2194,6 +2209,7 @@ def main_loop(DRY_RUN: bool = False):
                             min_score_threshold = _current_min_score_threshold()
                             if sig.get('score', 0) < min_score_threshold:
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
+                                pipeline_stats["score_rejected"] += 1
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
                                 stats.vetoed_score += 1  # FIX: Track score rejections
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})

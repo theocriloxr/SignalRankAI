@@ -201,3 +201,87 @@ After redeploying on Railway:
 4. Confirm Engine Pulse shows nonzero scanned/signals/deliveries after cycle completion.
 5. Confirm `/qa_report 30` coverage rises as outcome backfill catches up.
 6. Confirm owner receives signals even when free/VIP users are gated by limits.
+
+## 2026-06-29 Railway Log Follow-Up: Zero Scores / No Owner Signals
+
+The latest Railway logs showed the main blocker:
+
+- Postgres repeatedly returned `FATAL: sorry, too many clients already`.
+- The async DB engine logged an unsafe Railway monolith pool: `pool_size=16 max_overflow=6`.
+- Bot setup, ML training, realtime outcome tracking, shadow tracking, expiry, and threshold optimization all failed or retried while Postgres was exhausted.
+- Binance pair discovery was unavailable in the deployed region, but fallback assets and some real OHLC candles were still fetched from other providers.
+- US stock symbols were correctly skipped because the US market was closed at the logged UTC time.
+
+This means the all-zero pulse / `generated_signals=0` / `max_score=0` symptom was not evidence of demo data. The deployed service was starved of DB connections during startup, which prevented stable bot setup, tracking, persistence, and delivery.
+
+### Implemented in this follow-up
+
+- Railway detection now recognizes the full set of Railway deployment markers:
+  - `RAILWAY_SERVICE_NAME`
+  - `RAILWAY_ENVIRONMENT`
+  - `RAILWAY_ENVIRONMENT_NAME`
+  - `RAILWAY_PROJECT_ID`
+  - `RAILWAY_SERVICE_ID`
+  - `RAILWAY_DEPLOYMENT_ID`
+  - `RAILWAY_REPLICA_ID`
+  - public/private Railway domain markers where relevant
+- DB pool caps are now enforced on Railway even if `DB_POOL_DISABLE_RAILWAY_CAP=1` is present. Uncapped mode requires the second explicit override `DB_POOL_ALLOW_UNCAPPED_RAILWAY=1`.
+- Expected Railway DB log after redeploy:
+
+```text
+[db] Railway pool cap applied requested_pool=16 requested_overflow=6 effective_pool=2 effective_overflow=0
+[db] async engine initialised ... pool_size=2 max_overflow=0
+```
+
+- If the deployed log still shows `pool_size=16 max_overflow=6`, the running service is on an old build or has deliberately enabled uncapped mode.
+- Engine startup is delayed by default on Railway with `ENGINE_START_DELAY_SECONDS=12`.
+- Worker startup is delayed by default on Railway with `WORKER_START_DELAY_SECONDS=20`.
+- Worker sub-tasks are staggered by default on Railway with `WORKER_TASK_START_STAGGER_SECONDS=3`.
+- Worker task restarts now use backoff instead of immediate restart loops.
+- DB-related worker crashes use a longer default restart base on Railway.
+- ML training is delayed on Railway with `ML_TRAIN_STARTUP_DELAY_SECONDS=300` when it is explicitly enabled.
+- Drift monitoring is delayed on Railway with `ML_DRIFT_STARTUP_DELAY_SECONDS=180`.
+- The shadow outcome tracker is now supervised correctly. Previously the worker supervised `shadow_outcome_worker.start()`, which returned immediately after spawning its internal task and caused repeated restarts.
+- The Telegram APScheduler SQLAlchemy job store now defaults to MemoryJobStore on Railway to save a synchronous Postgres connection. Persistent scheduler storage can be restored with `BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED=1` after DB capacity is proven.
+- Engine cycle logging now includes zero-signal reason counters:
+  - `no_candles`
+  - `stale_data`
+  - `no_strategy_signals`
+  - `validation_failed`
+  - `risk_failed`
+  - `advanced_filter_failed`
+  - `invalid_tp`
+  - `score_rejected`
+
+### Recommended Railway env after this fix
+
+Remove or lower any broad pool settings such as:
+
+```env
+DB_POOL_SIZE=16
+DB_MAX_OVERFLOW=6
+```
+
+Use these safer monolith settings:
+
+```env
+DB_POOL_SIZE_RAILWAY=2
+DB_MAX_OVERFLOW_RAILWAY=0
+BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED=0
+ENGINE_START_DELAY_SECONDS=12
+WORKER_START_DELAY_SECONDS=20
+WORKER_TASK_START_STAGGER_SECONDS=3
+WORKER_TASK_DB_RESTART_BASE_SECONDS=60
+ML_TRAIN_STARTUP_DELAY_SECONDS=300
+ML_DRIFT_STARTUP_DELAY_SECONDS=180
+```
+
+If Postgres is still connection-limited, keep `ML_TRAIN_ENABLED=0` until the live evidence run shows stable DB health. The model can be trained as a separate one-off job or re-enabled after the monolith is stable.
+
+### Post-redeploy acceptance checks
+
+1. The boot log must show `pool_size=2 max_overflow=0`, not `16/6`.
+2. The bot setup error `too many clients already` must disappear.
+3. The shadow outcome tracker must not be restarted every second.
+4. The first Engine Pulse may still be quiet during startup delay, but later cycles must show DB/runtime evidence.
+5. If `generated_signals=0` persists, read the new engine counters to identify whether the bottleneck is provider candles, strategy generation, validation, risk, TP structure, advanced filters, or score thresholding.
