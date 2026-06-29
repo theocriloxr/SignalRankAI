@@ -27,6 +27,7 @@ the codebase is audited, implemented, refactored, optimized, or release-hardened
 | Readiness Scorecard | `docs/PRODUCTION_READINESS_SCORECARD.md` | Subsystem readiness scores and next actions. |
 | Shadow Governance | `docs/SHADOW_INTELLIGENCE_GOVERNANCE.md` | Rules for shadow evaluation and safe promotion. |
 | Launch Runbook | `docs/PRODUCTION_LAUNCH_RUNBOOK.md` | Public production launch sequence, rollback, and evidence checklist. |
+| Five-Year Roadmap | `docs/FIVE_YEAR_TRADING_SYSTEM_ROADMAP.md` | Research-backed durable architecture and feature roadmap for broker, risk, ML, data, portfolio, and audit upgrades. |
 
 ## Definition Of Done For Future Sessions
 

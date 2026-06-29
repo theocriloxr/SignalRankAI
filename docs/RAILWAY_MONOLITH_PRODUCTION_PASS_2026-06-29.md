@@ -202,6 +202,59 @@ After redeploying on Railway:
 5. Confirm `/qa_report 30` coverage rises as outcome backfill catches up.
 6. Confirm owner receives signals even when free/VIP users are gated by limits.
 
+## 2026-06-29 Score Saturation Follow-Up
+
+The latest diagnostic concern was that `max_score` and `max_score_pre_threshold`
+were consistently `100`, which made the scorer look suspiciously flat.
+
+Root cause:
+
+- `engine.scoring.score_signal(...)` previously applied several legitimate
+  quality multipliers and then hard-clipped the final value with
+  `min(score, 100.0)`.
+- The engine and Telegram delivery helpers then selected the maximum value
+  across primary and auxiliary score fields such as `score_composite`,
+  `rank_score`, and `quality_score`.
+- That fallback behavior was useful when the canonical `score` field was zero,
+  but it also made any helper field equal to `100` inflate `max_score`.
+
+Implemented:
+
+- `score_signal(...)` now keeps:
+  - `score_raw`: the pre-cap audit value.
+  - `score_calibrated`: the post-calibration score.
+  - `score_soft_capped`: whether the high-score compression path was used.
+  - `score_components`: weighted component details for RR, volatility,
+    confidence, and confluence.
+- High raw scores are compressed with a configurable soft cap instead of being
+  flattened to exactly `100`.
+- Engine and Telegram score resolvers now prefer the calibrated primary score
+  before falling back to auxiliary score aliases.
+
+New env knobs:
+
+```env
+SCORE_SOFT_CAP_ENABLED=1
+SCORE_SOFT_CAP_KNEE=95
+SCORE_SOFT_CAP_CEILING=99.5
+SCORE_SOFT_CAP_SCALE=50
+```
+
+Expected post-deploy behavior:
+
+- `max_score_pre_threshold` may still be high, but should no longer pin at
+  `100` for every strong candidate.
+- `score_raw` can exceed `100`; that is intentional and useful for debugging.
+- Delivery gating and pulse diagnostics should use the calibrated score spread.
+
+Verification added:
+
+```powershell
+python -m pytest tests\test_score_calibration.py tests\test_production_quality_guard.py tests\test_admin_pulse_delivery_count.py -q
+```
+
+Result: `7 passed`.
+
 ## 2026-06-29 Railway Log Follow-Up: Zero Scores / No Owner Signals
 
 The latest Railway logs showed the main blocker:
