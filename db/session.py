@@ -72,7 +72,18 @@ def _pool_bool(name: str, default: bool = False) -> bool:
 
 
 def _is_railway_runtime() -> bool:
-    return bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    railway_markers = (
+        "RAILWAY_SERVICE_NAME",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_REPLICA_ID",
+        "RAILWAY_PUBLIC_DOMAIN",
+        "RAILWAY_PRIVATE_DOMAIN",
+    )
+    return any(bool((os.getenv(name) or "").strip()) for name in railway_markers)
 
 
 def _effective_pool_settings() -> tuple[int, int]:
@@ -85,14 +96,33 @@ def _effective_pool_settings() -> tuple[int, int]:
         logger.info("[db] Using NullPool - connection pooling disabled for Railway compatibility")
         return 0, 0
 
-    if _is_railway_runtime() and not _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False):
-        # FIX for Railway "too many clients already" error
-        # Reduced pool_size from 3 to 2 to stay within Railway's ~20 connection limit
-        # Also reduced max_overflow from 5 to 0 to prevent opening extra connections
+    if _is_railway_runtime():
+        disable_requested = _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False)
+        allow_uncapped = _pool_bool("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
+        if disable_requested and not allow_uncapped:
+            logger.warning(
+                "[db] DB_POOL_DISABLE_RAILWAY_CAP ignored on Railway; set "
+                "DB_POOL_ALLOW_UNCAPPED_RAILWAY=1 only when Postgres max_connections is proven sufficient"
+            )
+        if disable_requested and allow_uncapped:
+            logger.warning("[db] Railway DB pool cap disabled by explicit operator override")
+            return pool_size, max_overflow
+
         railway_pool_cap = _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1)
         railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0)
+        original_pool_size = pool_size
+        original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)
         max_overflow = min(max_overflow, railway_overflow_cap)
+        if (pool_size, max_overflow) != (original_pool_size, original_max_overflow):
+            logger.warning(
+                "[db] Railway pool cap applied requested_pool=%s requested_overflow=%s "
+                "effective_pool=%s effective_overflow=%s",
+                original_pool_size,
+                original_max_overflow,
+                pool_size,
+                max_overflow,
+            )
     else:
         global_pool_cap_raw = os.getenv("DB_POOL_GLOBAL_CAP")
         if global_pool_cap_raw:

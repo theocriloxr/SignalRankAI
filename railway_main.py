@@ -295,7 +295,18 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _is_running_on_railway() -> bool:
-    return bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+    markers = (
+        "RAILWAY_SERVICE_NAME",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_REPLICA_ID",
+        "RAILWAY_PUBLIC_DOMAIN",
+        "RAILWAY_PRIVATE_DOMAIN",
+    )
+    return any(bool((os.getenv(name) or "").strip()) for name in markers)
 
 
 def _is_db_ready() -> bool:
@@ -799,6 +810,17 @@ async def _notify_admin_bot_ready() -> None:
         return
 
 
+async def _maybe_startup_delay(env_name: str, default_s: float, component: str) -> None:
+    try:
+        delay_s = max(0.0, float((os.getenv(env_name) or str(default_s)).strip()))
+    except Exception:
+        delay_s = float(default_s)
+    if delay_s <= 0:
+        return
+    logger.info("[startup] delaying %s start by %.1fs", component, delay_s)
+    await asyncio.sleep(delay_s)
+
+
 def _start_engine_loop_in_background() -> asyncio.Task:
     """Start the blocking engine.main_loop in a thread executor."""
     from config import config
@@ -808,6 +830,11 @@ def _start_engine_loop_in_background() -> asyncio.Task:
 
     async def _runner() -> None:
         loop = asyncio.get_running_loop()
+        await _maybe_startup_delay(
+            "ENGINE_START_DELAY_SECONDS",
+            12.0 if _is_running_on_railway() else 0.0,
+            "engine loop",
+        )
         print("[engine] background loop starting", flush=True)
         logger.info("[engine] background loop starting")
         try:
@@ -828,6 +855,11 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 
     async def _runner() -> None:
         loop = asyncio.get_running_loop()
+        await _maybe_startup_delay(
+            "WORKER_START_DELAY_SECONDS",
+            20.0 if _is_running_on_railway() else 0.0,
+            "worker loop",
+        )
         print("[worker] background loop starting", flush=True)
         logger.info("[worker] background loop starting")
         try:

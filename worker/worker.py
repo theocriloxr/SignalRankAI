@@ -20,10 +20,37 @@ import threading
 from typing import Optional
 
 from core.redis_state import state
-from db.session import get_session, run_with_db_retry, is_db_configured
+from db.session import get_session, run_with_db_retry, is_db_configured, is_transient_db_error
 from db.repository import expire_subscriptions
 
 logger = logging.getLogger(__name__)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float((os.getenv(name) or str(default)).strip()))
+    except Exception:
+        return float(default)
+
+
+def _is_railway_runtime() -> bool:
+    markers = (
+        "RAILWAY_SERVICE_NAME",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_REPLICA_ID",
+    )
+    return any(bool((os.getenv(name) or "").strip()) for name in markers)
 
 
 
@@ -69,14 +96,41 @@ class Worker:
     async def run(self) -> None:
         heartbeat_interval_s = max(60, int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "300") or 300))
         managed_tasks: dict[str, dict[str, object]] = {}
+        running_on_railway = _is_railway_runtime()
+        task_stagger_s = _env_float(
+            "WORKER_TASK_START_STAGGER_SECONDS",
+            3.0 if running_on_railway else 0.0,
+            minimum=0.0,
+        )
+        restart_base_s = _env_float("WORKER_TASK_RESTART_BASE_SECONDS", 5.0, minimum=1.0)
+        restart_db_base_s = _env_float(
+            "WORKER_TASK_DB_RESTART_BASE_SECONDS",
+            60.0 if running_on_railway else 15.0,
+            minimum=5.0,
+        )
+        restart_max_s = _env_float("WORKER_TASK_RESTART_MAX_SECONDS", 300.0, minimum=restart_base_s)
+
+        async def _delayed_start(name: str, factory, delay_s: float):
+            if delay_s > 0:
+                logger.info("[worker] task %s scheduled after %.1fs startup stagger", name, delay_s)
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=delay_s)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+            return await factory()
 
         def _register_task(name: str, factory, restart_on_failure: bool = True) -> None:
             try:
-                task = self._spawn_task(name, factory())
+                delay_s = task_stagger_s * len(managed_tasks)
+                task = self._spawn_task(name, _delayed_start(name, factory, delay_s))
                 managed_tasks[name] = {
                     "task": task,
                     "factory": factory,
                     "restart": bool(restart_on_failure),
+                    "restart_count": 0,
+                    "next_restart_at": 0.0,
+                    "restart_pending": False,
                 }
                 logger.info("[worker] task started: %s", name)
             except Exception as exc:
@@ -101,7 +155,7 @@ class Worker:
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
-                _register_task("shadow_outcome_tracker", lambda: shadow_outcome_worker.start(), restart_on_failure=True)
+                _register_task("shadow_outcome_tracker", lambda: self._shadow_outcome_tracker_loop(shadow_outcome_worker), restart_on_failure=True)
                 logger.info("[worker] ShadowOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
@@ -151,6 +205,7 @@ class Worker:
         try:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
+                now_mono = time.monotonic()
                 for name, spec in list(managed_tasks.items()):
                     task = spec.get("task")
                     if not isinstance(task, asyncio.Task):
@@ -161,12 +216,36 @@ class Worker:
                     restart = bool(spec.get("restart", False))
                     if restart and not self._stop.is_set():
                         try:
+                            exc: BaseException | None = None
+                            if not task.cancelled():
+                                with contextlib.suppress(Exception):
+                                    exc = task.exception()
+                            if not bool(spec.get("restart_pending", False)):
+                                restart_count = int(spec.get("restart_count", 0) or 0) + 1
+                                spec["restart_count"] = restart_count
+                                if exc is not None and is_transient_db_error(exc):
+                                    delay_s = min(restart_max_s, restart_db_base_s * (2 ** min(restart_count - 1, 4)))
+                                else:
+                                    delay_s = min(restart_max_s, restart_base_s * (2 ** min(restart_count - 1, 4)))
+                                spec["next_restart_at"] = now_mono + delay_s
+                                spec["restart_pending"] = True
+                                logger.warning(
+                                    "[worker] task %s ended; restart scheduled in %.1fs (attempt=%s db_error=%s)",
+                                    name,
+                                    delay_s,
+                                    restart_count,
+                                    bool(exc is not None and is_transient_db_error(exc)),
+                                )
+                                continue
+                            if now_mono < float(spec.get("next_restart_at", 0.0) or 0.0):
+                                continue
                             factory = spec.get("factory")
                             if factory is None:
                                 continue
                             logger.warning("[worker] restarting crashed task: %s", name)
                             new_task = self._spawn_task(name, factory())
                             spec["task"] = new_task
+                            spec["restart_pending"] = False
                         except Exception as exc:
                             logger.error("[worker] failed to restart task %s: %s", name, exc, exc_info=True)
 
@@ -215,6 +294,18 @@ class Worker:
             return
 
         interval = max(3600, int(getattr(config, "ML_TRAIN_INTERVAL_SECONDS", 86400) or 86400))
+        initial_delay = _env_float(
+            "ML_TRAIN_STARTUP_DELAY_SECONDS",
+            300.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            logger.info("[worker] ML train loop delayed %.1fs to avoid startup DB pressure", initial_delay)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
 
         while not self._stop.is_set():
             try:
@@ -253,6 +344,17 @@ class Worker:
         interval = max(900, int(os.getenv("ML_DRIFT_CHECK_INTERVAL_SECONDS", "3600") or 3600))
         psi_threshold = float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
         retrain_on_drift = str(os.getenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        initial_delay = _env_float(
+            "ML_DRIFT_STARTUP_DELAY_SECONDS",
+            180.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
 
         while not self._stop.is_set():
             try:
@@ -330,6 +432,28 @@ class Worker:
         finally:
             with contextlib.suppress(Exception):
                 await outcome_tracker.stop()
+
+    async def _shadow_outcome_tracker_loop(self, shadow_outcome_worker) -> None:
+        await shadow_outcome_worker.start()
+        try:
+            while not self._stop.is_set():
+                task = getattr(shadow_outcome_worker, "_task", None)
+                if isinstance(task, asyncio.Task) and task.done():
+                    exc = None
+                    try:
+                        exc = task.exception()
+                    except Exception:
+                        exc = None
+                    if exc is not None:
+                        raise exc
+                    break
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            with contextlib.suppress(Exception):
+                await shadow_outcome_worker.stop()
 
     async def _notify_admin_drift(self, result: dict) -> None:
         token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()

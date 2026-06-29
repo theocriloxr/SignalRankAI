@@ -6727,7 +6727,24 @@ def run_bot() -> None:
     # Closure functions defined inside run_bot() cannot be pickled for
     # SQLAlchemy — they are added to the implicit default MemoryJobStore.
     _jobstores: dict = {}
-    if _sched_sync_url:
+    _running_on_railway_sched = any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "RAILWAY_SERVICE_NAME",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_DEPLOYMENT_ID",
+            "RAILWAY_REPLICA_ID",
+        )
+    )
+    _persistent_jobstore_default = "0" if _running_on_railway_sched else "1"
+    _persistent_jobstore_enabled = str(
+        os.getenv("BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED", _persistent_jobstore_default)
+        or _persistent_jobstore_default
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    if _sched_sync_url and _persistent_jobstore_enabled:
         try:
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore as _SAJobStore
             _jobstore_engine_options = {
@@ -6753,6 +6770,12 @@ def run_bot() -> None:
                 _sa_err,
             )
 
+    if _sched_sync_url and not _persistent_jobstore_enabled:
+        logger.info(
+            "[sched] persistent SQLAlchemyJobStore disabled; using MemoryJobStore "
+            "(set BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED=1 to persist jobs)"
+        )
+
     # _sa: alias for the store to use for picklable module-level jobs.
     _sa = "persistent" if "persistent" in _jobstores else "default"
 
@@ -6767,7 +6790,7 @@ def run_bot() -> None:
     scheduler = None
     if _scheduler_enabled:
         from apscheduler.executors.pool import ThreadPoolExecutor as _APThreadPoolExecutor
-        _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+        _running_on_railway = _running_on_railway_sched
         _sched_default_workers = 4 if _running_on_railway else 12
         _sched_workers = max(2, _env_int("BOT_SCHEDULER_MAX_WORKERS", _sched_default_workers))
         _executors = {

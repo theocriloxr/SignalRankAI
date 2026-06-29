@@ -88,7 +88,18 @@ class Config:
 		self.MARKET_MONITOR_ENABLED = True
 		self.CRYPTO_WS_ENABLED = True
 # Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
-		is_railway = bool(self.RAILWAY_SERVICE_NAME or self.RAILWAY_ENVIRONMENT)
+		is_railway = any(
+			bool((os.getenv(name) or "").strip())
+			for name in (
+				"RAILWAY_SERVICE_NAME",
+				"RAILWAY_ENVIRONMENT",
+				"RAILWAY_ENVIRONMENT_NAME",
+				"RAILWAY_PROJECT_ID",
+				"RAILWAY_SERVICE_ID",
+				"RAILWAY_DEPLOYMENT_ID",
+				"RAILWAY_REPLICA_ID",
+			)
+		)
 		ml_train_default = not is_railway  # Default False on Railway (Hobby plan constraint)
 		self.ML_TRAIN_ENABLED = self._env_bool("ML_TRAIN_ENABLED", ml_train_default)
 		self.ML_TRAIN_INTERVAL_SECONDS = self._env_int("ML_TRAIN_INTERVAL_SECONDS", 86400)
