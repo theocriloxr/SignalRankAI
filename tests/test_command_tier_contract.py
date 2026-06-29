@@ -47,6 +47,17 @@ class TestTierHelpContract(unittest.TestCase):
             encoding="utf-8"
         )
         registered = {m.group(1).lower() for m in re.finditer(r'CommandHandler\("([^"]+)"', bot_source)}
+        registered.update(
+            m.group(1).lower()
+            for m in re.finditer(r'_CH\("([^"]+)"', bot_source)
+        )
+        commands_source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "commands.py").read_text(
+            encoding="utf-8"
+        )
+        registered.update(
+            m.group(1).lower()
+            for m in re.finditer(r'_CH\("([^"]+)"', commands_source)
+        )
         missing = sorted(help_commands - registered)
         self.assertFalse(missing, msg=f"/help lists commands without bot handlers: {missing}")
 
