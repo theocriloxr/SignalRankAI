@@ -672,12 +672,19 @@ def _display_tier_for_delivery(tier: str | None) -> str:
 
 
 def _delivery_score(signal: dict | None) -> float:
-    """Resolve signal score aliases used by engine/ranking paths."""
+    """Resolve calibrated signal score aliases used by engine/ranking paths."""
     if not isinstance(signal, dict):
         return 0.0
+    for primary_key in ("score", "score_calibrated", "score_final"):
+        try:
+            numeric = float(signal.get(primary_key))
+        except Exception:
+            continue
+        if numeric > 0:
+            return max(0.0, min(numeric, 100.0))
+
     best = 0.0
     for value in (
-        signal.get("score"),
         signal.get("score_total"),
         signal.get("score_composite"),
         signal.get("composite_score"),
@@ -691,7 +698,7 @@ def _delivery_score(signal: dict | None) -> float:
             continue
         if numeric > best:
             best = numeric
-    return best
+    return max(0.0, min(best, 100.0))
 
 
 

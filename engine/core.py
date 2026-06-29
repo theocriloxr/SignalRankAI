@@ -630,10 +630,17 @@ def _signal_roi_score(signal: Dict[str, Any]) -> float:
 
 
 def _signal_display_score(signal: Dict[str, Any]) -> float:
-    """Resolve the best available signal score for logs, storage, and promotion."""
+    """Resolve the calibrated signal score for logs, storage, and promotion."""
+    for primary_key in ("score", "score_calibrated", "score_final"):
+        try:
+            numeric = float(signal.get(primary_key))
+        except Exception:
+            continue
+        if math.isfinite(numeric) and numeric > 0:
+            return max(0.0, min(numeric, 100.0))
+
     best = 0.0
     for value in (
-        signal.get("score"),
         signal.get("score_total"),
         signal.get("score_composite"),
         signal.get("composite_score"),
@@ -647,7 +654,7 @@ def _signal_display_score(signal: Dict[str, Any]) -> float:
             continue
         if math.isfinite(numeric):
             best = max(best, numeric)
-    return best
+    return max(0.0, min(best, 100.0))
 
 
 def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:

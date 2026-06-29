@@ -1,4 +1,5 @@
 import json
+import math
 import os
 
 from engine.signal_metrics import (
@@ -263,8 +264,22 @@ def score_signal(signal):
         score = score * 1.20
     elif rr >= 2.0:
         score = score * 1.15
-    
-    return round(min(score, 100.0), 2)
+
+    raw_score = float(score)
+    calibrated_score, soft_capped = _apply_score_soft_cap(raw_score)
+    try:
+        signal["score_raw"] = round(raw_score, 4)
+        signal["score_calibrated"] = round(calibrated_score, 4)
+        signal["score_soft_capped"] = bool(soft_capped)
+        signal["score_components"] = {
+            name: {"value": round(float(value), 4), "weight": round(float(weight), 4)}
+            for name, (value, weight) in components.items()
+        }
+        signal["rr_ratio"] = round(float(rr), 4)
+    except Exception:
+        pass
+
+    return round(calibrated_score, 2)
 
 
 def calculate_signal_score(signal, risk_profile=None, regime=None):
@@ -381,6 +396,30 @@ def volatility_quality_score(signal):
         return 0.0
     else:
         return float((max_vol - vol) / max(1e-9, (max_vol - ideal_vol)))
+
+
+def _apply_score_soft_cap(raw_score: float) -> tuple[float, bool]:
+    """Compress very high scores instead of flattening them all to 100."""
+    try:
+        raw_score = float(raw_score)
+    except Exception:
+        return 0.0, False
+    if not math.isfinite(raw_score):
+        return 0.0, False
+
+    raw_score = max(0.0, raw_score)
+    if not _env_bool("SCORE_SOFT_CAP_ENABLED", True):
+        capped = min(raw_score, 100.0)
+        return capped, raw_score > 100.0
+
+    knee = max(50.0, min(_env_float("SCORE_SOFT_CAP_KNEE", 95.0), 99.0))
+    ceiling = max(knee + 0.1, min(_env_float("SCORE_SOFT_CAP_CEILING", 99.5), 100.0))
+    scale = max(1.0, _env_float("SCORE_SOFT_CAP_SCALE", 50.0))
+    if raw_score <= knee:
+        return raw_score, False
+
+    compressed = knee + ((ceiling - knee) * (1.0 - math.exp(-(raw_score - knee) / scale)))
+    return min(compressed, ceiling), True
 
 
 def historical_winrate_score(signal):
