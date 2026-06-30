@@ -9,6 +9,7 @@ from typing import Any, Dict, List
 from sqlalchemy import text
 
 from db.session import get_session, is_db_configured
+from services.codex_governance import run_codex_governance_review
 from services.gemini_ml import run_gemini_review_pipeline
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,7 @@ async def run_ai_review_audit() -> Dict[str, Any]:
     trades = await _fetch_completed_trades()
     logs = await _fetch_recent_logs()
     base = await run_gemini_review_pipeline(trigger="ai_reviewer", scope="weekly")
+    codex = await run_codex_governance_review(trigger="ai_reviewer", scope="weekly")
     result = {
         "ran_at": datetime.utcnow().isoformat(),
         "trades_sampled": len(trades),
@@ -73,6 +75,12 @@ async def run_ai_review_audit() -> Dict[str, Any]:
         "gemini_summary": {
             "received": base.get("received"),
             "feature_suggestions": base.get("feature_suggestions"),
+        },
+        "codex_governance_ok": bool(codex.get("ok")),
+        "codex_governance_summary": {
+            "assessment": (codex.get("review") or {}).get("assessment"),
+            "highest_risk_findings": (codex.get("review") or {}).get("highest_risk_findings"),
+            "guardrail": codex.get("guardrail"),
         },
     }
     if is_db_configured():

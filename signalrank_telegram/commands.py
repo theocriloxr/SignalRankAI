@@ -4661,6 +4661,57 @@ async def gemini_audit_command(update, context) -> None:
 		await update.message.reply_text(f"Audit error: {exc}")
 
 
+async def codex_audit_command(update, context) -> None:
+	"""Admin-only: local Codex governance review with no external data transfer."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = list(context.args or [])
+	scope = str(args[0] if args else "weekly").strip().lower()
+	if scope not in {"daily", "weekly", "monthly", "all_time"}:
+		await update.message.reply_text("Usage: /codex_audit [daily|weekly|monthly|all_time]")
+		return
+	from services.codex_governance import run_codex_governance_review
+
+	try:
+		await update.message.reply_text("Running local Codex governance review from DB evidence...")
+		result = await run_codex_governance_review(
+			trigger=f"admin:{int(update.effective_user.id)}",
+			scope=scope,
+		)
+		if not bool(result.get("ok", False)):
+			await update.message.reply_text(f"Codex governance review failed: {result.get('review') or result.get('error')}")
+			return
+		review = dict(result.get("review") or {})
+		context_data = dict(result.get("context") or {})
+		summary = dict(context_data.get("summary") or {})
+		deliveries = dict(context_data.get("deliveries") or {})
+		msg = (
+			"Local Codex governance review complete.\n\n"
+			f"Scope: {scope}\n"
+			f"Signals: {int(summary.get('signals') or 0)}\n"
+			f"Outcomes: {int(summary.get('outcomes') or 0)}\n"
+			f"Wins/Losses: {int(summary.get('wins') or 0)}/{int(summary.get('losses') or 0)}\n"
+			f"Same-asset repeats <12h: {int(context_data.get('same_asset_deliveries_12h') or 0)}\n"
+			f"Reserved not confirmed sent: {int(deliveries.get('reserved_not_confirmed') or 0)}\n\n"
+			f"{str(review.get('assessment') or '')[:900]}"
+		)
+		await update.message.reply_text(msg)
+		findings = [str(x) for x in review.get("highest_risk_findings") or []]
+		if findings:
+			await update.message.reply_text("Findings:\n" + "\n".join(f"- {x[:220]}" for x in findings[:6]))
+		env_tweaks = [str(x) for x in review.get("recommended_env_tweaks") or []]
+		if env_tweaks:
+			await update.message.reply_text("Recommended env/risk tweaks:\n" + "\n".join(f"- {x[:220]}" for x in env_tweaks[:6]))
+		code_changes = [str(x) for x in review.get("recommended_code_changes") or []]
+		if code_changes:
+			await update.message.reply_text("Recommended code checks:\n" + "\n".join(f"- {x[:220]}" for x in code_changes[:6]))
+	except Exception as exc:
+		await update.message.reply_text(f"Codex audit error: {exc}")
+
+
 async def gemini_predict_command(update, context) -> None:
 	"""Admin-only: predict/assess a candidate. Provide JSON or simple args.
 

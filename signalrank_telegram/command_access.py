@@ -87,6 +87,7 @@ COMMAND_TIERS = {
     "gemini_analyze":     "ADMIN",
     "gemini_audit":       "ADMIN",
     "gemini_predict":      "ADMIN",
+    "codex_audit":         "ADMIN",
     "admin_top_assets":   "ADMIN",
     "admin_top_strategies":"ADMIN",
     "admin_user_engagement":"ADMIN",
@@ -373,6 +374,7 @@ COMMAND_HELP = {
 
 
 COMMAND_DESCRIPTIONS = {
+    "codex_audit": "Local Codex governance review from DB evidence",
     "qa_report": "QA report by tier and asset class",
 }
 
