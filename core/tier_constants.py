@@ -211,10 +211,10 @@ TIER_EMOJIS: Final[dict[str, str]] = {
 
 TIER_ASSET_COOLDOWN_HOURS: Final[dict[str, int]] = {
     "free": int(_os.getenv("FREE_ASSET_COOLDOWN_HOURS", "12") or 12),
-    "premium": int(_os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8") or 8),
-    "vip": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4),
-    "admin": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4),
-    "owner": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4),
+    "premium": int(_os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "vip": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "admin": int(_os.getenv("ADMIN_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "owner": int(_os.getenv("OWNER_ASSET_COOLDOWN_HOURS", "12") or 12),
 }
 
 VIP_MAX_CAPACITY: Final[int] = int(_os.getenv("VIP_MAX_CAPACITY", "30") or 30)

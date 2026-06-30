@@ -5658,7 +5658,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		return
 
 	try:
-		from services.mt5_client import get_user_mt5_account_id
+		from services.mt5_client import get_user_mt5_link_status
 		from db.session import get_session
 		from db.models import MT5Credentials, User
 		from sqlalchemy import select
@@ -5684,7 +5684,15 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		)
 		if row.metaapi_account_id:
 			reply += f"☁️ MetaApi ID: {row.metaapi_account_id}\n"
-		reply += "\nUse ⚡ buttons on signals to trade instantly."
+		status = await get_user_mt5_link_status(int(user_id))
+		if status.get("executable"):
+			reply += "\nExecution bridge: READY\nUse ⚡ buttons on signals to trade instantly."
+		else:
+			reply += (
+				"\nExecution bridge: NOT READY\n"
+				"Your credentials are saved, but MetaApi has not returned an executable account ID.\n"
+				"Run /mt5_link again to retry provisioning, then check /mt5_status."
+			)
 		await update.message.reply_text(reply)
 	except Exception as exc:
 		await update.message.reply_text(f"Error fetching MT5 status: {exc}")

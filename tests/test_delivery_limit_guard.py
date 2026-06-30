@@ -29,3 +29,21 @@ def test_partial_tp_states_do_not_resolve_delivery_dedupe():
     assert '"tp3"' in resolved_block
     assert '"sl"' in resolved_block
     assert 'os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168"' in source
+
+
+def test_same_asset_cooldown_is_asset_wide_and_at_least_12h():
+    source = (Path(__file__).resolve().parents[1] / "db" / "pg_features.py").read_text(encoding="utf-8")
+    asset_gate = source.split("# Same-asset exposure gate:", 1)[1].split("if market_cutoff is not None:", 1)[0]
+
+    assert "Signal.asset == sig.asset" in asset_gate
+    assert "Signal.direction == sig.direction" not in asset_gate
+    assert "asset_cooldown_hours = max(12.0" in source
+    assert "if should_block_asset:" in asset_gate
+
+
+def test_inflight_delivery_reservation_blocks_duplicate_send_attempts():
+    source = (Path(__file__).resolve().parents[1] / "db" / "pg_features.py").read_text(encoding="utf-8")
+
+    assert "DELIVERY_INFLIGHT_RETRY_SECONDS" in source
+    assert "in-flight delivery reservation blocked" in source
+    assert "last_attempt_at" in source

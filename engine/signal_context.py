@@ -221,7 +221,13 @@ class SignalContext:
         
         # Rate limit: only send once per 4 hours
         if last_alert_time:
-            time_since_last = datetime.utcnow() - last_alert_time
+            now = datetime.utcnow()
+            try:
+                if getattr(last_alert_time, "tzinfo", None) is not None:
+                    now = datetime.now(last_alert_time.tzinfo)
+            except Exception:
+                now = datetime.utcnow()
+            time_since_last = now - last_alert_time
             if time_since_last < timedelta(hours=4):
                 return False, "Too soon since last NO TRADE alert"
         

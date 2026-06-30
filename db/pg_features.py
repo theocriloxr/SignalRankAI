@@ -988,10 +988,10 @@ async def record_signal_delivery(
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
                 _tier_cooldown_defaults = {
-                    "vip": 4.0,
-                    "admin": 4.0,
-                    "owner": 4.0,
-                    "premium": 6.0,
+                    "vip": 12.0,
+                    "admin": 12.0,
+                    "owner": 12.0,
+                    "premium": 12.0,
                     "free": 12.0,
                 }
                 try:
@@ -1002,29 +1002,18 @@ async def record_signal_delivery(
                     )
                 except Exception:
                     asset_cooldown_hours = _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
+                asset_cooldown_hours = max(12.0, float(asset_cooldown_hours))
 
-                def _tier_rank(_t: str | None) -> int:
-                    _base = str(_t or "free").split("_", 1)[0].strip().lower()
-                    ranks = {
-                        "free": 0,
-                        "premium": 1,
-                        "vip": 2,
-                        "admin": 3,
-                        "owner": 4,
-                    }
-                    return int(ranks.get(_base, 0))
-
-                # Same-asset+direction gate:
-                # Block new delivery for this user+asset+direction if previous delivery is
-                #   (a) younger than cooldown OR
-                #   (b) still has no resolved outcome.
-                # Exception: allow first post-upgrade send when tier rank increased.
+                # Same-asset exposure gate:
+                # Block any new signal for the same user+asset for at least 12h,
+                # and keep blocking while the previous asset exposure is unresolved.
                 latest_asset_row = (
                     await session.execute(
                         select(
                             SignalDelivery.signal_id,
                             SignalDelivery.delivered_at,
                             SignalDelivery.tier_at_send,
+                            Signal.direction,
                             Outcome.status,
                         )
                         .select_from(SignalDelivery)
@@ -1034,7 +1023,6 @@ async def record_signal_delivery(
                             SignalDelivery.user_id == user.id,
                             SignalDelivery.sent_ok.is_(True),
                             Signal.asset == sig.asset,
-                            Signal.direction == sig.direction,
                         )
                         .order_by(SignalDelivery.delivered_at.desc())
                         .limit(1)
@@ -1042,7 +1030,7 @@ async def record_signal_delivery(
                 ).first()
 
                 if latest_asset_row is not None:
-                    prev_signal_id, prev_delivered_at, prev_tier_at_send, prev_status = latest_asset_row
+                    prev_signal_id, prev_delivered_at, prev_tier_at_send, prev_direction, prev_status = latest_asset_row
                     now_dt = _utcnow()
                     age_hours = 9999.0
                     try:
@@ -1063,7 +1051,6 @@ async def record_signal_delivery(
                     }
                     is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
 
-                    is_upgrade_delivery = _tier_rank(tier_s) > _tier_rank(str(prev_tier_at_send or "free"))
                     try:
                         unresolved_block_hours = float(
                             (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
@@ -1076,12 +1063,12 @@ async def record_signal_delivery(
                         (age_hours < float(asset_cooldown_hours))
                         or ((not is_resolved) and (age_hours < unresolved_block_hours))
                     )
-                    if should_block_asset and not is_upgrade_delivery:
+                    if should_block_asset:
                         try:
                             import logging
                             logging.getLogger(__name__).info(
                                 f"[dedup] Asset gate hit: user={user.id} asset={sig.asset} prev_signal={prev_signal_id} "
-                                f"direction={sig.direction} age_h={age_hours:.2f} resolved={is_resolved} "
+                                f"prev_direction={prev_direction} new_direction={sig.direction} age_h={age_hours:.2f} resolved={is_resolved} "
                                 f"cooldown_h={float(asset_cooldown_hours):.2f} unresolved_block_h={float(unresolved_block_hours):.2f}"
                             )
                         except Exception:
@@ -1157,6 +1144,26 @@ async def record_signal_delivery(
     if existing_delivery is not None:
         if bool(getattr(existing_delivery, "sent_ok", False)):
             return False
+        try:
+            retry_seconds = max(30, int(os.getenv("DELIVERY_INFLIGHT_RETRY_SECONDS", "300") or 300))
+        except Exception:
+            retry_seconds = 300
+        last_attempt = getattr(existing_delivery, "last_attempt_at", None) or getattr(existing_delivery, "delivered_at", None)
+        last_error = str(getattr(existing_delivery, "last_error", "") or "").strip()
+        if last_attempt is not None and not last_error:
+            try:
+                age_seconds = (_utcnow() - last_attempt).total_seconds()
+                if age_seconds < float(retry_seconds):
+                    logger.info(
+                        "[dedup] in-flight delivery reservation blocked user=%s signal=%s age_s=%.1f retry_s=%s",
+                        user.id,
+                        signal_id,
+                        age_seconds,
+                        retry_seconds,
+                    )
+                    return False
+            except Exception:
+                return False
         existing_delivery.tier_at_send = tier_s
         existing_delivery.last_attempt_at = _utcnow()
         try:

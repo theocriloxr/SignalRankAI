@@ -549,6 +549,51 @@ async def get_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
         return None
 
 
+async def ensure_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
+    """Return an executable MetaApi account id, reprovisioning saved MT5 credentials if needed."""
+    existing = await get_user_mt5_account_id(int(telegram_user_id))
+    if existing:
+        return existing
+    if not _check_token():
+        return None
+    try:
+        from db.session import get_session
+        from services.security import decrypt_secret
+        from sqlalchemy import text
+
+        async with get_session() as session:
+            row = await session.execute(
+                text(
+                    """
+                    SELECT c.mt5_login, c.password_encrypted, c.server
+                    FROM   mt5_credentials c
+                    JOIN   users u ON u.id = c.user_id
+                    WHERE  u.telegram_user_id = :tid
+                    ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC NULLS LAST
+                    LIMIT 1
+                    """
+                ),
+                {"tid": int(telegram_user_id)},
+            )
+            found = row.fetchone()
+        if not found:
+            return None
+        password = decrypt_secret(str(found[1] or ""))
+        if not password:
+            logger.warning("[mt5_client] saved MT5 credentials could not be decrypted for user=%s", telegram_user_id)
+            return None
+        result = await link_mt5_account(
+            telegram_user_id=int(telegram_user_id),
+            mt5_login=str(found[0] or ""),
+            mt5_password=password,
+            mt5_server=str(found[2] or ""),
+        )
+        return str(result.get("metaapi_account_id") or "").strip() or None
+    except Exception:
+        logger.debug("[mt5_client] ensure account id failed", exc_info=True)
+        return None
+
+
 async def get_user_mt5_link_status(telegram_user_id: int) -> Dict[str, Any]:
     """Return MT5 linked/executable state for a Telegram user."""
     status: Dict[str, Any] = {

@@ -350,12 +350,94 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
         logger.debug('[engine] failed to persist diagnostic heatmap')
 
 
+def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]] | None = None) -> tuple[bool, float, str]:
+    """Deterministic fallback reviewer built from available signal metrics."""
+    def _f(value: Any, default: float = 0.0) -> float:
+        try:
+            numeric = float(value)
+            return numeric if math.isfinite(numeric) else default
+        except Exception:
+            return default
+
+    entry = _f(signal.get("entry") or signal.get("close_price"))
+    stop = _f(signal.get("stop_loss") or signal.get("stop"))
+    rr_values = [
+        _f(signal.get("rr_ratio")),
+        _f(signal.get("rr_estimate")),
+        _f(signal.get("risk_reward")),
+    ]
+    tp = _primary_take_profit(signal)
+    if entry > 0 and stop > 0 and tp:
+        risk = abs(entry - stop)
+        if risk > 0:
+            rr_values.append(abs(float(tp) - entry) / risk)
+    rr = max([v for v in rr_values if v > 0] or [0.0])
+    stop_pct = abs(entry - stop) / entry * 100.0 if entry > 0 and stop > 0 else 0.0
+    ml = _f(signal.get("ml_probability"))
+    if ml > 1.0:
+        ml = ml / 100.0
+    score = _f(signal.get("score") or signal.get("score_calibrated") or signal.get("score_final"))
+    confluence = resolve_confluence_percent(signal)
+    tf = str(signal.get("timeframe") or "").lower().strip()
+
+    review = 8.2
+    reasons: list[str] = []
+    if score >= 94:
+        review += 0.35
+        reasons.append("strong score")
+    elif score and score < 90:
+        review -= 0.45
+        reasons.append("score below elite band")
+    if ml >= 0.72:
+        review += 0.35
+        reasons.append("ML confirms")
+    elif ml and ml < 0.62:
+        review -= 0.7
+        reasons.append("ML weak")
+    if confluence is not None:
+        if confluence >= 60:
+            review += 0.25
+            reasons.append("confluence confirms")
+        elif confluence < 50:
+            review -= 0.65
+            reasons.append("low confluence")
+    if rr > 6.0:
+        review -= 1.1
+        reasons.append("overextended target ladder")
+    elif 1.2 <= rr <= 3.5:
+        review += 0.25
+        reasons.append("realistic target distance")
+    if stop_pct > 2.5:
+        review -= 1.0
+        reasons.append("wide stop for small accounts")
+    elif 0 < stop_pct <= 1.2:
+        review += 0.2
+        reasons.append("contained planned risk")
+    if tf in {"1d", "24h"}:
+        review -= 0.35
+        reasons.append("slow timeframe")
+    if candles is not None and len(candles) < 80:
+        review -= 0.25
+        reasons.append("limited candle depth")
+
+    review = max(1.0, min(10.0, review))
+    reason = "local_ai:" + ", ".join(reasons[:4] or ["quality checks passed"])
+    return review >= _env_float("QUALITY_MIN_LOCAL_AI_SCORE", 8.0), review, reason
+
+
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
+    fallback_enabled = _env_bool("AI_REVIEW_FALLBACK_ENABLED", True)
+    def _fallback() -> tuple[bool, float | None, str]:
+        if not fallback_enabled:
+            return True, None, "ai_review_fallback_disabled"
+        ok, score, reason = _local_ai_review_signal(signal, candles)
+        return ok, score, reason
+
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not api_key:
-        return True, None, "gemini_disabled_no_key"
+        return _fallback()
     if _env_bool("GEMINI_SIGNAL_REVIEW_ENABLED", True) is False:
-        return True, None, "gemini_disabled"
+        return _fallback()
 
     model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
     payload = {
@@ -421,14 +503,14 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
                         score = float(digit)
                         break
             if score is None:
-                return True, None, "gemini_unparsed_allow"
+                return _fallback()
             return (score > 8.0), score, "gemini_ok"
         except urllib.error.HTTPError as exc:
             logger.warning("[engine] gemini review http_error=%s", getattr(exc, "code", "?"))
-            return True, None, f"gemini_http_{getattr(exc, 'code', 'error')}"
+            return _fallback()
         except Exception as exc:
             logger.debug("[engine] gemini review failed: %s", exc)
-            return True, None, "gemini_failed_allow"
+            return _fallback()
 
     return await asyncio.to_thread(_do_request)
 
@@ -630,6 +712,30 @@ def _signal_roi_score(signal: Dict[str, Any]) -> float:
     return reward / risk
 
 
+def _signal_max_rr_score(signal: Dict[str, Any]) -> float:
+    values = [_signal_roi_score(signal)]
+    for key in ("risk_reward", "rr_ratio", "rr_estimate", "expected_rr"):
+        val = _safe_float(signal.get(key), 0.0)
+        if val > 0:
+            values.append(val)
+
+    entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+    raw_tp = signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
+    if entry > 0 and stop > 0 and isinstance(raw_tp, (list, tuple)):
+        risk = abs(entry - stop)
+        if risk > 0:
+            for item in raw_tp:
+                try:
+                    target = item.get("price") or item.get("tp") or item.get("target") if isinstance(item, dict) else item
+                    target_v = float(target)
+                    if target_v > 0:
+                        values.append(abs(target_v - entry) / risk)
+                except Exception:
+                    continue
+    return max(values or [0.0])
+
+
 def _signal_stop_loss_pct(signal: Dict[str, Any]) -> float:
     entry = _safe_float(signal.get("entry") or signal.get("close_price"))
     stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
@@ -738,6 +844,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     asset_class = _asset_class_key(asset)
     score = _signal_display_score(signal)
     rr = _signal_roi_score(signal)
+    rr_cap_value = _signal_max_rr_score(signal)
     stop_loss_pct = _signal_stop_loss_pct(signal)
     ml_probability = _safe_float(signal.get("ml_probability"), 0.0)
     confluence_pct = resolve_confluence_percent(signal)
@@ -826,8 +933,8 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_stop_loss_pct {stop_loss_pct:.2f}% > {max_stop_loss_pct:.2f}% ({asset_class})"
     if rr < min_rr:
         return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class})"
-    if rr > max_rr:
-        return False, f"quality_rr {rr:.2f} > {max_rr:.2f} ({asset_class})"
+    if rr_cap_value > max_rr:
+        return False, f"quality_rr {rr_cap_value:.2f} > {max_rr:.2f} ({asset_class})"
     if ml_probability > 0 and ml_probability < min_ml:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
     if confluence_pct is not None and confluence_pct < min_confluence:
@@ -840,7 +947,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     if asset_class == "fx":
         allowed_fx_tfs = {
             tf.strip().lower()
-            for tf in str(os.getenv("QUALITY_FX_ALLOWED_TIMEFRAMES", "1h,4h,1d")).split(",")
+            for tf in str(os.getenv("QUALITY_FX_ALLOWED_TIMEFRAMES", "1m,5m,15m,1h,4h,1d")).split(",")
             if tf.strip()
         }
         if timeframe and timeframe not in allowed_fx_tfs:
@@ -1272,7 +1379,7 @@ def main_loop(DRY_RUN: bool = False):
     fx_enabled = _env_bool('FX_ENABLED', True)
     stocks_enabled = _env_bool('STOCKS_ENABLED', True)
     _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-    _tf_default = '1h,4h,24h'
+    _tf_default = '1m,5m,15m,1h,4h,24h'
     def _norm_tf(tf: str) -> str:
         _tf = str(tf or "").strip().lower()
         if _tf == "24h":

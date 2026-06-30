@@ -81,3 +81,73 @@ def test_quality_gate_blocks_low_gemini_score_when_present():
 
     assert ok is False
     assert "quality_gemini" in reason
+
+
+def test_quality_gate_blocks_overextended_display_rr():
+    from engine.core import _production_quality_gate
+
+    ok, reason = _production_quality_gate(
+        {
+            "asset": "USDCHF",
+            "direction": "long",
+            "timeframe": "1h",
+            "score": 97,
+            "ml_probability": 0.94,
+            "rr_ratio": 3.2,
+            "risk_reward": 11.2,
+            "entry": 0.80783,
+            "stop_loss": 0.80500,
+            "take_profit": [0.84472, 0.88161, 0.91850],
+            "gemini_review_score": 8.9,
+            "adx": 30,
+            "mtf_4h_trend": 1,
+            "mtf_1d_trend": 1,
+        }
+    )
+
+    assert ok is False
+    assert "quality_rr" in reason
+
+
+def test_local_ai_review_fallback_is_visible_for_vip_signals():
+    from engine.core import _local_ai_review_signal
+    from signalrank_telegram.tier_signal_formatter import format_vip_signal
+
+    signal = {
+        "asset": "BTCUSDT",
+        "direction": "short",
+        "score": 96,
+        "ml_probability": 0.78,
+        "entry": 58334.2,
+        "stop_loss": 59087.66,
+        "take_profit": [57500.0, 56500.0, 55500.0],
+        "timeframe": "15m",
+        "signal_id": "sig-local-ai",
+        "rr_ratio": 2.2,
+    }
+    ok, score, reason = _local_ai_review_signal(signal, candles=[{"close": 1}] * 120)
+    signal["gemini_review_score"] = score
+    signal["gemini_review_reason"] = reason
+
+    msg = format_vip_signal(signal)
+
+    assert ok is True
+    assert "AI Review:" in msg
+    assert "Local AI" in msg
+
+
+def test_engine_default_timeframes_cover_1m_to_24h():
+    source = (Path(__file__).resolve().parents[1] / "engine" / "core.py").read_text(encoding="utf-8")
+
+    assert "_tf_default = '1m,5m,15m,1h,4h,24h'" in source
+    assert '"1m", "5m", "15m", "1h", "4h", "1d"' in source
+
+
+def test_mt5_trade_callback_attempts_reprovision_before_failing():
+    bot_source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+    client_source = (Path(__file__).resolve().parents[1] / "services" / "mt5_client.py").read_text(encoding="utf-8")
+
+    assert "ensure_user_mt5_account_id" in bot_source
+    assert "async def ensure_user_mt5_account_id" in client_source
+    assert "decrypt_secret" in client_source
+    assert "link_mt5_account(" in client_source

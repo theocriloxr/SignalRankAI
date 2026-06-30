@@ -714,3 +714,44 @@ Evidence to watch:
 - `/qa_report` delivered counts should align more closely with actual sent messages, not reservations.
 - TP notifications should no longer show `None` or `Ref: N/A`.
 - Signal messages should show `AI Review: Gemini x.x/10` when Gemini returned a review score.
+
+## 2026-06-30 follow-up: 12-hour asset lock, executable MT5, faster setups, and AI fallback
+
+Latest Railway/Telegram evidence showed:
+
+- Duplicate same-asset deliveries inside 12 hours, including exact duplicate XAGUSD messages.
+- Signals with an active same-asset exposure still being delivered.
+- MT5 credentials saved but the trade button failing because no executable MetaApi account ID existed.
+- Signals skewing toward slow 4h/1d target ladders with very high displayed R:R.
+- Gemini configured but signal-level AI review not visible when Gemini failed or returned unparseable prose.
+- Railway background `MarketMonitor` crashing on offset-naive vs offset-aware datetime subtraction.
+- The attached `railway_dump.bak` is a PostgreSQL custom-format dump (`PGDMP`), but local `pg_restore` tooling was unavailable in this environment, so it was identified safely but not restored locally.
+
+Changes made:
+
+- Central delivery reservation now enforces a same-user/same-asset cooldown of at least 12 hours, regardless of direction, tier, or timeframe.
+- Unresolved same-asset exposure remains blocked by `DELIVERY_UNRESOLVED_BLOCK_HOURS` even beyond the 12-hour cooldown.
+- In-flight delivery reservations now block concurrent duplicate sends for `DELIVERY_INFLIGHT_RETRY_SECONDS=300` unless a previous send attempt recorded an error.
+- `ASSET_REPEAT_LOCK_HOURS` and `TIER_ASSET_COOLDOWN_HOURS` defaults are aligned to 12 hours for all tiers.
+- Signal analysis defaults now include `1m,5m,15m,1h,4h,24h`; `24h` normalizes to `1d`.
+- Production quality gating now caps the largest available R:R value, including displayed `risk_reward` and full TP ladder distance, so 1:6+ to 1:11 ladders can no longer slip through by presenting a smaller pre-threshold R:R.
+- Gemini review now has a deterministic local AI fallback using score, ML probability, confluence, stop distance, target realism, timeframe, and candle depth. Formatter labels it as `Local AI` rather than pretending it came from Gemini.
+- MT5 trade execution now calls `ensure_user_mt5_account_id(...)`, which attempts to reprovision MetaApi from encrypted saved credentials before failing.
+- `/mt5_status` now distinguishes saved credentials from an executable bridge with `Execution bridge: READY/NOT READY`.
+- Market no-trade alert rate limiting now handles timezone-aware timestamps.
+
+Recommended Railway env defaults after this pass:
+
+```text
+DELIVERY_SAME_ASSET_COOLDOWN_HOURS=12
+ASSET_REPEAT_LOCK_HOURS=12
+DELIVERY_INFLIGHT_RETRY_SECONDS=300
+DELIVERY_UNRESOLVED_BLOCK_HOURS=168
+CRYPTO_TIMEFRAMES=1m,5m,15m,1h,4h,24h
+FX_TIMEFRAMES=1m,5m,15m,1h,4h,24h
+STOCK_TIMEFRAMES=1m,5m,15m,1h,4h,24h
+COMMODITY_TIMEFRAMES=1m,5m,15m,1h,4h,24h
+INDEX_TIMEFRAMES=1m,5m,15m,1h,4h,24h
+AI_REVIEW_FALLBACK_ENABLED=1
+QUALITY_MIN_LOCAL_AI_SCORE=8.0
+```

@@ -912,14 +912,8 @@ async def _is_asset_delivery_locked(
         symbol = str(asset or "").upper().strip()
         if not symbol:
             return False
-        try:
-            tier = str(resolve_user_tier(int(telegram_user_id)) or "free").strip().lower()
-            if tier in {"owner", "admin"}:
-                return False
-        except Exception:
-            pass
-
         hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+        hours = max(12, hours)
         if hours <= 0:
             return False
         cutoff = datetime.utcnow() - timedelta(hours=hours)
@@ -942,11 +936,11 @@ async def _is_asset_delivery_locked(
                     .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
                     .where(
                         SignalDelivery.user_id == user.id,
+                        SignalDelivery.sent_ok.is_(True),
                         SignalDelivery.delivered_at >= cutoff,
                         func.upper(Signal.asset) == symbol,
                         Signal.archived == False,
                         Signal.expired == False,
-                        Outcome.id.is_(None),
                     )
                 )
             ).scalar_one()
@@ -4529,7 +4523,7 @@ def run_bot() -> None:
             return
 
         try:
-            from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
+            from services.mt5_client import ensure_user_mt5_account_id, validate_slippage, execute_trade
             from db.session import get_session as _gs_mt5
             from db.models import User as _UserMT5
             from sqlalchemy import select as _sel_mt5
@@ -4609,15 +4603,12 @@ def run_bot() -> None:
             except Exception:
                 pass
 
-            account_id = await get_user_mt5_account_id(user_id)
+            account_id = await ensure_user_mt5_account_id(user_id)
             if not account_id:
                 await query.edit_message_text(
                     "No executable MT5 bridge is ready.\n"
-                    "Run /mt5_status to confirm whether credentials are saved and whether MetaApi returned an account ID."
-                )
-                return
-                await query.edit_message_text(
-                    "⚠️ No MT5 account linked.\nUse /mt5_link <login> <password> <server> first."
+                    "Credentials may be saved, but MetaApi has not returned an executable account ID yet.\n"
+                    "Run /mt5_status, then /mt5_link again if the bridge still shows NOT READY."
                 )
                 return
             within_tol, slip, live_px = await validate_slippage(account_id, asset, entry)
