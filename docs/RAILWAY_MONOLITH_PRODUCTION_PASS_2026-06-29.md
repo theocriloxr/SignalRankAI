@@ -641,3 +641,32 @@ Results:
 21 passed
 overall=PASS checks=8
 ```
+
+## 2026-06-30 follow-up: indices, active signals, dedupe, and outcome load
+
+- Added first-class index support across discovery, classification, market-hours, candle routing, price routing, risk profiles, quality gates, stale validation, ML feature encoding, and engine class diagnostics.
+- New index env knobs:
+  - `INDICES_ENABLED=1`
+  - `INDEX_TIMEFRAMES=1h,4h,1d`
+  - `INDEX_TICKERS=US500,US100,US30,GER40,UK100,JPN225,VIX`
+  - `INDEX_MARKET_MODE=cfd` or `cash`
+  - `INDEX_DAILY_BREAK_UTC=21:00-22:00`
+  - `TRADINGVIEW_INDEX_PREFIX=TVC`
+- `/signals` now treats TP1/TP2/breakeven/progress outcomes as still active and falls back to `active_signal_messages` when Railway DB pressure delays delivery bookkeeping.
+- Owner/admin delivery now bypasses daily caps but no longer bypasses signal dedupe by default. Set `OWNER_ADMIN_BYPASS_DELIVERY_DEDUPE=1` only for deliberate audit spam.
+- Outcome tracker defaults are lighter for Railway monolith mode:
+  - `OUTCOME_BACKFILL_SIGNAL_LIMIT` defaults to `100` instead of bulk 2500-style processing.
+  - `OUTCOME_TRACKER_MAX_CONCURRENCY` defaults to `2`.
+  - `OUTCOME_TRACKER_UPDATE_USER_PERF=0` by default; performance commands still calculate on demand.
+- Outcome R-multiple is now signed and based on stop distance, not absolute movement divided by entry price. This prevents loss rows from poisoning ML/leaderboards as positive-R wins.
+- Stop-loss notifications now label planned risk separately from actual market move/slippage at close.
+
+Expected post-deploy checks:
+
+```text
+[engine] open universe by class: ... index=...
+[data] index_provider=... symbol=US500 mapped=^GSPC ...
+[engine] ... selected_index_assets=... no_candles_index=... quality_rejected_index=...
+```
+
+If `/signals` still returns empty immediately after receiving a signal, check whether `active_signal_messages` rows are being created and whether `signal_deliveries` inserts are timing out.

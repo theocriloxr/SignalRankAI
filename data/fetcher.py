@@ -937,6 +937,48 @@ def is_commodity(asset):
     return False
 
 
+INDEX_SYMBOL_ALIASES = {
+    "US500": "^GSPC",
+    "SP500": "^GSPC",
+    "SPX": "^GSPC",
+    "GSPC": "^GSPC",
+    "US100": "^NDX",
+    "NAS100": "^NDX",
+    "NDX": "^NDX",
+    "NASDAQ100": "^NDX",
+    "US30": "^DJI",
+    "DJI": "^DJI",
+    "DOW": "^DJI",
+    "DJ30": "^DJI",
+    "VIX": "^VIX",
+    "GER40": "^GDAXI",
+    "DAX": "^GDAXI",
+    "DE40": "^GDAXI",
+    "UK100": "^FTSE",
+    "FTSE": "^FTSE",
+    "JPN225": "^N225",
+    "JP225": "^N225",
+    "NIKKEI": "^N225",
+    "HK50": "^HSI",
+    "HSI": "^HSI",
+    "FRA40": "^FCHI",
+    "CAC40": "^FCHI",
+    "EU50": "^STOXX50E",
+    "AUS200": "^AXJO",
+    "ASX200": "^AXJO",
+}
+
+
+def normalize_index_symbol(asset: str) -> str:
+    """Return the Yahoo-compatible ticker for a cash index / index CFD symbol."""
+    namespace, raw_symbol = parse_symbol(asset)
+    raw = str(raw_symbol or asset or "").upper().strip()
+    clean = raw.replace("/", "").replace("_", "").replace("-", "")
+    if raw.startswith("^"):
+        return raw
+    return INDEX_SYMBOL_ALIASES.get(clean, raw)
+
+
 def is_index(asset):
     """Check if asset is a cash index or broker index-CFD ticker."""
     namespace, raw_symbol = parse_symbol(asset)
@@ -1227,48 +1269,6 @@ def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool,
         primary_price = float(primary_price)
     except Exception:
         return None
-
-
-INDEX_SYMBOL_ALIASES = {
-    "US500": "^GSPC",
-    "SP500": "^GSPC",
-    "SPX": "^GSPC",
-    "GSPC": "^GSPC",
-    "US100": "^NDX",
-    "NAS100": "^NDX",
-    "NDX": "^NDX",
-    "NASDAQ100": "^NDX",
-    "US30": "^DJI",
-    "DJI": "^DJI",
-    "DOW": "^DJI",
-    "DJ30": "^DJI",
-    "VIX": "^VIX",
-    "GER40": "^GDAXI",
-    "DAX": "^GDAXI",
-    "DE40": "^GDAXI",
-    "UK100": "^FTSE",
-    "FTSE": "^FTSE",
-    "JPN225": "^N225",
-    "JP225": "^N225",
-    "NIKKEI": "^N225",
-    "HK50": "^HSI",
-    "HSI": "^HSI",
-    "FRA40": "^FCHI",
-    "CAC40": "^FCHI",
-    "EU50": "^STOXX50E",
-    "AUS200": "^AXJO",
-    "ASX200": "^AXJO",
-}
-
-
-def normalize_index_symbol(asset: str) -> str:
-    """Return the Yahoo-compatible ticker for a cash index / index CFD symbol."""
-    namespace, raw_symbol = parse_symbol(asset)
-    raw = str(raw_symbol or asset or "").upper().strip()
-    clean = raw.replace("/", "").replace("_", "").replace("-", "")
-    if raw.startswith("^"):
-        return raw
-    return INDEX_SYMBOL_ALIASES.get(clean, raw)
     if primary_price <= 0:
         return None
 
