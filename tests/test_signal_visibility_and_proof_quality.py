@@ -17,7 +17,9 @@ def test_unresolved_signal_lookup_does_not_hide_received_signals_with_stale_flag
     source = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
     helper = source.split("async def list_unresolved_signals_for_user", 1)[1].split("async def list_recent_signals_for_user", 1)[0]
 
-    assert "~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists()" in helper
+    assert "terminal_statuses" in helper
+    assert "Outcome.status.notin_(terminal_statuses)" in helper
+    assert "ActiveSignalMessage" in helper
     assert "Signal.expired == False" not in helper
     assert "Signal.archived == False" not in helper
 

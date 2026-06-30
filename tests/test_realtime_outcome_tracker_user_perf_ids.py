@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import AsyncMock, patch
+import time
 
 
 class _Rows:
@@ -34,6 +35,7 @@ class TestRealtimeOutcomeTrackerPerformanceIds(unittest.IsolatedAsyncioTestCase)
         from engine.realtime_outcome_tracker import RealtimeOutcomeTracker
 
         tracker = RealtimeOutcomeTracker()
+        tracker._last_retrain_ts = time.time()
         tracker._check_signal = AsyncMock(return_value=None)
 
         telegram_user_id = 1234567890
@@ -44,6 +46,7 @@ class TestRealtimeOutcomeTrackerPerformanceIds(unittest.IsolatedAsyncioTestCase)
             patch("engine.realtime_outcome_tracker._fetch_delivered_untracked_signals", AsyncMock(return_value=[])),
             patch("db.session.get_session", side_effect=lambda: _SessionCM([(telegram_user_id,)])),
             patch("db.pg_features.get_user_performance_30d", perf_mock),
+            patch.dict("os.environ", {"OUTCOME_TRACKER_UPDATE_USER_PERF": "1"}),
         ):
             await tracker._check_all()
 

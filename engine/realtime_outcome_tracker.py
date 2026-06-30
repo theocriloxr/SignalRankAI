@@ -1157,6 +1157,9 @@ class RealtimeOutcomeTracker:
 
         # Track which users had outcomes updated
         updated_users = set()
+        update_user_perf = str(
+            os.getenv("OUTCOME_TRACKER_UPDATE_USER_PERF", "0") or "0"
+        ).strip().lower() in {"1", "true", "yes", "y", "on"}
         max_concurrency = max(1, int(os.getenv("OUTCOME_TRACKER_MAX_CONCURRENCY", "2") or 2))
         signal_semaphore = asyncio.Semaphore(max_concurrency)
 
@@ -1164,6 +1167,8 @@ class RealtimeOutcomeTracker:
             async with signal_semaphore:
                 try:
                     await self._check_signal(sig)
+                    if not update_user_perf:
+                        return
                     # Find all telegram_user_id recipients who received this signal
                     from db.session import get_session
                     from db.models import SignalDelivery, User
@@ -1197,18 +1202,19 @@ class RealtimeOutcomeTracker:
             logger.error(f"[outcome_tracker] ML retraining failed: {exc}")
 
         # Update user performance for all affected users
-        try:
-            from db.session import get_session
-            from db.pg_features import get_user_performance_30d
-            async with get_session() as session:
-                for user_id in updated_users:
-                    try:
-                        perf = await get_user_performance_30d(session, int(user_id))
-                        logger.info(f"[outcome_tracker] Updated performance for user {user_id}: {perf}")
-                    except Exception as exc:
-                        logger.warning(f"[outcome_tracker] Failed to update performance for user {user_id}: {exc}")
-        except Exception as exc:
-            logger.error(f"[outcome_tracker] Bulk user performance update failed: {exc}")
+        if update_user_perf:
+            try:
+                from db.session import get_session
+                from db.pg_features import get_user_performance_30d
+                async with get_session() as session:
+                    for user_id in updated_users:
+                        try:
+                            perf = await get_user_performance_30d(session, int(user_id))
+                            logger.info(f"[outcome_tracker] Updated performance for user {user_id}: {perf}")
+                        except Exception as exc:
+                            logger.warning(f"[outcome_tracker] Failed to update performance for user {user_id}: {exc}")
+            except Exception as exc:
+                logger.error(f"[outcome_tracker] Bulk user performance update failed: {exc}")
 
     async def _check_signal(self, signal: Dict[str, Any]) -> None:
         symbol = signal["asset"]

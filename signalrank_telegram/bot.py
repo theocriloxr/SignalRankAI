@@ -5090,6 +5090,26 @@ def run_bot() -> None:
                         logger.debug(f"[outcome] Failed to fetch current market price for {asset}: {e}")
                         pass
 
+                    def _format_sl_closed_message() -> str:
+                        try:
+                            entry_v = float(signal_data.get("entry") or 0)
+                            sl_v = float(signal_data.get("stop_loss") or 0)
+                        except Exception:
+                            entry_v, sl_v = 0.0, 0.0
+                        actual_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                        planned_pct = abs(((entry_v - sl_v) / entry_v) * 100.0) if entry_v and sl_v else 0.0
+                        risk_pct = planned_pct if planned_pct > 0 else actual_pct
+                        extra = ""
+                        if actual_pct > 0 and risk_pct > 0 and actual_pct > (risk_pct + 0.25):
+                            extra = f"Market move at close: <b>-{actual_pct:.2f}%</b>\n"
+                        return (
+                            "âŒ <b>Trade Closed</b>\n"
+                            f"<b>{asset}</b> hit Stop Loss.\n"
+                            f"Planned risk: <b>-{risk_pct:.2f}%</b>\n"
+                            f"{extra}"
+                            "Status: Awaiting next high-probability setup."
+                        )
+
                     if user_tier in ("owner", "admin", "vip"):
                         if tp_level_num in (1, 2, 3):
                             notify = True
@@ -5107,6 +5127,7 @@ def run_bot() -> None:
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
                             )
+                            msg = _format_sl_closed_message()
                     elif user_tier == "premium":
                         if tp_level_num in (1, 2, 3):
                             notify = True
@@ -5124,6 +5145,7 @@ def run_bot() -> None:
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
                             )
+                            msg = _format_sl_closed_message()
                     elif str(tier_at_send).lower() == "free":
                         if tp_level_num > 0 or status == "tp":
                             notify = True
@@ -5141,6 +5163,7 @@ def run_bot() -> None:
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
                             )
+                            msg = _format_sl_closed_message()
 
                     if notify and msg:
                         eligible_count += 1
