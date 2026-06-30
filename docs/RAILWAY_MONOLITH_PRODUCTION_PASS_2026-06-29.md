@@ -691,6 +691,7 @@ Changes made:
 - TP notification payloads are normalized before formatting, and the TP formatter now falls back across `asset`/`symbol`, `take_profit`/`targets`, and `signal_id`/`id`.
 - Outcome tracker default lookback/backfill windows now default to 168 hours instead of 720 hours to reduce old backfill noise on Railway monolith deployments.
 - Gemini review scores are now displayed in paid/admin signal formatting when present, and `_production_quality_gate(...)` blocks signals with numeric Gemini review scores below `QUALITY_MIN_GEMINI_SCORE_*` defaults of `8.0`.
+- Paystack webhook processing now has a self-contained duration fallback so replayed `charge.success` events without `duration_days` do not crash when the optional legacy `paystack.paystack` package path is unavailable.
 
 Recommended post-deploy checks:
 
