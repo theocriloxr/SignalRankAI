@@ -660,6 +660,9 @@ overall=PASS checks=8
   - `OUTCOME_TRACKER_UPDATE_USER_PERF=0` by default; performance commands still calculate on demand.
 - Outcome R-multiple is now signed and based on stop distance, not absolute movement divided by entry price. This prevents loss rows from poisoning ML/leaderboards as positive-R wins.
 - Stop-loss notifications now label planned risk separately from actual market move/slippage at close.
+- Production quality guard now blocks low-confluence signals when confluence metadata is present. Default minimums:
+  - FX/crypto/indices/commodities/other: `QUALITY_MIN_CONFLUENCE_* = 50`
+  - Stocks: `QUALITY_MIN_CONFLUENCE_STOCK = 45`
 
 Expected post-deploy checks:
 

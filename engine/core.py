@@ -58,6 +58,7 @@ from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk, risk_check
 from engine.scoring import calculate_signal_score as score_signal, calculate_confluence
+from engine.signal_metrics import resolve_confluence_percent
 
 # Portfolio Exposure Manager (Capital Protection)
 # Limits open trades per asset class + direction
@@ -739,6 +740,7 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     rr = _signal_roi_score(signal)
     stop_loss_pct = _signal_stop_loss_pct(signal)
     ml_probability = _safe_float(signal.get("ml_probability"), 0.0)
+    confluence_pct = resolve_confluence_percent(signal)
     adx = _signal_adx_value(signal)
     timeframe = str(signal.get("timeframe") or "").strip().lower()
     direction = str(signal.get("direction") or "").strip().lower()
@@ -775,6 +777,14 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "commodity": 22.0,
         "other": 22.0,
     }
+    min_confluence_defaults = {
+        "fx": 50.0,
+        "crypto": 50.0,
+        "stock": 45.0,
+        "index": 50.0,
+        "commodity": 50.0,
+        "other": 50.0,
+    }
     max_stop_loss_pct_defaults = {
         "fx": 0.80,
         "crypto": 2.50,
@@ -796,6 +806,11 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_defaults.get(asset_class, 2.0))
     min_ml = _env_float_for_class("QUALITY_MIN_ML_PROB", asset_class, min_ml_defaults.get(asset_class, 0.62))
     min_adx = _env_float_for_class("QUALITY_MIN_ADX", asset_class, min_adx_defaults.get(asset_class, 22.0))
+    min_confluence = _env_float_for_class(
+        "QUALITY_MIN_CONFLUENCE",
+        asset_class,
+        min_confluence_defaults.get(asset_class, 50.0),
+    )
     max_stop_loss_pct = _env_float_for_class(
         "QUALITY_MAX_STOP_LOSS_PCT",
         asset_class,
@@ -813,6 +828,8 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         return False, f"quality_rr {rr:.2f} > {max_rr:.2f} ({asset_class})"
     if ml_probability > 0 and ml_probability < min_ml:
         return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
+    if confluence_pct is not None and confluence_pct < min_confluence:
+        return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
     if adx > 0 and adx < min_adx:
         return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
 

@@ -117,3 +117,26 @@ def test_production_quality_guard_rejects_roi_chasing_extreme_rr(monkeypatch):
 
     assert not ok
     assert "quality_rr" in reason
+
+
+def test_production_quality_guard_rejects_low_confluence_when_present(monkeypatch):
+    monkeypatch.delenv("PRODUCTION_QUALITY_GUARD_ENABLED", raising=False)
+
+    ok, reason = _production_quality_gate(
+        _base_signal(
+            asset="AUDUSD",
+            direction="short",
+            entry=0.69137,
+            stop_loss=0.69275,
+            take_profit=0.68700,
+            score=96.6,
+            ml_probability=0.733,
+            adx=30.0,
+            mtf_4h_trend=-1.0,
+            mtf_1d_trend=-1.0,
+            confluence_percent=33.0,
+        )
+    )
+
+    assert not ok
+    assert "quality_confluence" in reason
