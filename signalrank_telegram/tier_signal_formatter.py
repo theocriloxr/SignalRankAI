@@ -352,6 +352,23 @@ def _score_blurb(signal: DictType[str, Any]) -> str:
     return " • ".join(parts)
 
 
+def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
+    score = _safe_float(signal.get("gemini_review_score") or signal.get("ai_review_score"))
+    reason = str(signal.get("gemini_review_reason") or signal.get("ai_review_reason") or "").strip()
+    if score is None and not reason:
+        return None
+    if reason in {"gemini_disabled", "gemini_disabled_no_key"}:
+        return None
+    parts: List[str] = []
+    if score is not None and score > 0:
+        parts.append(f"Gemini {score:.1f}/10")
+    if reason:
+        readable = reason.replace("_", " ")
+        if readable.lower() != "gemini ok":
+            parts.append(readable[:80])
+    return " • ".join(parts) if parts else None
+
+
 def _suggested_size_text(signal: DictType[str, Any]) -> Optional[str]:
     suggested = _safe_float(signal.get("suggested_position_size") or signal.get("position_size") or signal.get("lot_size"))
     if suggested is not None and suggested > 0:
@@ -447,6 +464,9 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
         lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    ai_review = _ai_review_text(signal)
+    if ai_review:
+        lines.append(f"🧠 AI Review: {_h(ai_review)}")
 
     lines += [
         "",
@@ -625,6 +645,9 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
         lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    ai_review = _ai_review_text(signal)
+    if ai_review:
+        lines.append(f"🧠 AI Review: {_h(ai_review)}")
 
     # HTF Bias
     htf_bias = signal.get("htf_bias") or signal.get("higher_timeframe_bias")

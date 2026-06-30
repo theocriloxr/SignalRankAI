@@ -1248,7 +1248,10 @@ async def _deliver_or_update_signal_async(
                 )
 
                 jump_keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Go to signal", callback_data=_signal_callback_data("open_signal_", signal_id))]]
+                    [[InlineKeyboardButton(
+                        "Go to signal",
+                        url=_build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"])),
+                    )]]
                 )
                 await bot.send_message(
                     chat_id=int(telegram_user_id),
@@ -5068,7 +5071,17 @@ def run_bot() -> None:
                     except Exception:
                         delivered_signal = None
 
-                    signal_data = delivered_signal.__dict__ if delivered_signal else sig.__dict__
+                    signal_data = dict(delivered_signal.__dict__ if delivered_signal else sig.__dict__)
+                    signal_data.setdefault("asset", asset)
+                    signal_data.setdefault("symbol", asset)
+                    signal_data.setdefault("timeframe", timeframe or "1h")
+                    signal_data.setdefault("id", ref)
+                    signal_data.setdefault("signal_id", ref)
+                    signal_data.setdefault("direction", getattr(sig, "direction", "") or "")
+                    signal_data.setdefault("entry", getattr(sig, "entry", None))
+                    signal_data.setdefault("stop_loss", getattr(sig, "stop_loss", None))
+                    signal_data.setdefault("targets", getattr(sig, "take_profit", None))
+                    signal_data.setdefault("tp_levels", getattr(sig, "take_profit", None))
 
                     # Outcome notification logic by tier
                     notify = False

@@ -44,13 +44,21 @@ NEW PRODUCTION UPGRADES (2024):
 import os as _os
 from typing import Final
 
+
+def _env_int_limit(name: str, default: int) -> int:
+    try:
+        return max(0, int(float(_os.getenv(name, str(default)) or default)))
+    except Exception:
+        return int(default)
+
+
 # Tier daily signal limits (DELIVERED signals per user)
 TIER_DAILY_LIMITS: Final[dict[str, float]] = {
-    "free": 3.0,
-    "premium": 10.0,
-    "vip": 20.0,  # Soft cap, signals pause after 20/day
-    "owner": float('inf'),
-    "admin": float('inf'),
+    "free": float(_env_int_limit("FREE_SIGNAL_DAILY_LIMIT", 3)),
+    "premium": float(_env_int_limit("PREMIUM_SIGNAL_DAILY_LIMIT", 15)),
+    "vip": float(_env_int_limit("VIP_SIGNAL_DAILY_LIMIT", 30)),
+    "owner": float(_env_int_limit("OWNER_SIGNAL_DAILY_LIMIT", 100)),
+    "admin": float(_env_int_limit("ADMIN_SIGNAL_DAILY_LIMIT", 100)),
 }
 
 # Tier quality score thresholds (minimum signal score to be eligible)
@@ -136,7 +144,7 @@ ACTIVE_SIGNAL_LOOKBACK_HOURS: Final[int] = 24
 
 # FREE tier specific constants
 FREE_MIN_SCORE: Final[int] = 80  # Minimum signal score for FREE tier eligibility (upgraded from 60)
-FREE_SIGNAL_DAILY_LIMIT: Final[int] = 3  # Daily signal limit for FREE users
+FREE_SIGNAL_DAILY_LIMIT: Final[int] = _env_int_limit("FREE_SIGNAL_DAILY_LIMIT", 3)  # Daily signal limit for FREE users
 FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
 
 

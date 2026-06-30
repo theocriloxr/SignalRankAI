@@ -1,6 +1,6 @@
 # Living Testing Register
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 Owner: QA/Engineering
 
 | Test Area | Type | Current Coverage | Commands | Missing Coverage | Status | Owner |
@@ -16,3 +16,4 @@ Owner: QA/Engineering
 | Observability | Contract | Prometheus text and endpoint tests exist. | `.venv/Scripts/python.exe -m pytest tests/test_telemetry.py -q` | Dashboard/alert integration tests. | Partial | Engineering |
 | Production readiness | Contract | Offline production readiness checker validates governance, env templates, health/metrics routes, telemetry, and core Telegram command registration. | `.venv/Scripts/python.exe -m pytest tests/test_production_readiness_check.py -q`; `.venv/Scripts/python.exe scripts/production_readiness_check.py` | Live deployment, provider, Telegram, payment, and load checks. | Added | Engineering |
 | Deployment log regressions | Regression | Covers cold Engine Pulse counters, optional-provider outage suppression, risk-free recipient throttling, stats adapter compatibility, no synthetic TradingView candles, similarity import/sync wrapper, and weekly shadow-counter reporting. | `.venv/Scripts/python.exe -m pytest tests/test_deploy_log_regressions.py -q` | Live Railway/Telegram verification after redeploy. | Added | Engineering |
+| Post-deploy signal hardening | Regression | Covers confirmed-send tier caps, partial-TP dedupe, updated-signal URL buttons, TP notification metadata fallbacks, visible AI review formatting, and Gemini-score quality gating. | `.venv/Scripts/python.exe -m pytest tests/test_delivery_limit_guard.py tests/test_post_deploy_signal_hardening.py -q` | Live Railway/Telegram verification after redeploy. | Added | Engineering |

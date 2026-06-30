@@ -14,7 +14,7 @@ Key behaviours:
 
 Environment:
     OUTCOME_CHECK_INTERVAL_SECONDS  - Poll interval (default: 20)
-    ACTIVE_SIGNAL_LOOKBACK_HOURS    - How far back to look for open signals (default: 720)
+    ACTIVE_SIGNAL_LOOKBACK_HOURS    - How far back to look for open signals (default: 168)
 """
 from __future__ import annotations
 
@@ -239,9 +239,9 @@ def _check_interval() -> int:
 
 def _lookback_hours() -> int:
     try:
-        return int(os.getenv("ACTIVE_SIGNAL_LOOKBACK_HOURS", "720"))
+        return int(os.getenv("ACTIVE_SIGNAL_LOOKBACK_HOURS", "168"))
     except Exception:
-        return 720
+        return 168
 
 
 async def _fetch_active_signals() -> List[Dict[str, Any]]:
@@ -301,7 +301,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
         from db.models import Signal, SignalDelivery, Outcome
         from sqlalchemy import select
 
-        lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "720") or 720)
+        lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "168") or 168)
         limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
         if limit <= 0:
             return []

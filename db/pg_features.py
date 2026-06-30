@@ -954,6 +954,7 @@ async def record_signal_delivery(
             sent_today_res: Result[Tuple[int]] = await session.execute(
                 select(func.count(SignalDelivery.id)).where(
                     SignalDelivery.user_id == user.id,
+                    SignalDelivery.sent_ok.is_(True),
                     SignalDelivery.delivered_at >= day_start,
                 )
             )
@@ -1031,6 +1032,7 @@ async def record_signal_delivery(
                         .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
                         .where(
                             SignalDelivery.user_id == user.id,
+                            SignalDelivery.sent_ok.is_(True),
                             Signal.asset == sig.asset,
                             Signal.direction == sig.direction,
                         )
@@ -1048,16 +1050,26 @@ async def record_signal_delivery(
                     except Exception:
                         pass
 
-                    resolved_statuses = {"tp", "tp1", "tp2", "tp3", "sl", "invalid", "time_stop", "cancel", "cancelled", "breakeven", "be"}
+                    resolved_statuses = {
+                        "tp",
+                        "tp3",
+                        "sl",
+                        "invalid",
+                        "invalidated",
+                        "expired",
+                        "time_stop",
+                        "cancel",
+                        "cancelled",
+                    }
                     is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
 
                     is_upgrade_delivery = _tier_rank(tier_s) > _tier_rank(str(prev_tier_at_send or "free"))
                     try:
                         unresolved_block_hours = float(
-                            (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or str(asset_cooldown_hours)).strip()
+                            (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
                         )
                     except Exception:
-                        unresolved_block_hours = float(asset_cooldown_hours)
+                        unresolved_block_hours = 168.0
                     unresolved_block_hours = max(0.0, float(unresolved_block_hours))
 
                     should_block_asset = (
@@ -1083,6 +1095,7 @@ async def record_signal_delivery(
                         .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                         .where(
                             SignalDelivery.user_id == user.id,
+                            SignalDelivery.sent_ok.is_(True),
                             Signal.asset == sig.asset,
                             Signal.timeframe == sig.timeframe,
                             Signal.direction == sig.direction,
@@ -1110,6 +1123,7 @@ async def record_signal_delivery(
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                     .where(
                         SignalDelivery.user_id == user.id,
+                        SignalDelivery.sent_ok.is_(True),
                         Signal.asset == sig.asset,
                         Signal.timeframe == sig.timeframe,
                         Signal.direction == sig.direction,
@@ -1226,6 +1240,7 @@ async def count_signals_sent_today(
     cnt_res: Result[Tuple[int]] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
             SignalDelivery.user_id == user.id,
+            SignalDelivery.sent_ok.is_(True),
             SignalDelivery.delivered_at >= start,
         )
     )
@@ -1247,7 +1262,7 @@ async def list_recent_signals_delivered(
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .where(SignalDelivery.user_id == user.id)
+        .where(SignalDelivery.user_id == user.id, SignalDelivery.sent_ok.is_(True))
         .order_by(SignalDelivery.delivered_at.desc())
         .limit(max(1, int(limit)))
     )
@@ -2649,6 +2664,7 @@ async def count_signals_delivered_today(
     res: Result[Tuple[int]] = await session.execute(
         select(func.count(SignalDelivery.id)).where(
             SignalDelivery.user_id == user.id,
+            SignalDelivery.sent_ok.is_(True),
             SignalDelivery.delivered_at >= start_of_day
         )
     )

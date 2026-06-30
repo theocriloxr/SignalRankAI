@@ -1,6 +1,6 @@
 # Living Trading Intelligence Register
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30
 Owner: Quant/Engineering
 
 Every trading rule should be documented with a reason.
@@ -14,5 +14,7 @@ Every trading rule should be documented with a reason.
 | On-chain alpha | Avoid long/short trades during flow spikes. | `engine/onchain_alpha.py` | Exchange flows can precede crypto price moves. | Provider context, direction | Veto/reason | `tests/test_onchain_providers.py` | Active | Add provider live tests |
 | News weighting | Delay/suppress uncertain or high-impact news conditions. | `services/news_intelligence.py` | News can invalidate technical setups. | Source evidence | News assessment/action | `tests/test_news_intelligence.py` | Active | Wire to signal lifecycle and outcome learning |
 | Gemini weighting | AI confluence/veto for contextual risk. | `services/gemini_ml.py` | LLM can identify contextual traps when bounded by prompts. | Signal/news/recent history | Approval/veto/explanation | Command tests | Partial | Prompt registry and cost/latency governance |
+| Gemini score quality gate | Block signals when a numeric Gemini review exists but scores below the class threshold. | `engine/core.py`, `signalrank_telegram/tier_signal_formatter.py` | AI review should be visible and enforceable, not hidden metadata. | Gemini review score/reason, signal quality context | Approve/reject plus paid-tier AI review line | `tests/test_post_deploy_signal_hardening.py` | Active | Add multi-model reviewer and cost/latency budget once OpenAI key/config is introduced |
+| Open exposure dedupe | Prevent same-user repeated same-asset/same-direction exposure while prior trade is unresolved. | `db/pg_features.py` | Multiple active copies of the same thesis magnify loss and burn daily slots. | Delivered signal, outcome state, tier, cooldown env | Block/update duplicate delivery | `tests/test_delivery_limit_guard.py` | Active | Add portfolio-level duplicate exposure dashboard |
 | Session/regime logic | Adjust quality by market state and session. | `engine/regime.py`, `market/session_classifier.py` | Edge changes across sessions/regimes. | Time, market data | Regime/session labels | Strategy tests | Active | Add regime outcome dashboard |
 | Shadow learning | Compare live decisions with alternatives. | `db/models.py`, `engine/shadow_outcome_worker.py`, `ml/ml.py` | Improvements must be evidence-backed before promotion. | Production/shadow decisions/outcomes | Metrics/recommendations | Partial | Partial | Add replay, significance, and promotion gates |

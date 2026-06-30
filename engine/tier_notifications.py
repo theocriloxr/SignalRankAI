@@ -105,7 +105,7 @@ class TierNotificationManager:
         }
         
         direction = signal.get('direction', 'long').upper()
-        symbol = signal.get('symbol')
+        symbol = signal.get('symbol') or signal.get('asset') or signal.get('pair') or 'UNKNOWN'
         timeframe = signal.get('timeframe', '1h')
         
         # Header
@@ -211,11 +211,11 @@ class TierNotificationManager:
         Enhanced TP hit notification: includes full signal data, which TP was hit, current market price, and partial profit advice.
         """
         is_premium = user_tier in ['premium', 'vip', 'admin', 'owner']
-        symbol = signal.get('symbol')
+        symbol = signal.get('symbol') or signal.get('asset') or signal.get('pair') or 'UNKNOWN'
         direction = signal.get('direction', '').upper()
         entry = signal.get('entry')
         stop = signal.get('stop') or signal.get('stop_loss') or signal.get('sl')
-        tps = signal.get('targets') or signal.get('tp_levels') or []
+        tps = signal.get('targets') or signal.get('tp_levels') or signal.get('take_profit') or []
         if isinstance(tps, (float, int)):
             tps = [tps]
         timeframe = signal.get('timeframe', '')
@@ -254,7 +254,8 @@ class TierNotificationManager:
                     remaining_tps.append(f"TP{i} {price}")
             if remaining_tps:
                 msg += f"\n📊 Remaining TPs: {' | '.join(remaining_tps)}"
-        msg += f"\n\n📋 Ref: {signal.get('id', 'N/A')[:8]}"
+        ref = str(signal.get('id') or signal.get('signal_id') or signal.get('ref') or 'N/A')
+        msg += f"\n\n📋 Ref: {ref[:8]}"
         return msg
     
     def format_sl_hit_notification(
