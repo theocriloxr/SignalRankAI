@@ -290,7 +290,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         return []
 
 
-async def _fetch_delivered_untracked_signals(limit: int = 2500) -> List[Dict[str, Any]]:
+async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str, Any]]:
     """Find delivered signals that still do not have any outcome row.
 
     This supports outcome backfill and ensures delivered signals are eventually
@@ -302,7 +302,9 @@ async def _fetch_delivered_untracked_signals(limit: int = 2500) -> List[Dict[str
         from sqlalchemy import select
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "720") or 720)
-        limit = max(250, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
+        limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
+        if limit <= 0:
+            return []
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
         async with get_session() as session:
@@ -567,11 +569,6 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         pct: Optional[float] = None
         r_mult: Optional[float] = None
-        try:
-            pct = ((price - entry) / entry) * 100.0
-            r_mult = abs(price - entry) / (abs(entry) + 1e-9)
-        except Exception:
-            pass
 
         status_l = str(status or "").lower()
         terminal = status_l in {"sl", "tp3", "tp", "invalid", "time_stop"}
@@ -597,6 +594,28 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     select(Signal).where(Signal.signal_id == signal_id)
                 )
                 signal_data = result.scalar_one_or_none()
+        except Exception:
+            pass
+
+        try:
+            direction = str(getattr(signal_data, "direction", "") or "").lower() if signal_data is not None else ""
+            stop_loss = float(getattr(signal_data, "stop_loss", 0) or 0) if signal_data is not None else 0.0
+            entry_f = float(entry or 0)
+            price_f = float(price or 0)
+            if entry_f > 0 and price_f > 0:
+                signed_move = (entry_f - price_f) if direction == "short" else (price_f - entry_f)
+                pct = (signed_move / entry_f) * 100.0
+                risk_distance = abs(entry_f - stop_loss) if stop_loss > 0 else 0.0
+                if risk_distance > 0:
+                    r_mult = signed_move / risk_distance
+                else:
+                    r_mult = signed_move / (abs(entry_f) + 1e-9)
+                if status_l == "sl" and r_mult is not None and r_mult > 0:
+                    r_mult = -abs(r_mult)
+                    pct = -abs(float(pct or 0.0))
+                elif status_l in {"tp", "tp1", "tp2", "tp3"} and r_mult is not None and r_mult < 0:
+                    r_mult = abs(r_mult)
+                    pct = abs(float(pct or 0.0))
         except Exception:
             pass
 
@@ -1123,7 +1142,7 @@ class RealtimeOutcomeTracker:
         signals = await _fetch_active_signals()
         # Backfill previously delivered-but-untracked signals so every delivered
         # signal eventually receives an outcome state for analytics/training.
-        backfill_limit = max(250, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "2500") or 2500))
+        backfill_limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", "100") or 100))
         backfill = await _fetch_delivered_untracked_signals(limit=backfill_limit)
         if backfill:
             known = {str(s.get("signal_id") or "") for s in signals}
@@ -1138,7 +1157,7 @@ class RealtimeOutcomeTracker:
 
         # Track which users had outcomes updated
         updated_users = set()
-        max_concurrency = max(1, int(os.getenv("OUTCOME_TRACKER_MAX_CONCURRENCY", "4") or 4))
+        max_concurrency = max(1, int(os.getenv("OUTCOME_TRACKER_MAX_CONCURRENCY", "2") or 2))
         signal_semaphore = asyncio.Semaphore(max_concurrency)
 
         async def wrapped_check_signal(sig):

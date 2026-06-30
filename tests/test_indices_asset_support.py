@@ -9,7 +9,7 @@ from data.fetcher import (
     normalize_index_symbol,
     normalize_symbol,
 )
-from data.pair_discovery import get_all_tradable_assets, get_all_trending_pairs
+import data.pair_discovery as pair_discovery
 from engine.core import _asset_class_key, _production_quality_gate
 from engine.ml import _asset_class_to_int
 from engine.risk import get_asset_class, get_asset_class_config
@@ -51,13 +51,13 @@ def test_index_market_hours_supports_cfd_and_cash_modes(monkeypatch):
 
 def test_index_discovery_bucket_is_included(monkeypatch):
     monkeypatch.setenv("INDEX_TICKERS", "US500,GER40")
-    monkeypatch.setenv("CRYPTO_TRENDING_TOP_N", "1")
-    monkeypatch.setenv("FX_TRENDING_TOP_N", "1")
-    monkeypatch.setenv("STOCK_TRENDING_TOP_N", "1")
-    monkeypatch.setenv("COMMODITY_TRENDING_TOP_N", "1")
+    monkeypatch.setattr(pair_discovery, "get_trending_crypto_pairs", lambda top_n=20: ["BTCUSDT"])
+    monkeypatch.setattr(pair_discovery, "get_trending_fx_pairs", lambda: ["EURUSD"])
+    monkeypatch.setattr(pair_discovery, "get_trending_stock_tickers", lambda top_n=20: ["AAPL"])
+    monkeypatch.setattr(pair_discovery, "get_trending_commodity_tickers", lambda top_n=10: ["XAUUSD"])
 
-    assets = get_all_tradable_assets()
-    flattened = get_all_trending_pairs()
+    assets = pair_discovery.get_all_tradable_assets()
+    flattened = pair_discovery.get_all_trending_pairs()
 
     assert assets["indices"] == ["US500", "GER40"]
     assert "US500" in flattened

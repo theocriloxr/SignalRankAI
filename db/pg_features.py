@@ -12,7 +12,7 @@ def to_naive_utc(dt: datetime) -> datetime:
     return dt
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case
+from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case, or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,7 @@ from db.models import (
     ReferralReward,
     Signal,
     SignalDelivery,
+    ActiveSignalMessage,
     Outcome,
     OutcomeNotification,
     User,
@@ -940,6 +941,9 @@ async def record_signal_delivery(
     tier_s: str = str(tier_at_send or "free").strip().lower()[:16]
     tier_base: str = tier_s.split("_", 1)[0].strip().lower()
     monitoring_tier: bool = tier_base in {"owner", "admin"}
+    monitoring_bypass_dedupe: bool = str(
+        os.getenv("OWNER_ADMIN_BYPASS_DELIVERY_DEDUPE") or "0"
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
 
     # Central hard daily cap. Every delivery path reserves through this
     # function, so enforce limits here instead of relying on each caller.
@@ -977,7 +981,7 @@ async def record_signal_delivery(
         market_cutoff = max(market_cutoff, dedupe_reset_at) if market_cutoff else dedupe_reset_at
 
 
-    if cutoff is not None and not monitoring_tier:
+    if cutoff is not None and (not monitoring_tier or not monitoring_bypass_dedupe):
         try:
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
@@ -2245,9 +2249,9 @@ async def list_unresolved_signals_for_user(
 ) -> list[Signal]:
     """Return unresolved signals delivered to this user in the configured lookback window.
     
-    FIX: Removed sent_ok filter - signals can exist without successful delivery
-    (network errors, user blocked bot, etc). We show ALL delivered signals
-    to fix "no signals found" bug when signals actually exist.
+    A signal remains "active" while it has no outcome or only non-terminal
+    progress states such as tp1/tp2/breakeven. Delivery marking can lag under
+    Railway DB pressure, so active Telegram message rows are used as a fallback.
     """
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
@@ -2257,21 +2261,58 @@ async def list_unresolved_signals_for_user(
     cutoff_days = max(1, int(lookback_days or 1))
     cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
 
-    # CRITICAL FIX: Remove sent_ok filter - was causing "no signals despite trades exist" bug
-    # Show ALL delivered signals regardless of delivery success status
+    terminal_statuses = {
+        "sl",
+        "tp",
+        "tp3",
+        "invalid",
+        "invalidated",
+        "time_stop",
+        "cancel",
+        "cancelled",
+    }
+
+    # Show delivered signals regardless of sent_ok; exclude only terminal outcomes.
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
         .where(
             SignalDelivery.user_id == user.id,
-            # REMOVED: SignalDelivery.sent_ok.is_(True) - was filtering out valid signals
-            Signal.created_at >= cutoff,
-            ~select(Outcome.id).where(Outcome.signal_id == Signal.signal_id).exists(),
+            SignalDelivery.delivered_at >= cutoff,
+            or_(Outcome.id.is_(None), Outcome.status.notin_(terminal_statuses)),
         )
         .order_by(SignalDelivery.delivered_at.desc())
     )
     res2: Result[Tuple[Signal]] = await session.execute(q)
-    return list(res2.scalars().all())
+    rows = list(res2.scalars().all())
+
+    # Fallback for cases where Telegram sent the message but delivery marking
+    # was delayed/rolled back by DB pool pressure. These rows are maintained by
+    # the active message tracker used for inline keyboards.
+    q_active: Select[Tuple[Signal]] = (
+        select(Signal)
+        .join(ActiveSignalMessage, ActiveSignalMessage.signal_id == Signal.signal_id)
+        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+        .where(
+            ActiveSignalMessage.user_id == user.id,
+            ActiveSignalMessage.is_active.is_(True),
+            ActiveSignalMessage.created_at >= cutoff,
+            or_(Outcome.id.is_(None), Outcome.status.notin_(terminal_statuses)),
+        )
+        .order_by(ActiveSignalMessage.created_at.desc())
+    )
+    res3: Result[Tuple[Signal]] = await session.execute(q_active)
+
+    seen: set[str] = set()
+    out: list[Signal] = []
+    for sig in rows + list(res3.scalars().all()):
+        sid = str(getattr(sig, "signal_id", "") or "")
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        out.append(sig)
+    return out
 
 
 async def list_recent_signals_for_user(
