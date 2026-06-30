@@ -361,9 +361,10 @@ def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
         return None
     parts: List[str] = []
     if score is not None and score > 0:
-        parts.append(f"Gemini {score:.1f}/10")
+        label = "Local AI" if reason.startswith("local_ai:") else "Gemini"
+        parts.append(f"{label} {score:.1f}/10")
     if reason:
-        readable = reason.replace("_", " ")
+        readable = reason.replace("local_ai:", "").replace("_", " ").strip()
         if readable.lower() != "gemini ok":
             parts.append(readable[:80])
     return " • ".join(parts) if parts else None
