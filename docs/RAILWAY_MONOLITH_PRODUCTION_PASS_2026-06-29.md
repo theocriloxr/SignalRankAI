@@ -828,3 +828,45 @@ PROVIDER_FAILOVER_ENABLED=1
 PROVIDER_MAX_ERRORS=5
 PROVIDER_COOLDOWN_SECONDS=300
 ```
+
+## 2026-07-01 follow-up: trader profiles, command reliability, and DB pressure
+
+This follow-up converts SignalRankAI from a single swing-biased signal stream into a profile-aware trading system. The engine now annotates each signal with a trader profile (`scalp`, `day`, `swing`, or `position`), profile-specific expected hold time, expiry, and target model. Telegram users can select a preferred profile with `/profile`; dispatch filters signals to that profile before delivery.
+
+Changes made:
+
+- Added `services/trade_profiles.py` for profile normalization, ATR-based TP/SL shaping, expected time-to-target scoring, user profile persistence, and profile delivery matching.
+- Added `services/trading_ledger.py` as the first event-ledger layer for generated signals and guarded state transitions.
+- Added `/profile` and owner-only `/db_health` Telegram commands, plus matching command-access/help entries.
+- Hardened the Telegram command audit wrapper with command timeouts, error references, and DB-pressure logging so “too many clients” failures become diagnosable instead of silent UX failures.
+- Added database pool diagnostics and Postgres activity snapshots for Railway monolith operations.
+- Updated signal formatting so premium/VIP users see the signal style and expected hold.
+- Updated `/signal all` behavior to direct users to `/signals` instead of looking up a fake reference.
+- Fixed long-running owner actions so `/force_market_scan` acknowledges immediately and broadcast/terms blasts no longer report success when zero users received the message.
+- Hardened `TierDeliveryManager.get_users_for_signal(...)` so it no longer creates an unmanaged async DB session from synchronous code; callers must pass a sync session or use the managed helper that closes its session.
+
+Additional recommended Railway env:
+
+```text
+TRADE_PROFILE_ENGINE_ENABLED=1
+TRADING_LEDGER_ENABLED=1
+COMMAND_HANDLER_TIMEOUT_SECONDS=60
+DB_POOL_PRE_PING=true
+DB_USE_NULLPOOL=false
+DB_POOL_SIZE_RAILWAY=2
+DB_MAX_OVERFLOW_RAILWAY=0
+```
+
+Remaining live evidence still required:
+
+- Railway `/db_health` output during peak command traffic.
+- Real provider availability under the production asset universe.
+- MT5/Binance/Bybit sandbox execution proof with broker-side order IDs.
+- Outcome coverage recovery proof after the active-signal and expiry fixes are deployed.
+
+External implementation notes checked during this pass:
+
+- TradingView webhooks send alert payloads to user-provided HTTP endpoints, require secure handling, support JSON bodies when the alert message is valid JSON, and cancel requests taking longer than three seconds. SignalRankAI should keep webhook handlers fast, authenticated, and non-blocking.
+- MT5 `order_send` requires a structured trade request and broker-side validation of symbol, volume, price, SL, TP, order type, filling type, expiration, and retcode handling. SignalRankAI broker execution should continue to fail with structured reasons before and after broker submission.
+- Binance symbol filters such as price, lot size, and notional constraints require pre-trade normalization before order placement.
+- Bybit order creation requires category/symbol/side/order type/quantity inputs and exchange-specific validation; execution adapters should normalize broker payloads but preserve provider-specific rejection codes.

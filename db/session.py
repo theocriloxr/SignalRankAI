@@ -279,6 +279,78 @@ def is_db_configured() -> bool:
     return get_database_url_or_none() is not None
 
 
+def get_pool_diagnostics() -> dict[str, Any]:
+    """Return local SQLAlchemy pool diagnostics for admin health commands."""
+    loop_id = _loop_identity()
+    engine = _engines_by_loop.get(loop_id)
+    pool_size, max_overflow = _effective_pool_settings()
+    info: dict[str, Any] = {
+        "configured": is_db_configured(),
+        "loop_id": loop_id,
+        "engine_count": len(_engines_by_loop),
+        "sessionmaker_count": len(_sessionmakers_by_loop),
+        "effective_pool_size": pool_size,
+        "effective_max_overflow": max_overflow,
+        "railway_runtime": _is_railway_runtime(),
+        "nullpool": bool(pool_size == 0 and max_overflow == 0),
+    }
+    if engine is None:
+        info["engine_ready"] = False
+        return info
+    info["engine_ready"] = True
+    try:
+        pool = engine.sync_engine.pool
+        info["pool_class"] = type(pool).__name__
+        for attr in ("size", "checkedin", "checkedout", "overflow"):
+            try:
+                value = getattr(pool, attr)
+                info[attr] = int(value() if callable(value) else value)
+            except Exception:
+                pass
+        try:
+            status = getattr(pool, "status", None)
+            if callable(status):
+                info["status"] = str(status())
+        except Exception:
+            pass
+    except Exception as exc:
+        info["pool_error"] = f"{type(exc).__name__}: {exc}"
+    return info
+
+
+async def collect_database_health() -> dict[str, Any]:
+    """Collect local pool and optional Postgres activity metrics."""
+    diagnostics = get_pool_diagnostics()
+    result: dict[str, Any] = {"pool": diagnostics, "postgres": {}, "ok": bool(diagnostics.get("configured"))}
+    if not diagnostics.get("configured"):
+        return result
+    try:
+        from sqlalchemy import text
+
+        async with get_session() as session:
+            activity = await session.execute(
+                text(
+                    """
+                    SELECT state, COUNT(*) AS count
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                    GROUP BY state
+                    """
+                )
+            )
+            result["postgres"]["activity_by_state"] = {
+                str(state or "unknown"): int(count or 0)
+                for state, count in activity.fetchall()
+            }
+            max_conn = await session.execute(text("SHOW max_connections"))
+            result["postgres"]["max_connections"] = str(max_conn.scalar_one_or_none() or "")
+            await session.commit()
+    except Exception as exc:
+        result["ok"] = False
+        result["postgres"]["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
 def is_transient_db_error(exc: BaseException) -> bool:
     txt = str(exc or "").lower()
     markers = (

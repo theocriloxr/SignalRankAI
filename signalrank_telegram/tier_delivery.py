@@ -112,9 +112,11 @@ class TierDeliveryManager:
             Dict mapping tier -> list of user_ids to send to
             Example: {'free': [u1, u2], 'premium': [u3, u4], 'vip': [u5], 'admin': [u6]}
         """
-        if not session:
-            from db.session import get_session
-            session = get_session()
+        if session is None:
+            raise RuntimeError(
+                "get_users_for_signal requires a synchronous SQLAlchemy session. "
+                "Use get_users_for_signal_managed() when no session is available."
+            )
         
         from signalrank_telegram.signal_distribution import SignalDistributor
         
@@ -122,6 +124,23 @@ class TierDeliveryManager:
         recipients = distributor.sample_users_for_signal(signal, signal_id)
         
         return recipients
+
+    async def get_users_for_signal_managed(self, signal: Dict, signal_id: str) -> Dict[str, List[int]]:
+        """Open and close a short-lived sync session for recipient sampling.
+
+        The distributor uses synchronous ORM queries. Keeping this helper
+        explicit prevents accidental async-session misuse in Telegram workers.
+        """
+        from db.session import get_sync_session
+
+        session = get_sync_session()
+        try:
+            return self.get_users_for_signal(signal, signal_id, session=session)
+        finally:
+            try:
+                session.close()
+            except Exception:
+                logger.debug("[delivery] failed to close managed sync session", exc_info=True)
     
     def create_update_alert(self, signal: Dict, tp_number: int, user_tier: str) -> Optional[str]:
         """Create TP HIT update alert.

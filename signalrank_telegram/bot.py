@@ -414,6 +414,9 @@ from signalrank_telegram.httpx_config import httpx_client
 
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
+        import uuid as _uuid
+        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
+        err_ref = f"ERR-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
         command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
@@ -564,6 +567,8 @@ from .commands import (
     filter_command,
     selfcheck_command,
     ops_health_command,
+    db_health_command,
+    profile_command,
     myid_command,
     account_command,
     dashboard_command,
@@ -2237,7 +2242,24 @@ def _audit_handler(command_name: str, handler):
         # That would make start_command see the user as "not new" and prevent referral attribution.
         # start_command already handles user creation + start auditing in a single transaction.
         if str(command_name) == "start":
-            return await handler(update, context)
+            try:
+                return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
+            except asyncio.TimeoutError:
+                logger.warning("[cmd:%s] timed out ref=%s after %ss", command_name, err_ref, command_timeout_s)
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(f"That command timed out. Reference: {err_ref}")
+                except Exception:
+                    pass
+                return
+            except Exception as exc:
+                logger.exception("[cmd:%s] handler failed ref=%s: %s", command_name, err_ref, exc)
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(f"The command could not complete right now. Reference: {err_ref}")
+                except Exception:
+                    pass
+                return
 
         try:
             from db.session import get_engine_for_event_loop, get_session
@@ -2281,7 +2303,17 @@ def _audit_handler(command_name: str, handler):
                 f"[bot] bot_events audit init failed: {type(e).__name__}: {e}",
             )
         try:
-            return await handler(update, context)
+            return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning("[cmd:%s] timed out ref=%s after %ss", command_name, err_ref, command_timeout_s)
+            try:
+                if getattr(update, "message", None):
+                    await update.message.reply_text(
+                        f"That command is taking too long right now. Reference: {err_ref}"
+                    )
+            except Exception:
+                pass
+            return
         except Exception as _cmd_err:
             # Detect DB/connection errors and give the user actionable feedback
             # instead of silent failure.
@@ -2290,18 +2322,26 @@ def _audit_handler(command_name: str, handler):
                 "connection refused", "could not connect", "no route to host",
                 "password authentication failed", "database error",
                 "asyncpg", "operational error", "connection pool",
+                "too many clients already", "toomanyconnectionserror",
                 "ssl", "timeout expired", "could not translate host",
             ))
+            logger.exception("[cmd:%s] handler failed ref=%s db=%s: %s", command_name, err_ref, _is_db_err, _cmd_err)
             if _is_db_err:
                 try:
                     if getattr(update, "message", None):
                         await update.message.reply_text(
-                            "⚠️ Database connection error. Please try again later."
+                            f"Database connection pressure detected. Please try again shortly. Ref: {err_ref}"
                         )
                 except Exception:
                     pass
             else:
-                raise  # Let the on_error handler log unexpected errors
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(
+                            f"The command could not complete right now. Reference: {err_ref}"
+                        )
+                except Exception:
+                    pass
 
     return _inner
 
@@ -2914,6 +2954,30 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             signals_list = filtered
     except Exception as e:
         _log_once('user_prefs_filter_error', f'[dispatch] User prefs filter error: {e}')
+
+    # --- TRADER INTENT PROFILE FILTERING ---
+    try:
+        from services.trade_profiles import get_user_trade_profile, signal_matches_user_profile
+        from db.session import get_session as _profile_get_session
+
+        async with _profile_get_session() as _profile_session:
+            _trade_profile = await get_user_trade_profile(_profile_session, int(user_id))
+        if str(_trade_profile or "all").lower() != "all":
+            before_profile_count = len(signals_list)
+            signals_list = [
+                sig for sig in signals_list
+                if signal_matches_user_profile(sig, _trade_profile)
+            ]
+            dropped_profile_count = max(0, before_profile_count - len(signals_list))
+            if dropped_profile_count:
+                logger.info(
+                    "[dispatch] user=%s profile=%s dropped=%s nonmatching_signals",
+                    user_id,
+                    _trade_profile,
+                    dropped_profile_count,
+                )
+    except Exception as e:
+        _log_once('trade_profile_filter_error', f'[dispatch] Trade profile filter error: {e}')
 
     if not signals_list:
         return
@@ -3999,6 +4063,7 @@ def run_bot() -> None:
             ("signals", "Latest signals"),
             ("signal", "Signal by reference"),
             ("performance", "Performance"),
+            ("profile", "Trading profile"),
             ("invite", "Invite"),
             ("support", "Support"),
         ]
@@ -4031,6 +4096,7 @@ def run_bot() -> None:
             ("owner_users", "Owner: user list"),
             ("owner_revenue", "Owner: revenue"),
             ("provider_status", "Owner: provider health"),
+            ("db_health", "Owner: database health"),
             ("qa_report", "Owner: QA report"),
         ]
         try:
@@ -4170,6 +4236,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
+    application.add_handler(CommandHandler("profile", _audit_handler("profile", profile_command)))
     application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
     application.add_handler(CommandHandler("gemini", _audit_handler("gemini", gemini_command)))
     application.add_handler(CommandHandler("gemini_review", _audit_handler("gemini_review", gemini_review_command)))
@@ -4208,6 +4275,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("recap", _audit_handler("recap", recap_command)))
     application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
     application.add_handler(CommandHandler("ops_health", _audit_handler("ops_health", ops_health_command)))
+    application.add_handler(CommandHandler("db_health", _audit_handler("db_health", db_health_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
     application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))

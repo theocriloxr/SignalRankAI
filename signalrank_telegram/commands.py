@@ -829,6 +829,7 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 
 	threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
 	threshold = float(threshold_raw) if threshold_raw else None
+	await update.message.reply_text("Market scan started. I will post the result when the scan completes.")
 
 	try:
 		from db.session import get_session
@@ -862,22 +863,23 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 				errors += 1
 
 		try:
-			session.add(
-				AdminEvent(
-					event_type="force_market_scan",
-					actor_telegram_user_id=int(update.effective_user.id),
-					details={
-						"total": len(signals),
-						"approved": approved,
-						"rejected": rejected,
-						"errors": errors,
-						"threshold": threshold,
-					},
+			async with get_session() as event_session:
+				event_session.add(
+					AdminEvent(
+						event_type="force_market_scan",
+						actor_telegram_user_id=int(update.effective_user.id),
+						details={
+							"total": len(signals),
+							"approved": approved,
+							"rejected": rejected,
+							"errors": errors,
+							"threshold": threshold,
+						},
+					)
 				)
-			)
-			await session.commit()
-		except Exception:
-			pass
+				await event_session.commit()
+		except Exception as event_exc:
+			logger.debug("[force_market_scan] admin event write failed: %s", event_exc)
 
 	except Exception:
 		await update.message.reply_text("⚠️ Scan failed. Check logs for details.")
@@ -1072,6 +1074,78 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 def _t(user_id, key) -> str | None:
 	lang = _get_user_language(user_id)
 	return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Admin-only database pool and Postgres activity diagnostics."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		from db.session import collect_database_health
+
+		health = await collect_database_health()
+		pool = dict(health.get("pool") or {})
+		pg = dict(health.get("postgres") or {})
+		activity = dict(pg.get("activity_by_state") or {})
+		lines = [
+			"Database Health",
+			"",
+			f"Configured: {bool(pool.get('configured'))}",
+			f"Engine ready: {bool(pool.get('engine_ready'))}",
+			f"Railway runtime: {bool(pool.get('railway_runtime'))}",
+			f"Engines: {int(pool.get('engine_count') or 0)}",
+			f"Pool: size={pool.get('size', pool.get('effective_pool_size'))} checked_out={pool.get('checkedout', 'n/a')} overflow={pool.get('overflow', 'n/a')}",
+			f"Effective cap: pool={pool.get('effective_pool_size')} overflow={pool.get('effective_max_overflow')}",
+		]
+		if pg.get("max_connections"):
+			lines.append(f"Postgres max_connections: {pg.get('max_connections')}")
+		if activity:
+			lines.append("Activity:")
+			for state_name, count in sorted(activity.items()):
+				lines.append(f"- {state_name}: {count}")
+		if pg.get("error"):
+			lines.append(f"Postgres activity error: {pg.get('error')}")
+		await update.message.reply_text("\n".join(lines))
+	except Exception as exc:
+		await update.message.reply_text(f"Database health unavailable. Reference logged: {type(exc).__name__}")
+
+
+async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Set or show the user's trading intent profile."""
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	from services.trade_profiles import (
+		format_trade_profile_options,
+		get_user_trade_profile,
+		normalize_trade_profile,
+		set_user_trade_profile,
+	)
+
+	user_id = int(update.effective_user.id)
+	args = [str(x).strip().lower() for x in (context.args or []) if str(x).strip()]
+	try:
+		async with get_session() as session:
+			current = await get_user_trade_profile(session, user_id)
+			if not args:
+				await update.message.reply_text(format_trade_profile_options(current))
+				return
+			requested = normalize_trade_profile(args[0], default="")
+			if requested not in {"scalp", "day", "swing", "position", "all"}:
+				await update.message.reply_text(format_trade_profile_options(current))
+				return
+			selected = await set_user_trade_profile(session, user_id, requested)
+			await session.commit()
+		await update.message.reply_text(
+			f"Trading profile updated: {selected.upper()}\n\n"
+			"Future signals will be filtered for that trading horizon. Use /profile all to receive every style."
+		)
+	except Exception as exc:
+		await update.message.reply_text(f"Could not update trading profile: {type(exc).__name__}")
+
+
 from .user_prefs import user_prefs_store
 # --------- LANGUAGE SELECTION COMMAND ---------
 LANGUAGES: dict[str, str] = {
@@ -2548,7 +2622,10 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 	tier: str = _effective_tier(user_id)
 	arg: str = (context.args[0] if context.args else "").strip() if context.args else ""
 	if not arg:
-		await update.message.reply_text("Usage: /signal <reference> OR /signal all")
+		await update.message.reply_text("Usage: /signal <reference>\nUse /signals to list your active signals.")
+		return
+	if arg.lower() in {"all", "active", "list"}:
+		await update.message.reply_text("Use /signals to list your active signals, or /signal <reference> for one signal.")
 		return
 
 	def _as_float(v) -> float | None:
@@ -3657,8 +3734,9 @@ async def admin_broadcast_command(update: Update, context: ContextTypes.DEFAULT_
 			except Exception:
 				failed += 1
 
+		status_label = "Broadcast complete" if sent > 0 else "Broadcast failed: no users received the message"
 		await update.message.reply_text(
-			f"✅ Broadcast complete.\n\nSent: {sent} | Failed: {failed}"
+			f"{status_label}.\n\nSent: {sent} | Failed: {failed}"
 		)
 
 	except Exception as e:
@@ -3740,9 +3818,11 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			except Exception:
 				failed += 1
 
+		status_label = "Terms blast complete" if sent > 0 else "Terms blast failed: no users received the message"
 		await update.message.reply_text(
-			f"✅ Terms blast complete.\n\nSent: {sent} | Failed: {failed}"
+			f"{status_label}.\n\nSent: {sent} | Failed: {failed}"
 		)
+		return
 
 	except Exception as e:
 		logger.error(f"[blast_terms] failed: {e}")
@@ -3810,8 +3890,9 @@ async def blast_terms_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			except Exception:
 				failed += 1
 
+		status_label = "Terms blast complete" if sent > 0 else "Terms blast failed: no users received the message"
 		await update.message.reply_text(
-			f"✅ Terms blast complete.\n\nSent: {sent} | Failed: {failed}"
+			f"{status_label}.\n\nSent: {sent} | Failed: {failed}"
 		)
 
 	except Exception as e:

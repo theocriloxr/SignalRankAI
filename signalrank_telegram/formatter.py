@@ -137,6 +137,33 @@ def _format_expiration(expires_at) -> str:
 	except Exception:
 		return str(expires_at)[:16] if expires_at else "N/A"
 
+
+def _trade_profile_display(signal: dict) -> tuple[str, str]:
+	"""Return display label and expected duration for trader-intent profiles."""
+	try:
+		from services.trade_profiles import get_trade_profile, infer_trade_profile, estimate_time_to_target
+
+		profile = get_trade_profile(infer_trade_profile(signal))
+		duration = str(signal.get("expected_duration") or profile.expected_duration)
+		ettt = signal.get("time_to_target")
+		if not isinstance(ettt, dict):
+			ettt = estimate_time_to_target(signal, profile.name)
+		tp1_hours = ettt.get("tp1_hours") if isinstance(ettt, dict) else None
+		if tp1_hours:
+			try:
+				hours = float(tp1_hours)
+				if hours < 1:
+					duration = f"TP1 about {max(1, int(hours * 60))}m"
+				elif hours < 48:
+					duration = f"TP1 about {hours:.1f}h"
+				else:
+					duration = f"TP1 about {hours / 24.0:.1f}d"
+			except Exception:
+				pass
+		return profile.label, duration
+	except Exception:
+		return str(signal.get("trade_profile_label") or "Swing Trader"), str(signal.get("expected_duration") or "multi-day")
+
 def _risk_guidance(tier: str, score: float | int | None) -> str:
 	"""Return risk management guidance based on tier and score."""
 	try:
@@ -801,6 +828,7 @@ def format_signal_premium_new(signal: dict) -> str:
 	
 	# Price context
 	price_context = _get_price_context(signal)
+	profile_label, expected_duration = _trade_profile_display(signal)
 	
 	# Build message with enhanced data
 	lines = [
@@ -816,6 +844,8 @@ def format_signal_premium_new(signal: dict) -> str:
 		f"┃ Timeframe: {timeframe}",
 		f"┃ Entry: {_format_price(entry, asset)}",
 	]
+	lines.append(f"Style: {profile_label}")
+	lines.append(f"Expected Hold: {expected_duration}")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
@@ -961,6 +991,7 @@ def format_signal_vip_new(signal: dict) -> str:
 	
 	# Score explanation
 	score_explanation = _get_score_explanation(signal)
+	profile_label, expected_duration = _trade_profile_display(signal)
 
 	# Entry zone: only show low–high range if they differ meaningfully (>0.01%)
 	try:
@@ -987,6 +1018,8 @@ def format_signal_vip_new(signal: dict) -> str:
 	if _entry_zone_str:
 		lines.append(f"┃ {_entry_zone_str.strip()}")
 	lines.append(f"┃ Entry: {_format_price(entry, asset)}")
+	lines.append(f"Style: {profile_label}")
+	lines.append(f"Expected Hold: {expected_duration}")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:

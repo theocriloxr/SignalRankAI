@@ -2586,6 +2586,17 @@ def main_loop(DRY_RUN: bool = False):
                             sig['stop_loss'] = sl
                             sig['take_profit'] = tp
 
+                            # Trader-intent profile shaping: scalp/day/swing/position
+                            # signals get realistic ATR-based targets, expiry, and a
+                            # time-to-target score before production quality gates run.
+                            try:
+                                if _env_bool("TRADE_PROFILE_ENGINE_ENABLED", True):
+                                    from services.trade_profiles import apply_trade_profile_to_signal
+
+                                    sig = apply_trade_profile_to_signal(sig)
+                            except Exception as _profile_err:
+                                logger.debug(f"[engine] trade profile shaping failed: {_profile_err}")
+
                             # ML-driven dynamic risk sizing hint (for formatters/executors).
                             try:
                                 _mlp = float(sig.get('ml_probability') or 0.0)
@@ -2693,24 +2704,27 @@ def main_loop(DRY_RUN: bool = False):
                             # Attach regime + timeframe-aware expiration so higher-timeframe
                             # setups are not invalidated too early.
                             sig['regime'] = regime
-                            _sig_tf = str(sig.get('timeframe') or '1h').strip().lower()
-                            _expiry_candles = max(1, _env_int('SIGNAL_EXPIRY_CANDLES', 2))
-                            try:
-                                sig['expires_at'] = signal_context.calculate_signal_expiration(
-                                    _sig_tf,
-                                    candles_validity=_expiry_candles,
-                                )
-                            except Exception:
-                                from datetime import timedelta as _timedelta
-                                _fallback_minutes = {
-                                    '1m': 30,
-                                    '5m': 90,
-                                    '15m': 180,
-                                    '1h': 720,
-                                    '4h': 2880,
-                                    '1d': 4320,
-                                }.get(_sig_tf, 720)
-                                sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
+                            if not sig.get("expires_at"):
+                                _sig_tf = str(sig.get('timeframe') or '1h').strip().lower()
+                                _expiry_candles = max(1, _env_int('SIGNAL_EXPIRY_CANDLES', 2))
+                                try:
+                                    sig['expires_at'] = signal_context.calculate_signal_expiration(
+                                        _sig_tf,
+                                        candles_validity=_expiry_candles,
+                                    )
+                                except Exception:
+                                    from datetime import timedelta as _timedelta
+                                    _fallback_minutes = {
+                                        '1m': 30,
+                                        '3m': 60,
+                                        '5m': 90,
+                                        '15m': 180,
+                                        '30m': 360,
+                                        '1h': 720,
+                                        '4h': 2880,
+                                        '1d': 4320,
+                                    }.get(_sig_tf, 720)
+                                    sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
 
                             try:
                                 gemini_ok, gemini_score, gemini_reason = run_sync(
@@ -2963,6 +2977,23 @@ def main_loop(DRY_RUN: bool = False):
                             stored_signal_id = store_signal_compat(sig)
                             if stored_signal_id:
                                 sig["signal_id"] = str(stored_signal_id)
+                                try:
+                                    if _env_bool("TRADING_LEDGER_ENABLED", True):
+                                        async def _record_generated_event() -> None:
+                                            from db.session import get_session
+                                            from services.trading_ledger import record_signal_generated_event
+
+                                            async with get_session() as _ledger_session:
+                                                await record_signal_generated_event(
+                                                    _ledger_session,
+                                                    sig,
+                                                    str(stored_signal_id),
+                                                )
+                                                await _ledger_session.commit()
+
+                                        run_sync(_record_generated_event(), timeout=10.0)
+                                except Exception as _ledger_err:
+                                    logger.debug(f"[ledger] SignalGenerated append failed: {_ledger_err}")
                                 if _asset_name:
                                     open_counts_by_asset[_asset_name] = int(open_counts_by_asset.get(_asset_name, 0) + 1)
                                     open_counts_by_class[_asset_cls] = int(open_counts_by_class.get(_asset_cls, 0) + 1)

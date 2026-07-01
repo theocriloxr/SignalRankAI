@@ -23,6 +23,7 @@ COMMAND_TIERS = {
     "signal":              "FREE",
     "proof":               "FREE",
     "outcome":             "FREE",
+    "profile":             "FREE",
     "invite":              "FREE",
     "policy":              "FREE",
     "refunds":             "FREE",
@@ -94,6 +95,7 @@ COMMAND_TIERS = {
     "qa_report":           "ADMIN",
     "selfcheck":           "ADMIN",
     "ops_health":          "ADMIN",
+    "db_health":           "ADMIN",
     "blast_terms":         "ADMIN",
     "assets":              "ADMIN",
 
@@ -134,6 +136,7 @@ COMMAND_HELP = {
             ("signal",               "Lookup a specific signal by reference"),
             ("proof",                "Proof feed: recent verified wins/outcomes"),
             ("outcome",              "View your 24h outcomes or check one signal outcome"),
+            ("profile",              "Choose scalp/day/swing/position signal style"),
             ("liveprice",            "Get real-time price for any asset"),
             ("market",               "Market overview — major assets at a glance"),
             ("invite",               "Get your referral link and earn rewards"),
@@ -296,6 +299,7 @@ COMMAND_HELP = {
             ("signals",                "All signals"),
             ("signal",                 "Lookup signal (full debug)"),
             ("outcome",                "Check outcome"),
+            ("profile",                "Trading style profile"),
             ("liveprice",              "Live price"),
             ("market",                 "Market overview"),
             ("invite",                 "Referral system"),
@@ -357,6 +361,7 @@ COMMAND_HELP = {
             ("broadcast",              "Owner broadcast (via owner_commands)"),
             ("assets",                 "Manage pinned asset universe"),
             ("selfcheck",              "System self-check"),
+            ("db_health",              "Database pool health"),
             ("provider_status",        "Data provider status"),
         ],
         "footer": (
@@ -375,6 +380,8 @@ COMMAND_HELP = {
 
 COMMAND_DESCRIPTIONS = {
     "codex_audit": "Local Codex governance review from DB evidence",
+    "db_health": "Database pool and Postgres activity diagnostics",
+    "profile": "Choose scalp/day/swing/position signal style",
     "qa_report": "QA report by tier and asset class",
 }
 
