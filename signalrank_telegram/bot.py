@@ -2580,6 +2580,28 @@ def _schedule_bot_jobs(scheduler: BackgroundScheduler) -> None:
     
     Note: Functions are referenced directly since they're defined in this same module.
     """
+    if scheduler is None:
+        return
+
+    try:
+        existing_ids = {str(job.id) for job in (scheduler.get_jobs() or [])}
+    except Exception:
+        existing_ids = set()
+
+    # run_bot() already registers canonical jobs with these IDs. Avoid adding
+    # legacy duplicate jobs with alternate IDs/intervals.
+    canonical_ids = {
+        "resend_unsent_signals_job",
+        "distribute_random_signals_to_free_users_job",
+        "downgrade_expired_subscriptions_job",
+        "auto_delete_old_signals_job",
+    }
+    if canonical_ids.intersection(existing_ids):
+        logger.info(
+            "[sched] skipping legacy _schedule_bot_jobs registration; canonical jobs already configured"
+        )
+        return
+
     # CRITICAL: FREE signal distribution job - runs every 30 minutes
     # This distributes random signals from the global pool to FREE tier users
     try:
@@ -3158,7 +3180,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                         await session.commit()
                                     _increment_successful_delivery_stat()
                                 except Exception as mark_err:
-                                    logger.debug("[dispatch] failed to mark delivery success: %s", mark_err)
+                                    try:
+                                        mark_signal_delivered_sync(
+                                            int(user_id),
+                                            str(reserved_signal.get("signal_id") or ""),
+                                        )
+                                    except Exception:
+                                        pass
+                                    logger.warning("[dispatch] failed to mark delivery success in DB: %s", mark_err)
                             else:
                                 try:
                                     from db.pg_features import mark_signal_delivery_result
@@ -3228,7 +3257,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     await session.commit()
                                 _increment_successful_delivery_stat()
                             except Exception as mark_err:
-                                logger.debug("[dispatch] failed to mark delivery success: %s", mark_err)
+                                try:
+                                    mark_signal_delivered_sync(
+                                        int(user_id),
+                                        str(signal.get("signal_id") or ""),
+                                    )
+                                except Exception:
+                                    pass
+                                logger.warning("[dispatch] failed to mark delivery success in DB: %s", mark_err)
                         else:
                             try:
                                 from db.pg_features import mark_signal_delivery_result

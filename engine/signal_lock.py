@@ -82,6 +82,7 @@ async def is_signal_locked(asset: str, direction: str, timeframe: str, strategy_
             result = state.get_str_sync(key)
             if result:
                 logger.info(f"[signal_lock] Lock exists: {key}")
+                return True
     except Exception as e:
         logger.debug(f"[signal_lock] Redis check failed: {e}")
     

@@ -628,6 +628,14 @@ async def get_user_mt5_link_status(telegram_user_id: int) -> Dict[str, Any]:
         status["server"] = found[1]
         status["metaapi_account_id"] = found[2]
         status["executable"] = bool(found[2])
+
+        # Credentials may be saved while MetaApi provisioning was temporarily
+        # unavailable. Re-attempt provisioning on status checks when possible.
+        if status["linked"] and not status["executable"]:
+            recovered_account_id = await ensure_user_mt5_account_id(int(telegram_user_id))
+            if recovered_account_id:
+                status["metaapi_account_id"] = recovered_account_id
+                status["executable"] = True
     except Exception:
         logger.debug("[mt5_client] get link status failed", exc_info=True)
     return status
