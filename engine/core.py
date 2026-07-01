@@ -746,13 +746,16 @@ def _signal_stop_loss_pct(signal: Dict[str, Any]) -> float:
 
 def _signal_display_score(signal: Dict[str, Any]) -> float:
     """Resolve the calibrated signal score for logs, storage, and promotion."""
-    for primary_key in ("score", "score_calibrated", "score_final"):
+    display_max = _env_float("SCORE_DISPLAY_MAX", 99.5)
+    if not _env_bool("SCORE_ALLOW_HARD_100", False):
+        display_max = min(display_max, 99.5)
+    for primary_key in ("score_calibrated", "score_final", "score"):
         try:
             numeric = float(signal.get(primary_key))
         except Exception:
             continue
         if math.isfinite(numeric) and numeric > 0:
-            return max(0.0, min(numeric, 100.0))
+            return max(0.0, min(numeric, display_max))
 
     best = 0.0
     for value in (
@@ -769,7 +772,7 @@ def _signal_display_score(signal: Dict[str, Any]) -> float:
             continue
         if math.isfinite(numeric):
             best = max(best, numeric)
-    return max(0.0, min(best, 100.0))
+    return max(0.0, min(best, display_max))
 
 
 def _diagnostic_score(value: Any) -> float | None:
@@ -2954,7 +2957,7 @@ def main_loop(DRY_RUN: bool = False):
                             # to the dict; without this every is_signal_fresh() call returns False.
                             sig.setdefault('created_at', datetime.utcnow())
                             _resolved_score = _signal_display_score(sig)
-                            if _resolved_score > 0 and _safe_float(sig.get("score"), 0.0) <= 0:
+                            if _resolved_score > 0:
                                 sig["score"] = _resolved_score
                             logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
                             stored_signal_id = store_signal_compat(sig)

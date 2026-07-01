@@ -1003,6 +1003,37 @@ async def record_signal_delivery(
                 except Exception:
                     asset_cooldown_hours = _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
                 asset_cooldown_hours = max(12.0, float(asset_cooldown_hours))
+                try:
+                    unresolved_block_hours = float(
+                        (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
+                    )
+                except Exception:
+                    unresolved_block_hours = 168.0
+                unresolved_block_hours = max(0.0, float(unresolved_block_hours))
+
+                from services.asset_position_manager import get_user_asset_position_state
+
+                position_state = await get_user_asset_position_state(
+                    session,
+                    telegram_user_id=int(telegram_user_id),
+                    asset=str(sig.asset),
+                    cooldown_hours=float(asset_cooldown_hours),
+                    unresolved_block_hours=float(unresolved_block_hours),
+                )
+                if position_state.is_locked:
+                    logger.info(
+                        "[asset_position] blocked user=%s asset=%s state=%s prev_signal=%s prev_direction=%s "
+                        "new_direction=%s age_h=%s reason=%s",
+                        user.id,
+                        sig.asset,
+                        position_state.state,
+                        position_state.signal_id,
+                        position_state.direction,
+                        sig.direction,
+                        f"{position_state.age_hours:.2f}" if position_state.age_hours is not None else "n/a",
+                        position_state.reason,
+                    )
+                    return False
 
                 # Same-asset exposure gate:
                 # Block any new signal for the same user+asset for at least 12h,
@@ -1056,14 +1087,6 @@ async def record_signal_delivery(
                         "cancelled",
                     }
                     is_resolved = str(prev_status or "").strip().lower() in resolved_statuses
-
-                    try:
-                        unresolved_block_hours = float(
-                            (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
-                        )
-                    except Exception:
-                        unresolved_block_hours = 168.0
-                    unresolved_block_hours = max(0.0, float(unresolved_block_hours))
 
                     should_block_asset = (
                         (age_hours < float(asset_cooldown_hours))

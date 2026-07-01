@@ -909,6 +909,7 @@ async def _is_asset_delivery_locked(
         from sqlalchemy import and_, func, or_, select
         from db.session import get_session
         from db.models import Outcome, Signal, SignalDelivery, User
+        from services.asset_position_manager import get_user_asset_position_state
 
         symbol = str(asset or "").upper().strip()
         if not symbol:
@@ -928,6 +929,20 @@ async def _is_asset_delivery_locked(
             if user is None:
                 await session.commit()
                 return False
+
+            try:
+                state_row = await get_user_asset_position_state(
+                    session,
+                    telegram_user_id=int(telegram_user_id),
+                    asset=symbol,
+                    cooldown_hours=float(hours),
+                    unresolved_block_hours=float(os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS", "168") or 168),
+                )
+                if state_row.is_locked:
+                    await session.commit()
+                    return True
+            except Exception:
+                pass
 
             locked_count = (
                 await session.execute(

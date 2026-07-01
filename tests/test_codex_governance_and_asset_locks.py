@@ -12,6 +12,8 @@ def test_local_codex_recommendations_flag_duplicate_and_weak_win_rate():
             "summary": {"outcomes": 20, "wins": 3, "losses": 17},
             "deliveries": {"reserved": 100, "sent_ok": 80, "reserved_not_confirmed": 20},
             "same_asset_deliveries_12h": 12,
+            "score_saturation": {"signals": 50, "score_100": 7},
+            "outcome_integrity": {"outcome_rows": 30, "distinct_signals": 20, "partial_progress_rows": 0},
             "segments": [
                 {"asset_class": "fx", "timeframe": "1h", "strategy_name": "EMA Trend", "wins": 1, "losses": 9, "avg_r": -0.8}
             ],
@@ -25,7 +27,11 @@ def test_local_codex_recommendations_flag_duplicate_and_weak_win_rate():
     assert "same-user/same-asset" in findings
     assert "Tracked win rate" in findings
     assert "delivery reservations" in findings
+    assert "scored exactly 100" in findings
+    assert "Outcome table has" in findings
+    assert "No partial TP progress rows" in findings
     assert "ASSET_REPEAT_LOCK_HOURS=12" in env_tweaks
+    assert "SCORE_DISPLAY_MAX=99.5" in env_tweaks
     assert "segment-level quarantine" in code_changes
 
 
@@ -79,6 +85,8 @@ def test_asset_lock_and_quarantine_wiring_present():
     bot = (root / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
     engine = (root / "engine" / "core.py").read_text(encoding="utf-8")
 
+    assert "get_user_asset_position_state" in pg_features
+    assert "get_user_asset_position_state" in bot
     assert "SignalDelivery.sent_ok.is_(False)" in pg_features
     assert "SignalDelivery.last_error.is_(None)" in pg_features
     assert "safety query failed; blocking delivery" in pg_features
@@ -86,6 +94,16 @@ def test_asset_lock_and_quarantine_wiring_present():
     assert "_cycle_asset_cooldown" in engine
     assert "skipped_db_asset_cooldown" in engine
     assert "SEGMENT_QUARANTINE_ENABLED" in engine
+
+
+def test_uncalibrated_perfect_score_is_display_capped(monkeypatch):
+    from engine.core import _signal_display_score
+
+    monkeypatch.delenv("SCORE_ALLOW_HARD_100", raising=False)
+    monkeypatch.setenv("SCORE_DISPLAY_MAX", "99.5")
+
+    assert _signal_display_score({"score": 100.0}) == 99.5
+    assert _signal_display_score({"score": 100.0, "score_calibrated": 97.25}) == 97.25
 
 
 def test_railway_dump_analyzer_reports_same_asset_duplicates(tmp_path):
@@ -123,4 +141,3 @@ def test_railway_dump_analyzer_reports_same_asset_duplicates(tmp_path):
     assert report["same_asset_duplicate_12h_count"] == 1
     assert report["score_summary"]["score_100_count"] == 1
     assert report["outcome_counts"]["loss"] == 1
-

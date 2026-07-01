@@ -796,3 +796,35 @@ Post-deploy evidence to watch:
 - Engine logs should show `skipped_cycle_asset_cooldown` or `skipped_db_asset_cooldown` for repeated USDCAD/AAVE/CADJPY-style candidates.
 - Delivery logs should show `[dedup] Asset gate hit` before any second same-asset send reaches Telegram.
 - `/codex_audit weekly` should report `External aggregate AI: ran` when OpenAI env vars are configured, otherwise `off/failed`.
+
+## 2026-07-01 follow-up: Asset Position Manager and score saturation controls
+
+The next hardening pass moved same-asset protection toward a central position-state model rather than scattered dedupe checks.
+
+Changes made:
+
+- Added `services/asset_position_manager.py` as the shared user/asset state resolver. It normalizes delivered/reserved rows and outcomes into `NONE`, `ACTIVE`, `TP1`, `TP2`, `TP3`, `STOPPED`, `EXPIRED`, and `CANCELLED`.
+- `record_signal_delivery(...)` now queries the Asset Position Manager before using legacy fallback checks.
+- Telegram pre-send asset locks now query the same Asset Position Manager.
+- `_signal_display_score(...)` now prefers `score_calibrated` over raw `score` and caps uncalibrated perfect scores to `SCORE_DISPLAY_MAX=99.5` unless `SCORE_ALLOW_HARD_100=1`.
+- Engine storage now writes the resolved capped score back into the signal payload before persistence, reducing future `score=100` accumulation.
+- `/codex_audit` governance context now includes score saturation and outcome-integrity metrics so it can flag exact-100 score clusters, duplicate outcome rows, and suspicious absence of TP1/TP2 progress rows.
+
+Additional recommended Railway env:
+
+```text
+SCORE_SOFT_CAP_ENABLED=1
+SCORE_DISPLAY_MAX=99.5
+SCORE_ALLOW_HARD_100=0
+OUTCOME_IDEMPOTENCY_ENABLED=1
+TELEGRAM_IDEMPOTENCY_ENABLED=1
+MT5_IDEMPOTENCY_ENABLED=1
+OBSERVABILITY_METRICS_ENABLED=1
+EXECUTION_ELIGIBILITY_ENABLED=1
+AI_CONSENSUS_MIN=0.85
+AI_DISAGREEMENT_MAX=0.20
+NEWS_BLACKOUT_MINUTES=30
+PROVIDER_FAILOVER_ENABLED=1
+PROVIDER_MAX_ERRORS=5
+PROVIDER_COOLDOWN_SECONDS=300
+```

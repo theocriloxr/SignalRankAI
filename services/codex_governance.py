@@ -76,6 +76,8 @@ def _aggregate_only_context(context: dict[str, Any]) -> dict[str, Any]:
         ],
         "same_asset_deliveries_12h": context.get("same_asset_deliveries_12h"),
         "deliveries": context.get("deliveries") or {},
+        "score_saturation": context.get("score_saturation") or {},
+        "outcome_integrity": context.get("outcome_integrity") or {},
     }
 
 
@@ -252,6 +254,36 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
                 {"since": since},
             )
         ).mappings().first()
+        score_saturation = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS signals,
+                           SUM(CASE WHEN COALESCE(score, 0) >= 99.999 THEN 1 ELSE 0 END) AS score_100,
+                           AVG(COALESCE(score, 0)) AS avg_score,
+                           MAX(COALESCE(score, 0)) AS max_score
+                    FROM signals
+                    WHERE created_at >= :since
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().first()
+        outcome_integrity = (
+            await session.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS outcome_rows,
+                           COUNT(DISTINCT signal_id) AS distinct_signals,
+                           SUM(CASE WHEN lower(COALESCE(canonical_outcome, status, '')) IN ('tp1','tp2','partial_tp') THEN 1 ELSE 0 END) AS partial_progress_rows,
+                           SUM(CASE WHEN lower(COALESCE(canonical_outcome, status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS loss_rows
+                    FROM outcomes
+                    WHERE closed_at >= :since OR opened_at >= :since
+                    """
+                ),
+                {"since": since},
+            )
+        ).mappings().first()
         await session.commit()
     return {
         "ok": True,
@@ -261,12 +293,16 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
         "top_rejections": [dict(row) for row in rejections],
         "same_asset_deliveries_12h": int((duplicates or {}).get("same_asset_deliveries_12h") or 0),
         "deliveries": dict(deliveries or {}),
+        "score_saturation": dict(score_saturation or {}),
+        "outcome_integrity": dict(outcome_integrity or {}),
     }
 
 
 def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]:
     summary = dict(context.get("summary") or {})
     deliveries = dict(context.get("deliveries") or {})
+    score_saturation = dict(context.get("score_saturation") or {})
+    outcome_integrity = dict(context.get("outcome_integrity") or {})
     segments = list(context.get("segments") or [])
     findings: list[str] = []
     env_tweaks: list[str] = []
@@ -281,6 +317,11 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
     reserved = int(deliveries.get("reserved") or 0)
     sent_ok = int(deliveries.get("sent_ok") or 0)
     reserved_not_confirmed = int(deliveries.get("reserved_not_confirmed") or 0)
+    score_100 = int(score_saturation.get("score_100") or 0)
+    total_scored = int(score_saturation.get("signals") or 0)
+    outcome_rows = int(outcome_integrity.get("outcome_rows") or 0)
+    distinct_outcome_signals = int(outcome_integrity.get("distinct_signals") or 0)
+    partial_progress_rows = int(outcome_integrity.get("partial_progress_rows") or 0)
 
     if same_asset_12h > 0:
         findings.append(f"{same_asset_12h} same-user/same-asset deliveries occurred inside 12h.")
@@ -299,6 +340,16 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
             ]
         )
         code_changes.append("Promote per-asset-class expectancy gates and demote segments with negative avg_r until forward-tested recovery.")
+    if score_100 > 0:
+        findings.append(f"{score_100}/{max(1, total_scored)} recent signals scored exactly 100.")
+        env_tweaks.append("Keep SCORE_SOFT_CAP_ENABLED=1 and SCORE_DISPLAY_MAX=99.5 unless running an intentional calibration experiment.")
+        code_changes.append("Audit strategy inputs that stamp score=100 directly and prefer score_calibrated over raw score.")
+    if outcome_rows > distinct_outcome_signals:
+        findings.append(f"Outcome table has {outcome_rows} rows for {distinct_outcome_signals} distinct signals in scope.")
+        code_changes.append("Audit outcome idempotency and prevent duplicate terminal writes after restarts.")
+    if outcomes and partial_progress_rows == 0 and losses > wins * 5:
+        findings.append("No partial TP progress rows were observed while losses dominate; verify TP1/TP2 tracking before trusting win-rate claims.")
+        code_changes.append("Run outcome replay on a candle sample to prove TP1/TP2/TP3 and SL ordering is classified correctly.")
     weak_segments = []
     for row in segments:
         seg_wins = int(row.get("wins") or 0)
