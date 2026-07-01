@@ -965,6 +965,74 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
+async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
+    """Auto-quarantine weak live segments using aggregate outcomes only."""
+    if not _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
+        return True, ""
+    try:
+        from sqlalchemy import text
+        from db.session import get_session, is_db_configured
+
+        if not is_db_configured():
+            return True, ""
+        asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        asset_class = _asset_class_key(asset)
+        timeframe = str(signal.get("timeframe") or "").strip().lower() or "unknown"
+        strategy = str(signal.get("strategy_name") or "unknown").strip()[:64] or "unknown"
+        days = max(1, _env_int("SEGMENT_QUARANTINE_LOOKBACK_DAYS", 30))
+        min_trades = max(1, _env_int("SEGMENT_QUARANTINE_MIN_TRADES", 10))
+        min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
+        min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
+        since = datetime.utcnow() - _timedelta(days=days)
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(o.id) AS outcomes,
+                               SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
+                               SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
+                               AVG(COALESCE(o.r_multiple, 0)) AS avg_r
+                        FROM outcomes o
+                        JOIN signals s ON s.signal_id = o.signal_id
+                        WHERE o.closed_at >= :since
+                          AND lower(COALESCE(s.asset_class, :asset_class)) = :asset_class
+                          AND lower(COALESCE(s.timeframe, 'unknown')) = :timeframe
+                          AND lower(COALESCE(s.strategy_name, 'unknown')) = :strategy
+                          AND lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                        """
+                    ),
+                    {
+                        "since": since,
+                        "asset_class": asset_class,
+                        "timeframe": timeframe,
+                        "strategy": strategy.lower(),
+                    },
+                )
+            ).mappings().first()
+            await session.commit()
+        outcomes = int((row or {}).get("outcomes") or 0)
+        wins = int((row or {}).get("wins") or 0)
+        losses = int((row or {}).get("losses") or 0)
+        terminal = wins + losses
+        avg_r = float((row or {}).get("avg_r") or 0.0)
+        if terminal < min_trades:
+            return True, ""
+        win_rate = wins / max(1, terminal) * 100.0
+        if win_rate < min_win_rate or avg_r < min_avg_r:
+            return (
+                False,
+                f"segment_quarantine {asset_class}/{timeframe}/{strategy} "
+                f"wr={win_rate:.1f}% avg_r={avg_r:.2f} n={terminal}",
+            )
+        return True, ""
+    except Exception as exc:
+        if _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+            return False, f"segment_quarantine_error {exc}"
+        logger.debug("[segment_quarantine] check failed: %s", exc)
+        return True, ""
+
+
 def _latest_candle_timestamp(candles: Any) -> datetime | None:
     if not isinstance(candles, list) or not candles:
         return None
@@ -1773,8 +1841,10 @@ def main_loop(DRY_RUN: bool = False):
 
             scored_signals_all: List[Dict] = []
             max_candidate_score = None
-            # Fix 2: cycle-level set prevents duplicate asset+timeframe signals in the same batch
+            # Cycle-level sets prevent duplicate and opposite-direction same-asset
+            # signals in the same batch, even when they come from different TFs.
             _cycle_cooldown: set = set()
+            _cycle_asset_cooldown: set[str] = set()
             pipeline_stats = {
                 "strategy_signals": 0,
                 "normalized": 0,
@@ -1797,8 +1867,11 @@ def main_loop(DRY_RUN: bool = False):
                 "skipped_open_limit_asset": 0,
                 "skipped_open_limit_class": 0,
                 "skipped_cycle_cooldown": 0,
+                "skipped_cycle_asset_cooldown": 0,
                 "skipped_db_cooldown": 0,
+                "skipped_db_asset_cooldown": 0,
                 "skipped_confluence_block": 0,
+                "skipped_segment_quarantine": 0,
                 "skipped_portfolio_exposure": 0,
                 "store_failed": 0,
             }
@@ -2702,13 +2775,16 @@ def main_loop(DRY_RUN: bool = False):
                     # keys so the loop only does an O(1) set-lookup per signal.
                     _cd_mins = _env_int("SIGNAL_COOLDOWN_MINUTES", 30)
                     _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
+                    _asset_cd_hours = max(12, _env_int("ASSET_REPEAT_LOCK_HOURS", 12))
+                    _asset_cd_cutoff = datetime.utcnow() - _timedelta(hours=_asset_cd_hours)
                     _cooled_down_pairs: set[str] = set()
+                    _cooled_down_assets: set[str] = set()
                     try:
                         from db.session import get_session as _get_s_cd
                         from db.models import Signal as _SigModel
                         from sqlalchemy import select as _sel_cd
 
-                        async def _batch_cooldown_check() -> set[str]:
+                        async def _batch_cooldown_check() -> tuple[set[str], set[str]]:
                             async with _get_s_cd() as _cs:
                                 rows = (await _cs.execute(
                                     _sel_cd(_SigModel.asset, _SigModel.timeframe).where(
@@ -2717,9 +2793,19 @@ def main_loop(DRY_RUN: bool = False):
                                         _SigModel.archived.is_(False),
                                     ).distinct()
                                 )).fetchall()
-                                return {f"{r[0]}_{r[1]}" for r in rows}
+                                asset_rows = (await _cs.execute(
+                                    _sel_cd(_SigModel.asset).where(
+                                        _SigModel.created_at >= _asset_cd_cutoff,
+                                        _SigModel.expired.is_(False),
+                                        _SigModel.archived.is_(False),
+                                    ).distinct()
+                                )).fetchall()
+                                return (
+                                    {f"{r[0]}_{r[1]}" for r in rows},
+                                    {str(r[0] or "").upper().strip() for r in asset_rows if r[0]},
+                                )
 
-                        _cooled_down_pairs = run_sync(_batch_cooldown_check(), timeout=15.0)
+                        _cooled_down_pairs, _cooled_down_assets = run_sync(_batch_cooldown_check(), timeout=15.0)
                     except Exception as _bcd_err:
                         logger.debug(f"[engine] batch cooldown pre-check failed, falling back to per-signal: {_bcd_err}")
 
@@ -2750,11 +2836,31 @@ def main_loop(DRY_RUN: bool = False):
                                 pipeline_stats["skipped_cycle_cooldown"] += 1
                                 logger.info(f"[engine] cooldown(cycle): skipping duplicate {_asset_tf_key}")
                                 continue
+                            if _asset_name in _cycle_asset_cooldown:
+                                pipeline_stats["skipped_cycle_asset_cooldown"] += 1
+                                logger.info(
+                                    f"[engine] cooldown(cycle-asset): skipping duplicate/opposite {_asset_name} "
+                                    f"tf={sig.get('timeframe')} dir={sig.get('direction')}"
+                                )
+                                continue
 
                             # DB cooldown — use pre-computed batch result (O(1) lookup)
                             if _asset_tf_key in _cooled_down_pairs:
                                 pipeline_stats["skipped_db_cooldown"] += 1
                                 logger.info(f"[engine] cooldown(db): active signal exists for {_asset_tf_key}, skipping")
+                                continue
+                            if _asset_name in _cooled_down_assets:
+                                pipeline_stats["skipped_db_asset_cooldown"] += 1
+                                logger.info(f"[engine] cooldown(db-asset): active signal exists for {_asset_name}, skipping")
+                                continue
+
+                            _segment_ok, _segment_reason = run_sync(
+                                _segment_quarantine_gate(sig),
+                                timeout=10.0,
+                            )
+                            if not _segment_ok:
+                                pipeline_stats["skipped_segment_quarantine"] += 1
+                                logger.info(f"[engine] {_segment_reason}; skipping {_asset_name}")
                                 continue
 
                             # ── Confluence Engine enrichment ───────────────────────────────────
@@ -2860,6 +2966,7 @@ def main_loop(DRY_RUN: bool = False):
                                 scored_signals_all.append(sig)
                                 stored_signals.append(sig)
                                 _cycle_cooldown.add(_asset_tf_key)
+                                _cycle_asset_cooldown.add(_asset_name)
                                 pipeline_stats["stored"] += 1
                             else:
                                 pipeline_stats["store_failed"] += 1

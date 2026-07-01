@@ -2,18 +2,157 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy import text
 
 from db.session import get_session, is_db_configured
 
 logger = logging.getLogger(__name__)
 
+OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
+
 
 def _win_bucket_expr() -> str:
     return "lower(COALESCE(o.canonical_outcome, o.status, ''))"
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _api_key() -> str:
+    return (os.getenv("OPENAI_API_KEY") or os.getenv("CODEX_OPENAI_API_KEY") or "").strip()
+
+
+def _extract_json_response(payload: dict[str, Any]) -> dict[str, Any]:
+    chunks: list[str] = []
+    for item in payload.get("output") or []:
+        for part in item.get("content") or []:
+            if part.get("type") in {"output_text", "text"}:
+                chunks.append(str(part.get("text") or ""))
+    if not chunks and payload.get("output_text"):
+        chunks.append(str(payload.get("output_text") or ""))
+    text_value = "\n".join(chunks).strip()
+    try:
+        return json.loads(text_value)
+    except Exception:
+        start = text_value.find("{")
+        end = text_value.rfind("}")
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text_value[start : end + 1])
+            except Exception:
+                return {}
+    return {}
+
+
+def _aggregate_only_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Strip context to non-user, non-signal aggregate metrics for external AI."""
+    return {
+        "days": context.get("days"),
+        "summary": context.get("summary") or {},
+        "segments": [
+            {
+                "asset_class": row.get("asset_class"),
+                "timeframe": row.get("timeframe"),
+                "strategy_name": row.get("strategy_name"),
+                "outcomes": row.get("outcomes"),
+                "wins": row.get("wins"),
+                "losses": row.get("losses"),
+                "avg_r": row.get("avg_r"),
+            }
+            for row in list(context.get("segments") or [])[:12]
+        ],
+        "top_rejections": [
+            {"reason": row.get("reason"), "count": row.get("n")}
+            for row in list(context.get("top_rejections") or [])[:12]
+        ],
+        "same_asset_deliveries_12h": context.get("same_asset_deliveries_12h"),
+        "deliveries": context.get("deliveries") or {},
+    }
+
+
+async def run_external_codex_aggregate_review(context: dict[str, Any]) -> dict[str, Any] | None:
+    """Optional OpenAI review using approved aggregate-only, anonymized metrics."""
+    if not _env_bool("OPENAI_CODEX_REVIEW_ENABLED", False):
+        return None
+    key = _api_key()
+    if not key:
+        return {"ok": False, "error": "OPENAI_API_KEY not configured"}
+
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "assessment": {"type": "string"},
+            "highest_risk_findings": {"type": "array", "items": {"type": "string"}},
+            "recommended_env_tweaks": {"type": "array", "items": {"type": "string"}},
+            "recommended_code_changes": {"type": "array", "items": {"type": "string"}},
+            "do_not_change_without_forward_test": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": [
+            "assessment",
+            "highest_risk_findings",
+            "recommended_env_tweaks",
+            "recommended_code_changes",
+            "do_not_change_without_forward_test",
+        ],
+    }
+    body = {
+        "model": (os.getenv("OPENAI_CODEX_REVIEW_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-4.1-mini").strip(),
+        "input": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "You are a conservative trading-systems governance reviewer. "
+                            "Analyze aggregate metrics only. Do not claim future win rates. "
+                            "Recommend testable safeguards and rollout flags."
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps(_aggregate_only_context(context), default=str)[:16000],
+                    }
+                ],
+            },
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "signalrank_codex_governance",
+                "schema": schema,
+                "strict": True,
+            }
+        },
+        "max_output_tokens": int(os.getenv("OPENAI_CODEX_REVIEW_MAX_TOKENS", "1200") or 1200),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=float(os.getenv("OPENAI_CODEX_REVIEW_TIMEOUT_SECONDS", "25") or 25)) as client:
+            response = await client.post(
+                OPENAI_RESPONSES_URL,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json=body,
+            )
+            response.raise_for_status()
+        return {"ok": True, "review": _extract_json_response(response.json()), "data_scope": "aggregate_only"}
+    except Exception as exc:
+        logger.warning("[codex_governance] external aggregate review failed: %s", exc)
+        return {"ok": False, "error": str(exc), "data_scope": "aggregate_only"}
 
 
 async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> dict[str, Any]:
@@ -199,15 +338,18 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
 async def run_codex_governance_review(trigger: str, scope: str = "weekly") -> dict[str, Any]:
     days = {"daily": 1, "weekly": 7, "monthly": 30, "all_time": 3650}.get(str(scope or "weekly").lower(), 7)
     context = await collect_codex_governance_context(days=days)
-    review = build_local_codex_recommendations(context) if context.get("ok") else {"assessment": context.get("error")}
+    local_review = build_local_codex_recommendations(context) if context.get("ok") else {"assessment": context.get("error")}
+    external_review = await run_external_codex_aggregate_review(context) if context.get("ok") else None
     result = {
         "ok": bool(context.get("ok")),
         "trigger": trigger,
         "scope": scope,
         "finished_at": datetime.utcnow().isoformat(),
         "context": context,
-        "review": review,
-        "guardrail": "local_recommendations_only_no_unattended_code_updates",
+        "review": local_review,
+        "external_codex_review": external_review,
+        "guardrail": "recommendations_only_no_unattended_code_updates",
+        "external_data_scope": "aggregate_only_no_user_or_signal_ids" if external_review else "none",
     }
     if is_db_configured():
         async with get_session() as session:
@@ -244,4 +386,3 @@ async def get_last_codex_governance_review() -> dict[str, Any] | None:
         return json.loads(str(value))
     except Exception:
         return {"raw": str(value)[:2000]}
-

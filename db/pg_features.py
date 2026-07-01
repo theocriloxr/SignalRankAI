@@ -1021,7 +1021,13 @@ async def record_signal_delivery(
                         .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
                         .where(
                             SignalDelivery.user_id == user.id,
-                            SignalDelivery.sent_ok.is_(True),
+                            or_(
+                                SignalDelivery.sent_ok.is_(True),
+                                and_(
+                                    SignalDelivery.sent_ok.is_(False),
+                                    SignalDelivery.last_error.is_(None),
+                                ),
+                            ),
                             Signal.asset == sig.asset,
                         )
                         .order_by(SignalDelivery.delivered_at.desc())
@@ -1127,9 +1133,11 @@ async def record_signal_delivery(
                     except Exception:
                         pass
                     return False
-        except Exception:
-            # If dedupe query fails, fall back to unique(user_id, signal_id) constraint.
-            pass
+        except Exception as exc:
+            # Dedupe is a safety-critical gate. Failing open caused repeated and
+            # opposite-direction same-asset deliveries during Railway DB pressure.
+            logger.warning("[dedup] safety query failed; blocking delivery user=%s signal=%s error=%s", user.id, signal_id, exc)
+            return False
 
     existing_delivery_res = await session.execute(
         select(SignalDelivery)
@@ -2494,6 +2502,30 @@ async def get_random_available_signals_for_free_user(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
     already_received: set[Any] = set(row[0] for row in res_delivered.all())
+
+    try:
+        asset_lock_hours = max(12, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+    except Exception:
+        asset_lock_hours = 12
+    asset_lock_cutoff = now - timedelta(hours=asset_lock_hours)
+    res_locked_assets: Result[Tuple[str]] = await session.execute(
+        select(Signal.asset)
+        .select_from(SignalDelivery)
+        .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+        .where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.delivered_at >= asset_lock_cutoff,
+            or_(
+                SignalDelivery.sent_ok.is_(True),
+                and_(
+                    SignalDelivery.sent_ok.is_(False),
+                    SignalDelivery.last_error.is_(None),
+                ),
+            ),
+        )
+        .distinct()
+    )
+    locked_assets: set[str] = {str(row[0] or "").upper().strip() for row in res_locked_assets.all() if row[0]}
     
     # Get signals with outcomes (resolved trades)
     res_resolved: Result[Tuple[str]] = await session.execute(
@@ -2518,6 +2550,7 @@ async def get_random_available_signals_for_free_user(
         if (
             s.signal_id not in already_received
             and s.signal_id not in resolved_signals
+            and str(getattr(s, "asset", "") or "").upper().strip() not in locked_assets
             and float(getattr(s, "score", 0) or 0) >= float(min_score)
         )
     ]
@@ -2547,6 +2580,30 @@ async def get_highest_scoring_available_signal_for_user(
         select(SignalDelivery.signal_id).where(SignalDelivery.user_id == user.id)
     )
     already_received: set[Any] = set(row[0] for row in res_delivered.all())
+
+    try:
+        asset_lock_hours = max(12, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+    except Exception:
+        asset_lock_hours = 12
+    asset_lock_cutoff = now - timedelta(hours=asset_lock_hours)
+    res_locked_assets: Result[Tuple[str]] = await session.execute(
+        select(Signal.asset)
+        .select_from(SignalDelivery)
+        .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+        .where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.delivered_at >= asset_lock_cutoff,
+            or_(
+                SignalDelivery.sent_ok.is_(True),
+                and_(
+                    SignalDelivery.sent_ok.is_(False),
+                    SignalDelivery.last_error.is_(None),
+                ),
+            ),
+        )
+        .distinct()
+    )
+    locked_assets: set[str] = {str(row[0] or "").upper().strip() for row in res_locked_assets.all() if row[0]}
     
     # Get signals with outcomes (resolved trades)
     res_resolved: Result[Tuple[str]] = await session.execute(
@@ -2562,6 +2619,7 @@ async def get_highest_scoring_available_signal_for_user(
             Signal.created_at >= cutoff,
             Signal.signal_id.notin_(already_received) if already_received else True,
             Signal.signal_id.notin_(resolved_signals) if resolved_signals else True,
+            ~Signal.asset.in_(locked_assets) if locked_assets else True,
         )
         .order_by(Signal.score.desc())
         .limit(1)

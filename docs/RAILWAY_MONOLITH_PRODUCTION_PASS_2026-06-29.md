@@ -755,3 +755,44 @@ INDEX_TIMEFRAMES=1m,5m,15m,1h,4h,24h
 AI_REVIEW_FALLBACK_ENABLED=1
 QUALITY_MIN_LOCAL_AI_SCORE=8.0
 ```
+
+## 2026-07-01 follow-up: opposite-direction asset lock, segment quarantine, and Codex governance
+
+Latest Telegram evidence showed `USDCAD` delivered as `BUY` and then `SELL` within minutes on different timeframes. Root cause:
+
+- Engine storage cooldown was asset+timeframe scoped, so `USDCAD 1d` and `USDCAD 15m` were treated as different active exposures.
+- Delivery locks counted only `sent_ok IS TRUE`, so a fresh in-flight reservation could fail to protect the user before Telegram send confirmation was written.
+
+Changes made:
+
+- Engine now has cycle-level asset cooldown in addition to asset+timeframe cooldown. Only one signal per asset can be stored in a cycle, regardless of direction or timeframe.
+- Engine DB cooldown now also loads active assets from the last `ASSET_REPEAT_LOCK_HOURS` hours, defaulting to 12, so different-timeframe same-asset signals are blocked before storage.
+- Central delivery reservation treats in-flight rows (`sent_ok=false` and `last_error IS NULL`) as locks. A second same-asset signal cannot slip through while the first send is still being confirmed.
+- Delivery dedupe now fails closed when its safety query errors instead of falling back to same-signal-id uniqueness only.
+- Free/random and extra-signal selection now exclude assets the user received or reserved inside the asset lock window.
+- Segment auto-quarantine is enabled by default. Segments with at least `SEGMENT_QUARANTINE_MIN_TRADES=10` terminal outcomes in the lookback and win rate below `SEGMENT_QUARANTINE_MIN_WIN_RATE=45` or average R below `SEGMENT_QUARANTINE_MIN_AVG_R=0` are blocked.
+- `/codex_audit` remains admin/owner-gated and now supports local evidence review plus optional OpenAI aggregate-only review. External review sends only grouped metrics and never sends Telegram IDs, user IDs, signal IDs, MT5 credentials, or raw database rows.
+- `scripts/analyze_railway_sql_dump.py` can audit exported Railway SQL dumps for same-user/same-asset duplicates, score saturation, outcome distribution, active-message counts, and redacted MT5 linkage status.
+
+Required/recommended Railway env:
+
+```text
+ASSET_REPEAT_LOCK_HOURS=12
+DELIVERY_SAME_ASSET_COOLDOWN_HOURS=12
+DELIVERY_UNRESOLVED_BLOCK_HOURS=168
+DELIVERY_INFLIGHT_RETRY_SECONDS=300
+SEGMENT_QUARANTINE_ENABLED=1
+SEGMENT_QUARANTINE_LOOKBACK_DAYS=30
+SEGMENT_QUARANTINE_MIN_TRADES=10
+SEGMENT_QUARANTINE_MIN_WIN_RATE=45
+SEGMENT_QUARANTINE_MIN_AVG_R=0
+OPENAI_CODEX_REVIEW_ENABLED=1
+OPENAI_API_KEY=<set in Railway>
+OPENAI_CODEX_REVIEW_MODEL=gpt-4.1-mini
+```
+
+Post-deploy evidence to watch:
+
+- Engine logs should show `skipped_cycle_asset_cooldown` or `skipped_db_asset_cooldown` for repeated USDCAD/AAVE/CADJPY-style candidates.
+- Delivery logs should show `[dedup] Asset gate hit` before any second same-asset send reaches Telegram.
+- `/codex_audit weekly` should report `External aggregate AI: ran` when OpenAI env vars are configured, otherwise `off/failed`.

@@ -4685,12 +4685,14 @@ async def codex_audit_command(update, context) -> None:
 			await update.message.reply_text(f"Codex governance review failed: {result.get('review') or result.get('error')}")
 			return
 		review = dict(result.get("review") or {})
+		external_review = dict(result.get("external_codex_review") or {})
 		context_data = dict(result.get("context") or {})
 		summary = dict(context_data.get("summary") or {})
 		deliveries = dict(context_data.get("deliveries") or {})
 		msg = (
 			"Local Codex governance review complete.\n\n"
 			f"Scope: {scope}\n"
+			f"External aggregate AI: {'ran' if external_review.get('ok') else 'off/failed'}\n"
 			f"Signals: {int(summary.get('signals') or 0)}\n"
 			f"Outcomes: {int(summary.get('outcomes') or 0)}\n"
 			f"Wins/Losses: {int(summary.get('wins') or 0)}/{int(summary.get('losses') or 0)}\n"
@@ -4708,6 +4710,11 @@ async def codex_audit_command(update, context) -> None:
 		code_changes = [str(x) for x in review.get("recommended_code_changes") or []]
 		if code_changes:
 			await update.message.reply_text("Recommended code checks:\n" + "\n".join(f"- {x[:220]}" for x in code_changes[:6]))
+		if external_review.get("ok"):
+			ai_review = dict(external_review.get("review") or {})
+			ai_findings = [str(x) for x in ai_review.get("highest_risk_findings") or []]
+			if ai_findings:
+				await update.message.reply_text("OpenAI aggregate review findings:\n" + "\n".join(f"- {x[:220]}" for x in ai_findings[:6]))
 	except Exception as exc:
 		await update.message.reply_text(f"Codex audit error: {exc}")
 

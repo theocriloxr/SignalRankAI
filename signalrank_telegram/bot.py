@@ -906,7 +906,7 @@ async def _is_asset_delivery_locked(
 ) -> bool:
     try:
         from datetime import datetime, timedelta
-        from sqlalchemy import and_, func, select
+        from sqlalchemy import and_, func, or_, select
         from db.session import get_session
         from db.models import Outcome, Signal, SignalDelivery, User
 
@@ -937,7 +937,13 @@ async def _is_asset_delivery_locked(
                     .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
                     .where(
                         SignalDelivery.user_id == user.id,
-                        SignalDelivery.sent_ok.is_(True),
+                        or_(
+                            SignalDelivery.sent_ok.is_(True),
+                            and_(
+                                SignalDelivery.sent_ok.is_(False),
+                                SignalDelivery.last_error.is_(None),
+                            ),
+                        ),
                         SignalDelivery.delivered_at >= cutoff,
                         func.upper(Signal.asset) == symbol,
                         Signal.archived == False,
