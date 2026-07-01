@@ -106,6 +106,20 @@ def test_uncalibrated_perfect_score_is_display_capped(monkeypatch):
     assert _signal_display_score({"score": 100.0, "score_calibrated": 97.25}) == 97.25
 
 
+def test_asset_position_manager_state_contract():
+    from services.asset_position_manager import AssetPositionState, POSITION_STATES, _state_from_status
+
+    for state in {"NONE", "CANDIDATE", "ACTIVE", "TP1", "TP2", "TP3", "STOPPED", "EXPIRED", "SUPERSEDED"}:
+        assert state in POSITION_STATES
+
+    assert _state_from_status("tp1") == "TP1"
+    assert _state_from_status("tp2") == "TP2"
+    assert _state_from_status("sl") == "STOPPED"
+    assert _state_from_status("") == "ACTIVE"
+    assert AssetPositionState(1, 2, "BTCUSDT", "STOPPED", locked=True).is_locked is True
+    assert AssetPositionState(1, 2, "BTCUSDT", "ACTIVE", locked=False).is_locked is False
+
+
 def test_railway_dump_analyzer_reports_same_asset_duplicates(tmp_path):
     from scripts.analyze_railway_sql_dump import analyze_dump
 

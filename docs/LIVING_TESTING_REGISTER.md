@@ -1,6 +1,6 @@
 # Living Testing Register
 
-Last updated: 2026-06-30
+Last updated: 2026-07-01
 Owner: QA/Engineering
 
 | Test Area | Type | Current Coverage | Commands | Missing Coverage | Status | Owner |
@@ -19,4 +19,4 @@ Owner: QA/Engineering
 | Post-deploy signal hardening | Regression | Covers confirmed-send tier caps, partial-TP dedupe, updated-signal URL buttons, TP notification metadata fallbacks, visible AI review formatting, and Gemini-score quality gating. | `.venv/Scripts/python.exe -m pytest tests/test_delivery_limit_guard.py tests/test_post_deploy_signal_hardening.py -q` | Live Railway/Telegram verification after redeploy. | Added | Engineering |
 | Paystack webhook | Regression | Valid signatures, disabled-payment behavior, and idempotent replay without package import crashes. | `.venv/Scripts/python.exe -m pytest tests/test_paystack_webhook.py -q` | Live Paystack sandbox replay and webhook secret rotation drill. | Active | Engineering |
 | Railway monolith incident regressions | Regression | Covers 12h asset-wide delivery lock, in-flight duplicate reservation guard, local AI review fallback visibility, overextended R:R rejection, expanded timeframe defaults, MT5 reprovision wiring, and MarketMonitor timezone handling. | `.venv/Scripts/python.exe -m pytest tests/test_delivery_limit_guard.py tests/test_post_deploy_signal_hardening.py tests/test_market_monitor_regressions.py -q` | Restore/query latest Railway dump with `pg_restore` and run live MetaApi sandbox execution. | Added | Engineering |
-| Codex governance and asset locks | Regression | Covers local Codex governance recommendations, `/codex_audit` command wiring, reservation-aware same-asset locks, asset-level engine cooldowns, segment quarantine wiring, and Railway SQL dump duplicate detection. | `.venv/Scripts/python.exe -m pytest tests/test_codex_governance_and_asset_locks.py -q` | Live `/codex_audit` run on Railway with `OPENAI_CODEX_REVIEW_ENABLED=1`; post-deploy verification that USDCAD-style opposite-direction repeats stop. | Added | Engineering |
+| Codex governance and asset locks | Regression | Covers local Codex governance recommendations, `/codex_audit` command wiring, Asset Position Manager state ownership, reservation-aware same-asset locks, asset-level engine cooldowns, score-saturation controls, segment quarantine wiring, and Railway SQL dump duplicate detection. | `.venv/Scripts/python.exe -m pytest tests/test_codex_governance_and_asset_locks.py -q` | Live `/codex_audit` run on Railway with `OPENAI_CODEX_REVIEW_ENABLED=1`; post-deploy verification that USDCAD-style opposite-direction repeats stop and exact-100 score clusters decline. | Added | Engineering |

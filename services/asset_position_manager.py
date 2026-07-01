@@ -26,6 +26,18 @@ TERMINAL_OUTCOMES = {
 }
 
 PROGRESS_OUTCOMES = {"tp1", "tp2", "partial_tp", "breakeven", "risk_free", "pending"}
+POSITION_STATES = {
+    "NONE",
+    "CANDIDATE",
+    "ACTIVE",
+    "TP1",
+    "TP2",
+    "TP3",
+    "STOPPED",
+    "EXPIRED",
+    "CANCELLED",
+    "SUPERSEDED",
+}
 
 
 @dataclass(slots=True)
@@ -41,9 +53,12 @@ class AssetPositionState:
     outcome_status: str | None = None
     age_hours: float | None = None
     reason: str = ""
+    locked: bool | None = None
 
     @property
     def is_locked(self) -> bool:
+        if self.locked is not None:
+            return bool(self.locked)
         return self.state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
 
 
@@ -110,6 +125,7 @@ async def get_user_asset_position_state(
                 SignalDelivery.delivered_at,
                 Signal.direction,
                 Signal.timeframe,
+                SignalDelivery.sent_ok,
                 Outcome.status,
                 Outcome.canonical_outcome,
             )
@@ -132,9 +148,9 @@ async def get_user_asset_position_state(
     if row is None:
         return AssetPositionState(int(user.id), int(telegram_user_id), symbol, "NONE", reason="no_recent_position")
 
-    signal_id, delivered_at, direction, timeframe, status, canonical = row
+    signal_id, delivered_at, direction, timeframe, sent_ok, status, canonical = row
     outcome_status = _normalize_status(canonical or status)
-    state = _state_from_status(outcome_status)
+    state = "CANDIDATE" if sent_ok is False else _state_from_status(outcome_status)
     age_hours = None
     if delivered_at is not None:
         try:
@@ -142,12 +158,18 @@ async def get_user_asset_position_state(
         except Exception:
             age_hours = None
 
-    if state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
-        state = "ACTIVE"
+    locked = state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
+    if state == "CANDIDATE":
+        locked = True
+        reason = "candidate_delivery_reserved"
+    elif state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
+        locked = True
         reason = "terminal_but_cooldown_active"
     elif state not in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < unresolved_h):
+        locked = True
         reason = "unresolved_position_active"
     else:
+        locked = False
         reason = "terminal_or_old_position"
 
     return AssetPositionState(
@@ -162,5 +184,5 @@ async def get_user_asset_position_state(
         outcome_status=outcome_status or None,
         age_hours=age_hours,
         reason=reason,
+        locked=locked,
     )
-
