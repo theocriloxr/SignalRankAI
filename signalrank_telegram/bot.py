@@ -569,6 +569,7 @@ from .commands import (
     ops_health_command,
     db_health_command,
     profile_command,
+    mission_command,
     myid_command,
     account_command,
     dashboard_command,
@@ -2955,29 +2956,34 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     except Exception as e:
         _log_once('user_prefs_filter_error', f'[dispatch] User prefs filter error: {e}')
 
-    # --- TRADER INTENT PROFILE FILTERING ---
+    # --- PERSONALIZED TRADING INTELLIGENCE FILTERING ---
     try:
-        from services.trade_profiles import get_user_trade_profile, signal_matches_user_profile
+        from services.user_intelligence import get_user_trading_preferences, signal_matches_preferences
+        from services.opportunity_engine import rank_opportunities
         from db.session import get_session as _profile_get_session
 
         async with _profile_get_session() as _profile_session:
-            _trade_profile = await get_user_trade_profile(_profile_session, int(user_id))
-        if str(_trade_profile or "all").lower() != "all":
-            before_profile_count = len(signals_list)
-            signals_list = [
-                sig for sig in signals_list
-                if signal_matches_user_profile(sig, _trade_profile)
-            ]
-            dropped_profile_count = max(0, before_profile_count - len(signals_list))
-            if dropped_profile_count:
-                logger.info(
-                    "[dispatch] user=%s profile=%s dropped=%s nonmatching_signals",
-                    user_id,
-                    _trade_profile,
-                    dropped_profile_count,
-                )
+            _prefs = await get_user_trading_preferences(_profile_session, int(user_id))
+        before_profile_count = len(signals_list)
+        _filtered_signals = []
+        for sig in signals_list:
+            ok, reason = signal_matches_preferences(sig, _prefs)
+            if ok:
+                _filtered_signals.append(sig)
+            else:
+                logger.debug("[dispatch] user=%s personalized_filter_drop reason=%s asset=%s", user_id, reason, sig.get("asset"))
+        signals_list = rank_opportunities(_filtered_signals, _prefs)
+        dropped_profile_count = max(0, before_profile_count - len(signals_list))
+        if dropped_profile_count:
+            logger.info(
+                "[dispatch] user=%s profile=%s risk=%s dropped=%s nonmatching_signals",
+                user_id,
+                _prefs.trade_profile,
+                _prefs.risk_profile,
+                dropped_profile_count,
+            )
     except Exception as e:
-        _log_once('trade_profile_filter_error', f'[dispatch] Trade profile filter error: {e}')
+        _log_once('trade_profile_filter_error', f'[dispatch] Trading preference filter error: {e}')
 
     if not signals_list:
         return
@@ -4064,6 +4070,7 @@ def run_bot() -> None:
             ("signal", "Signal by reference"),
             ("performance", "Performance"),
             ("profile", "Trading profile"),
+            ("mission", "Signal Mission Control"),
             ("invite", "Invite"),
             ("support", "Support"),
         ]
@@ -4237,6 +4244,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
     application.add_handler(CommandHandler("profile", _audit_handler("profile", profile_command)))
+    application.add_handler(CommandHandler("mission", _audit_handler("mission", mission_command)))
     application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
     application.add_handler(CommandHandler("gemini", _audit_handler("gemini", gemini_command)))
     application.add_handler(CommandHandler("gemini_review", _audit_handler("gemini_review", gemini_review_command)))

@@ -1112,38 +1112,138 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Set or show the user's trading intent profile."""
+	"""Set or show the user's personalized AI trading profile."""
 	if await _public_guard(update):
 		return
 	if update.effective_user is None or update.message is None:
 		return
-	from services.trade_profiles import (
-		format_trade_profile_options,
-		get_user_trade_profile,
-		normalize_trade_profile,
-		set_user_trade_profile,
+	from services.trade_profiles import normalize_trade_profile
+	from services.user_intelligence import (
+		UserTradingPreferences,
+		format_preferences,
+		get_user_trading_preferences,
+		normalize_risk_profile,
+		set_user_trading_preferences,
 	)
 
 	user_id = int(update.effective_user.id)
 	args = [str(x).strip().lower() for x in (context.args or []) if str(x).strip()]
 	try:
 		async with get_session() as session:
-			current = await get_user_trade_profile(session, user_id)
+			current = await get_user_trading_preferences(session, user_id)
 			if not args:
-				await update.message.reply_text(format_trade_profile_options(current))
+				await update.message.reply_text(format_preferences(current))
 				return
-			requested = normalize_trade_profile(args[0], default="")
-			if requested not in {"scalp", "day", "swing", "position", "all"}:
-				await update.message.reply_text(format_trade_profile_options(current))
+			cmd = args[0]
+			next_prefs = UserTradingPreferences(
+				trade_profile=current.trade_profile,
+				risk_profile=current.risk_profile,
+				asset_classes=current.asset_classes,
+				preferred_assets=current.preferred_assets,
+				blocked_assets=current.blocked_assets,
+				sessions=current.sessions,
+				notification_style=current.notification_style,
+				execution_mode=current.execution_mode,
+				max_signals_per_day=current.max_signals_per_day,
+				auto_trade_brokers=current.auto_trade_brokers,
+				learned_preferences=current.learned_preferences,
+			)
+			if cmd in {"scalp", "scalper", "day", "swing", "position", "all"}:
+				next_prefs.trade_profile = normalize_trade_profile(cmd, default="all")
+			elif cmd == "risk" and len(args) >= 2:
+				next_prefs.risk_profile = normalize_risk_profile(args[1])
+			elif cmd == "assets" and len(args) >= 2:
+				classes = []
+				for item in args[1:]:
+					item = item.replace("forex", "fx").replace("indices", "index")
+					if item in {"crypto", "fx", "commodity", "index", "stock", "all"}:
+						classes.append(item)
+				next_prefs.asset_classes = ("crypto", "fx", "commodity", "index", "stock") if "all" in classes else tuple(classes or current.asset_classes)
+			elif cmd == "sessions" and len(args) >= 2:
+				next_prefs.sessions = tuple(args[1:]) or ("auto",)
+			elif cmd == "notify" and len(args) >= 2:
+				next_prefs.notification_style = args[1]
+			elif cmd == "execution" and len(args) >= 2:
+				mode = args[1]
+				next_prefs.execution_mode = mode if mode in {"manual", "semi", "semi_auto", "auto", "mt5", "bybit", "binance"} else "manual"
+			elif cmd == "block" and len(args) >= 2:
+				next_prefs.blocked_assets = tuple(sorted(set(current.blocked_assets + tuple(a.upper() for a in args[1:]))))
+			elif cmd == "prefer" and len(args) >= 2:
+				next_prefs.preferred_assets = tuple(sorted(set(current.preferred_assets + tuple(a.upper() for a in args[1:]))))
+			else:
+				await update.message.reply_text(format_preferences(current))
 				return
-			selected = await set_user_trade_profile(session, user_id, requested)
+			selected = await set_user_trading_preferences(session, user_id, next_prefs)
 			await session.commit()
 		await update.message.reply_text(
-			f"Trading profile updated: {selected.upper()}\n\n"
-			"Future signals will be filtered for that trading horizon. Use /profile all to receive every style."
+			"AI trading profile updated.\n\n"
+			+ format_preferences(selected)
 		)
 	except Exception as exc:
 		await update.message.reply_text(f"Could not update trading profile: {type(exc).__name__}")
+
+
+async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Signal Mission Control: inspect live health and recommendation for an active signal."""
+	if await _public_guard(update):
+		return
+	if update.effective_user is None or update.message is None:
+		return
+	user_id = int(update.effective_user.id)
+	args = [str(x).strip() for x in (context.args or []) if str(x).strip()]
+	try:
+		from db.pg_features import list_unresolved_signals_for_user
+		from engine.price_validator import enrich_signal_with_live_price
+		from services.mission_control import build_mission_snapshot, format_mission
+		from services.trading_intelligence import enrich_signal_intelligence
+
+		async with get_session() as session:
+			rows = await list_unresolved_signals_for_user(session, telegram_user_id=user_id, lookback_days=30)
+		if not rows:
+			await update.message.reply_text("No active delivered signal mission is available right now.")
+			return
+		needle = args[0].lower() if args else ""
+		selected = None
+		for row in rows:
+			sid = str(getattr(row, "signal_id", "") or "")
+			asset = str(getattr(row, "asset", "") or "")
+			if not needle or sid.lower().startswith(needle) or asset.lower() == needle:
+				selected = row
+				break
+		if selected is None:
+			await update.message.reply_text("Signal mission not found in your active delivered signals. Use /signals first.")
+			return
+		payload = {
+			"signal_id": selected.signal_id,
+			"asset": selected.asset,
+			"timeframe": selected.timeframe,
+			"direction": selected.direction,
+			"entry": selected.entry,
+			"stop_loss": selected.stop_loss,
+			"take_profit": selected.take_profit,
+			"rr_ratio": selected.rr_estimate,
+			"score": selected.score,
+			"confidence": getattr(selected, "confidence", 0.5),
+			"regime": getattr(selected, "regime", None),
+			"strength": getattr(selected, "strength", 0.5),
+			"ml_probability": getattr(selected, "ml_probability", 0.5),
+			"strategy_name": selected.strategy_name,
+			"strategy_group": selected.strategy_group,
+			"created_at": selected.created_at,
+			"status": getattr(selected, "status", "active"),
+		}
+		try:
+			payload = enrich_signal_with_live_price(payload)
+		except Exception:
+			pass
+		try:
+			payload = enrich_signal_intelligence(payload)
+		except Exception:
+			pass
+		snapshot = build_mission_snapshot(payload, current_price=payload.get("current_price") or payload.get("live_price"))
+		await update.message.reply_text(format_mission(snapshot))
+	except Exception as exc:
+		await update.message.reply_text(f"Mission control unavailable. Reference logged: {type(exc).__name__}")
 
 
 from .user_prefs import user_prefs_store

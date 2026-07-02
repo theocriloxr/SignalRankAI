@@ -164,6 +164,22 @@ def _trade_profile_display(signal: dict) -> tuple[str, str]:
 	except Exception:
 		return str(signal.get("trade_profile_label") or "Swing Trader"), str(signal.get("expected_duration") or "multi-day")
 
+
+def _confidence_breakdown_lines(signal: dict, prefix: str = "") -> list[str]:
+	"""Format transparent score components when the intelligence layer provides them."""
+	breakdown = signal.get("confidence_breakdown")
+	if not isinstance(breakdown, dict) or not breakdown:
+		return []
+	lines = [f"{prefix}Confidence Breakdown:".rstrip()]
+	for name in ("trend", "momentum", "liquidity", "volume", "regime", "historical", "ai"):
+		if name not in breakdown:
+			continue
+		try:
+			lines.append(f"{prefix}- {name.title()}: {float(breakdown[name]):.0f}/100".rstrip())
+		except Exception:
+			continue
+	return lines
+
 def _risk_guidance(tier: str, score: float | int | None) -> str:
 	"""Return risk management guidance based on tier and score."""
 	try:
@@ -846,6 +862,12 @@ def format_signal_premium_new(signal: dict) -> str:
 	]
 	lines.append(f"Style: {profile_label}")
 	lines.append(f"Expected Hold: {expected_duration}")
+	if signal.get("trade_type"):
+		lines.append(f"Trade Type: {signal.get('trade_type')}")
+	if signal.get("trade_health") is not None:
+		lines.append(f"Trade Health: {float(signal.get('trade_health') or 0):.1f}%")
+	if signal.get("probability_tp_today") is not None:
+		lines.append(f"Expected TP Today: {float(signal.get('probability_tp_today') or 0):.1f}%")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
@@ -911,6 +933,8 @@ def format_signal_premium_new(signal: dict) -> str:
 		lines.append(f"┃ AI Confluence: {int(_cv)}/{int(_ct)} agree")
 		if _cdr:
 			lines.append(f"┃ Drivers: {', '.join(str(d) for d in _cdr[:3])}")
+
+	lines.extend(_confidence_breakdown_lines(signal, prefix="┃ "))
 
 	# Add signal age if available
 	if signal_age is not None:
@@ -1020,6 +1044,12 @@ def format_signal_vip_new(signal: dict) -> str:
 	lines.append(f"┃ Entry: {_format_price(entry, asset)}")
 	lines.append(f"Style: {profile_label}")
 	lines.append(f"Expected Hold: {expected_duration}")
+	if signal.get("trade_type"):
+		lines.append(f"Trade Type: {signal.get('trade_type')}")
+	if signal.get("trade_health") is not None:
+		lines.append(f"Trade Health: {float(signal.get('trade_health') or 0):.1f}%")
+	if signal.get("probability_tp_today") is not None:
+		lines.append(f"Expected TP Today: {float(signal.get('probability_tp_today') or 0):.1f}%")
 	if price_context:
 		lines.append(f"┃ {price_context}")
 	elif current_price:
@@ -1119,6 +1149,8 @@ def format_signal_vip_new(signal: dict) -> str:
 		_sv = signal.get('short_votes', 0)
 		if _lv or _sv:
 			lines.append(f"┃ Votes: ⬆️{_lv} LONG / ⬇️{_sv} SHORT")
+
+	lines.extend(_confidence_breakdown_lines(signal, prefix="┃ "))
 
 	# Add signal age if available
 	if signal_age is not None:

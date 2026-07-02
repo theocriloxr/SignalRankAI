@@ -2597,6 +2597,30 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _profile_err:
                                 logger.debug(f"[engine] trade profile shaping failed: {_profile_err}")
 
+                            # Market intelligence + multi-timeframe consensus + opportunity rank.
+                            # This classifies cases like 5m SELL inside 1h BUY as a pullback/counter-trend
+                            # setup instead of a plain directional signal.
+                            try:
+                                if _env_bool("SIGNAL_INTELLIGENCE_ENGINE_ENABLED", True):
+                                    from services.trading_intelligence import enrich_signal_intelligence
+
+                                    sig = enrich_signal_intelligence(
+                                        sig,
+                                        market_data=market_data if isinstance(market_data, dict) else {},
+                                        candles=candles if isinstance(candles, list) else [],
+                                    )
+                                    if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
+                                        sig['rejection_reason'] = 'market_intelligence_block'
+                                        pipeline_stats["quality_rejected"] += 1
+                                        _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
+                                        _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                            "asset_health_score": sig.get("asset_health_score"),
+                                            "market_session": sig.get("market_session"),
+                                        })
+                                        continue
+                            except Exception as _intel_err:
+                                logger.debug(f"[engine] signal intelligence enrichment failed: {_intel_err}")
+
                             # ML-driven dynamic risk sizing hint (for formatters/executors).
                             try:
                                 _mlp = float(sig.get('ml_probability') or 0.0)
