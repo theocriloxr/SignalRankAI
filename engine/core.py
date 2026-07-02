@@ -1004,6 +1004,45 @@ def _increment_quality_rejection_stat(reason: str | None, amount: int = 1) -> st
     return bucket
 
 
+def _increment_engine_veto(reason: str, amount: int = 1) -> None:
+    try:
+        stats.increment_vetoed(reason, amount)
+    except Exception:
+        try:
+            if reason == "regime":
+                stats.vetoed_regime += amount
+            elif reason == "squeeze":
+                stats.vetoed_squeeze += amount
+            elif reason == "microstructure":
+                stats.vetoed_microstructure += amount
+            elif reason == "score":
+                stats.vetoed_score += amount
+            elif reason == "ml":
+                stats.vetoed_ml += amount
+            else:
+                stats.vetoed_other += amount
+        except Exception:
+            pass
+
+
+def _increment_engine_scanned(amount: int = 1) -> None:
+    try:
+        stats.increment_scanned(max(0, int(amount or 0)))
+    except Exception:
+        try:
+            stats.scanned += max(0, int(amount or 0))
+        except Exception:
+            pass
+
+
+def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200) -> None:
+    """Persist compact latest-cycle telemetry for admin pulse/debug views."""
+    try:
+        state.set_sync("engine:last_cycle", json.dumps(payload, default=str), ex=max(60, int(ttl_seconds)))
+    except Exception:
+        logger.debug("[engine] failed to publish cycle state", exc_info=True)
+
+
 async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     """Auto-quarantine weak live segments using aggregate outcomes only."""
     if not _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
@@ -1846,6 +1885,18 @@ def main_loop(DRY_RUN: bool = False):
                     f"batch={cycle_assets} wakeup={cycle_no} classes={_selected_counts}"
                 )
 
+            cycle_started_at = datetime.now(timezone.utc)
+            cycle_started_monotonic = time.monotonic()
+            _cycle_state = {
+                "status": "started",
+                "cycle": int(cycle_no),
+                "round": getattr(_cycle_queue, "round_progress", ""),
+                "started_at": cycle_started_at.isoformat(),
+                "assets_attempted": int(cycle_assets),
+                "class_counts": dict(_selected_counts or {}),
+            }
+            _publish_engine_cycle_state(_cycle_state)
+
             # Build timeframes map
             asset_to_tfs: Dict[str, List[str]] = {}
             for asset in assets:
@@ -1876,6 +1927,8 @@ def main_loop(DRY_RUN: bool = False):
             asset_to_tfs_degraded = {a: (tfs[:1] if a in degraded_assets else tfs) for a, tfs in asset_to_tfs.items()}
 
             # Fetch market data (async)
+            market_fetch_started = time.monotonic()
+            market_fetch_error = None
             try:
                 from utils.async_runner import run_sync
                 fetch_timeout_s = max(30.0, float(_env_float("ENGINE_MARKET_FETCH_TIMEOUT_SECONDS", 180.0) or 180.0))
@@ -1883,9 +1936,22 @@ def main_loop(DRY_RUN: bool = False):
                     _fetch_market_data_for_assets(asset_to_tfs_degraded),
                     timeout=fetch_timeout_s,
                 )
-            except Exception:
+            except Exception as _market_fetch_exc:
+                market_fetch_error = type(_market_fetch_exc).__name__
                 logger.exception("Market data fetch failed or timed out")
                 all_market_data = {}
+            market_fetch_ms = int((time.monotonic() - market_fetch_started) * 1000)
+            try:
+                _cycle_state.update({
+                    "status": "market_data_fetched",
+                    "market_fetch_ms": int(market_fetch_ms),
+                    "market_fetch_error": market_fetch_error,
+                    "market_data_assets": int(len(all_market_data or {})),
+                    "missing_market_data_assets": int(max(0, cycle_assets - len(all_market_data or {}))),
+                })
+                _publish_engine_cycle_state(_cycle_state)
+            except Exception:
+                pass
 
             try:
                 macro_snapshot = run_sync(_fetch_macro_snapshot(), timeout=30.0)
@@ -1917,6 +1983,10 @@ def main_loop(DRY_RUN: bool = False):
                 "invalid_tp": 0,
                 "quality_rejected": 0,
                 "score_rejected": 0,
+                "no_consensus": 0,
+                "strategy_exception": 0,
+                "consensus_exception": 0,
+                "scoring_exception": 0,
                 "skipped_open_limit_asset": 0,
                 "skipped_open_limit_class": 0,
                 "skipped_cycle_cooldown": 0,
@@ -1932,6 +2002,12 @@ def main_loop(DRY_RUN: bool = False):
                 pipeline_stats[f"selected_{_cls_name}_assets"] = int(_selected_counts.get(_cls_name, 0) or 0)
                 pipeline_stats[f"no_candles_{_cls_name}"] = 0
                 pipeline_stats[f"quality_rejected_{_cls_name}"] = 0
+            pipeline_stats["assets_attempted"] = int(cycle_assets)
+            pipeline_stats["market_fetch_ms"] = int(market_fetch_ms)
+            pipeline_stats["market_data_assets"] = int(len(all_market_data or {}))
+            if market_fetch_error:
+                pipeline_stats["market_fetch_error"] = market_fetch_error
+            _increment_engine_scanned(cycle_assets)
 
             open_limit_per_asset = max(1, _env_int("OPEN_SIGNALS_MAX_PER_ASSET", 20))
             open_limit_per_class = max(1, _env_int("OPEN_SIGNALS_MAX_PER_CLASS", 20))
@@ -2025,6 +2101,7 @@ def main_loop(DRY_RUN: bool = False):
                         pipeline_stats[f"no_candles_{_asset_class_key(asset)}"] = int(
                             pipeline_stats.get(f"no_candles_{_asset_class_key(asset)}", 0) or 0
                         ) + 1
+                        _increment_engine_veto("other")
                         _record_gate_failure(asset, "market_data", "no_candles")
                         _maybe_log_heatmap(asset, cycle_no, 0)
                         continue
@@ -2053,6 +2130,7 @@ def main_loop(DRY_RUN: bool = False):
                             elif data_age is not None and data_age > max_age:
                                 logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
                                 pipeline_stats["stale_data"] += 1
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "stale_data", f"{tf}:{data_age:.0f}s>{max_age:.0f}s")
                                 _maybe_log_heatmap(asset, cycle_no, 0)
                                 stale_data = True
@@ -2064,6 +2142,7 @@ def main_loop(DRY_RUN: bool = False):
                     try:
                         if _is_no_trade_zone_sync(asset, buffer_minutes=60):
                             logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 60 min)")
+                            _increment_engine_veto("regime")
                             _record_gate_failure(asset, "macro", "no_trade_zone_60m")
                             _maybe_log_heatmap(asset, cycle_no, 0)
                             continue
@@ -2076,12 +2155,10 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         regime = None
 
-                    # === PHASE 1 FIX: Increment stats.scanned for each asset analyzed ===
-                    stats.scanned += 1
-                    
-                    # === PHASE 1 FIX: Check regime and track vetoes ===
+                    # Scan attempts are counted once per batch before early gates,
+                    # including no-candle/provider-timeout assets.
                     if regime is None or regime == "neutral" or regime == "unknown":
-                        stats.vetoed_regime += 1
+                        _increment_engine_veto("regime")
                         
                     # News sentiment (non-critical)
                     try:
@@ -2105,11 +2182,14 @@ def main_loop(DRY_RUN: bool = False):
                             )
                     except Exception:
                         logger.exception(f"Strategies failed for {asset}")
+                        pipeline_stats["strategy_exception"] += 1
+                        _increment_engine_veto("other")
                         strategy_signals = []
 
                     pipeline_stats["strategy_signals"] += len(strategy_signals)
                     if not strategy_signals:
                         pipeline_stats["no_strategy_signals"] += 1
+                        _increment_engine_veto("other")
                         # DEBUG: Log what's happening - regime, available TFs, indicators keys
                         _tf_list = list(market_data.keys()) if market_data else []
                         _ind_keys = list(market_data.get(list(market_data.keys())[0], {}).get('indicators', {}).keys()) if market_data else []
@@ -2141,9 +2221,15 @@ def main_loop(DRY_RUN: bool = False):
                         )
                         if not consensus_signals and _block_on_empty_consensus:
                             logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
+                            pipeline_stats["no_consensus"] += 1
+                            _increment_engine_veto("other")
+                            _record_gate_failure(asset, "consensus", "empty")
+                            _maybe_log_heatmap(asset, cycle_no, 0)
                             continue  # Skip asset entirely
                     except Exception as e:
                         logger.error(f"Consensus failed for {asset}: {e}")
+                        pipeline_stats["consensus_exception"] += 1
+                        _increment_engine_veto("other")
                         consensus_signals = []
                     pipeline_stats["consensus"] += len(consensus_signals)
 
@@ -2247,6 +2333,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not ok:
                                 sig['rejection_reason'] = f"validation:{reason}"
                                 pipeline_stats["validation_failed"] += 1
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "trend", reason)
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2269,6 +2356,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not risk_check(sig, account_state):
                                 sig['rejection_reason'] = 'risk/volatility'
                                 pipeline_stats["risk_failed"] += 1
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "risk", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2279,6 +2367,7 @@ def main_loop(DRY_RUN: bool = False):
                                 conf_min = float(conf_raw) if conf_raw else None
                                 if conf_min is not None and conf < conf_min:
                                     sig['rejection_reason'] = f'confluence {conf:.1f}%'
+                                    _increment_engine_veto("microstructure")
                                     _record_gate_failure(asset, "trend", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
                                     continue
@@ -2292,6 +2381,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _oppose = (_news >= _thr and _dir == 'short') or (_news <= -_thr and _dir == 'long')
                                 if _oppose:
                                     sig['rejection_reason'] = f"news_conflict sentiment={_news:.2f}"
+                                    _increment_engine_veto("regime")
                                     _record_gate_failure(asset, "news", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"news_sentiment": _news})
                                     continue
@@ -2305,6 +2395,8 @@ def main_loop(DRY_RUN: bool = False):
                             strict_candidates.append(sig)
                         except Exception:
                             logger.exception("candidate gating failed")
+                            pipeline_stats["scoring_exception"] += 1
+                            _increment_engine_veto("other")
 
                     pipeline_stats["strict_candidates"] += len(strict_candidates)
                     if not strict_candidates:
@@ -2352,7 +2444,7 @@ def main_loop(DRY_RUN: bool = False):
 
                         if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
-                            stats.vetoed_ml += 1  # FIX: Track ML rejections
+                            _increment_engine_veto("ml")
                             _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
                             try:
                                 run_sync(
@@ -2380,6 +2472,7 @@ def main_loop(DRY_RUN: bool = False):
                             ml_hard_min = 0.40
                         if prob is not None and float(prob) < ml_hard_min:
                             sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
+                            _increment_engine_veto("ml")
                             _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
                             continue
                         sig['ml_probability'] = prob
@@ -2507,6 +2600,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not passed_filters:
                                 sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
                                 pipeline_stats["advanced_filter_failed"] += 1
+                                _increment_engine_veto("microstructure")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2516,6 +2610,7 @@ def main_loop(DRY_RUN: bool = False):
                                 should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
                                 if not should_trade:
                                     sig['rejection_reason'] = f'ultra:{rejection}'
+                                    _increment_engine_veto("other")
                                     _record_gate_failure(asset, "ultra", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                     continue
@@ -2629,6 +2724,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not tp:
                                 sig['rejection_reason'] = 'invalid_tp_structure'
                                 pipeline_stats["invalid_tp"] += 1
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2733,7 +2829,7 @@ def main_loop(DRY_RUN: bool = False):
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                                 pipeline_stats["score_rejected"] += 1
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
-                                stats.vetoed_score += 1  # FIX: Track score rejections
+                                _increment_engine_veto("score")
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                                 try:
                                     run_sync(
@@ -2757,6 +2853,7 @@ def main_loop(DRY_RUN: bool = False):
                             # Optional hard block remains available via env toggle.
                             if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_exp < 0.0:
                                 sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
+                                _increment_engine_veto("score")
                                 _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 try:
@@ -2846,6 +2943,8 @@ def main_loop(DRY_RUN: bool = False):
                             final_signals.append(sig)
                         except Exception:
                             logger.exception("scoring/filtering failed for signal")
+                            pipeline_stats["scoring_exception"] += 1
+                            _increment_engine_veto("other")
 
                     collapsed_signals = _collapse_signal_variants(final_signals)
                     dropped_variants = max(0, len(final_signals) - len(collapsed_signals))
@@ -3657,6 +3756,26 @@ def main_loop(DRY_RUN: bool = False):
             # ── Anti-stagnation: stamp last_analyzed_at for managed assets ────────
             # Only DB-pinned assets need the timestamp; env/discovered assets are
             # excluded so the managed_assets table stays minimal.
+            try:
+                _cycle_top_raw = max((_signal_display_score(s) for s in scored_signals_all), default=None)
+                if _cycle_top_raw is None:
+                    _cycle_top_raw = max_candidate_score
+                _cycle_state.update({
+                    "status": "completed",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "duration_ms": int((time.monotonic() - cycle_started_monotonic) * 1000),
+                    "generated_signals": int(len(scored_signals_all or [])),
+                    "dispatched": int(locals().get("dispatched", 0) or 0),
+                    "max_score": _diagnostic_score(_cycle_top_raw),
+                    "max_score_raw": _cycle_top_raw,
+                    "max_score_pre_threshold": _diagnostic_score(max_candidate_score),
+                    "max_score_raw_pre_threshold": max_candidate_score,
+                    "pipeline_stats": dict(pipeline_stats or {}),
+                })
+                _publish_engine_cycle_state(_cycle_state)
+            except Exception:
+                logger.debug("[engine] failed to publish completed cycle state", exc_info=True)
+
             _managed_set = set(_managed_assets)
             _batch_managed = [a for a in assets if a in _managed_set]
             if _batch_managed:

@@ -58,6 +58,65 @@ def _top_pairs(rows: list, limit: int = 5) -> list[dict[str, Any]]:
     return out
 
 
+def _latest_cycle_state() -> dict[str, Any]:
+    try:
+        from core.redis_state import state
+
+        raw = state.get_sync("engine:last_cycle")
+        if not raw:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        parsed = json.loads(str(raw))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def _cycle_rejection_buckets(cycle: dict[str, Any]) -> dict[str, int]:
+    stats = cycle.get("pipeline_stats") if isinstance(cycle, dict) else {}
+    if not isinstance(stats, dict):
+        return {}
+
+    def _i(key: str) -> int:
+        try:
+            return int(stats.get(key) or 0)
+        except Exception:
+            return 0
+
+    buckets = {
+        "regime": 0,
+        "squeeze": 0,
+        "microstructure": _i("advanced_filter_failed") + _i("skipped_confluence_block"),
+        "score": _i("score_rejected"),
+        "ml": 0,
+        "risk": _i("risk_failed") + _i("skipped_portfolio_exposure"),
+        "dedupe": (
+            _i("skipped_open_limit_asset")
+            + _i("skipped_open_limit_class")
+            + _i("skipped_cycle_cooldown")
+            + _i("skipped_cycle_asset_cooldown")
+            + _i("skipped_db_cooldown")
+            + _i("skipped_db_asset_cooldown")
+            + _i("skipped_duplicate_trade")
+        ),
+        "other": (
+            _i("no_candles")
+            + _i("stale_data")
+            + _i("no_strategy_signals")
+            + _i("validation_failed")
+            + _i("quality_rejected")
+            + _i("invalid_tp")
+            + _i("no_consensus")
+            + _i("strategy_exception")
+            + _i("consensus_exception")
+            + _i("scoring_exception")
+            + _i("store_failed")
+        ),
+    }
+    return {k: v for k, v in buckets.items() if v > 0}
+
+
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     """Collect engine health stats for the last `window_hours` hours.
     
@@ -311,11 +370,41 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     partial_win = max(int(partial_win or 0), int(db_shadow.get("db_partial_win") or 0))
     shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
 
+    latest_cycle = _latest_cycle_state()
+    cycle_pipeline = latest_cycle.get("pipeline_stats") if isinstance(latest_cycle, dict) else {}
+    if not isinstance(cycle_pipeline, dict):
+        cycle_pipeline = {}
+    try:
+        cycle_attempted = int(
+            latest_cycle.get("assets_attempted")
+            or cycle_pipeline.get("assets_attempted")
+            or 0
+        )
+    except Exception:
+        cycle_attempted = 0
+    try:
+        cycle_delivered = int(latest_cycle.get("dispatched") or 0)
+    except Exception:
+        cycle_delivered = 0
+    cycle_rejected_by = _cycle_rejection_buckets(latest_cycle)
+
     global_total = int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
     db_rejected_total = sum(int(v or 0) for v in (db_rejected_by or {}).values())
     db_scanned_evidence = max(int(db_scanned or 0), int(db_issued or 0), int(db_delivered or 0), int(db_rejected_total or 0))
-    scanned = max(int(global_scanned or 0), db_scanned_evidence)
-    delivered = max(int(global_delivered or 0), int(db_delivered or 0))
+    if db_scanned_evidence > 0:
+        scanned = db_scanned_evidence
+    elif cycle_attempted > 0:
+        scanned = cycle_attempted
+    else:
+        scanned = int(global_scanned or 0)
+
+    if int(db_delivered or 0) > 0:
+        delivered = int(db_delivered or 0)
+    elif latest_cycle:
+        delivered = cycle_delivered
+    else:
+        delivered = int(global_delivered or 0)
+
     db_rejection_buckets: dict[str, int] = {}
     top_rejection_reasons: list[dict[str, Any]] = []
     for row in list(db_reason_rows or []):
@@ -333,12 +422,17 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 "reason": reason or decision or "unknown",
                 "count": count,
             })
-    if use_global_stats and global_total > 0:
-        rejected_by = dict(global_vetoed or {})
-        for bucket, count in db_rejection_buckets.items():
-            rejected_by[bucket] = max(int(rejected_by.get(bucket, 0) or 0), int(count or 0))
-    else:
+    if db_rejection_buckets or db_rejected_by:
         rejected_by = db_rejection_buckets or db_rejected_by
+    elif cycle_rejected_by:
+        rejected_by = cycle_rejected_by
+    elif use_global_stats and global_total > 0:
+        rejected_by = dict(global_vetoed or {})
+    else:
+        rejected_by = {}
+
+    accounted = int(delivered or 0) + sum(int(v or 0) for v in (rejected_by or {}).values())
+    unaccounted = max(0, int(scanned or 0) - int(accounted or 0))
 
     try:
         from data.fetcher import get_provider_health_snapshot
@@ -355,6 +449,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         "scanned": scanned,
         "delivered": delivered,
         "rejected_by": rejected_by,
+        "accounted": accounted,
+        "unaccounted": unaccounted,
+        "latest_cycle": latest_cycle,
         "top_rejection_reasons": top_rejection_reasons,
         "top_assets": db_top_assets,
         "top_strategies": db_top_strategies,
@@ -368,6 +465,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
             "db_decisions": int(db_scanned or 0),
             "db_signals": int(db_issued or 0),
             "db_deliveries": int(db_delivered or 0),
+            "cycle_attempted": int(cycle_attempted or 0),
+            "cycle_status": str(latest_cycle.get("status") or "") if isinstance(latest_cycle, dict) else "",
         },
         "shadow": {
             "total_tracked": total_tracked,
@@ -399,10 +498,28 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
             f"Engine Pulse ({window_hours}h)\n\n"
             f"Total Scanned: {stats.get('scanned', 0)}\n"
             f"Delivered: {stats.get('delivered', 0)}\n"
+            f"Accounted: {stats.get('accounted', 0)}\n"
+            f"Unaccounted: {stats.get('unaccounted', 0)}\n"
             "Rejected breakdown:\n"
         )
         for k, v in (stats.get("rejected_by") or {}).items():
             txt += f"- {k}: {v}\n"
+        cycle = stats.get("latest_cycle") or {}
+        if cycle:
+            pipeline = cycle.get("pipeline_stats") if isinstance(cycle, dict) else {}
+            pipeline = pipeline if isinstance(pipeline, dict) else {}
+            txt += (
+                "\nLatest cycle:\n"
+                f"- status: {cycle.get('status', 'unknown')}\n"
+                f"- cycle: {cycle.get('cycle', 'n/a')}\n"
+                f"- assets attempted: {cycle.get('assets_attempted', pipeline.get('assets_attempted', 0))}\n"
+                f"- market data assets: {cycle.get('market_data_assets', pipeline.get('market_data_assets', 0))}\n"
+                f"- generated: {cycle.get('generated_signals', 0)}\n"
+                f"- max score: {cycle.get('max_score', None)}\n"
+                f"- duration ms: {cycle.get('duration_ms', 'n/a')}\n"
+            )
+            if cycle.get("market_fetch_error"):
+                txt += f"- market fetch error: {cycle.get('market_fetch_error')}\n"
         quality = stats.get("signal_quality") or {}
         if quality:
             txt += (

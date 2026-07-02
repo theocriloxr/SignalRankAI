@@ -1,6 +1,8 @@
 import sys
 import types
+import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import pytest
 
@@ -200,6 +202,83 @@ async def test_admin_pulse_uses_db_evidence_when_global_stats_are_zero(monkeypat
     assert stats["delivered"] == 2
     assert stats["rejected_by"] == {"rejected": 2, "issued": 1}
     assert stats["sources"]["global_total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_admin_pulse_uses_latest_cycle_when_db_window_is_empty(monkeypatch):
+    import engine.admin_pulse as pulse
+
+    class _Stats:
+        def get_stats(self):
+            return {
+                "scanned": 112415,
+                "delivered": 6489,
+                "vetoed_regime": 0,
+                "vetoed_squeeze": 0,
+                "vetoed_microstructure": 0,
+                "vetoed_score": 55973,
+                "vetoed_ml": 0,
+                "vetoed_other": 6138,
+            }
+
+    monkeypatch.setitem(sys.modules, "engine.stats_manager", types.SimpleNamespace(stats=_Stats()))
+
+    class _Result:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def first(self):
+            return self._rows[0] if self._rows else None
+
+        def fetchall(self):
+            return list(self._rows)
+
+    class _Session:
+        async def execute(self, stmt, params=None):
+            sql = str(stmt)
+            if "GROUP BY" in sql:
+                return _Result([])
+            return _Result([(0,)])
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _Session()
+
+    monkeypatch.setitem(sys.modules, "db.session", types.SimpleNamespace(get_session=_fake_get_session))
+
+    latest_cycle = {
+        "status": "completed",
+        "cycle": 482,
+        "assets_attempted": 20,
+        "market_data_assets": 0,
+        "generated_signals": 0,
+        "pipeline_stats": {"assets_attempted": 20, "no_candles": 20},
+    }
+
+    class _State:
+        def get_sync(self, key):
+            if key == "engine:last_cycle":
+                return json.dumps(latest_cycle)
+            return 0
+
+    monkeypatch.setitem(sys.modules, "core.redis_state", types.SimpleNamespace(state=_State()))
+
+    stats = await pulse.compute_engine_health(window_hours=1)
+
+    assert stats["scanned"] == 20
+    assert stats["delivered"] == 0
+    assert stats["rejected_by"] == {"other": 20}
+    assert stats["unaccounted"] == 0
+    assert stats["sources"]["cycle_attempted"] == 20
+    assert stats["latest_cycle"]["cycle"] == 482
+
+
+def test_engine_counts_scan_attempts_before_market_data_gate():
+    core_source = Path("engine/core.py").read_text(encoding="utf-8")
+
+    assert "_increment_engine_scanned(cycle_assets)" in core_source
+    assert "stats.scanned += 1" not in core_source
+    assert "\"engine:last_cycle\"" in core_source
 
 
 @pytest.mark.asyncio
