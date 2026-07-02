@@ -870,3 +870,39 @@ External implementation notes checked during this pass:
 - MT5 `order_send` requires a structured trade request and broker-side validation of symbol, volume, price, SL, TP, order type, filling type, expiration, and retcode handling. SignalRankAI broker execution should continue to fail with structured reasons before and after broker submission.
 - Binance symbol filters such as price, lot size, and notional constraints require pre-trade normalization before order placement.
 - Bybit order creation requires category/symbol/side/order type/quantity inputs and exchange-specific validation; execution adapters should normalize broker payloads but preserve provider-specific rejection codes.
+
+## 2026-07-02 follow-up: trading ecosystem intelligence foundation
+
+This pass moves SignalRankAI further away from a one-size-fits-all signal bot and toward a personalized trading ecosystem. The engine now enriches candidate signals with asset registry data, market intelligence, multi-timeframe conflict classification, opportunity scoring, confidence breakdowns, and mission-control health fields before final delivery.
+
+Changes made:
+
+- Added `services/asset_registry.py` for canonical symbols, asset-class classification including indices, provider/broker symbol routes, recommended profiles, and dynamic universe fallback discovery.
+- Added `services/market_intelligence.py` to evaluate market open state, session, liquidity, volatility regime, trend regime, news risk, strategy compatibility, asset health, and scan priority.
+- Added `services/mtf_consensus.py` so a lower-timeframe SELL inside higher-timeframe BUY context is classified as a counter-trend/pullback setup with a confidence haircut rather than a plain directional signal.
+- Added `services/user_intelligence.py` for persistent user preferences: trader style, risk profile, asset classes, preferred/blocked assets, sessions, notification style, execution mode, and broker preferences.
+- Added `services/tier_policy.py` to encode Free/Premium/VIP capabilities, delivery delay, TP visibility, asset-class access, auto-trading access, and trade-management access.
+- Added `services/opportunity_engine.py` to rank opportunities using technical quality, AI confidence, historical/live performance, market health, R/R realism, time-to-target, and MTF alignment.
+- Added `services/mission_control.py` to build live signal mission snapshots with health, TP1 progress, live P/L, probability TP today, recovery probability, risk state, and AI recommendation.
+- Added `services/trading_intelligence.py` as the engine-facing adapter for enrichment.
+- Wired engine enrichment behind `SIGNAL_INTELLIGENCE_ENGINE_ENABLED`.
+- Expanded `/profile` from a single trade-style switch into a persistent personalization command for style, risk, asset classes, sessions, notification style, execution mode, preferred assets, and blocked assets.
+- Added `/mission` for Premium+ users to inspect active delivered signals as living trade missions.
+- Updated Premium/VIP signal cards with trade type, trade health, expected TP today, and transparent confidence breakdowns when available.
+
+Recommended Railway env:
+
+```text
+SIGNAL_INTELLIGENCE_ENGINE_ENABLED=1
+MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED=0
+FREE_SIGNAL_DELAY_MINUTES=10
+PREMIUM_SIGNAL_DELAY_MINUTES=0
+VIP_SIGNAL_DELAY_MINUTES=0
+```
+
+Remaining live evidence still required:
+
+- Calibrate opportunity score and mission-control thresholds from real outcome coverage, replay, and shadow evaluation.
+- Verify `/mission` and expanded `/profile` on Railway Telegram with real delivered signals.
+- Add live provider/broker health feeds into the intelligence scores rather than relying on deterministic defaults.
+- Promote `MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED=1` only after confirming it does not starve high-quality signals.
