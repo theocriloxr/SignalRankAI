@@ -96,8 +96,8 @@ def _is_railway_runtime() -> bool:
 
 
 def _effective_pool_settings() -> tuple[int, int]:
-    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 3, minimum=0)
+    pool_size = _pool_int("DB_POOL_SIZE", 20, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 20, minimum=0)
 
     # NullPool remains available for pgbouncer/transient debugging, but pooled
     # connections are the default so caps can be enforced explicitly.
@@ -118,12 +118,12 @@ def _effective_pool_settings() -> tuple[int, int]:
             return pool_size, max_overflow
 
         railway_pool_cap = min(
-            _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1),
-            _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1),
+            _pool_int("DB_POOL_SIZE_RAILWAY", 20, minimum=1),
+            _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 20, minimum=1),
         )
         railway_overflow_cap = min(
-            _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0),
-            _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0),
+            _pool_int("DB_MAX_OVERFLOW_RAILWAY", 20, minimum=0),
+            _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 20, minimum=0),
         )
         original_pool_size = pool_size
         original_max_overflow = max_overflow
@@ -149,6 +149,15 @@ def _effective_pool_settings() -> tuple[int, int]:
             max_overflow = min(max_overflow, global_overflow_cap)
 
     return pool_size, max_overflow
+
+
+def _default_session_gate_limit() -> int:
+    pool_size, max_overflow = _effective_pool_settings()
+    if pool_size == 0 and max_overflow == 0:
+        return _pool_int("DB_NULLPOOL_SESSION_GATE_DEFAULT", 8, minimum=1)
+    configured_capacity = max(1, int(pool_size or 0) + int(max_overflow or 0))
+    default_cap = _pool_int("DB_SESSION_GATE_DEFAULT_CAP", 40, minimum=1)
+    return max(1, min(configured_capacity, default_cap))
 
 
 def create_engine() -> Optional[AsyncEngine]:
@@ -184,7 +193,7 @@ _engines_by_loop: dict[int, AsyncEngine] = {}
 _sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
 _sync_thread_local = threading.local()
-_session_gate_limit = max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", 1 if _is_railway_runtime() else 8, minimum=1))
+_session_gate_limit = max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", _default_session_gate_limit(), minimum=1))
 _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 _session_metrics_lock = threading.Lock()
 _session_metrics: dict[str, int] = {

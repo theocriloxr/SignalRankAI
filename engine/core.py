@@ -1043,6 +1043,41 @@ def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200
         logger.debug("[engine] failed to publish cycle state", exc_info=True)
 
 
+def _infer_max_score_absent_reason(pipeline_stats: dict[str, Any], market_fetch_error: str | None = None) -> str:
+    def _i(key: str) -> int:
+        try:
+            return int((pipeline_stats or {}).get(key) or 0)
+        except Exception:
+            return 0
+
+    if market_fetch_error:
+        return f"market_fetch_error:{market_fetch_error}"
+    attempted = _i("assets_attempted")
+    if attempted > 0 and _i("no_candles") >= attempted:
+        return "market_data:no_candles_all_assets"
+    if _i("market_data_assets") == 0 and attempted > 0:
+        return "market_data:no_assets_returned"
+    if _i("strategy_signals") == 0:
+        return "strategy_generation:no_strategy_signals"
+    if _i("normalized") == 0:
+        return "signal_controller:no_normalized_candidates"
+    if _i("consensus") == 0:
+        return "consensus:no_consensus_candidates"
+    if _i("selected") == 0:
+        return "selection:no_selected_candidates"
+    if _i("unique") == 0:
+        return "dedupe:no_unique_candidates"
+    if _i("strict_candidates") == 0:
+        return "candidate_gates:no_strict_candidates"
+    if _i("risk_passed") == 0:
+        return "risk_or_ml:no_risk_passed_candidates"
+    if _i("final_signals") == 0:
+        return "scoring_or_quality:no_final_signals"
+    if _i("stored") == 0:
+        return "storage:no_stored_signals"
+    return "unknown:no_score_recorded"
+
+
 async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     """Auto-quarantine weak live segments using aggregate outcomes only."""
     if not _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
@@ -3739,10 +3774,17 @@ def main_loop(DRY_RUN: bool = False):
                         top_score_raw = max_candidate_score
                     top_score = _diagnostic_score(top_score_raw)
                     max_candidate_score_display = _diagnostic_score(max_candidate_score)
+                    score_absent_reason = (
+                        _infer_max_score_absent_reason(pipeline_stats, market_fetch_error)
+                        if top_score_raw is None
+                        else ""
+                    )
                     if _env_bool("ENGINE_PIPELINE_DEBUG", True):
                         stats_str = " ".join([f"{k}={v}" for k, v in pipeline_stats.items()])
                     else:
                         stats_str = ""
+                    if score_absent_reason:
+                        stats_str = f"{stats_str} max_score_absent_reason={score_absent_reason}".strip()
                     print(
                         f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} "
                         f"max_score={top_score} max_score_pre_threshold={max_candidate_score_display} "
@@ -3760,6 +3802,11 @@ def main_loop(DRY_RUN: bool = False):
                 _cycle_top_raw = max((_signal_display_score(s) for s in scored_signals_all), default=None)
                 if _cycle_top_raw is None:
                     _cycle_top_raw = max_candidate_score
+                _score_absent_reason = (
+                    _infer_max_score_absent_reason(pipeline_stats, market_fetch_error)
+                    if _cycle_top_raw is None
+                    else ""
+                )
                 _cycle_state.update({
                     "status": "completed",
                     "completed_at": datetime.now(timezone.utc).isoformat(),
@@ -3770,6 +3817,7 @@ def main_loop(DRY_RUN: bool = False):
                     "max_score_raw": _cycle_top_raw,
                     "max_score_pre_threshold": _diagnostic_score(max_candidate_score),
                     "max_score_raw_pre_threshold": max_candidate_score,
+                    "max_score_absent_reason": _score_absent_reason,
                     "pipeline_stats": dict(pipeline_stats or {}),
                 })
                 _publish_engine_cycle_state(_cycle_state)

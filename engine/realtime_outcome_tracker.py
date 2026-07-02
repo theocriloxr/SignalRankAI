@@ -874,6 +874,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
         from db.session import get_session
         from db.models import OutcomeNotification, User
         from db.pg_features import (
+            claim_outcome_notification_for_delivery,
             mark_outcome_notification_delivered,
             mark_outcome_notification_failed,
         )
@@ -924,6 +925,10 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         )
                     ).scalar_one_or_none()
                     if user_row is None:
+                        claimed = await claim_outcome_notification_for_delivery(session, int(row.id))
+                        if not claimed:
+                            continue
+                        await session.commit()
                         await mark_outcome_notification_failed(
                             session,
                             int(row.id),
@@ -951,8 +956,18 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         else:
                             can_receive_tp = False
                     if tp_level_num > 0 and not can_receive_tp:
+                        claimed = await claim_outcome_notification_for_delivery(session, int(row.id))
+                        if not claimed:
+                            continue
+                        await session.commit()
                         await mark_outcome_notification_delivered(session, int(row.id))
+                        await session.commit()
                         continue
+
+                    claimed = await claim_outcome_notification_for_delivery(session, int(row.id))
+                    if not claimed:
+                        continue
+                    await session.commit()
 
                     body = _build_outcome_message(
                         signal_id=signal_id,
@@ -971,10 +986,11 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                         parse_mode="HTML",
                     )
                     await mark_outcome_notification_delivered(session, int(row.id))
+                    await session.commit()
                 except Exception as exc:
                     await mark_outcome_notification_failed(session, int(row.id), error=str(exc))
+                    await session.commit()
                     logger.debug("[outcome_tracker] notify user %s error: %s", getattr(row, "telegram_user_id", "?"), exc)
-            await session.commit()
 
     except Exception as exc:
         logger.error("[outcome_tracker] _notify_outcome error: %s", exc)

@@ -1785,6 +1785,43 @@ async def mark_outcome_notification_delivered(
     await session.flush()
 
 
+async def claim_outcome_notification_for_delivery(
+    session: AsyncSession,
+    notification_id: int,
+    *,
+    stale_after_seconds: int = 300,
+) -> bool:
+    """Atomically reserve one pending/failed notification before Telegram I/O."""
+    now = _utcnow()
+    stale_cutoff = now - timedelta(seconds=max(60, int(stale_after_seconds or 300)))
+    stmt = (
+        update(OutcomeNotification)
+        .where(
+            OutcomeNotification.id == int(notification_id),
+            or_(
+                OutcomeNotification.delivery_state.in_(["pending", "failed"]),
+                and_(
+                    OutcomeNotification.delivery_state == "sending",
+                    or_(
+                        OutcomeNotification.last_attempt_at.is_(None),
+                        OutcomeNotification.last_attempt_at <= stale_cutoff,
+                    ),
+                ),
+            ),
+        )
+        .values(
+            delivery_state="sending",
+            last_attempt_at=now,
+            updated_at=now,
+        )
+        .returning(OutcomeNotification.id)
+    )
+    res = await session.execute(stmt)
+    claimed = res.scalar_one_or_none() is not None
+    await session.flush()
+    return bool(claimed)
+
+
 async def mark_outcome_notified(session: AsyncSession, outcome_id: int) -> None:
     """Backward-compatible alias: mark all recipient notifications as delivered."""
     rows = (

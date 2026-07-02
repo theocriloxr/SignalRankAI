@@ -518,6 +518,8 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
                 f"- max score: {cycle.get('max_score', None)}\n"
                 f"- duration ms: {cycle.get('duration_ms', 'n/a')}\n"
             )
+            if cycle.get("max_score_absent_reason"):
+                txt += f"- max score absent: {cycle.get('max_score_absent_reason')}\n"
             if cycle.get("market_fetch_error"):
                 txt += f"- market fetch error: {cycle.get('market_fetch_error')}\n"
         quality = stats.get("signal_quality") or {}
