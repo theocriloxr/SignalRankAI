@@ -19,8 +19,45 @@ def test_optional_provider_outage_can_be_opted_in(monkeypatch):
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "1")
     fetcher._PROVIDER_OUTAGE_ALERTED.clear()
     fetcher._PROVIDER_OUTAGE_LAST_ALERT.clear()
+    fetcher._PROVIDER_OUTAGE_ALERT_STAGE.clear()
+    fetcher._PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
 
     assert fetcher.should_alert_provider_outage("polygon_connector", 30.0) is True
+
+
+def test_provider_outage_alerts_are_staged_and_emit_recovery(monkeypatch):
+    import data.fetcher as fetcher
+
+    monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "1")
+    monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES", "10,30,60")
+    monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES", "60")
+    fetcher._PROVIDER_OUTAGE_ALERTED.clear()
+    fetcher._PROVIDER_OUTAGE_LAST_ALERT.clear()
+    fetcher._PROVIDER_OUTAGE_ALERT_STAGE.clear()
+    fetcher._PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
+
+    assert fetcher.should_alert_provider_outage("polygon_connector", 10.0) is True
+    assert fetcher.provider_outage_alert_label("polygon_connector", 10.0) == "initial"
+    assert fetcher.should_alert_provider_outage("Polygon_Connector", 12.0) is False
+    assert fetcher.should_alert_provider_outage("polygon_connector", 30.0) is True
+    assert fetcher.provider_outage_alert_label("polygon_connector", 30.0) == "30m"
+    assert fetcher.should_alert_provider_outage("polygon_connector", 60.0) is True
+    assert fetcher.provider_outage_alert_label("polygon_connector", 60.0) == "60m+"
+
+    fetcher.mark_provider_result("polygon_connector", True)
+    alerts = fetcher.consume_provider_recovery_alerts()
+
+    assert alerts and alerts[0]["provider"] == "polygon_connector"
+    assert fetcher.consume_provider_recovery_alerts() == []
+
+
+def test_quality_rejection_reasons_map_to_admin_pulse_buckets():
+    import engine.core as core
+
+    assert core._quality_rejection_bucket("quality_ml 0.51 < 0.62") == "ml"
+    assert core._quality_rejection_bucket("quality_confluence 42% < 50%") == "microstructure"
+    assert core._quality_rejection_bucket("quality_adx 14.2 < 22.0") == "regime"
+    assert core._quality_rejection_bucket("quality_score 88.0 < 94.0") == "score"
 
 
 def test_stats_adapter_supports_legacy_property_increment():

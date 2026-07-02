@@ -16,6 +16,48 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _rejection_bucket(reason: str | None, decision: str | None = None) -> str:
+    text = f"{reason or ''} {decision or ''}".lower()
+    if any(token in text for token in ("ml", "gemini", "ai", "model", "probability")):
+        return "ml"
+    if any(token in text for token in ("squeeze",)):
+        return "squeeze"
+    if any(token in text for token in ("confluence", "microstructure", "liquidity", "spread", "volume", "orderflow")):
+        return "microstructure"
+    if any(token in text for token in ("adx", "mtf", "regime", "session", "market_intelligence", "news", "volatility", "market_hours")):
+        return "regime"
+    if any(token in text for token in ("score", "threshold", "quality_score")):
+        return "score"
+    if any(token in text for token in ("risk", "portfolio", "exposure")):
+        return "risk"
+    if any(token in text for token in ("duplicate", "cooldown", "open_limit")):
+        return "dedupe"
+    return "other"
+
+
+def _profile_from_timeframe(timeframe: str | None) -> str:
+    tf = str(timeframe or "").strip().lower()
+    if tf in {"1m", "3m", "5m"}:
+        return "scalp"
+    if tf in {"15m", "30m", "1h"}:
+        return "day"
+    if tf in {"2h", "4h", "6h", "8h", "12h", "1d", "24h"}:
+        return "swing"
+    if tf in {"1w", "weekly", "1mo", "1mth", "monthly"}:
+        return "position"
+    return "unknown"
+
+
+def _top_pairs(rows: list, limit: int = 5) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        try:
+            out.append({"name": str(row[0] or "unknown"), "count": int(row[1] or 0)})
+        except Exception:
+            continue
+    return out
+
+
 async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     """Collect engine health stats for the last `window_hours` hours.
     
@@ -48,6 +90,21 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     except ImportError:
         logger.debug("[admin_pulse] GlobalStats not available, using DB fallback")
     
+    db_reason_rows = []
+    db_top_assets: list[dict[str, Any]] = []
+    db_top_strategies: list[dict[str, Any]] = []
+    db_profile_counts: dict[str, int] = {}
+    db_timeframe_counts: dict[str, int] = {}
+    db_signal_quality: dict[str, float] = {}
+    db_shadow = {
+        "db_total": 0,
+        "db_pending": 0,
+        "db_tracked": 0,
+        "db_false_negative": 0,
+        "db_correct_block": 0,
+        "db_partial_win": 0,
+    }
+
     # Always get DB-based counts for delivered signals and shadow metrics
     try:
         from db.session import get_session
@@ -68,7 +125,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 ).first()
                 db_scanned = int(scanned_row[0] or 0) if scanned_row else 0
 
-                # Rejected by risk / score
+                # Decision counts are useful source evidence, but the admin-facing
+                # rejection breakdown below is bucketed by reason so ML/regime/
+                # microstructure filters do not disappear into "other".
                 rej_rows = (
                     await session.execute(
                         text("SELECT decision, COUNT(*) FROM decision_log WHERE created_at >= :since GROUP BY decision"),
@@ -76,6 +135,18 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     )
                 ).fetchall()
                 db_rejected_by = {str(r[0] or ""): int(r[1] or 0) for r in (rej_rows or [])}
+                reason_rows = (
+                    await session.execute(
+                        text(
+                            "SELECT reason, decision, COUNT(*) FROM decision_log "
+                            "WHERE created_at >= :since "
+                            "AND decision IN ('rejected','skipped','delayed','suppressed') "
+                            "GROUP BY reason, decision ORDER BY COUNT(*) DESC LIMIT 20"
+                        ),
+                        params,
+                    )
+                ).fetchall()
+                db_reason_rows = list(reason_rows or [])
             except Exception as e:
                 # Fallback if created_at column doesn't exist yet
                 if "created_at" in str(e):
@@ -122,6 +193,101 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 db_issued = int(issued_row[0] or 0) if issued_row else 0
             except Exception:
                 db_issued = 0
+
+            try:
+                top_asset_rows = (
+                    await session.execute(
+                        text(
+                            "SELECT asset, COUNT(*) FROM signals WHERE created_at >= :since "
+                            "GROUP BY asset ORDER BY COUNT(*) DESC LIMIT 5"
+                        ),
+                        params,
+                    )
+                ).fetchall()
+                db_top_assets = _top_pairs(list(top_asset_rows or []))
+            except Exception:
+                db_top_assets = []
+
+            try:
+                top_strategy_rows = (
+                    await session.execute(
+                        text(
+                            "SELECT strategy_name, COUNT(*) FROM signals WHERE created_at >= :since "
+                            "GROUP BY strategy_name ORDER BY COUNT(*) DESC LIMIT 5"
+                        ),
+                        params,
+                    )
+                ).fetchall()
+                db_top_strategies = _top_pairs(list(top_strategy_rows or []))
+            except Exception:
+                db_top_strategies = []
+
+            try:
+                tf_rows = (
+                    await session.execute(
+                        text(
+                            "SELECT timeframe, COUNT(*) FROM signals WHERE created_at >= :since "
+                            "GROUP BY timeframe ORDER BY COUNT(*) DESC"
+                        ),
+                        params,
+                    )
+                ).fetchall()
+                for row in list(tf_rows or []):
+                    tf = str(row[0] or "unknown")
+                    count = int(row[1] or 0)
+                    db_timeframe_counts[tf] = count
+                    profile = _profile_from_timeframe(tf)
+                    db_profile_counts[profile] = int(db_profile_counts.get(profile, 0) + count)
+            except Exception:
+                db_timeframe_counts = {}
+                db_profile_counts = {}
+
+            try:
+                quality_row = (
+                    await session.execute(
+                        text(
+                            "SELECT AVG(score), MAX(score), AVG(ml_probability), AVG(rr_estimate) "
+                            "FROM signals WHERE created_at >= :since"
+                        ),
+                        params,
+                    )
+                ).first()
+                if quality_row:
+                    db_signal_quality = {
+                        "avg_score": float(quality_row[0] or 0.0),
+                        "max_score": float(quality_row[1] or 0.0),
+                        "avg_ml_probability": float(quality_row[2] or 0.0),
+                        "avg_rr": float(quality_row[3] or 0.0),
+                    }
+            except Exception:
+                db_signal_quality = {}
+
+            try:
+                shadow_row = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*), "
+                            "SUM(CASE WHEN outcome_tracked_at IS NULL THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN outcome_tracked_at IS NOT NULL THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome = 'false_negative' THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome = 'correct_block' THEN 1 ELSE 0 END), "
+                            "SUM(CASE WHEN actual_outcome = 'partial_win' THEN 1 ELSE 0 END) "
+                            "FROM ml_rejected_signals WHERE created_at >= :since"
+                        ),
+                        params,
+                    )
+                ).first()
+                if shadow_row:
+                    db_shadow = {
+                        "db_total": int(shadow_row[0] or 0),
+                        "db_pending": int(shadow_row[1] or 0),
+                        "db_tracked": int(shadow_row[2] or 0),
+                        "db_false_negative": int(shadow_row[3] or 0),
+                        "db_correct_block": int(shadow_row[4] or 0),
+                        "db_partial_win": int(shadow_row[5] or 0),
+                    }
+            except Exception:
+                pass
     except Exception as db_err:
         logger.debug("[admin_pulse] DB query failed: %s", db_err)
         db_scanned = 0
@@ -139,6 +305,10 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     except Exception:
         total_tracked = false_neg = correct_block = partial_win = 0
 
+    total_tracked = max(int(total_tracked or 0), int(db_shadow.get("db_tracked") or 0))
+    false_neg = max(int(false_neg or 0), int(db_shadow.get("db_false_negative") or 0))
+    correct_block = max(int(correct_block or 0), int(db_shadow.get("db_correct_block") or 0))
+    partial_win = max(int(partial_win or 0), int(db_shadow.get("db_partial_win") or 0))
     shadow_winner_rate = (false_neg / max(1, total_tracked)) * 100.0 if total_tracked > 0 else 0.0
 
     global_total = int(global_scanned or 0) + int(global_delivered or 0) + sum(int(v or 0) for v in (global_vetoed or {}).values())
@@ -146,12 +316,52 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
     db_scanned_evidence = max(int(db_scanned or 0), int(db_issued or 0), int(db_delivered or 0), int(db_rejected_total or 0))
     scanned = max(int(global_scanned or 0), db_scanned_evidence)
     delivered = max(int(global_delivered or 0), int(db_delivered or 0))
-    rejected_by = global_vetoed if (use_global_stats and global_total > 0) else db_rejected_by
+    db_rejection_buckets: dict[str, int] = {}
+    top_rejection_reasons: list[dict[str, Any]] = []
+    for row in list(db_reason_rows or []):
+        try:
+            reason = str(row[0] or "")
+            decision = str(row[1] or "")
+            count = int(row[2] or 0)
+        except Exception:
+            continue
+        bucket = _rejection_bucket(reason, decision)
+        db_rejection_buckets[bucket] = int(db_rejection_buckets.get(bucket, 0) + count)
+        if len(top_rejection_reasons) < 8:
+            top_rejection_reasons.append({
+                "bucket": bucket,
+                "reason": reason or decision or "unknown",
+                "count": count,
+            })
+    if use_global_stats and global_total > 0:
+        rejected_by = dict(global_vetoed or {})
+        for bucket, count in db_rejection_buckets.items():
+            rejected_by[bucket] = max(int(rejected_by.get(bucket, 0) or 0), int(count or 0))
+    else:
+        rejected_by = db_rejection_buckets or db_rejected_by
+
+    try:
+        from data.fetcher import get_provider_health_snapshot
+        provider_snapshot = get_provider_health_snapshot()
+        provider_summary = {
+            "total": len(provider_snapshot),
+            "unhealthy": sum(1 for item in provider_snapshot.values() if not bool((item or {}).get("healthy", True))),
+            "alerted": sum(1 for item in provider_snapshot.values() if bool((item or {}).get("alerted"))),
+        }
+    except Exception:
+        provider_summary = {"total": 0, "unhealthy": 0, "alerted": 0}
 
     return {
         "scanned": scanned,
         "delivered": delivered,
         "rejected_by": rejected_by,
+        "top_rejection_reasons": top_rejection_reasons,
+        "top_assets": db_top_assets,
+        "top_strategies": db_top_strategies,
+        "profile_counts": db_profile_counts,
+        "timeframe_counts": db_timeframe_counts,
+        "signal_quality": db_signal_quality,
+        "providers": provider_summary,
         "sources": {
             "global_stats": bool(use_global_stats),
             "global_total": int(global_total),
@@ -161,6 +371,8 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
         },
         "shadow": {
             "total_tracked": total_tracked,
+            "db_total": int(db_shadow.get("db_total") or 0),
+            "pending": int(db_shadow.get("db_pending") or 0),
             "false_negative": false_neg,
             "correct_block": correct_block,
             "partial_win": partial_win,
@@ -191,14 +403,53 @@ async def send_admin_pulse_via_telegram(window_hours: int = 1) -> bool:
         )
         for k, v in (stats.get("rejected_by") or {}).items():
             txt += f"- {k}: {v}\n"
+        quality = stats.get("signal_quality") or {}
+        if quality:
+            txt += (
+                "\nQuality snapshot:\n"
+                f"- avg score: {float(quality.get('avg_score') or 0.0):.1f}\n"
+                f"- max score: {float(quality.get('max_score') or 0.0):.1f}\n"
+                f"- avg ML: {float(quality.get('avg_ml_probability') or 0.0) * 100.0:.1f}%\n"
+                f"- avg R/R: {float(quality.get('avg_rr') or 0.0):.2f}\n"
+            )
+        profiles = stats.get("profile_counts") or {}
+        if profiles:
+            ordered_profiles = ["scalp", "day", "swing", "position", "unknown"]
+            profile_txt = ", ".join(
+                f"{name}={int(profiles.get(name) or 0)}"
+                for name in ordered_profiles
+                if int(profiles.get(name) or 0) > 0
+            )
+            if profile_txt:
+                txt += f"\nProfiles: {profile_txt}\n"
+        top_assets = stats.get("top_assets") or []
+        if top_assets:
+            txt += "Top assets: " + ", ".join(f"{x.get('name')}({x.get('count')})" for x in top_assets[:5]) + "\n"
+        top_strategies = stats.get("top_strategies") or []
+        if top_strategies:
+            txt += "Top strategies: " + ", ".join(f"{x.get('name')}({x.get('count')})" for x in top_strategies[:5]) + "\n"
+        top_reasons = stats.get("top_rejection_reasons") or []
+        if top_reasons:
+            txt += "\nTop rejection reasons:\n"
+            for item in top_reasons[:5]:
+                txt += f"- {item.get('bucket')}: {item.get('reason')} ({item.get('count')})\n"
         sh = stats.get("shadow") or {}
         txt += (
             f"\nShadow (tracked rejects): {sh.get('total_tracked', 0)}\n"
+            f"Shadow Pending: {sh.get('pending', 0)} / DB total {sh.get('db_total', 0)}\n"
             f"False Negatives (would have hit TP3): {sh.get('false_negative', 0)}\n"
             f"Correct Blocks (would have hit SL): {sh.get('correct_block', 0)}\n"
             f"Partial Wins: {sh.get('partial_win', 0)}\n"
             f"Shadow Winner Rate: {sh.get('shadow_winner_rate_pct', 0.0):.1f}%\n"
         )
+        providers = stats.get("providers") or {}
+        if providers:
+            txt += (
+                "\nProviders: "
+                f"total={int(providers.get('total') or 0)}, "
+                f"unhealthy={int(providers.get('unhealthy') or 0)}, "
+                f"alerted={int(providers.get('alerted') or 0)}\n"
+            )
         src = stats.get("sources") or {}
         if int(src.get("global_total") or 0) == 0 and int(src.get("db_decisions") or 0) == 0 and int(src.get("db_signals") or 0) == 0:
             txt += "\nNote: no engine/DB activity was observed in this window yet; this may be a cold-start pulse.\n"

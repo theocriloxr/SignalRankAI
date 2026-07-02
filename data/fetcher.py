@@ -44,19 +44,31 @@ _CANDLE_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 # Outage tracking for automated alerts
 _PROVIDER_OUTAGE_ALERTED: dict[str, bool] = {}
 _PROVIDER_OUTAGE_LAST_ALERT: dict[str, float] = {}
+_PROVIDER_OUTAGE_ALERT_STAGE: dict[str, float] = {}
+_PROVIDER_OUTAGE_RECOVERY_ALERTS: dict[str, dict] = {}
 _PROVIDER_OUTAGE_MINUTES = 10  # Default alert threshold (minutes)
-_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 360  # Default alert interval (minutes)
+_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 60  # Default repeat interval after final stage
+
+
+def _provider_key(provider_name: str) -> str:
+    return str(provider_name or "").strip().lower()
 
 def mark_provider_result(provider_name, ok):
     now = time.time()
+    provider_key = _provider_key(provider_name)
     with _PROVIDER_HEALTH_LOCK:
         entry = _PROVIDER_HEALTH.setdefault(provider_name, {"failures": [], "last_success": 0})
         if ok:
             entry["last_success"] = now
             entry["failures"] = []
-            # Reset outage alert state
-            _PROVIDER_OUTAGE_ALERTED[provider_name] = False
-            _PROVIDER_OUTAGE_LAST_ALERT.pop(provider_name, None)
+            if _PROVIDER_OUTAGE_ALERTED.get(provider_key) or provider_key in _PROVIDER_OUTAGE_ALERT_STAGE:
+                _PROVIDER_OUTAGE_RECOVERY_ALERTS[provider_key] = {
+                    "provider": str(provider_name or provider_key),
+                    "recovered_at": now,
+                }
+            _PROVIDER_OUTAGE_ALERTED[provider_key] = False
+            _PROVIDER_OUTAGE_LAST_ALERT.pop(provider_key, None)
+            _PROVIDER_OUTAGE_ALERT_STAGE.pop(provider_key, None)
         else:
             entry["failures"].append(now)
             # Keep only recent failures
@@ -141,6 +153,21 @@ def _outage_alert_interval_minutes() -> float:
         return float(_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES)
 
 
+def _outage_alert_schedule_minutes() -> list[float]:
+    raw = os.getenv("PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES", "10,30,60")
+    stages: list[float] = []
+    for part in str(raw or "").split(","):
+        try:
+            value = float(str(part or "").strip())
+        except Exception:
+            continue
+        if value > 0:
+            stages.append(value)
+    threshold = _outage_threshold_minutes()
+    stages.append(float(threshold))
+    return sorted({float(stage) for stage in stages if float(stage) >= float(threshold)})
+
+
 def _optional_outage_providers() -> set[str]:
     raw = os.getenv(
         "PROVIDER_OUTAGE_OPTIONAL_PROVIDERS",
@@ -154,21 +181,43 @@ def _alert_optional_provider_outages() -> bool:
 
 
 def should_alert_provider_outage(provider_name: str, minutes_down: float) -> bool:
-    provider_key = str(provider_name or "").strip().lower()
+    provider_key = _provider_key(provider_name)
     if provider_key in _optional_outage_providers() and not _alert_optional_provider_outages():
         return False
     min_minutes = _outage_threshold_minutes()
     if minutes_down < float(min_minutes):
         return False
     now = time.time()
-    last_alert = _PROVIDER_OUTAGE_LAST_ALERT.get(provider_name)
+    schedule = _outage_alert_schedule_minutes()
+    current_stage = max((stage for stage in schedule if float(minutes_down) >= stage), default=float(min_minutes))
+    previous_stage = float(_PROVIDER_OUTAGE_ALERT_STAGE.get(provider_key) or 0.0)
+    last_alert = _PROVIDER_OUTAGE_LAST_ALERT.get(provider_key)
     interval_s = max(60.0, _outage_alert_interval_minutes() * 60.0)
-    if _PROVIDER_OUTAGE_ALERTED.get(provider_name) and last_alert is not None:
-        if (now - last_alert) < interval_s:
+    if _PROVIDER_OUTAGE_ALERTED.get(provider_key) and last_alert is not None:
+        if current_stage <= previous_stage and (now - last_alert) < interval_s:
             return False
-    _PROVIDER_OUTAGE_ALERTED[provider_name] = True
-    _PROVIDER_OUTAGE_LAST_ALERT[provider_name] = now
+    _PROVIDER_OUTAGE_ALERTED[provider_key] = True
+    _PROVIDER_OUTAGE_ALERT_STAGE[provider_key] = current_stage
+    _PROVIDER_OUTAGE_LAST_ALERT[provider_key] = now
     return True
+
+
+def provider_outage_alert_label(provider_name: str, minutes_down: float) -> str:
+    schedule = _outage_alert_schedule_minutes()
+    if not schedule:
+        return "initial"
+    current_stage = max((stage for stage in schedule if float(minutes_down) >= stage), default=schedule[0])
+    if current_stage <= schedule[0]:
+        return "initial"
+    suffix = "+" if current_stage >= max(schedule) else ""
+    return f"{current_stage:g}m{suffix}"
+
+
+def consume_provider_recovery_alerts() -> list[dict]:
+    with _PROVIDER_HEALTH_LOCK:
+        alerts = list(_PROVIDER_OUTAGE_RECOVERY_ALERTS.values())
+        _PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
+    return alerts
 
 
 def get_unhealthy_providers(min_minutes=None):
@@ -186,6 +235,27 @@ def get_unhealthy_providers(min_minutes=None):
                 if down_for >= min_minutes:
                     unhealthy.append((name, down_for))
     return unhealthy
+
+
+def get_provider_health_snapshot() -> dict[str, dict]:
+    now = time.time()
+    with _PROVIDER_HEALTH_LOCK:
+        snapshot: dict[str, dict] = {}
+        for name, entry in _PROVIDER_HEALTH.items():
+            failures = list(entry.get("failures") or [])
+            last_success = float(entry.get("last_success") or 0.0)
+            healthy = True
+            if len(failures) >= _PROVIDER_FAIL_THRESHOLD:
+                if failures and now - failures[-1] < _PROVIDER_FAIL_WINDOW and (now - last_success > _PROVIDER_FAIL_WINDOW):
+                    healthy = False
+            snapshot[str(name)] = {
+                "healthy": bool(healthy),
+                "recent_failures": len(failures),
+                "last_success_age_minutes": ((now - last_success) / 60.0) if last_success else None,
+                "alerted": bool(_PROVIDER_OUTAGE_ALERTED.get(_provider_key(name))),
+                "alert_stage_minutes": _PROVIDER_OUTAGE_ALERT_STAGE.get(_provider_key(name)),
+            }
+        return snapshot
 import random
 import math
 def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60, jitter=0.2):

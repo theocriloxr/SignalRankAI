@@ -968,6 +968,42 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     return True, ""
 
 
+def _quality_rejection_bucket(reason: str | None) -> str:
+    """Map quality-gate reasons to the admin pulse rejection buckets."""
+    text = str(reason or "").lower()
+    if any(token in text for token in ("ml", "gemini", "ai", "model", "probability")):
+        return "ml"
+    if any(token in text for token in ("confluence", "microstructure", "liquidity", "spread", "volume", "orderflow")):
+        return "microstructure"
+    if any(token in text for token in ("adx", "mtf", "regime", "session", "market_intelligence", "news", "volatility")):
+        return "regime"
+    if any(token in text for token in ("score", "threshold")):
+        return "score"
+    if "squeeze" in text:
+        return "squeeze"
+    return "other"
+
+
+def _increment_quality_rejection_stat(reason: str | None, amount: int = 1) -> str:
+    bucket = _quality_rejection_bucket(reason)
+    try:
+        if bucket == "ml":
+            stats.vetoed_ml += amount
+        elif bucket == "microstructure":
+            stats.vetoed_microstructure += amount
+        elif bucket == "regime":
+            stats.vetoed_regime += amount
+        elif bucket == "score":
+            stats.vetoed_score += amount
+        elif bucket == "squeeze":
+            stats.vetoed_squeeze += amount
+        else:
+            stats.vetoed_other += amount
+    except Exception:
+        pass
+    return bucket
+
+
 async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     """Auto-quarantine weak live segments using aggregate outcomes only."""
     if not _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
@@ -1114,16 +1150,30 @@ def start_outage_alert_job():
             try:
                 unhealthy = []
                 try:
-                    from data.fetcher import get_unhealthy_providers
+                    from data.fetcher import consume_provider_recovery_alerts, get_unhealthy_providers
                     unhealthy = get_unhealthy_providers()
+                    if bot_token:
+                        for recovery in consume_provider_recovery_alerts():
+                            provider_name = str((recovery or {}).get("provider") or "provider")
+                            msg = f"✅ Provider recovered: {provider_name} is healthy again."
+                            for admin_id in (OWNER_IDS or []):
+                                try:
+                                    _requests.post(
+                                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                                        json={"chat_id": admin_id, "text": msg},
+                                        timeout=10,
+                                    )
+                                except Exception:
+                                    logger.exception("Failed to send provider recovery message")
                 except Exception:
                     unhealthy = []
                 if unhealthy and bot_token:
-                    from data.fetcher import should_alert_provider_outage
+                    from data.fetcher import provider_outage_alert_label, should_alert_provider_outage
                     for name, mins in unhealthy:
                         if not should_alert_provider_outage(name, mins):
                             continue
-                        msg = f"🚨 Provider outage: {name} has been down for {mins:.1f} minutes."
+                        stage = provider_outage_alert_label(name, mins)
+                        msg = f"🚨 Provider outage ({stage}): {name} has been down for {mins:.1f} minutes."
                         for admin_id in (OWNER_IDS or []):
                             try:
                                 _requests.post(
@@ -2609,15 +2659,17 @@ def main_loop(DRY_RUN: bool = False):
                                         market_data=market_data if isinstance(market_data, dict) else {},
                                         candles=candles if isinstance(candles, list) else [],
                                     )
-                                    if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
-                                        sig['rejection_reason'] = 'market_intelligence_block'
-                                        pipeline_stats["quality_rejected"] += 1
-                                        _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
-                                        _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
-                                            "asset_health_score": sig.get("asset_health_score"),
-                                            "market_session": sig.get("market_session"),
-                                        })
-                                        continue
+                            if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
+                                sig['rejection_reason'] = 'market_intelligence_block'
+                                pipeline_stats["quality_rejected"] += 1
+                                _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
+                                _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                    "asset_health_score": sig.get("asset_health_score"),
+                                    "market_session": sig.get("market_session"),
+                                    "rejection_bucket": _rejection_bucket,
+                                })
+                                continue
                             except Exception as _intel_err:
                                 logger.debug(f"[engine] signal intelligence enrichment failed: {_intel_err}")
 
@@ -2650,13 +2702,14 @@ def main_loop(DRY_RUN: bool = False):
                                 pipeline_stats[f"quality_rejected_{_quality_cls}"] = int(
                                     pipeline_stats.get(f"quality_rejected_{_quality_cls}", 0) or 0
                                 ) + 1
-                                stats.vetoed_other += 1
+                                _rejection_bucket = _increment_quality_rejection_stat(quality_reason)
                                 _record_gate_failure(asset, "quality", quality_reason)
                                 _log_decision("skipped", sig, reason=quality_reason, meta={
                                     "score": _signal_display_score(sig),
                                     "rr": _signal_roi_score(sig),
                                     "ml_probability": sig.get("ml_probability"),
                                     "asset_class": _asset_class_key(str(sig.get("asset") or asset)),
+                                    "rejection_bucket": _rejection_bucket,
                                 })
                                 continue
 
@@ -2763,8 +2816,12 @@ def main_loop(DRY_RUN: bool = False):
                                 sig['gemini_review_reason'] = gemini_reason
                                 if not gemini_ok:
                                     sig['rejection_reason'] = f"gemini:{gemini_reason}"
+                                    _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
                                     _record_gate_failure(asset, "gemini", sig['rejection_reason'])
-                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"gemini_score": gemini_score})
+                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                        "gemini_score": gemini_score,
+                                        "rejection_bucket": _rejection_bucket,
+                                    })
                                     try:
                                         run_sync(
                                             _ml_rejection_tracker.persist_rejection(
