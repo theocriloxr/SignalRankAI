@@ -8,9 +8,6 @@ _PROVIDER_HEALTH_LOCK = threading.Lock()
 _PROVIDER_FAIL_WINDOW = 600  # seconds to deprioritize after repeated failures
 _PROVIDER_FAIL_THRESHOLD = 3
 
-from typing import Optional
-
-
 # ============================================================================
 # MACRO DATA CACHING - Fix for HTTP 429 rate limit errors
 # Macro indicators (US10Y, VIX, DXY) don't change by the minute
@@ -43,7 +40,6 @@ def _set_cached_macro_value(symbol: str, value: float, source: str = "cached") -
 _CANDLE_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
 _CANDLE_CACHE_LOCK = threading.Lock()
 _CANDLE_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
-_NO_CANDLE_LOG_LAST: dict[tuple[str, str, str], float] = {}
 
 # Outage tracking for automated alerts
 _PROVIDER_OUTAGE_ALERTED: dict[str, bool] = {}
@@ -51,7 +47,8 @@ _PROVIDER_OUTAGE_LAST_ALERT: dict[str, float] = {}
 _PROVIDER_OUTAGE_ALERT_STAGE: dict[str, float] = {}
 _PROVIDER_OUTAGE_RECOVERY_ALERTS: dict[str, dict] = {}
 _PROVIDER_OUTAGE_MINUTES = 10  # Default alert threshold (minutes)
-_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 60  # Repeat interval after the final outage stage
+_PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 60  # Default repeat interval after final stage
+
 
 def _provider_key(provider_name: str) -> str:
     return str(provider_name or "").strip().lower()
@@ -134,49 +131,11 @@ def _write_cached_candles(key: tuple[str, str], candles: list) -> None:
         pass
 
 
-def _should_log_no_candles(provider: str, asset: str, timeframe: str) -> bool:
-    try:
-        cooldown = float(os.getenv("NO_CANDLE_LOG_COOLDOWN_SECONDS", "900") or 900)
-    except Exception:
-        cooldown = 900.0
-    key = (
-        str(provider or "provider").lower().strip(),
-        str(asset or "").upper().strip(),
-        str(timeframe or "").lower().strip(),
-    )
-    now = time.time()
-    last = float(_NO_CANDLE_LOG_LAST.get(key) or 0.0)
-    if now - last < max(60.0, cooldown):
-        return False
-    _NO_CANDLE_LOG_LAST[key] = now
-    return True
-
-
 def _get_forward_fill_ttl_seconds() -> float:
-    """Get forward-fill TTL for cached candles.
-    
-    FIX: Increased default from 300s to 1800s (30 min) to handle provider outages.
-    This allows the engine to use stale cached data when providers are down,
-    preventing the pipeline from starving entirely.
-    """
     try:
-        return float((os.getenv("CANDLE_FORWARD_FILL_TTL_SECONDS") or "1800").strip())
+        return float((os.getenv("CANDLE_FORWARD_FILL_TTL_SECONDS") or "300").strip())
     except Exception:
-        return 1800.0
-
-
-def _get_degraded_mode_min_candles() -> int:
-    """Get minimum candles for degraded mode.
-    
-    FIX: Allow 10 candles minimum (vs 20) when in degraded operation.
-    This prevents complete pipeline starvation during provider outages.
-    Lowered from 20 to 10 on 2026-06-13 to fix signal starvation.
-    Also lowered in market_data.py MARKET_CACHE_MIN_CANDLES to match.
-    """
-    try:
-        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "10").strip())
-    except Exception:
-        return 10
+        return 300.0
 
 
 # Return list of (provider_name, minutes_down) for providers down > threshold
@@ -209,8 +168,22 @@ def _outage_alert_schedule_minutes() -> list[float]:
     return sorted({float(stage) for stage in stages if float(stage) >= float(threshold)})
 
 
+def _optional_outage_providers() -> set[str]:
+    raw = os.getenv(
+        "PROVIDER_OUTAGE_OPTIONAL_PROVIDERS",
+        "polygon_connector,polygon_legacy,alphavantage_connector,alphavantage_legacy,tradingview_connector,tradingview_legacy",
+    )
+    return {str(item or "").strip().lower() for item in str(raw or "").split(",") if str(item or "").strip()}
+
+
+def _alert_optional_provider_outages() -> bool:
+    return str(os.getenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "0") or "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def should_alert_provider_outage(provider_name: str, minutes_down: float) -> bool:
     provider_key = _provider_key(provider_name)
+    if provider_key in _optional_outage_providers() and not _alert_optional_provider_outages():
+        return False
     min_minutes = _outage_threshold_minutes()
     if minutes_down < float(min_minutes):
         return False
@@ -247,6 +220,23 @@ def consume_provider_recovery_alerts() -> list[dict]:
     return alerts
 
 
+def get_unhealthy_providers(min_minutes=None):
+    now = time.time()
+    min_minutes = min_minutes or _outage_threshold_minutes()
+    unhealthy = []
+    with _PROVIDER_HEALTH_LOCK:
+        for name, entry in _PROVIDER_HEALTH.items():
+            if len(entry["failures"]) >= _PROVIDER_FAIL_THRESHOLD:
+                last_success = entry["last_success"]
+                if last_success == 0:
+                    # Provider was never successfully polled in this process; skip
+                    continue
+                down_for = (now - last_success) / 60.0
+                if down_for >= min_minutes:
+                    unhealthy.append((name, down_for))
+    return unhealthy
+
+
 def get_provider_health_snapshot() -> dict[str, dict]:
     now = time.time()
     with _PROVIDER_HEALTH_LOCK:
@@ -266,23 +256,6 @@ def get_provider_health_snapshot() -> dict[str, dict]:
                 "alert_stage_minutes": _PROVIDER_OUTAGE_ALERT_STAGE.get(_provider_key(name)),
             }
         return snapshot
-
-
-def get_unhealthy_providers(min_minutes=None):
-    now = time.time()
-    min_minutes = min_minutes or _outage_threshold_minutes()
-    unhealthy = []
-    with _PROVIDER_HEALTH_LOCK:
-        for name, entry in _PROVIDER_HEALTH.items():
-            if len(entry["failures"]) >= _PROVIDER_FAIL_THRESHOLD:
-                last_success = entry["last_success"]
-                if last_success == 0:
-                    # Provider was never successfully polled in this process; skip
-                    continue
-                down_for = (now - last_success) / 60.0
-                if down_for >= min_minutes:
-                    unhealthy.append((name, down_for))
-    return unhealthy
 import random
 import math
 def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60, jitter=0.2):
@@ -301,31 +274,27 @@ def retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=6
 import os
 import time
 import logging
-import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 import asyncio
 from core.circuit_breaker import provider_breaker
 
-# FIX: Add provider error tracking for better diagnostics
-_PROVIDER_ERRORS: dict[tuple[str, str], list[str]] = {}  # (asset, tf) -> [error messages]
+MARKET_DATA_CONTRACT = "real chart candles; no demo/synthetic generation"
+_PROVIDER_ERRORS: dict[tuple[str, str], list[str]] = {}
 
 
 def _track_provider_error(asset: str, tf: str, error_msg: str) -> None:
-    """Track provider errors for diagnostics."""
-    key = (str(asset).upper().strip(), str(tf).lower().strip())
-    if key not in _PROVIDER_ERRORS:
-        _PROVIDER_ERRORS[key] = []
-    _PROVIDER_ERRORS[key].append(error_msg)
-    # Keep only last 5 errors
+    """Track provider errors for per-asset diagnostics."""
+    key = (str(asset or "").upper().strip(), str(tf or "").lower().strip())
+    _PROVIDER_ERRORS.setdefault(key, []).append(str(error_msg or "")[:500])
     _PROVIDER_ERRORS[key] = _PROVIDER_ERRORS[key][-5:]
 
 
 def _get_provider_errors(asset: str, tf: str) -> list[str]:
-    """Get tracked errors for asset/timeframe."""
-    key = (str(asset).upper().strip(), str(tf).lower().strip())
-    return _PROVIDER_ERRORS.get(key, [])
+    """Return recently tracked provider errors for an asset/timeframe."""
+    key = (str(asset or "").upper().strip(), str(tf or "").lower().strip())
+    return list(_PROVIDER_ERRORS.get(key, []))
 
 # Import market hours module for holiday checks
 try:
@@ -368,6 +337,160 @@ _ALPHA_LAST_CALL_TS = 0.0
 _ALPHA_COOLDOWN_UNTIL = 0.0
 _BINANCE_BLOCKED_REASON: str | None = None
 _LAST_PROVIDER_USED: dict[tuple[str, str], str] = {}
+
+_QUALITY_METRICS = {
+    "short_history": 0,
+    "nan_ratio": 0,
+    "stale_data": 0,
+    "empty": 0,
+    "total_checked": 0,
+}
+
+_STALENESS_THRESHOLDS = {
+    "5m": 20 * 60,
+    "15m": 45 * 60,
+    "1h": 3 * 3600,
+    "4h": 12 * 3600,
+    "1d": 2 * 86400,
+}
+
+_MIN_CANDLES_NORMAL = 150
+_MIN_EMERGENCY_BARS = 50
+
+
+def _get_degraded_mode_min_candles() -> int:
+    """Minimum candles accepted when the system is operating in degraded mode."""
+    try:
+        return int((os.getenv("DEGRADED_MODE_MIN_CANDLES") or "10").strip())
+    except Exception:
+        return 10
+
+
+def reset_quality_metrics() -> None:
+    """Reset market-data quality counters for a new engine cycle."""
+    global _QUALITY_METRICS
+    _QUALITY_METRICS = {key: 0 for key in _QUALITY_METRICS}
+
+
+def get_quality_metrics() -> dict:
+    """Return a snapshot of market-data quality counters."""
+    return dict(_QUALITY_METRICS)
+
+
+def _calculate_quality_score(candles: list, nan_ratio: float, stale_minutes: float, asset_type: str) -> int:
+    """Calculate an overall data-quality score from 0 to 100."""
+    candle_count = len(candles or [])
+    score = 0
+    if candle_count >= 200:
+        score += 40
+    elif candle_count >= 150:
+        score += 35
+    elif candle_count >= 100:
+        score += 25
+    elif candle_count >= 50:
+        score += 10
+
+    if nan_ratio <= 0.01:
+        score += 30
+    elif nan_ratio <= 0.03:
+        score += 25
+    elif nan_ratio <= 0.05:
+        score += 20
+    elif nan_ratio <= 0.10:
+        score += 10
+
+    asset_type = str(asset_type or "crypto").lower()
+    if asset_type == "crypto":
+        score += 30
+    elif asset_type == "stock":
+        if stale_minutes <= 5:
+            score += 30
+        elif stale_minutes <= 60:
+            score += 20
+        elif stale_minutes <= 360:
+            score += 10
+    else:
+        if stale_minutes <= 30:
+            score += 30
+        elif stale_minutes <= 120:
+            score += 20
+        elif stale_minutes <= 360:
+            score += 10
+    return min(100, int(score))
+
+
+def _validate_data_quality(
+    candles: list,
+    max_nan_ratio: float = 0.05,
+    asset_type: str = "crypto",
+    timeframe: str = "1h",
+    latest_candle_timestamp: float | None = None,
+) -> tuple[bool, str, dict]:
+    """Validate candle history before it is passed into strategies."""
+    report = {
+        "asset_type": asset_type,
+        "timeframe": timeframe,
+        "candles": 0,
+        "nan_ratio": 0.0,
+        "stale_minutes": 0.0,
+        "quality_score": 0,
+        "tier": "PREMIUM",
+    }
+    if not candles or not isinstance(candles, list):
+        _QUALITY_METRICS["empty"] += 1
+        return False, "empty_dataframe", report
+
+    candle_count = len(candles)
+    report["candles"] = candle_count
+    if candle_count < _MIN_EMERGENCY_BARS:
+        _QUALITY_METRICS["short_history"] += 1
+        report["tier"] = "BASIC"
+        return False, f"insufficient_candles_{candle_count}_need_{_MIN_EMERGENCY_BARS}_emergency", report
+    if candle_count < _MIN_CANDLES_NORMAL:
+        report["tier"] = "STANDARD"
+
+    close_values: list[float] = []
+    for candle in candles:
+        if not isinstance(candle, dict):
+            continue
+        try:
+            close_values.append(float(candle.get("close", 0) or 0))
+        except Exception:
+            close_values.append(float("nan"))
+    if not close_values:
+        _QUALITY_METRICS["nan_ratio"] += 1
+        return False, "no_close_prices", report
+
+    nan_count = sum(1 for value in close_values if value == 0 or math.isnan(value))
+    nan_ratio = nan_count / len(close_values)
+    report["nan_ratio"] = nan_ratio
+    if nan_ratio > max_nan_ratio:
+        _QUALITY_METRICS["nan_ratio"] += 1
+        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}", report
+
+    stale_minutes = 0.0
+    if latest_candle_timestamp:
+        age_seconds = max(0.0, time.time() - float(latest_candle_timestamp))
+        stale_minutes = age_seconds / 60.0
+        report["stale_minutes"] = stale_minutes
+        max_stale = _STALENESS_THRESHOLDS.get(str(timeframe).lower(), 3600)
+        if str(asset_type).lower() == "crypto":
+            max_stale *= 2
+        elif str(asset_type).lower() == "stock":
+            now_utc = datetime.now(timezone.utc)
+            if not (now_utc.weekday() < 5 and 14 <= now_utc.hour < 21):
+                max_stale *= 3
+        if age_seconds > max_stale:
+            _QUALITY_METRICS["stale_data"] += 1
+            return False, f"stale_data_{stale_minutes:.0f}min_max_{max_stale/60:.0f}min", report
+
+    report["quality_score"] = _calculate_quality_score(candles, nan_ratio, stale_minutes, asset_type)
+    if report["quality_score"] < 50:
+        report["tier"] = "BASIC"
+    elif report["quality_score"] < 75:
+        report["tier"] = "STANDARD"
+    _QUALITY_METRICS["total_checked"] += 1
+    return True, "", report
 
 
 def is_binance_blocked() -> bool:
@@ -413,208 +536,6 @@ def _get_last_provider_used(asset: str, timeframe: str) -> str | None:
     except Exception:
         return None
 
-# ============================================================================
-# DATA QUALITY GATE - Telemetry and Strategy-Aware Validation
-# ============================================================================
-
-# Quality metrics for cycle summaries
-_QUALITY_METRICS = {
-    "short_history": 0,
-    "nan_ratio": 0,
-    "stale_data": 0,
-    "empty": 0,
-    "total_checked": 0,
-}
-
-# Maximum staleness by timeframe (in seconds)
-_STALENESS_THRESHOLDS = {
-    "5m": 20 * 60,      # 20 minutes
-    "15m": 45 * 60,      # 45 minutes
-    "1h": 3 * 3600,     # 3 hours
-    "4h": 12 * 3600,    # 12 hours
-    "1d": 2 * 86400,    # 2 days
-}
-
-# Minimum candles by strategy requirement
-# Strategy can override with strategy.required_history()
-_MIN_CANDLES_NORMAL = 150   # For EMA200, ATR, ADX
-_MIN_EMERGENCY_BARS = 50    # Absolute minimum - marks signals as BASIC tier only
-
-
-def reset_quality_metrics() -> None:
-    """Reset quality metrics for new cycle."""
-    global _QUALITY_METRICS
-    _QUALITY_METRICS = {k: 0 for k in _QUALITY_METRICS}
-    _QUALITY_METRICS["total_checked"] = 0
-
-
-def get_quality_metrics() -> dict:
-    """Get current quality metrics for logging."""
-    return dict(_QUALITY_METRICS)
-
-
-def _calculate_quality_score(candles: list, nan_ratio: float, stale_minutes: float, asset_type: str) -> int:
-    """Calculate overall quality score 0-100.
-    
-    Factors:
-    - Candle count (up to 40 points)
-    - NaN ratio (up to 30 points)
-    - Freshness (up to 30 points)
-    """
-    score = 0
-    
-    # Candle count scoring (40 points max)
-    candle_count = len(candles) if candles else 0
-    if candle_count >= 200:
-        score += 40
-    elif candle_count >= 150:
-        score += 35
-    elif candle_count >= 100:
-        score += 25
-    elif candle_count >= 50:
-        score += 10
-    
-    # NaN ratio scoring (30 points max)
-    if nan_ratio <= 0.01:
-        score += 30
-    elif nan_ratio <= 0.03:
-        score += 25
-    elif nan_ratio <= 0.05:
-        score += 20
-    elif nan_ratio <= 0.10:
-        score += 10
-    
-    # Freshness scoring (30 points max) - asset-type aware
-    if asset_type == "crypto":
-        # Crypto: always fresh
-        score += 30
-    elif asset_type == "stock":
-        # Stocks: allow staleness during market hours
-        if stale_minutes <= 5:
-            score += 30
-        elif stale_minutes <= 60:
-            score += 20
-        elif stale_minutes <= 360:  # 6 hours - allow after-market
-            score += 10
-    else:
-        # FX, Commodities - allow some staleness
-        if stale_minutes <= 30:
-            score += 30
-        elif stale_minutes <= 120:
-            score += 20
-        elif stale_minutes <= 360:
-            score += 10
-    
-    return min(100, score)
-
-
-def _validate_data_quality(
-    candles: list, 
-    max_nan_ratio: float = 0.05,
-    asset_type: str = "crypto",
-    timeframe: str = "1h",
-    latest_candle_timestamp: Optional[float] = None
-) -> tuple[bool, str, dict]:
-    """Validate data quality before passing to strategies.
-    
-    Returns:
-        tuple of (is_valid, reason_if_invalid, quality_report)
-    
-    Quality gates:
-    - Minimum candles: 150 (normal) or 50 (emergency)
-    - Max 5% NaN values in close column
-    - Max staleness by asset type and timeframe
-    """
-    global _QUALITY_METRICS
-    
-    quality_report = {
-        "asset_type": asset_type,
-        "timeframe": timeframe,
-        "candles": 0,
-        "nan_ratio": 0.0,
-        "stale_minutes": 0.0,
-        "quality_score": 0,
-        "tier": "PREMIUM",
-    }
-    
-    if not candles or not isinstance(candles, list):
-        _QUALITY_METRICS["empty"] += 1
-        return False, "empty_dataframe", quality_report
-    
-    candle_count = len(candles)
-    quality_report["candles"] = candle_count
-    
-    # Check minimum candles - use strategy-aware requirement
-    # Scalping: 50+, Swing: 150+, Trend: 200+
-    if candle_count < _MIN_EMERGENCY_BARS:
-        _QUALITY_METRICS["short_history"] += 1
-        quality_report["tier"] = "BASIC"
-        return False, f"insufficient_candles_{candle_count}_need_{_MIN_EMERGENCY_BARS}_emergency", quality_report
-    
-    # For premium quality, require more candles
-    if candle_count < _MIN_CANDLES_NORMAL:
-        # Still acceptable but marks as potentially limited
-        quality_report["tier"] = "STANDARD"
-    
-    # Check NaN ratio in close column
-    close_values = [float(c.get("close", 0) or 0) for c in candles if isinstance(c, dict)]
-    if not close_values:
-        _QUALITY_METRICS["nan_ratio"] += 1
-        return False, "no_close_prices", quality_report
-    
-    nan_count = sum(1 for v in close_values if v is None or v == 0 or (isinstance(v, float) and math.isnan(v)))
-    nan_ratio = nan_count / len(close_values) if close_values else 1.0
-    quality_report["nan_ratio"] = nan_ratio
-    
-    if nan_ratio > max_nan_ratio:
-        _QUALITY_METRICS["nan_ratio"] += 1
-        return False, f"high_nan_ratio_{nan_ratio:.1%}_max_{max_nan_ratio:.1%}", quality_report
-    
-    # Check staleness if timestamp provided
-    stale_minutes = 0.0
-    if latest_candle_timestamp:
-        current_time = time.time()
-        age_seconds = current_time - latest_candle_timestamp
-        stale_minutes = age_seconds / 60.0
-        quality_report["stale_minutes"] = stale_minutes
-        
-        # Get threshold for this timeframe
-        max_stale = _STALENESS_THRESHOLDS.get(timeframe, 3600)
-        
-        # Adjust based on asset class
-        if asset_type == "crypto":
-            # Crypto is 24/7 - very lenient
-            max_stale = max_stale * 2
-        elif asset_type == "stock":
-            # Stocks: apply strict during market, lenient after hours
-            from datetime import datetime
-            now_utc = datetime.utcnow()
-            wd = now_utc.weekday()
-            hr = now_utc.hour
-            # Outside market hours (9:30-16:00 ET = 14:30-21:00 UTC)
-            is_market_hours = wd < 5 and 14 <= hr < 21
-            if not is_market_hours:
-                max_stale = max_stale * 3  # More lenient after hours
-        
-        if stale_minutes * 60 > max_stale:
-            _QUALITY_METRICS["stale_data"] += 1
-            return False, f"stale_data_{stale_minutes:.0f}min_max_{max_stale/60:.0f}min", quality_report
-    
-    # Calculate quality score
-    quality_report["quality_score"] = _calculate_quality_score(
-        candles, nan_ratio, stale_minutes, asset_type
-    )
-    
-    # Downgrade tier if quality is low
-    if quality_report["quality_score"] < 50:
-        quality_report["tier"] = "BASIC"
-    elif quality_report["quality_score"] < 75:
-        quality_report["tier"] = "STANDARD"
-    
-    _QUALITY_METRICS["total_checked"] += 1
-    return True, "", quality_report
-
-
 def fetch_market_data(asset, timeframes):
     """Fetch live market data with validation and freshness checks."""
     data = {}
@@ -623,37 +544,14 @@ def fetch_market_data(asset, timeframes):
         _tf_norm = str(tf or "").lower().strip()
         try:
             candles = get_candles(asset, tf)
-            
-            # CRITICAL: Data quality gate - DON'T skip this!
-            # This is why strategy_signals=0 - data appears available but is poor quality
-            _is_valid, _quality_reason = _validate_data_quality(candles)
-            if not _is_valid:
-                logger.warning(
-                    f"[fetcher][QUALITY GATE] REJECTED {asset} {tf}: {_quality_reason}. "
-                    f"This is WHY strategy_signals=0 despite asset being scanned."
-                )
-                continue
-            
             # Validate candles: must be non-empty and have required fields
-            # FIX: Accept degraded mode (10 candles minimum) to prevent data starvation
-            # Previously required 20, but this causes starvation when providers fail
-            _min_candles_for_engine = _get_degraded_mode_min_candles()  # Returns 10 by default
-            if not candles or not isinstance(candles, list) or len(candles) < _min_candles_for_engine:
-                # FIX: Log diagnostic for degraded mode
-                logger.warning(
-                    f"[fetcher] Insufficient candles for {asset} {tf}: got {len(candles) if candles else 0}, "
-                    f"need >= {_min_candles_for_engine}. Skipping asset (causes strategy_signals=0)"
-                )
+            if not candles or not isinstance(candles, list) or len(candles) < 20:
                 continue
             
             # Verify candle structure
             first = candles[0]
             required_keys = {'close', 'high', 'low', 'open', 'timestamp'}
             if not all(k in first for k in required_keys):
-                logger.warning(
-                    f"[fetcher] Missing required OHLC keys for {asset} {tf}: "
-                    f"has={set(first.keys())}, need={required_keys}"
-                )
                 continue
             
             # Check candle freshness - most recent candle should not be too old
@@ -834,6 +732,8 @@ def get_candles(asset, timeframe):
                     candles = get_crypto_candles(asset, timeframe)
                 elif asset_type == "fx":
                     candles = get_fx_candles(asset, timeframe)
+                elif asset_type == "index":
+                    candles = get_index_candles(asset, timeframe)
                 else:
                     candles = get_stock_candles(asset, timeframe)
                 _write_cached_candles(_cache_key, candles or [])
@@ -844,37 +744,22 @@ def get_candles(asset, timeframe):
                 candles = _fetch_crypto_multi_provider(asset, timeframe)
             elif asset_type == "fx":
                 candles = _fetch_fx_multi_provider(asset, timeframe)
+            elif asset_type == "index":
+                candles = _fetch_index_multi_provider(asset, timeframe)
             else:  # stock
                 candles = _fetch_stock_multi_provider(asset, timeframe)
 
-# FIX: Use degraded mode minimum (10 candles) when forward-fill is triggered
-            # This prevents complete pipeline starvation during provider outages
-            _min_candles_normal = 20
-            _min_candles_degraded = _get_degraded_mode_min_candles()  # 10 by default
-            
-            if (not candles) or len(candles) < _min_candles_normal:
+            if (not candles) or len(candles) < 20:
                 ff_ttl = _get_forward_fill_ttl_seconds()
                 stale_cached = _read_stale_cached_candles(_cache_key, ff_ttl)
-                # FIX: Accept degraded mode minimum (10 candles) to prevent pipeline starvation
-                if stale_cached is not None and len(stale_cached) >= _min_candles_degraded:
+                if stale_cached is not None and len(stale_cached) >= 20:
                     logger.warning(
-                        "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss candles=%d (degraded mode)",
+                        "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss",
                         asset,
                         timeframe,
                         ff_ttl,
-                        len(stale_cached),
                     )
                     _set_last_provider_used(asset, timeframe, "cache_forward_fill")
-                    return stale_cached
-                # FIX: Try even older cache if degraded mode helps prevent complete failure
-                if stale_cached is not None and len(stale_cached) >= 5:
-                    logger.warning(
-                        "[data] ultra-stale cache used symbol=%s tf=%s candles=%d (emergency mode)",
-                        asset,
-                        timeframe,
-                        len(stale_cached),
-                    )
-                    _set_last_provider_used(asset, timeframe, "cache_emergency")
                     return stale_cached
 
             _write_cached_candles(_cache_key, candles or [])
@@ -890,9 +775,6 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     NOTE: For Nigeria (Binance blocked):
     - Binance/Bybit → Yahoo Finance (free, works worldwide) → CryptoCompare
     - Yahoo requires symbol conversion: BTCUSDT → BTC-USD
-    
-    FIX: Short-circuit provider chain after 2 consecutive failures to prevent 
-    excessive retries during outages. Also adds enhanced error logging.
     """
     # Build provider list from connector registry (prefer connectors)
     from data.connector_registry import get_providers_for_asset
@@ -919,54 +801,26 @@ def _fetch_crypto_multi_provider(asset, timeframe):
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    
-# FIX: Track consecutive failures to short-circuit after 2 failures
-    consecutive_failures = 0
-    max_consecutive_failures = 2  # Short-circuit threshold
-    _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
-    
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            # FIX: Use degraded mode threshold instead of hardcoded 20
-            if candles and len(candles) >= _min_candles:
+            if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
             else:
                 mark_provider_result(provider_name, False)
-                consecutive_failures += 1
-                # FIX: Enhanced error logging for diagnostics
-                logger.warning(
-                    f"[data] crypto_provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0} "
-                    f"consecutive_failures={consecutive_failures}"
-                )
         except Exception as e:
             mark_provider_result(provider_name, False)
-            consecutive_failures += 1
-            # FIX: Enhanced error logging - include FULL TRACEBACK for diagnostics
-            logger.error(f"❌ FATAL CRASH in {provider_name} adapter for {asset}!")
-            logger.error(traceback.format_exc())
-            # FIX: Short-circuit after max_consecutive_failures
-            if consecutive_failures >= max_consecutive_failures:
-                logger.warning(
-                    f"[data] crypto_providers short-circuited after {consecutive_failures} consecutive failures for {asset} {timeframe}"
-                )
-                break
+            logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
             continue
-    
-    if _should_log_no_candles("crypto", asset, timeframe):
-        logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
 
 def _fetch_fx_multi_provider(asset, timeframe):
-    """Try multiple FX providers in order.
-    
-    FIX: Short-circuit provider chain after 2 consecutive failures to prevent 
-    excessive retries during outages. Also adds enhanced error logging.
-    """
+    """Try multiple FX providers in order."""
     from .providers import fetch_oanda_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles, fetch_tradingview_candles
     
     # Convert to formats needed by different providers
@@ -1001,54 +855,26 @@ def _fetch_fx_multi_provider(asset, timeframe):
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    
-# FIX: Track consecutive failures to short-circuit after 2 failures
-    consecutive_failures = 0
-    max_consecutive_failures = 2  # Short-circuit threshold
-    _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
-    
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            # FIX: Use degraded mode threshold instead of hardcoded 20
-            if candles and len(candles) >= _min_candles:
+            if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
             else:
                 mark_provider_result(provider_name, False)
-                consecutive_failures += 1
-                # FIX: Enhanced error logging for diagnostics
-                logger.warning(
-                    f"[data] fx_provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0} "
-                    f"consecutive_failures={consecutive_failures}"
-                )
         except Exception as e:
             mark_provider_result(provider_name, False)
-            consecutive_failures += 1
-            # FIX: Enhanced error logging - include FULL TRACEBACK for diagnostics
-            logger.error(f"❌ FATAL CRASH in {provider_name} adapter for {asset}!")
-            logger.error(traceback.format_exc())
-            # FIX: Short-circuit after max_consecutive_failures
-            if consecutive_failures >= max_consecutive_failures:
-                logger.warning(
-                    f"[data] fx_providers short-circuited after {consecutive_failures} consecutive failures for {asset} {timeframe}"
-                )
-                break
+            logger.warning(f"[data] fx_provider={provider_name} symbol={asset} failed: {e}")
             continue
-    
-    if _should_log_no_candles("fx", asset, timeframe):
-        logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
 
 def _fetch_stock_multi_provider(asset, timeframe):
-    """Try multiple stock providers in order.
-    
-    FIX: Short-circuit provider chain after 2 consecutive failures to prevent 
-    excessive retries during outages. Also adds enhanced error logging.
-    """
+    """Try multiple stock providers in order."""
     from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
     
     from data.connector_registry import get_providers_for_asset
@@ -1060,46 +886,54 @@ def _fetch_stock_multi_provider(asset, timeframe):
     providers.append(("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="NYSE")))
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    
-# FIX: Track consecutive failures to short-circuit after 2 failures
-    consecutive_failures = 0
-    max_consecutive_failures = 2  # Short-circuit threshold
-    _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
-    
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            # FIX: Use degraded mode threshold instead of hardcoded 20
-            if candles and len(candles) >= _min_candles:
+            if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                 return candles
             else:
                 mark_provider_result(provider_name, False)
-                consecutive_failures += 1
-                # FIX: Enhanced error logging for diagnostics
-                logger.warning(
-                    f"[data] stock_provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0} "
-                    f"consecutive_failures={consecutive_failures}"
-                )
         except Exception as e:
             mark_provider_result(provider_name, False)
-            consecutive_failures += 1
-            # FIX: Enhanced error logging for diagnostics - log exact error
-            logger.warning(
-                f"[data] stock_provider={provider_name} symbol={asset} error={type(e).__name__}:{str(e)[:80]} "
-                f"consecutive_failures={consecutive_failures}"
-            )
-            # FIX: Short-circuit after max_consecutive_failures
-            if consecutive_failures >= max_consecutive_failures:
-                logger.warning(
-                    f"[data] stock_providers short-circuited after {consecutive_failures} consecutive failures for {asset} {timeframe}"
-                )
-                break
+            logger.warning(f"[data] stock_provider={provider_name} symbol={asset} failed: {e}")
             continue
-    if _should_log_no_candles("stock", asset, timeframe):
-        logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    return []
+
+
+def _fetch_index_multi_provider(asset, timeframe):
+    """Try index-capable providers in order without routing index CFDs as stocks."""
+    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
+
+    raw = str(asset or "").upper().strip()
+    yahoo_symbol = normalize_index_symbol(raw)
+    tv_symbol = yahoo_symbol.lstrip("^") if yahoo_symbol.startswith("^") else raw.lstrip("^")
+    tv_exchange = (os.getenv("TRADINGVIEW_INDEX_PREFIX") or "TVC").strip() or "TVC"
+    providers = [
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
+        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "index")),
+        ("polygon", lambda timeout=10: fetch_polygon_candles(yahoo_symbol, timeframe, "indices")),
+        ("tradingview", lambda timeout=10: fetch_tradingview_candles(tv_symbol, timeframe, exchange=tv_exchange)),
+    ]
+    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
+    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        try:
+            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            if candles and len(candles) >= 20:
+                mark_provider_result(provider_name, True)
+                _set_last_provider_used(asset, timeframe, provider_name)
+                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)}")
+                return candles
+            mark_provider_result(provider_name, False)
+        except Exception as e:
+            mark_provider_result(provider_name, False)
+            logger.warning(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} failed: {e}")
+            continue
+    logger.warning(f"[data] index_fetched=none symbol={asset} mapped={yahoo_symbol} tf={timeframe} (all providers failed)")
     return []
 
 
@@ -1107,6 +941,12 @@ def get_stock_candles(asset, timeframe):
     """Legacy single-provider stock fetcher - uses Yahoo as default."""
     from .providers import fetch_yahoo_candles
     return fetch_yahoo_candles(asset, timeframe)
+
+
+def get_index_candles(asset, timeframe):
+    """Legacy single-provider index fetcher using Yahoo-compatible symbols."""
+    from .providers import fetch_yahoo_candles
+    return fetch_yahoo_candles(normalize_index_symbol(asset), timeframe)
 
 def is_crypto(asset):
     a = (asset or "").upper().strip()
@@ -1144,8 +984,8 @@ def is_fx(asset):
 
 def is_stock(asset):
     """Check if asset is a stock ticker."""
-    # If not crypto and not FX and not commodity, assume stock
-    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset)
+    # If not crypto, FX, commodity, or index, assume stock
+    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset) and not is_index(asset)
 
 
 def is_commodity(asset):
@@ -1167,8 +1007,62 @@ def is_commodity(asset):
     return False
 
 
+INDEX_SYMBOL_ALIASES = {
+    "US500": "^GSPC",
+    "SP500": "^GSPC",
+    "SPX": "^GSPC",
+    "GSPC": "^GSPC",
+    "US100": "^NDX",
+    "NAS100": "^NDX",
+    "NDX": "^NDX",
+    "NASDAQ100": "^NDX",
+    "US30": "^DJI",
+    "DJI": "^DJI",
+    "DOW": "^DJI",
+    "DJ30": "^DJI",
+    "VIX": "^VIX",
+    "GER40": "^GDAXI",
+    "DAX": "^GDAXI",
+    "DE40": "^GDAXI",
+    "UK100": "^FTSE",
+    "FTSE": "^FTSE",
+    "JPN225": "^N225",
+    "JP225": "^N225",
+    "NIKKEI": "^N225",
+    "HK50": "^HSI",
+    "HSI": "^HSI",
+    "FRA40": "^FCHI",
+    "CAC40": "^FCHI",
+    "EU50": "^STOXX50E",
+    "AUS200": "^AXJO",
+    "ASX200": "^AXJO",
+}
+
+
+def normalize_index_symbol(asset: str) -> str:
+    """Return the Yahoo-compatible ticker for a cash index / index CFD symbol."""
+    namespace, raw_symbol = parse_symbol(asset)
+    raw = str(raw_symbol or asset or "").upper().strip()
+    clean = raw.replace("/", "").replace("_", "").replace("-", "")
+    if raw.startswith("^"):
+        return raw
+    return INDEX_SYMBOL_ALIASES.get(clean, raw)
+
+
+def is_index(asset):
+    """Check if asset is a cash index or broker index-CFD ticker."""
+    namespace, raw_symbol = parse_symbol(asset)
+    if namespace and namespace.upper() in {"INDEX", "INDICES", "IDX"}:
+        return True
+    a = str(raw_symbol or asset or "").upper().strip()
+    clean = a.replace("/", "").replace("_", "").replace("-", "")
+    if a.startswith("^"):
+        return True
+    return clean in INDEX_SYMBOL_ALIASES
+
+
 def get_asset_type(asset):
-    """Determine asset type: 'crypto', 'fx', 'stock', or 'commodity'."""
+    """Determine asset type: 'crypto', 'fx', 'stock', 'commodity', or 'index'."""
     # First check for explicit namespace prefix
     namespace, raw_symbol = parse_symbol(asset)
     if namespace:
@@ -1180,6 +1074,8 @@ def get_asset_type(asset):
             return "commodity"
         elif namespace.upper() in ("FX", "FOREX"):
             return "fx"
+        elif namespace.upper() in ("INDEX", "INDICES", "IDX"):
+            return "index"
     
     # Fall back to symbol-based detection
     if is_crypto(asset):
@@ -1188,6 +1084,8 @@ def get_asset_type(asset):
         return "fx"
     elif is_commodity(asset):
         return "commodity"
+    elif is_index(asset):
+        return "index"
     else:
         return "stock"
 
@@ -1197,7 +1095,7 @@ def get_asset_type(asset):
 # =============================================================================
 
 # Valid namespace prefixes
-ASSET_NAMESPACE_PREFIXES = ("CRYPTO", "EQUITY", "STOCK", "COMMODITY", "CMDT", "FX", "FOREX")
+ASSET_NAMESPACE_PREFIXES = ("CRYPTO", "EQUITY", "STOCK", "COMMODITY", "CMDT", "FX", "FOREX", "INDEX", "INDICES", "IDX")
 
 # Known commodity tickers (to prevent crypto provider from fetching wrong asset)
 KNOWN_COMMODITY_TICKERS = {
@@ -1299,6 +1197,8 @@ def normalize_symbol(symbol: str, force_type: str | None = None) -> str:
         return f"COMMODITY:{sym}"
     elif asset_type in ("fx", "forex"):
         return f"FX:{sym}"
+    elif asset_type in ("index", "indices", "idx"):
+        return f"INDEX:{sym}"
     else:
         # Default to equity for unknown stocks, commodity for known commodities
         if sym in KNOWN_COMMODITY_TICKERS:
@@ -1362,6 +1262,8 @@ def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
             return "commodity", ["twelvedata", "oanda", "yahoo"]
         elif namespace in ("FX", "FOREX"):
             return "fx", ["twelvedata", "polygon", "oanda"]
+        elif namespace in ("INDEX", "INDICES", "IDX"):
+            return "index", ["yahoo", "twelvedata", "polygon", "tradingview"]
     
     # Fall back to symbol-based detection
     asset_type = get_asset_type(asset)
@@ -1374,15 +1276,14 @@ def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
         return "commodity", ["twelvedata", "oanda", "yahoo"]
     elif asset_type == "fx":
         return "fx", ["twelvedata", "polygon", "oanda"]
+    elif asset_type == "index":
+        return "index", ["yahoo", "twelvedata", "polygon", "tradingview"]
     
     return asset_type, []
 
 
 def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None = None) -> bool:
     """Validate that fetched price is reasonable to prevent ghost prices.
-    
-    Now uses multi-source validation for better sanity checking.
-    Fetches from multiple providers and calculates confidence score.
     
     Args:
         asset: Symbol
@@ -1405,6 +1306,7 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
         "fx": 0.0001,          # Forex pairs in major currencies
         "stock": 0.01,         # Stocks rarely go below penny
         "commodity": 0.01,     # Commodities in dollars
+        "index": 1.0,          # Index levels / index CFDs should not be penny-priced
     }
     
     min_price = MIN_PRICES.get(asset_type, 0.01)
@@ -1426,49 +1328,26 @@ def validate_price_sanity(asset: str, price: float, lastKnownPrice: float | None
             )
             return False
     
-    # NEW: Multi-source validation for better sanity checking
-    # Fetch from multiple providers and calculate confidence
-    multi_source_result = validate_price_multi_source(asset, price)
-    if multi_source_result is not None:
-        is_valid, confidence, sources_prices = multi_source_result
-        if not is_valid:
-            logger.warning(
-                f"[price_validator] Multi-source validation failed for {asset}: "
-                f"price=${price:.4f}, confidence={confidence:.2%}, sources={len(sources_prices)}"
-            )
-            return False
-        logger.info(
-            f"[price_validator] Multi-source validated {asset}: "
-            f"price=${price:.4f}, confidence={confidence:.2%}, sources={len(sources_prices)}"
-        )
-    
     return True
 
 
 def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool, float, dict] | None:
-    """
-    Validate price by fetching from multiple independent sources.
-    
-    For crypto: Binance, Bybit, CryptoCompare
-    For FX: AlphaVantage, Yahoo, Polygon
-    For stocks: Yahoo, Polygon
-    
-    Returns:
-        Tuple of (is_valid: bool, confidence: float, sources_prices: dict)
-        or None if validation couldn't be performed
-    """
+    """Validate a price against independent providers when they are reachable."""
     import statistics
-    
+
+    try:
+        primary_price = float(primary_price)
+    except Exception:
+        return None
+    if primary_price <= 0:
+        return None
+
     asset_type = get_asset_type(asset)
-    sources_prices = {}
-    
-    # Crypto: try multiple sources
+    sources_prices: dict[str, float] = {}
+    symbol = str(asset or "").upper().replace("/", "").strip()
+
     if asset_type == "crypto":
-        symbol = str(asset or "").upper().replace("/", "").strip()
-        
-        # 1. Binance
         try:
-            import requests
             resp = requests.get(
                 "https://api.binance.com/api/v3/ticker/price",
                 params={"symbol": symbol},
@@ -1480,158 +1359,45 @@ def validate_price_multi_source(asset: str, primary_price: float) -> tuple[bool,
                     sources_prices["binance"] = px
         except Exception:
             pass
-        
-        # 2. Bybit
         try:
-            import requests
             resp = requests.get(
                 "https://api.bybit.com/v5/market/tickers",
                 params={"category": "spot", "symbol": symbol},
                 timeout=3,
             )
             if resp.ok:
-                data = resp.json() or {}
-                result = (data.get("result") or {}).get("list") or []
-                if result:
-                    px = float(result[0].get("lastPrice") or 0)
+                rows = ((resp.json() or {}).get("result") or {}).get("list") or []
+                if rows:
+                    px = float(rows[0].get("lastPrice") or 0)
                     if px > 0:
                         sources_prices["bybit"] = px
         except Exception:
             pass
-        
-        # 3. CryptoCompare
+    elif asset_type in {"stock", "fx", "commodity", "index"}:
         try:
-            base = symbol.replace("USDT", "").replace("USDC", "").replace("BUSD", "")
-            import requests
-            resp = requests.get(
-                "https://min-api.cryptocompare.com/data/price",
-                params={"fsym": base, "tsyms": "USD,USDT"},
-                timeout=3,
-            )
-            if resp.ok:
-                data = resp.json() or {}
-                px = float(data.get("USDT") or data.get("USD") or 0)
+            import yfinance as yf
+
+            hist_symbol = normalize_index_symbol(asset) if asset_type == "index" else symbol
+            hist = yf.Ticker(hist_symbol).history(period="1d", interval="1m")
+            if hist is not None and not hist.empty:
+                px = float(hist["Close"].iloc[-1])
                 if px > 0:
-                    sources_prices["cryptocompare"] = px
+                    sources_prices["yahoo"] = px
         except Exception:
             pass
-    
-    # FX: try multiple sources  
-    elif asset_type == "fx":
-        symbol = str(asset or "").upper().replace("/", "").strip()
-        
-        # 1. Yahoo Finance
-        try:
-            import yfinance as yf
-            ticker = yf.Ticker(f"{symbol}=X")
-            fast = getattr(ticker, "fast_info", None) or {}
-            px = float(fast.get("lastPrice") or 0)
-            if px > 0:
-                sources_prices["yahoo"] = px
-        except Exception:
-            pass
-        
-        # 2. AlphaVantage (if API key available)
-        try:
-            import os
-            api_key = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
-            if api_key:
-                from_symbol = symbol[:3]
-                to_symbol = symbol[3:6]
-                import requests
-                resp = requests.get(
-                    "https://www.alphavantage.co/query",
-                    params={
-                        "function": "CURRENCY_EXCHANGE_RATE",
-                        "from_currency": from_symbol,
-                        "to_currency": to_symbol,
-                        "apikey": api_key,
-                    },
-                    timeout=3,
-                )
-                if resp.ok:
-                    data = resp.json() or {}
-                    rate = float((data.get("Realtime Currency Exchange Rate") or {}).get("Exchange Rate") or 0)
-                    if rate > 0:
-                        sources_prices["alphavantage"] = rate
-        except Exception:
-            pass
-    
-    # Stocks: try multiple sources
-    else:
-        symbol = str(asset or "").upper().replace("/", "").strip()
-        
-        # 1. Yahoo Finance
-        try:
-            import yfinance as yf
-            ticker = yf.Ticker(symbol)
-            fast = getattr(ticker, "fast_info", None) or {}
-            px = float(fast.get("lastPrice") or 0)
-            if px > 0:
-                sources_prices["yahoo"] = px
-        except Exception:
-            pass
-        
-        # 2. Polygon (if API key available)
-        try:
-            import os
-            api_key = os.getenv("POLYGON_API_KEY", "").strip()
-            if api_key:
-                import requests
-                resp = requests.get(
-                    f"https://api.polygon.io/v2/aggs/ticker/{symbol}/prev",
-                    params={"apiKey": api_key},
-                    timeout=3,
-                )
-                if resp.ok:
-                    data = resp.json() or {}
-                    results = data.get("results") or []
-                    if results:
-                        px = float(results[0].get("c") or 0)
-                        if px > 0:
-                            sources_prices["polygon"] = px
-        except Exception:
-            pass
-    
-    # Need at least 2 sources for validation
-    if len(sources_prices) < 2:
-        return None  # Can't validate with multiple sources
-    
-    # Calculate median and check for outliers
-    try:
-        prices_list = list(sources_prices.values())
-        median_price = statistics.median(prices_list)
-        
-        # Calculate standard deviation for outlier detection
-        if len(prices_list) >= 2:
-            mean_price = statistics.mean(prices_list)
-            stdev = statistics.stdev(prices_list)
-            
-            # Check if primary price is an outlier (> 2 standard deviations)
-            if stdev > 0:
-                z_score = abs(primary_price - mean_price) / stdev
-                if z_score > 2:
-                    # Primary price is an outlier - check if it's the only outlier
-                    # by comparing to other sources
-                    other_prices = [p for p in prices_list if p != primary_price]
-                    if other_prices:
-                        other_median = statistics.median(other_prices)
-                        # If primary deviates significantly from others, reject
-                        deviation = abs(primary_price - other_median) / other_median
-                        if deviation > 0.05:  # 5% threshold
-                            return False, 0.0, sources_prices
-        
-        # Calculate confidence based on source agreement
-        # More sources agreement = higher confidence
-        max_deviation = max(abs(p - median_price) / median_price for p in prices_list) if median_price > 0 else 0
-        confidence = 1.0 - min(max_deviation, 1.0)  # Invert: closer prices = higher confidence
-        
-        # If confidence > 0.8 (prices agree closely), consider valid
-        return True, confidence, sources_prices
-        
-    except Exception as e:
-        logger.warning(f"[price_validator] Multi-source calculation failed: {e}")
+
+    if not sources_prices:
         return None
+
+    all_prices = list(sources_prices.values()) + [primary_price]
+    median_price = statistics.median(all_prices)
+    if median_price <= 0:
+        return None
+
+    deviations = [abs(price - median_price) / median_price for price in all_prices]
+    max_deviation = max(deviations)
+    confidence = max(0.0, 1.0 - max_deviation)
+    return max_deviation <= 0.05, confidence, sources_prices
 
 
 def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
@@ -1646,10 +1412,66 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     if is_crypto(asset):
         return None
 
-    now = now_utc or datetime.utcnow()
+    now = now_utc or datetime.now(timezone.utc)
     wd = now.weekday()  # Monday=0 ... Sunday=6
     hr = now.hour
     minute = now.minute
+
+    def _in_hhmm_window(window: str) -> bool:
+        try:
+            start, end = [part.strip() for part in str(window or "").split("-", 1)]
+            sh, sm = [int(x) for x in start.split(":")]
+            eh, em = [int(x) for x in end.split(":")]
+            current = hr * 60 + minute
+            start_min = sh * 60 + sm
+            end_min = eh * 60 + em
+            if start_min <= end_min:
+                return start_min <= current < end_min
+            return current >= start_min or current < end_min
+        except Exception:
+            return False
+
+    # Index schedule:
+    # - Cash index symbols (^GSPC, SPX, NDX, DJI) follow exchange hours by default.
+    # - Broker index CFDs (US500, US100, US30, GER40, UK100, JPN225) default to
+    #   futures/CFD-style 23x5 with a configurable daily maintenance break.
+    if is_index(asset):
+        raw_asset = str(asset or "").upper().strip()
+        clean_asset = raw_asset.replace("/", "").replace("_", "").replace("-", "")
+        explicit_mode = (os.getenv("INDEX_MARKET_MODE") or "").strip().lower()
+        cash_like = raw_asset.startswith("^") or clean_asset in {"SPX", "GSPC", "NDX", "DJI", "IXIC"}
+        mode = explicit_mode or ("cash" if cash_like else "cfd")
+
+        if mode == "cash":
+            holiday = is_stock_holiday(now)
+            if holiday:
+                return holiday
+            try:
+                open_str = (os.getenv("INDEX_OPEN_UTC") or os.getenv("STOCK_OPEN_UTC") or "13:30").strip()
+                close_str = (os.getenv("INDEX_CLOSE_UTC") or os.getenv("STOCK_CLOSE_UTC") or "20:00").strip()
+                oh, om = [int(x) for x in open_str.split(":")]
+                ch, cm = [int(x) for x in close_str.split(":")]
+            except Exception:
+                oh, om = 13, 30
+                ch, cm = 20, 0
+            if wd in (5, 6):
+                return "Indices closed (weekend)"
+            after_open = (hr > oh) or (hr == oh and minute >= om)
+            before_close = (hr < ch) or (hr == ch and minute <= cm)
+            if after_open and before_close:
+                return None
+            return "Indices closed (outside cash-index hours)"
+
+        if wd == 5:
+            return "Indices closed (Saturday)"
+        if wd == 6 and hr < int(_env_float("INDEX_SUNDAY_OPEN_HOUR_UTC", 22)):
+            return "Indices closed (Sunday before index CFD open)"
+        if wd == 4 and hr >= int(_env_float("INDEX_FRIDAY_CLOSE_HOUR_UTC", 22)):
+            return "Indices closed (Friday after index CFD close)"
+        daily_break = (os.getenv("INDEX_DAILY_BREAK_UTC") or "21:00-22:00").strip()
+        if wd in (0, 1, 2, 3) and daily_break and _in_hhmm_window(daily_break):
+            return f"Indices closed (daily maintenance {daily_break} UTC)"
+        return None
 
     # Commodity schedule (CME/COMEX hours)
     # Gold/Silver: Sunday 23:00 UTC - Friday 22:00 UTC (with daily break 21:00-22:00 UTC)
@@ -2296,23 +2118,11 @@ def get_tradingview_candles(asset: str, timeframe: str) -> list[dict]:
             # to validate the asset exists and get indicator-based analysis
             # For candle data, we fetch from primary source and validate with TradingView
             
-            # If we got here, asset exists on TradingView - return indicator summary
-            indicators = getattr(analysis, 'indicators', {})
-            
-            # Create a single synthetic candle with analysis metadata
-            # This is used to enrich other data sources
-            candle_meta = {
-                'timestamp': datetime.utcnow().isoformat(),
-                'open': 0.0,  # Placeholder - actual candles come from other sources
-                'high': 0.0,
-                'low': 0.0,
-                'close': 0.0,
-                'volume': 0.0,
-                'tradingview_verified': True,
-                'indicators_count': len([k for k in indicators.keys() if k != 'summary']),
-            }
             logger.info(f"[data] tradingview_candles source=tradingview asset={asset_upper} tf={timeframe} verified=True")
-            return [candle_meta]
+            # TradingView analysis is not OHLCV data. Do not emit placeholder
+            # candles into the live signal pipeline; callers must use real
+            # candle providers for price-bearing market data.
+            return candles
         
         except Exception as e:
             # Asset might not exist on TradingView - that's OK
@@ -2403,8 +2213,6 @@ async def async_get_candles(asset, timeframe):
         symbol_for_providers = asset
 
         provider_timeout_s = 2.5
-        _min_candles = _get_degraded_mode_min_candles()  # Use degraded mode (5 candles)
-        
         for provider_name, fetch_fn in provs:
             try:
                 # Strict per-provider timeout so slow upstreams fail fast and the chain can fallback.
@@ -2412,16 +2220,12 @@ async def async_get_candles(asset, timeframe):
                     fetch_fn(symbol_for_providers, timeframe, timeout=provider_timeout_s),
                     timeout=provider_timeout_s,
                 )
-                # FIX: Use degraded mode threshold instead of hardcoded 20
-                if candles and len(candles) >= _min_candles:
+                if candles and len(candles) >= 20:
                     mark_provider_result(provider_name, True)
                     logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
                     return candles
                 else:
                     mark_provider_result(provider_name, False)
-                    logger.warning(
-                        f"[data][async] provider={provider_name} symbol={asset} insufficient_candles={len(candles) if candles else 0}"
-                    )
             except asyncio.TimeoutError:
                 mark_provider_result(provider_name, False)
                 logger.warning(
@@ -2431,21 +2235,6 @@ async def async_get_candles(asset, timeframe):
                 mark_provider_result(provider_name, False)
                 logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")
                 continue
-
-        # FIX: Try forward-fill cache before giving up completely
-        cache_key = (str(asset or "").upper().strip(), str(timeframe or "").lower().strip())
-        ff_ttl = _get_forward_fill_ttl_seconds()
-        stale_cached = _read_stale_cached_candles(cache_key, ff_ttl)
-        if stale_cached is not None and len(stale_cached) >= _min_candles:
-            logger.warning(
-                "[data][async] forward-fill cached candles symbol=%s tf=%s age<=%ss candles=%d (degraded mode)",
-                asset,
-                timeframe,
-                ff_ttl,
-                len(stale_cached),
-            )
-            _set_last_provider_used(asset, timeframe, "cache_forward_fill_async")
-            return stale_cached
 
         logger.warning("[WARN] All providers failed for %s, skipping...", asset)
         return []
