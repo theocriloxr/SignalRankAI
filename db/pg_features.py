@@ -2298,7 +2298,7 @@ async def archive_signal_after_outcome(session: AsyncSession, signal_id: str) ->
 async def list_unresolved_signals_for_user(
     session: AsyncSession,
     telegram_user_id: int,
-    lookback_days: int = 1,
+    lookback_days: int = 7,
 ) -> list[Signal]:
     """Return unresolved signals delivered to this user in the configured lookback window.
     
