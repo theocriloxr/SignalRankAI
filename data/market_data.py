@@ -632,6 +632,18 @@ def _sanitize_ohlcv(candles: list) -> list:
             nc["high"] = h
             nc["low"] = l
             nc["close"] = close
+            if not nc.get("timestamp") and nc.get("time") is not None:
+                raw_ts = nc.get("time")
+                try:
+                    if isinstance(raw_ts, (int, float)):
+                        ts_val = int(float(raw_ts))
+                        nc["timestamp"] = ts_val
+                    else:
+                        parsed = pd.to_datetime(str(raw_ts), utc=True, errors="coerce")
+                        if not pd.isna(parsed):
+                            nc["timestamp"] = int(float(parsed.timestamp()) * 1000)
+                except Exception:
+                    pass
             out.append(nc)
         except Exception:
             continue

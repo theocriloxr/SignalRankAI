@@ -11,6 +11,22 @@ except Exception:  # pragma: no cover - optional dependency
 from utils.async_runner import run_sync
 
 
+def _idx_to_epoch_ms(idx: Any) -> int:
+    try:
+        if hasattr(idx, "timestamp"):
+            return int(float(idx.timestamp()) * 1000)
+        raw = str(idx).strip()
+        if raw:
+            import pandas as pd
+
+            ts = pd.to_datetime(raw, utc=True, errors="coerce")
+            if not pd.isna(ts):
+                return int(float(ts.timestamp()) * 1000)
+    except Exception:
+        pass
+    return 0
+
+
 def _normalize_symbol(symbol: str) -> str:
     # Unified mapping to Yahoo-compatible symbols.
     s = (symbol or "").upper().strip().replace("/", "").replace("_", "")
@@ -61,9 +77,11 @@ def _sync_get_candles_impl(symbol: str, timeframe: str, limit: int = 200) -> Lis
         out: List[Dict[str, Any]] = []
         for idx, row in df.iterrows():
             try:
+                ts_ms = _idx_to_epoch_ms(idx)
                 out.append(
                     {
-                        "time": idx,
+                        "time": ts_ms,
+                        "timestamp": ts_ms,
                         "open": float(row.get("Open", 0.0)),
                         "high": float(row.get("High", 0.0)),
                         "low": float(row.get("Low", 0.0)),

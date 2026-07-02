@@ -184,6 +184,17 @@ _engines_by_loop: dict[int, AsyncEngine] = {}
 _sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
 _sync_thread_local = threading.local()
+_session_gate = threading.BoundedSemaphore(
+    max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", 1 if _is_railway_runtime() else 8, minimum=1))
+)
+_session_metrics_lock = threading.Lock()
+_session_metrics: dict[str, int] = {
+    "opened": 0,
+    "closed": 0,
+    "active": 0,
+    "waiting": 0,
+    "errors": 0,
+}
 
 # Backward compatibility for legacy call-sites that still import
 # `_get_global_engine` / `_global_engine` from this module.
@@ -284,6 +295,8 @@ def get_pool_diagnostics() -> dict[str, Any]:
     loop_id = _loop_identity()
     engine = _engines_by_loop.get(loop_id)
     pool_size, max_overflow = _effective_pool_settings()
+    with _session_metrics_lock:
+        session_metrics = dict(_session_metrics)
     info: dict[str, Any] = {
         "configured": is_db_configured(),
         "loop_id": loop_id,
@@ -293,6 +306,8 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "effective_max_overflow": max_overflow,
         "railway_runtime": _is_railway_runtime(),
         "nullpool": bool(pool_size == 0 and max_overflow == 0),
+        "session_limit": max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", 1 if _is_railway_runtime() else 8, minimum=1)),
+        "session_metrics": session_metrics,
     }
     if engine is None:
         info["engine_ready"] = False
@@ -399,14 +414,44 @@ async def run_with_db_retry(
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
+    timeout_s = float(_pool_int("DB_SESSION_GATE_TIMEOUT_SECONDS", _pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1), minimum=1))
+    acquired = False
+    with _session_metrics_lock:
+        _session_metrics["waiting"] += 1
+    try:
+        acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
+    finally:
+        with _session_metrics_lock:
+            _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
+    if not acquired:
+        with _session_metrics_lock:
+            _session_metrics["errors"] += 1
+        raise TimeoutError(
+            f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
+            "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"
+        )
     session_local = _get_sessionmaker_for_loop(_loop_identity())
     if session_local is None:
+        _session_gate.release()
         raise RuntimeError("DATABASE_URL is not configured")
-    async with session_local() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+    with _session_metrics_lock:
+        _session_metrics["opened"] += 1
+        _session_metrics["active"] += 1
+    try:
+        async with session_local() as session:
+            try:
+                yield session
+            except Exception:
+                with _session_metrics_lock:
+                    _session_metrics["errors"] += 1
+                raise
+            finally:
+                await session.close()
+    finally:
+        with _session_metrics_lock:
+            _session_metrics["closed"] += 1
+            _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
+        _session_gate.release()
 
 
 @asynccontextmanager

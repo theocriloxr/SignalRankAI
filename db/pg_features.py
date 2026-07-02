@@ -1313,6 +1313,130 @@ async def list_recent_signals_delivered(
     return list(res2.scalars().all())
 
 
+async def list_delivered_signals_for_user(
+    session: AsyncSession,
+    telegram_user_id: int,
+    *,
+    lookback_days: int = 7,
+    status_filter: str = "active",
+    asset: str | None = None,
+    limit: int = 50,
+    sent_ok_only: bool = True,
+) -> list[Signal]:
+    """Return signals actually delivered to a Telegram user.
+
+    This is the canonical user-facing query for /signals. It starts from
+    SignalDelivery rather than Signal so generated/reserved-but-never-sent
+    rows do not appear in a user's active signal list.
+    """
+    res: Result[Tuple[User]] = await session.execute(
+        select(User).where(User.telegram_user_id == int(telegram_user_id))
+    )
+    user: User | None = res.scalar_one_or_none()
+    if user is None:
+        return []
+
+    mode = str(status_filter or "active").strip().lower()
+    if mode == "running":
+        mode = "active"
+    cutoff_days = max(1, int(lookback_days or 7))
+    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
+    max_rows = max(1, min(int(limit or 50), 200))
+
+    terminal_statuses = {
+        "sl",
+        "tp",
+        "tp3",
+        "invalid",
+        "invalidated",
+        "time_stop",
+        "cancel",
+        "cancelled",
+        "expired",
+    }
+    winner_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp"}
+    loser_statuses = {"sl", "stop_loss"}
+    missed_statuses = {"missed", "time_stop", "expired", "invalid", "invalidated", "cancel", "cancelled"}
+
+    q: Select[Tuple[Signal]] = (
+        select(Signal)
+        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
+        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+        .where(
+            SignalDelivery.user_id == int(user.id),
+            SignalDelivery.delivered_at >= cutoff,
+        )
+        .order_by(SignalDelivery.delivered_at.desc())
+        .limit(max_rows)
+    )
+    if sent_ok_only:
+        q = q.where(SignalDelivery.sent_ok.is_(True))
+    if asset:
+        q = q.where(Signal.asset == str(asset).upper().strip())
+
+    status_lower = func.lower(Outcome.status)
+    if mode in {"active", ""}:
+        q = q.where(
+            Signal.archived.is_(False),
+            Signal.expired.is_(False),
+            or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
+        )
+    elif mode == "closed":
+        q = q.where(or_(Signal.archived.is_(True), Signal.expired.is_(True), status_lower.in_(terminal_statuses)))
+    elif mode == "winners":
+        q = q.where(status_lower.in_(winner_statuses))
+    elif mode == "losers":
+        q = q.where(status_lower.in_(loser_statuses))
+    elif mode == "missed":
+        q = q.where(or_(Signal.expired.is_(True), status_lower.in_(missed_statuses)))
+    elif mode == "all":
+        pass
+    else:
+        q = q.where(
+            Signal.archived.is_(False),
+            Signal.expired.is_(False),
+            or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
+        )
+
+    res2: Result[Tuple[Signal]] = await session.execute(q)
+    rows = list(res2.scalars().all())
+
+    # If delivery marking failed during a DB-pressure window, active message
+    # tracking is the strongest evidence that the user really saw the signal.
+    if mode == "active":
+        q_active: Select[Tuple[Signal]] = (
+            select(Signal)
+            .join(ActiveSignalMessage, ActiveSignalMessage.signal_id == Signal.signal_id)
+            .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+            .where(
+                ActiveSignalMessage.user_id == int(user.id),
+                ActiveSignalMessage.is_active.is_(True),
+                ActiveSignalMessage.created_at >= cutoff,
+                Signal.archived.is_(False),
+                Signal.expired.is_(False),
+                or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
+            )
+            .order_by(ActiveSignalMessage.created_at.desc())
+            .limit(max_rows)
+        )
+        if asset:
+            q_active = q_active.where(Signal.asset == str(asset).upper().strip())
+        res3: Result[Tuple[Signal]] = await session.execute(q_active)
+        rows.extend(list(res3.scalars().all()))
+
+    seen: set[str] = set()
+    out: list[Signal] = []
+    for sig in rows:
+        sid = str(getattr(sig, "signal_id", "") or "")
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+        out.append(sig)
+        if len(out) >= max_rows:
+            break
+    return out
+
+
 async def get_delivered_signal_by_ref(
     session: AsyncSession,
     telegram_user_id: int,
@@ -2300,72 +2424,14 @@ async def list_unresolved_signals_for_user(
     telegram_user_id: int,
     lookback_days: int = 7,
 ) -> list[Signal]:
-    """Return unresolved signals delivered to this user in the configured lookback window.
-    
-    A signal remains "active" while it has no outcome or only non-terminal
-    progress states such as tp1/tp2/breakeven. Delivery marking can lag under
-    Railway DB pressure, so active Telegram message rows are used as a fallback.
-    """
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
-    user: User | None = res.scalar_one_or_none()
-    if user is None:
-        return []
-
-    cutoff_days = max(1, int(lookback_days or 1))
-    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
-
-    terminal_statuses = {
-        "sl",
-        "tp",
-        "tp3",
-        "invalid",
-        "invalidated",
-        "time_stop",
-        "cancel",
-        "cancelled",
-    }
-
-    # Show delivered signals regardless of sent_ok; exclude only terminal outcomes.
-    q: Select[Tuple[Signal]] = (
-        select(Signal)
-        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
-        .where(
-            SignalDelivery.user_id == user.id,
-            SignalDelivery.delivered_at >= cutoff,
-            or_(Outcome.id.is_(None), Outcome.status.notin_(terminal_statuses)),
-        )
-        .order_by(SignalDelivery.delivered_at.desc())
+    """Return active delivered signals for this user in the lookback window."""
+    return await list_delivered_signals_for_user(
+        session,
+        telegram_user_id=int(telegram_user_id),
+        lookback_days=lookback_days,
+        status_filter="active",
+        sent_ok_only=True,
     )
-    res2: Result[Tuple[Signal]] = await session.execute(q)
-    rows = list(res2.scalars().all())
-
-    # Fallback for cases where Telegram sent the message but delivery marking
-    # was delayed/rolled back by DB pool pressure. These rows are maintained by
-    # the active message tracker used for inline keyboards.
-    q_active: Select[Tuple[Signal]] = (
-        select(Signal)
-        .join(ActiveSignalMessage, ActiveSignalMessage.signal_id == Signal.signal_id)
-        .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
-        .where(
-            ActiveSignalMessage.user_id == user.id,
-            ActiveSignalMessage.is_active.is_(True),
-            ActiveSignalMessage.created_at >= cutoff,
-            or_(Outcome.id.is_(None), Outcome.status.notin_(terminal_statuses)),
-        )
-        .order_by(ActiveSignalMessage.created_at.desc())
-    )
-    res3: Result[Tuple[Signal]] = await session.execute(q_active)
-
-    seen: set[str] = set()
-    out: list[Signal] = []
-    for sig in rows + list(res3.scalars().all()):
-        sid = str(getattr(sig, "signal_id", "") or "")
-        if not sid or sid in seen:
-            continue
-        seen.add(sid)
-        out.append(sig)
-    return out
 
 
 async def list_recent_signals_for_user(
@@ -2373,35 +2439,14 @@ async def list_recent_signals_for_user(
     telegram_user_id: int,
     lookback_days: int = 30,
 ) -> list[Signal]:
-    """Return ALL signals delivered to this user in the lookback window, including resolved/invalidated ones.
-    
-    FIX for /signals command - fetches all signals regardless of:
-    - sent_ok status (shows signals even if delivery marking failed)
-    - outcome status (shows invalidated/missed signals too)
-    
-    This ensures users see all their signals, not just the ones that appear "active".
-    """
-    res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
-    user: User | None = res.scalar_one_or_none()
-    if user is None:
-        return []
-
-    cutoff_days = max(1, int(lookback_days or 30))
-    cutoff: datetime = _utcnow() - timedelta(days=cutoff_days)
-
-    # BROAD query: Include ALL delivered signals, regardless of sent_ok or outcome
-    q: Select[Tuple[Signal]] = (
-        select(Signal)
-        .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .where(
-            SignalDelivery.user_id == user.id,
-            Signal.archived == False,
-            Signal.created_at >= cutoff,
-        )
-        .order_by(SignalDelivery.delivered_at.desc())
+    """Return all sent signals delivered to this user in the lookback window."""
+    return await list_delivered_signals_for_user(
+        session,
+        telegram_user_id=int(telegram_user_id),
+        lookback_days=lookback_days,
+        status_filter="all",
+        sent_ok_only=True,
     )
-    res2: Result[Tuple[Signal]] = await session.execute(q)
-    return list(res2.scalars().all())
 
 
 async def delete_old_signals(session: AsyncSession, older_than_days: int = 7) -> int:

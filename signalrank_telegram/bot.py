@@ -567,6 +567,7 @@ from .commands import (
     filter_command,
     selfcheck_command,
     ops_health_command,
+    system_command,
     db_health_command,
     profile_command,
     mission_command,
@@ -725,7 +726,7 @@ async def _send_message_async(
             from telegram.helpers import escape_markdown
             version = 2 if "v2" in parse_mode.lower() else 1
             text = escape_markdown(str(text), version=version)
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode=parse_mode)
         if telemetry_started_at is not None:
             observe_signal_dispatch(
                 max(0.0, time.perf_counter() - float(telemetry_started_at)),
@@ -742,6 +743,65 @@ async def _send_message_async(
                 status="error",
             )
         raise
+
+
+_TG_SEND_LOCKS: dict[tuple[int, int], object] = {}
+_TG_SEND_LOCKS_GUARD = threading.Lock()
+
+
+def _telegram_chat_lock(chat_id: int):
+    import asyncio
+
+    loop_id = id(asyncio.get_running_loop())
+    key = (loop_id, int(chat_id))
+    with _TG_SEND_LOCKS_GUARD:
+        lock = _TG_SEND_LOCKS.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _TG_SEND_LOCKS[key] = lock
+        return lock
+
+
+async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, **kwargs):
+    """Send one Telegram message with per-chat serialization and RetryAfter backoff."""
+    import asyncio
+    import os
+    from telegram.error import RetryAfter
+
+    try:
+        global_delay = float((os.getenv("TELEGRAM_GLOBAL_SEND_DELAY_SECONDS") or "0.08").strip())
+    except Exception:
+        global_delay = 0.08
+    try:
+        max_retry_after = float((os.getenv("TELEGRAM_RETRY_AFTER_MAX_SECONDS") or "180").strip())
+    except Exception:
+        max_retry_after = 180.0
+    try:
+        max_attempts = max(1, int((os.getenv("TELEGRAM_SEND_MAX_ATTEMPTS") or "2").strip()))
+    except Exception:
+        max_attempts = 2
+
+    lock = _telegram_chat_lock(int(chat_id))
+    async with lock:
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                if global_delay > 0:
+                    await asyncio.sleep(global_delay)
+                return await bot.send_message(chat_id=int(chat_id), text=str(text), **kwargs)
+            except RetryAfter as exc:
+                retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
+                logger.warning(
+                    "[telegram] flood control chat=%s retry_after=%.1fs attempt=%s/%s",
+                    chat_id,
+                    retry_after,
+                    attempt,
+                    max_attempts,
+                )
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(max(1.0, retry_after) + 0.5)
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -2044,7 +2104,8 @@ async def _send_signal_with_engagement_async(
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
     try:
         _dispatch_started = time.perf_counter()
-        msg = await bot.send_message(
+        msg = await _telegram_send_message_guarded(
+            bot,
             chat_id=chat_id,
             text=text,
             reply_markup=keyboard,
@@ -2192,31 +2253,18 @@ async def _send_message_with_retry(
     reply_markup=None,
 ) -> None:
     """Async send with Telegram flood-control retry and pacing."""
-    import asyncio
-    from telegram.error import RetryAfter
-
-    import time
-    last_heartbeat = time.time()
-    while True:
-        try:
-            now = time.time()
-            if now - last_heartbeat > 60:
-                print(f"[bot] heartbeat: polling loop running", flush=True)
-                last_heartbeat = now
-            send_text = str(text)
-            if parse_mode and parse_mode.lower().startswith("markdown"):
-                from telegram.helpers import escape_markdown
-                version = 2 if "v2" in parse_mode.lower() else 1
-                send_text = escape_markdown(send_text, version=version)
-            await bot.send_message(
-                chat_id=int(chat_id),
-                text=send_text,
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-            )
-            return
-        except RetryAfter as e:
-            await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+    send_text = str(text)
+    if parse_mode and parse_mode.lower().startswith("markdown"):
+        from telegram.helpers import escape_markdown
+        version = 2 if "v2" in parse_mode.lower() else 1
+        send_text = escape_markdown(send_text, version=version)
+    await _telegram_send_message_guarded(
+        bot,
+        chat_id=int(chat_id),
+        text=send_text,
+        parse_mode=parse_mode,
+        reply_markup=reply_markup,
+    )
 
 
 def _send_message_with_retry_sync(
@@ -4107,6 +4155,7 @@ def run_bot() -> None:
             ("owner_users", "Owner: user list"),
             ("owner_revenue", "Owner: revenue"),
             ("provider_status", "Owner: provider health"),
+            ("system", "Owner: system health"),
             ("db_health", "Owner: database health"),
             ("qa_report", "Owner: QA report"),
         ]
@@ -4287,6 +4336,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("recap", _audit_handler("recap", recap_command)))
     application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
     application.add_handler(CommandHandler("ops_health", _audit_handler("ops_health", ops_health_command)))
+    application.add_handler(CommandHandler("system", _audit_handler("system", system_command)))
     application.add_handler(CommandHandler("db_health", _audit_handler("db_health", db_health_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))

@@ -1088,6 +1088,7 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		pool = dict(health.get("pool") or {})
 		pg = dict(health.get("postgres") or {})
 		activity = dict(pg.get("activity_by_state") or {})
+		session_metrics = dict(pool.get("session_metrics") or {})
 		lines = [
 			"Database Health",
 			"",
@@ -1097,6 +1098,8 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			f"Engines: {int(pool.get('engine_count') or 0)}",
 			f"Pool: size={pool.get('size', pool.get('effective_pool_size'))} checked_out={pool.get('checkedout', 'n/a')} overflow={pool.get('overflow', 'n/a')}",
 			f"Effective cap: pool={pool.get('effective_pool_size')} overflow={pool.get('effective_max_overflow')}",
+			f"Session gate: limit={pool.get('session_limit')} active={session_metrics.get('active', 0)} waiting={session_metrics.get('waiting', 0)} errors={session_metrics.get('errors', 0)}",
+			f"Sessions: opened={session_metrics.get('opened', 0)} closed={session_metrics.get('closed', 0)}",
 		]
 		if pg.get("max_connections"):
 			lines.append(f"Postgres max_connections: {pg.get('max_connections')}")
@@ -1245,6 +1248,11 @@ async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception as exc:
 		await update.message.reply_text(f"Mission control unavailable. Reference logged: {type(exc).__name__}")
 
+
+@require_tier("ADMIN")
+async def system_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Admin alias for the production system health view."""
+	await ops_health_command(update, context)
 
 from .user_prefs import user_prefs_store
 # --------- LANGUAGE SELECTION COMMAND ---------
@@ -1503,6 +1511,78 @@ async def assets_command(update, context) -> None:
 	args = context.args or []
 	subcmd = args[0].lower() if args else "list"
 
+	if subcmd in {"discovered", "health", "providers", "coverage", "failing", "quarantined", "liquidity", "sessions", "pending", "inactive"}:
+		try:
+			from data.pair_discovery import get_asset_discovery_snapshot
+			snapshot = get_asset_discovery_snapshot(force_refresh=subcmd in {"discovered", "health"})
+		except Exception as exc:
+			await update.message.reply_text(f"Asset discovery diagnostics unavailable: {type(exc).__name__}")
+			return
+
+		counts = dict(snapshot.get("counts") or {})
+		samples = dict(snapshot.get("samples") or {})
+		providers = dict(snapshot.get("providers") or {})
+		lines: list[str] = [
+			"Asset Discovery",
+			f"Total discovered: {snapshot.get('total', 0)}",
+			f"Refresh age: {snapshot.get('last_refresh_age_seconds', 'n/a')}s",
+			"Counts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())),
+		]
+
+		if subcmd in {"providers", "coverage", "health"}:
+			lines.extend([
+				"",
+				"Providers:",
+				f"- crypto provider: {providers.get('crypto_provider', 'auto')}",
+				f"- auto all providers: {providers.get('auto_all_providers')}",
+				f"- binance disabled: {providers.get('binance_disabled')} {providers.get('binance_disabled_reason') or ''}".strip(),
+				f"- bybit disabled: {providers.get('bybit_disabled')} {providers.get('bybit_disabled_reason') or ''}".strip(),
+			])
+
+		if subcmd in {"discovered", "health", "pending", "coverage"}:
+			lines.append("")
+			lines.append("Samples:")
+			for asset_type, vals in sorted(samples.items()):
+				preview = ", ".join(str(v) for v in list(vals or [])[:12]) or "none"
+				lines.append(f"- {asset_type}: {preview}")
+
+		if subcmd == "inactive":
+			async with get_session() as session:
+				rows = await list_all_managed_assets(session)
+			inactive = [r for r in rows if not getattr(r, "is_active", False)]
+			lines = ["Inactive Managed Assets"]
+			if inactive:
+				for r in inactive[:50]:
+					lines.append(f"- {r.symbol} ({r.asset_type})")
+			else:
+				lines.append("None.")
+
+		if subcmd in {"failing", "quarantined"}:
+			try:
+				from data.fetcher import get_provider_health_snapshot
+				health = get_provider_health_snapshot()
+				bad = {k: v for k, v in health.items() if not bool(v.get("healthy", True))}
+			except Exception:
+				bad = {}
+			lines = [f"{subcmd.title()} Providers"]
+			if bad:
+				for name, info in sorted(bad.items()):
+					lines.append(f"- {name}: failures={info.get('failure_count', 0)} last_error={info.get('last_error') or 'n/a'}")
+			else:
+				lines.append("None currently tracked.")
+
+		if subcmd in {"liquidity", "sessions"}:
+			lines.extend([
+				"",
+				"Detailed per-asset liquidity/session telemetry is tracked by market intelligence during scans.",
+				"Use /market <SYMBOL> for a live asset view and /system for global health.",
+			])
+
+		if snapshot.get("error"):
+			lines.append(f"Error: {snapshot.get('error')}")
+		await update.message.reply_text("\n".join(lines[:80]))
+		return
+
 	if subcmd == "list":
 		async with get_session() as session:
 			rows = await list_all_managed_assets(session)
@@ -1549,7 +1629,8 @@ async def assets_command(update, context) -> None:
 		return
 
 	await update.message.reply_text(
-		"Usage:\n/assets list\n/assets add <SYMBOL>\n/assets remove <SYMBOL>"
+		"Usage:\n/assets list\n/assets add <SYMBOL>\n/assets remove <SYMBOL>\n"
+		"/assets discovered\n/assets inactive\n/assets providers\n/assets coverage\n/assets failing\n/assets quarantined\n/assets liquidity\n/assets sessions"
 	)
 
 
@@ -2412,9 +2493,25 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	user_id: int = update.effective_user.id
 	tier: str = _effective_tier(user_id)
 	show_unvoted_only: bool = False
+	status_filter: str = "active"
+	lookback_days: int = 7
+	asset_filter: str | None = None
 	try:
-		arg0 = str((context.args or [""])[0] or "").strip().lower()
+		args_norm = [str(x or "").strip() for x in (context.args or []) if str(x or "").strip()]
+		arg0 = str((args_norm or [""])[0] or "").strip().lower()
 		show_unvoted_only = arg0 in {"unvoted", "pending", "notvoted"}
+		for idx, raw in enumerate(args_norm):
+			token = raw.lower()
+			if token in {"active", "running", "closed", "all", "winners", "losers", "missed"}:
+				status_filter = "active" if token == "running" else token
+			elif token in {"today", "24h"}:
+				lookback_days = 1
+			elif token in {"week", "7d", "7days"}:
+				lookback_days = 7
+			elif token in {"30d", "30days", "month"}:
+				lookback_days = 30
+			elif token == "asset" and idx + 1 < len(args_norm):
+				asset_filter = args_norm[idx + 1].upper().strip()
 	except Exception:
 		show_unvoted_only = False
 	try:
@@ -2545,18 +2642,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence, full TP ladder and execution tools.")
 		return
 	
-	# PREMIUM/VIP: show unresolved active signals delivered in the last 30 days.
+	# PREMIUM/VIP: show delivered signals in the requested user-facing window.
 	unresolved_signals: list[dict] = []
 	try:
 		from db.session import get_session
 		engine = get_engine_for_event_loop()
 		if engine is not None:
-			from db.pg_features import list_unresolved_signals_for_user
+			from db.pg_features import list_delivered_signals_for_user
 			async with get_session() as session:
-				rows: list[Signal] = await list_unresolved_signals_for_user(
+				rows: list[Signal] = await list_delivered_signals_for_user(
 					session,
 					telegram_user_id=int(user_id),
-					lookback_days=30,
+					lookback_days=lookback_days,
+					status_filter=status_filter,
+					asset=asset_filter,
+					limit=50,
+					sent_ok_only=True,
 				)
 				unresolved_signals = [
 					{
@@ -2576,6 +2677,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 						"strategy_name": r.strategy_name,
 						"strategy_group": r.strategy_group,
 						"created_at": r.created_at,
+						"status": getattr(r, "status", "active"),
 					}
 					for r in rows
 				]
@@ -2593,6 +2695,12 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		filtered_signals.append(s)
 
 	if not filtered_signals:
+		if update.message is not None and not show_unvoted_only:
+			asset_txt = f" for {asset_filter}" if asset_filter else ""
+			await update.message.reply_text(
+				f"No {status_filter} delivered signals{asset_txt} in the last {lookback_days} day(s)."
+			)
+			return
 		if update.message is not None:
 			if show_unvoted_only:
 				await update.message.reply_text("✅ No unvoted active unresolved signals right now.")
@@ -2606,6 +2714,12 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	from .formatter import format_signal
 
 	total_active: int = len(filtered_signals)
+	if update.message is not None and total_active > 0:
+		asset_txt = f" - {asset_filter}" if asset_filter else ""
+		await update.message.reply_text(
+			f"Your {status_filter.title()} Signals{asset_txt} ({total_active} in last {lookback_days} day(s)):"
+		)
+		total_active = 0
 	if update.message is not None and total_active > 0:
 		await update.message.reply_text(f"📊 Your Active Signals ({total_active} in last 30 days):")
 

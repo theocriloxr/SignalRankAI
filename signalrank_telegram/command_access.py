@@ -96,6 +96,7 @@ COMMAND_TIERS = {
     "qa_report":           "ADMIN",
     "selfcheck":           "ADMIN",
     "ops_health":          "ADMIN",
+    "system":              "ADMIN",
     "db_health":           "ADMIN",
     "blast_terms":         "ADMIN",
     "assets":              "ADMIN",
@@ -365,6 +366,7 @@ COMMAND_HELP = {
             ("broadcast",              "Owner broadcast (via owner_commands)"),
             ("assets",                 "Manage pinned asset universe"),
             ("selfcheck",              "System self-check"),
+            ("system",                 "System health and operations"),
             ("db_health",              "Database pool health"),
             ("provider_status",        "Data provider status"),
         ],
@@ -385,6 +387,7 @@ COMMAND_HELP = {
 COMMAND_DESCRIPTIONS = {
     "codex_audit": "Local Codex governance review from DB evidence",
     "db_health": "Database pool and Postgres activity diagnostics",
+    "system": "System health and operations diagnostics",
     "profile": "Choose scalp/day/swing/position signal style",
     "mission": "Signal Mission Control for active delivered trades",
     "qa_report": "QA report by tier and asset class",
