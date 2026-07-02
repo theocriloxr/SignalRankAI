@@ -11,6 +11,8 @@ This pass moved the latest stabilization work into `SignalRankAI1` and focused o
 - yfinance connector candles failing freshness checks because they lacked `timestamp`.
 - Telegram flood-control retries not being centrally throttled.
 - Short-timeframe signals being delivered hours after generation.
+- Dashboard win-rate and exposure metrics hiding low outcome coverage.
+- SQLAlchemy/asyncpg bind casts failing on raw `:value::jsonb` syntax.
 
 ## Implemented Changes
 
@@ -167,10 +169,44 @@ The gate now checks:
 - live price availability,
 - current setup validity through the existing stale-signal validator,
 - whether TP/SL has already been reached.
+- entry drift relative to stop distance,
+- current reward/risk after live price movement.
 
 This directly targets the production failure where a `5m` signal could be generated nearly five hours earlier and still be delivered.
 
 The resend pipeline also expires stale candidates before sending, so DB or scheduler recovery should not flush old signals to users.
+
+### Dashboard Outcome Accounting
+
+Files:
+
+- `db/pg_features.py`
+- `signalrank_telegram/commands.py`
+
+`get_user_performance_30d()` now reconciles delivered signals into exact lifecycle buckets:
+
+- terminal wins
+- losses
+- partial wins
+- break-even
+- active
+- outcome pending
+- expired
+- missed entry
+- tracking failed
+- cancelled
+
+`/dashboard` and `/performance` now show completed win rate together with outcome coverage and completion rate. Asset/class usage is now based on the requesting user's active delivered exposure rather than unrelated global open signals.
+
+### asyncpg Bind-Cast Fix
+
+Files:
+
+- `services/codex_governance.py`
+- `ml/retrain.py`
+- `scripts/ai_reviewer.py`
+
+Replaced `:value::jsonb` / `:v::jsonb` with `CAST(:value AS JSONB)` / `CAST(:v AS JSONB)` for runtime-state writes. This fixes asyncpg syntax errors around Codex governance and AI reviewer persistence.
 
 ## Railway Environment Variables To Review
 
@@ -189,6 +225,8 @@ DELIVERY_FRESHNESS_GATE_ENABLED=true
 DELIVERY_REQUIRE_LIVE_PRICE=true
 DELIVERY_DEFAULT_MAX_SIGNAL_AGE_MINUTES=60
 DELIVERY_OPPORTUNITY_MIN_REMAINING_PCT=30
+DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION=0.75
+DELIVERY_MIN_CURRENT_RR=1.0
 DELIVERY_MAX_SIGNAL_AGE_BY_TF_MINUTES={"1m":2,"5m":10,"15m":20,"1h":60,"4h":180,"1d":720}
 DELIVERY_MAX_SIGNAL_AGE_BY_PROFILE_MINUTES={"scalp":10,"day":45,"swing":360,"position":4320}
 NO_CANDLE_LOG_COOLDOWN_SECONDS=900
@@ -207,6 +245,9 @@ python -m py_compile db/session.py db/pg_features.py data/connectors/yfinance_ad
 python -m pytest tests/test_trader_profiles_and_platform_reliability.py tests/test_deploy_log_regressions.py -q
 python -m py_compile engine\delivery_freshness.py signalrank_telegram\bot.py
 python -m pytest tests\test_delivery_freshness.py tests\test_trader_profiles_and_platform_reliability.py tests\test_deploy_log_regressions.py -q
+python -m py_compile services\codex_governance.py ml\retrain.py scripts\ai_reviewer.py db\pg_features.py signalrank_telegram\commands.py engine\delivery_freshness.py
+python -m pytest tests\test_delivery_freshness.py tests\test_codex_governance_and_asset_locks.py tests\test_trader_profiles_and_platform_reliability.py tests\test_deploy_log_regressions.py -q
+python scripts\validate_governance_docs.py
 ```
 
 Result:
@@ -214,6 +255,8 @@ Result:
 ```text
 19 passed, 3 warnings
 24 passed, 3 warnings
+33 passed, 3 warnings
+Governance validation passed: 17 documents checked.
 ```
 
 Warnings are pre-existing deprecation/runtime warnings:
@@ -235,6 +278,9 @@ Most important next checks after deploy:
 - `/assets discovered` and `/assets providers` should explain why stocks or indices are absent instead of leaving only log warnings.
 - Telegram flood-control warnings should decrease; if they persist, lower send volume or increase `TELEGRAM_GLOBAL_SEND_DELAY_SECONDS`.
 - Short-timeframe signals should be rejected or expired if their age exceeds the delivery freshness gate.
+- `/dashboard` should show completed win rate and outcome coverage separately.
+- `/performance` should reconcile delivered signals into lifecycle buckets instead of leaving most signals unexplained.
+- `/codex_audit` and AI reviewer runtime-state writes should no longer fail with asyncpg syntax errors near `:`.
 
 ## Remaining Live-Evidence Items
 

@@ -408,7 +408,7 @@ async def run_codex_governance_review(trigger: str, scope: str = "weekly") -> di
                 text(
                     """
                     INSERT INTO runtime_state(key, value, expires_at, updated_at)
-                    VALUES ('codex_governance_last_review', :value::jsonb, NULL, NOW())
+                    VALUES ('codex_governance_last_review', CAST(:value AS JSONB), NULL, NOW())
                     ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()
                     """
                 ),

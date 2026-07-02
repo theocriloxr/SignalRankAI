@@ -96,6 +96,20 @@ def test_asset_lock_and_quarantine_wiring_present():
     assert "SEGMENT_QUARANTINE_ENABLED" in engine
 
 
+def test_asyncpg_runtime_state_writes_use_cast_not_bind_colon_cast():
+    root = Path(__file__).resolve().parents[1]
+    checked = [
+        root / "services" / "codex_governance.py",
+        root / "ml" / "retrain.py",
+        root / "scripts" / "ai_reviewer.py",
+    ]
+    for path in checked:
+        text = path.read_text(encoding="utf-8")
+        assert ":value::jsonb" not in text
+        assert ":v::jsonb" not in text
+        assert "CAST(:value AS JSONB)" in text or "CAST(:v AS JSONB)" in text
+
+
 def test_uncalibrated_perfect_score_is_display_capped(monkeypatch):
     from engine.core import _signal_display_score
 

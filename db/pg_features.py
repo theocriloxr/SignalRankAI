@@ -12,7 +12,7 @@ def to_naive_utc(dt: datetime) -> datetime:
     return dt
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case, or_
+from sqlalchemy import Result, Select, Subquery, Update, CursorResult, Row, and_, func, select, update, delete, case, or_, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -2037,77 +2037,169 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
     """Compute 30-day performance from deliveries + outcomes.
 
     Returns:
-      {total, wins, losses, win_rate, avg_r, net_r, tracked_outcomes, profit_loss_pct}
+      Delivered signal totals, exact lifecycle buckets, and outcome coverage.
     """
 
     now: datetime = _utcnow()
     cutoff: datetime = now - timedelta(days=30)
 
+    def _empty() -> dict[str, object]:
+        return {
+            "total": 0,
+            "delivered": 0,
+            "wins": 0,
+            "terminal_wins": 0,
+            "losses": 0,
+            "partial_wins": 0,
+            "breakeven": 0,
+            "time_stops": 0,
+            "expired": 0,
+            "cancelled": 0,
+            "missed_entry": 0,
+            "tracking_failed": 0,
+            "active": 0,
+            "outcome_pending": 0,
+            "win_rate": 0.0,
+            "completed_win_rate": 0.0,
+            "outcome_coverage": 0.0,
+            "completion_rate": 0.0,
+            "avg_r": None,
+            "net_r": None,
+            "tracked_outcomes": 0,
+            "completed_outcomes": 0,
+            "profit_loss_pct": 0.0,
+        }
+
     res: Result[Tuple[User]] = await session.execute(select(User).where(User.telegram_user_id == int(telegram_user_id)))
     user: User | None = res.scalar_one_or_none()
     if user is None:
-        return {
-            "total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
-            "avg_r": None, "net_r": None, "tracked_outcomes": 0, "profit_loss_pct": 0.0
-        }
+        return _empty()
 
-    # Total signals delivered in last 30 days
-    res_total: Result[Tuple[int]] = await session.execute(
-        select(func.count(SignalDelivery.id)).where(
-            SignalDelivery.user_id == user.id,
-            SignalDelivery.delivered_at >= cutoff,
+    row = (
+        await session.execute(
+            text(
+                """
+                WITH delivered AS (
+                    SELECT DISTINCT sd.signal_id, s.status AS signal_status, s.expired, s.archived, s.expires_at
+                    FROM signal_deliveries sd
+                    JOIN signals s ON s.signal_id = sd.signal_id
+                    WHERE sd.user_id = :user_id
+                      AND sd.sent_ok IS TRUE
+                      AND sd.delivered_at >= :cutoff
+                ),
+                outcome_flags AS (
+                    SELECT
+                        d.signal_id,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp3','win')) AS has_win,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss')) AS has_loss,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp1','tp2','partial_tp')) AS has_partial,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('be','breakeven','break_even')) AS has_be,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('time_stop','expired')) AS has_time_stop,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('missed','missed_entry','entry_missed')) AS has_missed,
+                        BOOL_OR(LOWER(COALESCE(o.canonical_outcome, o.status, '')) IN ('cancelled','canceled','superseded')) AS has_cancelled,
+                        COUNT(o.id) AS outcome_rows,
+                        AVG(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL) AS avg_r,
+                        SUM(o.r_multiple) FILTER (WHERE o.r_multiple IS NOT NULL) AS net_r
+                    FROM delivered d
+                    LEFT JOIN outcomes o ON o.signal_id = d.signal_id
+                    GROUP BY d.signal_id
+                ),
+                classified AS (
+                    SELECT
+                        d.signal_id,
+                        CASE
+                            WHEN COALESCE(f.has_win, FALSE) THEN 'win'
+                            WHEN COALESCE(f.has_partial, FALSE) THEN 'partial_win'
+                            WHEN COALESCE(f.has_be, FALSE) THEN 'breakeven'
+                            WHEN COALESCE(f.has_loss, FALSE) THEN 'loss'
+                            WHEN COALESCE(f.has_time_stop, FALSE) THEN 'expired'
+                            WHEN COALESCE(f.has_missed, FALSE) THEN 'missed_entry'
+                            WHEN COALESCE(f.has_cancelled, FALSE) OR LOWER(COALESCE(d.signal_status, '')) IN ('cancelled','canceled','superseded') THEN 'cancelled'
+                            WHEN LOWER(COALESCE(d.signal_status, '')) IN ('tracking_failed','outcome_failed','tracker_failed') THEN 'tracking_failed'
+                            WHEN COALESCE(d.expired, FALSE) IS TRUE OR (d.expires_at IS NOT NULL AND d.expires_at < NOW()) THEN 'expired'
+                            WHEN LOWER(COALESCE(d.signal_status, '')) IN ('active','issued','open','running','delivered') AND COALESCE(d.archived, FALSE) IS FALSE THEN 'active'
+                            ELSE 'outcome_pending'
+                        END AS lifecycle_state,
+                        COALESCE(f.outcome_rows, 0) AS outcome_rows,
+                        f.avg_r,
+                        f.net_r
+                    FROM delivered d
+                    LEFT JOIN outcome_flags f ON f.signal_id = d.signal_id
+                )
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN lifecycle_state = 'win' THEN 1 ELSE 0 END) AS terminal_wins,
+                    SUM(CASE WHEN lifecycle_state = 'loss' THEN 1 ELSE 0 END) AS losses,
+                    SUM(CASE WHEN lifecycle_state = 'partial_win' THEN 1 ELSE 0 END) AS partial_wins,
+                    SUM(CASE WHEN lifecycle_state = 'breakeven' THEN 1 ELSE 0 END) AS breakeven,
+                    SUM(CASE WHEN lifecycle_state = 'expired' THEN 1 ELSE 0 END) AS expired,
+                    SUM(CASE WHEN lifecycle_state = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+                    SUM(CASE WHEN lifecycle_state = 'missed_entry' THEN 1 ELSE 0 END) AS missed_entry,
+                    SUM(CASE WHEN lifecycle_state = 'tracking_failed' THEN 1 ELSE 0 END) AS tracking_failed,
+                    SUM(CASE WHEN lifecycle_state = 'active' THEN 1 ELSE 0 END) AS active,
+                    SUM(CASE WHEN lifecycle_state = 'outcome_pending' THEN 1 ELSE 0 END) AS outcome_pending,
+                    AVG(avg_r) FILTER (WHERE avg_r IS NOT NULL) AS avg_r,
+                    SUM(net_r) FILTER (WHERE net_r IS NOT NULL) AS net_r
+                FROM classified
+                """
+            ),
+            {"user_id": int(user.id), "cutoff": cutoff},
         )
-    )
-    total = int(res_total.scalar() or 0)
+    ).mappings().first()
+    if not row:
+        return _empty()
+
+    total = int(row.get("total") or 0)
     if total <= 0:
-        return {
-            "total": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
-            "avg_r": None, "net_r": None, "tracked_outcomes": 0, "profit_loss_pct": 0.0
-        }
+        return _empty()
 
-    delivered_signal_ids_subq: Subquery = (
-        select(SignalDelivery.signal_id)
-        .where(SignalDelivery.user_id == user.id, SignalDelivery.delivered_at >= cutoff)
-        .distinct()
-        .subquery()
-    )
-
-    # Outcomes are global per signal; we only count outcomes for signals this user received.
-    res_outcomes: Result[Tuple[str, int]] = await session.execute(
-        select(Outcome.status, func.count(Outcome.id)).where(Outcome.signal_id.in_(select(delivered_signal_ids_subq.c.signal_id))).group_by(Outcome.status)
-    )
-    outcome_counts: Dict[str, int] = {str(status).lower(): int(cnt) for (status, cnt) in (res_outcomes.all() or [])}
-
-    win_statuses: set[str] = {"tp", "tp1", "tp2", "partial_tp"}
-    loss_statuses: set[str] = {"sl"}
-    wins: int = sum(outcome_counts.get(s, 0) for s in win_statuses)
-    losses: int = sum(outcome_counts.get(s, 0) for s in loss_statuses)
-    tracked_outcomes: int = wins + losses
-
-    win_rate: float = (wins / max(1, wins + losses)) if (wins + losses) > 0 else 0.0
-
-    res_r: Result[Tuple[Any, float | None]] = await session.execute(
-        select(func.avg(Outcome.r_multiple), func.sum(Outcome.r_multiple)).where(
-            Outcome.signal_id.in_(select(delivered_signal_ids_subq.c.signal_id)),
-            Outcome.r_multiple.is_not(None),
-        )
-    )
-    avg_r, net_r = res_r.first() or (None, None)
+    terminal_wins = int(row.get("terminal_wins") or 0)
+    losses = int(row.get("losses") or 0)
+    partial_wins = int(row.get("partial_wins") or 0)
+    breakeven = int(row.get("breakeven") or 0)
+    expired = int(row.get("expired") or 0)
+    cancelled = int(row.get("cancelled") or 0)
+    missed_entry = int(row.get("missed_entry") or 0)
+    tracking_failed = int(row.get("tracking_failed") or 0)
+    active = int(row.get("active") or 0)
+    outcome_pending = int(row.get("outcome_pending") or 0)
+    tracked_outcomes = terminal_wins + losses + partial_wins + breakeven + expired + missed_entry + cancelled
+    completed_outcomes = terminal_wins + losses
+    win_rate = (terminal_wins / max(1, completed_outcomes)) if completed_outcomes > 0 else 0.0
+    outcome_coverage = tracked_outcomes / max(1, total)
+    completion_rate = completed_outcomes / max(1, total)
+    avg_r = row.get("avg_r")
+    net_r = row.get("net_r")
 
     # Calculate profit/loss percentage: assume equal 1% risk per trade
     profit_loss_pct = 0.0
-    if net_r is not None and tracked_outcomes > 0:
+    if net_r is not None and completed_outcomes > 0:
         risk_per_trade = 1.0  # 1% risk assumed per signal
-        profit_loss_pct: float = (float(net_r) / tracked_outcomes) * risk_per_trade
+        profit_loss_pct: float = (float(net_r) / completed_outcomes) * risk_per_trade
 
     return {
         "total": int(total),
-        "wins": int(wins),
+        "delivered": int(total),
+        "wins": int(terminal_wins),
+        "terminal_wins": int(terminal_wins),
         "losses": int(losses),
+        "partial_wins": int(partial_wins),
+        "breakeven": int(breakeven),
+        "time_stops": int(expired),
+        "expired": int(expired),
+        "cancelled": int(cancelled),
+        "missed_entry": int(missed_entry),
+        "tracking_failed": int(tracking_failed),
+        "active": int(active),
+        "outcome_pending": int(outcome_pending),
         "win_rate": float(win_rate),
+        "completed_win_rate": float(win_rate),
+        "outcome_coverage": float(outcome_coverage),
+        "completion_rate": float(completion_rate),
         "avg_r": float(avg_r) if avg_r is not None else None,
         "net_r": float(net_r) if net_r is not None else None,
         "tracked_outcomes": int(tracked_outcomes),
+        "completed_outcomes": int(completed_outcomes),
         "profit_loss_pct": float(profit_loss_pct),
     }
 

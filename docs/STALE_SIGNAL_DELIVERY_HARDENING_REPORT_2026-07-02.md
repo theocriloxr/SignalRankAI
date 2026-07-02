@@ -30,6 +30,8 @@ File: `engine/delivery_freshness.py`
   - `position`: 4320 minutes
 - Added opportunity-decay scoring so old signals can be rejected even before the absolute maximum age if too little opportunity remains.
 - Added fail-closed live revalidation. By default, if the system cannot obtain a current price for final validation, delivery is blocked instead of sending a potentially stale signal.
+- Added execution-time entry drift validation. Signals are rejected when current price has moved too far from the original entry relative to the planned stop distance.
+- Added current reward/risk validation. Signals are rejected when live price movement has consumed too much of the reward side before delivery.
 
 ### Resend Pipeline Protection
 
@@ -65,6 +67,8 @@ DELIVERY_FRESHNESS_GATE_ENABLED=true
 DELIVERY_REQUIRE_LIVE_PRICE=true
 DELIVERY_DEFAULT_MAX_SIGNAL_AGE_MINUTES=60
 DELIVERY_OPPORTUNITY_MIN_REMAINING_PCT=30
+DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION=0.75
+DELIVERY_MIN_CURRENT_RR=1.0
 DELIVERY_MAX_SIGNAL_AGE_BY_TF_MINUTES={"1m":2,"5m":10,"15m":20,"1h":60,"4h":180,"1d":720}
 DELIVERY_MAX_SIGNAL_AGE_BY_PROFILE_MINUTES={"scalp":10,"day":45,"swing":360,"position":4320}
 ```
@@ -97,6 +101,8 @@ Added coverage proving:
 - Fresh day-profile signals are allowed when enough opportunity remains.
 - Live-price validation fails closed when no current price is available.
 - Fresh revalidated signals pass when current price data is available.
+- Current price drift beyond the configured stop-distance fraction is rejected.
+- Current reward/risk below the configured minimum is rejected.
 
 ## Current Condition
 

@@ -2279,7 +2279,8 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 	try:
 		from db.session import get_session, get_engine_for_event_loop
 		from db.models import User, Signal, SignalDelivery, Outcome
-		from sqlalchemy import select, func
+		from db.pg_features import get_user_performance_30d
+		from sqlalchemy import select, func, text
 		from datetime import datetime, timedelta
 
 		# If a web dashboard URL is configured, send premium users to it
@@ -2325,6 +2326,18 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			total_signals = 0
 			wins = 0
 			losses = 0
+			partial_wins = 0
+			breakeven = 0
+			expired = 0
+			cancelled = 0
+			missed_entry = 0
+			tracking_failed = 0
+			active_signals = 0
+			outcome_pending = 0
+			tracked = 0
+			completed = 0
+			outcome_coverage = 0.0
+			completion_rate = 0.0
 			open_limit_per_asset = 20
 			open_limit_per_class = 20
 			class_usage_txt = "N/A"
@@ -2344,79 +2357,101 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 					return "fx"
 				if s in {"XAUUSD", "XAGUSD", "WTI", "BRENT", "CL=F", "GC=F", "SI=F"}:
 					return "commodity"
+				if s in {"DXY", "VIX", "US30", "NAS100", "SPX500", "SPY", "QQQ"}:
+					return "index"
 				return "stock"
 
-			asset_open_rows = (await session.execute(
-				select(Signal.asset, func.count(Signal.signal_id))
-				.where(
-					Signal.expired.is_(False),
-					Signal.archived.is_(False),
-				)
-				.group_by(Signal.asset)
-			)).fetchall()
-
 			asset_open_counts: dict[str, int] = {}
-			class_open_counts: dict[str, int] = {"crypto": 0, "fx": 0, "commodity": 0, "stock": 0}
-			for _asset, _count in asset_open_rows:
-				_asset_key = str(_asset or "").upper().strip()
-				_count_i = int(_count or 0)
-				if not _asset_key:
-					continue
-				asset_open_counts[_asset_key] = _count_i
-				_cls = _asset_class(_asset_key)
-				class_open_counts[_cls] = int(class_open_counts.get(_cls, 0) + _count_i)
-
+			class_open_counts: dict[str, int] = {"crypto": 0, "fx": 0, "commodity": 0, "index": 0, "stock": 0}
+			if db_user_id:
+				stats = await get_user_performance_30d(session, int(user_id))
+				total_signals = int((stats or {}).get("total") or 0)
+				wins = int((stats or {}).get("terminal_wins", (stats or {}).get("wins", 0)) or 0)
+				losses = int((stats or {}).get("losses") or 0)
+				partial_wins = int((stats or {}).get("partial_wins") or 0)
+				breakeven = int((stats or {}).get("breakeven") or 0)
+				expired = int((stats or {}).get("expired") or (stats or {}).get("time_stops") or 0)
+				cancelled = int((stats or {}).get("cancelled") or 0)
+				missed_entry = int((stats or {}).get("missed_entry") or 0)
+				tracking_failed = int((stats or {}).get("tracking_failed") or 0)
+				active_signals = int((stats or {}).get("active") or 0)
+				outcome_pending = int((stats or {}).get("outcome_pending") or 0)
+				tracked = int((stats or {}).get("tracked_outcomes") or 0)
+				completed = int((stats or {}).get("completed_outcomes") or 0)
+				outcome_coverage = float((stats or {}).get("outcome_coverage") or 0.0) * 100.0
+				completion_rate = float((stats or {}).get("completion_rate") or 0.0) * 100.0
+				user_asset_rows = (await session.execute(
+					text(
+						"""
+						WITH delivered AS (
+							SELECT DISTINCT sd.signal_id, s.asset, s.status, s.expired, s.archived, s.expires_at
+							FROM signal_deliveries sd
+							JOIN signals s ON s.signal_id = sd.signal_id
+							WHERE sd.user_id = :uid
+							  AND sd.sent_ok IS TRUE
+							  AND sd.delivered_at >= :cutoff
+						),
+						resolved AS (
+							SELECT DISTINCT signal_id
+							FROM outcomes
+							WHERE LOWER(COALESCE(canonical_outcome, status, '')) IN (
+								'tp','tp3','win','sl','loss','stop_loss','expired','time_stop','cancelled','canceled','superseded','missed','missed_entry','entry_missed'
+							)
+						)
+						SELECT asset, COUNT(*) AS n
+						FROM delivered d
+						LEFT JOIN resolved r ON r.signal_id = d.signal_id
+						WHERE r.signal_id IS NULL
+						  AND COALESCE(d.archived, FALSE) IS FALSE
+						  AND COALESCE(d.expired, FALSE) IS FALSE
+						  AND (d.expires_at IS NULL OR d.expires_at >= NOW())
+						GROUP BY asset
+						ORDER BY n DESC, asset ASC
+						"""
+					)
+					,
+					{"uid": int(db_user_id), "cutoff": cutoff},
+				)).fetchall()
+				for _asset, _count in user_asset_rows:
+					_asset_key = str(_asset or "").upper().strip()
+					_count_i = int(_count or 0)
+					if not _asset_key:
+						continue
+					asset_open_counts[_asset_key] = _count_i
+					_cls = _asset_class(_asset_key)
+					class_open_counts[_cls] = int(class_open_counts.get(_cls, 0) + _count_i)
+				if asset_open_counts:
+					top_open = sorted(asset_open_counts.items(), key=lambda kv: kv[1], reverse=True)[:4]
+					asset_usage_txt = " | ".join([f"{a} {c}/{open_limit_per_asset}" for a, c in top_open])
+				else:
+					asset_usage_txt = "No active delivered exposure"
+			else:
+				asset_open_rows = (await session.execute(
+					select(Signal.asset, func.count(Signal.signal_id))
+					.where(
+						Signal.expired.is_(False),
+						Signal.archived.is_(False),
+					)
+					.group_by(Signal.asset)
+				)).fetchall()
+				for _asset, _count in asset_open_rows:
+					_asset_key = str(_asset or "").upper().strip()
+					_count_i = int(_count or 0)
+					if not _asset_key:
+						continue
+					asset_open_counts[_asset_key] = _count_i
+					_cls = _asset_class(_asset_key)
+					class_open_counts[_cls] = int(class_open_counts.get(_cls, 0) + _count_i)
+				if asset_open_counts:
+					top_open = sorted(asset_open_counts.items(), key=lambda kv: kv[1], reverse=True)[:4]
+					asset_usage_txt = " | ".join([f"{a} {c}/{open_limit_per_asset}" for a, c in top_open])
 			class_usage_txt = (
 				f"CR {class_open_counts.get('crypto', 0)}/{open_limit_per_class} | "
 				f"FX {class_open_counts.get('fx', 0)}/{open_limit_per_class} | "
 				f"CM {class_open_counts.get('commodity', 0)}/{open_limit_per_class} | "
+				f"IX {class_open_counts.get('index', 0)}/{open_limit_per_class} | "
 				f"ST {class_open_counts.get('stock', 0)}/{open_limit_per_class}"
 			)
-			if db_user_id:
-				total_signals = (await session.execute(
-					select(func.count(SignalDelivery.id)).where(
-						SignalDelivery.user_id == db_user_id,
-						SignalDelivery.sent_ok.is_(True),
-						SignalDelivery.delivered_at >= cutoff,
-					)
-				)).scalar() or 0
-
-				oc_rows = (await session.execute(
-					select(Outcome)
-					.distinct(Outcome.id)
-					.join(SignalDelivery, SignalDelivery.signal_id == Outcome.signal_id)
-					.where(
-						SignalDelivery.user_id == db_user_id,
-						SignalDelivery.sent_ok.is_(True),
-						SignalDelivery.delivered_at >= cutoff,
-						Outcome.closed_at >= cutoff,
-					)
-				)).scalars().all()
-				wins = sum(1 for o in oc_rows if str(o.status or "").startswith("tp"))
-				losses = sum(1 for o in oc_rows if o.status == "sl")
-
-				user_asset_rows = (await session.execute(
-					select(Signal.asset)
-					.distinct()
-					.join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-					.where(
-						SignalDelivery.user_id == db_user_id,
-						SignalDelivery.sent_ok.is_(True),
-						SignalDelivery.delivered_at >= cutoff,
-					)
-				)).fetchall()
-				user_assets = [str(r[0] or "").upper().strip() for r in user_asset_rows if str(r[0] or "").strip()]
-				if user_assets:
-					parts = []
-					for _a in user_assets[:4]:
-						parts.append(f"{_a} {int(asset_open_counts.get(_a, 0))}/{open_limit_per_asset}")
-					asset_usage_txt = " | ".join(parts)
-				elif asset_open_counts:
-					top_open = sorted(asset_open_counts.items(), key=lambda kv: kv[1], reverse=True)[:4]
-					asset_usage_txt = " | ".join([f"{a} {c}/{open_limit_per_asset}" for a, c in top_open])
-			elif asset_open_counts:
-				top_open = sorted(asset_open_counts.items(), key=lambda kv: kv[1], reverse=True)[:4]
-				asset_usage_txt = " | ".join([f"{a} {c}/{open_limit_per_asset}" for a, c in top_open])
 			await session.commit()
 
 		win_rate = wins / (wins + losses) * 100 if (wins + losses) > 0 else 0.0
@@ -2432,14 +2467,17 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				expiry_txt = f"\n📅 Sub expires: <b>{exp.strftime('%d %b %Y')}</b>"
 
 		msg = (
-			f"📊 <b>Dashboard — {tier.upper()}</b>\n\n"
-			f"🎯 Signals (30d): <b>{total_signals}</b>\n"
-			f"✅ Wins: <b>{wins}</b>  ❌ Losses: <b>{losses}</b>\n"
-			f"📈 Win rate: <b>{win_rate:.1f}%</b>\n"
-			f"🧱 Open caps: <b>Asset {open_limit_per_asset}</b> | <b>Class {open_limit_per_class}</b>\n"
-			f"📦 Class usage: <b>{class_usage_txt}</b>\n"
-			f"🧭 Asset usage: <b>{asset_usage_txt}</b>\n"
-			f"⚙️ Execution mode: <b>{exec_mode}</b>"
+			f"<b>Dashboard - {tier.upper()}</b>\n\n"
+			f"Signals delivered (30d): <b>{total_signals}</b>\n"
+			f"Terminal wins: <b>{wins}</b> | Losses: <b>{losses}</b>\n"
+			f"Completed win rate: <b>{win_rate:.1f}%</b> ({completed}/{total_signals})\n"
+			f"Outcome coverage: <b>{outcome_coverage:.1f}%</b> ({tracked}/{total_signals})\n"
+			f"Active: <b>{active_signals}</b> | Pending: <b>{outcome_pending}</b> | Completion: <b>{completion_rate:.1f}%</b>\n"
+			f"Partial: <b>{partial_wins}</b> | BE: <b>{breakeven}</b> | Expired: <b>{expired}</b> | Missed: <b>{missed_entry}</b> | Failed: <b>{tracking_failed}</b> | Cancelled: <b>{cancelled}</b>\n"
+			f"Open caps: <b>Asset {open_limit_per_asset}</b> | <b>Class {open_limit_per_class}</b>\n"
+			f"Class usage: <b>{class_usage_txt}</b>\n"
+			f"Asset usage: <b>{asset_usage_txt}</b>\n"
+			f"Execution mode: <b>{exec_mode}</b>"
 			f"{expiry_txt}\n\n"
 			"<b>Quick commands:</b>\n"
 			"/portfolio — live P&amp;L\n"
@@ -4607,12 +4645,23 @@ async def performance_command(update, context):
 					_audit_logger.error(f"/performance fallback query failed for user={user_id}: {e2}")
 
 			total = int((stats or {}).get("total") or 0)
-			wins = int((stats or {}).get("wins") or 0)
+			wins = int((stats or {}).get("terminal_wins", (stats or {}).get("wins", 0)) or 0)
 			losses = int((stats or {}).get("losses") or 0)
 			win_rate = float((stats or {}).get("win_rate") or 0.0)
 			avg_r = (stats or {}).get("avg_r")
 			net_r = (stats or {}).get("net_r")
 			tracked = int((stats or {}).get("tracked_outcomes") or 0)
+			completed = int((stats or {}).get("completed_outcomes") or (wins + losses))
+			partial_wins = int((stats or {}).get("partial_wins") or 0)
+			breakeven = int((stats or {}).get("breakeven") or 0)
+			active = int((stats or {}).get("active") or 0)
+			outcome_pending = int((stats or {}).get("outcome_pending") or 0)
+			expired = int((stats or {}).get("expired") or (stats or {}).get("time_stops") or 0)
+			cancelled = int((stats or {}).get("cancelled") or 0)
+			missed_entry = int((stats or {}).get("missed_entry") or 0)
+			tracking_failed = int((stats or {}).get("tracking_failed") or 0)
+			outcome_coverage = float((stats or {}).get("outcome_coverage") or 0.0) * 100.0
+			completion_rate = float((stats or {}).get("completion_rate") or 0.0) * 100.0
 			profit_loss = float((stats or {}).get("profit_loss_pct") or 0.0)
 
 			if total <= 0:
@@ -4670,15 +4719,19 @@ async def performance_command(update, context):
 			profit_emoji: str = "✅" if profit_loss >= 0 else "⚠️"
 			
 			msg: str = (
-				"📊 Performance (last 30 days)\n\n"
+				"Performance (last 30 days)\n\n"
 				f"Signals delivered: {total}\n"
-				f"Outcomes tracked: {tracked}/{total}\n"
-				f"Wins: {wins} | Losses: {losses}\n"
-				f"Win rate: {round(win_rate*100,1)}%\n"
-				f"Avg R per trade: {avg_r_str}\n"
-				f"Net R (total): {net_r_str}\n"
+				f"Outcome coverage: {tracked}/{total} ({outcome_coverage:.1f}%)\n"
+				f"Completed outcomes: {completed}/{total} ({completion_rate:.1f}%)\n"
+				f"Terminal wins: {wins} | Losses: {losses}\n"
+				f"Completed win rate: {round(win_rate*100,1)}%\n"
+				f"Partial wins: {partial_wins} | BE: {breakeven}\n"
+				f"Active: {active} | Pending: {outcome_pending}\n"
+				f"Expired: {expired} | Missed entry: {missed_entry} | Tracking failed: {tracking_failed} | Cancelled: {cancelled}\n"
+				f"Avg R per completed trade: {avg_r_str}\n"
+				f"Net R (completed): {net_r_str}\n"
 				f"{profit_emoji} Est. profit/loss: {profit_str}\n\n"
-				"💡 Based on 1% risk per signal."
+				"Based on 1% risk per completed signal. Low coverage means win rate is not yet reliable."
 			)
 			if update.message is not None:
 				await update.message.reply_text(msg, reply_markup=_perf_kbd)

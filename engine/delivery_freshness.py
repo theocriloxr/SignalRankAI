@@ -40,6 +40,13 @@ class DeliveryFreshnessResult:
     live_price: float | None = None
 
 
+def _direction(signal: dict[str, Any]) -> str:
+    raw = str(signal.get("direction") or signal.get("side") or "").strip().lower()
+    if raw in {"sell", "short", "bearish"}:
+        return "short"
+    return "long"
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -103,6 +110,90 @@ def _infer_profile(signal: dict[str, Any], user_profile: str | None = None) -> s
         return infer_trade_profile(signal)
     except Exception:
         return str(signal.get("trade_profile") or "swing").strip().lower() or "swing"
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        out = float(value)
+        return out if out > 0 else None
+    except Exception:
+        return None
+
+
+def _target_prices(signal: dict[str, Any]) -> list[float]:
+    raw = (
+        signal.get("take_profit")
+        or signal.get("take_profits")
+        or signal.get("targets")
+        or signal.get("tp")
+    )
+    if raw is None:
+        return []
+    if isinstance(raw, (int, float)):
+        parsed: Any = [raw]
+    elif isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = [p.strip() for p in text.replace(";", ",").split(",") if p.strip()]
+    else:
+        parsed = raw
+    if isinstance(parsed, dict):
+        parsed = list(parsed.values())
+    if not isinstance(parsed, (list, tuple, set)):
+        parsed = [parsed]
+    out: list[float] = []
+    for item in parsed:
+        if isinstance(item, dict):
+            item = item.get("price") or item.get("target") or item.get("value")
+        value = _to_float(item)
+        if value is not None:
+            out.append(value)
+    return out
+
+
+def _current_reward_risk(signal: dict[str, Any], live_price: float) -> tuple[bool, str, float | None]:
+    entry = _to_float(signal.get("entry"))
+    stop = _to_float(signal.get("stop_loss") or signal.get("sl"))
+    if entry is None or stop is None:
+        return True, "rr_skip_missing_entry_or_stop", None
+    stop_distance = abs(entry - stop)
+    if stop_distance <= 0:
+        return False, "invalid_stop_distance", None
+
+    max_drift = _env_float("DELIVERY_MAX_ENTRY_DRIFT_STOP_FRACTION", 0.75)
+    drift_fraction = abs(float(live_price) - entry) / stop_distance
+    if drift_fraction > max_drift:
+        return False, f"entry_drift_exceeded:{drift_fraction:.2f}>{max_drift:.2f}", None
+
+    targets = _target_prices(signal)
+    if not targets:
+        return True, "rr_skip_missing_target", None
+    direction = _direction(signal)
+    if direction == "short":
+        viable = [t for t in targets if t < float(live_price)]
+        target = max(viable) if viable else min(targets)
+        risk = stop - float(live_price)
+        reward = float(live_price) - target
+    else:
+        viable = [t for t in targets if t > float(live_price)]
+        target = min(viable) if viable else max(targets)
+        risk = float(live_price) - stop
+        reward = target - float(live_price)
+    if risk <= 0:
+        return False, "current_price_beyond_stop", None
+    if reward <= 0:
+        return False, "target_already_consumed", 0.0
+    current_rr = reward / risk
+    min_rr = _env_float("DELIVERY_MIN_CURRENT_RR", 1.0)
+    if current_rr < min_rr:
+        return False, f"current_rr_too_low:{current_rr:.2f}<{min_rr:.2f}", current_rr
+    return True, f"current_rr_ok:{current_rr:.2f}", current_rr
 
 
 def max_delivery_age_minutes(signal: dict[str, Any], user_profile: str | None = None) -> float:
@@ -215,6 +306,16 @@ async def validate_delivery_freshness(
         logger.debug("[delivery_freshness] price revalidation skipped after error: %s", exc)
 
     if live_price is not None:
+        rr_ok, rr_reason, _current_rr = _current_reward_risk(sig, float(live_price))
+        if not rr_ok:
+            return DeliveryFreshnessResult(
+                False,
+                rr_reason,
+                age_result.age_minutes,
+                age_result.max_age_minutes,
+                age_result.opportunity_remaining_pct,
+                float(live_price),
+            )
         try:
             from engine.price_validator import check_sl_tp_hit
 
