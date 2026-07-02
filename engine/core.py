@@ -2659,17 +2659,17 @@ def main_loop(DRY_RUN: bool = False):
                                         market_data=market_data if isinstance(market_data, dict) else {},
                                         candles=candles if isinstance(candles, list) else [],
                                     )
-                            if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
-                                sig['rejection_reason'] = 'market_intelligence_block'
-                                pipeline_stats["quality_rejected"] += 1
-                                _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
-                                _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
-                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
-                                    "asset_health_score": sig.get("asset_health_score"),
-                                    "market_session": sig.get("market_session"),
-                                    "rejection_bucket": _rejection_bucket,
-                                })
-                                continue
+                                if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
+                                    sig['rejection_reason'] = 'market_intelligence_block'
+                                    pipeline_stats["quality_rejected"] += 1
+                                    _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
+                                    _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
+                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                        "asset_health_score": sig.get("asset_health_score"),
+                                        "market_session": sig.get("market_session"),
+                                        "rejection_bucket": _rejection_bucket,
+                                    })
+                                    continue
                             except Exception as _intel_err:
                                 logger.debug(f"[engine] signal intelligence enrichment failed: {_intel_err}")
 
