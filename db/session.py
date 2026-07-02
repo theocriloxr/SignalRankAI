@@ -184,9 +184,8 @@ _engines_by_loop: dict[int, AsyncEngine] = {}
 _sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
 _sync_thread_local = threading.local()
-_session_gate = threading.BoundedSemaphore(
-    max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", 1 if _is_railway_runtime() else 8, minimum=1))
-)
+_session_gate_limit = max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", 1 if _is_railway_runtime() else 8, minimum=1))
+_session_gate = threading.BoundedSemaphore(_session_gate_limit)
 _session_metrics_lock = threading.Lock()
 _session_metrics: dict[str, int] = {
     "opened": 0,
@@ -306,7 +305,7 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "effective_max_overflow": max_overflow,
         "railway_runtime": _is_railway_runtime(),
         "nullpool": bool(pool_size == 0 and max_overflow == 0),
-        "session_limit": max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", 1 if _is_railway_runtime() else 8, minimum=1)),
+        "session_limit": int(_session_gate_limit),
         "session_metrics": session_metrics,
     }
     if engine is None:

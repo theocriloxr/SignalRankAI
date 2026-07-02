@@ -67,10 +67,14 @@ def test_db_health_and_profile_commands_are_registered_and_helped():
 
     assert 'CommandHandler("profile"' in bot
     assert 'CommandHandler("db_health"' in bot
+    assert 'CommandHandler("system"' in bot
     assert '"profile":             "FREE"' in access
     assert '"db_health":           "ADMIN"' in access
+    assert '"system":              "ADMIN"' in access
     assert "async def profile_command" in commands
     assert "async def db_health_command" in commands
+    assert "async def system_command" in commands
+    assert "list_delivered_signals_for_user" in (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
 
 
 def test_signal_all_is_fast_usage_reply():
