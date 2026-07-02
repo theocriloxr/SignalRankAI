@@ -10,6 +10,7 @@ This pass moved the latest stabilization work into `SignalRankAI1` and focused o
 - Stock/index/asset discovery diagnostics being too shallow for production triage.
 - yfinance connector candles failing freshness checks because they lacked `timestamp`.
 - Telegram flood-control retries not being centrally throttled.
+- Short-timeframe signals being delivered hours after generation.
 
 ## Implemented Changes
 
@@ -148,6 +149,29 @@ New environment variables:
 - `TELEGRAM_RETRY_AFTER_MAX_SECONDS` default `180`
 - `TELEGRAM_SEND_MAX_ATTEMPTS` default `2`
 
+### Stale Signal Delivery Gate
+
+Files:
+
+- `engine/delivery_freshness.py`
+- `signalrank_telegram/bot.py`
+- `tests/test_delivery_freshness.py`
+
+Added a hard delivery freshness gate so stale opportunities are rejected before Telegram delivery instead of merely showing `Freshness` and `Age` in the message.
+
+The gate now checks:
+
+- signal age by timeframe,
+- user trade profile maximum age,
+- remaining opportunity decay,
+- live price availability,
+- current setup validity through the existing stale-signal validator,
+- whether TP/SL has already been reached.
+
+This directly targets the production failure where a `5m` signal could be generated nearly five hours earlier and still be delivered.
+
+The resend pipeline also expires stale candidates before sending, so DB or scheduler recovery should not flush old signals to users.
+
 ## Railway Environment Variables To Review
 
 Recommended production values for the current Railway monolith shape:
@@ -161,6 +185,12 @@ DB_POOL_TIMEOUT_SECONDS=30
 TELEGRAM_GLOBAL_SEND_DELAY_SECONDS=0.08
 TELEGRAM_RETRY_AFTER_MAX_SECONDS=180
 TELEGRAM_SEND_MAX_ATTEMPTS=2
+DELIVERY_FRESHNESS_GATE_ENABLED=true
+DELIVERY_REQUIRE_LIVE_PRICE=true
+DELIVERY_DEFAULT_MAX_SIGNAL_AGE_MINUTES=60
+DELIVERY_OPPORTUNITY_MIN_REMAINING_PCT=30
+DELIVERY_MAX_SIGNAL_AGE_BY_TF_MINUTES={"1m":2,"5m":10,"15m":20,"1h":60,"4h":180,"1d":720}
+DELIVERY_MAX_SIGNAL_AGE_BY_PROFILE_MINUTES={"scalp":10,"day":45,"swing":360,"position":4320}
 NO_CANDLE_LOG_COOLDOWN_SECONDS=900
 PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES=10,30,60
 PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES=60
@@ -175,12 +205,15 @@ Commands run:
 ```text
 python -m py_compile db/session.py db/pg_features.py data/connectors/yfinance_adapter.py data/market_data.py signalrank_telegram/commands.py signalrank_telegram/bot.py signalrank_telegram/command_access.py
 python -m pytest tests/test_trader_profiles_and_platform_reliability.py tests/test_deploy_log_regressions.py -q
+python -m py_compile engine\delivery_freshness.py signalrank_telegram\bot.py
+python -m pytest tests\test_delivery_freshness.py tests\test_trader_profiles_and_platform_reliability.py tests\test_deploy_log_regressions.py -q
 ```
 
 Result:
 
 ```text
 19 passed, 3 warnings
+24 passed, 3 warnings
 ```
 
 Warnings are pre-existing deprecation/runtime warnings:
@@ -201,6 +234,7 @@ Most important next checks after deploy:
 - `/system` should execute for admin/owner users.
 - `/assets discovered` and `/assets providers` should explain why stocks or indices are absent instead of leaving only log warnings.
 - Telegram flood-control warnings should decrease; if they persist, lower send volume or increase `TELEGRAM_GLOBAL_SEND_DELAY_SECONDS`.
+- Short-timeframe signals should be rejected or expired if their age exceeds the delivery freshness gate.
 
 ## Remaining Live-Evidence Items
 

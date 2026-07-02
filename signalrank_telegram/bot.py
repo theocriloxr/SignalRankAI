@@ -141,7 +141,8 @@ async def _resend_unsent_signals_async():
         except Exception:
             pass
 
-        # Fetch signals from the last 24 h, limit 100 rows, then rank by score
+        # Fetch recent signals, then apply a hard per-timeframe freshness gate
+        # before anything can be reserved or delivered.
         async with get_session() as session:
             try:
                 raw_signals = await list_active_signals(session, max_age_days=1, limit=100)
@@ -178,6 +179,38 @@ async def _resend_unsent_signals_async():
                 continue
 
         signals = list(best_by_bucket.values())[:max(1, resend_max_signals)]
+        try:
+            from engine.delivery_freshness import evaluate_signal_age
+
+            fresh_ranked = []
+            for s in signals:
+                payload = {c.key: getattr(s, c.key, None) for c in s.__table__.columns} if hasattr(s, "__table__") else dict(getattr(s, "__dict__", {}) or {})
+                age_result = evaluate_signal_age(payload)
+                if age_result.ok:
+                    fresh_ranked.append(s)
+                    continue
+                sid = str(getattr(s, "signal_id", "") or "")
+                logger.info(
+                    "[resend] skipped stale signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    sid,
+                    getattr(s, "asset", ""),
+                    getattr(s, "timeframe", ""),
+                    age_result.reason,
+                    float(age_result.age_minutes or 0.0),
+                    float(age_result.max_age_minutes or 0.0),
+                    float(age_result.opportunity_remaining_pct or 0.0),
+                )
+                try:
+                    async with get_session() as _exp_s:
+                        from db.pg_features import expire_signal as _expire
+                        await _expire(_exp_s, sid)
+                        await _exp_s.commit()
+                except Exception:
+                    pass
+            signals = fresh_ranked
+        except Exception as _fresh_err:
+            logger.warning("[resend] freshness age gate failed; no stale signals delivered: %s", _fresh_err)
+            signals = []
 
         if not signals:
             logger.info(
@@ -1296,6 +1329,40 @@ async def _deliver_or_update_signal_async(
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     signal_id = str(signal.get("signal_id") or "").strip()
+    try:
+        from engine.delivery_freshness import validate_delivery_freshness
+
+        _cached_live_price = None
+        try:
+            _raw_price = signal.get("current_price") or signal.get("live_price")
+            _cached_live_price = float(_raw_price) if _raw_price is not None else None
+        except Exception:
+            _cached_live_price = None
+        freshness = await validate_delivery_freshness(
+            signal,
+            user_profile=signal.get("trade_profile"),
+            cached_live_price=_cached_live_price,
+        )
+        if not freshness.ok:
+            logger.info(
+                "[delivery] blocked stale signal user=%s signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                telegram_user_id,
+                signal_id or signal.get("id"),
+                signal.get("asset") or signal.get("symbol"),
+                signal.get("timeframe"),
+                freshness.reason,
+                float(freshness.age_minutes or 0.0),
+                float(freshness.max_age_minutes or 0.0),
+                float(freshness.opportunity_remaining_pct or 0.0),
+            )
+            return False
+        if freshness.live_price is not None:
+            signal["current_price"] = float(freshness.live_price)
+            signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
+    except Exception as exc:
+        logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
+        return False
+
     text = format_signal(signal, display_tier=display_tier)
     if not text or not str(text).strip():
         return False
@@ -1335,7 +1402,8 @@ async def _deliver_or_update_signal_async(
                         url=_build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"])),
                     )]]
                 )
-                await bot.send_message(
+                await _telegram_send_message_guarded(
+                    bot,
                     chat_id=int(telegram_user_id),
                     text=f"♻️ <b>Signal updated</b> — {update_reason}.",
                     parse_mode="HTML",
@@ -2198,7 +2266,7 @@ async def _send_signal_with_engagement_async(
         except Exception:
             pass
         # Fallback: send without buttons so the signal still reaches the user
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode="HTML")
 
 
 def _send_signal_with_engagement_sync(
@@ -2966,6 +3034,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         signals_list = (vip_list + prem_list)
     else:
         signals_list = list(strategy_signals or [])
+    user_trade_profile = "all"
 
     # Canonical tier quality gate: enforce per-tier score thresholds centrally,
     # independent of caller/source (engine, resend, callbacks, etc.).
@@ -3016,6 +3085,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
 
         async with _profile_get_session() as _profile_session:
             _prefs = await get_user_trading_preferences(_profile_session, int(user_id))
+        user_trade_profile = str(getattr(_prefs, "trade_profile", "all") or "all")
         before_profile_count = len(signals_list)
         _filtered_signals = []
         for sig in signals_list:
@@ -3041,9 +3111,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         return
 
     # --- FRESHNESS FILTERING ---
-    # Keep this path non-blocking (avoid sync HTTP calls in async dispatch loop).
+    # Final freshness gate before reservation/delivery. This enforces hard age
+    # limits by timeframe/profile, opportunity decay, price drift, and TP/SL
+    # already-hit checks.
     try:
-        from engine.stale_signal_validator import validate_signal_freshness
+        from engine.delivery_freshness import validate_delivery_freshness
 
         fresh_signals = []
         for sig in signals_list:
@@ -3053,17 +3125,29 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             except Exception:
                 _cached_price = None
 
-            is_fresh, reason, live_price = await validate_signal_freshness(
+            freshness = await validate_delivery_freshness(
                 sig,
+                user_profile=user_trade_profile,
                 cached_live_price=_cached_price,
             )
-            if not is_fresh:
+            if not freshness.ok:
                 sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
                 asset = sig.get('asset', 'unknown')
-                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: asset={asset} reason={reason}")
+                logger.info(
+                    "[dispatch] filtered stale signal=%s user=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    sig_id,
+                    user_id,
+                    asset,
+                    sig.get("timeframe"),
+                    freshness.reason,
+                    float(freshness.age_minutes or 0.0),
+                    float(freshness.max_age_minutes or 0.0),
+                    float(freshness.opportunity_remaining_pct or 0.0),
+                )
             else:
-                if live_price is not None:
-                    sig["current_price"] = float(live_price)
+                if freshness.live_price is not None:
+                    sig["current_price"] = float(freshness.live_price)
+                sig["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
                 fresh_signals.append(sig)
         
         signals_list = fresh_signals
