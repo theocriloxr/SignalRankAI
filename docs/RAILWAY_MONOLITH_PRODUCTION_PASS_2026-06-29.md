@@ -1,5 +1,12 @@
 # Railway Monolith Production Pass - 2026-06-29
 
+## 2026-07-03 Supersession Note
+
+Railway DB pool and provider environment recommendations in this June 29 report are historical. For current deployment settings, use:
+
+- `docs/ENGINE_MARKET_DATA_PROVIDER_STABILIZATION_REPORT_2026-07-03.md`
+- `docs/RAILWAY_PROVIDER_ENVIRONMENT_VARIABLES_2026-07-03.md`
+
 ## Scope
 
 This pass focused on the Railway monolith symptoms reported from production logs:

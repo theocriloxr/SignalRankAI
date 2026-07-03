@@ -298,7 +298,10 @@ def test_outcome_notifications_are_claimed_before_send():
     assert "delivery_state=\"sending\"" in features_source
     assert "claim_outcome_notification_for_delivery" in tracker_source
     assert "_send_message_sync(" in tracker_source
-    assert tracker_source.index("claim_outcome_notification_for_delivery") < tracker_source.index("_send_message_sync(")
+    notify_start = tracker_source.index("async def _notify_outcome")
+    claim_idx = tracker_source.index("claimed = await claim_outcome_notification_for_delivery", notify_start)
+    send_idx = tracker_source.index("_send_message_sync(", notify_start)
+    assert claim_idx < send_idx
 
 
 @pytest.mark.asyncio

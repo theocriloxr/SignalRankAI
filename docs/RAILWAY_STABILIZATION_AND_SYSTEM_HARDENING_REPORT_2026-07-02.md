@@ -1,5 +1,14 @@
 # Railway Stabilization And System Hardening Report - 2026-07-02
 
+## 2026-07-03 Supersession Note
+
+The emergency Railway DB cap guidance in this July 2 report has been superseded by:
+
+- `docs/ENGINE_MARKET_DATA_PROVIDER_STABILIZATION_REPORT_2026-07-03.md`
+- `docs/RAILWAY_PROVIDER_ENVIRONMENT_VARIABLES_2026-07-03.md`
+
+Use the July 3 settings for current Railway deployments unless intentionally running on a very small Postgres plan.
+
 ## Scope
 
 This pass moved the latest stabilization work into `SignalRankAI1` and focused on the live Railway symptoms from the July 2 logs:
