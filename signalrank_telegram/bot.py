@@ -792,14 +792,14 @@ async def _send_message_async(
     telemetry_started_at: float | None = None,
     telemetry_tier: str | None = None,
     telemetry_regime: str | None = None,
-) -> None:
+) -> object:
     # Global fix: escape text for Markdown/MarkdownV2 parse modes
     try:
         if parse_mode and parse_mode.lower().startswith("markdown"):
             from telegram.helpers import escape_markdown
             version = 2 if "v2" in parse_mode.lower() else 1
             text = escape_markdown(str(text), version=version)
-        await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode=parse_mode)
+        msg = await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode=parse_mode)
         if telemetry_started_at is not None:
             observe_signal_dispatch(
                 max(0.0, time.perf_counter() - float(telemetry_started_at)),
@@ -844,6 +844,7 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
 
     try:
         global_delay = float((os.getenv("TELEGRAM_GLOBAL_SEND_DELAY_SECONDS") or "0.08").strip())
+        return msg
     except Exception:
         global_delay = 0.08
     try:

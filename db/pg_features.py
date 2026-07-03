@@ -1232,6 +1232,11 @@ async def record_signal_delivery(
                 return False
         existing_delivery.tier_at_send = tier_s
         existing_delivery.last_attempt_at = _utcnow()
+        existing_delivery.dispatch_started_at = _utcnow()
+        existing_delivery.telegram_send_started_at = None
+        existing_delivery.delivery_confirmed_at = None
+        existing_delivery.delivery_state = "reserved"
+        existing_delivery.sent_ok = False
         try:
             existing_delivery.attempt_count = int(getattr(existing_delivery, "attempt_count", 0) or 0) + 1
         except Exception:
@@ -1247,7 +1252,9 @@ async def record_signal_delivery(
         signal_id=signal_id,
         tier_at_send=tier_s,
         sent_ok=False,
+        delivery_state="reserved",
         attempt_count=1,
+        dispatch_started_at=_utcnow(),
         last_attempt_at=_utcnow(),
         delivered_at=_utcnow(),
     )
@@ -1675,6 +1682,10 @@ async def mark_signal_delivery_result(
     signal_id: str,
     sent_ok: bool,
     error: str | None = None,
+    telegram_chat_id: int | None = None,
+    telegram_message_id: int | None = None,
+    telegram_api_result: dict | None = None,
+    delivery_state: str | None = None,
 ) -> bool:
     """Update delivery attempt result after Telegram/webhook dispatch."""
     user_res = await session.execute(
@@ -1697,8 +1708,24 @@ async def mark_signal_delivery_result(
     if row is None:
         return False
 
+    now = _utcnow()
+    proof_ok = telegram_chat_id is not None and telegram_message_id is not None
+    if sent_ok and not proof_ok:
+        sent_ok = False
+        error = error or "missing_telegram_ack"
+
     row.sent_ok = bool(sent_ok)
-    row.last_attempt_at = _utcnow()
+    row.last_attempt_at = now
+    row.telegram_send_started_at = getattr(row, "telegram_send_started_at", None) or now
+    if sent_ok:
+        row.delivery_confirmed_at = now
+        row.delivered_at = now
+        row.delivery_state = str(delivery_state or "sent")[:16]
+        row.telegram_chat_id = int(telegram_chat_id) if telegram_chat_id is not None else None
+        row.telegram_message_id = int(telegram_message_id) if telegram_message_id is not None else None
+        row.telegram_api_result = dict(telegram_api_result or {})
+    else:
+        row.delivery_state = str(delivery_state or "failed")[:16]
     try:
         row.attempt_count = int(getattr(row, "attempt_count", 0) or 0) + 1
     except Exception:

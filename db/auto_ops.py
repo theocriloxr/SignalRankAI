@@ -186,7 +186,14 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
                     # signal_deliveries (0023 migration belt-and-suspenders)
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS sent_ok BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_state VARCHAR(16) NOT NULL DEFAULT 'reserved'",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 1",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_send_started_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_confirmed_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_api_result JSON DEFAULT '{}'::json",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMP",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_error TEXT",
                 ]
@@ -205,6 +212,14 @@ def run_startup_ops(run_mode: str) -> None:
                     pass
                 try:
                     cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_asset_class ON signals(asset_class)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_state ON signal_deliveries(delivery_state)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_telegram_msg ON signal_deliveries(telegram_chat_id, telegram_message_id)")
                 except Exception:
                     pass
                 conn.commit()
