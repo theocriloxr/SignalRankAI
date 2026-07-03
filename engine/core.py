@@ -1397,21 +1397,33 @@ def _rotate_slice(items: List[str], start: int, size: int) -> List[str]:
 
 async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]]) -> Dict[str, Dict]:
     concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
-    per_asset_timeout_default = 120.0 if is_binance_blocked() else 45.0
+    # Keep the per-asset deadline short enough that a few slow provider
+    # waterfalls cannot exceed the whole batch timeout and erase partial data.
+    per_asset_timeout_default = 30.0 if is_binance_blocked() else 20.0
     per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default))
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(asset: str, tfs: List[str]):
         async with sem:
+            started = time.time()
             try:
-                started = time.time()
-                data = await fetch_market_data_cached(asset, tfs)
+                data = await asyncio.wait_for(
+                    fetch_market_data_cached(asset, tfs),
+                    timeout=max(1.0, float(per_asset_timeout)),
+                )
                 elapsed = time.time() - started
                 if elapsed > max(5.0, per_asset_timeout):
                     logger.warning(
                         "[engine] candle_fetch asset=%s status=slow elapsed=%.2fs",
                         asset,
                         elapsed,
+                    )
+                else:
+                    logger.info(
+                        "[engine] candle_fetch asset=%s status=done elapsed=%.2fs tfs=%s",
+                        asset,
+                        elapsed,
+                        len(tfs or []),
                     )
                 if not data or not any(data.values()):
                     logger.warning("[WARN] All providers failed for %s, skipping...", asset)
@@ -1425,13 +1437,41 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                     except Exception:
                         logger.exception("indicator calc failed")
                 return asset, (data or {})
+            except asyncio.TimeoutError:
+                elapsed = time.time() - started
+                logger.warning(
+                    "[engine] candle_fetch asset=%s status=timeout elapsed=%.2fs timeout=%.2fs",
+                    asset,
+                    elapsed,
+                    per_asset_timeout,
+                )
+                return asset, {}
             except Exception:
                 logger.exception(f"[engine] candle_fetch failed for {asset}")
                 return asset, {}
 
     tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
-    return {asset: data for asset, data in results}
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    out: Dict[str, Dict] = {}
+    for item in results:
+        if isinstance(item, Exception):
+            logger.warning("[engine] candle_fetch task failed: %s", _short_err(item))
+            continue
+        try:
+            asset, data = item
+            out[str(asset)] = data if isinstance(data, dict) else {}
+        except Exception as exc:
+            logger.warning("[engine] candle_fetch malformed result: %s", _short_err(exc))
+    success_count = sum(1 for value in out.values() if isinstance(value, dict) and any(value.values()))
+    logger.info(
+        "[engine] candle_fetch summary assets=%s success=%s failed=%s concurrency=%s timeout=%.2fs",
+        len(asset_to_timeframes or {}),
+        success_count,
+        max(0, len(asset_to_timeframes or {}) - success_count),
+        concurrency,
+        per_asset_timeout,
+    )
+    return out
 
 
 # Minimal helper: safe await-or-call for maybe-async functions
@@ -1976,13 +2016,17 @@ def main_loop(DRY_RUN: bool = False):
                 logger.exception("Market data fetch failed or timed out")
                 all_market_data = {}
             market_fetch_ms = int((time.monotonic() - market_fetch_started) * 1000)
+            usable_market_data_assets = sum(
+                1 for _payload in (all_market_data or {}).values()
+                if isinstance(_payload, dict) and any(_payload.values())
+            )
             try:
                 _cycle_state.update({
                     "status": "market_data_fetched",
                     "market_fetch_ms": int(market_fetch_ms),
                     "market_fetch_error": market_fetch_error,
-                    "market_data_assets": int(len(all_market_data or {})),
-                    "missing_market_data_assets": int(max(0, cycle_assets - len(all_market_data or {}))),
+                    "market_data_assets": int(usable_market_data_assets),
+                    "missing_market_data_assets": int(max(0, cycle_assets - usable_market_data_assets)),
                 })
                 _publish_engine_cycle_state(_cycle_state)
             except Exception:
@@ -2039,7 +2083,7 @@ def main_loop(DRY_RUN: bool = False):
                 pipeline_stats[f"quality_rejected_{_cls_name}"] = 0
             pipeline_stats["assets_attempted"] = int(cycle_assets)
             pipeline_stats["market_fetch_ms"] = int(market_fetch_ms)
-            pipeline_stats["market_data_assets"] = int(len(all_market_data or {}))
+            pipeline_stats["market_data_assets"] = int(usable_market_data_assets)
             if market_fetch_error:
                 pipeline_stats["market_fetch_error"] = market_fetch_error
             _increment_engine_scanned(cycle_assets)

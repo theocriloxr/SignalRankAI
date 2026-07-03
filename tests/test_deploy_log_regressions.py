@@ -281,6 +281,26 @@ def test_engine_counts_scan_attempts_before_market_data_gate():
     assert "\"engine:last_cycle\"" in core_source
 
 
+def test_market_data_batch_is_timeout_isolated_per_asset():
+    core_source = Path("engine/core.py").read_text(encoding="utf-8")
+
+    assert "asyncio.wait_for(" in core_source
+    assert "fetch_market_data_cached(asset, tfs)" in core_source
+    assert "return_exceptions=True" in core_source
+    assert "status=timeout" in core_source
+
+
+def test_outcome_notifications_are_claimed_before_send():
+    tracker_source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
+    features_source = Path("db/pg_features.py").read_text(encoding="utf-8")
+
+    assert "async def claim_outcome_notification_for_delivery" in features_source
+    assert "delivery_state=\"sending\"" in features_source
+    assert "claim_outcome_notification_for_delivery" in tracker_source
+    assert "_send_message_sync(" in tracker_source
+    assert tracker_source.index("claim_outcome_notification_for_delivery") < tracker_source.index("_send_message_sync(")
+
+
 @pytest.mark.asyncio
 async def test_weekly_admin_report_includes_real_shadow_counters(monkeypatch):
     import engine.admin_pulse as pulse

@@ -299,7 +299,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
     try:
         from db.session import get_session
         from db.models import Signal, SignalDelivery, Outcome
-        from sqlalchemy import select
+        from sqlalchemy import select, or_, and_
 
         lookback_hours = int(os.getenv("OUTCOME_BACKFILL_LOOKBACK_HOURS", "168") or 168)
         limit = max(0, int(os.getenv("OUTCOME_BACKFILL_SIGNAL_LIMIT", str(limit)) or limit))
@@ -905,12 +905,26 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
         bot = Bot(token=bot_token)
 
         async with get_session() as session:
+            stale_claim_seconds = max(
+                60,
+                int(os.getenv("OUTCOME_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300),
+            )
+            stale_sending_cutoff = _utc_now_naive() - timedelta(seconds=stale_claim_seconds)
             q = (
                 select(OutcomeNotification)
                 .where(
                     OutcomeNotification.signal_id == signal_id,
                     OutcomeNotification.outcome_status == status_l,
-                    OutcomeNotification.delivery_state.in_(["pending", "failed"]),
+                    or_(
+                        OutcomeNotification.delivery_state.in_(["pending", "failed"]),
+                        and_(
+                            OutcomeNotification.delivery_state == "sending",
+                            or_(
+                                OutcomeNotification.last_attempt_at.is_(None),
+                                OutcomeNotification.last_attempt_at <= stale_sending_cutoff,
+                            ),
+                        ),
+                    ),
                 )
                 .order_by(OutcomeNotification.id.asc())
                 .limit(500)
@@ -934,6 +948,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
                             int(row.id),
                             error="recipient_missing",
                         )
+                        await session.commit()
                         continue
 
                     tier_at_send = str(getattr(row, "tier_at_send", "free") or "free").lower()

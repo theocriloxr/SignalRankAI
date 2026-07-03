@@ -98,6 +98,7 @@ COMMAND_TIERS = {
     "ops_health":          "ADMIN",
     "system":              "ADMIN",
     "db_health":           "ADMIN",
+    "engine_debug":        "ADMIN",
     "blast_terms":         "ADMIN",
     "assets":              "ADMIN",
 
@@ -368,6 +369,7 @@ COMMAND_HELP = {
             ("selfcheck",              "System self-check"),
             ("system",                 "System health and operations"),
             ("db_health",              "Database pool health"),
+            ("engine_debug",           "Latest engine cycle diagnostics"),
             ("provider_status",        "Data provider status"),
         ],
         "footer": (
@@ -387,6 +389,7 @@ COMMAND_HELP = {
 COMMAND_DESCRIPTIONS = {
     "codex_audit": "Local Codex governance review from DB evidence",
     "db_health": "Database pool and Postgres activity diagnostics",
+    "engine_debug": "Latest engine market-data/scoring pipeline diagnostics",
     "system": "System health and operations diagnostics",
     "profile": "Choose scalp/day/swing/position signal style",
     "mission": "Signal Mission Control for active delivered trades",

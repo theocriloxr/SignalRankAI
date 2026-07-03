@@ -1114,6 +1114,80 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		await update.message.reply_text(f"Database health unavailable. Reference logged: {type(exc).__name__}")
 
 
+async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Admin-only latest engine cycle diagnostics from the Redis/runtime state heartbeat."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	try:
+		import json as _json
+		from core.redis_state import state
+
+		raw = state.get_sync("engine:last_cycle")
+		if not raw:
+			await update.message.reply_text(
+				"Engine Debug\n\nNo latest cycle heartbeat found yet. Wait for one engine cycle, then retry /engine_debug."
+			)
+			return
+		if isinstance(raw, (bytes, bytearray)):
+			raw = raw.decode("utf-8", errors="replace")
+		cycle = _json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+		pipeline = dict(cycle.get("pipeline_stats") or {})
+
+		def _fmt_ms(value):
+			try:
+				return f"{int(float(value))}ms"
+			except Exception:
+				return "n/a"
+
+		lines = [
+			"Engine Debug",
+			"",
+			f"Status: {cycle.get('status', 'unknown')}",
+			f"Cycle: {cycle.get('cycle', 'n/a')}  Round: {cycle.get('round', 'n/a')}",
+			f"Started: {cycle.get('started_at', 'n/a')}",
+			f"Completed: {cycle.get('completed_at', cycle.get('updated_at', 'n/a'))}",
+			f"Duration: {_fmt_ms(cycle.get('duration_ms'))}",
+			f"Assets attempted: {cycle.get('assets_attempted', pipeline.get('assets_attempted', 0))}",
+			f"Market data assets: {cycle.get('market_data_assets', pipeline.get('market_data_assets', 0))}",
+			f"Market fetch: {_fmt_ms(cycle.get('market_fetch_ms', pipeline.get('market_fetch_ms')))}",
+			f"Market fetch error: {cycle.get('market_fetch_error') or pipeline.get('market_fetch_error') or 'none'}",
+			f"Max score: {cycle.get('max_score', 'n/a')}",
+			f"Score absent reason: {cycle.get('max_score_absent_reason') or 'none'}",
+			"",
+			"Pipeline:",
+		]
+		for key in (
+			"strategy_signals",
+			"normalized",
+			"consensus",
+			"selected",
+			"unique",
+			"strict_candidates",
+			"risk_passed",
+			"final_signals",
+			"stored",
+			"no_candles",
+			"no_strategy_signals",
+			"validation_failed",
+			"risk_failed",
+			"advanced_filter_failed",
+			"quality_rejected",
+			"score_rejected",
+			"skipped_portfolio_exposure",
+		):
+			if key in pipeline:
+				lines.append(f"- {key}: {pipeline.get(key)}")
+		class_counts = cycle.get("class_counts") or {}
+		if class_counts:
+			lines.extend(["", f"Class counts: {class_counts}"])
+		await update.message.reply_text("\n".join(lines))
+	except Exception as exc:
+		await update.message.reply_text(f"Engine debug unavailable. Reference logged: {type(exc).__name__}")
+
+
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Set or show the user's personalized AI trading profile."""
 	if await _public_guard(update):

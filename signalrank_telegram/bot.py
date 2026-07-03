@@ -602,6 +602,7 @@ from .commands import (
     ops_health_command,
     system_command,
     db_health_command,
+    engine_debug_command,
     profile_command,
     mission_command,
     myid_command,
@@ -4241,6 +4242,7 @@ def run_bot() -> None:
             ("provider_status", "Owner: provider health"),
             ("system", "Owner: system health"),
             ("db_health", "Owner: database health"),
+            ("engine_debug", "Owner: engine diagnostics"),
             ("qa_report", "Owner: QA report"),
         ]
         try:
@@ -4422,6 +4424,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("ops_health", _audit_handler("ops_health", ops_health_command)))
     application.add_handler(CommandHandler("system", _audit_handler("system", system_command)))
     application.add_handler(CommandHandler("db_health", _audit_handler("db_health", db_health_command)))
+    application.add_handler(CommandHandler("engine_debug", _audit_handler("engine_debug", engine_debug_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
     application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
