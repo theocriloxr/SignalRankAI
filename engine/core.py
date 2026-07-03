@@ -3745,6 +3745,22 @@ def main_loop(DRY_RUN: bool = False):
                             skipped_daily_limit += 1
                             continue
 
+                        user_trade_prefs = None
+                        try:
+                            from services.user_intelligence import get_user_trading_preferences as _get_user_trading_preferences
+
+                            async with _get_limit_session() as _profile_session:
+                                user_trade_prefs = await _get_user_trading_preferences(
+                                    _profile_session,
+                                    int(user_id),
+                                )
+                        except Exception as _profile_err:
+                            logger.debug(
+                                "[engine] trading preference lookup failed user=%s: %s",
+                                user_id,
+                                _profile_err,
+                            )
+
                         user_signals = []
                         for sig in _fresh_scored_signals:
                             if signals_sent_today + len(user_signals) >= daily_limit:
@@ -3794,6 +3810,34 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.warning(f"[engine] Price validation failed for signal: {e}")
                                 # Continue with signal delivery even if validation fails
 
+                            # Match the candidate to the user's trader profile before calling
+                            # Telegram dispatch. Dispatch applies the same filter again as a
+                            # final guard, but doing it here keeps delivery counters truthful.
+                            if user_trade_prefs is not None:
+                                try:
+                                    from services.trade_profiles import infer_trade_profile as _infer_trade_profile
+                                    from services.user_intelligence import signal_matches_preferences as _signal_matches_preferences
+
+                                    pref_ok, pref_reason = _signal_matches_preferences(sig, user_trade_prefs)
+                                    if not pref_ok:
+                                        logger.info(
+                                            "[engine] profile/preference skip user=%s profile=%s asset=%s tf=%s signal_profile=%s reason=%s",
+                                            user_id,
+                                            getattr(user_trade_prefs, "trade_profile", "all"),
+                                            sig.get("asset"),
+                                            sig.get("timeframe"),
+                                            _infer_trade_profile(sig),
+                                            pref_reason,
+                                        )
+                                        continue
+                                except Exception as _pref_err:
+                                    logger.debug(
+                                        "[engine] preference filter skipped user=%s asset=%s err=%s",
+                                        user_id,
+                                        sig.get("asset"),
+                                        _pref_err,
+                                    )
+
                             # Robust eligibility check with logging
                             try:
                                 delivery_score = _signal_display_score(sig)
@@ -3827,8 +3871,19 @@ def main_loop(DRY_RUN: bool = False):
                                 print(f"[DRY RUN][{user_tier}] {msg}")
                             dispatched_count += 1
                         else:
-                            await dispatch_signals_async(user_signals, user_id=user_id)
-                            dispatched_count += 1
+                            sent_count = await dispatch_signals_async(user_signals, user_id=user_id)
+                            sent_count = int(sent_count or 0)
+                            if sent_count > 0:
+                                dispatched_count += 1
+                            else:
+                                logger.info(
+                                    "[engine] dispatch produced no Telegram sends user=%s tier=%s candidates=%s profile=%s",
+                                    user_id,
+                                    user_tier,
+                                    len(user_signals),
+                                    getattr(user_trade_prefs, "trade_profile", "unknown") if user_trade_prefs is not None else "unknown",
+                                )
+                                skipped_no_eligible_signals += 1
                     except Exception:
                         logger.exception("deliver_all per-user failed")
                 logger.info(

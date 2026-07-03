@@ -94,6 +94,11 @@ async def _resend_unsent_signals_async():
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         from signalrank_telegram.access import resolve_user_tier
         from .formatter import format_signal
+        from services.trade_profiles import infer_trade_profile
+        from services.user_intelligence import (
+            get_user_trading_preferences,
+            signal_matches_preferences,
+        )
         import asyncio
 
         delivery_mgr = TierDeliveryManager()
@@ -224,6 +229,8 @@ async def _resend_unsent_signals_async():
         failed_count = 0
         skipped_eligibility_count = 0
         skipped_already_delivered_count = 0
+        skipped_profile_count = 0
+        user_prefs_cache = {}
 
         # Single Bot instance, properly initialised — avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
@@ -322,6 +329,37 @@ async def _resend_unsent_signals_async():
                         if int(user_id) in delivered_user_ids:
                             skipped_already_delivered_count += 1
                             continue
+
+                        try:
+                            prefs = user_prefs_cache.get(int(user_id))
+                            if prefs is None:
+                                async with get_session() as _pref_session:
+                                    prefs = await get_user_trading_preferences(
+                                        _pref_session,
+                                        int(user_id),
+                                    )
+                                user_prefs_cache[int(user_id)] = prefs
+                            pref_ok, pref_reason = signal_matches_preferences(sig_dict, prefs)
+                            if not pref_ok:
+                                skipped_profile_count += 1
+                                logger.info(
+                                    "[resend] profile skip user=%s profile=%s signal=%s asset=%s tf=%s signal_profile=%s reason=%s",
+                                    user_id,
+                                    getattr(prefs, "trade_profile", "all"),
+                                    signal_id,
+                                    sig_dict.get("asset"),
+                                    sig_dict.get("timeframe"),
+                                    infer_trade_profile(sig_dict),
+                                    pref_reason,
+                                )
+                                continue
+                        except Exception as _profile_err:
+                            logger.debug(
+                                "[resend] profile filter failed user=%s signal=%s err=%s",
+                                user_id,
+                                signal_id,
+                                _profile_err,
+                            )
 
                         # Tier, score, and daily-limit gate
                         score = float(getattr(sig, 'score', 0) or 0)
@@ -427,12 +465,13 @@ async def _resend_unsent_signals_async():
                 # unresolved signals should remain active until real expiry/outcome rules do it.
 
         logger.info(
-            "[resend] summary: users=%s candidate_signals=%s delivered=%s failed=%s skipped_eligibility=%s skipped_already_delivered=%s",
+            "[resend] summary: users=%s candidate_signals=%s delivered=%s failed=%s skipped_eligibility=%s skipped_profile=%s skipped_already_delivered=%s",
             len(user_ids),
             len(signals),
             delivered_count,
             failed_count,
             skipped_eligibility_count,
+            skipped_profile_count,
             skipped_already_delivered_count,
         )
 
@@ -3022,7 +3061,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     # Global kill-switch (do not dispatch/queue)
     try:
         if state.get_killswitch_sync().enabled:
-            return
+            return 0
     except Exception as e:
         logger.debug(f"[dispatch] Failed to check killswitch: {e}")
         pass
@@ -3110,7 +3149,13 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         _log_once('trade_profile_filter_error', f'[dispatch] Trading preference filter error: {e}')
 
     if not signals_list:
-        return
+        logger.info(
+            "[dispatch] no deliverable signals after profile/preferences user=%s profile=%s tier=%s",
+            user_id,
+            user_trade_profile,
+            routing_tier,
+        )
+        return 0
 
     # --- FRESHNESS FILTERING ---
     # Final freshness gate before reservation/delivery. This enforces hard age
@@ -3156,7 +3201,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         
         if not signals_list:
             logger.info(f"[dispatch] All signals filtered as stale for user {user_id}")
-            return
+            return 0
     except Exception as e:
         logger.warning(f"[dispatch] Freshness filtering failed for user {user_id}: {e}")
         # Continue with unfiltered signals on error
@@ -3226,7 +3271,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         )
 
     if not signals_list:
-        return
+        return 0
 
     # Dispatch diagnostics (debug-level only)
     try:
@@ -3454,8 +3499,9 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 pass
                             logger.debug(f"[dispatch] Exception in fallback send: {e}")
                             continue
-                    return
+                    return int(sent)
 
+                sent = 0
                 for signal in reserved:
                     try:
                         logger.debug(f"[dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
@@ -3466,6 +3512,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             display_tier=display_tier,
                         )
                         if _ok_send:
+                            sent += 1
                             try:
                                 _auto_execute_signal_if_enabled(
                                     telegram_user_id=int(user_id),
@@ -3530,7 +3577,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             pass
                         logger.debug(f"[dispatch] Exception in reserved send: {e}")
                         continue
-                return
+                return int(sent)
 
             # FREE with extra signals: send highest scoring available signal immediately
             if tier == 'free' and extra_left > 0:
@@ -3653,7 +3700,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     )
                     user = res_user.scalar_one_or_none()
                     if not user:
-                        return
+                        return 0
                     
                     # Check how many signals user already received today from DB
                     from core.tier_constants import TIER_DAILY_LIMITS
@@ -3675,7 +3722,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     
                     if remaining <= 0:
                         logger.info(f"[bot] daily limit reached for user={user_id} tier={user_tier_actual} sent={signals_sent_today}")
-                        return  # Already hit daily limit
+                        return 0  # Already hit daily limit
                     
                     # Get one random available signal at a time to avoid burst delivery.
                     available_signals = await get_random_available_signals_for_free_user(
@@ -3683,8 +3730,9 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     )
                     
                     if not available_signals:
-                        return  # No signals available
+                        return 0  # No signals available
                     
+                    sent_count = 0
                     # Send each signal
                     for sig in available_signals:
                         try:
@@ -3748,25 +3796,26 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     display_tier=signal_display_tier,
                                 ):
                                     continue
+                                sent_count += 1
                             except Exception as e:
                                 logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {e}")
                                 pass
                     
                     await session.commit()
+                    return sent_count
 
             # In production, FREE delivery should be driven by queued scheduler jobs
             # (distribute_random_signals_to_free_users_job + resend job) to keep timing
             # randomized and prevent burst/spam behavior from engine dispatch loops.
             if str(os.getenv("FREE_DIRECT_DISPATCH", "1")).strip().lower() in {"1", "true", "yes"}:
                 try:
-                    await _send_random_signals_immediately()
-                    return
+                    return int(await _send_random_signals_immediately() or 0)
                 except Exception as e:
                     _log_once(
                         "free_random_send_failed",
                         f"[bot] free random signal delivery failed: {type(e).__name__}: {e}",
                     )
-            return
+            return 0
     except Exception as e:
         _log_once(
             "dispatch_pg_path_failed",
@@ -3786,7 +3835,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         
         if signals_sent_today >= daily_limit:
             logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")
-            return
+            return 0
         
         bot = Bot(token=_require_telegram_token())
         limit = TIER_LIMITS.get(routing_tier, 0)
@@ -3818,14 +3867,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             except Exception as e:
                 logger.warning(f"[dispatch] Failed to dispatch signal to user {user_id}: {e}")
                 continue
-        return
+        return int(sent)
 
     # FREE: queue delayed summary (legacy mode).
     # Default is FOMO unlock dispatch on VIP TP1 events.
     try:
         if _is_free_fomo_dispatch_only_enabled():
             logger.debug(f"[dispatch] free queue skipped (FREE_FOMO_DISPATCH_ONLY=1) user={user_id}")
-            return
+            return 0
 
         from db.session import get_engine_for_event_loop, get_session
         engine = get_engine_for_event_loop()
@@ -3848,6 +3897,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     if not ok:
                         break
                 await session.commit()
+            return 0
 
         try:
             await _queue()
@@ -3861,9 +3911,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         try:
             bot = Bot(token=_require_telegram_token())
             await _send_message_async(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
+            return 1
         except Exception as e:
             logger.warning(f"[dispatch] Failed to send free preview to user {user_id}: {e}")
             pass
+    return 0
 
 
 def dispatch_signals(strategy_signals, user_id, regime=None):

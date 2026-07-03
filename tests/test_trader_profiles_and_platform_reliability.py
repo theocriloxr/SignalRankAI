@@ -39,6 +39,26 @@ def test_signal_profile_filter_matches_user_intent():
     assert signal_matches_user_profile({"timeframe": "4h"}, "all") is True
 
 
+def test_engine_delivery_filters_profile_before_telegram_dispatch():
+    source = (ROOT / "engine" / "core.py").read_text(encoding="utf-8")
+
+    assert "get_user_trading_preferences" in source
+    assert "signal_matches_preferences" in source
+    assert "[engine] profile/preference skip" in source
+    assert "dispatch produced no Telegram sends" in source
+    assert "sent_count = await dispatch_signals_async" in source
+
+
+def test_resend_path_is_profile_aware_and_reports_skips():
+    source = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+
+    assert "get_user_trading_preferences" in source
+    assert "signal_matches_preferences" in source
+    assert "[resend] profile skip" in source
+    assert "skipped_profile" in source
+    assert "return int(sent)" in source
+
+
 def test_trading_ledger_transition_contract():
     from services.trading_ledger import assert_valid_transition
 
