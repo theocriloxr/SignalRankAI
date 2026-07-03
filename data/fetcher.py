@@ -53,23 +53,60 @@ _PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES = 60  # Default repeat interval after fi
 def _provider_key(provider_name: str) -> str:
     return str(provider_name or "").strip().lower()
 
-def mark_provider_result(provider_name, ok):
+
+def _provider_alias(provider_name: str) -> str:
+    name = _provider_key(provider_name)
+    for suffix in ("_connector", "_legacy", "_adapter"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    if name == "yfinance":
+        return "yahoo"
+    return name
+
+def mark_provider_result(provider_name, ok, latency_ms: int | None = None):
     now = time.time()
     provider_key = _provider_key(provider_name)
+    alias_key = _provider_alias(provider_name)
     with _PROVIDER_HEALTH_LOCK:
-        entry = _PROVIDER_HEALTH.setdefault(provider_name, {"failures": [], "last_success": 0})
+        entry = _PROVIDER_HEALTH.setdefault(
+            provider_name,
+            {
+                "failures": [],
+                "last_success": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "latencies_ms": [],
+            },
+        )
+        if latency_ms is not None:
+            try:
+                latencies = entry.setdefault("latencies_ms", [])
+                latencies.append(max(0, int(latency_ms)))
+                entry["latencies_ms"] = latencies[-100:]
+            except Exception:
+                pass
         if ok:
+            entry["success_count"] = int(entry.get("success_count") or 0) + 1
             entry["last_success"] = now
             entry["failures"] = []
-            if _PROVIDER_OUTAGE_ALERTED.get(provider_key) or provider_key in _PROVIDER_OUTAGE_ALERT_STAGE:
+            if (
+                _PROVIDER_OUTAGE_ALERTED.get(provider_key)
+                or _PROVIDER_OUTAGE_ALERTED.get(alias_key)
+                or provider_key in _PROVIDER_OUTAGE_ALERT_STAGE
+                or alias_key in _PROVIDER_OUTAGE_ALERT_STAGE
+            ):
                 _PROVIDER_OUTAGE_RECOVERY_ALERTS[provider_key] = {
                     "provider": str(provider_name or provider_key),
                     "recovered_at": now,
                 }
             _PROVIDER_OUTAGE_ALERTED[provider_key] = False
+            _PROVIDER_OUTAGE_ALERTED[alias_key] = False
             _PROVIDER_OUTAGE_LAST_ALERT.pop(provider_key, None)
+            _PROVIDER_OUTAGE_LAST_ALERT.pop(alias_key, None)
             _PROVIDER_OUTAGE_ALERT_STAGE.pop(provider_key, None)
+            _PROVIDER_OUTAGE_ALERT_STAGE.pop(alias_key, None)
         else:
+            entry["failure_count"] = int(entry.get("failure_count") or 0) + 1
             entry["failures"].append(now)
             # Keep only recent failures
             entry["failures"] = [t for t in entry["failures"] if now - t < _PROVIDER_FAIL_WINDOW]
@@ -85,6 +122,22 @@ def provider_is_healthy(provider_name):
             if now - entry["failures"][-1] < _PROVIDER_FAIL_WINDOW and (now - entry["last_success"] > _PROVIDER_FAIL_WINDOW):
                 return False
         return True
+
+
+def _provider_matches_preference(provider_name: str, preferred: str) -> bool:
+    pref = _provider_alias(preferred)
+    if not pref:
+        return False
+    return _provider_alias(provider_name) == pref or pref in _provider_key(provider_name).split("_")
+
+
+def _prioritize_provider_list(providers: list[tuple[str, object]], preferred: str) -> list[tuple[str, object]]:
+    pref = str(preferred or "").strip().lower()
+    if not pref:
+        return providers
+    preferred_items = [item for item in providers if _provider_matches_preference(item[0], pref)]
+    remaining = [item for item in providers if not _provider_matches_preference(item[0], pref)]
+    return preferred_items + remaining
 
 
 def _get_candle_key_lock(key: tuple[str, str]) -> threading.Lock:
@@ -250,7 +303,19 @@ def get_provider_health_snapshot() -> dict[str, dict]:
                     healthy = False
             snapshot[str(name)] = {
                 "healthy": bool(healthy),
+                "status": "healthy" if healthy else "degraded",
                 "recent_failures": len(failures),
+                "success_count": int(entry.get("success_count") or 0),
+                "failure_count": int(entry.get("failure_count") or 0),
+                "error_rate": (
+                    float(entry.get("failure_count") or 0)
+                    / max(1.0, float((entry.get("success_count") or 0) + (entry.get("failure_count") or 0)))
+                ),
+                "avg_latency_ms": (
+                    sum(entry.get("latencies_ms") or []) / len(entry.get("latencies_ms") or [])
+                    if entry.get("latencies_ms")
+                    else None
+                ),
                 "last_success_age_minutes": ((now - last_success) / 60.0) if last_success else None,
                 "alerted": bool(_PROVIDER_OUTAGE_ALERTED.get(_provider_key(name))),
                 "alert_stage_minutes": _PROVIDER_OUTAGE_ALERT_STAGE.get(_provider_key(name)),
@@ -752,6 +817,8 @@ def get_candles(asset, timeframe):
                     candles = get_fx_candles(asset, timeframe)
                 elif asset_type == "index":
                     candles = get_index_candles(asset, timeframe)
+                elif asset_type == "commodity":
+                    candles = get_stock_candles(asset, timeframe)
                 else:
                     candles = get_stock_candles(asset, timeframe)
                 _write_cached_candles(_cache_key, candles or [])
@@ -764,6 +831,8 @@ def get_candles(asset, timeframe):
                 candles = _fetch_fx_multi_provider(asset, timeframe)
             elif asset_type == "index":
                 candles = _fetch_index_multi_provider(asset, timeframe)
+            elif asset_type == "commodity":
+                candles = _fetch_commodity_multi_provider(asset, timeframe)
             else:  # stock
                 candles = _fetch_stock_multi_provider(asset, timeframe)
 
@@ -805,50 +874,42 @@ def _fetch_crypto_multi_provider(asset, timeframe):
 
     # Allow explicit preferred provider via env var (e.g., CRYPTO_PREFERRED_PROVIDER=binance)
     preferred = (os.getenv("CRYPTO_PREFERRED_PROVIDER") or "").strip().lower()
-    if preferred:
-        # move preferred provider to front if present
-        providers_sorted = []
-        pref_added = False
-        for name, fn in providers:
-            if name.lower() == preferred and not pref_added:
-                providers_sorted.insert(0, (name, fn))
-                pref_added = True
-            else:
-                providers_sorted.append((name, fn))
-        providers = providers_sorted
+    providers = _prioritize_provider_list(providers, preferred)
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
         _provider_started = time.monotonic()
+        logger.info(
+            "[data] provider_attempt asset=%s class=crypto tf=%s provider=%s health=%s",
+            asset,
+            timeframe,
+            provider_name,
+            "healthy" if provider_is_healthy(provider_name) else "degraded",
+        )
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True)
+                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             else:
-                mark_provider_result(provider_name, False)
-                _track_provider_error(
-                    asset,
-                    timeframe,
-                    _provider_failure_reason(
-                        provider_name,
-                        "insufficient_candles",
-                        candles_count=len(candles or []),
-                        latency_ms=_latency_ms,
-                    ),
+                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+                reason = _provider_failure_reason(
+                    provider_name,
+                    "insufficient_candles",
+                    candles_count=len(candles or []),
+                    latency_ms=_latency_ms,
                 )
+                _track_provider_error(asset, timeframe, reason)
+                logger.info("[data] provider_attempt_failed asset=%s tf=%s %s", asset, timeframe, reason)
         except Exception as e:
-            mark_provider_result(provider_name, False)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
-            )
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+            reason = _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms)
+            _track_provider_error(asset, timeframe, reason)
             logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
             continue
     _track_provider_error(asset, timeframe, "all_crypto_providers_failed")
@@ -859,6 +920,7 @@ def _fetch_crypto_multi_provider(asset, timeframe):
 def _fetch_fx_multi_provider(asset, timeframe):
     """Try multiple FX providers in order."""
     from .providers import fetch_oanda_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_yahoo_candles, fetch_tradingview_candles
+    from data.connectors.tiingo_adapter import get_candles as fetch_tiingo_candles
     
     # Convert to formats needed by different providers
     oanda_format = asset.replace("/", "_").replace("-", "_").upper()
@@ -868,10 +930,11 @@ def _fetch_fx_multi_provider(asset, timeframe):
     
     alpha_enabled = os.getenv("ALPHAVANTAGE_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
     providers = [
-        ("oanda", lambda timeout=10: fetch_oanda_candles(oanda_format, timeframe)),
         ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_format, timeframe)),
-        ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
         ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(asset, timeframe, "forex")),
+        ("tiingo", lambda timeout=10: fetch_tiingo_candles(asset, timeframe, timeout=timeout)),
+        ("polygon", lambda timeout=10: fetch_polygon_candles(asset, timeframe, "forex")),
+        ("oanda", lambda timeout=10: fetch_oanda_candles(oanda_format, timeframe)),
         ("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="FX_IDC")),
     ]
     if alpha_enabled:
@@ -879,16 +942,7 @@ def _fetch_fx_multi_provider(asset, timeframe):
 
     # Allow explicit FX preferred provider via env var (e.g., FX_PREFERRED_PROVIDER=alphavantage)
     fx_pref = (os.getenv("FX_PREFERRED_PROVIDER") or "").strip().lower()
-    if fx_pref:
-        providers_sorted = []
-        pref_added = False
-        for name, fn in providers:
-            if name.lower() == fx_pref and not pref_added:
-                providers_sorted.insert(0, (name, fn))
-                pref_added = True
-            else:
-                providers_sorted.append((name, fn))
-        providers = providers_sorted
+    providers = _prioritize_provider_list(providers, fx_pref)
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
@@ -898,12 +952,12 @@ def _fetch_fx_multi_provider(asset, timeframe):
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True)
+                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             else:
-                mark_provider_result(provider_name, False)
+                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
                 _track_provider_error(
                     asset,
                     timeframe,
@@ -915,8 +969,8 @@ def _fetch_fx_multi_provider(asset, timeframe):
                     ),
                 )
         except Exception as e:
-            mark_provider_result(provider_name, False)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
             _track_provider_error(
                 asset,
                 timeframe,
@@ -940,6 +994,7 @@ def _fetch_stock_multi_provider(asset, timeframe):
     for name, fn in provs:
         providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
     providers.append(("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="NYSE")))
+    providers = _prioritize_provider_list(providers, os.getenv("STOCK_PREFERRED_PROVIDER") or "")
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
@@ -948,12 +1003,12 @@ def _fetch_stock_multi_provider(asset, timeframe):
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True)
+                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                 _set_last_provider_used(asset, timeframe, provider_name)
                 logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             else:
-                mark_provider_result(provider_name, False)
+                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
                 _track_provider_error(
                     asset,
                     timeframe,
@@ -965,8 +1020,8 @@ def _fetch_stock_multi_provider(asset, timeframe):
                     ),
                 )
         except Exception as e:
-            mark_provider_result(provider_name, False)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
             _track_provider_error(
                 asset,
                 timeframe,
@@ -979,20 +1034,21 @@ def _fetch_stock_multi_provider(asset, timeframe):
     return []
 
 
-def _fetch_index_multi_provider(asset, timeframe):
-    """Try index-capable providers in order without routing index CFDs as stocks."""
-    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
+def _fetch_commodity_multi_provider(asset, timeframe):
+    """Try commodity-capable providers in order without routing metals/oil as stocks or crypto."""
+    from .providers import fetch_yahoo_candles, fetch_twelvedata_candles, fetch_tradingview_candles, fetch_oanda_candles
+    from data.connectors.fmp_adapter import get_candles as fetch_fmp_candles
 
     raw = str(asset or "").upper().strip()
-    yahoo_symbol = normalize_index_symbol(raw)
-    tv_symbol = yahoo_symbol.lstrip("^") if yahoo_symbol.startswith("^") else raw.lstrip("^")
-    tv_exchange = (os.getenv("TRADINGVIEW_INDEX_PREFIX") or "TVC").strip() or "TVC"
     providers = [
-        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
-        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "index")),
-        ("polygon", lambda timeout=10: fetch_polygon_candles(yahoo_symbol, timeframe, "indices")),
-        ("tradingview", lambda timeout=10: fetch_tradingview_candles(tv_symbol, timeframe, exchange=tv_exchange)),
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(raw, timeframe)),
+        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "commodity")),
+        ("fmp", lambda timeout=10: fetch_fmp_candles(raw, timeframe, timeout=timeout)),
+        ("oanda", lambda timeout=10: fetch_oanda_candles(raw.replace("/", "_").replace("-", "_"), timeframe)),
+        ("tradingview", lambda timeout=10: fetch_tradingview_candles(raw, timeframe, exchange=(os.getenv("TRADINGVIEW_COMMODITY_PREFIX") or "TVC"))),
     ]
+    providers = _prioritize_provider_list(providers, os.getenv("COMMODITY_PREFERRED_PROVIDER") or "")
+
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
@@ -1001,11 +1057,18 @@ def _fetch_index_multi_provider(asset, timeframe):
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True)
+                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                 _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
+                logger.info(
+                    "[data] commodity_provider=%s symbol=%s tf=%s candles=%s latency_ms=%s",
+                    provider_name,
+                    asset,
+                    timeframe,
+                    len(candles),
+                    _latency_ms,
+                )
                 return candles
-            mark_provider_result(provider_name, False)
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
             _track_provider_error(
                 asset,
                 timeframe,
@@ -1017,8 +1080,63 @@ def _fetch_index_multi_provider(asset, timeframe):
                 ),
             )
         except Exception as e:
-            mark_provider_result(provider_name, False)
             _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
+            )
+            logger.warning("[data] commodity_provider=%s symbol=%s failed: %s", provider_name, asset, e)
+            continue
+    _track_provider_error(asset, timeframe, "all_commodity_providers_failed")
+    logger.warning("[data] commodity_fetched=none symbol=%s tf=%s (all providers failed)", asset, timeframe)
+    return []
+
+
+def _fetch_index_multi_provider(asset, timeframe):
+    """Try index-capable providers in order without routing index CFDs as stocks."""
+    from .providers import fetch_yahoo_candles, fetch_polygon_candles, fetch_twelvedata_candles, fetch_tradingview_candles
+    from data.connectors.fmp_adapter import get_candles as fetch_fmp_candles
+
+    raw = str(asset or "").upper().strip()
+    yahoo_symbol = normalize_index_symbol(raw)
+    tv_symbol = yahoo_symbol.lstrip("^") if yahoo_symbol.startswith("^") else raw.lstrip("^")
+    tv_exchange = (os.getenv("TRADINGVIEW_INDEX_PREFIX") or "TVC").strip() or "TVC"
+    providers = [
+        ("yahoo", lambda timeout=10: fetch_yahoo_candles(yahoo_symbol, timeframe)),
+        ("twelvedata", lambda timeout=10: fetch_twelvedata_candles(raw, timeframe, "index")),
+        ("fmp", lambda timeout=10: fetch_fmp_candles(raw.lstrip("^"), timeframe, timeout=timeout)),
+        ("polygon", lambda timeout=10: fetch_polygon_candles(yahoo_symbol, timeframe, "indices")),
+        ("tradingview", lambda timeout=10: fetch_tradingview_candles(tv_symbol, timeframe, exchange=tv_exchange)),
+    ]
+    providers = _prioritize_provider_list(providers, os.getenv("INDEX_PREFERRED_PROVIDER") or "")
+    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
+    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        _provider_started = time.monotonic()
+        try:
+            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            if candles and len(candles) >= 20:
+                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
+                _set_last_provider_used(asset, timeframe, provider_name)
+                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
+                return candles
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(
+                    provider_name,
+                    "insufficient_candles",
+                    candles_count=len(candles or []),
+                    latency_ms=_latency_ms,
+                ),
+            )
+        except Exception as e:
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
             _track_provider_error(
                 asset,
                 timeframe,
@@ -1349,29 +1467,29 @@ def get_strict_provider_for_asset(asset: str) -> tuple[str, list[str]]:
     # Use namespace if present
     if namespace:
         if namespace == "CRYPTO":
-            return "crypto", ["binance", "bybit", "cryptocompare", "coingecko"]
+            return "crypto", ["bybit", "okx", "coinbase", "kraken", "cryptocompare", "coingecko", "binance"]
         elif namespace in ("EQUITY", "STOCK"):
-            return "stock", ["twelvedata", "polygon", "yahoo"]
+            return "stock", ["twelvedata", "fmp", "yahoo", "alphavantage", "tiingo", "polygon"]
         elif namespace in ("COMMODITY", "CMDT"):
-            return "commodity", ["twelvedata", "oanda", "yahoo"]
+            return "commodity", ["yahoo", "twelvedata", "fmp", "alphavantage", "oanda"]
         elif namespace in ("FX", "FOREX"):
-            return "fx", ["twelvedata", "polygon", "oanda"]
+            return "fx", ["yahoo", "twelvedata", "tiingo", "alphavantage", "polygon", "oanda"]
         elif namespace in ("INDEX", "INDICES", "IDX"):
-            return "index", ["yahoo", "twelvedata", "polygon", "tradingview"]
+            return "index", ["yahoo", "twelvedata", "fmp", "alphavantage", "polygon", "tradingview"]
     
     # Fall back to symbol-based detection
     asset_type = get_asset_type(asset)
     
     if asset_type == "crypto":
-        return "crypto", ["binance", "bybit", "cryptocompare", "coingecko"]
+        return "crypto", ["bybit", "okx", "coinbase", "kraken", "cryptocompare", "coingecko", "binance"]
     elif asset_type == "stock":
-        return "stock", ["twelvedata", "polygon", "yahoo"]
+        return "stock", ["twelvedata", "fmp", "yahoo", "alphavantage", "tiingo", "polygon"]
     elif asset_type == "commodity":
-        return "commodity", ["twelvedata", "oanda", "yahoo"]
+        return "commodity", ["yahoo", "twelvedata", "fmp", "alphavantage", "oanda"]
     elif asset_type == "fx":
-        return "fx", ["twelvedata", "polygon", "oanda"]
+        return "fx", ["yahoo", "twelvedata", "tiingo", "alphavantage", "polygon", "oanda"]
     elif asset_type == "index":
-        return "index", ["yahoo", "twelvedata", "polygon", "tradingview"]
+        return "index", ["yahoo", "twelvedata", "fmp", "alphavantage", "polygon", "tradingview"]
     
     return asset_type, []
 
@@ -2303,12 +2421,32 @@ async def async_get_candles(asset, timeframe):
 
         # Build provider list in strict fallback order.
         provs = get_async_providers_for_asset(asset_type)
+        preferred_env = {
+            "crypto": "CRYPTO_PREFERRED_PROVIDER",
+            "fx": "FX_PREFERRED_PROVIDER",
+            "forex": "FX_PREFERRED_PROVIDER",
+            "stock": "STOCK_PREFERRED_PROVIDER",
+            "index": "INDEX_PREFERRED_PROVIDER",
+            "commodity": "COMMODITY_PREFERRED_PROVIDER",
+        }.get(str(asset_type or "").lower().strip())
+        if preferred_env:
+            provs = _prioritize_provider_list(provs, os.getenv(preferred_env) or "")
+        healthy_provs = [p for p in provs if provider_is_healthy(p[0])]
+        unhealthy_provs = [p for p in provs if not provider_is_healthy(p[0])]
 
         symbol_for_providers = asset
 
         provider_timeout_s = 2.5
-        for provider_name, fetch_fn in provs:
+        for provider_name, fetch_fn in healthy_provs + unhealthy_provs:
             _provider_started = time.monotonic()
+            logger.info(
+                "[data][async] provider_attempt asset=%s class=%s tf=%s provider=%s health=%s",
+                asset,
+                asset_type,
+                timeframe,
+                provider_name,
+                "healthy" if provider_is_healthy(provider_name) else "degraded",
+            )
             try:
                 # Strict per-provider timeout so slow upstreams fail fast and the chain can fallback.
                 candles = await asyncio.wait_for(
@@ -2317,40 +2455,32 @@ async def async_get_candles(asset, timeframe):
                 )
                 _latency_ms = int((time.monotonic() - _provider_started) * 1000)
                 if candles and len(candles) >= 20:
-                    mark_provider_result(provider_name, True)
+                    mark_provider_result(provider_name, True, latency_ms=_latency_ms)
                     logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                     return candles
                 else:
-                    mark_provider_result(provider_name, False)
-                    _track_provider_error(
-                        asset,
-                        timeframe,
-                        _provider_failure_reason(
-                            provider_name,
-                            "insufficient_candles",
-                            candles_count=len(candles or []),
-                            latency_ms=_latency_ms,
-                        ),
+                    mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+                    reason = _provider_failure_reason(
+                        provider_name,
+                        "insufficient_candles",
+                        candles_count=len(candles or []),
+                        latency_ms=_latency_ms,
                     )
+                    _track_provider_error(asset, timeframe, reason)
+                    logger.info("[data][async] provider_attempt_failed asset=%s tf=%s %s", asset, timeframe, reason)
             except asyncio.TimeoutError:
-                mark_provider_result(provider_name, False)
                 _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-                _track_provider_error(
-                    asset,
-                    timeframe,
-                    _provider_failure_reason(provider_name, "timeout", latency_ms=_latency_ms),
-                )
+                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+                reason = _provider_failure_reason(provider_name, "timeout", latency_ms=_latency_ms)
+                _track_provider_error(asset, timeframe, reason)
                 logger.warning(
                     f"[data][async] provider={provider_name} symbol={asset} timeout={provider_timeout_s}s"
                 )
             except Exception as e:
-                mark_provider_result(provider_name, False)
                 _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-                _track_provider_error(
-                    asset,
-                    timeframe,
-                    _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
-                )
+                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+                reason = _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms)
+                _track_provider_error(asset, timeframe, reason)
                 logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")
                 continue
 

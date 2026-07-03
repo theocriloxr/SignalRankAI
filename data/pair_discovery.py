@@ -356,8 +356,9 @@ def get_trending_crypto_pairs(top_n=20):
     all_enabled = provider in {"all", "auto", ""} and _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
     if all_enabled:
         provider_jobs = {
-            "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
+            "bybit": lambda: _bybit_top_crypto_pairs(top_n=max(1, int(top_n))),
             "cryptocompare": lambda: _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n=max(1, int(top_n)))),
+            "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
         }
         results: dict[str, list[str]] = {}
         with ThreadPoolExecutor(max_workers=len(provider_jobs)) as ex:
@@ -370,14 +371,17 @@ def get_trending_crypto_pairs(top_n=20):
                     logger.warning("[pair_discovery] crypto provider %s failed: %s", name, e)
                     results[name] = []
         merged = _merge_provider_results(
-            [results.get("binance", []), results.get("cryptocompare", [])],
+            [results.get("bybit", []), results.get("cryptocompare", []), results.get("binance", [])],
             limit=max(1, int(top_n)),
         )
         if merged:
             return exclude_pairs(merged)
 
-    # Final fail-open fallback: try Binance first, then CryptoCompare, then HARDCODED
-    # Try CryptoCompare first (safer for Railway)
+    # Final fail-open fallback: try Bybit, then CryptoCompare, then Binance, then HARDCODED.
+    fallback = _bybit_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(_filter_blacklisted(fallback))
+
     fallback = _cryptocompare_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(_filter_blacklisted(fallback))
