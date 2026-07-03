@@ -9,6 +9,7 @@ from engine.signal_metrics import (
 	resolve_ml_probability,
 	resolve_score_percent,
 )
+from signalrank_telegram.message_style import clean_message_text
 
 # Initialize tier notification manager
 _tier_notifier = TierNotificationManager()
@@ -524,7 +525,7 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	# Route to tier-specific formatter.
 	# FREE keeps locked template; PREMIUM/VIP use the agreed plain-text style.
 	if tier == TIER_FREE:
-		return format_signal_free_new(signal, signals_sent_today, daily_limit)
+		return clean_message_text(format_signal_free_new(signal, signals_sent_today, daily_limit))
 
 	try:
 		from signalrank_telegram.tier_signal_formatter import format_premium_signal, format_vip_signal
@@ -536,16 +537,16 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 			_sig['direction'] = 'short'
 
 		if tier == TIER_PREMIUM:
-			return format_premium_signal(_sig)
+			return clean_message_text(format_premium_signal(_sig))
 		if tier in {TIER_VIP, TIER_ADMIN, TIER_OWNER}:
-			return format_vip_signal(_sig)
+			return clean_message_text(format_vip_signal(_sig))
 	except Exception:
 		pass
 
 	# Fallback to enhanced templates
 	if tier == TIER_PREMIUM:
-		return format_signal_premium_new(signal)
-	return format_signal_vip_new(signal)
+		return clean_message_text(format_signal_premium_new(signal))
+	return clean_message_text(format_signal_vip_new(signal))
 
 def _get_freshness_badge(signal: dict) -> str:
 	"""Get data freshness badge based on data_age_seconds."""

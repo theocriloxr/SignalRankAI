@@ -296,6 +296,24 @@ def _get_provider_errors(asset: str, tf: str) -> list[str]:
     key = (str(asset or "").upper().strip(), str(tf or "").lower().strip())
     return list(_PROVIDER_ERRORS.get(key, []))
 
+
+def _provider_failure_reason(
+    provider_name: str,
+    reason: str,
+    *,
+    candles_count: int | None = None,
+    latency_ms: int | None = None,
+) -> str:
+    """Compact provider failure reason for engine diagnostics."""
+    provider = str(provider_name or "unknown").strip() or "unknown"
+    detail = str(reason or "unknown").strip() or "unknown"
+    parts = [f"{provider}:{detail}"]
+    if candles_count is not None:
+        parts.append(f"candles={int(candles_count or 0)}")
+    if latency_ms is not None:
+        parts.append(f"latency_ms={int(latency_ms or 0)}")
+    return " ".join(parts)[:500]
+
 # Import market hours module for holiday checks
 try:
     from data.market_hours import is_stock_holiday, is_commodity_holiday, is_fx_low_liquidity
@@ -802,19 +820,38 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        _provider_started = time.monotonic()
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             else:
                 mark_provider_result(provider_name, False)
+                _track_provider_error(
+                    asset,
+                    timeframe,
+                    _provider_failure_reason(
+                        provider_name,
+                        "insufficient_candles",
+                        candles_count=len(candles or []),
+                        latency_ms=_latency_ms,
+                    ),
+                )
         except Exception as e:
             mark_provider_result(provider_name, False)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
+            )
             logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
             continue
+    _track_provider_error(asset, timeframe, "all_crypto_providers_failed")
     logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
@@ -856,19 +893,38 @@ def _fetch_fx_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        _provider_started = time.monotonic()
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             else:
                 mark_provider_result(provider_name, False)
+                _track_provider_error(
+                    asset,
+                    timeframe,
+                    _provider_failure_reason(
+                        provider_name,
+                        "insufficient_candles",
+                        candles_count=len(candles or []),
+                        latency_ms=_latency_ms,
+                    ),
+                )
         except Exception as e:
             mark_provider_result(provider_name, False)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
+            )
             logger.warning(f"[data] fx_provider={provider_name} symbol={asset} failed: {e}")
             continue
+    _track_provider_error(asset, timeframe, "all_fx_providers_failed")
     logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
@@ -887,19 +943,38 @@ def _fetch_stock_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        _provider_started = time.monotonic()
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             else:
                 mark_provider_result(provider_name, False)
+                _track_provider_error(
+                    asset,
+                    timeframe,
+                    _provider_failure_reason(
+                        provider_name,
+                        "insufficient_candles",
+                        candles_count=len(candles or []),
+                        latency_ms=_latency_ms,
+                    ),
+                )
         except Exception as e:
             mark_provider_result(provider_name, False)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
+            )
             logger.warning(f"[data] stock_provider={provider_name} symbol={asset} failed: {e}")
             continue
+    _track_provider_error(asset, timeframe, "all_stock_providers_failed")
     logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
     return []
 
@@ -921,18 +996,37 @@ def _fetch_index_multi_provider(asset, timeframe):
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
+        _provider_started = time.monotonic()
         try:
             candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
             if candles and len(candles) >= 20:
                 mark_provider_result(provider_name, True)
                 _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)}")
+                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                 return candles
             mark_provider_result(provider_name, False)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(
+                    provider_name,
+                    "insufficient_candles",
+                    candles_count=len(candles or []),
+                    latency_ms=_latency_ms,
+                ),
+            )
         except Exception as e:
             mark_provider_result(provider_name, False)
+            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+            _track_provider_error(
+                asset,
+                timeframe,
+                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
+            )
             logger.warning(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} failed: {e}")
             continue
+    _track_provider_error(asset, timeframe, "all_index_providers_failed")
     logger.warning(f"[data] index_fetched=none symbol={asset} mapped={yahoo_symbol} tf={timeframe} (all providers failed)")
     return []
 
@@ -2214,28 +2308,53 @@ async def async_get_candles(asset, timeframe):
 
         provider_timeout_s = 2.5
         for provider_name, fetch_fn in provs:
+            _provider_started = time.monotonic()
             try:
                 # Strict per-provider timeout so slow upstreams fail fast and the chain can fallback.
                 candles = await asyncio.wait_for(
                     fetch_fn(symbol_for_providers, timeframe, timeout=provider_timeout_s),
                     timeout=provider_timeout_s,
                 )
+                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
                 if candles and len(candles) >= 20:
                     mark_provider_result(provider_name, True)
-                    logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)}")
+                    logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                     return candles
                 else:
                     mark_provider_result(provider_name, False)
+                    _track_provider_error(
+                        asset,
+                        timeframe,
+                        _provider_failure_reason(
+                            provider_name,
+                            "insufficient_candles",
+                            candles_count=len(candles or []),
+                            latency_ms=_latency_ms,
+                        ),
+                    )
             except asyncio.TimeoutError:
                 mark_provider_result(provider_name, False)
+                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+                _track_provider_error(
+                    asset,
+                    timeframe,
+                    _provider_failure_reason(provider_name, "timeout", latency_ms=_latency_ms),
+                )
                 logger.warning(
                     f"[data][async] provider={provider_name} symbol={asset} timeout={provider_timeout_s}s"
                 )
             except Exception as e:
                 mark_provider_result(provider_name, False)
+                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+                _track_provider_error(
+                    asset,
+                    timeframe,
+                    _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
+                )
                 logger.warning(f"[data][async] provider={provider_name} symbol={asset} failed: {e}")
                 continue
 
+        _track_provider_error(asset, timeframe, f"all_{asset_type}_providers_failed")
         logger.warning("[WARN] All providers failed for %s, skipping...", asset)
         return []
     except Exception:

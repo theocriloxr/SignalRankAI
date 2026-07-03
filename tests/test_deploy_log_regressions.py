@@ -62,6 +62,40 @@ def test_quality_rejection_reasons_map_to_admin_pulse_buckets():
     assert core._quality_rejection_bucket("quality_score 88.0 < 94.0") == "score"
 
 
+def test_cycle_rejection_reason_helpers_keep_top_reasons_compact():
+    import engine.core as core
+
+    stats = {}
+    core._bump_cycle_reason(stats, "quality_rejected_reasons", "quality_rr 1.20 < 2.00")
+    core._bump_cycle_reason(stats, "quality_rejected_reasons", "quality_rr 1.20 < 2.00")
+    core._bump_cycle_reason(stats, "quality_rejected_reasons", "quality_adx 14.2 < 22.0")
+
+    top = core._top_cycle_reasons(stats, "quality_rejected_reasons")
+
+    assert top[0] == {"reason": "quality_rr 1.20 < 2.00", "count": 2}
+    assert top[1] == {"reason": "quality_adx 14.2 < 22.0", "count": 1}
+
+
+def test_provider_failure_reasons_are_recorded_for_engine_audit():
+    import data.fetcher as fetcher
+
+    fetcher._PROVIDER_ERRORS.clear()
+    reason = fetcher._provider_failure_reason("coingecko", "timeout", candles_count=0, latency_ms=2501)
+    fetcher._track_provider_error("DOTUSDT", "1m", reason)
+
+    assert fetcher._get_provider_errors("dotusdt", "1M") == [
+        "coingecko:timeout candles=0 latency_ms=2501"
+    ]
+
+
+def test_message_cleaner_removes_common_mojibake():
+    from signalrank_telegram.message_style import clean_message_text
+
+    raw = "ðŸš€ BUY SIGNAL â€” VIP\n\nâœ… TP1 HIT\n\n\nðŸ“Œ Signal ID: abc"
+
+    assert clean_message_text(raw) == "🚀 BUY SIGNAL - VIP\n\n✅ TP1 HIT\n\n📌 Signal ID: abc"
+
+
 def test_stats_adapter_supports_legacy_property_increment():
     from core.redis_global_stats import stats
 

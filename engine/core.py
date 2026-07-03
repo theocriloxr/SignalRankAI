@@ -37,7 +37,7 @@ from signalrank_telegram.tier_delivery import TierDeliveryManager
 from engine.signal_analytics import signal_analytics
 
 # Data layer
-from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock, is_index
+from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock, is_index, _get_provider_errors
 try:
     from data.fetcher import is_commodity
 except Exception:
@@ -1034,6 +1034,30 @@ def _increment_engine_scanned(amount: int = 1) -> None:
             stats.scanned += max(0, int(amount or 0))
         except Exception:
             pass
+
+
+def _compact_reason(reason: Any, max_len: int = 96) -> str:
+    text = str(reason or "unknown").strip()
+    if not text:
+        return "unknown"
+    text = " ".join(text.replace("\n", " ").replace("\r", " ").split())
+    return text[:max(16, int(max_len))]
+
+
+def _bump_cycle_reason(pipeline_stats: dict[str, Any], key: str, reason: Any) -> str:
+    reason_key = _compact_reason(reason)
+    bucket = pipeline_stats.setdefault(key, {})
+    if isinstance(bucket, dict):
+        bucket[reason_key] = int(bucket.get(reason_key, 0) or 0) + 1
+    return reason_key
+
+
+def _top_cycle_reasons(pipeline_stats: dict[str, Any], key: str, limit: int = 8) -> list[dict[str, Any]]:
+    bucket = pipeline_stats.get(key) or {}
+    if not isinstance(bucket, dict):
+        return []
+    rows = sorted(bucket.items(), key=lambda item: int(item[1] or 0), reverse=True)
+    return [{"reason": str(reason), "count": int(count or 0)} for reason, count in rows[:max(1, int(limit))]]
 
 
 def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200) -> None:
@@ -2065,6 +2089,12 @@ def main_loop(DRY_RUN: bool = False):
                 "invalid_tp": 0,
                 "quality_rejected": 0,
                 "score_rejected": 0,
+                "risk_failed_reasons": {},
+                "advanced_filter_reasons": {},
+                "invalid_tp_reasons": {},
+                "quality_rejected_reasons": {},
+                "score_rejected_reasons": {},
+                "market_data_failure_reasons": {},
                 "no_consensus": 0,
                 "strategy_exception": 0,
                 "consensus_exception": 0,
@@ -2183,6 +2213,23 @@ def main_loop(DRY_RUN: bool = False):
                         pipeline_stats[f"no_candles_{_asset_class_key(asset)}"] = int(
                             pipeline_stats.get(f"no_candles_{_asset_class_key(asset)}", 0) or 0
                         ) + 1
+                        _provider_errors: list[str] = []
+                        for _tf in asset_to_tfs.get(asset, []):
+                            try:
+                                _provider_errors.extend(_get_provider_errors(asset, _tf)[:3])
+                            except Exception:
+                                continue
+                        _data_reason = _provider_errors[0] if _provider_errors else "no_usable_candles"
+                        _bump_cycle_reason(pipeline_stats, "market_data_failure_reasons", _data_reason)
+                        if _provider_errors:
+                            _provider_error_map = pipeline_stats.setdefault("market_data_provider_errors", {})
+                            if isinstance(_provider_error_map, dict):
+                                _provider_error_map[_norm_asset] = _provider_errors[:8]
+                            logger.warning(
+                                "[engine][market_data_audit] asset=%s errors=%s",
+                                asset,
+                                _provider_errors[:8],
+                            )
                         _increment_engine_veto("other")
                         _record_gate_failure(asset, "market_data", "no_candles")
                         _maybe_log_heatmap(asset, cycle_no, 0)
@@ -2438,6 +2485,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not risk_check(sig, account_state):
                                 sig['rejection_reason'] = 'risk/volatility'
                                 pipeline_stats["risk_failed"] += 1
+                                _bump_cycle_reason(pipeline_stats, "risk_failed_reasons", sig['rejection_reason'])
                                 _increment_engine_veto("other")
                                 _record_gate_failure(asset, "risk", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
@@ -2682,9 +2730,10 @@ def main_loop(DRY_RUN: bool = False):
                             if not passed_filters:
                                 sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
                                 pipeline_stats["advanced_filter_failed"] += 1
+                                _bump_cycle_reason(pipeline_stats, "advanced_filter_reasons", sig['rejection_reason'])
                                 _increment_engine_veto("microstructure")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
-                                _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
                                 continue
 
                             # ultra quality (optional)
@@ -2806,6 +2855,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not tp:
                                 sig['rejection_reason'] = 'invalid_tp_structure'
                                 pipeline_stats["invalid_tp"] += 1
+                                _bump_cycle_reason(pipeline_stats, "invalid_tp_reasons", sig['rejection_reason'])
                                 _increment_engine_veto("other")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
@@ -2840,6 +2890,7 @@ def main_loop(DRY_RUN: bool = False):
                                 if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
                                     sig['rejection_reason'] = 'market_intelligence_block'
                                     pipeline_stats["quality_rejected"] += 1
+                                    _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
                                     _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
                                     _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
@@ -2876,6 +2927,7 @@ def main_loop(DRY_RUN: bool = False):
                             if not quality_ok:
                                 sig['rejection_reason'] = quality_reason
                                 pipeline_stats["quality_rejected"] += 1
+                                _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", quality_reason)
                                 _quality_cls = _asset_class_key(str(sig.get("asset") or asset))
                                 pipeline_stats[f"quality_rejected_{_quality_cls}"] = int(
                                     pipeline_stats.get(f"quality_rejected_{_quality_cls}", 0) or 0
@@ -2910,6 +2962,7 @@ def main_loop(DRY_RUN: bool = False):
                             if sig.get('score', 0) < min_score_threshold:
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
                                 pipeline_stats["score_rejected"] += 1
+                                _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig['rejection_reason'])
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
                                 _increment_engine_veto("score")
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
@@ -2935,6 +2988,7 @@ def main_loop(DRY_RUN: bool = False):
                             # Optional hard block remains available via env toggle.
                             if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_exp < 0.0:
                                 sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
+                                _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig['rejection_reason'])
                                 _increment_engine_veto("score")
                                 _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
@@ -3812,6 +3866,27 @@ def main_loop(DRY_RUN: bool = False):
                         logger.debug("[engine] automated analyst check failed", exc_info=True)
             except Exception:
                 pass
+
+            try:
+                pipeline_stats["quality_rejected_top"] = _top_cycle_reasons(pipeline_stats, "quality_rejected_reasons")
+                pipeline_stats["advanced_filter_top"] = _top_cycle_reasons(pipeline_stats, "advanced_filter_reasons")
+                pipeline_stats["risk_failed_top"] = _top_cycle_reasons(pipeline_stats, "risk_failed_reasons")
+                pipeline_stats["score_rejected_top"] = _top_cycle_reasons(pipeline_stats, "score_rejected_reasons")
+                pipeline_stats["invalid_tp_top"] = _top_cycle_reasons(pipeline_stats, "invalid_tp_reasons")
+                pipeline_stats["market_data_failure_top"] = _top_cycle_reasons(pipeline_stats, "market_data_failure_reasons")
+                if int(pipeline_stats.get("quality_rejected") or 0) or int(pipeline_stats.get("advanced_filter_failed") or 0):
+                    logger.info(
+                        "[engine][final_gate_audit] cycle=%s quality=%s advanced=%s risk=%s score=%s invalid_tp=%s data=%s",
+                        cycle_no,
+                        pipeline_stats.get("quality_rejected_top"),
+                        pipeline_stats.get("advanced_filter_top"),
+                        pipeline_stats.get("risk_failed_top"),
+                        pipeline_stats.get("score_rejected_top"),
+                        pipeline_stats.get("invalid_tp_top"),
+                        pipeline_stats.get("market_data_failure_top"),
+                    )
+            except Exception:
+                logger.debug("[engine] final gate audit summary failed", exc_info=True)
 
             # cycle logging
             if _env_bool("ENGINE_CYCLE_LOG", True):

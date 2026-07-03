@@ -801,6 +801,7 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
     import asyncio
     import os
     from telegram.error import RetryAfter
+    from signalrank_telegram.message_style import clean_message_text
 
     try:
         global_delay = float((os.getenv("TELEGRAM_GLOBAL_SEND_DELAY_SECONDS") or "0.08").strip())
@@ -823,7 +824,7 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
             try:
                 if global_delay > 0:
                     await asyncio.sleep(global_delay)
-                return await bot.send_message(chat_id=int(chat_id), text=str(text), **kwargs)
+                return await bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **kwargs)
             except RetryAfter as exc:
                 retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
                 logger.warning(
