@@ -3835,7 +3835,13 @@ async def upgrade_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id = update.effective_user.id
 	msg, keyboard = await _compose_upgrade_message(int(user_id))
-	await update.message.reply_text(msg, parse_mode="MarkdownV2", reply_markup=keyboard)
+	from telegram.constants import ParseMode
+
+	await update.message.reply_text(
+		msg,
+		parse_mode=ParseMode.HTML,
+		reply_markup=keyboard,
+	)
 
 
 # ── Inline-button callbacks for /upgrade VIP waitlist ─────────────────────
