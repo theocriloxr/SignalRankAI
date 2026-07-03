@@ -330,6 +330,29 @@ def test_trend_strategy_missing_ema_alias_does_not_raise():
     assert signal is None or signal["direction"] in {"LONG", "SHORT"}
 
 
+def test_volatility_strategy_missing_atr_does_not_raise():
+    from strategies.volatility import ATRBreakoutStrategy
+
+    market_data = {
+        "candles": [
+            {"open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "volume": 100},
+            {"open": 1.0, "high": 1.2, "low": 0.95, "close": 1.1, "volume": 120},
+        ],
+        "indicators": {},
+    }
+
+    assert ATRBreakoutStrategy().evaluate(market_data) is None
+
+
+def test_strategy_modules_do_not_directly_index_market_data_payloads():
+    for path in Path("strategies").glob("*.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "market_data['indicators']" not in source
+        assert 'market_data["indicators"]' not in source
+        assert "market_data['candles']" not in source
+        assert 'market_data["candles"]' not in source
+
+
 def test_outcome_notifications_are_claimed_before_send():
     tracker_source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
     features_source = Path("db/pg_features.py").read_text(encoding="utf-8")
@@ -339,6 +362,8 @@ def test_outcome_notifications_are_claimed_before_send():
     assert "claim_outcome_notification_for_delivery" in tracker_source
     assert "_send_message_sync(" in tracker_source
     assert "from sqlalchemy import select, or_, and_" in tracker_source
+    notify_source = tracker_source.split("async def _notify_outcome", 1)[1]
+    assert "from sqlalchemy import select, or_, and_" in notify_source
     notify_start = tracker_source.index("async def _notify_outcome")
     claim_idx = tracker_source.index("claimed = await claim_outcome_notification_for_delivery", notify_start)
     send_idx = tracker_source.index("_send_message_sync(", notify_start)

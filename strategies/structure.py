@@ -5,18 +5,19 @@ def structure_strategy(asset, timeframe, market_data):
 
 
 from .base import BaseStrategy
+from data.indicator_schema import normalize_indicator_schema
 
 # --- Structure Strategies ---
 class StructureBiasStrategy(BaseStrategy):
     """Renamed from StructureBullStrategy — now handles both LONG and SHORT bias."""
     name = "Structure Bias"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles or not ind.get('ema_trend'):
             return None
         price = candles[-1]['close']
-        ema_trend = ind['ema_trend']
+        ema_trend = float(ind.get('ema_trend') or 0)
         # LONG: price above EMA trend = bullish market structure
         if price > ema_trend:
             stop = candles[-1]['low']
@@ -47,8 +48,8 @@ StructureBullStrategy = StructureBiasStrategy
 class SRBreakRetestStrategy(BaseStrategy):
     name = "S/R Break + Retest"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         entry = candles[-1]['close']
@@ -81,8 +82,8 @@ class SRBreakRetestStrategy(BaseStrategy):
 class LiquiditySweepStrategy(BaseStrategy):
     name = "Liquidity Sweep"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles or not ind.get('liquidity_sweep', False):
             return None
         entry = candles[-1]['close']

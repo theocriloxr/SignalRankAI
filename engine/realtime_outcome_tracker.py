@@ -878,7 +878,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             mark_outcome_notification_delivered,
             mark_outcome_notification_failed,
         )
-        from sqlalchemy import select
+        from sqlalchemy import select, or_, and_
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config

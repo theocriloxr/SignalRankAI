@@ -10,7 +10,7 @@ class EMATrendStrategy(BaseStrategy):
     name = "EMA Trend"
     def evaluate(self, market_data):
         ind = normalize_indicator_schema(market_data.get('indicators') or {})
-        candles = market_data['candles']
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         missing = missing_indicators(ind, ("ema_fast", "ema_slow", "ema_trend"))
@@ -77,8 +77,8 @@ class EMATrendStrategy(BaseStrategy):
 class SupertrendStrategy(BaseStrategy):
     name = "Supertrend"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         entry = candles[-1]['close']
@@ -135,8 +135,8 @@ class SupertrendStrategy(BaseStrategy):
 class ADXTrendStrategy(BaseStrategy):
     name = "ADX Trend"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles or ind.get('adx', 0) <= 25:
             return None
         entry = candles[-1]['close']
