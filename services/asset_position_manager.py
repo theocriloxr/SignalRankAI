@@ -101,6 +101,7 @@ async def get_user_asset_position_state(
     asset: str,
     cooldown_hours: float | None = None,
     unresolved_block_hours: float | None = None,
+    exclude_signal_id: str | None = None,
 ) -> AssetPositionState:
     symbol = str(asset or "").upper().strip()
     user = (
@@ -136,6 +137,7 @@ async def get_user_asset_position_state(
                 SignalDelivery.user_id == user.id,
                 SignalDelivery.delivered_at >= cutoff,
                 Signal.asset == symbol,
+                SignalDelivery.signal_id != str(exclude_signal_id or "__none__"),
                 or_(
                     SignalDelivery.sent_ok.is_(True),
                     and_(SignalDelivery.sent_ok.is_(False), SignalDelivery.last_error.is_(None)),

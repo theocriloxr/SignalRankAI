@@ -103,6 +103,10 @@ class Signal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     ml_probability: Mapped[Optional[float]] = mapped_column(Float)
+    trade_profile: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    asset_class: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    target_model: Mapped[Optional[str]] = mapped_column(String(32))
+    expected_duration: Mapped[Optional[str]] = mapped_column(String(64))
     expires_at: Mapped[Optional[datetime]]
     expired: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

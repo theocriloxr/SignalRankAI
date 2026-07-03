@@ -573,6 +573,20 @@ async def get_or_create_signal_impl(
     asset: str = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()[:32]
     timeframe: str = str(signal.get("timeframe") or "").lower().strip()[:8]
     direction: str = str(signal.get("direction") or "").lower().strip()[:8]
+    try:
+        from services.trade_profiles import infer_trade_profile
+        trade_profile = str(signal.get("trade_profile") or infer_trade_profile(signal)).lower().strip()[:16]
+    except Exception:
+        trade_profile = str(signal.get("trade_profile") or "").lower().strip()[:16] or None
+    try:
+        from services.asset_mapper import classify_asset
+        asset_class = str(signal.get("asset_class") or classify_asset(asset)).lower().strip()[:16]
+        if asset_class == "forex":
+            asset_class = "fx"
+    except Exception:
+        asset_class = str(signal.get("asset_class") or "").lower().strip()[:16] or None
+    target_model = str(signal.get("target_model") or "").strip()[:32] or None
+    expected_duration = str(signal.get("expected_duration") or "").strip()[:64] or None
 
     entry = float(signal.get("entry") or 0)
     stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
@@ -650,6 +664,17 @@ async def get_or_create_signal_impl(
                         except Exception:
                             pass
                     else:
+                        try:
+                            if trade_profile and not getattr(existing_active, "trade_profile", None):
+                                existing_active.trade_profile = trade_profile
+                            if asset_class and not getattr(existing_active, "asset_class", None):
+                                existing_active.asset_class = asset_class
+                            if target_model and not getattr(existing_active, "target_model", None):
+                                existing_active.target_model = target_model
+                            if expected_duration and not getattr(existing_active, "expected_duration", None):
+                                existing_active.expected_duration = expected_duration
+                        except Exception:
+                            pass
                         outcome_res: Result[Tuple[Outcome]] = await session.execute(
                             select(Outcome.status)
                             .where(Outcome.signal_id == active_signal_id)
@@ -831,6 +856,10 @@ async def get_or_create_signal_impl(
             existing.strategy_name = strategy_name
             existing.expires_at = signal_expires_at
             existing.status = "active"
+            existing.trade_profile = trade_profile
+            existing.asset_class = asset_class
+            existing.target_model = target_model
+            existing.expected_duration = expected_duration
         except Exception:
             pass
         await session.flush()
@@ -889,6 +918,10 @@ async def get_or_create_signal_impl(
             strategy_group=strategy_group,
             strength=strength,
             fingerprint=fingerprint,
+            trade_profile=trade_profile,
+            asset_class=asset_class,
+            target_model=target_model,
+            expected_duration=expected_duration,
             status="active",
             created_at=now,
         )
@@ -1019,6 +1052,7 @@ async def record_signal_delivery(
                     asset=str(sig.asset),
                     cooldown_hours=float(asset_cooldown_hours),
                     unresolved_block_hours=float(unresolved_block_hours),
+                    exclude_signal_id=str(signal_id),
                 )
                 if position_state.is_locked:
                     logger.info(
@@ -1060,6 +1094,7 @@ async def record_signal_delivery(
                                 ),
                             ),
                             Signal.asset == sig.asset,
+                            SignalDelivery.signal_id != str(signal_id),
                         )
                         .order_by(SignalDelivery.delivered_at.desc())
                         .limit(1)
@@ -1876,7 +1911,10 @@ async def list_delivery_recipients_for_signal(session: AsyncSession, signal_id: 
         select(User.telegram_user_id, SignalDelivery.tier_at_send)
         .select_from(SignalDelivery)
         .join(User, User.id == SignalDelivery.user_id)
-        .where(SignalDelivery.signal_id == str(signal_id))
+        .where(
+            SignalDelivery.signal_id == str(signal_id),
+            SignalDelivery.sent_ok.is_(True),
+        )
         .order_by(User.telegram_user_id.asc())
     )
     return [(int(uid), str(tier)) for (uid, tier) in (res.all() or [])]

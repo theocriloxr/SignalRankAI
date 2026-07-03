@@ -59,6 +59,34 @@ def test_resend_path_is_profile_aware_and_reports_skips():
     assert "return int(sent)" in source
 
 
+def test_signal_rows_persist_profile_routing_metadata():
+    models = (ROOT / "db" / "models.py").read_text(encoding="utf-8")
+    pg_features = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
+    auto_ops = (ROOT / "db" / "auto_ops.py").read_text(encoding="utf-8")
+
+    assert "trade_profile" in models
+    assert "asset_class" in models
+    assert "target_model" in models
+    assert "expected_duration" in models
+    assert "infer_trade_profile(signal)" in pg_features
+    assert "classify_asset(asset)" in pg_features
+    assert "trade_profile=trade_profile" in pg_features
+    assert "asset_class=asset_class" in pg_features
+    assert "ALTER TABLE signals ADD COLUMN IF NOT EXISTS trade_profile" in auto_ops
+
+
+def test_delivery_recipients_and_outcomes_only_use_actual_sends():
+    pg_features = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
+    bot = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+
+    assert "SignalDelivery.sent_ok.is_(True)" in pg_features
+    assert "exclude_signal_id=str(signal_id)" in pg_features
+    assert "claim_outcome_notification_for_delivery" in bot
+    assert "mark_outcome_notification_delivered" in bot
+    assert "outcome_bot = Bot(token=_require_telegram_token())" in bot
+    assert "application.bot,\n                                chat_id=int(telegram_user_id)" not in bot
+
+
 def test_trading_ledger_transition_contract():
     from services.trading_ledger import assert_valid_transition
 

@@ -168,6 +168,10 @@ def run_startup_ops(run_mode: str) -> None:
                     # signals
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'issued'",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS ml_probability FLOAT",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS trade_profile VARCHAR(16)",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS asset_class VARCHAR(16)",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS target_model VARCHAR(32)",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expected_duration VARCHAR(64)",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE",
@@ -193,6 +197,14 @@ def run_startup_ops(run_mode: str) -> None:
                         pass  # column already exists or table not yet created
                 try:
                     cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_status ON signals(status)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_trade_profile ON signals(trade_profile)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_asset_class ON signals(asset_class)")
                 except Exception:
                     pass
                 conn.commit()

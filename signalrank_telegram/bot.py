@@ -5210,6 +5210,9 @@ def run_bot() -> None:
                 list_unnotified_outcomes,
                 list_delivery_recipients_for_signal,
                 mark_outcome_notified,
+                claim_outcome_notification_for_delivery,
+                mark_outcome_notification_delivered,
+                mark_outcome_notification_failed,
                 get_alert_prefs,
             )
             from datetime import datetime
@@ -5237,6 +5240,8 @@ def run_bot() -> None:
                 pending = []
             if not pending:
                 return
+
+            outcome_bot = Bot(token=_require_telegram_token())
 
             for oc, sig, recipients in pending:
                 status = str(getattr(oc, 'status', '') or '').lower()
@@ -5500,13 +5505,54 @@ def run_bot() -> None:
 
                     if notify and msg:
                         eligible_count += 1
+                        notification_id = None
                         try:
+                            async def _claim_notification() -> int | None:
+                                from db.models import OutcomeNotification
+                                from sqlalchemy import select as _select
+
+                                async with get_session() as session:
+                                    row = (
+                                        await session.execute(
+                                            _select(OutcomeNotification)
+                                            .where(
+                                                OutcomeNotification.outcome_id == int(getattr(oc, "id")),
+                                                OutcomeNotification.signal_id == str(ref),
+                                                OutcomeNotification.telegram_user_id == int(telegram_user_id),
+                                                OutcomeNotification.outcome_status == str(status)[:16],
+                                            )
+                                            .order_by(OutcomeNotification.id.desc())
+                                            .limit(1)
+                                        )
+                                    ).scalar_one_or_none()
+                                    if row is None:
+                                        await session.commit()
+                                        return None
+                                    claimed = await claim_outcome_notification_for_delivery(session, int(row.id))
+                                    await session.commit()
+                                    return int(row.id) if claimed else None
+
+                            notification_id = run_sync(_claim_notification())
+                            if not notification_id:
+                                logger.debug(
+                                    "[outcome] notification already claimed/delivered ref=%s user=%s status=%s",
+                                    ref_short,
+                                    telegram_user_id,
+                                    status,
+                                )
+                                continue
                             _send_message_with_retry_sync(
-                                application.bot,
+                                outcome_bot,
                                 chat_id=int(telegram_user_id),
                                 text=msg,
                                 parse_mode="HTML",
                             )
+                            async def _mark_notification_delivered(notification_id: int) -> None:
+                                async with get_session() as session:
+                                    await mark_outcome_notification_delivered(session, int(notification_id))
+                                    await session.commit()
+
+                            run_sync(_mark_notification_delivered(int(notification_id)))
                             try:
                                 import asyncio
                                 run_sync(asyncio.sleep(0.5))
@@ -5515,13 +5561,25 @@ def run_bot() -> None:
                             sent_count += 1
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
+                            if notification_id:
+                                try:
+                                    async def _mark_notification_failed(notification_id: int, error: str) -> None:
+                                        async with get_session() as session:
+                                            await mark_outcome_notification_failed(
+                                                session,
+                                                int(notification_id),
+                                                error=error,
+                                            )
+                                            await session.commit()
+
+                                    run_sync(_mark_notification_failed(int(notification_id), str(e)))
+                                except Exception:
+                                    pass
                             failed_count += 1
                             pass
 
                 mark_notified = False
-                if sent_count > 0:
-                    mark_notified = True
-                elif len(recipients or []) == 0:
+                if len(recipients or []) == 0:
                     # No recipients for this signal; avoid permanent retry loop.
                     mark_notified = True
                 elif eligible_count == 0 and quiet_deferred_count == 0:
