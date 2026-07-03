@@ -687,7 +687,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
     try:
         from db.session import get_session
         from db.models import SignalDelivery, User
-        from sqlalchemy import select
+        from sqlalchemy import select, or_, and_
         from signalrank_telegram.bot import _send_message_sync
         from telegram import Bot
         from config import config

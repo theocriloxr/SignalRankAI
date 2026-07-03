@@ -1,16 +1,27 @@
 from .base import BaseStrategy
 from .dynamic_targets import calculate_dynamic_targets
+from data.indicator_schema import missing_indicators, normalize_indicator_schema
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- Trend Strategies ---
 class EMATrendStrategy(BaseStrategy):
     name = "EMA Trend"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
         candles = market_data['candles']
         if not candles:
             return None
+        missing = missing_indicators(ind, ("ema_fast", "ema_slow", "ema_trend"))
+        if missing:
+            logger.warning("EMA Trend missing indicators: %s available=%s", missing, list(ind.keys())[:12])
+            return None
         # LONG: EMA bullish stack
-        if ind['ema_fast'] > ind['ema_slow'] and ind['ema_slow'] > ind['ema_trend']:
+        ema_fast = float(ind.get('ema_fast') or 0)
+        ema_slow = float(ind.get('ema_slow') or 0)
+        ema_trend = float(ind.get('ema_trend') or 0)
+        if ema_fast > ema_slow and ema_slow > ema_trend:
             entry = candles[-1]['close']
             regime = ind.get('regime', 'neutral')
             quality = 0.9  # High confidence for strong EMA alignment
@@ -36,7 +47,7 @@ class EMATrendStrategy(BaseStrategy):
                 'reasoning': f"EMA fast > EMA slow > EMA trend. Uptrend confirmed — LONG. R:R={levels['rr_ratio']:.2f}"
             }
         # SHORT: EMA bearish stack
-        if ind['ema_fast'] < ind['ema_slow'] and ind['ema_slow'] < ind['ema_trend']:
+        if ema_fast < ema_slow and ema_slow < ema_trend:
             entry = candles[-1]['close']
             regime = ind.get('regime', 'neutral')
             quality = 0.9

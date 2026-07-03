@@ -3128,6 +3128,8 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			raise RuntimeError("Postgres not configured")
 		from db.pg_features import list_unresolved_signals_for_user, get_delivered_signal_by_ref
 		from .formatter import format_signal, format_signal_free_limited
+		# /signal lookup must remain delivery-first; pg_features enforces
+		# SignalDelivery.sent_ok.is_(True) before exposing a signal to the user.
 
 		if arg.lower() == "all":
 			async with get_session() as session:

@@ -290,6 +290,46 @@ def test_market_data_batch_is_timeout_isolated_per_asset():
     assert "status=timeout" in core_source
 
 
+def test_indicator_schema_aliases_support_strategy_keys():
+    from data.indicator_schema import normalize_indicator_schema
+
+    indicators = normalize_indicator_schema({
+        "ema_20": 10.0,
+        "ema_50": 9.0,
+        "ema_200": 8.0,
+        "sma_20": 11.0,
+        "sma_50": 10.5,
+    })
+
+    assert indicators["ema_fast"] == 10.0
+    assert indicators["ema_slow"] == 9.0
+    assert indicators["ema_trend"] == 8.0
+    assert indicators["sma_fast"] == 11.0
+    assert indicators["sma_slow"] == 10.5
+
+
+def test_trend_strategy_missing_ema_alias_does_not_raise():
+    from strategies.trend import EMATrendStrategy
+
+    market_data = {
+        "candles": [
+            {"open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "volume": 100},
+            {"open": 1.0, "high": 1.2, "low": 0.95, "close": 1.1, "volume": 120},
+        ],
+        "indicators": {
+            "ema_20": 1.10,
+            "ema_50": 1.05,
+            "ema_200": 1.00,
+            "atr": 0.01,
+            "bollinger": {"width": 0.02},
+        },
+    }
+
+    signal = EMATrendStrategy().evaluate(market_data)
+
+    assert signal is None or signal["direction"] in {"LONG", "SHORT"}
+
+
 def test_outcome_notifications_are_claimed_before_send():
     tracker_source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
     features_source = Path("db/pg_features.py").read_text(encoding="utf-8")
@@ -298,6 +338,7 @@ def test_outcome_notifications_are_claimed_before_send():
     assert "delivery_state=\"sending\"" in features_source
     assert "claim_outcome_notification_for_delivery" in tracker_source
     assert "_send_message_sync(" in tracker_source
+    assert "from sqlalchemy import select, or_, and_" in tracker_source
     notify_start = tracker_source.index("async def _notify_outcome")
     claim_idx = tracker_source.index("claimed = await claim_outcome_notification_for_delivery", notify_start)
     send_idx = tracker_source.index("_send_message_sync(", notify_start)

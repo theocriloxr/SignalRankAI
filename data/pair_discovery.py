@@ -428,14 +428,15 @@ def get_all_trending_pairs():
     except Exception:
         top_n = 30
     stock_top_n = max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20")))
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=5) as ex:
         futures = {
             "crypto": ex.submit(partial(get_trending_crypto_pairs, top_n=max(1, top_n))),
             "fx": ex.submit(get_trending_fx_pairs),
             "stocks": ex.submit(partial(get_trending_stock_tickers, top_n=stock_top_n)),
+            "indices": ex.submit(partial(get_trending_index_tickers, top_n=max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))),
             "commodities": ex.submit(partial(get_trending_commodity_tickers, 10)),
         }
-        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "commodities": []}
+        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "indices": [], "commodities": []}
         for k, fut in futures.items():
             try:
                 out[k] = list(fut.result() or [])
@@ -445,8 +446,9 @@ def get_all_trending_pairs():
     crypto = out["crypto"]
     fx = out["fx"]
     stocks = out["stocks"]
+    indices = out["indices"]
     commodities = out["commodities"]
-    return crypto + fx + stocks + commodities
+    return crypto + fx + stocks + indices + commodities
 
 
 def get_trending_stock_tickers(top_n=20):
@@ -532,22 +534,47 @@ def get_trending_stock_tickers(top_n=20):
     return sp500_liquid[:top_n]
 
 
+def get_trending_index_tickers(top_n=20):
+    """Return configured index/CFD symbols.
+
+    Index discovery is intentionally env-driven because broker/index symbol
+    names vary heavily across MT5, Yahoo, TradingView, and CFD providers.
+    """
+    manual = (os.getenv("INDEX_TICKERS") or "").strip()
+    if manual:
+        return [t.strip().upper() for t in manual.split(",") if t.strip()][:top_n]
+    return [
+        "US500",
+        "NAS100",
+        "US30",
+        "GER40",
+        "UK100",
+        "JP225",
+        "FRA40",
+        "EU50",
+        "AUS200",
+        "HK50",
+    ][:top_n]
+
+
 def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     """
-    Get all tradable assets (crypto + FX + stocks).
+    Get all tradable assets (crypto + FX + stocks + indices + commodities).
     
     Returns:
-        dict with keys: crypto, fx, stocks, commodities
+        dict with keys: crypto, fx, stocks, indices, commodities
     """
     crypto = get_trending_crypto_pairs(crypto_limit)
     fx = get_trending_fx_pairs()
     stocks = get_trending_stock_tickers(stock_limit)
+    indices = get_trending_index_tickers(max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))
     commodities = get_trending_commodity_tickers(10)
     
     return {
         "crypto": crypto,
         "fx": fx,
         "stocks": stocks,
+        "indices": indices,
         "commodities": commodities,
     }
 
@@ -568,6 +595,7 @@ def get_asset_discovery_snapshot(force_refresh: bool = False) -> dict:
         "crypto": list(universe.get("crypto") or []),
         "fx": list(universe.get("fx") or []),
         "stocks": list(universe.get("stocks") or []),
+        "indices": list(universe.get("indices") or []),
         "commodities": list(universe.get("commodities") or []),
     }
     all_symbols: list[str] = []

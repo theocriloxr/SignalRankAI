@@ -130,37 +130,37 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
                 signals.append(sig)
 
+        def _run_group(group_name, producer):
+            try:
+                for sig in producer() or []:
+                    _add(sig)
+            except Exception as exc:
+                logger.warning(
+                    "[strategies] group failed asset=%s timeframe=%s group=%s error=%s",
+                    asset,
+                    timeframe,
+                    group_name,
+                    exc,
+                    exc_info=True,
+                )
+
         # Run main strategy groups
         if "trend" in groups:
-            for sig in trend_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("trend", lambda: trend_strategies(asset, timeframe, data))
         if "stock" in groups:
-            for sig in stock_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("stock", lambda: stock_strategies(asset, timeframe, data))
         if "momentum" in groups:
-            for sig in momentum_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("momentum", lambda: momentum_strategies(asset, timeframe, data))
         if "volatility" in groups:
-            for sig in volatility_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("volatility", lambda: volatility_strategies(asset, timeframe, data))
         if "structure" in groups:
-            for sig in structure_strategy(asset, timeframe, data):
-                _add(sig)
+            _run_group("structure", lambda: structure_strategy(asset, timeframe, data))
         if "liquidity" in groups:
-            for sig in liquidity_sweep_strategies(asset, market_data):
-                _add(sig)
+            _run_group("liquidity", lambda: liquidity_sweep_strategies(asset, market_data))
         if "fibonacci" in groups:
-            for sig in fibonacci_confluence_strategies(asset, market_data):
-                _add(sig)
+            _run_group("fibonacci", lambda: fibonacci_confluence_strategies(asset, market_data))
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
-            try:
-                for sig in tradingview_strategies(asset, timeframe, data):
-                    _add(sig)
-            except Exception as e:
-                try:
-                    logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
-                except Exception:
-                    pass
+            _run_group("tradingview", lambda: tradingview_strategies(asset, timeframe, data))
     
     # === FALLBACK STRATEGIES ===
     # If no signals generated from main strategies and fallback is enabled, try fallback strategies

@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Optional
+from data.indicator_schema import normalize_indicator_schema
 
 def calculate_indicators(candles):
     """Calculate all technical indicators for a given set of candles."""
@@ -18,10 +19,11 @@ def calculate_indicators(candles):
     indicators['sma_50'] = df['close'].rolling(window=50).mean().iloc[-1]
     indicators['sma_200'] = df['close'].rolling(window=200).mean().iloc[-1]
     
-    # Strategy-expected EMAs (for compatibility with trend strategies)
-    indicators['ema_fast'] = df['close'].ewm(span=12, adjust=False).mean().iloc[-1]
-    indicators['ema_slow'] = df['close'].ewm(span=26, adjust=False).mean().iloc[-1]
-    indicators['ema_trend'] = df['close'].ewm(span=50, adjust=False).mean().iloc[-1]
+    # Canonical strategy aliases. Keep raw period keys and expose stable names
+    # used by the strategy layer.
+    indicators['ema_fast'] = indicators['ema_20']
+    indicators['ema_slow'] = indicators['ema_50']
+    indicators['ema_trend'] = indicators['ema_200']
     
     # Trend Direction
     indicators['trend_ema'] = determine_trend_ema(df['close'].iloc[-50:].values)
@@ -108,7 +110,7 @@ def calculate_indicators(candles):
     indicators['range'] = indicators['high_price'] - indicators['low_price']
     indicators['range_percent'] = (indicators['range'] / indicators['close_price']) * 100 if indicators['close_price'] > 0 else 0
     
-    return indicators
+    return normalize_indicator_schema(indicators)
 
 def RSI(series, period):
     delta = series.diff()

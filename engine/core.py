@@ -46,6 +46,7 @@ except Exception:
 from data.market_data import fetch_market_data_cached
 from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers, get_all_tradable_assets
 from data.indicators import calculate_indicators
+from data.indicator_schema import normalize_indicator_schema
 from data.news import get_news_sentiment
 
 # Engine pieces
@@ -1434,6 +1435,8 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                         if not tf_data.get('indicators'):
                             tf_candles = tf_data.get('candles', [])
                             tf_data['indicators'] = calculate_indicators(tf_candles)
+                        if isinstance(tf_data.get('indicators'), dict):
+                            tf_data['indicators'] = normalize_indicator_schema(tf_data.get('indicators'))
                     except Exception:
                         logger.exception("indicator calc failed")
                 return asset, (data or {})

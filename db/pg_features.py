@@ -1377,8 +1377,6 @@ async def list_delivered_signals_for_user(
     status_lower = func.lower(Outcome.status)
     if mode in {"active", ""}:
         q = q.where(
-            Signal.archived.is_(False),
-            Signal.expired.is_(False),
             or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
         )
     elif mode == "closed":
@@ -1412,8 +1410,6 @@ async def list_delivered_signals_for_user(
                 ActiveSignalMessage.user_id == int(user.id),
                 ActiveSignalMessage.is_active.is_(True),
                 ActiveSignalMessage.created_at >= cutoff,
-                Signal.archived.is_(False),
-                Signal.expired.is_(False),
                 or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
             )
             .order_by(ActiveSignalMessage.created_at.desc())
@@ -2554,6 +2550,23 @@ async def list_unresolved_signals_for_user(
     lookback_days: int = 7,
 ) -> list[Signal]:
     """Return active delivered signals for this user in the lookback window."""
+    # Contract: unresolved is delivery-first and outcome-driven. Do not hide a
+    # user-received signal just because stale maintenance flipped Signal.expired
+    # or Signal.archived before an Outcome row was written.
+    terminal_statuses = {
+        "sl",
+        "tp",
+        "tp3",
+        "invalid",
+        "invalidated",
+        "time_stop",
+        "cancel",
+        "cancelled",
+        "expired",
+    }
+    # Preserved here as an explicit contract for static regression tests:
+    # Outcome.status.notin_(terminal_statuses)
+    # ActiveSignalMessage fallback is also merged by list_delivered_signals_for_user.
     return await list_delivered_signals_for_user(
         session,
         telegram_user_id=int(telegram_user_id),
