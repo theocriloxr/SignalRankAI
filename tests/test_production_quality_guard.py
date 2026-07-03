@@ -140,3 +140,53 @@ def test_production_quality_guard_rejects_low_confluence_when_present(monkeypatc
 
     assert not ok
     assert "quality_confluence" in reason
+
+
+def test_production_quality_guard_uses_trade_profile_rr_for_atr_day_signals(monkeypatch):
+    monkeypatch.delenv("PRODUCTION_QUALITY_GUARD_ENABLED", raising=False)
+    monkeypatch.delenv("QUALITY_MIN_RR_CRYPTO", raising=False)
+
+    ok, reason = _production_quality_gate(
+        _base_signal(
+            asset="AVAXUSDT",
+            timeframe="5m",
+            entry=20.0,
+            stop_loss=19.5,
+            take_profit=[20.615, 21.0, 21.5],
+            score=97.5,
+            ml_probability=0.80,
+            adx=30.0,
+            trade_profile="day",
+            target_model="atr_profile",
+            rr_ratio=1.23,
+            rr_estimate=1.23,
+        )
+    )
+
+    assert ok
+    assert reason == ""
+
+
+def test_production_quality_guard_env_can_keep_profile_rr_strict(monkeypatch):
+    monkeypatch.delenv("PRODUCTION_QUALITY_GUARD_ENABLED", raising=False)
+    monkeypatch.setenv("QUALITY_MIN_RR_CRYPTO", "2.0")
+
+    ok, reason = _production_quality_gate(
+        _base_signal(
+            asset="AVAXUSDT",
+            timeframe="5m",
+            entry=20.0,
+            stop_loss=19.5,
+            take_profit=[20.615, 21.0, 21.5],
+            score=97.5,
+            ml_probability=0.80,
+            adx=30.0,
+            trade_profile="day",
+            target_model="atr_profile",
+            rr_ratio=1.23,
+            rr_estimate=1.23,
+        )
+    )
+
+    assert not ok
+    assert "quality_rr 1.23 < 2.00" in reason

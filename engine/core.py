@@ -913,9 +913,24 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         "commodity": 3.50,
         "other": 4.00,
     }
+    profile_name = ""
+    profile_min_rr = None
+    if str(signal.get("target_model") or "").strip().lower() == "atr_profile":
+        try:
+            from services.trade_profiles import get_trade_profile, infer_trade_profile
+
+            profile = get_trade_profile(infer_trade_profile(signal))
+            profile_name = str(profile.name or "")
+            profile_min_rr = float(profile.min_rr)
+        except Exception:
+            profile_min_rr = None
+
+    min_rr_default = min_rr_defaults.get(asset_class, 2.0)
+    if profile_min_rr is not None and profile_min_rr > 0:
+        min_rr_default = max(1.0, float(profile_min_rr))
 
     min_score = _env_float_for_class("QUALITY_MIN_SCORE", asset_class, min_score_defaults.get(asset_class, 90.0))
-    min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_defaults.get(asset_class, 2.0))
+    min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_default)
     min_ml = _env_float_for_class("QUALITY_MIN_ML_PROB", asset_class, min_ml_defaults.get(asset_class, 0.62))
     min_adx = _env_float_for_class("QUALITY_MIN_ADX", asset_class, min_adx_defaults.get(asset_class, 22.0))
     min_confluence = _env_float_for_class(
@@ -936,7 +951,8 @@ def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
     if stop_loss_pct > max_stop_loss_pct:
         return False, f"quality_stop_loss_pct {stop_loss_pct:.2f}% > {max_stop_loss_pct:.2f}% ({asset_class})"
     if rr < min_rr:
-        return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class})"
+        profile_suffix = f", {profile_name}" if profile_name else ""
+        return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class}{profile_suffix})"
     if rr_cap_value > max_rr:
         return False, f"quality_rr {rr_cap_value:.2f} > {max_rr:.2f} ({asset_class})"
     if ml_probability > 0 and ml_probability < min_ml:

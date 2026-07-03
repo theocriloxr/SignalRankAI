@@ -49,7 +49,7 @@ TRADE_PROFILES: dict[str, TradeProfile] = {
         expiry_minutes=90,
         expected_duration="5-60 minutes",
         max_tp1_hours=1.0,
-        min_rr=1.2,
+        min_rr=1.1,
     ),
     "day": TradeProfile(
         name="day",
@@ -60,7 +60,7 @@ TRADE_PROFILES: dict[str, TradeProfile] = {
         expiry_minutes=24 * 60,
         expected_duration="30 minutes-24 hours",
         max_tp1_hours=24.0,
-        min_rr=1.35,
+        min_rr=1.2,
     ),
     "swing": TradeProfile(
         name="swing",
@@ -288,4 +288,3 @@ def format_trade_profile_options(current: str = "all") -> str:
     lines.append("")
     lines.append("Use /profile scalp, /profile day, /profile swing, /profile position, or /profile all.")
     return "\n".join(lines)
-
