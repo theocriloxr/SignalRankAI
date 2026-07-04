@@ -10,6 +10,16 @@ def test_every_signal_success_path_requires_telegram_proof() -> None:
     assert "sent_ok=True" not in bot_source
     assert "missing_telegram_ack" in pg_source
     assert "telegram_message_id" in pg_source
+    assert "SignalDelivery.telegram_message_id.is_not(None)" in pg_source
+
+
+def test_owner_delivery_debug_and_signal_supersession_are_registered() -> None:
+    commands_source = (ROOT / "signalrank_telegram" / "commands.py").read_text(encoding="utf-8")
+    bot_source = (ROOT / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+    pg_source = (ROOT / "db" / "pg_features.py").read_text(encoding="utf-8")
+    assert "async def delivery_debug_command" in commands_source
+    assert 'CommandHandler("delivery_debug"' in bot_source
+    assert 'status="superseded"' in pg_source
 
 
 def test_excursion_tracker_preserves_best_and_worst_prices() -> None:

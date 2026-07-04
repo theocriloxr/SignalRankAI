@@ -640,6 +640,7 @@ from .commands import (
     ops_health_command,
     system_command,
     db_health_command,
+    delivery_debug_command,
     engine_debug_command,
     profile_command,
     mission_command,
@@ -1548,7 +1549,7 @@ async def _mark_delivery_with_telegram_proof(
             telegram_chat_id=int(chat_id) if chat_id is not None else None,
             telegram_message_id=int(message_id) if message_id is not None else None,
             telegram_api_result=proof_d,
-            delivery_state=str(delivery_state or proof_d.get("mode") or ("sent" if has_ack else "failed")),
+            delivery_state=str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
         )
         await db_session.commit()
         return bool(ok and has_ack and not error)
@@ -4491,6 +4492,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("ops_health", _audit_handler("ops_health", ops_health_command)))
     application.add_handler(CommandHandler("system", _audit_handler("system", system_command)))
     application.add_handler(CommandHandler("db_health", _audit_handler("db_health", db_health_command)))
+    application.add_handler(CommandHandler("delivery_debug", _audit_handler("delivery_debug", delivery_debug_command)))
     application.add_handler(CommandHandler("engine_debug", _audit_handler("engine_debug", engine_debug_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))

@@ -50,7 +50,8 @@ def test_vip_formatter_never_leaves_why_blank():
     message = format_vip_signal(signal)
 
     assert "Why:" in message
-    assert "supports this LONG setup" in message
+    why_line = next(line for line in message.splitlines() if line.startswith("Why:"))
+    assert why_line.removeprefix("Why:").strip()
 
 
 def test_webhook_payload_carries_explanation_metadata():

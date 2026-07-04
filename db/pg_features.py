@@ -880,6 +880,20 @@ async def get_or_create_signal_impl(
 
     signal_near_ob: bool = bool(signal.get('is_near_order_block', False))
 
+    # One canonical active thesis per asset/timeframe. A newly accepted signal
+    # supersedes older unresolved rows in the same market bucket, including an
+    # opposing direction, so user-facing "active" lists cannot contradict.
+    await session.execute(
+        update(Signal)
+        .where(
+            Signal.asset == asset,
+            Signal.timeframe == timeframe,
+            Signal.expired.is_(False),
+            Signal.archived.is_(False),
+        )
+        .values(status="superseded", expired=True, archived=True)
+    )
+
     # Create Signal - try with ml_probability, fallback if column missing (migration pending)
     try:
         s = Signal(
@@ -897,6 +911,10 @@ async def get_or_create_signal_impl(
             strategy_group=strategy_group,
             strength=strength,
             fingerprint=fingerprint,
+            trade_profile=trade_profile,
+            asset_class=asset_class,
+            target_model=target_model,
+            expected_duration=expected_duration,
             status="active",
             created_at=now,
             expires_at=signal_expires_at,
@@ -1402,6 +1420,7 @@ async def list_delivered_signals_for_user(
         "cancel",
         "cancelled",
         "expired",
+        "superseded",
     }
     winner_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp"}
     loser_statuses = {"sl", "stop_loss"}
@@ -1419,13 +1438,20 @@ async def list_delivered_signals_for_user(
         .limit(max_rows)
     )
     if sent_ok_only:
-        q = q.where(SignalDelivery.sent_ok.is_(True))
+        q = q.where(
+            SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+        )
     if asset:
         q = q.where(Signal.asset == str(asset).upper().strip())
 
     status_lower = func.lower(Outcome.status)
     if mode in {"active", ""}:
         q = q.where(
+            Signal.archived.is_(False),
+            Signal.expired.is_(False),
+            or_(Signal.expires_at.is_(None), Signal.expires_at > _utcnow()),
             or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
         )
     elif mode == "closed":
@@ -1459,6 +1485,9 @@ async def list_delivered_signals_for_user(
                 ActiveSignalMessage.user_id == int(user.id),
                 ActiveSignalMessage.is_active.is_(True),
                 ActiveSignalMessage.created_at >= cutoff,
+                Signal.archived.is_(False),
+                Signal.expired.is_(False),
+                or_(Signal.expires_at.is_(None), Signal.expires_at > _utcnow()),
                 or_(Outcome.id.is_(None), status_lower.notin_(terminal_statuses)),
             )
             .order_by(ActiveSignalMessage.created_at.desc())
@@ -1470,12 +1499,20 @@ async def list_delivered_signals_for_user(
         rows.extend(list(res3.scalars().all()))
 
     seen: set[str] = set()
+    seen_market_buckets: set[tuple[str, str]] = set()
     out: list[Signal] = []
     for sig in rows:
         sid = str(getattr(sig, "signal_id", "") or "")
         if not sid or sid in seen:
             continue
+        bucket = (
+            str(getattr(sig, "asset", "") or "").upper(),
+            str(getattr(sig, "timeframe", "") or "").lower(),
+        )
+        if mode == "active" and bucket in seen_market_buckets:
+            continue
         seen.add(sid)
+        seen_market_buckets.add(bucket)
         out.append(sig)
         if len(out) >= max_rows:
             break
@@ -1499,7 +1536,12 @@ async def get_delivered_signal_by_ref(
     q: Select[Tuple[Signal]] = (
         select(Signal)
         .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-        .where(SignalDelivery.user_id == user.id)
+        .where(
+            SignalDelivery.user_id == user.id,
+            SignalDelivery.sent_ok.is_(True),
+            SignalDelivery.telegram_chat_id.is_not(None),
+            SignalDelivery.telegram_message_id.is_not(None),
+        )
     )
     if len(ref) >= 32:
         q: Select[Tuple[Signal]] = q.where(Signal.signal_id == ref)

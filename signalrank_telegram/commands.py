@@ -1114,6 +1114,65 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		await update.message.reply_text(f"Database health unavailable. Reference logged: {type(exc).__name__}")
 
 
+async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Owner/admin proof trail for a signal delivery and Telegram acknowledgement."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = [str(x or "").strip() for x in (context.args or []) if str(x or "").strip()]
+	if not args:
+		await update.message.reply_text("Usage: /delivery_debug <signal_ref> [telegram_user_id]")
+		return
+	ref = args[0]
+	user_filter = int(args[1]) if len(args) > 1 and args[1].isdigit() else None
+
+	try:
+		from sqlalchemy import select
+		from db.models import Outcome, Signal, SignalDelivery, User
+		from db.session import get_session
+
+		async with get_session() as session:
+			query = (
+				select(SignalDelivery, User, Signal, Outcome)
+				.join(User, User.id == SignalDelivery.user_id)
+				.join(Signal, Signal.signal_id == SignalDelivery.signal_id)
+				.outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+				.where(Signal.signal_id.like(f"{ref}%"))
+				.order_by(SignalDelivery.id.desc())
+				.limit(20)
+			)
+			if user_filter is not None:
+				query = query.where(User.telegram_user_id == int(user_filter))
+			rows = (await session.execute(query)).all()
+			await session.commit()
+
+		if not rows:
+			await update.message.reply_text("No delivery rows match that signal reference and user.")
+			return
+
+		for delivery, user, signal, outcome in rows:
+			proof_ok = bool(delivery.telegram_chat_id is not None and delivery.telegram_message_id is not None)
+			message = (
+				"Delivery proof\n"
+				f"Signal: {signal.signal_id}\n"
+				f"Market: {signal.asset} {signal.timeframe} {str(signal.direction).upper()}\n"
+				f"User: {user.telegram_user_id}\n"
+				f"State: {delivery.delivery_state} | sent_ok={bool(delivery.sent_ok)} | proof={proof_ok}\n"
+				f"Telegram: chat={delivery.telegram_chat_id or 'none'} message={delivery.telegram_message_id or 'none'}\n"
+				f"Attempts: {int(delivery.attempt_count or 0)}\n"
+				f"Dispatch: {delivery.dispatch_started_at or 'none'}\n"
+				f"Confirmed: {delivery.delivery_confirmed_at or 'none'}\n"
+				f"Error: {delivery.last_error or 'none'}\n"
+				f"Outcome: {getattr(outcome, 'status', None) or 'pending'}"
+			)
+			await update.message.reply_text(message[:3900])
+	except Exception as exc:
+		logger.exception("[delivery_debug] failed: %s", exc)
+		await update.message.reply_text(f"Delivery debug failed: {type(exc).__name__}")
+
+
 async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Admin-only latest engine cycle diagnostics from the Redis/runtime state heartbeat."""
 	if update.effective_user is None or update.message is None:
@@ -2822,33 +2881,40 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				)
 		return
 
-	# PREMIUM/VIP: use consistent box-style template
-	from .formatter import format_signal
+	# Keep the list scannable. Full cards remain available through /signal <ref>
+	# and the inline Open buttons, avoiding Telegram floods of 50 large messages.
+	from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-	total_active: int = len(filtered_signals)
-	if update.message is not None and total_active > 0:
-		asset_txt = f" - {asset_filter}" if asset_filter else ""
-		await update.message.reply_text(
-			f"Your {status_filter.title()} Signals{asset_txt} ({total_active} in last {lookback_days} day(s)):"
+	total_active = len(filtered_signals)
+	visible = filtered_signals[:10]
+	asset_txt = f" for {asset_filter}" if asset_filter else ""
+	lines = [
+		f"{status_filter.title()} signals{asset_txt}",
+		f"{total_active} delivered in the last {lookback_days} day(s)",
+		"",
+	]
+	button_rows = []
+	for idx, signal in enumerate(visible, 1):
+		ref = str(signal.get("signal_id") or "")
+		score = float(signal.get("score") or 0.0)
+		lines.append(
+			f"{idx}. {signal.get('asset')} {str(signal.get('direction') or '').upper()} "
+			f"{signal.get('timeframe')} | {score:.1f}% | {ref[:8]}"
 		)
-		total_active = 0
-	if update.message is not None and total_active > 0:
-		await update.message.reply_text(f"📊 Your Active Signals ({total_active} in last 30 days):")
-
-	for idx, s in enumerate(filtered_signals, 1):
-		try:
-			formatted = format_signal(s, user_tier=tier)
-			if not formatted:
-				continue
-			if update.message is not None:
-				await update.message.reply_text(
-					formatted,
-					parse_mode="HTML",
-					reply_markup=_build_signal_action_keyboard(s),
+		if ref and idx <= 5:
+			button_rows.append([
+				InlineKeyboardButton(
+					f"Open {signal.get('asset')} {str(signal.get('direction') or '').upper()}",
+					callback_data=f"open_signal_{ref}",
 				)
-		except Exception as e:
-			_audit_logger.error(f"Error formatting signal for {user_id}: {e}")
-			continue
+			])
+	if total_active > len(visible):
+		lines.extend(["", f"Showing {len(visible)} of {total_active}. Use filters such as /signals asset XAUUSD."])
+	lines.extend(["", "Open details with /signal <reference>."])
+	await update.message.reply_text(
+		"\n".join(lines),
+		reply_markup=InlineKeyboardMarkup(button_rows) if button_rows else _nav_kbd,
+	)
 
 
 async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3159,19 +3225,19 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			await update.message.reply_text("Signal not found (or not delivered to you).")
 			return
 
-		try:
-			from datetime import datetime, timedelta, timezone
-			_created = getattr(sig, "created_at", None)
-			if _created is not None:
-				_created_utc = _created if getattr(_created, "tzinfo", None) is not None else _created.replace(tzinfo=timezone.utc)
-				if _created_utc < datetime.now(timezone.utc) - timedelta(days=1):
-					await update.message.reply_text("⏰ This signal is older than 24h and is no longer active.")
+		if oc is None:
+			try:
+				from datetime import datetime, timezone
+				expires_at = getattr(sig, "expires_at", None)
+				if expires_at is not None and getattr(expires_at, "tzinfo", None) is None:
+					expires_at = expires_at.replace(tzinfo=timezone.utc)
+				is_retired = bool(getattr(sig, "expired", False) or getattr(sig, "archived", False))
+				is_retired = is_retired or bool(expires_at and expires_at <= datetime.now(timezone.utc))
+				if is_retired:
+					await update.message.reply_text("This signal is expired or superseded and is no longer active.")
 					return
-		except Exception:
-			pass
-		if oc is not None:
-			await update.message.reply_text("✅ This signal already has an outcome. Use /outcome <ref> for details.")
-			return
+			except Exception:
+				pass
 
 		sig_dict = {
 			"signal_id": sig.signal_id,
@@ -3224,9 +3290,13 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		
 		# Enrich with entry_status and current price
 		entry: float | None = _as_float(sig_dict.get("entry"))
+		sl: float | None = _as_float(sig_dict.get("stop_loss"))
+		tp: float | None = _parse_tp(sig_dict.get("take_profit"))
 		asset: str = str(sig_dict.get("asset") or "").upper()
 		price = None
 		entry_status = "UNKNOWN"
+		position_lines: list[str] = []
+		advice_line = ""
 		
 		if entry is not None and _is_crypto(asset):
 			price: float | None = await _current_price(asset)

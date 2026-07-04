@@ -861,53 +861,43 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                         if sym.endswith("USDT"):
                             bid_vol = ask_vol = 0.0
                             try:
-                                async with httpx.AsyncClient(timeout=2.0) as client:
-                                    bin_sym = format_ticker(sym, "binance")
-                                    # Funding rate (recent)
-                                    fr_url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={bin_sym}&limit=1"
-                                    r = await client.get(fr_url)
-                                    if r.status_code == 200:
-                                        j = r.json()
-                                        if isinstance(j, list) and j:
-                                            fr = j[0].get("fundingRate")
-                                            macro["funding_rate"] = float(fr) if fr is not None else 0.0
-                                    # Open interest
-                                    oi_url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={bin_sym}"
-                                    r2 = await client.get(oi_url)
-                                    if r2.status_code == 200:
-                                        j2 = r2.json()
-                                        oi = j2.get("openInterest")
-                                        try:
-                                            current_oi = float(oi)
-                                        except Exception:
-                                            current_oi = 0.0
-                                        prev_raw = state.get_sync(f"market:open_interest:{bin_sym}")
-                                        prev = None
-                                        try:
-                                            prev = float(prev_raw) if prev_raw is not None else None
-                                        except Exception:
-                                            prev = None
-                                        if prev and prev > 0:
-                                            macro["open_interest_change"] = (current_oi - prev) / prev
-                                        else:
-                                            macro["open_interest_change"] = 0.0
-                                        try:
-                                            state.set_sync(f"market:open_interest:{bin_sym}", str(current_oi))
-                                        except Exception:
-                                            pass
-                                    # Orderbook imbalance (top levels)
-                                    depth_url = f"https://api.binance.com/api/v3/depth?symbol={bin_sym}&limit=5"
-                                    r3 = await client.get(depth_url)
-                                    if r3.status_code == 200:
-                                        j3 = r3.json()
-                                        bids = j3.get("bids") or []
-                                        asks = j3.get("asks") or []
-                                        bid_vol = sum(float(b[1]) for b in bids[:5]) if bids else 0.0
-                                        ask_vol = sum(float(a[1]) for a in asks[:5]) if asks else 0.0
-                                        if (bid_vol + ask_vol) > 0:
-                                            macro["orderbook_imbalance"] = (bid_vol - ask_vol) / (bid_vol + ask_vol)
-                                        else:
-                                            macro["orderbook_imbalance"] = 0.0
+                                from engine.derivatives import default_squeeze_detector
+                                from engine.microstructure import default_order_book_analyzer
+
+                                funding_rate = await default_squeeze_detector.get_funding_rate(sym)
+                                if funding_rate is not None:
+                                    macro["funding_rate"] = float(funding_rate)
+
+                                async with httpx.AsyncClient(timeout=3.0) as client:
+                                    oi_response = await client.get(
+                                        "https://api.bybit.com/v5/market/open-interest",
+                                        params={
+                                            "category": "linear",
+                                            "symbol": sym,
+                                            "intervalTime": "5min",
+                                            "limit": 1,
+                                        },
+                                    )
+                                if oi_response.status_code == 200:
+                                    oi_rows = (oi_response.json().get("result") or {}).get("list") or []
+                                    current_oi = float(oi_rows[0].get("openInterest") or 0.0) if oi_rows else 0.0
+                                    prev_raw = state.get_sync(f"market:open_interest:{sym}")
+                                    prev = float(prev_raw) if prev_raw is not None else None
+                                    macro["open_interest_change"] = (
+                                        (current_oi - prev) / prev if prev and prev > 0 else 0.0
+                                    )
+                                    state.set_sync(f"market:open_interest:{sym}", str(current_oi))
+
+                                order_book = await default_order_book_analyzer.fetch_order_book(sym)
+                                if order_book:
+                                    bids = order_book.get("bids") or []
+                                    asks = order_book.get("asks") or []
+                                    bid_vol = sum(float(level[1]) for level in bids[:5]) if bids else 0.0
+                                    ask_vol = sum(float(level[1]) for level in asks[:5]) if asks else 0.0
+                                    total_volume = bid_vol + ask_vol
+                                    macro["orderbook_imbalance"] = (
+                                        (bid_vol - ask_vol) / total_volume if total_volume > 0 else 0.0
+                                    )
                             except Exception:
                                 pass
                         # Default zeros for non-crypto or failures

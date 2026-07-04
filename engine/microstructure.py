@@ -48,7 +48,7 @@ class OrderBookAnalyzer:
     
     async def fetch_order_book(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
-        Fetch order book from Binance public API.
+        Fetch and normalize public order-book depth with geo-resilient fallbacks.
         
         Args:
             symbol: Trading symbol (e.g., 'BTCUSDT')
@@ -56,24 +56,48 @@ class OrderBookAnalyzer:
         Returns:
             Order book data dict or None on failure.
         """
-        # Use Binance public API (no auth required for depth)
-        url = f"https://api.binance.com/api/v3/depth"
-        params = {
-            "symbol": symbol.upper(),
-            "limit": 50  # Top 50 levels
-        }
-        
-        try:
-            session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    logger.warning(f"[microstructure] Order book API returned {response.status}")
-                    return None
-                data = await response.json()
-                return data
-        except Exception as e:
-            logger.debug(f"[microstructure] Order book fetch failed: {e}")
-            return None
+        normalized_symbol = str(symbol or "").upper().replace("/", "").replace("-", "")
+        providers = [
+            item.strip().lower()
+            for item in os.getenv("CRYPTO_MICROSTRUCTURE_PROVIDERS", "bybit,okx,binance").split(",")
+            if item.strip()
+        ]
+        session = await self._get_session()
+        for provider in providers:
+            try:
+                if provider == "bybit":
+                    url = "https://api.bybit.com/v5/market/orderbook"
+                    params = {"category": "spot", "symbol": normalized_symbol, "limit": 50}
+                elif provider == "okx":
+                    url = "https://www.okx.com/api/v5/market/books"
+                    base = normalized_symbol[:-4] if normalized_symbol.endswith("USDT") else normalized_symbol
+                    params = {"instId": f"{base}-USDT", "sz": 50}
+                elif provider == "binance":
+                    url = "https://api.binance.com/api/v3/depth"
+                    params = {"symbol": normalized_symbol, "limit": 50}
+                else:
+                    continue
+
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        logger.debug("[microstructure] provider=%s status=%s", provider, response.status)
+                        continue
+                    payload = await response.json()
+
+                if provider == "bybit":
+                    result = payload.get("result") or {}
+                    data = {"bids": result.get("b") or [], "asks": result.get("a") or [], "provider": provider}
+                elif provider == "okx":
+                    rows = payload.get("data") or []
+                    row = rows[0] if rows else {}
+                    data = {"bids": row.get("bids") or [], "asks": row.get("asks") or [], "provider": provider}
+                else:
+                    data = {"bids": payload.get("bids") or [], "asks": payload.get("asks") or [], "provider": provider}
+                if data["bids"] and data["asks"]:
+                    return data
+            except Exception as exc:
+                logger.debug("[microstructure] provider=%s failed: %s", provider, exc)
+        return None
     
     def calculate_volume(self, orders: list) -> float:
         """

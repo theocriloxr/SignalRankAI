@@ -222,6 +222,44 @@ def run_startup_ops(run_mode: str) -> None:
                     cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_telegram_msg ON signal_deliveries(telegram_chat_id, telegram_message_id)")
                 except Exception:
                     pass
+                try:
+                    cur.execute(
+                        """
+                        UPDATE signal_deliveries
+                        SET sent_ok = FALSE,
+                            delivery_state = 'invalid',
+                            delivery_confirmed_at = NULL,
+                            last_error = COALESCE(last_error, 'startup_invariant_missing_telegram_ack')
+                        WHERE sent_ok IS TRUE
+                          AND (telegram_chat_id IS NULL OR telegram_message_id IS NULL)
+                        """
+                    )
+                    invalid_successes = int(cur.rowcount or 0)
+                    if invalid_successes:
+                        print(
+                            f"[auto_ops] repaired {invalid_successes} false-positive signal deliveries without Telegram proof",
+                            flush=True,
+                        )
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        """
+                        UPDATE signal_deliveries
+                        SET delivery_state = 'retry',
+                            last_error = COALESCE(last_error, 'stale_reservation_recovered')
+                        WHERE delivery_state IN ('reserved', 'sending')
+                          AND COALESCE(last_attempt_at, dispatch_started_at, delivered_at) < NOW() - INTERVAL '5 minutes'
+                        """
+                    )
+                    stale_reservations = int(cur.rowcount or 0)
+                    if stale_reservations:
+                        print(
+                            f"[auto_ops] released {stale_reservations} stale signal delivery reservations for retry",
+                            flush=True,
+                        )
+                except Exception:
+                    pass
                 conn.commit()
         except Exception:
             pass
