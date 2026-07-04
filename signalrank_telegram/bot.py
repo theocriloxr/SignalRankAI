@@ -405,34 +405,35 @@ async def _resend_unsent_signals_async():
                             continue
 
                         try:
-                            await _deliver_or_update_signal_async(
+                            delivery_proof = await _deliver_or_update_signal_async(
                                 bot=bot,
                                 telegram_user_id=int(user_id),
                                 signal=dict(sig_dict or {}),
                                 display_tier=str(display_tier),
                             )
-                            async with get_session() as db_session:
-                                await mark_signal_delivery_result(
-                                    db_session,
-                                    telegram_user_id=int(user_id),
-                                    signal_id=str(signal_id),
-                                    sent_ok=True,
+                            confirmed = await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=str(signal_id),
+                                proof=delivery_proof,
+                                delivery_state="sent" if delivery_proof else "skipped",
+                            )
+                            if not confirmed:
+                                logger.info(
+                                    "[resend] delivery not confirmed user=%s signal=%s proof=%s",
+                                    user_id,
+                                    signal_id,
+                                    delivery_proof,
                                 )
-                                await db_session.commit()
+                                continue
                             _increment_successful_delivery_stat()
                         except Exception as send_err:
-                            try:
-                                async with get_session() as db_session:
-                                    await mark_signal_delivery_result(
-                                        db_session,
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(signal_id),
-                                        sent_ok=False,
-                                        error=str(send_err),
-                                    )
-                                    await db_session.commit()
-                            except Exception:
-                                pass
+                            await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=str(signal_id),
+                                proof=None,
+                                error=str(send_err),
+                                delivery_state="failed",
+                            )
                             raise send_err
 
                         await asyncio.sleep(0.5)
@@ -807,6 +808,7 @@ async def _send_message_async(
                 regime=telemetry_regime,
                 status="ok",
             )
+        return msg
     except Exception:
         if telemetry_started_at is not None:
             observe_signal_dispatch(
@@ -844,7 +846,6 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
 
     try:
         global_delay = float((os.getenv("TELEGRAM_GLOBAL_SEND_DELAY_SECONDS") or "0.08").strip())
-        return msg
     except Exception:
         global_delay = 0.08
     try:
@@ -1366,7 +1367,7 @@ async def _deliver_or_update_signal_async(
     telegram_user_id: int,
     signal: dict,
     display_tier: str,
-) -> bool:
+) -> dict | None:
     """Prefer editing existing active message over sending a near-duplicate new one."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -1397,17 +1398,17 @@ async def _deliver_or_update_signal_async(
                 float(freshness.max_age_minutes or 0.0),
                 float(freshness.opportunity_remaining_pct or 0.0),
             )
-            return False
+            return None
         if freshness.live_price is not None:
             signal["current_price"] = float(freshness.live_price)
             signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
     except Exception as exc:
         logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
-        return False
+        return None
 
     text = format_signal(signal, display_tier=display_tier)
     if not text or not str(text).strip():
-        return False
+        return None
 
     if signal_id:
         editable = await _find_editable_signal_message(int(telegram_user_id), signal)
@@ -1420,7 +1421,7 @@ async def _deliver_or_update_signal_async(
                         f"[signal_update] skipped non-material update user={telegram_user_id} "
                         f"old={editable.get('old_signal_id')} new={signal_id}"
                     )
-                    return True
+                    return None
 
                 counts = await _load_signal_engagement_counts(signal_id)
                 keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
@@ -1451,7 +1452,7 @@ async def _deliver_or_update_signal_async(
                     parse_mode="HTML",
                     reply_markup=jump_keyboard,
                 )
-                return True
+                return None
             except Exception as exc:
                 logger.debug(f"[signal_update] edit path failed; fallback to fresh send: {exc}")
 
@@ -1462,11 +1463,11 @@ async def _deliver_or_update_signal_async(
                 f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
                 f"asset={signal_asset} signal={signal_id or signal.get('id')}"
             )
-            return True
+            return None
     except Exception as exc:
         logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
 
-    await _send_signal_with_engagement_async(
+    sent_msg = await _send_signal_with_engagement_async(
         bot,
         chat_id=int(telegram_user_id),
         text=str(text),
@@ -1474,7 +1475,11 @@ async def _deliver_or_update_signal_async(
         telegram_user_id=int(telegram_user_id),
         signal=signal,
     )
-    return True
+    return {
+        "mode": "sent",
+        "chat_id": int(getattr(getattr(sent_msg, "chat", None), "id", telegram_user_id)),
+        "message_id": int(getattr(sent_msg, "message_id")),
+    }
 
 
 def _deliver_or_update_signal_sync(
@@ -1505,6 +1510,38 @@ def _deliver_or_update_signal_sync(
     except Exception as exc:
         logger.debug(f"[dispatch] deliver_or_update failed: {exc}")
         return False
+
+
+async def _mark_delivery_with_telegram_proof(
+    *,
+    telegram_user_id: int,
+    signal_id: str,
+    proof: dict | None,
+    error: str | None = None,
+    delivery_state: str | None = None,
+) -> bool:
+    """Persist Telegram delivery state; success requires a Telegram chat/message ack."""
+    from db.session import get_session
+    from db.pg_features import mark_signal_delivery_result
+
+    proof_d = dict(proof or {})
+    chat_id = proof_d.get("chat_id")
+    message_id = proof_d.get("message_id")
+    has_ack = chat_id is not None and message_id is not None
+    async with get_session() as db_session:
+        ok = await mark_signal_delivery_result(
+            db_session,
+            telegram_user_id=int(telegram_user_id),
+            signal_id=str(signal_id),
+            sent_ok=bool(has_ack and not error),
+            error=None if has_ack and not error else str(error or "delivery_not_confirmed"),
+            telegram_chat_id=int(chat_id) if chat_id is not None else None,
+            telegram_message_id=int(message_id) if message_id is not None else None,
+            telegram_api_result=proof_d,
+            delivery_state=str(delivery_state or proof_d.get("mode") or ("sent" if has_ack else "failed")),
+        )
+        await db_session.commit()
+        return bool(ok and has_ack and not error)
 
 
 def _record_mt5_execution_sync(
@@ -2207,7 +2244,7 @@ async def _send_signal_with_engagement_async(
     signal_id: str,
     telegram_user_id: int,
     signal: dict | None = None,
-) -> None:
+) -> object:
     """Send a signal message with engagement buttons (+ ⚡ MT5 button for PREMIUM+)
     and save message_id to ActiveSignalMessage for live-edit support."""
     counts = await _load_signal_engagement_counts(str(signal_id))
@@ -2292,6 +2329,7 @@ async def _send_signal_with_engagement_async(
                 await session.commit()
         except Exception as _e:
             logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
+        return msg
     except Exception as send_exc:
         logger.warning(
             "[send_signal] keyboard send failed chat_id=%s user=%s signal_id=%s err=%s",
@@ -2308,7 +2346,7 @@ async def _send_signal_with_engagement_async(
         except Exception:
             pass
         # Fallback: send without buttons so the signal still reaches the user
-        await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode="HTML")
+        return await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode="HTML")
 
 
 def _send_signal_with_engagement_sync(
@@ -2318,21 +2356,21 @@ def _send_signal_with_engagement_sync(
     signal_id: str,
     telegram_user_id: int,
     signal: dict | None = None,
-) -> None:
+) -> object | None:
     """Sync wrapper for _send_signal_with_engagement_async."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        run_sync(_send_signal_with_engagement_async(
+        return run_sync(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
-        return
     try:
         loop.create_task(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
     except Exception as _e:
         logger.debug(f"[send_signal] Failed to schedule engagement send: {_e}")
+    return None
 
 
 def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
@@ -2361,14 +2399,14 @@ async def _send_message_with_retry(
     text: str,
     parse_mode: str | None = None,
     reply_markup=None,
-) -> None:
+) -> object:
     """Async send with Telegram flood-control retry and pacing."""
     send_text = str(text)
     if parse_mode and parse_mode.lower().startswith("markdown"):
         from telegram.helpers import escape_markdown
         version = 2 if "v2" in parse_mode.lower() else 1
         send_text = escape_markdown(send_text, version=version)
-    await _telegram_send_message_guarded(
+    return await _telegram_send_message_guarded(
         bot,
         chat_id=int(chat_id),
         text=send_text,
@@ -2383,9 +2421,9 @@ def _send_message_with_retry_sync(
     text: str,
     parse_mode: str | None = None,
     reply_markup=None,
-) -> None:
+) -> object | None:
     """Sync wrapper for _send_message_with_retry, safe in background threads."""
-    run_sync(_send_message_with_retry(
+    return run_sync(_send_message_with_retry(
         bot,
         int(chat_id),
         str(text),
@@ -3428,11 +3466,17 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 continue
 
                             logger.debug(f"[dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                            if await _deliver_or_update_signal_async(
+                            delivery_proof = await _deliver_or_update_signal_async(
                                 bot,
                                 telegram_user_id=int(user_id),
                                 signal=reserved_signal,
                                 display_tier=display_tier,
+                            )
+                            if await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=str(reserved_signal.get("signal_id") or ""),
+                                proof=delivery_proof,
+                                delivery_state="sent" if delivery_proof else "skipped",
                             ):
                                 sent += 1
                                 try:
@@ -3443,26 +3487,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     )
                                 except Exception:
                                     pass
-                                try:
-                                    from db.pg_features import mark_signal_delivery_result
-                                    async with get_session() as session:
-                                        await mark_signal_delivery_result(
-                                            session,
-                                            telegram_user_id=int(user_id),
-                                            signal_id=str(reserved_signal.get("signal_id") or ""),
-                                            sent_ok=True,
-                                        )
-                                        await session.commit()
-                                    _increment_successful_delivery_stat()
-                                except Exception as mark_err:
-                                    try:
-                                        mark_signal_delivered_sync(
-                                            int(user_id),
-                                            str(reserved_signal.get("signal_id") or ""),
-                                        )
-                                    except Exception:
-                                        pass
-                                    logger.warning("[dispatch] failed to mark delivery success in DB: %s", mark_err)
+                                _increment_successful_delivery_stat()
                             else:
                                 try:
                                     from db.pg_features import mark_signal_delivery_result
