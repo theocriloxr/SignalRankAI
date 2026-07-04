@@ -1210,6 +1210,13 @@ async def record_signal_delivery(
     if existing_delivery is not None:
         if bool(getattr(existing_delivery, "sent_ok", False)):
             return False
+        if str(getattr(existing_delivery, "delivery_state", "") or "").lower() == "blocked":
+            logger.info(
+                "[dedup] permanently blocked Telegram recipient user=%s signal=%s",
+                user.id,
+                signal_id,
+            )
+            return False
         try:
             retry_seconds = max(30, int(os.getenv("DELIVERY_INFLIGHT_RETRY_SECONDS", "300") or 300))
         except Exception:
@@ -1726,9 +1733,9 @@ async def mark_signal_delivery_result(
         row.telegram_api_result = dict(telegram_api_result or {})
     else:
         row.delivery_state = str(delivery_state or "failed")[:16]
-    try:
-        row.attempt_count = int(getattr(row, "attempt_count", 0) or 0) + 1
-    except Exception:
+    # Reservation owns the attempt counter. Confirmation must not turn one
+    # Telegram API attempt into two in diagnostics.
+    if int(getattr(row, "attempt_count", 0) or 0) < 1:
         row.attempt_count = 1
     row.last_error = (str(error)[:1000] if error else None)
     await session.flush()

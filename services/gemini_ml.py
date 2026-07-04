@@ -27,6 +27,7 @@ import asyncio
 
 
 logger = logging.getLogger("GeminiValidator")
+_LAST_REVIEW_KEY = "gemini_last_review"
 
 # Setup Client (New SDK: google-genai)
 client = None
@@ -472,6 +473,55 @@ DECISION: [APPROVE/VETO]"""
         return True, 5.0, f"Review failed: {e}"
 
 
+async def get_last_gemini_review() -> Optional[Dict[str, Any]]:
+    """Return the latest persisted Gemini review, if one has completed."""
+    from db.models import RuntimeState
+    from db.session import get_session
+
+    async with get_session() as session:
+        row = await session.get(RuntimeState, _LAST_REVIEW_KEY)
+        return dict(row.value or {}) if row is not None else None
+
+
+async def _persist_gemini_review(result: Dict[str, Any], session=None) -> None:
+    """Persist review data through the typed JSON column, avoiding raw JSON casts."""
+    from db.models import RuntimeState
+    from db.session import get_session
+    from utils.timeutils import now_utc_naive
+
+    async def _write(active_session) -> None:
+        row = await active_session.get(RuntimeState, _LAST_REVIEW_KEY)
+        if row is None:
+            row = RuntimeState(key=_LAST_REVIEW_KEY, value=dict(result), updated_at=now_utc_naive())
+            active_session.add(row)
+        else:
+            row.value = dict(result)
+            row.updated_at = now_utc_naive()
+        await active_session.commit()
+
+    if session is not None:
+        await _write(session)
+        return
+    async with get_session() as new_session:
+        await _write(new_session)
+
+
+def _review_feature_suggestions(analysis: str) -> List[str]:
+    suggestions: List[str] = []
+    in_recommendations = False
+    for raw_line in str(analysis or "").splitlines():
+        line = raw_line.strip().lstrip("-*0123456789. ")
+        upper = line.upper()
+        if upper.startswith("RECOMMENDATIONS:"):
+            in_recommendations = True
+            line = line.split(":", 1)[1].strip()
+        elif upper.startswith(("ASSESSMENT:", "PATTERNS:")):
+            in_recommendations = False
+        if in_recommendations and line:
+            suggestions.append(line[:300])
+    return suggestions[:8]
+
+
 async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dict[str, Any]:
     """
     Run a comprehensive Gemini review pipeline for automated analytics.
@@ -550,14 +600,14 @@ async def run_gemini_review_pipeline(trigger: str, scope: str = "weekly") -> Dic
                 wins = await db_session.scalar(
                     select(func.count(Outcome.id)).where(
                         Outcome.closed_at >= cutoff,
-                        Outcome.status == "win"
+                        Outcome.canonical_outcome == "win"
                     )
                 ) or 0
                 
                 losses = await db_session.scalar(
                     select(func.count(Outcome.id)).where(
                         Outcome.closed_at >= cutoff,
-                        Outcome.status.in_(["loss", "timeout"])
+                        Outcome.canonical_outcome.in_(["loss", "time_stop"])
                     )
                 ) or 0
             except Exception as e:
@@ -610,17 +660,36 @@ RECOMMENDATIONS: [Specific suggestions]
             
             # Call Gemini
             try:
-                response = client.models.generate_content(
+                response = await asyncio.to_thread(
+                    client.models.generate_content,
                     model=MODEL_ID,
-                    contents=prompt
+                    contents=prompt,
                 )
                 
                 analysis = response.text.strip()
                 
-                return {
+                result = {
                     "ok": True,
                     "trigger": trigger,
                     "scope": scope,
+                    "finished_at": now_utc_naive().isoformat(),
+                    "received": {
+                        "outcomes_total": int(outcomes_count),
+                        "wins": int(wins),
+                        "losses": int(losses),
+                        "issued": int(signals_stored),
+                        "rejected_or_skipped": int(ml_rejected_count),
+                    },
+                    "processed": {
+                        "prompt_chars": len(prompt),
+                        "review_chars": len(analysis),
+                    },
+                    "training": {
+                        "succeeded": False,
+                        "note": "Review completed; model retraining is a separate governed job.",
+                    },
+                    "review": analysis,
+                    "feature_suggestions": _review_feature_suggestions(analysis),
                     "metrics": {
                         "signals_generated": signals_generated,
                         "signals_stored": signals_stored,
@@ -632,6 +701,8 @@ RECOMMENDATIONS: [Specific suggestions]
                     },
                     "analysis": analysis,
                 }
+                await _persist_gemini_review(result, db_session)
+                return result
             except Exception as e:
                 logger.error(f"[GeminiValidator] Pipeline API call failed: {e}")
                 return {

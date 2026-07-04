@@ -4,9 +4,10 @@ Fetches upcoming high-impact economic events and enforces a 30-minute
 no-trade buffer around USD red-folder releases.
 
 Providers (in priority order):
-    1. Finnhub  (requires FINNHUB_API_KEY env var — free tier OK)
-    2. TradingEconomics  (requires TRADINGECONOMICS_API_KEY — optional)
-    3. Static fallback list  (NFP first Friday, CPI 2nd–3rd Wed, FOMC ~8×/year)
+    1. Redis/DB cached normalized events
+    2. Fair Economy/Forex Factory weekly JSON feed (free, no key)
+    3. Finnhub (optional FINNHUB_API_KEY fallback)
+    4. Static timing hints when every live source is unavailable
 
 Usage::
     from services.economic_calendar import is_no_trade_zone, fetch_economic_events
@@ -33,7 +34,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _EVENTS_CACHE: list[dict] = []
 _CACHE_FETCHED_AT: Optional[datetime] = None
-_CACHE_TTL_SECONDS = 3600  # refresh once per hour
+_CACHE_TTL_SECONDS = max(300, int(os.getenv("ECONOMIC_CALENDAR_CACHE_TTL_SECONDS", "3600") or 3600))
+_REQUEST_TIMEOUT_SECONDS = max(2.0, float(os.getenv("ECONOMIC_CALENDAR_TIMEOUT_SECONDS", "8") or 8))
+_FOREX_FACTORY_URL = (
+    os.getenv("FOREX_FACTORY_CALENDAR_URL")
+    or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+).strip()
 
 # ---------------------------------------------------------------------------
 # Known high-impact USD events (month, day pattern matching)
@@ -73,7 +79,21 @@ async def _load_events_from_redis() -> list[dict]:
         cached = state.get_sync(REDIS_EVENTS_KEY)
         if cached:
             events = json.loads(cached)
-            return events if isinstance(events, list) else []
+            if not isinstance(events, list):
+                return []
+            normalized = []
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                item = dict(event)
+                raw_time = item.get("event_time")
+                if isinstance(raw_time, str) and raw_time:
+                    try:
+                        item["event_time"] = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+                    except Exception:
+                        item["event_time"] = None
+                normalized.append(item)
+            return normalized
     except Exception as exc:
         logger.debug("[economic_calendar] Redis cache unavailable: %s", exc)
     return []
@@ -129,7 +149,7 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
         "token": api_key,
     }
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
@@ -156,6 +176,73 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
     except Exception as exc:
         logger.warning(f"[economic_calendar] Finnhub fetch failed: {exc}")
         return []
+
+
+async def _fetch_forex_factory(from_dt: datetime, to_dt: datetime) -> list[dict]:
+    """Fetch the free weekly calendar feed used by Forex Factory/Fair Economy."""
+    if not _FOREX_FACTORY_URL:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            response = await client.get(
+                _FOREX_FACTORY_URL,
+                headers={"User-Agent": "SignalRankAI/1.0 economic-calendar"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, list):
+            return []
+
+        events: list[dict] = []
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+            impact = str(raw.get("impact") or "low").strip().lower()
+            if impact not in {"high", "medium"}:
+                continue
+            raw_time = raw.get("date") or raw.get("event_time") or raw.get("time")
+            try:
+                event_time = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=timezone.utc)
+                event_time = event_time.astimezone(timezone.utc)
+            except Exception:
+                continue
+            if event_time < from_dt or event_time > to_dt:
+                continue
+            events.append(
+                {
+                    "title": str(raw.get("title") or raw.get("event") or "Economic event"),
+                    "currency": str(raw.get("country") or raw.get("currency") or "").upper(),
+                    "impact": impact,
+                    "event_time": event_time,
+                    "forecast": raw.get("forecast"),
+                    "previous": raw.get("previous"),
+                    "actual": raw.get("actual"),
+                    "source": "forex_factory",
+                }
+            )
+        logger.info("[economic_calendar] Forex Factory feed returned %d events", len(events))
+        return events
+    except Exception as exc:
+        logger.warning("[economic_calendar] Forex Factory feed failed: %s", exc)
+        return []
+
+
+def _store_events_in_redis(events: list[dict]) -> None:
+    try:
+        from core.redis_state import state
+
+        serializable = []
+        for event in events:
+            item = dict(event)
+            event_time = item.get("event_time")
+            if isinstance(event_time, datetime):
+                item["event_time"] = event_time.isoformat()
+            serializable.append(item)
+        state.set_sync(REDIS_EVENTS_KEY, json.dumps(serializable), ex=_CACHE_TTL_SECONDS)
+    except Exception as exc:
+        logger.debug("[economic_calendar] Redis cache write unavailable: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +281,9 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
         _CACHE_FETCHED_AT = now
         return events
 
-    events = await _fetch_finnhub(from_dt, to_dt)
+    events = await _fetch_forex_factory(from_dt, to_dt)
+    if not events:
+        events = await _fetch_finnhub(from_dt, to_dt)
 
     if not events:
         logger.warning(
@@ -210,6 +299,7 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
 
     _EVENTS_CACHE = events
     _CACHE_FETCHED_AT = now
+    _store_events_in_redis(events)
     logger.info(f"[economic_calendar] Cache refreshed: {len(events)} events")
     return events
 

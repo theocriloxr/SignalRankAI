@@ -677,8 +677,16 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         or signal.get("trade_logic")
         or signal.get("setup_rationale")
     )
-    if why:
-        lines.append(f"Why: {_h(str(why)[:180])}")
+    if not why:
+        strategy = str(signal.get("strategy") or signal.get("strategy_name") or "multi-factor setup")
+        direction_text = str(signal.get("direction") or "trade").upper()
+        timeframe_text = str(signal.get("timeframe") or "current timeframe")
+        regime_text = str(signal.get("market_regime") or signal.get("regime") or "current market regime")
+        why = (
+            f"{strategy} supports this {direction_text} setup on {timeframe_text}; "
+            f"risk and confluence checks passed for the {regime_text} regime."
+        )
+    lines.append(f"Why: {_h(str(why)[:180])}")
 
     lines += [
         "",

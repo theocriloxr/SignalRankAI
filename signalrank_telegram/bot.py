@@ -447,15 +447,13 @@ async def _resend_unsent_signals_async():
                         if "bot was blocked by the user" in _err_text.lower():
                             logger.info(f"[resend] User {user_id} blocked bot; suppressing retries for signal {signal_id}")
                             try:
-                                async with get_session() as db_session:
-                                    await record_signal_delivery(
-                                        db_session,
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(signal_id),
-                                        tier_at_send=f"{str(gate_tier)[:8]}_blk",
-                                    )
-                                    await db_session.commit()
-                                delivered_user_ids.add(int(user_id))
+                                await _mark_delivery_with_telegram_proof(
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(signal_id),
+                                    proof=None,
+                                    error="telegram_bot_blocked",
+                                    delivery_state="blocked",
+                                )
                             except Exception:
                                 pass
                         else:
@@ -1425,7 +1423,7 @@ async def _deliver_or_update_signal_async(
 
                 counts = await _load_signal_engagement_counts(signal_id)
                 keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
-                await bot.edit_message_text(
+                edited_msg = await bot.edit_message_text(
                     chat_id=int(editable["chat_id"]),
                     message_id=int(editable["message_id"]),
                     text=text,
@@ -1445,14 +1443,26 @@ async def _deliver_or_update_signal_async(
                         url=_build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"])),
                     )]]
                 )
-                await _telegram_send_message_guarded(
+                notice_msg = await _telegram_send_message_guarded(
                     bot,
                     chat_id=int(telegram_user_id),
                     text=f"♻️ <b>Signal updated</b> — {update_reason}.",
                     parse_mode="HTML",
                     reply_markup=jump_keyboard,
                 )
-                return None
+                acknowledged = edited_msg or notice_msg
+                message_id = getattr(acknowledged, "message_id", None)
+                if message_id is None:
+                    raise RuntimeError("Telegram edit completed without a message acknowledgement")
+                return {
+                    "mode": "updated",
+                    "chat_id": int(
+                        getattr(getattr(acknowledged, "chat", None), "id", editable["chat_id"])
+                    ),
+                    "message_id": int(message_id),
+                    "edited_chat_id": int(editable["chat_id"]),
+                    "edited_message_id": int(editable["message_id"]),
+                }
             except Exception as exc:
                 logger.debug(f"[signal_update] edit path failed; fallback to fresh send: {exc}")
 
@@ -3019,39 +3029,41 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
 
         bot = Bot(token=_require_telegram_token())
         unlock_msg = _format_free_fomo_unlock_message(signal)
-        sent = 0
+        async def _dispatch_recipients() -> int:
+            confirmed_count = 0
+            for uid in recipients:
+                try:
+                    await _send_message_with_retry(
+                        bot,
+                        chat_id=int(uid),
+                        text=unlock_msg,
+                        parse_mode="HTML",
+                    )
+                    delivery_proof = await _deliver_or_update_signal_async(
+                        bot,
+                        telegram_user_id=int(uid),
+                        signal=dict(signal or {}),
+                        display_tier="free",
+                    )
+                    if await _mark_delivery_with_telegram_proof(
+                        telegram_user_id=int(uid),
+                        signal_id=str(signal_id),
+                        proof=delivery_proof,
+                        delivery_state="sent" if delivery_proof else "skipped",
+                    ):
+                        confirmed_count += 1
+                except Exception as exc:
+                    await _mark_delivery_with_telegram_proof(
+                        telegram_user_id=int(uid),
+                        signal_id=str(signal_id),
+                        proof=None,
+                        error=str(exc),
+                        delivery_state="failed",
+                    )
+                    logger.debug("[fomo_free] send failed user=%s err=%s", uid, exc)
+            return confirmed_count
 
-        for uid in recipients:
-            try:
-                _send_message_with_retry_sync(bot, chat_id=int(uid), text=unlock_msg, parse_mode="HTML")
-                if _deliver_or_update_signal_sync(
-                    bot,
-                    telegram_user_id=int(uid),
-                    signal=dict(signal or {}),
-                    display_tier="free",):
-                # Global fix: escape text for Markdown/MarkdownV2 parse modes
-                    send_text = str(text)
-                if parse_mode and parse_mode.lower().startswith("markdown"):
-                    try:
-                        from telegram.helpers import escape_markdown
-                        version = 2 if "v2" in parse_mode.lower() else 1
-                        send_text = escape_markdown(send_text, version=version)
-                    except Exception:
-                        pass
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    run_sync(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode, telemetry_started_at=time.perf_counter(), telemetry_tier=tier, telemetry_regime=regime))
-                    return
-                # If we're already in an event loop, schedule it.
-                try:
-                    loop.create_task(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode, telemetry_started_at=time.perf_counter(), telemetry_tier=tier, telemetry_regime=regime))
-                except Exception as e:
-                    logger.debug(f"[send_message] Failed to create async task for message: {e}")
-                    pass
-            except Exception as e:
-                logger.debug(f"[fomo_free] Failed to send free fomo message to user {uid}: {e}")
-                continue
+        sent = int(run_sync(_dispatch_recipients()) or 0)
         if sent:
             logger.info(f"[fomo_free] dispatched signal={signal_id[:8]} to free_users={sent}")
         return int(sent)
@@ -3531,13 +3543,18 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                 for signal in reserved:
                     try:
                         logger.debug(f"[dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                        _ok_send = await _deliver_or_update_signal_async(
+                        delivery_proof = await _deliver_or_update_signal_async(
                             bot,
                             telegram_user_id=int(user_id),
                             signal=signal,
                             display_tier=display_tier,
                         )
-                        if _ok_send:
+                        if await _mark_delivery_with_telegram_proof(
+                            telegram_user_id=int(user_id),
+                            signal_id=str(signal.get("signal_id") or ""),
+                            proof=delivery_proof,
+                            delivery_state="sent" if delivery_proof else "skipped",
+                        ):
                             sent += 1
                             try:
                                 _auto_execute_signal_if_enabled(
@@ -3547,26 +3564,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 )
                             except Exception:
                                 pass
-                            try:
-                                from db.pg_features import mark_signal_delivery_result
-                                async with get_session() as session:
-                                    await mark_signal_delivery_result(
-                                        session,
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(signal.get("signal_id") or ""),
-                                        sent_ok=True,
-                                    )
-                                    await session.commit()
-                                _increment_successful_delivery_stat()
-                            except Exception as mark_err:
-                                try:
-                                    mark_signal_delivered_sync(
-                                        int(user_id),
-                                        str(signal.get("signal_id") or ""),
-                                    )
-                                except Exception:
-                                    pass
-                                logger.warning("[dispatch] failed to mark delivery success in DB: %s", mark_err)
+                            _increment_successful_delivery_stat()
                         else:
                             try:
                                 from db.pg_features import mark_signal_delivery_result
@@ -3673,15 +3671,29 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 try:
                                     # Determine display tier: VIP for owner/admin, PREMIUM otherwise
                                     signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'premium'
-                                    if await _deliver_or_update_signal_async(
+                                    await session.commit()
+                                    delivery_proof = await _deliver_or_update_signal_async(
                                         bot,
                                         telegram_user_id=int(user_id),
                                         signal=sig_dict,
                                         display_tier=signal_display_tier,
+                                    )
+                                    if await _mark_delivery_with_telegram_proof(
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(best_sig.signal_id),
+                                        proof=delivery_proof,
+                                        delivery_state="sent" if delivery_proof else "skipped",
                                     ):
                                         sent_count += 1
                                         state.consume_extra_signals_sync(int(user_id), 1)
                                 except Exception as e:
+                                    await _mark_delivery_with_telegram_proof(
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(best_sig.signal_id),
+                                        proof=None,
+                                        error=str(e),
+                                        delivery_state="failed",
+                                    )
                                     logger.warning(f"[dispatch] Failed to send extra signal to user {user_id}: {e}")
                                     pass
                         await session.commit()
@@ -3815,16 +3827,30 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             try:
                                 # Determine display tier: VIP for owner/admin, FREE for others
                                 signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'free'
-                                if not await _deliver_or_update_signal_async(
+                                await session.commit()
+                                delivery_proof = await _deliver_or_update_signal_async(
                                     bot,
                                     telegram_user_id=int(user_id),
                                     signal=sig_dict,
                                     display_tier=signal_display_tier,
+                                )
+                                if not await _mark_delivery_with_telegram_proof(
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(sig.signal_id),
+                                    proof=delivery_proof,
+                                    delivery_state="sent" if delivery_proof else "skipped",
                                 ):
                                     continue
                                 sent_count += 1
                             except Exception as e:
-                                logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {e}")
+                                await _mark_delivery_with_telegram_proof(
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(sig.signal_id),
+                                    proof=None,
+                                    error=str(e),
+                                    delivery_state="failed",
+                                )
+                                logger.debug(f"[dispatch] Failed to deliver free signal: {e}")
                                 pass
                     
                     await session.commit()
@@ -3849,51 +3875,13 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         )
 
     if routing_tier in ('premium', 'vip'):
-        from core.tier_constants import TIER_DAILY_LIMITS
-
-        # Check daily limit from DB deliveries
-        signals_sent_today = int(_count_signals_sent_today_sync(int(user_id)) or 0)
-        
-        daily_limit = TIER_DAILY_LIMITS.get(
+        logger.error(
+            "[dispatch] suppressed untracked premium/vip fallback user=%s tier=%s; "
+            "the PostgreSQL reservation path must recover before delivery",
+            user_id,
             routing_tier,
-            TIER_DAILY_LIMITS.get("free", 3),
         )
-        
-        if signals_sent_today >= daily_limit:
-            logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")
-            return 0
-        
-        bot = Bot(token=_require_telegram_token())
-        limit = TIER_LIMITS.get(routing_tier, 0)
-        sent = 0
-        display_tier = _display_tier_for_delivery(tier)
-        for signal in signals_list:
-            # Check if we've hit the daily limit
-            if signals_sent_today + sent >= daily_limit:
-                break
-            if sent >= limit:
-                break
-            try:
-                if not await _deliver_or_update_signal_async(
-                    bot,
-                    telegram_user_id=int(user_id),
-                    signal=signal,
-                    display_tier=display_tier,
-                ):
-                    continue
-                try:
-                    _auto_execute_signal_if_enabled(
-                        telegram_user_id=int(user_id),
-                        signal=dict(signal or {}),
-                        routing_tier=str(routing_tier),
-                    )
-                except Exception:
-                    pass
-                sent += 1
-            except Exception as e:
-                logger.warning(f"[dispatch] Failed to dispatch signal to user {user_id}: {e}")
-                continue
-        return int(sent)
+        return 0
 
     # FREE: queue delayed summary (legacy mode).
     # Default is FOMO unlock dispatch on VIP TP1 events.
@@ -6436,6 +6424,7 @@ def run_bot() -> None:
                     get_alert_prefs as get_alert_prefs_pg,
                     get_due_free_signal_summaries as get_due_free_signal_summaries_pg,
                     mark_free_signal_summaries_sent as mark_free_signal_summaries_sent_pg,
+                    mark_signal_delivery_result,
                     record_signal_delivery,
                 )
                 from datetime import datetime
@@ -6502,10 +6491,16 @@ def run_bot() -> None:
                             items_to_skip = items[per_user_limit:]
 
                             status = 'sent'
+                            telegram_proof = None
                             if items_to_send:
                                 msg = _format_free_delayed_digest(items_to_send)
                                 try:
-                                    await _send_message_with_retry(bot, chat_id=int(uid), text=msg)
+                                    sent_msg = await _send_message_with_retry(bot, chat_id=int(uid), text=msg)
+                                    telegram_proof = {
+                                        "mode": "digest",
+                                        "chat_id": int(getattr(getattr(sent_msg, "chat", None), "id", uid)),
+                                        "message_id": int(getattr(sent_msg, "message_id")),
+                                    }
                                     await asyncio.sleep(0.5)
                                     logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
                                 except Exception as e:
@@ -6518,6 +6513,7 @@ def run_bot() -> None:
                                         [it["id"] for it in items_to_send],
                                         [it["signal_id"] for it in items_to_send],
                                         status,
+                                        telegram_proof,
                                     )
                                 )
 
@@ -6529,6 +6525,7 @@ def run_bot() -> None:
                                         [it["id"] for it in items_to_skip],
                                         [it["signal_id"] for it in items_to_skip],
                                         'expired',
+                                        None,
                                     )
                                 )
 
@@ -6537,16 +6534,28 @@ def run_bot() -> None:
                         return 0
 
                     async with get_session() as session:
-                        for uid, ids, signal_ids, status in actions:
+                        for uid, ids, signal_ids, status, telegram_proof in actions:
                             await mark_free_signal_summaries_sent_pg(session, ids, status=status)
                             if status == 'sent':
                                 for sid in signal_ids:
-                                    await record_signal_delivery(
+                                    reserved = await record_signal_delivery(
                                         session,
                                         telegram_user_id=int(uid),
                                         signal_id=str(sid),
                                         tier_at_send='free',
                                     )
+                                    if reserved:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(uid),
+                                            signal_id=str(sid),
+                                            sent_ok=bool(telegram_proof),
+                                            error=None if telegram_proof else "missing_telegram_ack",
+                                            telegram_chat_id=(telegram_proof or {}).get("chat_id"),
+                                            telegram_message_id=(telegram_proof or {}).get("message_id"),
+                                            telegram_api_result=dict(telegram_proof or {}),
+                                            delivery_state="sent" if telegram_proof else "failed",
+                                        )
                         await session.commit()
                     return len(actions)
 

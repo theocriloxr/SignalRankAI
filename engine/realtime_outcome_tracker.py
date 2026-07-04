@@ -30,6 +30,27 @@ logger = logging.getLogger(__name__)
 ENTRY_ZONE_PCT = float(os.getenv("ENTRY_ZONE_PCT", "0.003"))
 BE_BUFFER_PCT = float(os.getenv("BE_BUFFER_PCT", "0.001"))
 TICK_INTERVAL = float(os.getenv("TICK_INTERVAL_SECONDS", "30.0"))
+_EXCURSION_CACHE: Dict[str, Dict[str, float]] = {}
+
+
+def _record_excursion(signal_id: str, direction: str, entry: float, price: float) -> Dict[str, float]:
+    """Accumulate signed MFE/MAE in memory between persisted lifecycle events."""
+    try:
+        entry_f = float(entry)
+        price_f = float(price)
+        if entry_f <= 0 or price_f <= 0:
+            return dict(_EXCURSION_CACHE.get(str(signal_id), {}))
+        signed_pct = (
+            ((entry_f - price_f) / entry_f) * 100.0
+            if str(direction or "").lower() == "short"
+            else ((price_f - entry_f) / entry_f) * 100.0
+        )
+        current = _EXCURSION_CACHE.setdefault(str(signal_id), {"mfe_pct": 0.0, "mae_pct": 0.0})
+        current["mfe_pct"] = max(float(current.get("mfe_pct", 0.0)), signed_pct, 0.0)
+        current["mae_pct"] = min(float(current.get("mae_pct", 0.0)), signed_pct, 0.0)
+        return dict(current)
+    except Exception:
+        return dict(_EXCURSION_CACHE.get(str(signal_id), {}))
 
 
 def _utc_now_naive() -> datetime:
@@ -204,7 +225,7 @@ async def _write_outcome_to_db(signal: TrackedSignal, new_state: str, transition
         or signal.entry
     )
     status = state_to_db_outcome(new_state, signal.highest_tp_hit)
-    if status not in {"unknown", "tp1", "tp2"}:
+    if status != "unknown":
         await _persist_outcome(signal.signal_id, status, signal.entry, exit_price)
 
 
@@ -562,7 +583,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
     """Upsert outcome row and queue per-recipient notifications (idempotent)."""
     try:
         from db.session import get_session
-        from db.models import Signal
+        from db.models import Outcome, Signal
         from db.pg_features import upsert_outcome
         from db.pg_features import queue_outcome_notifications_for_outcome
         from sqlalchemy import update as sa_update
@@ -573,19 +594,12 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         status_l = str(status or "").lower()
         terminal = status_l in {"sl", "tp3", "tp", "invalid", "time_stop"}
 
-        canonical_outcome = "pending"
-        if status_l in {"tp", "tp3"}:
-            canonical_outcome = "win"
-        elif status_l == "sl":
-            canonical_outcome = "loss"
-        elif status_l == "time_stop":
-            canonical_outcome = "time_stop"
-
         vip_fill_outcome = "pending"
         sentiment_outcome = "pending"
 
         # Fetch signal data for ML training data logging BEFORE creating session
         signal_data = None
+        existing_outcome_meta: Dict[str, Any] = {}
         try:
             from db.session import get_session
             from sqlalchemy import select
@@ -594,8 +608,32 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                     select(Signal).where(Signal.signal_id == signal_id)
                 )
                 signal_data = result.scalar_one_or_none()
+                outcome_result = await _session.execute(
+                    select(Outcome).where(Outcome.signal_id == signal_id)
+                )
+                existing_outcome = outcome_result.scalar_one_or_none()
+                existing_outcome_meta = dict(getattr(existing_outcome, "meta", {}) or {})
         except Exception:
             pass
+
+        tp_hit_index = int(existing_outcome_meta.get("tp_hit_index") or 0)
+        if status_l.startswith("tp") and status_l != "tp":
+            try:
+                tp_hit_index = max(tp_hit_index, int(status_l[2:]))
+            except Exception:
+                pass
+        elif status_l == "tp":
+            tp_hit_index = max(tp_hit_index, 3)
+
+        canonical_outcome = "pending"
+        if status_l in {"tp", "tp3"}:
+            canonical_outcome = "win"
+        elif status_l in {"tp1", "tp2"} or (status_l == "sl" and tp_hit_index > 0):
+            canonical_outcome = "partial_win"
+        elif status_l == "sl":
+            canonical_outcome = "loss"
+        elif status_l == "time_stop":
+            canonical_outcome = "time_stop"
 
         try:
             direction = str(getattr(signal_data, "direction", "") or "").lower() if signal_data is not None else ""
@@ -620,6 +658,18 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             pass
 
         async with get_session() as session:
+            excursion = dict(_EXCURSION_CACHE.get(str(signal_id), {}))
+            outcome_meta = {
+                "close_price": float(price),
+                "last_event_price": float(price),
+                "tp_hit_index": int(tp_hit_index),
+                "tp1_hit": bool(tp_hit_index >= 1),
+                "tp2_hit": bool(tp_hit_index >= 2),
+                "tp3_hit": bool(tp_hit_index >= 3),
+                "reversed_after_tp": bool(status_l == "sl" and tp_hit_index > 0),
+                "mfe_pct": float(excursion.get("mfe_pct", existing_outcome_meta.get("mfe_pct", 0.0)) or 0.0),
+                "mae_pct": float(excursion.get("mae_pct", existing_outcome_meta.get("mae_pct", 0.0)) or 0.0),
+            }
             _outcome = await upsert_outcome(
                 session,
                 str(signal_id),
@@ -630,7 +680,15 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 canonical_outcome=canonical_outcome,
                 vip_fill_outcome=vip_fill_outcome,
                 sentiment_outcome=sentiment_outcome,
-                meta={"close_price": float(price)},
+                meta=outcome_meta,
+            )
+            await session.execute(
+                sa_update(Signal)
+                .where(Signal.signal_id == signal_id)
+                .values(
+                    mfe_pct=outcome_meta["mfe_pct"],
+                    mae_pct=outcome_meta["mae_pct"],
+                )
             )
             if terminal:
                 # new requirement: do not archive unresolved tracked states
@@ -647,6 +705,8 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 status_l,
             )
             await session.commit()
+            if terminal:
+                _EXCURSION_CACHE.pop(str(signal_id), None)
             
             # NEW: Log to ML training data table for model retraining
             if terminal and signal_data is not None:
@@ -1262,6 +1322,7 @@ class RealtimeOutcomeTracker:
         entry = float(signal["entry"])
         sl = float(signal["stop_loss"])
         direction = signal.get("direction", "long")
+        _record_excursion(signal_id, direction, entry, float(price))
         prev_tp = int(await _get_tp_progress(signal) or 0)
 
         # Normalize TP ladder before any checks.

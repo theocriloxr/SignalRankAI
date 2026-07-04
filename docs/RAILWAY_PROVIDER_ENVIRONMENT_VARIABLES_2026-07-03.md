@@ -71,20 +71,30 @@ TRADINGVIEW_OHLCV_ENABLED=0
 ### News and Macro Risk
 
 ```text
-FINNHUB_API_KEY=<economic calendar provider>
-NEWSAPI_KEY=<optional news headlines>
+NEWSAPI_KEY=<recommended general headlines and sentiment; NEWS_API_KEY is accepted as an alias>
+FOREX_FACTORY_CALENDAR_URL=https://nfs.faireconomy.media/ff_calendar_thisweek.json
+FINNHUB_API_KEY=<optional economic-calendar fallback>
 X_BEARER_TOKEN=<optional X/Twitter news source>
 TWITTER_BEARER_TOKEN=<optional alias fallback for X_BEARER_TOKEN>
-NEWS_WINDOW_MINUTES=30
+ECONOMIC_CALENDAR_CACHE_TTL_SECONDS=3600
+ECONOMIC_CALENDAR_TIMEOUT_SECONDS=8
+NO_TRADE_BUFFER_MINUTES=30
 NEWS_VOLATILITY_BUFFER_MULTIPLIER=1.0
 ```
+
+`NewsAPI` supplies headlines after publication; it does not supply a scheduled
+economic calendar. The default Fair Economy/Forex Factory JSON feed supplies
+event time, currency, impact, forecast, previous, and actual values without a
+TradingEconomics subscription. Keep both sources enabled. Official government
+releases can be added as authoritative fallbacks, but TradingEconomics is not a
+required environment variable in this codebase.
 
 ## AI and Governance
 
 ```text
 GEMINI_API_KEY=<required for Gemini analysis>
-GEMINI_MODEL=gemini-1.5-flash
-GEMINI_SIGNAL_REVIEW_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-2.0-flash
+GEMINI_SIGNAL_REVIEW_MODEL=gemini-2.0-flash
 GEMINI_API_TIMEOUT_SECONDS=8
 GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC=8
 GEMINI_SIGNAL_REVIEW_ENABLED=1
@@ -177,6 +187,8 @@ STOCK_TIMEFRAMES=5m,15m,1h,4h,1d
 
 - Use the exact names above. For example, the code reads `TWELVEDATA_API_KEY`, not `TWELVE_DATA_API_KEY`.
 - `FINNHUB_API_KEY` is currently used by the economic calendar service, not the OHLC provider waterfall.
+- Bybit, OKX, Coinbase Exchange, Kraken, Yahoo Finance, and the default Fair Economy calendar feed use public endpoints and need no Railway secret.
+- Do not add `TRADINGECONOMICS_API_KEY`; the active calendar waterfall does not require it.
 - `FMP_API_KEY`, `FCS_API_KEY`, and `TIINGO_API_KEY` are connector keys and are optional but useful for resilience.
 - `TRADINGVIEW_OHLCV_ENABLED` defaults to off because TradingView TA is useful for validation but should not emit synthetic OHLC candles.
 - If Railway logs still show `effective_pool=2 effective_overflow=0`, Railway is running old code or explicit env vars are overriding the new defaults.

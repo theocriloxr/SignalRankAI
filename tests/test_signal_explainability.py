@@ -42,6 +42,17 @@ def test_vip_formatter_includes_why_block():
     assert "Invalidation:" in message
 
 
+def test_vip_formatter_never_leaves_why_blank():
+    signal = _sample_signal()
+    signal.pop("technical_reason")
+    signal.pop("confluence_drivers")
+
+    message = format_vip_signal(signal)
+
+    assert "Why:" in message
+    assert "supports this LONG setup" in message
+
+
 def test_webhook_payload_carries_explanation_metadata():
     payload = generate_webhook_payload(_sample_signal())
 
