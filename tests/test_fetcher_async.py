@@ -86,8 +86,8 @@ class TestAsyncFetcher(unittest.TestCase):
 
         self.assertGreaterEqual(len(names), 5)
         self.assertEqual(names[:5], [
-            "bybit_connector",
             "okx_connector",
+            "bybit_connector",
             "coinbase_connector",
             "kraken_connector",
             "cryptocompare_connector",
@@ -103,6 +103,31 @@ class TestAsyncFetcher(unittest.TestCase):
                 names = [name for name, _ in get_async_providers_for_asset("crypto")]
             self.assertIn("binance_connector", names)
             self.assertGreater(names.index("binance_connector"), names.index("cryptocompare_connector"))
+
+        asyncio.run(run_test())
+
+    def test_crypto_market_data_skips_yfinance_and_returns_provider_timeframes(self):
+        async def provider_fetch(asset, tf):
+            return make_dummy_candles(30)
+
+        async def run_test():
+            from data.market_data import fetch_market_data_cached
+
+            env = {
+                "MARKET_CACHE_ENABLED": "0",
+                "YFINANCE_ENABLED": "1",
+                "YFINANCE_CRYPTO_PRIMARY_ENABLED": "0",
+                "MARKET_CACHE_WRITE_THROUGH": "0",
+                "MARKET_TIMEFRAME_FETCH_TIMEOUT_SECONDS": "2",
+            }
+            with patch.dict(os.environ, env, clear=False), \
+                 patch("data.market_data.async_get_candles", side_effect=provider_fetch), \
+                 patch("data.market_data._fetch_yfinance_with_timeout", side_effect=AssertionError("crypto yfinance called")):
+                result = await fetch_market_data_cached("BTCUSDT", ["5m", "1h"])
+
+            self.assertIn("5m", result)
+            self.assertIn("1h", result)
+            self.assertEqual(result["5m"]["source"], "provider_fallback_chain")
 
         asyncio.run(run_test())
 

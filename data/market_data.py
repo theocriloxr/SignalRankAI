@@ -9,7 +9,7 @@ from typing import Iterable
 
 import yfinance as yf
 
-from data.fetcher import async_get_candles
+from data.fetcher import async_get_candles, get_asset_type
 from db.market_cache import get_recent_candles
 from db.session import get_session
 import requests
@@ -735,12 +735,15 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     limit = _env_int("MARKET_CACHE_READ_LIMIT", 200)
     use_cache = _env_bool("MARKET_CACHE_ENABLED", True)
     use_yfinance = _env_bool("YFINANCE_ENABLED", True)
+    is_crypto_asset = str(get_asset_type(asset) or "").lower() == "crypto"
+    if is_crypto_asset and not _env_bool("YFINANCE_CRYPTO_PRIMARY_ENABLED", False):
+        use_yfinance = False
 
     out: dict = {}
     
     # 1. Try yfinance first (primary source)
     if use_yfinance and _yf_available():
-        for tf in tfs:
+        async def _fetch_yf(tf: str):
             try:
                 yf_candles = await _fetch_yfinance_with_timeout(asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
@@ -752,12 +755,11 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     else:
                         data_age = None
                     
-                    out[tf] = {
+                    return tf, {
                         "candles": yf_candles,
                         "source": "yfinance",
                         "data_age_seconds": data_age
                     }
-                    logger.info(f"[market_data] yfinance success for {asset} {tf}: {len(yf_candles)} candles")
                 else:
                     # FIX: Add QUALITY_GATE logging for visibility into data rejection reasons
                     got_candles = len(yf_candles) if yf_candles else 0
@@ -768,6 +770,18 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     logger.warning(f"yfinance failed/insufficient for {asset} {tf}, falling back to cache/REST")
             except Exception as e:
                 logger.warning(f"yfinance exception for {asset} {tf}: {e}")
+            return tf, {}
+
+        yf_results = await asyncio.gather(*[_fetch_yf(tf) for tf in tfs])
+        for tf, payload in yf_results:
+            if payload:
+                out[tf] = payload
+                logger.info(
+                    "[market_data] yfinance success for %s %s: %s candles",
+                    asset,
+                    tf,
+                    len(payload.get("candles") or []),
+                )
     elif use_yfinance and not _yf_available():
         logger.warning("[market_data] yfinance skipped due to cooldown")
 
@@ -807,14 +821,19 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     missing = [tf for tf in tfs if tf not in out]
     if missing:
         rest: dict = {}
-        rest_timeout = float(_env_int("MARKET_REST_TIMEOUT_SECONDS", 60))
+        try:
+            rest_timeout = max(
+                1.0,
+                float(os.getenv("MARKET_TIMEFRAME_FETCH_TIMEOUT_SECONDS", "10") or 10),
+            )
+        except Exception:
+            rest_timeout = 10.0
 
         async def _fetch_one(tf: str):
             try:
-                strict_timeout = min(2.5, max(0.1, rest_timeout))
                 candles = await asyncio.wait_for(
                     async_get_candles(asset, tf),
-                    timeout=strict_timeout,
+                    timeout=rest_timeout,
                 )
                 if candles:
                     return tf, {
@@ -851,7 +870,10 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             
             out[tf] = payload
 
-            # Attach lightweight alternative-market signals (funding/open-interest/orderbook)
+            # Attach lightweight alternative-market signals once per asset, not once
+            # for every timeframe returned by the provider waterfall.
+            if tf != next(iter(rest), None):
+                continue
             try:
                 async def _fetch_alt():
                     try:

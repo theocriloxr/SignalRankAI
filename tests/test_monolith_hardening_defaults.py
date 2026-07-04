@@ -57,8 +57,8 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
 
         mocked_create_engine.assert_called_once()
         kwargs = mocked_create_engine.call_args.kwargs
-        self.assertEqual(kwargs.get("pool_size"), 20)
-        self.assertEqual(kwargs.get("max_overflow"), 20)
+        self.assertEqual(kwargs.get("pool_size"), 5)
+        self.assertEqual(kwargs.get("max_overflow"), 2)
 
     def test_db_pool_is_capped_on_railway(self):
         import db.session as dbs
@@ -72,8 +72,8 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
 
         mocked_create_engine.assert_called_once()
         kwargs = mocked_create_engine.call_args.kwargs
-        self.assertEqual(kwargs.get("pool_size"), 15)
-        self.assertEqual(kwargs.get("max_overflow"), 5)
+        self.assertEqual(kwargs.get("pool_size"), 2)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
 
     def test_db_pool_is_capped_with_railway_project_marker(self):
         import db.session as dbs
@@ -86,8 +86,8 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
             dbs.get_engine_for_event_loop()
 
         kwargs = mocked_create_engine.call_args.kwargs
-        self.assertEqual(kwargs.get("pool_size"), 16)
-        self.assertEqual(kwargs.get("max_overflow"), 6)
+        self.assertEqual(kwargs.get("pool_size"), 2)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
 
     def test_db_pool_disable_railway_cap_requires_uncapped_override(self):
         import db.session as dbs
@@ -110,8 +110,8 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
             dbs.get_engine_for_event_loop()
 
         kwargs = mocked_create_engine.call_args.kwargs
-        self.assertEqual(kwargs.get("pool_size"), 16)
-        self.assertEqual(kwargs.get("max_overflow"), 6)
+        self.assertEqual(kwargs.get("pool_size"), 2)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
 
     def test_railway_absolute_pool_cap_overrides_bad_railway_cap_env(self):
         import db.session as dbs

@@ -96,8 +96,8 @@ def _is_railway_runtime() -> bool:
 
 
 def _effective_pool_settings() -> tuple[int, int]:
-    pool_size = _pool_int("DB_POOL_SIZE", 20, minimum=1)
-    max_overflow = _pool_int("DB_MAX_OVERFLOW", 20, minimum=0)
+    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 2, minimum=0)
 
     # NullPool remains available for pgbouncer/transient debugging, but pooled
     # connections are the default so caps can be enforced explicitly.
@@ -118,12 +118,12 @@ def _effective_pool_settings() -> tuple[int, int]:
             return pool_size, max_overflow
 
         railway_pool_cap = min(
-            _pool_int("DB_POOL_SIZE_RAILWAY", 20, minimum=1),
-            _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 20, minimum=1),
+            _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1),
+            _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 4, minimum=1),
         )
         railway_overflow_cap = min(
-            _pool_int("DB_MAX_OVERFLOW_RAILWAY", 20, minimum=0),
-            _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 20, minimum=0),
+            _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0),
+            _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 2, minimum=0),
         )
         original_pool_size = pool_size
         original_max_overflow = max_overflow
@@ -236,8 +236,15 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
 
         pool_size, max_overflow = _effective_pool_settings()
 
-        # Use NullPool when pool_size is 0 (NullPool mode enabled)
-        if pool_size == 0 and max_overflow == 0:
+        # Keep only the first event loop backed by a persistent Railway pool.
+        # Auxiliary loops use transient connections so every short-lived loop
+        # cannot reserve its own independent pool.
+        auxiliary_nullpool = bool(
+            _engines_by_loop
+            and _is_railway_runtime()
+            and _pool_bool("DB_AUX_LOOPS_USE_NULLPOOL", True)
+        )
+        if (pool_size == 0 and max_overflow == 0) or auxiliary_nullpool:
             engine = create_async_engine(
                 url,
                 poolclass=NullPool,
@@ -263,11 +270,12 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
         except Exception:
             _masked = "<url parse error>"
         logger.info(
-            "[db] async engine initialised loop=%s url=%s pool_size=%s max_overflow=%s",
+            "[db] async engine initialised loop=%s url=%s pool_size=%s max_overflow=%s auxiliary_nullpool=%s",
             loop_id,
             _masked,
             pool_size,
             max_overflow,
+            auxiliary_nullpool,
         )
         return engine
 

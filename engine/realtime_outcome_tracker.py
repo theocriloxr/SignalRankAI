@@ -724,15 +724,16 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                         take_profit=str(getattr(signal_data, "take_profit", "") or ""),
                         ml_probability=float(getattr(signal_data, "ml_probability", 0) or 0) if getattr(signal_data, "ml_probability", None) else None,
                         outcome_status=_outcome_status,
-                        outcome_r_multiple=float(r_mult) if r_mult else None,
-                        outcome_percent=float(pct) if pct else None,
-                        outcome_meta={"close_price": float(price)},
+                        outcome_r_multiple=float(r_mult) if r_mult is not None else None,
+                        outcome_percent=float(pct) if pct is not None else None,
+                        outcome_meta=outcome_meta,
                         signals_created_at=getattr(signal_data, "created_at", None),
                         outcome_closed_at=now,
                     )
+                    r_label = f"{float(r_mult):.2f}" if r_mult is not None else "n/a"
                     logger.info(
-                        "[outcome_tracker] ML training data logged: %s outcome=%s r=%.2f",
-                        signal_id[:8], _outcome_status, r_mult
+                        "[outcome_tracker] ML training data logged: %s outcome=%s r=%s",
+                        signal_id[:8], _outcome_status, r_label
                     )
                 except Exception as _ml_train_err:
                     logger.debug(f"[outcome_tracker] ML training data logging failed: {_ml_train_err}")

@@ -65,8 +65,8 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
     kind = str(kind or "").lower().strip()
     binance_enabled = _env_enabled("BINANCE_MARKET_DATA_ENABLED", False)
     crypto: List[Tuple[str, Callable]] = [
-        ("bybit_connector", getattr(c, "bybit_get_candles", None)),
         ("okx_connector", getattr(c, "okx_get_candles", None)),
+        ("bybit_connector", getattr(c, "bybit_get_candles", None)),
         ("coinbase_connector", getattr(c, "coinbase_get_candles", None)),
         ("kraken_connector", getattr(c, "kraken_get_candles", None)),
         (

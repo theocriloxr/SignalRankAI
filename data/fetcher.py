@@ -2436,7 +2436,13 @@ async def async_get_candles(asset, timeframe):
 
         symbol_for_providers = asset
 
-        provider_timeout_s = 2.5
+        try:
+            provider_timeout_s = max(
+                0.5,
+                float(os.getenv("MARKET_PROVIDER_TIMEOUT_SECONDS", "3.0") or 3.0),
+            )
+        except Exception:
+            provider_timeout_s = 3.0
         for provider_name, fetch_fn in healthy_provs + unhealthy_provs:
             _provider_started = time.monotonic()
             logger.info(

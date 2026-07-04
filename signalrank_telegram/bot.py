@@ -2376,9 +2376,10 @@ def _send_signal_with_engagement_sync(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
     try:
-        loop.create_task(_send_signal_with_engagement_async(
+        task = loop.create_task(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
+        task.add_done_callback(_consume_telegram_task_result)
     except Exception as _e:
         logger.debug(f"[send_signal] Failed to schedule engagement send: {_e}")
     return None
@@ -2398,10 +2399,23 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None
         return
     # If we're already in an event loop, schedule it.
     try:
-        loop.create_task(_send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode))
+        task = loop.create_task(
+            _send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode)
+        )
+        task.add_done_callback(_consume_telegram_task_result)
     except Exception as e:
         logger.debug(f"[send_message] Failed to create async task for message: {e}")
         pass
+
+
+def _consume_telegram_task_result(task: asyncio.Task) -> None:
+    """Own fire-and-forget Telegram tasks so failures are observed and logged."""
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        logger.debug("[telegram] background send task cancelled")
+    except Exception as exc:
+        logger.warning("[telegram] background send failed: %s", exc)
 
 
 async def _send_message_with_retry(
