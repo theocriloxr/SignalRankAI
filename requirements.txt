@@ -29,6 +29,7 @@ oandapyV20>=0.7.2
 newsapi-python>=0.2.7
 # Universal Market Engine additions
 pytz>=2024.1
+timezonefinder>=6.5.0,<8
 pandas_market_calendars>=4.3.1
 yahoo_fin>=0.8.9
 cachetools

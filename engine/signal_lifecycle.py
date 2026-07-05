@@ -361,6 +361,14 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
 
     bot = Bot(token=token)
     for notification, user, preference in rows:
+        if preference is not None and not bool(preference.tp_sl_enabled):
+            async with get_session() as session:
+                suppressed = await session.get(SignalEventNotification, notification.id)
+                if suppressed is not None:
+                    suppressed.delivery_state = "suppressed"
+                    suppressed.error = "user_alert_preference_disabled"
+                    await session.commit()
+            continue
         if preference is not None and preference.quiet_start_hour is not None and preference.quiet_end_hour is not None:
             try:
                 from zoneinfo import ZoneInfo
@@ -400,7 +408,10 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
                     text=text,
                     parse_mode="HTML",
                 )
-            sent_message_id = int(getattr(result, "message_id", 0) or 0) or None
+            if result is True and notification.source_message_id:
+                sent_message_id = int(notification.source_message_id)
+            else:
+                sent_message_id = int(getattr(result, "message_id", 0) or 0) or None
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"[:1000]
 

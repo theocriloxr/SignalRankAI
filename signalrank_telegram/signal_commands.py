@@ -83,6 +83,11 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     
     user_id: int = update.effective_user.id
+    try:
+        from signalrank_telegram.commands import maybe_prompt_timezone
+        await maybe_prompt_timezone(update.message, int(user_id))
+    except Exception:
+        pass
     tier: str = _effective_tier(user_id)
     show_unvoted_only: bool = False
     display_timezone = None

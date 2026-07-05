@@ -502,6 +502,9 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	except Exception:
 		pass
 	data = str(query.data or "")
+	if data == "nav_timezone" or data.startswith("timezone_"):
+		if await handle_timezone_callback(update, context):
+			return
 	if data.startswith("trade_now_"):
 		try:
 			signal_id = str(data.replace("trade_now_", "", 1) or "").strip()[:36]
@@ -1277,11 +1280,30 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 	user_id = int(update.effective_user.id)
 	args = [str(x).strip().lower() for x in (context.args or []) if str(x).strip()]
+	if args and args[0] == "timezone":
+		await _send_timezone_panel(update.message, user_id)
+		return
 	try:
 		async with get_session() as session:
 			current = await get_user_trading_preferences(session, user_id)
 			if not args:
-				await update.message.reply_text(format_preferences(current))
+				from db.models import User
+				from sqlalchemy import select
+				from signalrank_telegram.timezones import effective_user_timezone
+				from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+				user_row = (await session.execute(
+					select(User).where(User.telegram_user_id == user_id)
+				)).scalar_one_or_none()
+				timezone_name = effective_user_timezone(
+					getattr(user_row, "timezone", None), user_id
+				)
+				await update.message.reply_text(
+					format_preferences(current) + f"\nTimezone: {timezone_name}",
+					reply_markup=InlineKeyboardMarkup([[
+						InlineKeyboardButton("Timezone", callback_data="nav_timezone")
+					]]),
+				)
+				await maybe_prompt_timezone(update.message, user_id)
 				return
 			cmd = args[0]
 			next_prefs = UserTradingPreferences(
@@ -1431,37 +1453,250 @@ async def language_command(update, context) -> None:
 
 
 async def timezone_command(update, context) -> None:
-	"""Show or update the receiver's IANA timezone."""
+	"""Show or update timezone using an IANA name or a supported city alias."""
 	if update.effective_user is None or update.message is None:
 		return
-	from db.models import User
-	from sqlalchemy import select
-	from signalrank_telegram.timezones import effective_user_timezone, validate_timezone_name
-
 	telegram_user_id = int(update.effective_user.id)
-	requested = str((context.args or [""])[0] or "").strip()
-	async with get_session() as session:
-		user = (await session.execute(
-			select(User).where(User.telegram_user_id == telegram_user_id)
-		)).scalar_one_or_none()
-		if user is None:
-			await update.message.reply_text("Run /start first, then set your timezone.")
-			return
-		if not requested:
-			current = effective_user_timezone(user.timezone, telegram_user_id)
-			await update.message.reply_text(
-				f"Your timezone is {current}.\n\nSet it with: /timezone Africa/Lagos"
-			)
-			return
-		valid = validate_timezone_name(requested)
+	requested = " ".join(str(arg or "").strip() for arg in (context.args or [])).strip()
+	if requested:
+		from signalrank_telegram.timezones import resolve_timezone_query
+		valid = resolve_timezone_query(requested)
 		if valid is None:
 			await update.message.reply_text(
-				"That timezone is not valid. Use an IANA name such as Africa/Lagos, Europe/London, or America/New_York."
+				"Timezone not recognized. Try /timezone Africa/Lagos, /timezone London, or /timezone New York."
 			)
 			return
-		user.timezone = valid
+		if await _save_user_timezone(telegram_user_id, valid, source="manual"):
+			await update.message.reply_text(
+				f"Timezone set to {valid}. Signal times will use your local time.",
+				reply_markup=_timezone_location_keyboard(remove=True),
+			)
+		else:
+			await update.message.reply_text("Run /start first, then set your timezone.")
+		return
+	await _send_timezone_panel(update.message, telegram_user_id)
+
+
+def _timezone_location_keyboard(*, remove: bool = False):
+	from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+	if remove:
+		return ReplyKeyboardRemove()
+	return ReplyKeyboardMarkup(
+		[
+			[KeyboardButton("Use my current location", request_location=True)],
+			[KeyboardButton("Keep UTC")],
+		],
+		resize_keyboard=True,
+		one_time_keyboard=True,
+	)
+
+
+def _timezone_inline_keyboard(*, travel_enabled: bool = False):
+	from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+	from signalrank_telegram.timezones import COMMON_TIMEZONES
+	rows = []
+	for index in range(0, len(COMMON_TIMEZONES), 2):
+		rows.append([
+			InlineKeyboardButton(
+				zone.split("/")[-1].replace("_", " "),
+				callback_data=f"timezone_set_{zone.replace('/', '~')}",
+			)
+			for zone in COMMON_TIMEZONES[index:index + 2]
+		])
+	rows.extend([
+		[InlineKeyboardButton("Choose manually", callback_data="timezone_manual")],
+		[InlineKeyboardButton(
+			"Travel mode: ON" if travel_enabled else "Travel mode: OFF",
+			callback_data="timezone_travel_toggle",
+		)],
+		[InlineKeyboardButton("Keep UTC", callback_data="timezone_keep_utc")],
+	])
+	return InlineKeyboardMarkup(rows)
+
+
+async def _get_timezone_user(telegram_user_id: int):
+	from db.models import User
+	from sqlalchemy import select
+	async with get_session() as session:
+		return (await session.execute(
+			select(User).where(User.telegram_user_id == int(telegram_user_id))
+		)).scalar_one_or_none()
+
+
+async def _save_user_timezone(
+	telegram_user_id: int,
+	timezone_name: str,
+	*,
+	source: str,
+	location=None,
+) -> bool:
+	from datetime import datetime, timezone as datetime_timezone
+	from db.models import User
+	from sqlalchemy import select
+	from signalrank_telegram.timezones import should_store_location_coordinates
+
+	now = datetime.now(datetime_timezone.utc).replace(tzinfo=None)
+	async with get_session() as session:
+		user = (await session.execute(
+			select(User).where(User.telegram_user_id == int(telegram_user_id))
+		)).scalar_one_or_none()
+		if user is None:
+			return False
+		user.timezone = timezone_name
+		user.timezone_source = source
+		user.timezone_updated_at = now
+		if location is not None:
+			user.last_location_at = now
+			if should_store_location_coordinates():
+				user.last_location_lat = float(location.latitude)
+				user.last_location_lon = float(location.longitude)
+				user.last_location_accuracy_m = getattr(location, "horizontal_accuracy", None)
+			else:
+				user.last_location_lat = None
+				user.last_location_lon = None
+				user.last_location_accuracy_m = None
 		await session.commit()
-	await update.message.reply_text(f"Timezone set to {valid}. Signal times will now use your local time.")
+	return True
+
+
+async def _send_timezone_panel(message, telegram_user_id: int) -> None:
+	from datetime import datetime, timezone as datetime_timezone
+	from signalrank_telegram.timezones import effective_user_timezone, format_user_time
+	user = await _get_timezone_user(telegram_user_id)
+	if user is None:
+		await message.reply_text("Run /start first, then set your timezone.")
+		return
+	current = effective_user_timezone(user.timezone, telegram_user_id)
+	local_time = format_user_time(datetime.now(datetime_timezone.utc), user, include_date=False)
+	await message.reply_text(
+		f"Timezone settings\n\nCurrent: {current}\nLocal time: {local_time}\n"
+		f"Source: {getattr(user, 'timezone_source', None) or 'default'}\n\n"
+		"Share your location, choose below, or type /timezone London.",
+		reply_markup=_timezone_inline_keyboard(
+			travel_enabled=bool(getattr(user, "timezone_auto_update", False))
+		),
+	)
+	await message.reply_text(
+		"Location is used only to resolve your timezone. Exact coordinates are not retained by default.",
+		reply_markup=_timezone_location_keyboard(),
+	)
+
+
+async def timezone_location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None or update.message.location is None:
+		return
+	from signalrank_telegram.timezones import timezone_from_coordinates
+	location = update.message.location
+	timezone_name = timezone_from_coordinates(location.latitude, location.longitude)
+	if timezone_name is None:
+		await update.message.reply_text(
+			"I could not resolve that location. Use /timezone Africa/Lagos or another city.",
+			reply_markup=_timezone_location_keyboard(remove=True),
+		)
+		return
+	await _save_user_timezone(
+		int(update.effective_user.id), timezone_name, source="location", location=location
+	)
+	await update.message.reply_text(
+		f"Timezone updated to {timezone_name}. Exact coordinates were not retained.",
+		reply_markup=_timezone_location_keyboard(remove=True),
+	)
+
+
+async def travelmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	from datetime import datetime, timezone as datetime_timezone
+	from db.models import User
+	from sqlalchemy import select
+	args = [str(arg).lower() for arg in (context.args or [])]
+	if not args or args[0] not in {"on", "off"}:
+		user = await _get_timezone_user(int(update.effective_user.id))
+		status = "on" if user and user.timezone_auto_update else "off"
+		await update.message.reply_text(f"Travel mode is {status}. Use /travelmode on or /travelmode off.")
+		return
+	enabled = args[0] == "on"
+	async with get_session() as session:
+		user = (await session.execute(
+			select(User).where(User.telegram_user_id == int(update.effective_user.id))
+		)).scalar_one_or_none()
+		if user is None:
+			await update.message.reply_text("Run /start first.")
+			return
+		user.timezone_auto_update = enabled
+		user.timezone_updated_at = user.timezone_updated_at or datetime.now(datetime_timezone.utc).replace(tzinfo=None)
+		await session.commit()
+	await update.message.reply_text(
+		"Travel mode enabled. I will periodically ask you to refresh your location."
+		if enabled else "Travel mode disabled. Your saved timezone will remain fixed."
+	)
+
+
+async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+	user = await _get_timezone_user(int(update.effective_user.id))
+	from signalrank_telegram.timezones import effective_user_timezone
+	current = effective_user_timezone(getattr(user, "timezone", None), update.effective_user.id)
+	await update.message.reply_text(
+		f"Settings\n\nTimezone: {current}\nTravel mode: {'on' if user and user.timezone_auto_update else 'off'}",
+		reply_markup=InlineKeyboardMarkup([
+			[InlineKeyboardButton("Timezone", callback_data="nav_timezone")],
+			[InlineKeyboardButton("Account", callback_data="nav_account")],
+		]),
+	)
+
+
+async def maybe_prompt_timezone(message, telegram_user_id: int) -> bool:
+	user = await _get_timezone_user(telegram_user_id)
+	if user is None or user.timezone:
+		return False
+	try:
+		key = f"timezone_prompted:{int(telegram_user_id)}"
+		if await state.cache_get(key):
+			return False
+		await state.cache_set(key, "1", ex=14 * 24 * 3600)
+	except Exception:
+		pass
+	await message.reply_text(
+		"Your timezone is not set. Signal times are currently shown in UTC. Use /timezone to set local time."
+	)
+	return True
+
+
+async def handle_timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+	query = update.callback_query
+	if query is None or update.effective_user is None:
+		return False
+	data = str(query.data or "")
+	if data == "nav_timezone":
+		await _send_timezone_panel(query.message, int(update.effective_user.id))
+		return True
+	if data.startswith("timezone_set_"):
+		zone = data.replace("timezone_set_", "", 1).replace("~", "/")
+		from signalrank_telegram.timezones import validate_timezone_name
+		valid = validate_timezone_name(zone)
+		if valid and await _save_user_timezone(int(update.effective_user.id), valid, source="manual"):
+			await query.edit_message_text(f"Timezone set to {valid}.")
+		return True
+	if data == "timezone_keep_utc":
+		await _save_user_timezone(int(update.effective_user.id), "UTC", source="manual")
+		await query.edit_message_text("Timezone fixed to UTC. You can change it anytime with /timezone.")
+		return True
+	if data == "timezone_manual":
+		await query.message.reply_text("Type /timezone Lagos, /timezone London, or an IANA name such as Asia/Dubai.")
+		return True
+	if data == "timezone_travel_toggle":
+		user = await _get_timezone_user(int(update.effective_user.id))
+		context.args = ["off" if user and user.timezone_auto_update else "on"]
+		proxy = type("TimezoneUpdate", (), {
+			"effective_user": update.effective_user,
+			"message": query.message,
+		})()
+		await travelmode_command(proxy, context)
+		return True
+	return False
 
 # --------- CUSTOM SIGNAL FILTERS COMMAND ---------
 @require_tier("PREMIUM")
@@ -4040,6 +4275,11 @@ async def agree_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 				)
 		except Exception:
 			pass
+	try:
+		if query.message is not None:
+			await maybe_prompt_timezone(query.message, int(user_id))
+	except Exception:
+		pass
 
 
 async def decline_terms_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -4501,6 +4741,15 @@ async def start_command(update, context):
 							get_or_create_user(session, telegram_user_id=user_id, username=username),
 							timeout=timeout_s,
 						)
+						try:
+							user_row.locale = getattr(update.effective_user, "language_code", None)
+							if not getattr(user_row, "timezone", None) and int(user_id) in (set(OWNER_IDS or set()) | set(ADMIN_IDS or set())):
+								from datetime import datetime, timezone as _timezone
+								user_row.timezone = "Africa/Lagos"
+								user_row.timezone_source = "country_default"
+								user_row.timezone_updated_at = datetime.now(_timezone.utc).replace(tzinfo=None)
+						except Exception:
+							pass
 						# Avoid nested DB resolution inside /start; use env-configured tiers only.
 						try:
 							if int(user_id) in OWNER_IDS:
@@ -4682,6 +4931,7 @@ async def start_command(update, context):
 	_tier = _effective_tier(int(user_id))
 	_kbd_start = _build_dynamic_menu(user_id=int(user_id), tier=_tier)
 	await update.message.reply_text(msg, reply_markup=_kbd_start)
+	await maybe_prompt_timezone(update.message, int(user_id))
 
 # /about message
 async def about_command(update, context) -> None:

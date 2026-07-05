@@ -61,6 +61,15 @@ class User(Base):
     auto_signals_daily_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_daily_drawdown_pct: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)
     timezone: Mapped[Optional[str]] = mapped_column(String(64))
+    timezone_source: Mapped[Optional[str]] = mapped_column(String(24))
+    timezone_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    timezone_auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_location_lat: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_lon: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_accuracy_m: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    locale: Mapped[Optional[str]] = mapped_column(String(16))
+    time_format: Mapped[str] = mapped_column(String(8), default="12h", nullable=False)
     dca_profile: Mapped[Optional[str]] = mapped_column(String(32))
 
 

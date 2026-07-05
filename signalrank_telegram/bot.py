@@ -634,6 +634,9 @@ from .commands import (
     report_command,
     language_command,
     timezone_command,
+    timezone_location_handler,
+    travelmode_command,
+    settings_command,
     feedback_command,
     notify_command,
     filter_command,
@@ -4556,6 +4559,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
     application.add_handler(CommandHandler("timezone", _audit_handler("timezone", timezone_command)))
+    application.add_handler(CommandHandler("travelmode", _audit_handler("travelmode", travelmode_command)))
+    application.add_handler(CommandHandler("settings", _audit_handler("settings", settings_command)))
     application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
     application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
     application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
@@ -4634,7 +4639,7 @@ def run_bot() -> None:
     # ── Help/Navigation buttons ─────────────────────────────────────────────
     from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
-    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|trade_now.*|mt5_link_guide|mt5_settings|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
+    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|timezone_.*|trade_now.*|mt5_link_guide|mt5_settings|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
     from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard, force_market_scan_command
@@ -5199,6 +5204,7 @@ def run_bot() -> None:
 
     # True fallback: keep this after every concrete CommandHandler so it does
     # not shadow valid commands registered later in the setup flow.
+    application.add_handler(MessageHandler(filters.LOCATION, _audit_handler("timezone_location", timezone_location_handler)))
     application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
 
     # In webhook mode, handlers are now fully registered. Mark readiness here so
