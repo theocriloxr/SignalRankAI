@@ -184,7 +184,8 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE",
-                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS performance_version INTEGER NOT NULL DEFAULT 2",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS performance_version INTEGER NOT NULL DEFAULT 1",
+                    "ALTER TABLE signals ALTER COLUMN performance_version SET DEFAULT 2",
                     # referrals
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS is_successful BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",

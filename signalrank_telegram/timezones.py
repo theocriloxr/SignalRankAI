@@ -36,6 +36,11 @@ def validate_timezone_name(value: str | None) -> str | None:
     name = str(value or "").strip()
     if not name:
         return None
+    try:
+        ZoneInfo(name)
+        return name
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
 
 
 def resolve_timezone_query(value: str | None) -> str | None:
@@ -55,11 +60,6 @@ def timezone_from_coordinates(latitude: float, longitude: float) -> str | None:
         )
         return validate_timezone_name(timezone_name)
     except Exception:
-        return None
-    try:
-        ZoneInfo(name)
-        return name
-    except (ZoneInfoNotFoundError, ValueError):
         return None
 
 

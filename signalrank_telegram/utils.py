@@ -129,6 +129,8 @@ def _build_dynamic_menu(user_id: int, tier: str) -> Optional[InlineKeyboardMarku
             InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
         ])
         
+        rows.append([InlineKeyboardButton("Settings", callback_data="nav_settings")])
+
         # Admin dashboard
         try:
             if user_id in ADMIN_IDS or user_id in OWNER_IDS:

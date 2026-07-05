@@ -635,6 +635,7 @@ from .commands import (
     language_command,
     timezone_command,
     timezone_location_handler,
+    timezone_keep_utc_message_handler,
     travelmode_command,
     settings_command,
     feedback_command,
@@ -5224,6 +5225,7 @@ def run_bot() -> None:
     # True fallback: keep this after every concrete CommandHandler so it does
     # not shadow valid commands registered later in the setup flow.
     application.add_handler(MessageHandler(filters.LOCATION, _audit_handler("timezone_location", timezone_location_handler)))
+    application.add_handler(MessageHandler(filters.Regex(r"^Keep UTC$"), _audit_handler("timezone_keep_utc", timezone_keep_utc_message_handler)))
     application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
 
     # In webhook mode, handlers are now fully registered. Mark readiness here so

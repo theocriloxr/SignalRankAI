@@ -180,6 +180,7 @@ def _build_dynamic_menu(user_id: int, tier: str):
 			InlineKeyboardButton("⚙️ Account", callback_data="nav_account"),
 			InlineKeyboardButton("🎧 Support", callback_data="nav_support"),
 		])
+		rows.append([InlineKeyboardButton("Settings", callback_data="nav_settings")])
 		# Admin shortcut
 		try:
 			if int(user_id) in ADMIN_IDS:
@@ -502,6 +503,11 @@ async def button_click_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 	except Exception:
 		pass
 	data = str(query.data or "")
+	if data == "nav_settings":
+		from types import SimpleNamespace
+		proxy_update = SimpleNamespace(effective_user=update.effective_user, message=query.message)
+		await settings_command(proxy_update, context)
+		return
 	if data == "nav_timezone" or data.startswith("timezone_"):
 		if await handle_timezone_callback(update, context):
 			return
@@ -1622,6 +1628,16 @@ async def timezone_location_handler(update: Update, context: ContextTypes.DEFAUL
 	)
 	await update.message.reply_text(
 		f"Timezone updated to {timezone_name}. Exact coordinates were not retained.",
+		reply_markup=_timezone_location_keyboard(remove=True),
+	)
+
+
+async def timezone_keep_utc_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	if update.effective_user is None or update.message is None:
+		return
+	await _save_user_timezone(int(update.effective_user.id), "UTC", source="manual")
+	await update.message.reply_text(
+		"Timezone fixed to UTC. You can change it anytime with /timezone.",
 		reply_markup=_timezone_location_keyboard(remove=True),
 	)
 
@@ -2828,6 +2844,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 							WHERE sd.user_id = :uid
 							  AND sd.sent_ok IS TRUE
 							  AND sd.delivered_at >= :cutoff
+							  AND COALESCE(s.performance_version, 1) >= :performance_version
 						),
 						resolved AS (
 							SELECT DISTINCT signal_id
@@ -2848,7 +2865,11 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 						"""
 					)
 					,
-					{"uid": int(db_user_id), "cutoff": cutoff},
+					{
+						"uid": int(db_user_id),
+						"cutoff": cutoff,
+						"performance_version": max(1, int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2)),
+					},
 				)).fetchall()
 				for _asset, _count in user_asset_rows:
 					_asset_key = str(_asset or "").upper().strip()
@@ -2967,6 +2988,9 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if update.message is None:
 		return
 	user_id: int = update.effective_user.id
+	await maybe_prompt_timezone(update.message, int(user_id))
+	timezone_user = await _get_timezone_user(int(user_id))
+	display_timezone = getattr(timezone_user, "timezone", None)
 	tier: str = _effective_tier(user_id)
 	show_unvoted_only: bool = False
 	status_filter: str = "active"
@@ -3065,6 +3089,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 							"rr_ratio": r.rr_estimate,
 							"score": r.score,
 							"created_at": getattr(r, "created_at", None),
+							"display_timezone": display_timezone,
+							"display_telegram_user_id": int(user_id),
 						}
 						
 						# Enrich with live price and freshness info
@@ -3516,10 +3542,32 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			await update.message.reply_text("\n".join(lines))
 			return
 
+		display_timezone = None
+		delivered_at = None
 		async with get_session() as session:
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			oc = None
 			if sig is not None:
+				try:
+					from sqlalchemy import select
+					from db.models import SignalDelivery, User
+					delivery_row = (await session.execute(
+						select(SignalDelivery, User.timezone)
+						.join(User, User.id == SignalDelivery.user_id)
+						.where(
+							SignalDelivery.signal_id == str(sig.signal_id),
+							User.telegram_user_id == int(user_id),
+							SignalDelivery.sent_ok.is_(True),
+						)
+						.order_by(SignalDelivery.delivered_at.desc())
+						.limit(1)
+					)).first()
+					if delivery_row is not None:
+						delivery, user_timezone = delivery_row
+						display_timezone = delivery.display_timezone or user_timezone
+						delivered_at = delivery.delivered_at_utc or delivery.delivered_at
+				except Exception:
+					pass
 				try:
 					from db.pg_features import get_outcome_for_signal
 					oc: Outcome | None = await get_outcome_for_signal(session, str(sig.signal_id))
@@ -3560,6 +3608,9 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 			"strategy_group": getattr(sig, "strategy_group", None),
 			"ml_probability": getattr(sig, "ml_probability", None),
 			"created_at": getattr(sig, "created_at", None),
+			"delivered_at": delivered_at,
+			"display_timezone": display_timezone,
+			"display_telegram_user_id": int(user_id),
 		}
 		
 		# Enrich signal with live price and freshness info
@@ -5072,12 +5123,19 @@ async def performance_command(update, context):
 							LEFT JOIN signal_deliveries sd
 							  ON sd.user_id = u.id
 							  AND sd.delivered_at >= (NOW() - INTERVAL '30 days')
+							  AND sd.sent_ok IS TRUE
+							LEFT JOIN signals s
+							  ON s.signal_id = sd.signal_id
 							LEFT JOIN outcomes o
 							  ON o.signal_id = sd.signal_id
 							WHERE u.telegram_user_id = :uid
+							  AND COALESCE(s.performance_version, 1) >= :performance_version
 							"""
 						),
-						{"uid": int(tg_user_id)},
+						{
+							"uid": int(tg_user_id),
+							"performance_version": max(1, int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2)),
+						},
 					)
 				).first()
 				if not row:
@@ -7251,8 +7309,11 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 				AVG(o.r_multiple) AS avg_r
 			FROM users u
 			JOIN signal_deliveries sd ON sd.user_id = u.id
+			JOIN signals s ON s.signal_id = sd.signal_id
 			JOIN outcomes o ON o.signal_id = sd.signal_id
 			WHERE o.closed_at >= NOW() - INTERVAL '7 days'
+			  AND sd.sent_ok IS TRUE
+			  AND COALESCE(s.performance_version, 1) >= :performance_version
 			GROUP BY u.id, u.username, u.tier
 			HAVING COUNT(o.id) >= :min_trades
 			   AND AVG(o.r_multiple) >= :min_avg_r
@@ -7274,6 +7335,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 					"min_trades": min_trades,
 					"min_win_rate": min_win_rate,
 					"min_avg_r": min_avg_r,
+					"performance_version": max(1, int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2)),
 				},
 			)).fetchall()
 			await session.commit()
