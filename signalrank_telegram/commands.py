@@ -1162,7 +1162,14 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 
 	try:
 		from sqlalchemy import select
-		from db.models import Outcome, Signal, SignalDelivery, User
+		from db.models import (
+			Outcome,
+			Signal,
+			SignalDelivery,
+			SignalEventNotification,
+			SignalTrackingEvent,
+			User,
+		)
 		from db.session import get_session
 
 		async with get_session() as session:
@@ -1178,11 +1185,30 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 			if user_filter is not None:
 				query = query.where(User.telegram_user_id == int(user_filter))
 			rows = (await session.execute(query)).all()
+			event_query = (
+				select(SignalEventNotification, SignalTrackingEvent)
+				.join(
+					SignalTrackingEvent,
+					SignalTrackingEvent.id == SignalEventNotification.event_id,
+				)
+				.where(SignalEventNotification.signal_id.like(f"{ref}%"))
+				.order_by(SignalTrackingEvent.event_time.desc(), SignalEventNotification.id.desc())
+				.limit(50)
+			)
+			if user_filter is not None:
+				event_query = event_query.where(
+					SignalEventNotification.telegram_user_id == int(user_filter)
+				)
+			event_rows = (await session.execute(event_query)).all()
 			await session.commit()
 
 		if not rows:
 			await update.message.reply_text("No delivery rows match that signal reference and user.")
 			return
+
+		latest_event_by_user = {}
+		for notification, event in event_rows:
+			latest_event_by_user.setdefault(int(notification.telegram_user_id), (notification, event))
 
 		for delivery, user, signal, outcome in rows:
 			proof_ok = bool(delivery.telegram_chat_id is not None and delivery.telegram_message_id is not None)
@@ -1196,6 +1222,17 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 			delivered_display = getattr(delivery, "display_delivered_at", None) or format_user_datetime(
 				delivery.delivered_at, display_tz, user.telegram_user_id
 			)
+			latest_event = latest_event_by_user.get(int(user.telegram_user_id))
+			if latest_event:
+				notification, event = latest_event
+				event_proof = (
+					f"\nLifecycle: {event.event_type} at {event.event_time}\n"
+					f"Lifecycle notification: state={notification.delivery_state} "
+					f"sent_ok={bool(notification.sent_ok)} message={notification.sent_message_id or 'none'}\n"
+					f"Lifecycle error: {notification.error or 'none'}"
+				)
+			else:
+				event_proof = "\nLifecycle: no persisted event notification yet"
 			message = (
 				"Delivery proof\n"
 				f"Signal: {signal.signal_id}\n"
@@ -1211,6 +1248,7 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 				f"Age at delivery: {getattr(delivery, 'signal_age_at_delivery_seconds', None) or 'n/a'}s\n"
 				f"Error: {delivery.last_error or 'none'}\n"
 				f"Outcome: {getattr(outcome, 'status', None) or 'pending'}"
+				f"{event_proof}"
 			)
 			await update.message.reply_text(message[:3900])
 	except Exception as exc:
@@ -1284,6 +1322,13 @@ async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 		):
 			if key in pipeline:
 				lines.append(f"- {key}: {pipeline.get(key)}")
+		delivery_reasons = pipeline.get("delivery_skip_reasons") or {}
+		if delivery_reasons:
+			lines.extend(["", "Delivery skips:"])
+			for reason, count in sorted(
+				delivery_reasons.items(), key=lambda item: int(item[1] or 0), reverse=True
+			)[:12]:
+				lines.append(f"- {reason}: {count}")
 		class_counts = cycle.get("class_counts") or {}
 		if class_counts:
 			lines.extend(["", f"Class counts: {class_counts}"])

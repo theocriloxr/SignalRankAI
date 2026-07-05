@@ -3597,6 +3597,11 @@ def main_loop(DRY_RUN: bool = False):
                 skipped_daily_limit = 0
                 skipped_no_eligible_signals = 0
                 users_seen = 0
+                delivery_skip_reasons = pipeline_stats.setdefault("delivery_skip_reasons", {})
+
+                def _delivery_skip(reason: Any, amount: int = 1) -> None:
+                    key = _compact_reason(reason, max_len=72)
+                    delivery_skip_reasons[key] = int(delivery_skip_reasons.get(key, 0) or 0) + max(1, int(amount or 1))
                 # session management adapted to your codebase
                 try:
                     from db.session import get_session
@@ -3756,6 +3761,7 @@ def main_loop(DRY_RUN: bool = False):
                         if signals_sent_today >= daily_limit:
                             logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")
                             skipped_daily_limit += 1
+                            _delivery_skip("daily_limit")
                             continue
 
                         user_trade_prefs = None
@@ -3788,6 +3794,7 @@ def main_loop(DRY_RUN: bool = False):
                                 # Check signal freshness
                                 is_fresh, fresh_reason = is_signal_fresh(sig)
                                 if not is_fresh:
+                                    _delivery_skip(f"freshness:{fresh_reason}")
                                     logger.info(f"[engine] Skipping stale signal for {sig.get('asset')}: {fresh_reason}")
                                     continue
 
@@ -3807,6 +3814,7 @@ def main_loop(DRY_RUN: bool = False):
                                     # Check if SL/TP already hit
                                     should_skip, skip_reason = check_sl_tp_hit(sig, current_price)
                                     if should_skip:
+                                        _delivery_skip(f"opportunity_consumed:{skip_reason}")
                                         logger.info(f"[engine] Skipping signal for {asset}: {skip_reason}")
                                         continue
 
@@ -3818,8 +3826,18 @@ def main_loop(DRY_RUN: bool = False):
                                         sig['price_updated'] = True
                                     else:
                                         sig['price_updated'] = False
+                                        if not is_valid:
+                                            _delivery_skip(f"price_drift:{drift_reason}")
+                                            logger.info(
+                                                "[engine] price-drift skip user=%s asset=%s reason=%s",
+                                                user_id,
+                                                asset,
+                                                drift_reason,
+                                            )
+                                            continue
                                     sig['current_price'] = current_price
                             except Exception as e:
+                                _delivery_skip("price_validation_error")
                                 logger.warning(f"[engine] Price validation failed for signal: {e}")
                                 # Continue with signal delivery even if validation fails
 
@@ -3833,6 +3851,7 @@ def main_loop(DRY_RUN: bool = False):
 
                                     pref_ok, pref_reason = _signal_matches_preferences(sig, user_trade_prefs)
                                     if not pref_ok:
+                                        _delivery_skip(f"profile:{pref_reason}")
                                         logger.info(
                                             "[engine] profile/preference skip user=%s profile=%s asset=%s tf=%s signal_profile=%s reason=%s",
                                             user_id,
@@ -3858,7 +3877,10 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.info(f"[engine] Eligibility for user={user_id} tier={user_tier} score={delivery_score}: {eligible}")
                                 if eligible:
                                     user_signals.append(sig)
+                                else:
+                                    _delivery_skip(f"score_gate:{user_tier}")
                             except Exception as e:
+                                _delivery_skip("eligibility_error")
                                 logger.warning(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                                 pass
 
@@ -3870,6 +3892,7 @@ def main_loop(DRY_RUN: bool = False):
                         #   3. `continue` skipped to next sig instead of next user
                         if not user_signals:
                             skipped_no_eligible_signals += 1
+                            _delivery_skip("user_no_candidates_after_filters")
                             continue
 
                         # Filter out signals already sent to this user (prevent duplicates)
@@ -3877,6 +3900,7 @@ def main_loop(DRY_RUN: bool = False):
                         if not user_signals:
                             logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
                             skipped_no_eligible_signals += 1
+                            _delivery_skip("already_delivered")
                             continue
 
                         if DRY_RUN:
@@ -3897,14 +3921,17 @@ def main_loop(DRY_RUN: bool = False):
                                     getattr(user_trade_prefs, "trade_profile", "unknown") if user_trade_prefs is not None else "unknown",
                                 )
                                 skipped_no_eligible_signals += 1
+                                _delivery_skip("dispatch_returned_zero")
                     except Exception:
+                        _delivery_skip("per_user_exception")
                         logger.exception("deliver_all per-user failed")
                 logger.info(
-                    "[engine] delivery summary: users_seen=%s users_dispatched=%s skipped_daily_limit=%s skipped_no_eligible=%s",
+                    "[engine] delivery summary: users_seen=%s users_dispatched=%s skipped_daily_limit=%s skipped_no_eligible=%s reasons=%s",
                     users_seen,
                     dispatched_count,
                     skipped_daily_limit,
                     skipped_no_eligible_signals,
+                    dict(sorted(delivery_skip_reasons.items(), key=lambda item: int(item[1]), reverse=True)[:12]),
                 )
                 return dispatched_count
 

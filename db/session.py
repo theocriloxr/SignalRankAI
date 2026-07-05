@@ -117,14 +117,12 @@ def _effective_pool_settings() -> tuple[int, int]:
             logger.warning("[db] Railway DB pool cap disabled by explicit operator override")
             return pool_size, max_overflow
 
-        railway_pool_cap = min(
-            _pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1),
-            _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 4, minimum=1),
-        )
-        railway_overflow_cap = min(
-            _pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0),
-            _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 2, minimum=0),
-        )
+        # Fail-safe monolith limits. A stale Railway variable such as
+        # DB_POOL_SIZE=200 or DB_POOL_SIZE_RAILWAY=20 must not reserve a large
+        # pool. Operators can still use the explicit two-flag override above
+        # after confirming the database connection budget.
+        railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
+        railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
         original_pool_size = pool_size
         original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)
