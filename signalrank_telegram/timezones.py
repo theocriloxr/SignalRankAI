@@ -98,6 +98,8 @@ def format_user_datetime(
     utc_value = as_utc(value)
     if utc_value is None:
         return "n/a"
+    if str(os.getenv("SIGNAL_TIMEZONE_DISPLAY_ENABLED", "1")).lower() in {"0", "false", "off", "no"}:
+        timezone_name = "UTC"
     zone_name = effective_user_timezone(timezone_name, telegram_user_id)
     local = utc_value.astimezone(ZoneInfo(zone_name))
     pattern = "%Y-%m-%d %I:%M %p %Z" if include_date else "%I:%M %p %Z"

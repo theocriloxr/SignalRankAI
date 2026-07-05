@@ -124,6 +124,7 @@ class Signal(Base):
     mfe_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # MAE = Maximum Adverse Excursion (how far into loss before closing)
     mae_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    performance_version: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
 

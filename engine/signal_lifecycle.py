@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -22,6 +23,13 @@ NOTIFIABLE_EVENTS = {
     "entry_touched", "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit",
     "breakeven_stop", "missed_entry", "expired",
 }
+
+
+def _enabled(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _utc_now_naive() -> datetime:
@@ -140,6 +148,8 @@ def _event_message(signal: dict, event_type: str, price: float, timezone_name: s
 
 async def update_lifecycle_observation(signal: dict, price: float) -> str:
     """Create/update current lifecycle telemetry and return the persisted state."""
+    if not _enabled("OUTCOME_LIFECYCLE_ENABLED", True):
+        return ACTIVE_TRADE
     from db.models import SignalLifecycle, SignalTrackingEvent
     from db.session import get_session
     from sqlalchemy import select
@@ -188,6 +198,8 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
 
 async def record_lifecycle_event(signal: dict, event_type: str, price: float, meta: dict | None = None) -> bool:
     """Persist one lifecycle transition and queue one notification per confirmed recipient."""
+    if not _enabled("OUTCOME_LIFECYCLE_ENABLED", True):
+        return False
     from db.models import (
         SignalDelivery, SignalEventNotification, SignalLifecycle,
         SignalTrackingEvent, User,
@@ -334,6 +346,8 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
 
 
 async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
+    if not _enabled("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
+        return
     from config import config
     from db.models import AlertPreference, OutcomeNotification, SignalEventNotification, SignalTrackingEvent, User
     from db.session import get_session
@@ -459,6 +473,8 @@ async def dispatch_event_notifications(event_id: int, signal: dict) -> None:
 
 async def dispatch_pending_event_notifications(limit: int = 100) -> int:
     """Retry event notifications deferred by quiet hours or transient failures."""
+    if not _enabled("LIFECYCLE_EVENT_NOTIFICATIONS_ENABLED", True):
+        return 0
     from db.models import Signal, SignalEventNotification
     from db.session import get_session
     from sqlalchemy import select

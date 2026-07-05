@@ -1356,7 +1356,10 @@ class RealtimeOutcomeTracker:
 
         # Entry is authoritative. A signal cannot hit TP or SL until the market
         # has actually traded through its entry level.
-        if lifecycle_state == WATCHING_FOR_ENTRY:
+        entry_gating_enabled = str(
+            os.getenv("SIGNAL_ENTRY_GATING_ENABLED", "1") or "1"
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if entry_gating_enabled and lifecycle_state == WATCHING_FOR_ENTRY:
             expires_at = signal.get("expires_at")
             is_expired = False
             if isinstance(expires_at, datetime):

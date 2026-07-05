@@ -919,6 +919,7 @@ async def get_or_create_signal_impl(
             created_at=now,
             expires_at=signal_expires_at,
             is_near_order_block=signal_near_ob,
+            performance_version=int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2),
         )
     except Exception:
         # Fallback if new columns don't exist yet
@@ -2212,6 +2213,7 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
 
     now: datetime = _utcnow()
     cutoff: datetime = now - timedelta(days=30)
+    performance_version = max(1, int(os.getenv("PERFORMANCE_BASELINE_VERSION", "2") or 2))
 
     def _empty() -> dict[str, object]:
         return {
@@ -2256,6 +2258,7 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
                     WHERE sd.user_id = :user_id
                       AND sd.sent_ok IS TRUE
                       AND sd.delivered_at >= :cutoff
+                      AND COALESCE(s.performance_version, 1) >= :performance_version
                 ),
                 outcome_flags AS (
                     SELECT
@@ -2313,7 +2316,11 @@ async def get_user_performance_30d(session: AsyncSession, telegram_user_id: int)
                 FROM classified
                 """
             ),
-            {"user_id": int(user.id), "cutoff": cutoff},
+            {
+                "user_id": int(user.id),
+                "cutoff": cutoff,
+                "performance_version": performance_version,
+            },
         )
     ).mappings().first()
     if not row:

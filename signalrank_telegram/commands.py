@@ -1092,6 +1092,27 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		pg = dict(health.get("postgres") or {})
 		activity = dict(pg.get("activity_by_state") or {})
 		session_metrics = dict(pool.get("session_metrics") or {})
+		schema_status = {}
+		try:
+			from sqlalchemy import text
+			async with get_session() as schema_session:
+				revision = (await schema_session.execute(
+					text("SELECT version_num FROM alembic_version LIMIT 1")
+				)).scalar_one_or_none()
+				tables = (await schema_session.execute(text("""
+					SELECT
+					  to_regclass('public.signal_lifecycles') IS NOT NULL,
+					  to_regclass('public.signal_tracking_events') IS NOT NULL,
+					  to_regclass('public.signal_event_notifications') IS NOT NULL
+				"""))).one()
+				schema_status = {
+					"revision": revision,
+					"signal_lifecycles": bool(tables[0]),
+					"signal_tracking_events": bool(tables[1]),
+					"signal_event_notifications": bool(tables[2]),
+				}
+		except Exception as schema_error:
+			schema_status = {"error": type(schema_error).__name__}
 		lines = [
 			"Database Health",
 			"",
@@ -1103,6 +1124,8 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			f"Effective cap: pool={pool.get('effective_pool_size')} overflow={pool.get('effective_max_overflow')}",
 			f"Session gate: limit={pool.get('session_limit')} active={session_metrics.get('active', 0)} waiting={session_metrics.get('waiting', 0)} errors={session_metrics.get('errors', 0)}",
 			f"Sessions: opened={session_metrics.get('opened', 0)} closed={session_metrics.get('closed', 0)}",
+			f"Alembic head: {schema_status.get('revision', 'unavailable')}",
+			f"Lifecycle tables: state={schema_status.get('signal_lifecycles', False)} events={schema_status.get('signal_tracking_events', False)} notifications={schema_status.get('signal_event_notifications', False)}",
 		]
 		if pg.get("max_connections"):
 			lines.append(f"Postgres max_connections: {pg.get('max_connections')}")

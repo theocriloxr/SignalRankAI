@@ -1388,6 +1388,25 @@ async def _deliver_or_update_signal_async(
         signal["display_timezone"] = getattr(_tz_user, "timezone", None)
         signal["display_telegram_user_id"] = int(telegram_user_id)
         signal["delivered_at"] = datetime.now(timezone.utc)
+        try:
+            from signalrank_telegram.timezones import travel_timezone_refresh_due
+            if _tz_user is not None and travel_timezone_refresh_due(_tz_user):
+                reminder_key = f"travel_timezone_prompted:{int(telegram_user_id)}"
+                already_prompted = await state.cache_get(reminder_key)
+                if not already_prompted:
+                    from signalrank_telegram.commands import _timezone_location_keyboard
+                    await bot.send_message(
+                        chat_id=int(telegram_user_id),
+                        text=(
+                            f"Travel mode is on. Your saved timezone is "
+                            f"{getattr(_tz_user, 'timezone', None) or 'UTC'}. "
+                            "If you changed location, update it below."
+                        ),
+                        reply_markup=_timezone_location_keyboard(),
+                    )
+                    await state.cache_set(reminder_key, "1", ex=14 * 24 * 3600)
+        except Exception as _travel_prompt_error:
+            logger.debug("[timezone] travel reminder skipped: %s", _travel_prompt_error)
     except Exception:
         signal.setdefault("display_timezone", None)
         signal.setdefault("display_telegram_user_id", int(telegram_user_id))
