@@ -269,14 +269,15 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
     """Return all unresolved signals from DB created within lookback window."""
     try:
         from db.session import get_session
-        from db.models import Signal, Outcome
+        from db.models import Signal, Outcome, SignalLifecycle
         from sqlalchemy import select, or_
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with get_session() as session:
             stmt = (
-                select(Signal, Outcome)
+                select(Signal, Outcome, SignalLifecycle)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
+                .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
                 .where(Signal.archived.is_(False))
                 .where(Signal.created_at >= cutoff)
                 .where(
@@ -303,8 +304,11 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                     "ml_probability": getattr(s, "ml_probability", None),
                     "prev_outcome_status": str(getattr(o, "status", "") or "").lower() if o is not None else None,
                     "prev_outcome_meta": dict(getattr(o, "meta", {}) or {}) if o is not None else {},
+                    "expires_at": s.expires_at,
+                    "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
+                    "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
                 }
-                for s, o in rows
+                for s, o, lifecycle in rows
             ]
     except Exception as exc:
         logger.error("[outcome_tracker] fetch_active_signals error: %s", exc)
@@ -364,6 +368,9 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
                     "ml_probability": getattr(s, "ml_probability", None),
                     "prev_outcome_status": None,
                     "prev_outcome_meta": {},
+                    "expires_at": s.expires_at,
+                    "lifecycle_state": "WATCHING_FOR_ENTRY",
+                    "entry_touched_at": None,
                 }
             )
         return out
@@ -592,7 +599,10 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         r_mult: Optional[float] = None
 
         status_l = str(status or "").lower()
-        terminal = status_l in {"sl", "tp3", "tp", "invalid", "time_stop"}
+        terminal = status_l in {
+            "sl", "tp3", "tp", "invalid", "time_stop", "partial_win_be",
+            "missed_entry", "expired",
+        }
 
         vip_fill_outcome = "pending"
         sentiment_outcome = "pending"
@@ -634,6 +644,10 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
             canonical_outcome = "loss"
         elif status_l == "time_stop":
             canonical_outcome = "time_stop"
+        elif status_l == "partial_win_be":
+            canonical_outcome = "partial_win"
+        elif status_l in {"missed_entry", "expired"}:
+            canonical_outcome = status_l
 
         try:
             direction = str(getattr(signal_data, "direction", "") or "").lower() if signal_data is not None else ""
@@ -709,7 +723,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
                 _EXCURSION_CACHE.pop(str(signal_id), None)
             
             # NEW: Log to ML training data table for model retraining
-            if terminal and signal_data is not None:
+            if terminal and status_l not in {"missed_entry", "expired"} and signal_data is not None:
                 try:
                     from engine.ml_logger import log_ml_training_data
                     _outcome_status = canonical_outcome if canonical_outcome != "pending" else status_l
@@ -1231,6 +1245,13 @@ class RealtimeOutcomeTracker:
             await asyncio.sleep(_check_interval())
 
     async def _check_all(self) -> None:
+        try:
+            from engine.signal_lifecycle import dispatch_pending_event_notifications
+            await dispatch_pending_event_notifications(
+                limit=int(os.getenv("LIFECYCLE_NOTIFICATION_RETRY_LIMIT", "100") or 100)
+            )
+        except Exception as exc:
+            logger.debug("[lifecycle] pending notification retry skipped: %s", exc)
         signals = await _fetch_active_signals()
         # Backfill previously delivered-but-untracked signals so every delivered
         # signal eventually receives an outcome state for analytics/training.
@@ -1323,6 +1344,35 @@ class RealtimeOutcomeTracker:
         entry = float(signal["entry"])
         sl = float(signal["stop_loss"])
         direction = signal.get("direction", "long")
+        from engine.signal_lifecycle import (
+            ACTIVE_TRADE,
+            WATCHING_FOR_ENTRY,
+            entry_was_touched,
+            record_lifecycle_event,
+            update_lifecycle_observation,
+        )
+        lifecycle_state = await update_lifecycle_observation(signal, float(price))
+        signal["lifecycle_state"] = lifecycle_state
+
+        # Entry is authoritative. A signal cannot hit TP or SL until the market
+        # has actually traded through its entry level.
+        if lifecycle_state == WATCHING_FOR_ENTRY:
+            expires_at = signal.get("expires_at")
+            is_expired = False
+            if isinstance(expires_at, datetime):
+                compare_now = datetime.now(timezone.utc) if expires_at.tzinfo else _utc_now_naive()
+                is_expired = compare_now >= expires_at
+            if is_expired:
+                await _persist_outcome(signal_id, "missed_entry", entry, float(price))
+                await record_lifecycle_event(signal, "missed_entry", float(price), {"reason": "entry_not_touched"})
+                return
+            if not entry_was_touched(direction, entry, float(price)):
+                return
+            if await record_lifecycle_event(signal, "entry_touched", float(price)):
+                logger.info("[outcome_tracker] Entry touched: %s price=%.5f", signal_id[:8], float(price))
+            lifecycle_state = ACTIVE_TRADE
+            signal["lifecycle_state"] = lifecycle_state
+
         _record_excursion(signal_id, direction, entry, float(price))
         prev_tp = int(await _get_tp_progress(signal) or 0)
 
@@ -1338,6 +1388,12 @@ class RealtimeOutcomeTracker:
             if _halfway_to_tp1_reached(direction, entry, tp1, float(price)):
                 if await _mark_risk_free_triggered(signal_id):
                     await _apply_trailing_sl_to_breakeven(signal, float(price))
+                    await record_lifecycle_event(
+                        signal,
+                        "halfway_to_tp1",
+                        float(price),
+                        {"tp1": float(tp1), "stop_moved_to": float(entry)},
+                    )
                     await _notify_risk_free_update(signal, float(price))
                     logger.info(
                         "[outcome_tracker] Risk-free trigger: %s halfway_to_tp1 price=%.5f entry=%.5f tp1=%.5f",
@@ -1385,8 +1441,21 @@ class RealtimeOutcomeTracker:
             )
             if hit_tp_idx > 0:
                 await _set_tp_progress(signal_id, hit_tp_idx)
-            await _persist_outcome(signal_id, hit_l, entry, price)
-            await _notify_outcome(signal, hit_l, price)
+            event_type = (
+                "tp3_hit" if hit_l == "tp"
+                else (f"{hit_l}_hit" if hit_l.startswith("tp") else "sl_hit")
+            )
+            persist_status = hit_l
+            if hit_l == "sl" and prev_tp >= 1:
+                event_type = "breakeven_stop"
+                persist_status = "partial_win_be"
+            await _persist_outcome(signal_id, persist_status, entry, price)
+            await record_lifecycle_event(
+                signal,
+                event_type,
+                float(price),
+                {"highest_tp_hit": max(prev_tp, hit_tp_idx)},
+            )
             return
 
         # Time-stop stale unresolved delivered signals by timeframe SLA.
@@ -1429,8 +1498,12 @@ class RealtimeOutcomeTracker:
                 signal_id[:8],
                 age_h,
             )
-            await _persist_outcome(signal_id, "time_stop", entry, float(price))
-            await _notify_outcome(signal, "time_stop", float(price))
+            if lifecycle_state == WATCHING_FOR_ENTRY:
+                await _persist_outcome(signal_id, "missed_entry", entry, float(price))
+                await record_lifecycle_event(signal, "missed_entry", float(price), {"reason": "time_stop"})
+            else:
+                await _persist_outcome(signal_id, "time_stop", entry, float(price))
+                await record_lifecycle_event(signal, "expired", float(price), {"reason": "time_stop"})
 
 
 # Singleton instance

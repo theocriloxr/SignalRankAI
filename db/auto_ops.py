@@ -194,6 +194,13 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_api_result JSON DEFAULT '{}'::json",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS generated_at_utc TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivered_at_utc TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS display_timezone VARCHAR(64)",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS display_generated_at VARCHAR(64)",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS display_delivered_at VARCHAR(64)",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_latency_seconds INTEGER",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS signal_age_at_delivery_seconds INTEGER",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMP",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_error TEXT",
                 ]
@@ -202,6 +209,56 @@ def run_startup_ops(run_mode: str) -> None:
                         cur.execute(stmt)
                     except Exception:
                         pass  # column already exists or table not yet created
+                _lifecycle_tables = [
+                    """CREATE TABLE IF NOT EXISTS signal_lifecycles (
+                        signal_id VARCHAR(36) PRIMARY KEY REFERENCES signals(signal_id),
+                        state VARCHAR(32) NOT NULL DEFAULT 'WATCHING_FOR_ENTRY',
+                        generated_at TIMESTAMP, watch_started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        entry_touched_at TIMESTAMP, tp1_hit_at TIMESTAMP, tp2_hit_at TIMESTAMP,
+                        tp3_hit_at TIMESTAMP, sl_hit_at TIMESTAMP, breakeven_at TIMESTAMP,
+                        expired_at TIMESTAMP, closed_at TIMESTAMP, last_price FLOAT,
+                        last_checked_at TIMESTAMP, max_price_seen FLOAT, min_price_seen FLOAT,
+                        mfe_pct FLOAT NOT NULL DEFAULT 0, mae_pct FLOAT NOT NULL DEFAULT 0,
+                        mfe_r FLOAT NOT NULL DEFAULT 0, mae_r FLOAT NOT NULL DEFAULT 0,
+                        entry_latency_seconds INTEGER, time_to_tp1_seconds INTEGER,
+                        time_to_tp2_seconds INTEGER, time_to_tp3_seconds INTEGER,
+                        time_to_sl_seconds INTEGER, tp1_before_sl BOOLEAN NOT NULL DEFAULT FALSE,
+                        tp2_before_sl BOOLEAN NOT NULL DEFAULT FALSE,
+                        tp3_before_sl BOOLEAN NOT NULL DEFAULT FALSE,
+                        reversed_after_tp1 BOOLEAN NOT NULL DEFAULT FALSE,
+                        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )""",
+                    """CREATE TABLE IF NOT EXISTS signal_tracking_events (
+                        id BIGSERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36) NOT NULL REFERENCES signals(signal_id),
+                        event_type VARCHAR(32) NOT NULL, event_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                        price FLOAT, r_multiple FLOAT, meta JSON NOT NULL DEFAULT '{}'::json,
+                        notified_at TIMESTAMP,
+                        CONSTRAINT uq_signal_tracking_event_stage UNIQUE(signal_id, event_type)
+                    )""",
+                    """CREATE TABLE IF NOT EXISTS signal_event_notifications (
+                        id BIGSERIAL PRIMARY KEY,
+                        event_id BIGINT NOT NULL REFERENCES signal_tracking_events(id),
+                        signal_id VARCHAR(36) NOT NULL REFERENCES signals(signal_id),
+                        event_type VARCHAR(32) NOT NULL,
+                        user_id INTEGER NOT NULL REFERENCES users(id), telegram_user_id BIGINT NOT NULL,
+                        delivery_id INTEGER REFERENCES signal_deliveries(id), chat_id BIGINT,
+                        source_message_id BIGINT, sent_message_id BIGINT,
+                        delivery_state VARCHAR(16) NOT NULL DEFAULT 'pending',
+                        sent_ok BOOLEAN NOT NULL DEFAULT FALSE, error TEXT,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW(), sent_at TIMESTAMP,
+                        CONSTRAINT uq_signal_event_notification_recipient
+                            UNIQUE(signal_id, event_type, user_id)
+                    )""",
+                    "CREATE INDEX IF NOT EXISTS ix_signal_lifecycles_state ON signal_lifecycles(state)",
+                    "CREATE INDEX IF NOT EXISTS ix_signal_tracking_events_signal ON signal_tracking_events(signal_id)",
+                    "CREATE INDEX IF NOT EXISTS ix_signal_event_notifications_state ON signal_event_notifications(delivery_state)",
+                ]
+                for stmt in _lifecycle_tables:
+                    try:
+                        cur.execute(stmt)
+                    except Exception:
+                        pass
                 try:
                     cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_status ON signals(status)")
                 except Exception:

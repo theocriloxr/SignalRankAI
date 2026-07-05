@@ -633,6 +633,7 @@ from .commands import (
     early_command,
     report_command,
     language_command,
+    timezone_command,
     feedback_command,
     notify_command,
     filter_command,
@@ -1371,6 +1372,22 @@ async def _deliver_or_update_signal_async(
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     signal_id = str(signal.get("signal_id") or "").strip()
+    try:
+        from db.models import User
+        from db.session import get_session
+        from sqlalchemy import select
+        from datetime import datetime, timezone
+
+        async with get_session() as _tz_session:
+            _tz_user = (await _tz_session.execute(
+                select(User).where(User.telegram_user_id == int(telegram_user_id))
+            )).scalar_one_or_none()
+        signal["display_timezone"] = getattr(_tz_user, "timezone", None)
+        signal["display_telegram_user_id"] = int(telegram_user_id)
+        signal["delivered_at"] = datetime.now(timezone.utc)
+    except Exception:
+        signal.setdefault("display_timezone", None)
+        signal.setdefault("display_telegram_user_id", int(telegram_user_id))
     try:
         from engine.delivery_freshness import validate_delivery_freshness
 
@@ -4452,6 +4469,17 @@ def run_bot() -> None:
             logger.info("[bot] RealtimeOutcomeTracker stopped")
         except Exception as _e:
             logger.debug(f"[bot] RealtimeOutcomeTracker stop error: {_e}")
+        for module_name, instance_name in (
+            ("engine.derivatives", "default_squeeze_detector"),
+            ("engine.microstructure", "default_order_book_analyzer"),
+            ("engine.market_circuit_breaker", "default_market_circuit_breaker"),
+        ):
+            try:
+                module = __import__(module_name, fromlist=[instance_name])
+                instance = getattr(module, instance_name)
+                await instance.close()
+            except Exception as _e:
+                logger.debug("[bot] HTTP client close skipped %s: %s", module_name, _e)
 
     application.post_init = _post_init
     application.post_stop = _post_stop
@@ -4527,6 +4555,7 @@ def run_bot() -> None:
 
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
+    application.add_handler(CommandHandler("timezone", _audit_handler("timezone", timezone_command)))
     application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
     application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
     application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))

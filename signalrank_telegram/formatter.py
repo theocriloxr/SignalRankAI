@@ -764,10 +764,24 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 		"🔒 <b>TRADE SETUP DETECTED</b> 🔒",
 		f"Asset: <b>{asset_disp}</b>",
 		f"Direction: <b>{direction_text}</b>",
-		"",
 		_h(desc),
 		"",
 	]
+	try:
+		from signalrank_telegram.timezones import age_seconds, format_user_datetime
+		_created = signal.get("created_at")
+		_delivered = signal.get("delivered_at")
+		_tz = signal.get("display_timezone")
+		_uid = signal.get("display_telegram_user_id")
+		if _created:
+			lines.insert(3, f"Generated: {_h(format_user_datetime(_created, _tz, _uid))}")
+		if _delivered:
+			lines.insert(4, f"Delivered: {_h(format_user_datetime(_delivered, _tz, _uid, include_date=False))}")
+		_age = age_seconds(_created, _delivered)
+		if _age is not None:
+			lines.insert(5, f"Age at delivery: {_age}s")
+	except Exception:
+		pass
 
 	if entry is not None:
 		lines.append(f"Entry: {_h(_fmt_price_clean(entry, asset))}")

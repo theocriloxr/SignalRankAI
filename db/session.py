@@ -242,8 +242,16 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
         auxiliary_nullpool = bool(
             _engines_by_loop
             and _is_railway_runtime()
-            and _pool_bool("DB_AUX_LOOPS_USE_NULLPOOL", True)
+            and (
+                _pool_bool("DB_AUX_LOOPS_USE_NULLPOOL", True)
+                or _pool_bool("DB_AUXILIARY_NULLPOOL", True)
+            )
         )
+        if _is_railway_runtime() and pool_size > 5:
+            logger.warning(
+                "[db] unsafe Railway monolith pool configuration pool_size=%s; recommended DB_POOL_SIZE=2",
+                pool_size,
+            )
         if (pool_size == 0 and max_overflow == 0) or auxiliary_nullpool:
             engine = create_async_engine(
                 url,

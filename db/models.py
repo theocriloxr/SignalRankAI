@@ -249,6 +249,13 @@ class SignalDelivery(Base):
     telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     telegram_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     telegram_api_result: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    generated_at_utc: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    delivered_at_utc: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    display_timezone: Mapped[Optional[str]] = mapped_column(String(64))
+    display_generated_at: Mapped[Optional[str]] = mapped_column(String(64))
+    display_delivered_at: Mapped[Optional[str]] = mapped_column(String(64))
+    delivery_latency_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    signal_age_at_delivery_seconds: Mapped[Optional[int]] = mapped_column(Integer)
     last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_error: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -293,6 +300,85 @@ class ActiveSignalMessage(Base):
     message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SignalLifecycle(Base):
+    __tablename__ = "signal_lifecycles"
+
+    signal_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("signals.signal_id"), primary_key=True
+    )
+    state: Mapped[str] = mapped_column(String(32), default="WATCHING_FOR_ENTRY", index=True)
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    watch_started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    entry_touched_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    tp1_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    tp2_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    tp3_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    sl_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    breakeven_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    expired_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_price: Mapped[Optional[float]] = mapped_column(Float)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    max_price_seen: Mapped[Optional[float]] = mapped_column(Float)
+    min_price_seen: Mapped[Optional[float]] = mapped_column(Float)
+    mfe_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    mae_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    mfe_r: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    mae_r: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    entry_latency_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_tp1_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_tp2_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_tp3_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_sl_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    tp1_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tp2_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tp3_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reversed_after_tp1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SignalTrackingEvent(Base):
+    __tablename__ = "signal_tracking_events"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "event_type", name="uq_signal_tracking_event_stage"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    price: Mapped[Optional[float]] = mapped_column(Float)
+    r_multiple: Mapped[Optional[float]] = mapped_column(Float)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class SignalEventNotification(Base):
+    __tablename__ = "signal_event_notifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "signal_id", "event_type", "user_id",
+            name="uq_signal_event_notification_recipient",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("signal_tracking_events.id"), index=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    delivery_id: Mapped[Optional[int]] = mapped_column(ForeignKey("signal_deliveries.id"))
+    chat_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    source_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    sent_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    delivery_state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    sent_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class EconomicEvent(Base):

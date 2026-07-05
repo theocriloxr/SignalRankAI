@@ -288,8 +288,30 @@ def _signal_generated_time(signal: DictType[str, Any]) -> Optional[str]:
             created = created_at
         if getattr(created, "tzinfo", None) is None:
             created = created.replace(tzinfo=timezone.utc)
-        # Return in format: "2024-05-03 14:30 UTC"
-        return created.strftime("%Y-%m-%d %H:%M UTC")
+        from signalrank_telegram.timezones import format_user_datetime
+        return format_user_datetime(
+            created,
+            signal.get("display_timezone"),
+            signal.get("display_telegram_user_id"),
+        )
+    except Exception:
+        return None
+
+
+def _signal_delivery_time(signal: DictType[str, Any]) -> Optional[str]:
+    delivered_at = signal.get("delivered_at")
+    if not delivered_at:
+        return None
+    try:
+        if isinstance(delivered_at, str):
+            delivered_at = datetime.fromisoformat(delivered_at.replace("Z", "+00:00"))
+        from signalrank_telegram.timezones import format_user_datetime
+        return format_user_datetime(
+            delivered_at,
+            signal.get("display_timezone"),
+            signal.get("display_telegram_user_id"),
+            include_date=False,
+        )
     except Exception:
         return None
 
@@ -444,6 +466,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
     generated_time = _signal_generated_time(signal)
+    delivered_time = _signal_delivery_time(signal)
 
     lines = [
         "🚨 <b>PREMIUM SIGNAL DETECTED</b> 🚨",
@@ -453,6 +476,8 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
 
     if generated_time:
         lines.append(f"🕐 Generated: {_h(generated_time)}")
+    if delivered_time:
+        lines.append(f"📡 Delivered: {_h(delivered_time)}")
 
     lines += [
         "",
@@ -598,6 +623,7 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
     generated_time = _signal_generated_time(signal)
+    delivered_time = _signal_delivery_time(signal)
 
     # R/R — use last TP for best-case calculation
     rr = signal.get("risk_reward") or signal.get("rr_ratio") or signal.get("rr_estimate")
@@ -616,6 +642,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
 
     if generated_time:
         lines.append(f"🕐 Generated: {_h(generated_time)}")
+    if delivered_time:
+        lines.append(f"📡 Delivered: {_h(delivered_time)}")
 
     lines += [
         "",

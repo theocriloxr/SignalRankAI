@@ -1767,6 +1767,29 @@ async def mark_signal_delivery_result(
     row.last_attempt_at = now
     row.telegram_send_started_at = getattr(row, "telegram_send_started_at", None) or now
     if sent_ok:
+        signal_row = (await session.execute(
+            select(Signal).where(Signal.signal_id == str(signal_id)).limit(1)
+        )).scalar_one_or_none()
+        generated_at = getattr(signal_row, "created_at", None)
+        try:
+            from signalrank_telegram.timezones import (
+                age_seconds, effective_user_timezone, format_user_datetime,
+            )
+            display_timezone = effective_user_timezone(user.timezone, user.telegram_user_id)
+            latency_seconds = age_seconds(generated_at, now)
+            row.generated_at_utc = generated_at
+            row.delivered_at_utc = now
+            row.display_timezone = display_timezone
+            row.display_generated_at = format_user_datetime(
+                generated_at, display_timezone, user.telegram_user_id
+            )
+            row.display_delivered_at = format_user_datetime(
+                now, display_timezone, user.telegram_user_id
+            )
+            row.delivery_latency_seconds = latency_seconds
+            row.signal_age_at_delivery_seconds = latency_seconds
+        except Exception:
+            pass
         row.delivery_confirmed_at = now
         row.delivered_at = now
         row.delivery_state = str(delivery_state or "sent")[:16]

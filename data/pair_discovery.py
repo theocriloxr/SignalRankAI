@@ -56,6 +56,7 @@ from utils import proxy_manager
 BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
 BYBIT_API = 'https://api.bybit.com/v5/market/tickers'
 BYBIT_CATEGORY = 'linear'
+OKX_TICKERS_API = 'https://www.okx.com/api/v5/market/tickers'
 FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}'
 
 _BINANCE_DISABLED_REASON: str | None = None
@@ -246,6 +247,32 @@ def _bybit_top_crypto_pairs(top_n: int) -> list[str]:
     if _BYBIT_DISABLED_REASON is not None:
         return []
 
+
+def _okx_top_crypto_pairs(top_n: int) -> list[str]:
+    """Return liquid OKX USDT spot instruments in engine symbol format."""
+    try:
+        response = requests.get(OKX_TICKERS_API, params={"instType": "SPOT"}, timeout=8)
+        payload = response.json() if response.ok else {}
+        if not response.ok or str(payload.get("code") or "") != "0":
+            return []
+        ranked = sorted(
+            payload.get("data") or [],
+            key=lambda row: float(row.get("volCcy24h") or 0.0),
+            reverse=True,
+        )
+        pairs = []
+        for row in ranked:
+            instrument = str(row.get("instId") or "").upper().strip()
+            if not instrument.endswith("-USDT"):
+                continue
+            pairs.append(instrument.replace("-", ""))
+            if len(pairs) >= max(1, int(top_n)):
+                break
+        return _filter_blacklisted(pairs)
+    except Exception as exc:
+        logger.debug("[pair_discovery] OKX provider failed: %s", exc)
+        return []
+
     try:
         limit = max(1, int(top_n))
     except Exception:
@@ -337,9 +364,12 @@ def get_trending_crypto_pairs(top_n=20):
         logger.warning("[pair_discovery] Binance explicitly requested but failed, using hardcoded fallback")
         return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
     
-# FIX: On Railway - prefer Bybit as primary (less likely to be geo-blocked than Binance)
+# On Railway use the same public source that currently succeeds for candles.
     if is_railway:
-        logger.info("[pair_discovery] Railway detected, trying Bybit first to avoid Binance geoblock")
+        logger.info("[pair_discovery] Railway detected, trying OKX discovery first")
+        result = _okx_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
         result = _bybit_top_crypto_pairs(top_n)
         if result:
             return exclude_pairs(_filter_blacklisted(result))
@@ -356,6 +386,7 @@ def get_trending_crypto_pairs(top_n=20):
     all_enabled = provider in {"all", "auto", ""} and _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
     if all_enabled:
         provider_jobs = {
+            "okx": lambda: _okx_top_crypto_pairs(top_n=max(1, int(top_n))),
             "bybit": lambda: _bybit_top_crypto_pairs(top_n=max(1, int(top_n))),
             "cryptocompare": lambda: _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n=max(1, int(top_n)))),
             "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
@@ -371,13 +402,17 @@ def get_trending_crypto_pairs(top_n=20):
                     logger.warning("[pair_discovery] crypto provider %s failed: %s", name, e)
                     results[name] = []
         merged = _merge_provider_results(
-            [results.get("bybit", []), results.get("cryptocompare", []), results.get("binance", [])],
+            [results.get("okx", []), results.get("bybit", []), results.get("cryptocompare", []), results.get("binance", [])],
             limit=max(1, int(top_n)),
         )
         if merged:
             return exclude_pairs(merged)
 
     # Final fail-open fallback: try Bybit, then CryptoCompare, then Binance, then HARDCODED.
+    fallback = _okx_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(_filter_blacklisted(fallback))
+
     fallback = _bybit_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(_filter_blacklisted(fallback))

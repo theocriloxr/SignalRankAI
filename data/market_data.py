@@ -24,6 +24,48 @@ _YF_COOLDOWN_UNTIL = 0.0
 _YF_NO_CANDLE_LAST_LOG: dict[tuple[str, str], float] = {}
 
 
+def usable_timeframe_payloads(market_data: dict, minimum_candles: int | None = None) -> dict:
+    """Return only timeframe payloads containing normalized, usable OHLCV candles."""
+    minimum = max(1, int(minimum_candles or _env_int("MARKET_CACHE_MIN_CANDLES", 20)))
+    usable: dict = {}
+    for timeframe, payload in (market_data or {}).items():
+        if str(timeframe).startswith("_") or not isinstance(payload, dict):
+            continue
+        candles = payload.get("candles")
+        if not isinstance(candles, list) or len(candles) < minimum:
+            continue
+        normalized = _sanitize_ohlcv(candles)
+        if len(normalized) < minimum or not _validate_ohlcv(normalized):
+            continue
+        payload["candles"] = normalized
+        usable[str(timeframe)] = payload
+    return usable
+
+
+def market_data_diagnostics(asset: str, requested: Iterable[str], market_data: dict) -> dict:
+    minimum = max(1, _env_int("MARKET_CACHE_MIN_CANDLES", 20))
+    usable = usable_timeframe_payloads(market_data, minimum)
+    reasons: dict[str, str] = {}
+    for timeframe in requested or []:
+        payload = (market_data or {}).get(str(timeframe))
+        if not isinstance(payload, dict):
+            reasons[str(timeframe)] = "missing_payload"
+            continue
+        candles = payload.get("candles")
+        if not isinstance(candles, list):
+            reasons[str(timeframe)] = "candles_not_list"
+        elif len(candles) < minimum:
+            reasons[str(timeframe)] = f"insufficient_candles:{len(candles)}/{minimum}"
+        elif str(timeframe) not in usable:
+            reasons[str(timeframe)] = "invalid_ohlcv_schema"
+    return {
+        "asset": str(asset),
+        "usable_timeframes": sorted(usable),
+        "rejected_timeframes": reasons,
+        "minimum_candles": minimum,
+    }
+
+
 def _yf_timeout_seconds() -> float:
     try:
         return float((os.getenv("YFINANCE_TIMEOUT_SECONDS") or "6").strip())
@@ -872,7 +914,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
 
             # Attach lightweight alternative-market signals once per asset, not once
             # for every timeframe returned by the provider waterfall.
-            if tf != next(iter(rest), None):
+            if tf != next(iter(rest), None) or not _env_bool("MARKET_ALTERNATIVE_SIGNALS_ENABLED", True):
                 continue
             try:
                 async def _fetch_alt():
@@ -1053,4 +1095,12 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     except Exception:
         pass
 
+    diagnostics = market_data_diagnostics(asset, tfs, out)
+    logger.info(
+        "[market_data][aggregation] asset=%s usable=%s rejected=%s minimum=%s",
+        asset,
+        diagnostics["usable_timeframes"],
+        diagnostics["rejected_timeframes"],
+        diagnostics["minimum_candles"],
+    )
     return out

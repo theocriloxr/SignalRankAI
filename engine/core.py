@@ -2059,9 +2059,10 @@ def main_loop(DRY_RUN: bool = False):
                 logger.exception("Market data fetch failed or timed out")
                 all_market_data = {}
             market_fetch_ms = int((time.monotonic() - market_fetch_started) * 1000)
+            from data.market_data import market_data_diagnostics, usable_timeframe_payloads
             usable_market_data_assets = sum(
                 1 for _payload in (all_market_data or {}).values()
-                if isinstance(_payload, dict) and any(_payload.values())
+                if isinstance(_payload, dict) and usable_timeframe_payloads(_payload)
             )
             try:
                 _cycle_state.update({
@@ -2222,7 +2223,8 @@ def main_loop(DRY_RUN: bool = False):
                         market_data["_macro"] = dict(macro_snapshot or {})
 
                     # Basic safety: ensure we have at least one TF with candles
-                    has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
+                    usable_timeframes = usable_timeframe_payloads(market_data) if isinstance(market_data, dict) else {}
+                    has_candles = bool(usable_timeframes)
                     if not has_candles:
                         logger.warning(f"[engine] No market data for asset={asset}")
                         pipeline_stats["no_candles"] += 1
@@ -2236,6 +2238,17 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 continue
                         _data_reason = _provider_errors[0] if _provider_errors else "no_usable_candles"
+                        _aggregation = market_data_diagnostics(
+                            asset,
+                            asset_to_tfs.get(asset, []),
+                            market_data if isinstance(market_data, dict) else {},
+                        )
+                        logger.warning(
+                            "[engine][market_data_audit] asset=%s usable=%s rejected=%s",
+                            asset,
+                            _aggregation.get("usable_timeframes"),
+                            _aggregation.get("rejected_timeframes"),
+                        )
                         _bump_cycle_reason(pipeline_stats, "market_data_failure_reasons", _data_reason)
                         if _provider_errors:
                             _provider_error_map = pipeline_stats.setdefault("market_data_provider_errors", {})

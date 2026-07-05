@@ -1154,6 +1154,16 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 
 		for delivery, user, signal, outcome in rows:
 			proof_ok = bool(delivery.telegram_chat_id is not None and delivery.telegram_message_id is not None)
+			from signalrank_telegram.timezones import effective_user_timezone, format_user_datetime
+			display_tz = getattr(delivery, "display_timezone", None) or effective_user_timezone(
+				getattr(user, "timezone", None), user.telegram_user_id
+			)
+			generated_display = getattr(delivery, "display_generated_at", None) or format_user_datetime(
+				signal.created_at, display_tz, user.telegram_user_id
+			)
+			delivered_display = getattr(delivery, "display_delivered_at", None) or format_user_datetime(
+				delivery.delivered_at, display_tz, user.telegram_user_id
+			)
 			message = (
 				"Delivery proof\n"
 				f"Signal: {signal.signal_id}\n"
@@ -1164,6 +1174,9 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 				f"Attempts: {int(delivery.attempt_count or 0)}\n"
 				f"Dispatch: {delivery.dispatch_started_at or 'none'}\n"
 				f"Confirmed: {delivery.delivery_confirmed_at or 'none'}\n"
+				f"Generated ({display_tz}): {generated_display}\n"
+				f"Delivered ({display_tz}): {delivered_display}\n"
+				f"Age at delivery: {getattr(delivery, 'signal_age_at_delivery_seconds', None) or 'n/a'}s\n"
 				f"Error: {delivery.last_error or 'none'}\n"
 				f"Outcome: {getattr(outcome, 'status', None) or 'pending'}"
 			)
@@ -1415,6 +1428,40 @@ async def language_command(update, context) -> None:
 		return
 	user_prefs_store.set_prefs(user_id, language=lang)
 	await update.message.reply_text(f"Language set to {LANGUAGES[lang]}.")
+
+
+async def timezone_command(update, context) -> None:
+	"""Show or update the receiver's IANA timezone."""
+	if update.effective_user is None or update.message is None:
+		return
+	from db.models import User
+	from sqlalchemy import select
+	from signalrank_telegram.timezones import effective_user_timezone, validate_timezone_name
+
+	telegram_user_id = int(update.effective_user.id)
+	requested = str((context.args or [""])[0] or "").strip()
+	async with get_session() as session:
+		user = (await session.execute(
+			select(User).where(User.telegram_user_id == telegram_user_id)
+		)).scalar_one_or_none()
+		if user is None:
+			await update.message.reply_text("Run /start first, then set your timezone.")
+			return
+		if not requested:
+			current = effective_user_timezone(user.timezone, telegram_user_id)
+			await update.message.reply_text(
+				f"Your timezone is {current}.\n\nSet it with: /timezone Africa/Lagos"
+			)
+			return
+		valid = validate_timezone_name(requested)
+		if valid is None:
+			await update.message.reply_text(
+				"That timezone is not valid. Use an IANA name such as Africa/Lagos, Europe/London, or America/New_York."
+			)
+			return
+		user.timezone = valid
+		await session.commit()
+	await update.message.reply_text(f"Timezone set to {valid}. Signal times will now use your local time.")
 
 # --------- CUSTOM SIGNAL FILTERS COMMAND ---------
 @require_tier("PREMIUM")

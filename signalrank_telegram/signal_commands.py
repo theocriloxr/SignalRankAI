@@ -85,6 +85,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id: int = update.effective_user.id
     tier: str = _effective_tier(user_id)
     show_unvoted_only: bool = False
+    display_timezone = None
+    try:
+        async with get_session() as _timezone_session:
+            _timezone_user = (await _timezone_session.execute(
+                select(User).where(User.telegram_user_id == int(user_id))
+            )).scalar_one_or_none()
+            display_timezone = getattr(_timezone_user, "timezone", None)
+    except Exception:
+        display_timezone = None
     
     try:
         arg0 = str((context.args or [""])[0] or "").strip().lower()
@@ -161,6 +170,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         "rr_ratio": r.rr_estimate,
                         "score": r.score,
                         "created_at": getattr(r, "created_at", None),
+                        "display_timezone": display_timezone,
+                        "display_telegram_user_id": int(user_id),
                     }
                     try:
                         sig_dict = enrich_signal_with_live_price(sig_dict)
@@ -228,6 +239,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "strategy_name": r.strategy_name,
                     "strategy_group": r.strategy_group,
                     "created_at": r.created_at,
+                    "display_timezone": display_timezone,
+                    "display_telegram_user_id": int(user_id),
                 }
                 for r in rows
             ]

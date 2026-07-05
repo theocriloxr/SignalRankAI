@@ -118,6 +118,7 @@ class TestAsyncFetcher(unittest.TestCase):
                 "YFINANCE_ENABLED": "1",
                 "YFINANCE_CRYPTO_PRIMARY_ENABLED": "0",
                 "MARKET_CACHE_WRITE_THROUGH": "0",
+                "MARKET_ALTERNATIVE_SIGNALS_ENABLED": "0",
                 "MARKET_TIMEFRAME_FETCH_TIMEOUT_SECONDS": "2",
             }
             with patch.dict(os.environ, env, clear=False), \
