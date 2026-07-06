@@ -2439,10 +2439,10 @@ async def async_get_candles(asset, timeframe):
         try:
             provider_timeout_s = max(
                 0.5,
-                float(os.getenv("MARKET_PROVIDER_TIMEOUT_SECONDS", "3.0") or 3.0),
+                float(os.getenv("MARKET_PROVIDER_TIMEOUT_SECONDS", "5.0") or 5.0),
             )
         except Exception:
-            provider_timeout_s = 3.0
+            provider_timeout_s = 5.0
         for provider_name, fetch_fn in healthy_provs + unhealthy_provs:
             _provider_started = time.monotonic()
             logger.info(
@@ -2462,6 +2462,7 @@ async def async_get_candles(asset, timeframe):
                 _latency_ms = int((time.monotonic() - _provider_started) * 1000)
                 if candles and len(candles) >= 20:
                     mark_provider_result(provider_name, True, latency_ms=_latency_ms)
+                    _set_last_provider_used(asset, timeframe, provider_name)
                     logger.info(f"[data][async] provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
                     return candles
                 else:

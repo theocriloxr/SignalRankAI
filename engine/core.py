@@ -30,7 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Hard blacklist for zombie stablecoins that persist in database
 # These have minimal volatility and should never be traded
-HARD_BLACKLIST = ["USDCUSDT", "USDTPERF", "DAIUSDT", "FDUSDUSDT", "USDTUSDC", "TUSDUSDT"]
+HARD_BLACKLIST = {
+    "USDCUSDT", "USDTPERF", "DAIUSDT", "FDUSDUSDT", "USDTUSDC",
+    "USDTUSDT", "TUSDUSDT", "USDEUSDT",
+}
 
 # Core engine pieces
 from signalrank_telegram.tier_delivery import TierDeliveryManager
@@ -1423,6 +1426,32 @@ def _normalize_asset_symbol(symbol: str) -> str:
     return s
 
 
+def _enabled_asset_classes() -> set[str]:
+    """Resolve runtime asset-class gates without changing the default universe."""
+    if _env_bool("CRYPTO_ONLY_MODE", False):
+        return {"crypto"}
+    raw = (os.getenv("ASSET_CLASSES_ENABLED") or "").strip()
+    if not raw:
+        return {"crypto", "fx", "stock", "index", "commodity"}
+    aliases = {"forex": "fx", "stocks": "stock", "indices": "index", "commodities": "commodity"}
+    valid = {"crypto", "fx", "stock", "index", "commodity"}
+    parsed = {
+        aliases.get(item.strip().lower(), item.strip().lower())
+        for item in raw.split(",")
+        if item.strip()
+    }
+    enabled = parsed & valid
+    if enabled:
+        return enabled
+    logger.warning("[engine] ASSET_CLASSES_ENABLED=%s contains no valid classes; using defaults", raw)
+    return valid
+
+
+def _filter_assets_by_enabled_classes(assets: List[str]) -> List[str]:
+    enabled = _enabled_asset_classes()
+    return [asset for asset in (assets or []) if _asset_class_key(asset) in enabled]
+
+
 def _rotate_slice(items: List[str], start: int, size: int) -> List[str]:
     if size <= 0:
         return []
@@ -1845,6 +1874,20 @@ def main_loop(DRY_RUN: bool = False):
                 msg = ", ".join([f"{p}:{r}" for p, r in closed_notes])
                 logger.info(f"[engine] cycle={cycle_no} market_closed skip={msg}")
 
+            # Runtime verification gates are applied before partitioning and
+            # before the cycle queue is refreshed, so disabled classes cannot
+            # consume batch slots or be re-injected by class coverage logic.
+            _enabled_classes = _enabled_asset_classes()
+            open_assets = [
+                asset for asset in _filter_assets_by_enabled_classes(open_assets)
+                if _normalize_asset_symbol(asset) not in HARD_BLACKLIST
+            ]
+            logger.info(
+                "[engine] enabled asset classes=%s crypto_only=%s",
+                sorted(_enabled_classes),
+                _env_bool("CRYPTO_ONLY_MODE", False),
+            )
+
             # Partition
             crypto_assets = [a for a in open_assets if is_crypto(a)]
             fx_assets = [a for a in open_assets if is_fx(a)]
@@ -2059,10 +2102,15 @@ def main_loop(DRY_RUN: bool = False):
                 logger.exception("Market data fetch failed or timed out")
                 all_market_data = {}
             market_fetch_ms = int((time.monotonic() - market_fetch_started) * 1000)
-            from data.market_data import market_data_diagnostics, usable_timeframe_payloads
-            usable_market_data_assets = sum(
-                1 for _payload in (all_market_data or {}).values()
-                if isinstance(_payload, dict) and usable_timeframe_payloads(_payload)
+            from data.market_data import (
+                count_usable_market_data_assets,
+                market_data_diagnostics,
+                market_data_usability,
+                usable_timeframe_payloads,
+            )
+            usable_market_data_assets = count_usable_market_data_assets(
+                all_market_data,
+                asset_to_tfs,
             )
             try:
                 _cycle_state.update({
@@ -2222,9 +2270,15 @@ def main_loop(DRY_RUN: bool = False):
                     if isinstance(market_data, dict):
                         market_data["_macro"] = dict(macro_snapshot or {})
 
-                    # Basic safety: ensure we have at least one TF with candles
+                    # Required timeframes define strategy readiness. For crypto,
+                    # optional 1m/4h/1d failures must not veto valid 5m/15m/1h.
                     usable_timeframes = usable_timeframe_payloads(market_data) if isinstance(market_data, dict) else {}
-                    has_candles = bool(usable_timeframes)
+                    _asset_usability = market_data_usability(
+                        asset,
+                        asset_to_tfs.get(asset, []),
+                        market_data if isinstance(market_data, dict) else {},
+                    )
+                    has_candles = bool(_asset_usability.get("usable"))
                     if not has_candles:
                         logger.warning(f"[engine] No market data for asset={asset}")
                         pipeline_stats["no_candles"] += 1
@@ -2244,10 +2298,11 @@ def main_loop(DRY_RUN: bool = False):
                             market_data if isinstance(market_data, dict) else {},
                         )
                         logger.warning(
-                            "[engine][market_data_audit] asset=%s usable=%s rejected=%s",
+                            "[engine][market_data_audit] asset=%s usable=%s rejected=%s final_reason=%s",
                             asset,
                             _aggregation.get("usable_timeframes"),
                             _aggregation.get("rejected_timeframes"),
+                            _aggregation.get("final_reason"),
                         )
                         _bump_cycle_reason(pipeline_stats, "market_data_failure_reasons", _data_reason)
                         if _provider_errors:
@@ -2270,6 +2325,7 @@ def main_loop(DRY_RUN: bool = False):
                     from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
                     _TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
                     stale_data = False
+                    _required_crypto_tfs = {"5m", "15m", "1h"} if is_crypto(asset) else set()
                     for tf, tf_data in market_data.items():
                         if isinstance(tf_data, dict):
                             data_age = tf_data.get("data_age_seconds")
@@ -2286,6 +2342,12 @@ def main_loop(DRY_RUN: bool = False):
                                 )
                                 tf_data["latency_warning"] = True
                             elif data_age is not None and data_age > max_age:
+                                if _required_crypto_tfs and tf not in _required_crypto_tfs:
+                                    logger.warning(
+                                        "[engine] optional stale data ignored asset=%s tf=%s age=%ss max=%ss",
+                                        asset, tf, data_age, max_age,
+                                    )
+                                    continue
                                 logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
                                 pipeline_stats["stale_data"] += 1
                                 _increment_engine_veto("other")

@@ -90,6 +90,12 @@ class AssetCycleQueue:
                     ordered.append(a)
                     seen.add(a)
 
+            # Runtime class gates may shrink the universe (for example when
+            # CRYPTO_ONLY_MODE is enabled). Remove disabled assets immediately
+            # so an older queue snapshot cannot leak them into later batches.
+            allowed = set(ordered)
+            self._queue = deque(a for a in self._queue if a in allowed)
+
             # Append assets brand-new to this round.
             existing = set(self._queue) | self._done_this_round
             added = 0

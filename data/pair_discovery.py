@@ -82,7 +82,8 @@ _HARDCODED_CRYPTO_PAIRS: list[str] = [
 # These pairs have minimal volatility and should not generate "trend" signals
 STABLECOIN_PAIRS: set[str] = {
     "USDCUSDT", "USDCPERF", "DAIUSDT", "BUSDUSDT", "FDUSDUSDT",
-    "USDTUSDC", "TUSDUSDT", "USDDUSDT", "FRAXUSDT", "MIMUSDT",
+    "USDTUSDC", "USDTUSDT", "TUSDUSDT", "USDEUSDT", "USDDUSDT",
+    "FRAXUSDT", "MIMUSDT",
 }
 
 
