@@ -1085,7 +1085,11 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 pass
 
             # Best-effort write-through into Postgres cache tables.
-        if _env_bool("MARKET_CACHE_WRITE_THROUGH", True):
+        # Per-candle Postgres writes can take longer than the engine's asset
+        # deadline and cause asyncio cancellation to discard valid exchange
+        # data. The websocket/cache ingestor remains the primary persistence
+        # path; opt in only when write latency is known to be safely bounded.
+        if _env_bool("MARKET_CACHE_WRITE_THROUGH", False):
             try:
                 from datetime import datetime
                 from db.market_cache import upsert_market_candle, upsert_market_tick
