@@ -1,6 +1,9 @@
 from engine.tier_notifications import TierNotificationManager
 from datetime import datetime, timezone
 import os
+import html
+import json
+import logging
 from core.tier_constants import TIER_SCORE_THRESHOLDS
 from engine.signal_metrics import (
 	resolve_confidence_ratio,
@@ -21,6 +24,8 @@ TIER_VIP = "vip"
 TIER_ADMIN = "admin"
 TIER_OWNER = "owner"
 
+logger = logging.getLogger(__name__)
+
 def _get_user_tier(user_tier: str | None) -> str:
 	"""Normalize and return user tier."""
 	if not user_tier:
@@ -36,6 +41,9 @@ def _get_user_tier(user_tier: str | None) -> str:
 
 def _should_send_signal_for_tier(user_tier: str, score: float) -> bool:
 	"""Check if signal should be sent to this tier based on quality."""
+	raw_tier = str(user_tier or "free").lower().strip()
+	if raw_tier in {TIER_ADMIN, TIER_OWNER}:
+		return True
 	tier = _get_user_tier(user_tier)
 	try:
 		min_score = float(TIER_SCORE_THRESHOLDS.get(tier, 70) or 70)
@@ -489,7 +497,7 @@ Capital Gained: {stats.get('profit_pct', 0):.2f}%
 """
 	return msg
 
-def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None, signals_sent_today: int = 0, daily_limit: int = 3):
+def _format_signal_primary(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None, signals_sent_today: int = 0, daily_limit: int = 3):
 	"""
 	Format a signal for Telegram with tier-appropriate detail.
 
@@ -511,15 +519,15 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	    daily_limit: Daily limit for the tier
 	"""
 	
-	# Determine actual tier to show to user
+	# Preserve owner/admin for eligibility, while displaying VIP detail.
 	if not user_tier:
 		user_tier = display_tier
-	
+	gate_tier = user_tier
 	tier = _get_user_tier(user_tier)
 	score = resolve_score_percent(signal) or 0.0
 	
 	# Check if signal should be sent to this tier (quality gate)
-	if not _should_send_signal_for_tier(tier, score):
+	if not _should_send_signal_for_tier(gate_tier, score):
 		return None  # Signal filtered out for this tier
 	
 	# Route to tier-specific formatter.
@@ -547,6 +555,116 @@ def format_signal(signal, display_tier: str | None = None, limited: bool = False
 	if tier == TIER_PREMIUM:
 		return clean_message_text(format_signal_premium_new(signal))
 	return clean_message_text(format_signal_vip_new(signal))
+
+
+def _first_take_profit(signal: dict):
+	for key in ("tp1", "take_profit_1"):
+		value = signal.get(key)
+		if value not in (None, ""):
+			return value
+	value = signal.get("take_profit") or signal.get("tp_levels") or signal.get("targets")
+	if isinstance(value, str):
+		try:
+			value = json.loads(value)
+		except Exception:
+			value = [part.strip() for part in value.strip("[]").replace("'", "").split(",") if part.strip()]
+	if isinstance(value, dict):
+		for key in ("tp1", "1", 1):
+			if value.get(key) not in (None, ""):
+				return value.get(key)
+	if isinstance(value, (list, tuple)) and value:
+		return value[0]
+	if value not in (None, "", [], {}):
+		return value
+	return None
+
+
+def signal_format_diagnostics(signal: dict | None) -> dict:
+	"""Return structured, safe formatter diagnostics for logs and owner tools."""
+	sig = dict(signal or {})
+	values = {
+		"asset": sig.get("asset") or sig.get("symbol"),
+		"direction": sig.get("direction") or sig.get("side"),
+		"timeframe": sig.get("timeframe"),
+		"entry": sig.get("entry") or sig.get("entry_price"),
+		"stop_loss": sig.get("stop_loss") or sig.get("stop"),
+		"tp1": _first_take_profit(sig),
+		"score": sig.get("score") or sig.get("score_calibrated") or sig.get("confidence"),
+		"status": sig.get("status"),
+		"lifecycle_state": sig.get("lifecycle_state"),
+		"reason": sig.get("reason"),
+		"ai_reason": sig.get("ai_reason") or sig.get("gemini_reason"),
+	}
+	required = ("asset", "direction", "entry", "stop_loss", "tp1")
+	missing = [key for key in required if values.get(key) in (None, "")]
+	return {
+		"signal_id": str(sig.get("signal_id") or sig.get("id") or ""),
+		"signal_ref": str(sig.get("signal_ref") or sig.get("signal_id") or sig.get("id") or ""),
+		"fields": values,
+		"missing_required": missing,
+		"can_render_fallback": not missing,
+	}
+
+
+def format_signal_fallback_card(signal: dict | None) -> str | None:
+	"""Render a minimal safe trade card when richer templates fail."""
+	sig = dict(signal or {})
+	diagnostics = signal_format_diagnostics(sig)
+	if diagnostics["missing_required"]:
+		return None
+	fields = diagnostics["fields"]
+	direction = str(fields["direction"]).upper()
+	lines = [
+		"<b>TRADE SIGNAL</b>",
+		f"Asset: <b>{html.escape(str(fields['asset']))}</b>",
+		f"Direction: <b>{html.escape(direction)}</b>",
+	]
+	if fields.get("timeframe"):
+		lines.append(f"Timeframe: {html.escape(str(fields['timeframe']))}")
+	lines.extend([
+		f"Entry: {html.escape(str(fields['entry']))}",
+		f"Stop Loss: {html.escape(str(fields['stop_loss']))}",
+		f"Take Profit 1: {html.escape(str(fields['tp1']))}",
+	])
+	if fields.get("score") not in (None, ""):
+		lines.append(f"Score: {html.escape(str(fields['score']))}%")
+	lines.append("\nRisk responsibly. This is not financial advice.")
+	return clean_message_text("\n".join(lines))
+
+
+def format_signal(signal, display_tier: str | None = None, limited: bool = False, user_tier: str | None = None, signals_sent_today: int = 0, daily_limit: int = 3):
+	"""Format an eligible signal, falling back safely instead of failing closed."""
+	actual_tier = user_tier or display_tier
+	score = resolve_score_percent(signal) or 0.0
+	if not _should_send_signal_for_tier(actual_tier, score):
+		return None
+	try:
+		rendered = _format_signal_primary(
+			signal,
+			display_tier=display_tier,
+			limited=limited,
+			user_tier=user_tier,
+			signals_sent_today=signals_sent_today,
+			daily_limit=daily_limit,
+		)
+		if rendered and str(rendered).strip():
+			return rendered
+	except Exception as exc:
+		logger.exception("[formatter] primary formatter failed: %s", exc)
+	diagnostics = signal_format_diagnostics(signal)
+	fallback = format_signal_fallback_card(signal)
+	log_payload = {
+		"signal_id": diagnostics["signal_id"],
+		"signal_ref": diagnostics["signal_ref"],
+		**diagnostics["fields"],
+		"missing_fields": diagnostics["missing_required"],
+		"fallback_rendered": bool(fallback),
+	}
+	if fallback:
+		logger.warning("[formatter] using safe fallback card details=%s", log_payload)
+		return fallback
+	logger.error("[formatter] unable to render signal details=%s", log_payload)
+	return None
 
 def _get_freshness_badge(signal: dict) -> str:
 	"""Get data freshness badge based on data_age_seconds."""

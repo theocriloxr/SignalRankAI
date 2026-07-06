@@ -529,6 +529,10 @@ class MLRejectionTracker:
             signal_id: Optional[str] = None,
         ) -> None:
             """Store rejection for future outcome tracking."""
+            if str(os.getenv("REJECTION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+                "1", "true", "yes", "on",
+            }:
+                return
             session = None
             try:
                 tp_value = self._parse_tp_value(take_profit_levels)
@@ -540,7 +544,7 @@ class MLRejectionTracker:
                     features.setdefault("rejection_type", rejection_type)
                 if signal_id:
                     features.setdefault("signal_id", signal_id)
-                async with get_session() as session:
+                async with get_session(noncritical=True) as session:
                     rejection = MLRejectedSignal(
                         signal_id=signal_id,
                         asset=str(asset or "").upper(),
@@ -561,7 +565,10 @@ class MLRejectionTracker:
                     await session.commit()  # CRITICAL: Must commit to save to DB (not just flush)
                     logger.info("Rejection stored: %s %s %s signal_id=%s", asset, timeframe, direction, signal_id)
             except Exception as e:
-                logger.error("Failed to persist rejection: %s", e)
+                if type(e).__name__ == "NoncriticalWriteDropped":
+                    logger.warning("Rejection log dropped because DB gate is busy")
+                else:
+                    logger.error("Failed to persist rejection: %s", e)
                 if session:
                     try:
                         await session.rollback()

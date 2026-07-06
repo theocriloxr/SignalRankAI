@@ -22,6 +22,10 @@ def _increment_successful_delivery_stat() -> None:
         pass
 
 
+def is_formatter_failure_terminal(delivery_state: str | None) -> bool:
+    return str(delivery_state or "").strip().lower() == "formatter_failed"
+
+
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
 
@@ -93,7 +97,7 @@ async def _resend_unsent_signals_async():
         )
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         from signalrank_telegram.access import resolve_user_tier
-        from .formatter import format_signal
+        from .formatter import format_signal, signal_format_diagnostics
         from services.trade_profiles import infer_trade_profile
         from services.user_intelligence import (
             get_user_trading_preferences,
@@ -148,12 +152,30 @@ async def _resend_unsent_signals_async():
 
         # Fetch recent signals, then apply a hard per-timeframe freshness gate
         # before anything can be reserved or delivered.
+        formatter_failed_signal_ids: set[str] = set()
         async with get_session() as session:
             try:
                 raw_signals = await list_active_signals(session, max_age_days=1, limit=100)
+                from sqlalchemy import select
+                from db.models import SignalDelivery
+                failed_rows = await session.execute(
+                    select(SignalDelivery.signal_id).where(
+                        SignalDelivery.delivery_state == "formatter_failed"
+                    )
+                )
+                formatter_failed_signal_ids = {
+                    str(value) for value in (failed_rows.scalars().all() or []) if value
+                }
                 await session.commit()
             except Exception:
                 raw_signals = []
+
+        if formatter_failed_signal_ids:
+            raw_signals = [
+                signal for signal in (raw_signals or [])
+                if str(getattr(signal, "signal_id", "") or "") not in formatter_failed_signal_ids
+            ]
+            logger.info("[resend] suppressed formatter_failed signals=%s", len(formatter_failed_signal_ids))
 
         if not raw_signals:
             logger.info("[resend] no active signals found in last 24h")
@@ -378,13 +400,39 @@ async def _resend_unsent_signals_async():
                             continue
 
                         # Format and send
-                        display_tier = gate_tier
+                        display_tier = _display_tier_for_delivery(gate_tier)
                         text = format_signal(sig_dict, user_tier=gate_tier, display_tier=display_tier)
                         if not text or not str(text).strip():
-                            logger.info(
-                                f"[resend] Skipped signal {signal_id} for user {user_id} "
-                                f"(tier={user_tier}): formatter returned empty text"
+                            diagnostics = signal_format_diagnostics(sig_dict)
+                            logger.error(
+                                "[resend] formatter_failed user=%s tier=%s details=%s",
+                                user_id, user_tier, diagnostics,
                             )
+                            try:
+                                async with get_session() as db_session:
+                                    reserved = await record_signal_delivery(
+                                        db_session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal_id),
+                                        tier_at_send=str(gate_tier),
+                                    )
+                                    if reserved:
+                                        await mark_signal_delivery_result(
+                                            db_session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(signal_id),
+                                            sent_ok=False,
+                                            error=("formatter_missing_required:" + ",".join(
+                                                diagnostics.get("missing_required") or []
+                                            ))[:1000],
+                                            delivery_state="formatter_failed",
+                                        )
+                                    await db_session.commit()
+                            except Exception as formatter_db_err:
+                                logger.warning(
+                                    "[resend] could not persist formatter_failed signal=%s user=%s err=%s",
+                                    signal_id, user_id, formatter_db_err,
+                                )
                             continue
                         # Pre-send reservation in DB (attempt tracked even if network fails).
                         reserved = False
@@ -646,6 +694,8 @@ from .commands import (
     system_command,
     db_health_command,
     delivery_debug_command,
+    signal_debug_command,
+    format_debug_command,
     engine_debug_command,
     profile_command,
     mission_command,
@@ -4558,6 +4608,8 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("system", _audit_handler("system", system_command)))
     application.add_handler(CommandHandler("db_health", _audit_handler("db_health", db_health_command)))
     application.add_handler(CommandHandler("delivery_debug", _audit_handler("delivery_debug", delivery_debug_command)))
+    application.add_handler(CommandHandler("signal_debug", _audit_handler("signal_debug", signal_debug_command)))
+    application.add_handler(CommandHandler("format_debug", _audit_handler("format_debug", format_debug_command)))
     application.add_handler(CommandHandler("engine_debug", _audit_handler("engine_debug", engine_debug_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
@@ -7644,15 +7696,19 @@ def run_bot() -> None:
             )
         except Exception as _proxy_job_err:
             logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err)
+        resend_interval_seconds = max(
+            60,
+            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "180") or 180),
+        )
         scheduler.add_job(
             resend_unsent_signals_job,
             'interval',
-            minutes=1,
+            seconds=resend_interval_seconds,
             id='resend_unsent_signals_job',
             replace_existing=True,
             max_instances=1,
             coalesce=True,
-            misfire_grace_time=20,
+            misfire_grace_time=min(120, resend_interval_seconds),
             jobstore=_sa,
             next_run_time=datetime.utcnow(),
         )

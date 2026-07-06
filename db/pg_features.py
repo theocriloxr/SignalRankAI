@@ -1229,9 +1229,11 @@ async def record_signal_delivery(
     if existing_delivery is not None:
         if bool(getattr(existing_delivery, "sent_ok", False)):
             return False
-        if str(getattr(existing_delivery, "delivery_state", "") or "").lower() == "blocked":
+        existing_state = str(getattr(existing_delivery, "delivery_state", "") or "").lower()
+        if existing_state in {"blocked", "formatter_failed"}:
             logger.info(
-                "[dedup] permanently blocked Telegram recipient user=%s signal=%s",
+                "[dedup] terminal delivery state=%s user=%s signal=%s",
+                existing_state,
                 user.id,
                 signal_id,
             )

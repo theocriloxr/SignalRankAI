@@ -83,6 +83,19 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
         crypto.append(("binance_connector", getattr(c, "binance_get_candles", None)))
 
     if kind == "crypto":
+        configured = [
+            item.strip().lower().replace("_connector", "")
+            for item in (os.getenv("CRYPTO_MARKET_DATA_PROVIDERS") or "").split(",")
+            if item.strip()
+        ]
+        if configured:
+            by_alias = {
+                name.replace("_connector", ""): (name, fn)
+                for name, fn in crypto
+            }
+            selected = [by_alias[name] for name in configured if name in by_alias]
+            if selected:
+                crypto = selected
         return crypto
     if kind in ("fx", "forex"):
         return [

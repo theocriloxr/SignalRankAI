@@ -434,20 +434,32 @@ async def run_with_db_retry(
             attempt += 1
 
 
+class NoncriticalWriteDropped(RuntimeError):
+    """Raised when best-effort telemetry is dropped to protect critical DB work."""
+
+
 @asynccontextmanager
-async def get_session() -> AsyncIterator[AsyncSession]:
+async def get_session(*, noncritical: bool = False) -> AsyncIterator[AsyncSession]:
     timeout_s = float(_pool_int("DB_SESSION_GATE_TIMEOUT_SECONDS", _pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1), minimum=1))
     acquired = False
-    with _session_metrics_lock:
-        _session_metrics["waiting"] += 1
-    try:
-        acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
-    finally:
+    drop_noncritical = bool(
+        noncritical and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
+    )
+    if drop_noncritical:
+        acquired = _session_gate.acquire(blocking=False)
+    else:
         with _session_metrics_lock:
-            _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
+            _session_metrics["waiting"] += 1
+        try:
+            acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
+        finally:
+            with _session_metrics_lock:
+                _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
     if not acquired:
         with _session_metrics_lock:
             _session_metrics["errors"] += 1
+        if drop_noncritical:
+            raise NoncriticalWriteDropped("noncritical DB write dropped: session gate busy")
         raise TimeoutError(
             f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
             "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"

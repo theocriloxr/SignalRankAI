@@ -217,8 +217,12 @@ async def persist_decision_log(
     
     IMPORTANT: With NullPool enabled, failing to commit causes data loss!
     """
+    if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return 0
     try:
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             dl = DecisionLog(
                 signal_id=signal_id,
                 asset=asset,
@@ -239,7 +243,10 @@ async def persist_decision_log(
                 return 0
     except Exception as e:
         import logging
-        logging.exception(f"Failed to persist decision log: {e}")
+        if type(e).__name__ == "NoncriticalWriteDropped":
+            logging.getLogger(__name__).warning("Decision log dropped because DB gate is busy")
+        else:
+            logging.exception(f"Failed to persist decision log: {e}")
         return 0
 
 

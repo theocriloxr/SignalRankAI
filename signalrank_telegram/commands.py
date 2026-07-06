@@ -1256,6 +1256,94 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 		await update.message.reply_text(f"Delivery debug failed: {type(exc).__name__}")
 
 
+async def _load_signal_debug_payload(ref: str) -> dict | None:
+	from sqlalchemy import select
+	from db.models import Signal
+	from db.session import get_session
+
+	async with get_session() as session:
+		row = (
+			await session.execute(
+				select(Signal)
+				.where(Signal.signal_id.like(f"{str(ref).strip()}%"))
+				.order_by(Signal.created_at.desc())
+				.limit(1)
+			)
+		).scalar_one_or_none()
+		await session.commit()
+	if row is None:
+		return None
+	return {column.key: getattr(row, column.key, None) for column in row.__table__.columns}
+
+
+async def signal_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Owner/admin inspection of the DB fields needed for signal rendering."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = [str(value or "").strip() for value in (context.args or []) if str(value or "").strip()]
+	if not args:
+		await update.message.reply_text("Usage: /signal_debug <signal_ref>")
+		return
+	try:
+		payload = await _load_signal_debug_payload(args[0])
+		if payload is None:
+			await update.message.reply_text("No signal matches that reference.")
+			return
+		from signalrank_telegram.formatter import signal_format_diagnostics
+		diagnostics = signal_format_diagnostics(payload)
+		fields = diagnostics["fields"]
+		lines = [
+			"Signal Debug",
+			f"Signal: {diagnostics['signal_id'] or diagnostics['signal_ref']}",
+			f"Missing required: {', '.join(diagnostics['missing_required']) or 'none'}",
+			f"Fallback renderable: {bool(diagnostics['can_render_fallback'])}",
+		]
+		for key in ("asset", "direction", "timeframe", "entry", "stop_loss", "tp1", "score", "status", "lifecycle_state", "reason", "ai_reason"):
+			lines.append(f"{key}: {fields.get(key) if fields.get(key) not in (None, '') else 'MISSING'}")
+		await update.message.reply_text("\n".join(lines)[:3900])
+	except Exception as exc:
+		logger.exception("[signal_debug] failed: %s", exc)
+		await update.message.reply_text(f"Signal debug failed: {type(exc).__name__}")
+
+
+async def format_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+	"""Owner/admin formatter verdict and safe preview for a stored signal."""
+	if update.effective_user is None or update.message is None:
+		return
+	if not _is_admin(update.effective_user.id):
+		await update.message.reply_text("Admin only.")
+		return
+	args = [str(value or "").strip() for value in (context.args or []) if str(value or "").strip()]
+	if not args:
+		await update.message.reply_text("Usage: /format_debug <signal_ref>")
+		return
+	try:
+		payload = await _load_signal_debug_payload(args[0])
+		if payload is None:
+			await update.message.reply_text("No signal matches that reference.")
+			return
+		from signalrank_telegram.formatter import format_signal, signal_format_diagnostics
+		diagnostics = signal_format_diagnostics(payload)
+		rendered = format_signal(payload, user_tier="owner", display_tier="vip")
+		verdict = "renderable" if rendered and str(rendered).strip() else "formatter_failed"
+		preview = str(rendered or "").replace("<", "[").replace(">", "]")[:2500]
+		message = (
+			"Format Debug\n"
+			f"Signal: {diagnostics['signal_id'] or diagnostics['signal_ref']}\n"
+			f"Verdict: {verdict}\n"
+			f"Missing required: {', '.join(diagnostics['missing_required']) or 'none'}\n"
+			f"Fallback renderable: {bool(diagnostics['can_render_fallback'])}\n\n"
+			f"Preview:\n{preview or 'none'}"
+		)
+		await update.message.reply_text(message[:3900])
+	except Exception as exc:
+		logger.exception("[format_debug] failed: %s", exc)
+		await update.message.reply_text(f"Format debug failed: {type(exc).__name__}")
+
+
 async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Admin-only latest engine cycle diagnostics from the Redis/runtime state heartbeat."""
 	if update.effective_user is None or update.message is None:
