@@ -111,8 +111,27 @@ async def _resend_unsent_signals_async():
         # get_all_user_ids_compat() (which uses run_sync() internally and would
         # spawn a nested thread+event-loop inside the already-running loop).
         from db.pg_features import list_all_user_telegram_ids
-        async with get_session() as _uid_session:
-            user_ids = await list_all_user_telegram_ids(_uid_session)
+        from sqlalchemy import select
+        from db.models import SignalDelivery
+        formatter_failed_signal_ids: set[str] = set()
+        try:
+            async with get_session(noncritical=True) as _bootstrap_session:
+                user_ids = await list_all_user_telegram_ids(_bootstrap_session)
+                raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=100)
+                failed_rows = await _bootstrap_session.execute(
+                    select(SignalDelivery.signal_id).where(
+                        SignalDelivery.delivery_state == "formatter_failed"
+                    )
+                )
+                formatter_failed_signal_ids = {
+                    str(value) for value in (failed_rows.scalars().all() or []) if value
+                }
+                await _bootstrap_session.commit()
+        except Exception as bootstrap_err:
+            if type(bootstrap_err).__name__ == "NoncriticalWriteDropped":
+                logger.info("[resend] skipped: DB gate busy during bootstrap")
+                return
+            raise
         # Always include configured owner/admin IDs as a fallback audience,
         # even if user rows are missing in DB due onboarding races.
         try:
@@ -150,26 +169,7 @@ async def _resend_unsent_signals_async():
         except Exception:
             pass
 
-        # Fetch recent signals, then apply a hard per-timeframe freshness gate
-        # before anything can be reserved or delivered.
-        formatter_failed_signal_ids: set[str] = set()
-        async with get_session() as session:
-            try:
-                raw_signals = await list_active_signals(session, max_age_days=1, limit=100)
-                from sqlalchemy import select
-                from db.models import SignalDelivery
-                failed_rows = await session.execute(
-                    select(SignalDelivery.signal_id).where(
-                        SignalDelivery.delivery_state == "formatter_failed"
-                    )
-                )
-                formatter_failed_signal_ids = {
-                    str(value) for value in (failed_rows.scalars().all() or []) if value
-                }
-                await session.commit()
-            except Exception:
-                raw_signals = []
-
+        # The bootstrap DB session is released before formatting and sending.
         if formatter_failed_signal_ids:
             raw_signals = [
                 signal for signal in (raw_signals or [])
@@ -641,7 +641,7 @@ import logging
 import time
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.performance import performance_tracker
 from db.pg_compat import get_all_user_ids_compat
@@ -7475,6 +7475,11 @@ def run_bot() -> None:
                 "1" if _running_on_railway else "0",
             )
         ).strip().lower() in {"1", "true", "yes", "on"}
+        _outcome_start_delay_seconds = max(
+            30,
+            int(os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "60") or 60),
+        )
+        _outcome_first_run = datetime.utcnow() + timedelta(seconds=_outcome_start_delay_seconds)
 
         if _minimal_scheduler_mode:
             logger.info("[sched] minimal mode enabled: scheduling only core closure jobs")
@@ -7493,6 +7498,7 @@ def run_bot() -> None:
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
+                next_run_time=_outcome_first_run,
             )
             scheduler.add_job(
                 refresh_monitor_snapshots_job,
@@ -7552,6 +7558,7 @@ def run_bot() -> None:
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
+                next_run_time=_outcome_first_run,
             )
             scheduler.add_job(
                 smart_exit_guard_job,
@@ -7700,6 +7707,10 @@ def run_bot() -> None:
             60,
             int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "180") or 180),
         )
+        resend_start_delay_seconds = max(
+            _outcome_start_delay_seconds + 30,
+            int(os.getenv("RESEND_START_DELAY_SECONDS", "120") or 120),
+        )
         scheduler.add_job(
             resend_unsent_signals_job,
             'interval',
@@ -7710,7 +7721,7 @@ def run_bot() -> None:
             coalesce=True,
             misfire_grace_time=min(120, resend_interval_seconds),
             jobstore=_sa,
-            next_run_time=datetime.utcnow(),
+            next_run_time=datetime.utcnow() + timedelta(seconds=resend_start_delay_seconds),
         )
         scheduler.add_job(
             distribute_random_signals_to_free_users_job,

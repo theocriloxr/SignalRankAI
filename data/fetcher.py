@@ -347,6 +347,7 @@ from core.circuit_breaker import provider_breaker
 
 MARKET_DATA_CONTRACT = "real chart candles; no demo/synthetic generation"
 _PROVIDER_ERRORS: dict[tuple[str, str], list[str]] = {}
+_LOGGED_PROVIDER_ORDER_KEYS: set[str] = set()
 
 
 def _track_provider_error(asset: str, tf: str, error_msg: str) -> None:
@@ -2431,8 +2432,26 @@ async def async_get_candles(asset, timeframe):
         }.get(str(asset_type or "").lower().strip())
         if preferred_env:
             provs = _prioritize_provider_list(provs, os.getenv(preferred_env) or "")
-        healthy_provs = [p for p in provs if provider_is_healthy(p[0])]
-        unhealthy_provs = [p for p in provs if not provider_is_healthy(p[0])]
+        strict_configured_order = bool(
+            str(asset_type or "").lower().strip() == "crypto"
+            and (os.getenv("CRYPTO_MARKET_DATA_PROVIDERS") or "").strip()
+        )
+        if strict_configured_order:
+            ordered_provs = list(provs)
+        else:
+            healthy_provs = [p for p in provs if provider_is_healthy(p[0])]
+            unhealthy_provs = [p for p in provs if not provider_is_healthy(p[0])]
+            ordered_provs = healthy_provs + unhealthy_provs
+
+        if str(asset_type or "").lower().strip() == "crypto":
+            order_names = [str(name).replace("_connector", "") for name, _ in ordered_provs]
+            order_key = ",".join(order_names)
+            if order_key not in _LOGGED_PROVIDER_ORDER_KEYS:
+                _LOGGED_PROVIDER_ORDER_KEYS.add(order_key)
+                logger.info(
+                    "[market_data] crypto_ohlc_provider_order=[%s]",
+                    ",".join(order_names),
+                )
 
         symbol_for_providers = asset
 
@@ -2443,7 +2462,7 @@ async def async_get_candles(asset, timeframe):
             )
         except Exception:
             provider_timeout_s = 5.0
-        for provider_name, fetch_fn in healthy_provs + unhealthy_provs:
+        for provider_name, fetch_fn in ordered_provs:
             _provider_started = time.monotonic()
             logger.info(
                 "[data][async] provider_attempt asset=%s class=%s tf=%s provider=%s health=%s",

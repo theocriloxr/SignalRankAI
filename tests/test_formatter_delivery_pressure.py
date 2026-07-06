@@ -107,3 +107,64 @@ def test_configured_crypto_provider_order(monkeypatch):
     names = [name for name, _ in _provider_order("crypto", connectors, async_mode=True)]
 
     assert names == ["coinbase_connector", "okx_connector", "bybit_connector"]
+
+
+@pytest.mark.asyncio
+async def test_configured_crypto_order_beats_health_reordering(monkeypatch):
+    from data import fetcher
+    from data import connector_registry
+
+    attempts = []
+
+    async def provider(name, symbol, timeframe, timeout=5):
+        attempts.append(name)
+        return [{"close": 1.0}] * 20
+
+    providers = [
+        ("coinbase_connector", lambda symbol, timeframe, timeout=5: provider("coinbase", symbol, timeframe, timeout)),
+        ("okx_connector", lambda symbol, timeframe, timeout=5: provider("okx", symbol, timeframe, timeout)),
+        ("bybit_connector", lambda symbol, timeframe, timeout=5: provider("bybit", symbol, timeframe, timeout)),
+    ]
+    monkeypatch.setenv("CRYPTO_MARKET_DATA_PROVIDERS", "coinbase,okx,bybit")
+    monkeypatch.setenv("CRYPTO_PREFERRED_PROVIDER", "coinbase")
+    monkeypatch.setattr(connector_registry, "get_async_providers_for_asset", lambda asset_type: providers)
+    monkeypatch.setattr(fetcher, "provider_is_healthy", lambda name: name != "coinbase_connector")
+
+    candles = await fetcher.async_get_candles("BTCUSDT", "5m")
+
+    assert len(candles) == 20
+    assert attempts == ["coinbase"]
+
+
+@pytest.mark.asyncio
+async def test_gemini_429_is_fail_open_degraded(monkeypatch):
+    import urllib.error
+    from engine import core
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("GEMINI_SIGNAL_REVIEW_ENABLED", "1")
+
+    def rate_limited(*args, **kwargs):
+        raise urllib.error.HTTPError("https://example.invalid", 429, "rate limited", {}, None)
+
+    monkeypatch.setattr(core.urllib.request, "urlopen", rate_limited)
+    ok, score, reason = await core._gemini_review_signal(
+        _valid_signal(ml_probability=0.7, confidence=0.8),
+        [],
+        0.0,
+    )
+
+    assert ok is True
+    assert "ai_review_status=rate_limited_degraded" in reason
+
+
+def test_cycle_progress_and_scheduler_stagger_are_observable():
+    from pathlib import Path
+
+    core_source = Path("engine/core.py").read_text(encoding="utf-8")
+    bot_source = Path("signalrank_telegram/bot.py").read_text(encoding="utf-8")
+
+    assert "cycle_progress cycle=%s status=in_progress" in core_source
+    assert "status=completed assets=" in core_source
+    assert "OUTCOME_NOTIFICATION_START_DELAY_SECONDS" in bot_source
+    assert "RESEND_START_DELAY_SECONDS" in bot_source

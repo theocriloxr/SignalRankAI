@@ -510,7 +510,16 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
                 return _fallback()
             return (score > 8.0), score, "gemini_ok"
         except urllib.error.HTTPError as exc:
-            logger.warning("[engine] gemini review http_error=%s", getattr(exc, "code", "?"))
+            status_code = getattr(exc, "code", None)
+            if status_code == 429:
+                _local_ok, local_score, local_reason = _fallback()
+                reason = f"ai_review_status=rate_limited_degraded;{local_reason}"
+                logger.warning(
+                    "[engine] gemini review http_error=429 %s action=fail_open",
+                    reason,
+                )
+                return True, local_score, reason
+            logger.warning("[engine] gemini review http_error=%s", status_code or "?")
             return _fallback()
         except Exception as exc:
             logger.debug("[engine] gemini review failed: %s", exc)
@@ -1141,7 +1150,7 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
         min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
         since = datetime.utcnow() - _timedelta(days=days)
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             row = (
                 await session.execute(
                     text(
@@ -2256,7 +2265,7 @@ def main_loop(DRY_RUN: bool = False):
                 logger.debug(f"[engine] redis/db open-signal reconciliation failed: {_redis_reconcile_err}")
 
     # Per-asset pipeline
-            for asset in assets:
+            for _asset_index, asset in enumerate(assets, start=1):
                 # HARD_BLACKLIST check: skip zombie stablecoins
                 _norm_asset = _normalize_asset_symbol(asset)
                 if _norm_asset in HARD_BLACKLIST:
@@ -3540,6 +3549,41 @@ def main_loop(DRY_RUN: bool = False):
                 except Exception as e:
                     logger.exception(f"[engine] pipeline error for asset={asset}")
                     continue
+                finally:
+                    try:
+                        _progress_score = _diagnostic_score(max_candidate_score)
+                        _progress_absent_reason = (
+                            _infer_max_score_absent_reason(pipeline_stats, market_fetch_error)
+                            if max_candidate_score is None
+                            else ""
+                        )
+                        logger.info(
+                            "[engine] cycle_progress cycle=%s status=in_progress processed=%s/%s "
+                            "market_data_assets=%s strategy_signals=%s max_score_pre_threshold=%s "
+                            "final_signals=%s stored=%s max_score_absent_reason=%s",
+                            cycle_no,
+                            _asset_index,
+                            cycle_assets,
+                            usable_market_data_assets,
+                            pipeline_stats.get("strategy_signals", 0),
+                            _progress_score,
+                            pipeline_stats.get("final_signals", 0),
+                            pipeline_stats.get("stored", 0),
+                            _progress_absent_reason or "none",
+                        )
+                        _cycle_state.update({
+                            "status": "pipeline_in_progress",
+                            "assets_processed": int(_asset_index),
+                            "market_data_assets": int(usable_market_data_assets),
+                            "strategy_signals": int(pipeline_stats.get("strategy_signals", 0) or 0),
+                            "max_score_pre_threshold": _progress_score,
+                            "final_signals": int(pipeline_stats.get("final_signals", 0) or 0),
+                            "stored": int(pipeline_stats.get("stored", 0) or 0),
+                            "max_score_absent_reason": _progress_absent_reason or None,
+                        })
+                        _publish_engine_cycle_state(_cycle_state)
+                    except Exception:
+                        logger.debug("[engine] cycle progress checkpoint failed", exc_info=True)
 
             # DELIVERY PHASE
             delivery_mgr = TierDeliveryManager()
@@ -4081,7 +4125,7 @@ def main_loop(DRY_RUN: bool = False):
                     if score_absent_reason:
                         stats_str = f"{stats_str} max_score_absent_reason={score_absent_reason}".strip()
                     print(
-                        f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} "
+                        f"[engine] cycle={cycle_no} status=completed assets={cycle_assets} generated_signals={len(scored_signals_all)} "
                         f"max_score={top_score} max_score_pre_threshold={max_candidate_score_display} "
                         f"max_score_raw={top_score_raw} max_score_raw_pre_threshold={max_candidate_score} {stats_str}",
                         flush=True,
