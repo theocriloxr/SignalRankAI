@@ -3422,7 +3422,24 @@ def main_loop(DRY_RUN: bool = False):
                                 pipeline_stats["store_failed"] += 1
                         except Exception as e:
                             pipeline_stats["store_failed"] += 1
-                            logger.exception("store_signal failed")
+                            try:
+                                _tp = sig.get("take_profit") or sig.get("targets") or []
+                                _tp1 = _tp[0] if isinstance(_tp, (list, tuple)) and _tp else sig.get("tp1")
+                            except Exception:
+                                _tp1 = sig.get("tp1")
+                            logger.exception(
+                                "store_signal failed asset=%s direction=%s timeframe=%s score=%s fingerprint=%s entry=%s stop_loss=%s tp1=%s exception_type=%s message=%s",
+                                sig.get("asset") or sig.get("symbol"),
+                                sig.get("direction"),
+                                sig.get("timeframe"),
+                                sig.get("score"),
+                                sig.get("fingerprint") or sig.get("signal_fingerprint"),
+                                sig.get("entry"),
+                                sig.get("stop_loss") or sig.get("stop"),
+                                _tp1,
+                                type(e).__name__,
+                                str(e),
+                            )
 
                             if not final_signals:
                                 _maybe_log_heatmap(asset, cycle_no, 0)

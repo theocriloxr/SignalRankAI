@@ -200,7 +200,36 @@ _session_metrics: dict[str, int] = {
     "active": 0,
     "waiting": 0,
     "errors": 0,
+    "critical_waiting": 0,
+    "critical_active": 0,
+    "noncritical_dropped": 0,
 }
+_critical_db_lock = threading.Lock()
+_critical_db_inflight = 0
+
+
+def _truthy_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def critical_db_work_active() -> bool:
+    with _critical_db_lock:
+        return _critical_db_inflight > 0
+
+
+def _mark_critical_db_start() -> None:
+    global _critical_db_inflight
+    with _critical_db_lock:
+        _critical_db_inflight += 1
+
+
+def _mark_critical_db_end() -> None:
+    global _critical_db_inflight
+    with _critical_db_lock:
+        _critical_db_inflight = max(0, _critical_db_inflight - 1)
 
 # Backward compatibility for legacy call-sites that still import
 # `_get_global_engine` / `_global_engine` from this module.
@@ -439,53 +468,104 @@ class NoncriticalWriteDropped(RuntimeError):
 
 
 @asynccontextmanager
-async def get_session(*, noncritical: bool = False) -> AsyncIterator[AsyncSession]:
-    timeout_s = float(_pool_int("DB_SESSION_GATE_TIMEOUT_SECONDS", _pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1), minimum=1))
+async def get_session(*, noncritical: bool = False, critical: bool = False) -> AsyncIterator[AsyncSession]:
+    """Yield an async DB session with a process-wide gate.
+
+    ``critical=True`` is reserved for paths that must make forward progress
+    for the product to work, especially signal storage. While critical work is
+    waiting or active, best-effort/noncritical callers can fail fast instead of
+    consuming the scarce Railway/PgBouncer connection budget.
+    """
+    if critical and noncritical:
+        noncritical = False
+
+    base_timeout = _pool_int(
+        "DB_SESSION_GATE_TIMEOUT_SECONDS",
+        _pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+        minimum=1,
+    )
+    if critical:
+        timeout_s = float(_pool_int(
+            "DB_CRITICAL_SESSION_GATE_TIMEOUT_SECONDS",
+            _pool_int("SIGNAL_STORE_TIMEOUT_SECONDS", max(45, base_timeout), minimum=1),
+            minimum=1,
+        ))
+    else:
+        timeout_s = float(base_timeout)
+
     acquired = False
     drop_noncritical = bool(
         noncritical and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
     )
-    if drop_noncritical:
-        acquired = _session_gate.acquire(blocking=False)
-    else:
+
+    if critical:
+        _mark_critical_db_start()
         with _session_metrics_lock:
-            _session_metrics["waiting"] += 1
-        try:
-            acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
-        finally:
-            with _session_metrics_lock:
-                _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
-    if not acquired:
-        with _session_metrics_lock:
-            _session_metrics["errors"] += 1
-        if drop_noncritical:
-            raise NoncriticalWriteDropped("noncritical DB write dropped: session gate busy")
-        raise TimeoutError(
-            f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
-            "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"
-        )
-    session_local = _get_sessionmaker_for_loop(_loop_identity())
-    if session_local is None:
-        _session_gate.release()
-        raise RuntimeError("DATABASE_URL is not configured")
-    with _session_metrics_lock:
-        _session_metrics["opened"] += 1
-        _session_metrics["active"] += 1
+            _session_metrics["critical_waiting"] = int(_session_metrics.get("critical_waiting", 0) or 0) + 1
+
     try:
-        async with session_local() as session:
-            try:
-                yield session
-            except Exception:
+        if drop_noncritical:
+            # Noncritical work must never wait behind signal storage. This is
+            # especially important on Railway where pool_size=2 is intentional.
+            if critical_db_work_active() and _truthy_env("DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", True):
                 with _session_metrics_lock:
                     _session_metrics["errors"] += 1
-                raise
+                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
+                raise NoncriticalWriteDropped("noncritical DB write dropped: critical DB work active")
+            acquired = _session_gate.acquire(blocking=False)
+        else:
+            with _session_metrics_lock:
+                _session_metrics["waiting"] += 1
+            try:
+                acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
             finally:
-                await session.close()
-    finally:
+                with _session_metrics_lock:
+                    _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
+
+        if not acquired:
+            with _session_metrics_lock:
+                _session_metrics["errors"] += 1
+                if drop_noncritical:
+                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
+            if drop_noncritical:
+                raise NoncriticalWriteDropped("noncritical DB write dropped: session gate busy")
+            raise TimeoutError(
+                f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
+                "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"
+            )
+
+        session_local = _get_sessionmaker_for_loop(_loop_identity())
+        if session_local is None:
+            _session_gate.release()
+            raise RuntimeError("DATABASE_URL is not configured")
         with _session_metrics_lock:
-            _session_metrics["closed"] += 1
-            _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
-        _session_gate.release()
+            _session_metrics["opened"] += 1
+            _session_metrics["active"] += 1
+            if critical:
+                _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
+                _session_metrics["critical_active"] = int(_session_metrics.get("critical_active", 0) or 0) + 1
+        try:
+            async with session_local() as session:
+                try:
+                    yield session
+                except Exception:
+                    with _session_metrics_lock:
+                        _session_metrics["errors"] += 1
+                    raise
+                finally:
+                    await session.close()
+        finally:
+            with _session_metrics_lock:
+                _session_metrics["closed"] += 1
+                _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
+                if critical:
+                    _session_metrics["critical_active"] = max(0, int(_session_metrics.get("critical_active", 0) or 0) - 1)
+            _session_gate.release()
+    finally:
+        if critical:
+            with _session_metrics_lock:
+                _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
+            _mark_critical_db_end()
 
 
 @asynccontextmanager

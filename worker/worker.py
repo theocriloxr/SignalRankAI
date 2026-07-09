@@ -33,6 +33,14 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _env_bool_any(names: tuple[str, ...], default: bool = False) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None:
+            return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+    return bool(default)
+
+
 def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
     try:
         return max(minimum, float((os.getenv(name) or str(default)).strip()))
@@ -142,7 +150,7 @@ class Worker:
         # that detects when signals hit their targets and notifies users.
         # Default to ON in all deployments so every generated signal is tracked.
         # Override with WORKER_OUTCOME_TRACKER_ENABLED=0 to explicitly disable.
-        _enable_worker_tracker = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        _enable_worker_tracker = _env_bool_any(("WORKER_OUTCOME_TRACKER_ENABLED", "REALTIME_OUTCOME_TRACKER_ENABLED"), True)
         if _enable_worker_tracker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
@@ -151,7 +159,7 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
         # Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = str(os.getenv("WORKER_SHADOW_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        _enable_shadow = _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), True)
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
@@ -160,7 +168,7 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
         else:
-            logger.info("[worker] RealtimeOutcomeTracker disabled for this worker instance")
+            logger.info("[worker] ShadowOutcomeTracker disabled for this worker instance")
 
         # Start market monitor for NO TRADE alerts
         if config.MARKET_MONITOR_ENABLED:

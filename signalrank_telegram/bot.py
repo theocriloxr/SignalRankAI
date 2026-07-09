@@ -74,6 +74,13 @@ def resend_unsent_signals_job():
         logger.debug(f"[resend] advisory lock unavailable, continuing without lock: {_lock_err}")
 
     try:
+        try:
+            from db.session import critical_db_work_active
+            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", True):
+                logger.info("[resend] skipped: critical DB work active")
+                return
+        except Exception:
+            pass
         run_sync(_resend_unsent_signals_async())
     except Exception:
         logger.exception("[resend] resend_unsent_signals_job failed")
@@ -946,6 +953,21 @@ def _env_int(name: str, default: int) -> int:
         return int(os.getenv(name, str(default)) or default)
     except Exception:
         return int(default)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _env_bool_any(names: tuple[str, ...], default: bool = False) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None:
+            return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+    return bool(default)
 
 
 def _first_take_profit(signal: dict | None) -> float | None:
@@ -4095,13 +4117,25 @@ def distribute_random_signals_to_free_users_job():
     # The FOMO mode is for unlocking signals on VIP TP1 events, not for disabling
     # the regular queue distribution.
 
+    if not _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
+        logger.info("[free_distribution] disabled by env")
+        return
+
+    try:
+        from db.session import critical_db_work_active
+        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+            logger.info("[free_distribution] skipped: critical DB work active")
+            return
+    except Exception:
+        pass
+
     logger.info("🎲 Distributing random signals to FREE users...")
     try:
         from db.session import get_session
         from db.pg_features import queue_random_free_signals_for_all_users
 
         async def _do_distribute():
-            async with get_session() as session:
+            async with get_session(noncritical=True) as session:
                 count = await queue_random_free_signals_for_all_users(session)
                 if count > 0:
                     logger.info(f"📬 Queued signals for {count} FREE user(s)")
@@ -5337,6 +5371,16 @@ def run_bot() -> None:
 
     # Initialize and schedule jobs
     def send_outcome_notifications():
+        if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
+            logger.info("[outcome_notify] disabled by env")
+            return
+        try:
+            from db.session import critical_db_work_active
+            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+                logger.info("[outcome_notify] skipped: critical DB work active")
+                return
+        except Exception:
+            pass
         # Send outcome notifications only once per outcome (notified_at tracks this).
         # Fetches unnotified outcomes and sends them to all users who received the signal.
         # Once sent and marked as notified, the outcome will never be resent.
@@ -5356,7 +5400,7 @@ def run_bot() -> None:
             from datetime import datetime
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
-                async with get_session() as session:
+                async with get_session(noncritical=True) as session:
                     rows = await list_unnotified_outcomes(session, limit=50)
                     out = []
                     for oc, sig in rows:
@@ -7477,7 +7521,7 @@ def run_bot() -> None:
         ).strip().lower() in {"1", "true", "yes", "on"}
         _outcome_start_delay_seconds = max(
             30,
-            int(os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "60") or 60),
+            int(os.getenv("OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS", os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "90")) or 90),
         )
         _outcome_first_run = datetime.utcnow() + timedelta(seconds=_outcome_start_delay_seconds)
 
@@ -7709,7 +7753,7 @@ def run_bot() -> None:
         )
         resend_start_delay_seconds = max(
             _outcome_start_delay_seconds + 30,
-            int(os.getenv("RESEND_START_DELAY_SECONDS", "120") or 120),
+            int(os.getenv("RESEND_UNSENT_STARTUP_DELAY_SECONDS", os.getenv("RESEND_START_DELAY_SECONDS", "30")) or 30),
         )
         scheduler.add_job(
             resend_unsent_signals_job,
@@ -7723,17 +7767,25 @@ def run_bot() -> None:
             jobstore=_sa,
             next_run_time=datetime.utcnow() + timedelta(seconds=resend_start_delay_seconds),
         )
-        scheduler.add_job(
-            distribute_random_signals_to_free_users_job,
-            'interval',
-            minutes=15,
-            id='distribute_random_signals_to_free_users_job',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=120,
-            jobstore=_sa,
-        )
+        if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
+            free_start_delay_seconds = max(
+                resend_start_delay_seconds + 60,
+                int(os.getenv("FREE_DISTRIBUTION_STARTUP_DELAY_SECONDS", "150") or 150),
+            )
+            scheduler.add_job(
+                distribute_random_signals_to_free_users_job,
+                'interval',
+                minutes=15,
+                id='distribute_random_signals_to_free_users_job',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=120,
+                jobstore=_sa,
+                next_run_time=datetime.utcnow() + timedelta(seconds=free_start_delay_seconds),
+            )
+        else:
+            logger.info("[sched] distribute_random_signals_to_free_users_job disabled by env")
         scheduler.add_job(
             downgrade_expired_subscriptions_job,
             'cron',
