@@ -1121,22 +1121,61 @@ async def _is_asset_delivery_locked(
     telegram_user_id: int,
     asset: str,
     lock_hours: int | None = None,
+    *,
+    current_signal_id: str | None = None,
 ) -> bool:
+    """Return whether this user should be blocked from another signal for `asset`.
+
+    Production note: the dispatch path reserves a SignalDelivery row before the
+    Telegram send. Without excluding the current signal / ignoring unsent rows,
+    that reservation can lock itself and produce `Creating new delivery` followed
+    by `skipped duplicate asset due to lock`, which means no Telegram message is
+    actually sent. These env guards keep the anti-spam lock useful without
+    blocking owner verification or the same in-flight delivery.
+    """
     try:
         from datetime import datetime, timedelta
-        from sqlalchemy import and_, func, or_, select
+        from sqlalchemy import and_, func, not_, or_, select
         from db.session import get_session
         from db.models import Outcome, Signal, SignalDelivery, User
         from services.asset_position_manager import get_user_asset_position_state
 
+        def _env_true(name: str, default: str = "0") -> bool:
+            return str(os.getenv(name, default) or default).strip().lower() in {"1", "true", "yes", "on"}
+
         symbol = str(asset or "").upper().strip()
         if not symbol:
             return False
+
+        # Owner/admin emergency bypass is intentionally checked before the
+        # position-manager lock so production verification cannot be blocked by
+        # stale historical rows.
+        if _env_true("OWNER_DELIVERY_BYPASS_ASSET_LOCK") or _env_true("DELIVERY_ASSET_LOCK_FAIL_OPEN_FOR_OWNER"):
+            try:
+                from config import ADMIN_IDS, OWNER_IDS
+                privileged = {int(x) for x in (OWNER_IDS or set())} | {int(x) for x in (ADMIN_IDS or set())}
+                if int(telegram_user_id) in privileged:
+                    logger.info(
+                        f"[asset_lock] owner/admin bypass user={telegram_user_id} asset={symbol} "
+                        f"signal={current_signal_id or ''}"
+                    )
+                    return False
+            except Exception:
+                pass
+
         hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
-        hours = max(12, hours)
+        # Let Railway env shorten the lock during verification. 12h remains the
+        # recommended production value, but do not force it here.
+        hours = max(0, hours)
         if hours <= 0:
             return False
         cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        require_sent_ok = _env_true("DELIVERY_ASSET_LOCK_REQUIRE_SENT_OK", "1")
+        ignore_unsent = _env_true("DELIVERY_ASSET_LOCK_IGNORE_UNSENT", "1")
+        stale_minutes = int(os.getenv("DELIVERY_ASSET_LOCK_IGNORE_STALE_MINUTES", "180") or 180)
+        stale_cutoff = datetime.utcnow() - timedelta(minutes=max(1, stale_minutes))
+        current_signal_id = str(current_signal_id or "").strip() or None
 
         async with get_session() as session:
             user = (
@@ -1149,18 +1188,55 @@ async def _is_asset_delivery_locked(
                 return False
 
             try:
-                state_row = await get_user_asset_position_state(
-                    session,
-                    telegram_user_id=int(telegram_user_id),
-                    asset=symbol,
-                    cooldown_hours=float(hours),
-                    unresolved_block_hours=float(os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS", "168") or 168),
-                )
-                if state_row.is_locked:
-                    await session.commit()
-                    return True
+                # Skip the heavier position-manager lock while doing sent-ok-only
+                # delivery lock verification. Otherwise stale undelivered active
+                # positions can still block the first real Telegram send.
+                if not require_sent_ok:
+                    state_row = await get_user_asset_position_state(
+                        session,
+                        telegram_user_id=int(telegram_user_id),
+                        asset=symbol,
+                        cooldown_hours=float(hours),
+                        unresolved_block_hours=float(os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS", "168") or 168),
+                    )
+                    if state_row.is_locked:
+                        await session.commit()
+                        return True
             except Exception:
                 pass
+
+            filters = [
+                SignalDelivery.user_id == user.id,
+                SignalDelivery.delivered_at >= cutoff,
+                func.upper(Signal.asset) == symbol,
+                Signal.archived == False,
+                Signal.expired == False,
+            ]
+            if current_signal_id:
+                filters.append(Signal.signal_id != current_signal_id)
+            if require_sent_ok:
+                filters.append(SignalDelivery.sent_ok.is_(True))
+            elif ignore_unsent:
+                filters.append(
+                    or_(
+                        SignalDelivery.sent_ok.is_(True),
+                        and_(
+                            SignalDelivery.sent_ok.is_(False),
+                            SignalDelivery.last_error.isnot(None),
+                        ),
+                    )
+                )
+            else:
+                filters.append(
+                    or_(
+                        SignalDelivery.sent_ok.is_(True),
+                        and_(
+                            SignalDelivery.sent_ok.is_(False),
+                            SignalDelivery.last_error.is_(None),
+                            SignalDelivery.delivered_at >= stale_cutoff,
+                        ),
+                    )
+                )
 
             locked_count = (
                 await session.execute(
@@ -1168,24 +1244,17 @@ async def _is_asset_delivery_locked(
                     .select_from(SignalDelivery)
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                     .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
-                    .where(
-                        SignalDelivery.user_id == user.id,
-                        or_(
-                            SignalDelivery.sent_ok.is_(True),
-                            and_(
-                                SignalDelivery.sent_ok.is_(False),
-                                SignalDelivery.last_error.is_(None),
-                            ),
-                        ),
-                        SignalDelivery.delivered_at >= cutoff,
-                        func.upper(Signal.asset) == symbol,
-                        Signal.archived == False,
-                        Signal.expired == False,
-                    )
+                    .where(*filters)
                 )
             ).scalar_one()
             await session.commit()
-            return int(locked_count or 0) > 0
+            locked = int(locked_count or 0) > 0
+            if locked:
+                logger.info(
+                    f"[asset_lock] locked user={telegram_user_id} asset={symbol} count={int(locked_count or 0)} "
+                    f"require_sent_ok={require_sent_ok} ignore_unsent={ignore_unsent} signal={current_signal_id or ''}"
+                )
+            return locked
     except Exception as exc:
         logger.debug(f"[asset_lock] check failed for user={telegram_user_id} asset={asset}: {exc}")
         return False
@@ -1581,7 +1650,7 @@ async def _deliver_or_update_signal_async(
 
     try:
         signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-        if signal_asset and await _is_asset_delivery_locked(int(telegram_user_id), signal_asset):
+        if signal_asset and await _is_asset_delivery_locked(int(telegram_user_id), signal_asset, current_signal_id=signal_id or str(signal.get('id') or '')):
             logger.info(
                 f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
                 f"asset={signal_asset} signal={signal_id or signal.get('id')}"
@@ -3509,6 +3578,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             if await _is_asset_delivery_locked(
                                 int(user_id),
                                 str(signal.get('asset') or signal.get('symbol') or ''),
+                                current_signal_id=str(signal.get('signal_id') or signal.get('id') or ''),
                             ):
                                 logger.debug(
                                     f"[dispatch] asset lock skip user={user_id} "
