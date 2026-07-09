@@ -412,9 +412,9 @@ def _apply_score_soft_cap(raw_score: float) -> tuple[float, bool]:
         capped = min(raw_score, 100.0)
         return capped, raw_score > 100.0
 
-    knee = max(50.0, min(_env_float("SCORE_SOFT_CAP_KNEE", 95.0), 99.0))
-    ceiling = max(knee + 0.1, min(_env_float("SCORE_SOFT_CAP_CEILING", 99.5), 100.0))
-    scale = max(1.0, _env_float("SCORE_SOFT_CAP_SCALE", 50.0))
+    knee = max(50.0, min(_env_float("SCORE_SOFT_CAP_KNEE", 90.0), 99.0))
+    ceiling = max(knee + 0.1, min(_env_float("SCORE_SOFT_CAP_CEILING", 97.0), 100.0))
+    scale = max(1.0, _env_float("SCORE_SOFT_CAP_SCALE", 25.0))
     if raw_score <= knee:
         return raw_score, False
 

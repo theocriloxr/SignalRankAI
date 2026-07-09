@@ -73,9 +73,9 @@ def _soft_cap_score(raw_score: float) -> float:
     if not math.isfinite(raw_score):
         return 0.0
     raw_score = max(0.0, raw_score)
-    knee = max(50.0, min(_safe_float(os.getenv("SCORE_SOFT_CAP_KNEE")) or 95.0, 99.0))
-    ceiling = max(knee + 0.1, min(_safe_float(os.getenv("SCORE_SOFT_CAP_CEILING")) or 99.5, 100.0))
-    scale = max(1.0, _safe_float(os.getenv("SCORE_SOFT_CAP_SCALE")) or 50.0)
+    knee = max(50.0, min(_safe_float(os.getenv("SCORE_SOFT_CAP_KNEE")) or 90.0, 99.0))
+    ceiling = max(knee + 0.1, min(_safe_float(os.getenv("SCORE_SOFT_CAP_CEILING")) or 97.0, 100.0))
+    scale = max(1.0, _safe_float(os.getenv("SCORE_SOFT_CAP_SCALE")) or 25.0)
     if raw_score <= knee:
         return raw_score
     return min(knee + ((ceiling - knee) * (1.0 - math.exp(-(raw_score - knee) / scale))), ceiling)

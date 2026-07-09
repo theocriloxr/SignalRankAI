@@ -28,6 +28,14 @@ from datetime import datetime, timedelta as _timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
+# Gemini signal-review circuit breaker. Railway logs showed repeated 429s
+# causing many slow per-signal HTTP attempts. These process-wide guards keep
+# the engine fast by degrading to local AI review for a cooldown window.
+_GEMINI_REVIEW_LOCK = threading.Lock()
+_GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
+_GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
+_GEMINI_REVIEW_WINDOW_CALLS = 0
+
 # Hard blacklist for zombie stablecoins that persist in database
 # These have minimal volatility and should never be traded
 HARD_BLACKLIST = {
@@ -444,6 +452,30 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
         return _fallback()
 
     model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
+
+    # Fast degradation guard. If Gemini is rate-limited or over per-window
+    # budget, skip the external HTTP call and use deterministic local review.
+    # This prevents a full engine cycle from taking many minutes while signals
+    # become stale.
+    global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_REVIEW_WINDOW_STARTED_MONO, _GEMINI_REVIEW_WINDOW_CALLS
+    if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+        now_mono = time.monotonic()
+        with _GEMINI_REVIEW_LOCK:
+            until = float(_GEMINI_RATE_LIMIT_UNTIL_MONO or 0.0)
+            if until and now_mono < until:
+                ok, score, reason = _fallback()
+                return ok, score, f"ai_review_status=rate_limited_circuit_open;{reason}"
+
+            window_s = max(10, _env_int("GEMINI_SIGNAL_REVIEW_WINDOW_SECONDS", 60))
+            max_calls = max(0, _env_int("GEMINI_SIGNAL_REVIEW_MAX_CALLS_PER_WINDOW", 6))
+            if not _GEMINI_REVIEW_WINDOW_STARTED_MONO or (now_mono - _GEMINI_REVIEW_WINDOW_STARTED_MONO) > window_s:
+                _GEMINI_REVIEW_WINDOW_STARTED_MONO = now_mono
+                _GEMINI_REVIEW_WINDOW_CALLS = 0
+            if max_calls == 0 or _GEMINI_REVIEW_WINDOW_CALLS >= max_calls:
+                ok, score, reason = _fallback()
+                return ok, score, f"ai_review_status=budget_degraded;{reason}"
+            _GEMINI_REVIEW_WINDOW_CALLS += 1
+
     payload = {
         "prompt": "Review this trade. Is this a high-probability institutional move or a retail trap? Rate 1-10. Only approve if > 8.",
         "technical_signal": {
@@ -481,7 +513,7 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/json")
         try:
-            timeout_s = max(3, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "10") or 10))
+            timeout_s = max(2, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "4") or 4))
             with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                 raw = resp.read().decode("utf-8", errors="ignore")
             lower = raw.lower()
@@ -512,6 +544,13 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
         except urllib.error.HTTPError as exc:
             status_code = getattr(exc, "code", None)
             if status_code == 429:
+                if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+                    try:
+                        cooldown_s = max(30, _env_int("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", 900))
+                        with _GEMINI_REVIEW_LOCK:
+                            _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
+                    except Exception:
+                        pass
                 _local_ok, local_score, local_reason = _fallback()
                 reason = f"ai_review_status=rate_limited_degraded;{local_reason}"
                 logger.warning(
@@ -1436,7 +1475,14 @@ def _normalize_asset_symbol(symbol: str) -> str:
 
 
 def _enabled_asset_classes() -> set[str]:
-    """Resolve runtime asset-class gates without changing the default universe."""
+    """Resolve runtime asset-class gates without changing the default universe.
+
+    ALL_ASSET_MODE=1 intentionally overrides CRYPTO_ONLY_MODE so Railway envs
+    can move out of verification mode without requiring a risky delete/reorder
+    of old variables.
+    """
+    if _env_bool("ALL_ASSET_MODE", False):
+        return {"crypto", "fx", "stock", "index", "commodity"}
     if _env_bool("CRYPTO_ONLY_MODE", False):
         return {"crypto"}
     raw = (os.getenv("ASSET_CLASSES_ENABLED") or "").strip()
@@ -3143,7 +3189,7 @@ def main_loop(DRY_RUN: bool = False):
                                         candles if isinstance(candles, list) else [],
                                         float(sig.get('news_sentiment') or 0.0) if sig.get('news_sentiment') is not None else None,
                                     ),
-                                    timeout=20.0,
+                                    timeout=max(3.0, _env_float("GEMINI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC", 6.0)),
                                 )
                                 sig['gemini_review_score'] = gemini_score
                                 sig['gemini_review_reason'] = gemini_reason
@@ -3206,31 +3252,51 @@ def main_loop(DRY_RUN: bool = False):
                     # One query for all (asset, timeframe) pairs in this batch instead of
                     # one query per signal inside the loop.  Builds a set of "cooled-down"
                     # keys so the loop only does an O(1) set-lookup per signal.
-                    _cd_mins = _env_int("SIGNAL_COOLDOWN_MINUTES", 30)
+                    _cd_mins = max(1, _env_int("SIGNAL_COOLDOWN_MINUTES", 30))
                     _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
-                    _asset_cd_hours = max(12, _env_int("ASSET_REPEAT_LOCK_HOURS", 12))
+                    _asset_cd_hours = max(1, _env_int("ASSET_REPEAT_LOCK_HOURS", 12))
                     _asset_cd_cutoff = datetime.utcnow() - _timedelta(hours=_asset_cd_hours)
                     _cooled_down_pairs: set[str] = set()
                     _cooled_down_assets: set[str] = set()
                     try:
                         from db.session import get_session as _get_s_cd
                         from db.models import Signal as _SigModel
-                        from sqlalchemy import select as _sel_cd
+                        from sqlalchemy import select as _sel_cd, or_ as _or_cd, exists as _exists_cd
 
                         async def _batch_cooldown_check() -> tuple[set[str], set[str]]:
+                            now_cd = datetime.utcnow()
+                            base_filters = [
+                                _SigModel.expired.is_(False),
+                                _SigModel.archived.is_(False),
+                            ]
+                            # Do not let rows whose expires_at has passed keep blocking new
+                            # signals forever if the expiration job has not archived them yet.
+                            if _env_bool("ACTIVE_SIGNAL_COOLDOWN_IGNORE_EXPIRED_BY_TIME", True):
+                                base_filters.append(_or_cd(_SigModel.expires_at.is_(None), _SigModel.expires_at >= now_cd))
+
+                            # Production-safe default: only DELIVERED signals block repeats.
+                            # Undelivered/reserved/formatter_failed/stale rows should not starve
+                            # the engine and produce final_signals>0 but stored=0 forever.
+                            if _env_bool("ASSET_REPEAT_LOCK_REQUIRE_DELIVERED", True):
+                                from db.models import SignalDelivery as _SigDelivery
+                                delivered_exists = _exists_cd().where(
+                                    _SigDelivery.signal_id == _SigModel.signal_id,
+                                    _SigDelivery.sent_ok.is_(True),
+                                    _SigDelivery.delivery_state.in_(("sent", "delivered", "confirmed")),
+                                )
+                                base_filters.append(delivered_exists)
+
                             async with _get_s_cd() as _cs:
                                 rows = (await _cs.execute(
                                     _sel_cd(_SigModel.asset, _SigModel.timeframe).where(
                                         _SigModel.created_at >= _cd_cutoff,
-                                        _SigModel.expired.is_(False),
-                                        _SigModel.archived.is_(False),
+                                        *base_filters,
                                     ).distinct()
                                 )).fetchall()
                                 asset_rows = (await _cs.execute(
                                     _sel_cd(_SigModel.asset).where(
                                         _SigModel.created_at >= _asset_cd_cutoff,
-                                        _SigModel.expired.is_(False),
-                                        _SigModel.archived.is_(False),
+                                        *base_filters,
                                     ).distinct()
                                 )).fetchall()
                                 return (
@@ -3238,9 +3304,21 @@ def main_loop(DRY_RUN: bool = False):
                                     {str(r[0] or "").upper().strip() for r in asset_rows if r[0]},
                                 )
 
-                        _cooled_down_pairs, _cooled_down_assets = run_sync(_batch_cooldown_check(), timeout=15.0)
+                        _cooled_down_pairs, _cooled_down_assets = run_sync(
+                            _batch_cooldown_check(),
+                            timeout=max(5.0, _env_float("COOLDOWN_PREFLIGHT_TIMEOUT_SECONDS", 15.0)),
+                        )
+                        logger.info(
+                            "[engine] cooldown precheck pairs=%s assets=%s require_delivered=%s asset_lock_h=%s",
+                            len(_cooled_down_pairs),
+                            len(_cooled_down_assets),
+                            _env_bool("ASSET_REPEAT_LOCK_REQUIRE_DELIVERED", True),
+                            _asset_cd_hours,
+                        )
                     except Exception as _bcd_err:
-                        logger.debug(f"[engine] batch cooldown pre-check failed, falling back to per-signal: {_bcd_err}")
+                        logger.debug(f"[engine] batch cooldown pre-check failed, failing open: {_bcd_err}")
+                        if _env_bool("COOLDOWN_PREFLIGHT_FAIL_OPEN", True):
+                            _cooled_down_pairs, _cooled_down_assets = set(), set()
 
                     stored_signals: list[dict] = []
                     for sig in final_signals:
