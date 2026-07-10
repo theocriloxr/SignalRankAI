@@ -898,6 +898,20 @@ def _telegram_chat_lock(chat_id: int):
         return lock
 
 
+def _env_float_local(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
+def _env_true_local(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
 async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, **kwargs):
     """Send one Telegram message with per-chat serialization and RetryAfter backoff."""
     import asyncio
@@ -926,7 +940,11 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
             try:
                 if global_delay > 0:
                     await asyncio.sleep(global_delay)
-                return await bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **kwargs)
+                send_timeout = max(3.0, _env_float_local("TELEGRAM_SEND_TIMEOUT_SECONDS", 10.0))
+                return await asyncio.wait_for(
+                    bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **kwargs),
+                    timeout=send_timeout,
+                )
             except RetryAfter as exc:
                 retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
                 logger.warning(
@@ -1523,7 +1541,7 @@ async def _deliver_or_update_signal_async(
         from sqlalchemy import select
         from datetime import datetime, timezone
 
-        async with get_session() as _tz_session:
+        async with get_session(noncritical=True) as _tz_session:
             _tz_user = (await _tz_session.execute(
                 select(User).where(User.telegram_user_id == int(telegram_user_id))
             )).scalar_one_or_none()
@@ -1537,7 +1555,8 @@ async def _deliver_or_update_signal_async(
                 already_prompted = await state.cache_get(reminder_key)
                 if not already_prompted:
                     from signalrank_telegram.commands import _timezone_location_keyboard
-                    await bot.send_message(
+                    await _telegram_send_message_guarded(
+                        bot,
                         chat_id=int(telegram_user_id),
                         text=(
                             f"Travel mode is on. Your saved timezone is "
@@ -1561,36 +1580,61 @@ async def _deliver_or_update_signal_async(
             _cached_live_price = float(_raw_price) if _raw_price is not None else None
         except Exception:
             _cached_live_price = None
-        freshness = await validate_delivery_freshness(
-            signal,
-            user_profile=signal.get("trade_profile"),
-            cached_live_price=_cached_live_price,
-        )
-        if not freshness.ok:
-            logger.info(
-                "[delivery] blocked stale signal user=%s signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
-                telegram_user_id,
-                signal_id or signal.get("id"),
-                signal.get("asset") or signal.get("symbol"),
-                signal.get("timeframe"),
-                freshness.reason,
-                float(freshness.age_minutes or 0.0),
-                float(freshness.max_age_minutes or 0.0),
-                float(freshness.opportunity_remaining_pct or 0.0),
+        try:
+            freshness = await asyncio.wait_for(
+                validate_delivery_freshness(
+                    signal,
+                    user_profile=signal.get("trade_profile"),
+                    cached_live_price=_cached_live_price,
+                ),
+                timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 4.0)),
             )
-            return None
-        if freshness.live_price is not None:
-            signal["current_price"] = float(freshness.live_price)
-            signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
+        except asyncio.TimeoutError:
+            if _env_true_local("DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN", True):
+                logger.warning(
+                    "[delivery] freshness timeout fail-open user=%s signal=%s asset=%s",
+                    telegram_user_id,
+                    signal_id or signal.get("id"),
+                    signal.get("asset") or signal.get("symbol"),
+                )
+                freshness = None
+            else:
+                logger.info(
+                    "[delivery] blocked freshness timeout user=%s signal=%s asset=%s",
+                    telegram_user_id,
+                    signal_id or signal.get("id"),
+                    signal.get("asset") or signal.get("symbol"),
+                )
+                return None
+        if freshness is not None:
+            if not freshness.ok:
+                logger.info(
+                    "[delivery] blocked stale signal user=%s signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    telegram_user_id,
+                    signal_id or signal.get("id"),
+                    signal.get("asset") or signal.get("symbol"),
+                    signal.get("timeframe"),
+                    freshness.reason,
+                    float(freshness.age_minutes or 0.0),
+                    float(freshness.max_age_minutes or 0.0),
+                    float(freshness.opportunity_remaining_pct or 0.0),
+                )
+                return None
+            if freshness.live_price is not None:
+                signal["current_price"] = float(freshness.live_price)
+                signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
     except Exception as exc:
-        logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
-        return None
+        if _env_true_local("DELIVERY_FRESHNESS_ERROR_FAIL_OPEN", True):
+            logger.warning("[delivery] freshness gate error fail-open user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
+        else:
+            logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
+            return None
 
     text = format_signal(signal, display_tier=display_tier)
     if not text or not str(text).strip():
         return None
 
-    if signal_id:
+    if signal_id and _env_true_local("DELIVERY_SIGNAL_UPDATE_ENABLED", False):
         editable = await _find_editable_signal_message(int(telegram_user_id), signal)
         if editable is not None:
             try:
@@ -1605,12 +1649,15 @@ async def _deliver_or_update_signal_async(
 
                 counts = await _load_signal_engagement_counts(signal_id)
                 keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
-                edited_msg = await bot.edit_message_text(
-                    chat_id=int(editable["chat_id"]),
-                    message_id=int(editable["message_id"]),
-                    text=text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard,
+                edited_msg = await asyncio.wait_for(
+                    bot.edit_message_text(
+                        chat_id=int(editable["chat_id"]),
+                        message_id=int(editable["message_id"]),
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=keyboard,
+                    ),
+                    timeout=max(3.0, _env_float_local("TELEGRAM_EDIT_TIMEOUT_SECONDS", 8.0)),
                 )
 
                 await _mark_signal_message_updated(
@@ -1650,22 +1697,45 @@ async def _deliver_or_update_signal_async(
 
     try:
         signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-        if signal_asset and await _is_asset_delivery_locked(int(telegram_user_id), signal_asset, current_signal_id=signal_id or str(signal.get('id') or '')):
-            logger.info(
-                f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
-                f"asset={signal_asset} signal={signal_id or signal.get('id')}"
-            )
-            return None
+        if signal_asset:
+            _asset_lock_timeout = max(0.5, _env_float_local("DELIVERY_ASSET_LOCK_TIMEOUT_SECONDS", 2.0))
+            try:
+                _locked = await asyncio.wait_for(
+                    _is_asset_delivery_locked(
+                        int(telegram_user_id),
+                        signal_asset,
+                        current_signal_id=signal_id or str(signal.get('id') or ''),
+                    ),
+                    timeout=_asset_lock_timeout,
+                )
+            except asyncio.TimeoutError:
+                _locked = False
+                logger.warning(
+                    "[asset_lock] pre-send timeout fail-open user=%s asset=%s signal=%s timeout=%.1fs",
+                    telegram_user_id,
+                    signal_asset,
+                    signal_id or signal.get('id'),
+                    _asset_lock_timeout,
+                )
+            if _locked:
+                logger.info(
+                    f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
+                    f"asset={signal_asset} signal={signal_id or signal.get('id')}"
+                )
+                return None
     except Exception as exc:
         logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
 
-    sent_msg = await _send_signal_with_engagement_async(
-        bot,
-        chat_id=int(telegram_user_id),
-        text=str(text),
-        signal_id=signal_id or str(signal.get("id") or ""),
-        telegram_user_id=int(telegram_user_id),
-        signal=signal,
+    sent_msg = await asyncio.wait_for(
+        _send_signal_with_engagement_async(
+            bot,
+            chat_id=int(telegram_user_id),
+            text=str(text),
+            signal_id=signal_id or str(signal.get("id") or ""),
+            telegram_user_id=int(telegram_user_id),
+            signal=signal,
+        ),
+        timeout=max(3.0, _env_float_local("DELIVERY_SEND_TIMEOUT_SECONDS", 12.0)),
     )
     return {
         "mode": "sent",
@@ -1712,28 +1782,57 @@ async def _mark_delivery_with_telegram_proof(
     error: str | None = None,
     delivery_state: str | None = None,
 ) -> bool:
-    """Persist Telegram delivery state; success requires a Telegram chat/message ack."""
+    """Persist Telegram delivery state; success requires a Telegram chat/message ack.
+
+    This path is critical after Telegram already accepted a message: if the DB
+    proof write is left pending/unsent, the resend and asset-lock logic can
+    become confused. Bound it with its own timeout and use critical session
+    priority so proof updates don't sit behind outcome/background work.
+    """
     from db.session import get_session
     from db.pg_features import mark_signal_delivery_result
 
-    proof_d = dict(proof or {})
-    chat_id = proof_d.get("chat_id")
-    message_id = proof_d.get("message_id")
-    has_ack = chat_id is not None and message_id is not None
-    async with get_session() as db_session:
-        ok = await mark_signal_delivery_result(
-            db_session,
-            telegram_user_id=int(telegram_user_id),
-            signal_id=str(signal_id),
-            sent_ok=bool(has_ack and not error),
-            error=None if has_ack and not error else str(error or "delivery_not_confirmed"),
-            telegram_chat_id=int(chat_id) if chat_id is not None else None,
-            telegram_message_id=int(message_id) if message_id is not None else None,
-            telegram_api_result=proof_d,
-            delivery_state=str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+    async def _write_proof() -> bool:
+        proof_d = dict(proof or {})
+        chat_id = proof_d.get("chat_id")
+        message_id = proof_d.get("message_id")
+        has_ack = chat_id is not None and message_id is not None
+        async with get_session(critical=True) as db_session:
+            ok = await mark_signal_delivery_result(
+                db_session,
+                telegram_user_id=int(telegram_user_id),
+                signal_id=str(signal_id),
+                sent_ok=bool(has_ack and not error),
+                error=None if has_ack and not error else str(error or "delivery_not_confirmed"),
+                telegram_chat_id=int(chat_id) if chat_id is not None else None,
+                telegram_message_id=int(message_id) if message_id is not None else None,
+                telegram_api_result=proof_d,
+                delivery_state=str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+            )
+            await db_session.commit()
+            return bool(ok and has_ack and not error)
+
+    try:
+        return bool(await asyncio.wait_for(
+            _write_proof(),
+            timeout=max(2.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 10.0)),
+        ))
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[delivery] proof write timeout user=%s signal=%s timeout=%.1fs",
+            telegram_user_id,
+            signal_id,
+            max(2.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 10.0)),
         )
-        await db_session.commit()
-        return bool(ok and has_ack and not error)
+        return False
+    except Exception as exc:
+        logger.warning(
+            "[delivery] proof write failed user=%s signal=%s err=%s",
+            telegram_user_id,
+            signal_id,
+            exc,
+        )
+        return False
 
 
 def _record_mt5_execution_sync(
@@ -2466,7 +2565,7 @@ async def _send_signal_with_engagement_async(
             from sqlalchemy import select
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             global _vip_webhook_client
-            async with get_session() as session:
+            async with get_session(noncritical=True) as session:
                 user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
                 stmt = pg_insert(ActiveSignalMessage).values(
                     user_id=user.id,
@@ -2489,7 +2588,7 @@ async def _send_signal_with_engagement_async(
                             )
                         )
                     ).scalars().first()
-                    if wh_row and signal:
+                    if _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False) and wh_row and signal:
                         if _vip_webhook_client is None:
                             _vip_webhook_client = httpx.AsyncClient(timeout=8)
                         payload = {
@@ -3554,7 +3653,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     from core.tier_constants import TIER_DAILY_LIMITS
 
                     to_send: list[dict] = []
-                    async with get_session() as session:
+                    async with get_session(critical=True) as session:
                         daily_limit = TIER_DAILY_LIMITS.get(
                             str(effective_tier),
                             TIER_DAILY_LIMITS.get("free", 3),
@@ -3612,7 +3711,10 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     return to_send
 
                 try:
-                    reserved = await _reserve()
+                    reserved = await asyncio.wait_for(
+                        _reserve(),
+                        timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_TIMEOUT_SECONDS", 8.0)),
+                    )
                     reserve_failed = False
                 except Exception as e:
                     reserved = []
@@ -3633,7 +3735,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     async def _reserve_one(_signal: dict) -> dict | None:
                         from db.pg_features import get_or_create_signal, record_signal_delivery
 
-                        async with get_session() as session:
+                        async with get_session(critical=True) as session:
                             s = await get_or_create_signal(session, _signal)
                             ok = await record_signal_delivery(
                                 session,
@@ -3665,7 +3767,10 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             break
                         reserved_signal = None
                         try:
-                            reserved_signal = await _reserve_one(signal)
+                            reserved_signal = await asyncio.wait_for(
+                                _reserve_one(signal),
+                                timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 8.0)),
+                            )
                             if not reserved_signal:
                                 logger.debug(
                                     "[dispatch] Fallback dedupe skip: user=%s signal=%s",

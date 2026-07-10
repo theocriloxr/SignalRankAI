@@ -273,7 +273,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         from sqlalchemy import select, or_
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             stmt = (
                 select(Signal, Outcome, SignalLifecycle)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
@@ -332,7 +332,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
             return []
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             stmt = (
                 select(Signal)
                 .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
@@ -613,7 +613,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         try:
             from db.session import get_session
             from sqlalchemy import select
-            async with get_session() as _session:
+            async with get_session(noncritical=True) as _session:
                 result = await _session.execute(
                     select(Signal).where(Signal.signal_id == signal_id)
                 )
@@ -671,7 +671,7 @@ async def _persist_outcome(signal_id: str, status: str, entry: float, price: flo
         except Exception:
             pass
 
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             excursion = dict(_EXCURSION_CACHE.get(str(signal_id), {}))
             outcome_meta = {
                 "close_price": float(price),
@@ -788,7 +788,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             return
         bot = Bot(token=bot_token)
 
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -979,7 +979,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             return
         bot = Bot(token=bot_token)
 
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             stale_claim_seconds = max(
                 60,
                 int(os.getenv("OUTCOME_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300),
@@ -1126,7 +1126,7 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             return
         bot = Bot(token=bot_token)
 
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -1168,7 +1168,7 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.session import get_session
         from db.models import Trade
         from sqlalchemy import update as sa_update
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             await session.execute(
                 sa_update(Trade)
                 .where(Trade.signal_id == signal_id)
@@ -1186,7 +1186,7 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.models import Trade, User
         from sqlalchemy import select, join
         from services.mt5_client import update_stop_loss, get_user_mt5_account_id
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             stmt = (
                 select(Trade, User)
                 .join(User, Trade.symbol == User.telegram_user_id.cast(str))
@@ -1286,7 +1286,7 @@ class RealtimeOutcomeTracker:
                     from db.session import get_session
                     from db.models import SignalDelivery, User
                     from sqlalchemy import select
-                    async with get_session() as session:
+                    async with get_session(noncritical=True) as session:
                         rows = await session.execute(
                             select(User.telegram_user_id)
                             .join(SignalDelivery, SignalDelivery.user_id == User.id)
@@ -1319,7 +1319,7 @@ class RealtimeOutcomeTracker:
             try:
                 from db.session import get_session
                 from db.pg_features import get_user_performance_30d
-                async with get_session() as session:
+                async with get_session(noncritical=True) as session:
                     for user_id in updated_users:
                         try:
                             perf = await get_user_performance_30d(session, int(user_id))

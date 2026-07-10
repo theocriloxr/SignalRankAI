@@ -284,7 +284,7 @@ class Worker:
             try:
                 if is_db_configured():
                     async def _do_expire() -> None:
-                        async with get_session() as session:
+                        async with get_session(noncritical=True) as session:
                             _ = await expire_subscriptions(session)
                             await session.commit()
                     await run_with_db_retry(_do_expire)

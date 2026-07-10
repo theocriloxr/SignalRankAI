@@ -1474,6 +1474,27 @@ def _normalize_asset_symbol(symbol: str) -> str:
     return s
 
 
+def _env_asset_blacklist() -> set[str]:
+    """Operator-controlled blacklist applied before cycle queue refresh.
+
+    Railway logs showed noisy symbols (USDTARS/USDTIDR/DOGEIDR/index proxies)
+    consuming batch slots and provider calls even after class-level tuning. Keep
+    this lightweight and deterministic: comma-separated, case-insensitive, and
+    normalized through _normalize_asset_symbol.
+    """
+    raw = os.getenv("ASSET_BLACKLIST") or os.getenv("ENGINE_ASSET_BLACKLIST") or ""
+    parsed = {
+        _normalize_asset_symbol(item)
+        for item in str(raw).replace(";", ",").split(",")
+        if str(item or "").strip()
+    }
+    return set(HARD_BLACKLIST) | parsed
+
+
+def _is_asset_blacklisted(asset: Any) -> bool:
+    return _normalize_asset_symbol(str(asset or "")) in _env_asset_blacklist()
+
+
 def _enabled_asset_classes() -> set[str]:
     """Resolve runtime asset-class gates without changing the default universe.
 
@@ -1933,10 +1954,19 @@ def main_loop(DRY_RUN: bool = False):
             # before the cycle queue is refreshed, so disabled classes cannot
             # consume batch slots or be re-injected by class coverage logic.
             _enabled_classes = _enabled_asset_classes()
+            _operator_blacklist = _env_asset_blacklist()
+            _pre_blacklist_count = len(open_assets)
             open_assets = [
                 asset for asset in _filter_assets_by_enabled_classes(open_assets)
-                if _normalize_asset_symbol(asset) not in HARD_BLACKLIST
+                if _normalize_asset_symbol(asset) not in _operator_blacklist
             ]
+            _blacklisted_count = max(0, _pre_blacklist_count - len(open_assets))
+            if _blacklisted_count and _env_bool("ENGINE_CYCLE_LOG", True):
+                logger.info(
+                    "[engine] asset blacklist removed=%s active_blacklist=%s",
+                    _blacklisted_count,
+                    sorted(list(_operator_blacklist))[:30],
+                )
             logger.info(
                 "[engine] enabled asset classes=%s crypto_only=%s",
                 sorted(_enabled_classes),
@@ -2314,9 +2344,9 @@ def main_loop(DRY_RUN: bool = False):
             for _asset_index, asset in enumerate(assets, start=1):
                 # HARD_BLACKLIST check: skip zombie stablecoins
                 _norm_asset = _normalize_asset_symbol(asset)
-                if _norm_asset in HARD_BLACKLIST:
-                    logger.warning(f"[engine] HARDBLACKLIST: skipping zombie stablecoin {asset}")
-                    _record_gate_failure(asset, "hard_blacklist", "zombie_stablecoin")
+                if _is_asset_blacklisted(_norm_asset):
+                    logger.warning(f"[engine] ASSET_BLACKLIST: skipping {asset}")
+                    _record_gate_failure(asset, "asset_blacklist", "operator_or_hard_blacklist")
                     continue
                     
                 logger.info(f"[engine] pipeline: starting asset={asset}")
@@ -4109,7 +4139,40 @@ def main_loop(DRY_RUN: bool = False):
                                 print(f"[DRY RUN][{user_tier}] {msg}")
                             dispatched_count += 1
                         else:
-                            sent_count = await dispatch_signals_async(user_signals, user_id=user_id)
+                            # Delivery must never hold the engine hostage. A single
+                            # slow Telegram/API/DB path used to keep deliver_all()
+                            # blocked until DELIVER_ALL_TIMEOUT_SECONDS, which made
+                            # signals stale and caused later store_signal calls to
+                            # time out. Keep dispatch per-user bounded and continue.
+                            try:
+                                _user_timeout = float(_env_float("DELIVERY_USER_TIMEOUT_SECONDS", 20.0))
+                            except Exception:
+                                _user_timeout = 20.0
+                            try:
+                                sent_count = await asyncio.wait_for(
+                                    dispatch_signals_async(user_signals, user_id=user_id),
+                                    timeout=max(3.0, float(_user_timeout)),
+                                )
+                            except asyncio.TimeoutError:
+                                sent_count = 0
+                                logger.warning(
+                                    "[engine] dispatch user timeout user=%s tier=%s candidates=%s timeout=%.1fs",
+                                    user_id,
+                                    user_tier,
+                                    len(user_signals),
+                                    max(3.0, float(_user_timeout)),
+                                )
+                                _delivery_skip("dispatch_user_timeout")
+                            except Exception as _dispatch_err:
+                                sent_count = 0
+                                logger.warning(
+                                    "[engine] dispatch user failed user=%s tier=%s candidates=%s err=%s",
+                                    user_id,
+                                    user_tier,
+                                    len(user_signals),
+                                    _dispatch_err,
+                                )
+                                _delivery_skip("dispatch_user_error")
                             sent_count = int(sent_count or 0)
                             if sent_count > 0:
                                 dispatched_count += 1
@@ -4137,7 +4200,10 @@ def main_loop(DRY_RUN: bool = False):
                 return dispatched_count
 
             try:
-                dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 180.0)))
+                # Keep the engine loop responsive. Delivery is best-effort and
+                # bounded per-user above; this outer guard is only a final circuit
+                # breaker, not a normal 3-minute wait.
+                dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 60.0)))
             except Exception:
                 logger.exception("deliver_all failed")
                 dispatched = 0
