@@ -979,22 +979,57 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                 send_kwargs = dict(kwargs or {})
                 if _env_true_local("TELEGRAM_ALLOW_PAID_BROADCAST", False):
                     send_kwargs.setdefault("allow_paid_broadcast", True)
+                clean_text = clean_message_text(str(text))
+                send_started = time.perf_counter()
+                if _delivery_trace_enabled():
+                    logger.info(
+                        "[telegram_send_start] chat=%s attempt=%s/%s text_len=%s timeout=%.1fs rps=%.2f paid=%s reply_markup=%s",
+                        chat_id, attempt, max_attempts, len(clean_text), send_timeout, configured_rps,
+                        bool(send_kwargs.get("allow_paid_broadcast")), bool(send_kwargs.get("reply_markup")),
+                    )
                 try:
-                    return await asyncio.wait_for(
-                        bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **send_kwargs),
+                    msg = await asyncio.wait_for(
+                        bot.send_message(chat_id=int(chat_id), text=clean_text, **send_kwargs),
                         timeout=send_timeout,
                     )
+                    if _delivery_success_trace_enabled():
+                        logger.info(
+                            "[telegram_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=%s",
+                            chat_id, getattr(msg, "message_id", None), attempt,
+                            int((time.perf_counter() - send_started) * 1000),
+                            bool(send_kwargs.get("allow_paid_broadcast")),
+                        )
+                    return msg
                 except TypeError as _type_err:
                     # Older python-telegram-bot versions may not yet expose the
                     # Bot API paid-broadcast argument. Retry without it instead
                     # of dropping the message.
                     if "allow_paid_broadcast" in send_kwargs:
+                        logger.warning(
+                            "[telegram_send_paid_arg_unsupported] chat=%s retrying_without_paid_broadcast err=%s",
+                            chat_id, _type_err,
+                        )
                         send_kwargs.pop("allow_paid_broadcast", None)
-                        return await asyncio.wait_for(
-                            bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **send_kwargs),
+                        msg = await asyncio.wait_for(
+                            bot.send_message(chat_id=int(chat_id), text=clean_text, **send_kwargs),
                             timeout=send_timeout,
                         )
+                        if _delivery_success_trace_enabled():
+                            logger.info(
+                                "[telegram_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=false",
+                                chat_id, getattr(msg, "message_id", None), attempt,
+                                int((time.perf_counter() - send_started) * 1000),
+                            )
+                        return msg
                     raise _type_err
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[telegram_send_timeout] chat=%s attempt=%s/%s timeout=%.1fs text_len=%s",
+                    chat_id, attempt, max_attempts, send_timeout, len(str(text or "")),
+                )
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(0.5)
             except RetryAfter as exc:
                 retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
                 logger.warning(
@@ -1007,6 +1042,14 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                 if attempt >= max_attempts:
                     raise
                 await asyncio.sleep(max(1.0, retry_after) + 0.5)
+            except Exception as exc:
+                logger.warning(
+                    "[telegram_send_error] chat=%s attempt=%s/%s err_type=%s err=%s",
+                    chat_id, attempt, max_attempts, type(exc).__name__, exc,
+                )
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(0.5)
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -1036,6 +1079,17 @@ def _env_bool_any(names: tuple[str, ...], default: bool = False) -> bool:
         if raw is not None:
             return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
     return bool(default)
+
+
+def _delivery_trace_enabled() -> bool:
+    return _env_true_local("DELIVERY_TRACE_ENABLED", True)
+
+
+def _delivery_success_trace_enabled() -> bool:
+    # Success logs are enabled by default while we prove the production path.
+    # For high-volume 100k fanout, set TELEGRAM_SEND_SUCCESS_LOG_ENABLED=0
+    # after verification to reduce log volume.
+    return _env_true_local("TELEGRAM_SEND_SUCCESS_LOG_ENABLED", True)
 
 
 def _first_take_profit(signal: dict | None) -> float | None:
@@ -1585,6 +1639,14 @@ async def _deliver_or_update_signal_async(
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     signal_id = str(signal.get("signal_id") or "").strip()
+    asset_for_log = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    tf_for_log = str(signal.get("timeframe") or "").strip()
+    if _delivery_trace_enabled():
+        logger.info(
+            "[delivery_attempt_start] user=%s signal=%s asset=%s tf=%s display_tier=%s profile=%s",
+            telegram_user_id, signal_id or signal.get("id"), asset_for_log, tf_for_log, display_tier,
+            signal.get("delivery_user_profile") or signal.get("trade_profile") or "unknown",
+        )
     try:
         from db.models import User
         from db.session import get_session
@@ -1634,7 +1696,7 @@ async def _deliver_or_update_signal_async(
             freshness = await asyncio.wait_for(
                 validate_delivery_freshness(
                     signal,
-                    user_profile=signal.get("trade_profile"),
+                    user_profile=signal.get("delivery_user_profile") or signal.get("trade_profile"),
                     cached_live_price=_cached_live_price,
                 ),
                 timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 4.0)),
@@ -1682,7 +1744,18 @@ async def _deliver_or_update_signal_async(
 
     text = format_signal(signal, display_tier=display_tier)
     if not text or not str(text).strip():
+        logger.warning(
+            "[delivery_format_empty] user=%s signal=%s asset=%s tf=%s display_tier=%s",
+            telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+            signal.get("timeframe"), display_tier,
+        )
         return None
+    if _delivery_trace_enabled():
+        logger.info(
+            "[delivery_format_ok] user=%s signal=%s asset=%s tf=%s text_len=%s",
+            telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+            signal.get("timeframe"), len(str(text)),
+        )
 
     if signal_id and _env_true_local("DELIVERY_SIGNAL_UPDATE_ENABLED", False):
         editable = await _find_editable_signal_message(int(telegram_user_id), signal)
@@ -1776,6 +1849,13 @@ async def _deliver_or_update_signal_async(
     except Exception as exc:
         logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
 
+    send_timeout = max(3.0, _env_float_local("DELIVERY_SEND_TIMEOUT_SECONDS", 12.0))
+    if _delivery_trace_enabled():
+        logger.info(
+            "[delivery_telegram_send_begin] user=%s signal=%s asset=%s tf=%s timeout=%.1fs",
+            telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+            signal.get("timeframe"), send_timeout,
+        )
     sent_msg = await asyncio.wait_for(
         _send_signal_with_engagement_async(
             bot,
@@ -1785,13 +1865,19 @@ async def _deliver_or_update_signal_async(
             telegram_user_id=int(telegram_user_id),
             signal=signal,
         ),
-        timeout=max(3.0, _env_float_local("DELIVERY_SEND_TIMEOUT_SECONDS", 12.0)),
+        timeout=send_timeout,
     )
-    return {
+    proof = {
         "mode": "sent",
         "chat_id": int(getattr(getattr(sent_msg, "chat", None), "id", telegram_user_id)),
         "message_id": int(getattr(sent_msg, "message_id")),
     }
+    logger.info(
+        "[delivery_telegram_send_ok] user=%s signal=%s asset=%s tf=%s chat_id=%s message_id=%s",
+        telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+        signal.get("timeframe"), proof.get("chat_id"), proof.get("message_id"),
+    )
+    return proof
 
 
 def _deliver_or_update_signal_sync(
@@ -1860,7 +1946,14 @@ async def _mark_delivery_with_telegram_proof(
                 delivery_state=str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
             )
             await db_session.commit()
-            return bool(ok and has_ack and not error)
+            success = bool(ok and has_ack and not error)
+            logger.info(
+                "[delivery_proof_write] user=%s signal=%s sent_ok=%s chat_id=%s message_id=%s state=%s error=%s",
+                telegram_user_id, signal_id, success, chat_id, message_id,
+                str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+                None if success else str(error or "delivery_not_confirmed"),
+            )
+            return success
 
     try:
         return bool(await asyncio.wait_for(
@@ -2606,6 +2699,11 @@ async def _send_signal_with_engagement_async(
             )
         except Exception:
             pass
+        logger.info(
+            "[send_signal_ok] user=%s signal=%s chat_id=%s message_id=%s text_len=%s",
+            telegram_user_id, signal_id, getattr(getattr(msg, "chat", None), "id", chat_id),
+            getattr(msg, "message_id", None), len(str(text or "")),
+        )
         # Persist message location so tiered_executor can live-edit it later
         try:
             from db.session import get_session
@@ -2668,8 +2766,12 @@ async def _send_signal_with_engagement_async(
                 except Exception as _wh_exc:
                     logger.debug(f"[vip_webhook] dispatch failed for user={telegram_user_id}: {_wh_exc}")
                 await session.commit()
+                logger.info(
+                    "[active_message_saved] user=%s signal=%s chat_id=%s message_id=%s",
+                    telegram_user_id, signal_id, chat_id, getattr(msg, "message_id", None),
+                )
         except Exception as _e:
-            logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
+            logger.warning(f"[active_message_save_failed] user={telegram_user_id} signal={signal_id} err={_e}")
         return msg
     except Exception as send_exc:
         logger.warning(
@@ -3529,6 +3631,16 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             timeout=max(1.0, _env_float_local("DELIVERY_PREFS_TIMEOUT_SECONDS", 3.0)),
         )
         user_trade_profile = str(getattr(_prefs, "trade_profile", "all") or "all")
+        logger.info(
+            "[profile_apply] user=%s tier=%s trade_profile=%s risk=%s asset_classes=%s preferred=%s blocked=%s sessions=%s notification=%s execution=%s candidates_before=%s",
+            user_id, routing_tier, user_trade_profile, getattr(_prefs, "risk_profile", "unknown"),
+            ",".join(getattr(_prefs, "asset_classes", ()) or ()),
+            ",".join(getattr(_prefs, "preferred_assets", ()) or ()),
+            ",".join(getattr(_prefs, "blocked_assets", ()) or ()),
+            ",".join(getattr(_prefs, "sessions", ()) or ()),
+            getattr(_prefs, "notification_style", "unknown"), getattr(_prefs, "execution_mode", "unknown"),
+            len(signals_list),
+        )
         before_profile_count = len(signals_list)
         _filtered_signals = []
         for sig in signals_list:
@@ -3538,7 +3650,18 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             else:
                 logger.debug("[dispatch] user=%s personalized_filter_drop reason=%s asset=%s", user_id, reason, sig.get("asset"))
         signals_list = rank_opportunities(_filtered_signals, _prefs)
+        for _sig in signals_list:
+            try:
+                _sig["delivery_user_profile"] = user_trade_profile
+                _sig["delivery_risk_profile"] = str(getattr(_prefs, "risk_profile", "balanced") or "balanced")
+                _sig["delivery_execution_mode"] = str(getattr(_prefs, "execution_mode", "manual") or "manual")
+            except Exception:
+                pass
         dropped_profile_count = max(0, before_profile_count - len(signals_list))
+        logger.info(
+            "[profile_apply_result] user=%s profile=%s candidates_after=%s dropped=%s",
+            user_id, user_trade_profile, len(signals_list), dropped_profile_count,
+        )
         if dropped_profile_count:
             logger.info(
                 "[dispatch] user=%s profile=%s risk=%s dropped=%s nonmatching_signals",
@@ -3762,6 +3885,12 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             payload.setdefault("rr_ratio", s.rr_estimate)
                             payload.setdefault("score", s.score)
                             payload.setdefault("regime", s.regime)
+                            payload["delivery_user_profile"] = user_trade_profile
+                            payload["delivery_tier"] = str(effective_tier)
+                            logger.info(
+                                "[delivery_reserve_ok] user=%s signal=%s asset=%s tf=%s tier=%s profile=%s",
+                                user_id, s.signal_id, s.asset, s.timeframe, effective_tier, user_trade_profile,
+                            )
                             to_send.append(payload)
                         await session.commit()
                     return to_send
@@ -3849,6 +3978,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 delivery_state="sent" if delivery_proof else "skipped",
                             ):
                                 sent += 1
+                                logger.info(
+                                    "[dispatch_sent_ok] user=%s signal=%s asset=%s tf=%s tier=%s profile=%s sent_count=%s",
+                                    user_id, reserved_signal.get("signal_id"), reserved_signal.get("asset"),
+                                    reserved_signal.get("timeframe"), effective_tier, user_trade_profile, sent,
+                                )
                                 try:
                                     _auto_execute_signal_if_enabled(
                                         telegram_user_id=int(user_id),
@@ -3914,6 +4048,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             delivery_state="sent" if delivery_proof else "skipped",
                         ):
                             sent += 1
+                            logger.info(
+                                "[dispatch_sent_ok] user=%s signal=%s asset=%s tf=%s tier=%s profile=%s sent_count=%s",
+                                user_id, signal.get("signal_id"), signal.get("asset"), signal.get("timeframe"),
+                                effective_tier, user_trade_profile, sent,
+                            )
                             try:
                                 _auto_execute_signal_if_enabled(
                                     telegram_user_id=int(user_id),
@@ -4460,6 +4599,61 @@ _bot_scheduler = None  # keeps the BackgroundScheduler alive after run_bot() ret
 # notifications). Must be assigned during run_bot() startup.
 application = None
 
+async def profile_debug_command(update, context):
+    """Owner-facing profile/Redis audit for proving profile propagation."""
+    try:
+        user = getattr(update, "effective_user", None)
+        message = getattr(update, "message", None)
+        telegram_user_id = int(getattr(user, "id", 0) or 0)
+        if telegram_user_id <= 0 or message is None:
+            return
+        from db.session import get_session
+        from services.user_intelligence import get_user_trading_preferences, format_preferences
+        from services.trade_profiles import get_trade_profile
+        import html
+
+        async with get_session(noncritical=True) as session:
+            prefs = await get_user_trading_preferences(session, telegram_user_id)
+            await session.commit()
+        try:
+            profile = get_trade_profile(getattr(prefs, "trade_profile", "all"))
+            profile_line = (
+                f"Resolved profile: {profile.name} | timeframes={','.join(profile.timeframes)} | "
+                f"expiry={profile.expiry_minutes}m | min_rr={profile.min_rr}"
+            )
+        except Exception as profile_err:
+            profile_line = f"Resolved profile error: {profile_err}"
+        try:
+            redis_diag = state.redis_diagnostics_sync()
+        except Exception as redis_err:
+            redis_diag = {"error": str(redis_err)}
+        text = (
+            "<b>Profile Debug</b>\n"
+            f"User: <code>{telegram_user_id}</code>\n"
+            f"Tier: <code>{html.escape(str(resolve_user_tier(telegram_user_id) or 'unknown'))}</code>\n\n"
+            f"<pre>{html.escape(format_preferences(prefs))}</pre>\n"
+            f"<pre>{html.escape(profile_line)}</pre>\n"
+            "<b>Redis/state</b>\n"
+            f"<pre>{html.escape(str(redis_diag))}</pre>\n"
+            "Logs to look for: <code>[profile_apply]</code>, <code>[profile_apply_result]</code>, "
+            "<code>[dispatch_sent_ok]</code>, <code>[delivery_proof_write]</code>."
+        )
+        logger.info(
+            "[profile_debug] user=%s tier=%s profile=%s risk=%s execution=%s redis_source=%s separate_delivery=%s",
+            telegram_user_id, resolve_user_tier(telegram_user_id), getattr(prefs, "trade_profile", "unknown"),
+            getattr(prefs, "risk_profile", "unknown"), getattr(prefs, "execution_mode", "unknown"),
+            redis_diag.get("active_source") or redis_diag.get("connected_source"),
+            redis_diag.get("using_separate_delivery_redis"),
+        )
+        await message.reply_text(text, parse_mode="HTML")
+    except Exception as exc:
+        logger.exception("[profile_debug] failed: %s", exc)
+        try:
+            await update.message.reply_text(f"Profile debug failed: {type(exc).__name__}: {exc}")
+        except Exception:
+            pass
+
+
 def run_bot() -> None:
 
     """Run the Telegram polling bot.
@@ -4831,6 +5025,7 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
     application.add_handler(CommandHandler("profile", _audit_handler("profile", profile_command)))
+    application.add_handler(CommandHandler("profile_debug", _audit_handler("profile_debug", profile_debug_command)))
     application.add_handler(CommandHandler("mission", _audit_handler("mission", mission_command)))
     application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
     application.add_handler(CommandHandler("gemini", _audit_handler("gemini", gemini_command)))

@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import queue
+import time
 from typing import Any
 
 
@@ -174,15 +175,27 @@ def submit_background_coro(coro, *, label: str = "background"):
     not block on it in the hot path.
     """
     bg_loop = _ensure_background_loop()
+    started = time.perf_counter()
+    try:
+        import logging
+        logging.getLogger(__name__).info("[%s] background coroutine submitted", label)
+    except Exception:
+        pass
     fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
 
     def _log_result(done_fut):
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
         try:
-            done_fut.result()
+            result = done_fut.result()
+            try:
+                import logging
+                logging.getLogger(__name__).info("[%s] background coroutine finished elapsed_ms=%s result=%s", label, elapsed_ms, result)
+            except Exception:
+                pass
         except BaseException as exc:  # pragma: no cover - defensive logging path
             try:
                 import logging
-                logging.getLogger(__name__).warning("[%s] background coroutine failed: %s", label, exc)
+                logging.getLogger(__name__).warning("[%s] background coroutine failed elapsed_ms=%s err_type=%s err=%s", label, elapsed_ms, type(exc).__name__, exc)
             except Exception:
                 pass
 

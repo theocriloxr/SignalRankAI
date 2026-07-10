@@ -4004,6 +4004,18 @@ def main_loop(DRY_RUN: bool = False):
                                     _profile_session,
                                     int(user_id),
                                 )
+                            logger.info(
+                                "[engine_profile_load] user=%s tier=%s profile=%s risk=%s assets=%s preferred=%s blocked=%s sessions=%s execution=%s",
+                                user_id,
+                                user_tier,
+                                getattr(user_trade_prefs, "trade_profile", "all"),
+                                getattr(user_trade_prefs, "risk_profile", "balanced"),
+                                ",".join(getattr(user_trade_prefs, "asset_classes", ()) or ()),
+                                ",".join(getattr(user_trade_prefs, "preferred_assets", ()) or ()),
+                                ",".join(getattr(user_trade_prefs, "blocked_assets", ()) or ()),
+                                ",".join(getattr(user_trade_prefs, "sessions", ()) or ()),
+                                getattr(user_trade_prefs, "execution_mode", "manual"),
+                            )
                         except Exception as _profile_err:
                             logger.debug(
                                 "[engine] trading preference lookup failed user=%s: %s",
@@ -4105,8 +4117,24 @@ def main_loop(DRY_RUN: bool = False):
                             try:
                                 delivery_score = _signal_display_score(sig)
                                 eligible = delivery_mgr.should_send_signal(user_tier, delivery_score, user_id=user_id)
-                                logger.info(f"[engine] Eligibility for user={user_id} tier={user_tier} score={delivery_score}: {eligible}")
+                                logger.info(
+                                    "[engine] eligibility user=%s tier=%s score=%s eligible=%s profile=%s asset=%s tf=%s",
+                                    user_id,
+                                    user_tier,
+                                    delivery_score,
+                                    eligible,
+                                    getattr(user_trade_prefs, "trade_profile", "all") if user_trade_prefs is not None else "all",
+                                    sig.get("asset"),
+                                    sig.get("timeframe"),
+                                )
                                 if eligible:
+                                    if user_trade_prefs is not None:
+                                        try:
+                                            sig["delivery_user_profile"] = str(getattr(user_trade_prefs, "trade_profile", "all") or "all")
+                                            sig["delivery_risk_profile"] = str(getattr(user_trade_prefs, "risk_profile", "balanced") or "balanced")
+                                            sig["delivery_execution_mode"] = str(getattr(user_trade_prefs, "execution_mode", "manual") or "manual")
+                                        except Exception:
+                                            pass
                                     user_signals.append(sig)
                                 else:
                                     _delivery_skip(f"score_gate:{user_tier}")
@@ -4219,7 +4247,18 @@ def main_loop(DRY_RUN: bool = False):
                                 _delivery_state.cache_set_sync(_lock_key, "1", ex=_lock_ttl)
                                 submit_background_coro(deliver_all(), label="engine_deliver_all")
                                 dispatched = 0
-                                logger.info("[engine] delivery fanout scheduled background=true candidates=%s ttl=%ss", len(scored_signals_all or []), _lock_ttl)
+                                try:
+                                    _redis_diag = _delivery_state.redis_diagnostics_sync()
+                                except Exception as _redis_diag_err:
+                                    _redis_diag = {"error": str(_redis_diag_err)}
+                                logger.info(
+                                    "[engine] delivery fanout scheduled background=true candidates=%s ttl=%ss redis_source=%s separate_delivery=%s connected=%s",
+                                    len(scored_signals_all or []),
+                                    _lock_ttl,
+                                    _redis_diag.get("active_source") or _redis_diag.get("connected_source"),
+                                    _redis_diag.get("using_separate_delivery_redis"),
+                                    _redis_diag.get("connected"),
+                                )
                         except Exception:
                             submit_background_coro(deliver_all(), label="engine_deliver_all")
                             dispatched = 0
