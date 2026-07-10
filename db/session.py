@@ -193,6 +193,14 @@ _engine_lock = threading.Lock()
 _sync_thread_local = threading.local()
 _session_gate_limit = max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", _default_session_gate_limit(), minimum=1))
 _session_gate = threading.BoundedSemaphore(_session_gate_limit)
+
+# Background/noncritical work gets its own small gate before it can even wait
+# for a real DB session. This lets heavy features run continuously without
+# starving interactive Telegram commands, signal delivery proof writes, or
+# signal storage. The value is intentionally smaller than the main gate.
+_background_gate_limit = max(1, min(_session_gate_limit, _pool_int("DB_BACKGROUND_MAX_CONCURRENT_SESSIONS", max(1, min(2, _session_gate_limit // 2 or 1)), minimum=1)))
+_background_gate = threading.BoundedSemaphore(_background_gate_limit)
+
 _session_metrics_lock = threading.Lock()
 _session_metrics: dict[str, int] = {
     "opened": 0,
@@ -202,6 +210,11 @@ _session_metrics: dict[str, int] = {
     "errors": 0,
     "critical_waiting": 0,
     "critical_active": 0,
+    "interactive_waiting": 0,
+    "interactive_active": 0,
+    "background_waiting": 0,
+    "background_active": 0,
+    "background_dropped": 0,
     "noncritical_dropped": 0,
 }
 _critical_db_lock = threading.Lock()
@@ -358,6 +371,7 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "railway_runtime": _is_railway_runtime(),
         "nullpool": bool(pool_size == 0 and max_overflow == 0),
         "session_limit": int(_session_gate_limit),
+        "background_session_limit": int(_background_gate_limit),
         "session_metrics": session_metrics,
     }
     if engine is None:
@@ -393,7 +407,7 @@ async def collect_database_health() -> dict[str, Any]:
     try:
         from sqlalchemy import text
 
-        async with get_session() as session:
+        async with get_session(interactive=True) as session:
             activity = await session.execute(
                 text(
                     """
@@ -468,15 +482,22 @@ class NoncriticalWriteDropped(RuntimeError):
 
 
 @asynccontextmanager
-async def get_session(*, noncritical: bool = False, critical: bool = False) -> AsyncIterator[AsyncSession]:
-    """Yield an async DB session with a process-wide gate.
+async def get_session(*, noncritical: bool = False, critical: bool = False, interactive: bool = False) -> AsyncIterator[AsyncSession]:
+    """Yield an async DB session with a process-wide priority gate.
 
-    ``critical=True`` is reserved for paths that must make forward progress
-    for the product to work, especially signal storage. While critical work is
-    waiting or active, best-effort/noncritical callers can fail fast instead of
-    consuming the scarce Railway/PgBouncer connection budget.
+    Priority classes:
+    - critical=True: signal storage/delivery proof, must make progress.
+    - interactive=True: user commands/buttons, must stay responsive.
+    - noncritical=True: background/heavy jobs, outcome scans, analytics, pulses.
+
+    Noncritical callers pass through a separate small background gate before
+    they may wait for the real session gate. This lets heavy features keep
+    running, but prevents them from occupying every DB slot and making Telegram
+    feel dead.
     """
     if critical and noncritical:
+        noncritical = False
+    if interactive:
         noncritical = False
 
     base_timeout = _pool_int(
@@ -490,28 +511,60 @@ async def get_session(*, noncritical: bool = False, critical: bool = False) -> A
             _pool_int("SIGNAL_STORE_TIMEOUT_SECONDS", max(45, base_timeout), minimum=1),
             minimum=1,
         ))
+    elif interactive:
+        timeout_s = float(_pool_int("DB_INTERACTIVE_SESSION_GATE_TIMEOUT_SECONDS", min(8, base_timeout), minimum=1))
     else:
         timeout_s = float(base_timeout)
 
     acquired = False
+    bg_acquired = False
     drop_noncritical = bool(
         noncritical and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
     )
 
-    if critical:
+    # Treat interactive waits as critical pressure so best-effort background
+    # jobs can pause/defer while a user is tapping buttons or running commands.
+    critical_scope = bool(critical or (interactive and _truthy_env("DB_INTERACTIVE_PAUSES_BACKGROUND", True)))
+    if critical_scope:
         _mark_critical_db_start()
         with _session_metrics_lock:
-            _session_metrics["critical_waiting"] = int(_session_metrics.get("critical_waiting", 0) or 0) + 1
+            if critical:
+                _session_metrics["critical_waiting"] = int(_session_metrics.get("critical_waiting", 0) or 0) + 1
+            if interactive:
+                _session_metrics["interactive_waiting"] = int(_session_metrics.get("interactive_waiting", 0) or 0) + 1
 
     try:
-        if drop_noncritical:
-            # Noncritical work must never wait behind signal storage. This is
-            # especially important on Railway where pool_size=2 is intentional.
-            if critical_db_work_active() and _truthy_env("DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", True):
+        if noncritical:
+            # Limit background concurrency before it can contend for main DB slots.
+            bg_timeout = float(_pool_int("DB_BACKGROUND_SESSION_GATE_TIMEOUT_SECONDS", 2, minimum=0))
+            bg_drop_busy = _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
+            with _session_metrics_lock:
+                _session_metrics["background_waiting"] = int(_session_metrics.get("background_waiting", 0) or 0) + 1
+            try:
+                if bg_drop_busy:
+                    bg_acquired = _background_gate.acquire(blocking=False)
+                else:
+                    bg_acquired = await asyncio.to_thread(_background_gate.acquire, True, bg_timeout)
+            finally:
+                with _session_metrics_lock:
+                    _session_metrics["background_waiting"] = max(0, int(_session_metrics.get("background_waiting", 0) or 0) - 1)
+            if not bg_acquired:
+                with _session_metrics_lock:
+                    _session_metrics["errors"] += 1
+                    _session_metrics["background_dropped"] = int(_session_metrics.get("background_dropped", 0) or 0) + 1
+                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
+                raise NoncriticalWriteDropped("noncritical DB work deferred: background DB gate busy")
+            with _session_metrics_lock:
+                _session_metrics["background_active"] = int(_session_metrics.get("background_active", 0) or 0) + 1
+
+            # Optional fast-defer when signal storage or interactive command work is active.
+            if critical_db_work_active() and _truthy_env("DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False):
                 with _session_metrics_lock:
                     _session_metrics["errors"] += 1
                     _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
-                raise NoncriticalWriteDropped("noncritical DB write dropped: critical DB work active")
+                raise NoncriticalWriteDropped("noncritical DB work deferred: critical/interactive DB work active")
+
+        if drop_noncritical:
             acquired = _session_gate.acquire(blocking=False)
         else:
             with _session_metrics_lock:
@@ -528,7 +581,7 @@ async def get_session(*, noncritical: bool = False, critical: bool = False) -> A
                 if drop_noncritical:
                     _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
             if drop_noncritical:
-                raise NoncriticalWriteDropped("noncritical DB write dropped: session gate busy")
+                raise NoncriticalWriteDropped("noncritical DB work deferred: session gate busy")
             raise TimeoutError(
                 f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
                 "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"
@@ -537,6 +590,7 @@ async def get_session(*, noncritical: bool = False, critical: bool = False) -> A
         session_local = _get_sessionmaker_for_loop(_loop_identity())
         if session_local is None:
             _session_gate.release()
+            acquired = False
             raise RuntimeError("DATABASE_URL is not configured")
         with _session_metrics_lock:
             _session_metrics["opened"] += 1
@@ -544,6 +598,9 @@ async def get_session(*, noncritical: bool = False, critical: bool = False) -> A
             if critical:
                 _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
                 _session_metrics["critical_active"] = int(_session_metrics.get("critical_active", 0) or 0) + 1
+            if interactive:
+                _session_metrics["interactive_waiting"] = max(0, int(_session_metrics.get("interactive_waiting", 0) or 0) - 1)
+                _session_metrics["interactive_active"] = int(_session_metrics.get("interactive_active", 0) or 0) + 1
         try:
             async with session_local() as session:
                 try:
@@ -560,11 +617,22 @@ async def get_session(*, noncritical: bool = False, critical: bool = False) -> A
                 _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
                 if critical:
                     _session_metrics["critical_active"] = max(0, int(_session_metrics.get("critical_active", 0) or 0) - 1)
-            _session_gate.release()
+                if interactive:
+                    _session_metrics["interactive_active"] = max(0, int(_session_metrics.get("interactive_active", 0) or 0) - 1)
+            if acquired:
+                _session_gate.release()
+                acquired = False
     finally:
-        if critical:
+        if bg_acquired:
             with _session_metrics_lock:
-                _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
+                _session_metrics["background_active"] = max(0, int(_session_metrics.get("background_active", 0) or 0) - 1)
+            _background_gate.release()
+        if critical_scope:
+            with _session_metrics_lock:
+                if critical:
+                    _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
+                if interactive:
+                    _session_metrics["interactive_waiting"] = max(0, int(_session_metrics.get("interactive_waiting", 0) or 0) - 1)
             _mark_critical_db_end()
 
 

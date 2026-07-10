@@ -1,4 +1,5 @@
 import os
+import asyncio
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -248,7 +249,7 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 		from db.session import get_engine_for_event_loop, get_session
 		if get_engine_for_event_loop() is not None:
 			from db.repository import count_active_vip_users
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				vip_used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 	except Exception:
 		pass
@@ -306,11 +307,19 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
+	free_limit = int(os.getenv("FREE_SIGNAL_DAILY_LIMIT", "3") or 3)
+	premium_limit = int(os.getenv("PREMIUM_SIGNAL_DAILY_LIMIT", "15") or 15)
+	vip_limit = int(os.getenv("VIP_SIGNAL_DAILY_LIMIT", "30") or 30)
 	msg = (
-		"🚀 SignalRankAI — Choose Your Plan\n\n"
+		"🚀 SignalRankAI — Plans Built Around Trader Value\n\n"
+		"🆓 Free — proof feed + limited educational signals\n"
+		f"• Up to {free_limit}/day, delayed/limited detail, upgrade prompts\n\n"
+		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr\n"
+		f"• Up to {premium_limit}/day, real-time Entry/SL/TP, /signals, /outcome, performance stats, multi-asset coverage\n\n"
 		f"{vip_line}\n"
-		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr (Best Value)\n\n"
-		"⚠️ Trading involves risk. No guaranteed returns."
+		f"• Up to {vip_limit}/day, stricter high-conviction stream, priority delivery, TP3 runner, webhook/API, MT5-ready controls, advanced profile filters\n\n"
+		"Why upgrade? Paid tiers get cleaner timing, deeper signal context, more markets, tracked outcomes, and priority delivery.\n\n"
+		"⚠️ Educational only. Trading involves risk. No guaranteed returns."
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=False)
 	return msg, keyboard
@@ -318,19 +327,26 @@ async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
 
 async def _compose_upgrade_message(user_id: int) -> tuple[str, object | None]:
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
-	vip_line = _vip_plan_line(MarkdownV2=True, seats_left=vip_seats_left, sold_out=vip_sold_out)
+	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
 	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
 	msg = (
-		"🚀 *SignalRankAI — Choose Your Plan*\n\n"
+		"🚀 <b>Upgrade SignalRankAI</b>\n\n"
+		"The free tier proves the system. Paid tiers are for traders who want cleaner timing, more context, and better workflow.\n\n"
+		f"⭐ <b>Premium</b> — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr\n"
+		"• More daily real-time signals\n"
+		"• Full Entry / Stop Loss / TP levels\n"
+		"• /signals, /outcome, /performance, portfolio-style recap\n"
+		"• Multi-asset feed: crypto, FX, stocks, commodities\n\n"
 		f"{vip_line}\n"
-		f"⭐ Premium — ₦{prem_month_price:,}/mo · ₦{prem_qtr_price:,}/qtr · ₦{prem_year_price:,}/yr \\(Best Value\\)\n\n"
-		"✅ *What you unlock:*\n"
-		"• Premium: broader trade coverage, full Entry/SL/TP, analytics tools\n"
-		"• VIP: stricter quality stream, priority delivery, elite automation controls\n\n"
-		"⚠️ _No guaranteed profits. Trade responsibly._\n\n"
-		"_Tap a plan below to subscribe instantly via Paystack:_"
+		"• Priority delivery when the engine finds a setup\n"
+		"• Stricter quality stream and TP3 runner\n"
+		"• Webhook/API and MT5-ready controls\n"
+		"• Advanced profile filters: scalp, day, swing, position\n\n"
+		"Best practice: start Premium, upgrade to VIP when you need faster workflow and automation-grade alerts.\n\n"
+		"⚠️ <i>No guaranteed profits. Educational only. Trade responsibly.</i>\n\n"
+		"Tap a plan below to subscribe via Paystack."
 	)
 	keyboard = await _build_plan_keyboard(int(user_id), include_navigation=True)
 	return msg, keyboard
@@ -846,7 +862,7 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 		from sqlalchemy import select
 		from datetime import datetime, timedelta
 		cutoff = datetime.utcnow() - timedelta(hours=4)
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			rows = await session.execute(
 				select(Signal)
 				.where(
@@ -923,7 +939,7 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 		from db.models import Subscription
 		from sqlalchemy import select, desc
 		from datetime import datetime as _dt
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			user = await get_or_create_user(session, telegram_user_id=user_id)
 			expiry = getattr(user, 'premium_until', None)
 			if expiry is None:
@@ -1020,7 +1036,7 @@ async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
 	from db.repository import create_api_token
 	token = generate_api_key()
 	expires = datetime.utcnow() + timedelta(days=max(1, min(int(ttl_days), 365)))
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		await create_api_token(
 			session,
 			telegram_user_id=int(user_id),
@@ -1035,7 +1051,7 @@ async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
 async def _get_existing_api_token_meta(user_id: int):
 	from db.session import get_session
 	from db.repository import get_latest_active_api_token_meta
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		meta = await get_latest_active_api_token_meta(session, telegram_user_id=int(user_id))
 		await session.commit()
 	return meta
@@ -1101,7 +1117,7 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		schema_status = {}
 		try:
 			from sqlalchemy import text
-			async with get_session() as schema_session:
+			async with get_session(interactive=True) as schema_session:
 				revision = (await schema_session.execute(
 					text("SELECT version_num FROM alembic_version LIMIT 1")
 				)).scalar_one_or_none()
@@ -1129,7 +1145,9 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			f"Pool: size={pool.get('size', pool.get('effective_pool_size'))} checked_out={pool.get('checkedout', 'n/a')} overflow={pool.get('overflow', 'n/a')}",
 			f"Effective cap: pool={pool.get('effective_pool_size')} overflow={pool.get('effective_max_overflow')}",
 			f"Session gate: limit={pool.get('session_limit')} active={session_metrics.get('active', 0)} waiting={session_metrics.get('waiting', 0)} errors={session_metrics.get('errors', 0)}",
-			f"Sessions: opened={session_metrics.get('opened', 0)} closed={session_metrics.get('closed', 0)}",
+			f"Interactive: active={session_metrics.get('interactive_active', 0)} waiting={session_metrics.get('interactive_waiting', 0)}",
+			f"Background gate: limit={pool.get('background_session_limit')} active={session_metrics.get('background_active', 0)} waiting={session_metrics.get('background_waiting', 0)} dropped={session_metrics.get('background_dropped', 0)}",
+			f"Sessions: opened={session_metrics.get('opened', 0)} closed={session_metrics.get('closed', 0)} noncritical_dropped={session_metrics.get('noncritical_dropped', 0)}",
 			f"Alembic head: {schema_status.get('revision', 'unavailable')}",
 			f"Lifecycle tables: state={schema_status.get('signal_lifecycles', False)} events={schema_status.get('signal_tracking_events', False)} notifications={schema_status.get('signal_event_notifications', False)}",
 		]
@@ -1172,7 +1190,7 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 		)
 		from db.session import get_session
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			query = (
 				select(SignalDelivery, User, Signal, Outcome)
 				.join(User, User.id == SignalDelivery.user_id)
@@ -1261,7 +1279,7 @@ async def _load_signal_debug_payload(ref: str) -> dict | None:
 	from db.models import Signal
 	from db.session import get_session
 
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		row = (
 			await session.execute(
 				select(Signal)
@@ -1446,7 +1464,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		await _send_timezone_panel(update.message, user_id)
 		return
 	try:
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			current = await get_user_trading_preferences(session, user_id)
 			if not args:
 				from db.models import User
@@ -1530,7 +1548,7 @@ async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from services.mission_control import build_mission_snapshot, format_mission
 		from services.trading_intelligence import enrich_signal_intelligence
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			rows = await list_unresolved_signals_for_user(session, telegram_user_id=user_id, lookback_days=30)
 		if not rows:
 			await update.message.reply_text("No active delivered signal mission is available right now.")
@@ -1679,7 +1697,7 @@ def _timezone_inline_keyboard(*, travel_enabled: bool = False):
 async def _get_timezone_user(telegram_user_id: int):
 	from db.models import User
 	from sqlalchemy import select
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		return (await session.execute(
 			select(User).where(User.telegram_user_id == int(telegram_user_id))
 		)).scalar_one_or_none()
@@ -1698,7 +1716,7 @@ async def _save_user_timezone(
 	from signalrank_telegram.timezones import should_store_location_coordinates
 
 	now = datetime.now(datetime_timezone.utc).replace(tzinfo=None)
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		user = (await session.execute(
 			select(User).where(User.telegram_user_id == int(telegram_user_id))
 		)).scalar_one_or_none()
@@ -1788,7 +1806,7 @@ async def travelmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		await update.message.reply_text(f"Travel mode is {status}. Use /travelmode on or /travelmode off.")
 		return
 	enabled = args[0] == "on"
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		user = (await session.execute(
 			select(User).where(User.telegram_user_id == int(update.effective_user.id))
 		)).scalar_one_or_none()
@@ -1937,7 +1955,7 @@ async def referral_leaderboard_command(update, context) -> None:
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		from sqlalchemy import select, func, desc
 
 		res = await session.execute(
@@ -1987,7 +2005,7 @@ async def referral_rewards_command(update, context) -> None:
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 		from sqlalchemy import select, func
 		from db.pg_features import get_referral_progress
@@ -2134,7 +2152,7 @@ async def assets_command(update, context) -> None:
 				lines.append(f"- {asset_type}: {preview}")
 
 		if subcmd == "inactive":
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				rows = await list_all_managed_assets(session)
 			inactive = [r for r in rows if not getattr(r, "is_active", False)]
 			lines = ["Inactive Managed Assets"]
@@ -2171,7 +2189,7 @@ async def assets_command(update, context) -> None:
 		return
 
 	if subcmd == "list":
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			rows = await list_all_managed_assets(session)
 		if not rows:
 			await update.message.reply_text("No managed assets yet.\nUse /assets add <SYMBOL> to pin one.")
@@ -2192,7 +2210,7 @@ async def assets_command(update, context) -> None:
 			return
 		symbol = args[1].upper().strip()
 		atype = get_asset_type(symbol)
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			await add_managed_asset(
 				session, symbol=symbol, asset_type=atype,
 				added_by=update.effective_user.id,
@@ -2206,7 +2224,7 @@ async def assets_command(update, context) -> None:
 			await update.message.reply_text("Usage: /assets remove <SYMBOL>")
 			return
 		symbol = args[1].upper().strip()
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			found = await remove_managed_asset(session, symbol=symbol)
 			await session.commit()
 		if found:
@@ -2257,7 +2275,7 @@ async def admin_top_strategies_command(update, context) -> None:
 		return
 
 	cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-	async with get_session() as session:
+	async with get_session(interactive=True) as session:
 		res = await session.execute(
 			select(Signal.strategy_name, func.count(Signal.signal_id))
 			.where(Signal.created_at >= cutoff)
@@ -2341,7 +2359,7 @@ async def selfcheck_command(update, context) -> None:
 		from db.session import get_session
 		from sqlalchemy import select, desc
 		from db.models import Signal
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			res = await session.execute(select(Signal).order_by(desc(Signal.created_at)).limit(1))
 			last = res.scalar_one_or_none()
 			if last:
@@ -2396,7 +2414,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		now = datetime.utcnow()
 		window_start = now - timedelta(days=window_days)
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			# 1) Delivered signals without any outcome row.
 			untracked_q = (
 				select(func.count(func.distinct(SignalDelivery.signal_id)))
@@ -2529,7 +2547,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		from db.session import get_session, get_engine_for_event_loop
 		if get_engine_for_event_loop() is not None:
 			from db.pg_features import get_signal_id_by_short_ref
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				signal_id = await get_signal_id_by_short_ref(session, signal_ref)
 	except Exception:
 		pass
@@ -2901,7 +2919,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			)
 			return
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == user_id)
 			)).scalar_one_or_none()
@@ -3106,36 +3124,46 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-	"""Show user's signals with tier-specific formatting.
-	
-	FREE: Show last 5 delivered today (resolved + unresolved proof cards)
-	PREMIUM/VIP: Show unresolved active signals from last 30 days
+	"""Fast delivered-signal index for the current user.
+
+	This command must remain responsive during engine/delivery bursts. It uses a
+	bounded interactive DB read and returns a compact index instead of rendering
+	large cards. Full detail remains available through /signal <reference> or the
+	inline Open buttons.
 	"""
 	if await _public_guard(update):
 		return
-	if update.message is None and getattr(update, "callback_query", None) is not None:
-		try:
-			update.message = update.callback_query.message
-		except Exception:
-			pass
-	if update.message is None:
+	message = getattr(update, "message", None)
+	if message is None and getattr(update, "callback_query", None) is not None:
+		message = getattr(update.callback_query, "message", None)
+	if message is None or update.effective_user is None:
 		return
-	user_id: int = update.effective_user.id
-	await maybe_prompt_timezone(update.message, int(user_id))
-	timezone_user = await _get_timezone_user(int(user_id))
-	display_timezone = getattr(timezone_user, "timezone", None)
-	tier: str = _effective_tier(user_id)
-	show_unvoted_only: bool = False
-	status_filter: str = "active"
-	lookback_days: int = 7
+	user_id = int(update.effective_user.id)
+
+	def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 200) -> int:
+		try:
+			return max(minimum, min(maximum, int(float(os.getenv(name, str(default)) or default))))
+		except Exception:
+			return default
+
+	def _env_float(name: str, default: float, minimum: float = 1.0, maximum: float = 60.0) -> float:
+		try:
+			return max(minimum, min(maximum, float(os.getenv(name, str(default)) or default)))
+		except Exception:
+			return default
+
+	args_norm = [str(x or "").strip() for x in (getattr(context, "args", []) or []) if str(x or "").strip()]
+	status_filter = "active"
+	lookback_days = _env_int("SIGNALS_COMMAND_LOOKBACK_DAYS", 7, 1, 30)
+	limit = _env_int("SIGNALS_COMMAND_LIMIT", 8, 1, 25)
 	asset_filter: str | None = None
+	show_unvoted_only = False
 	try:
-		args_norm = [str(x or "").strip() for x in (context.args or []) if str(x or "").strip()]
-		arg0 = str((args_norm or [""])[0] or "").strip().lower()
-		show_unvoted_only = arg0 in {"unvoted", "pending", "notvoted"}
 		for idx, raw in enumerate(args_norm):
 			token = raw.lower()
-			if token in {"active", "running", "closed", "all", "winners", "losers", "missed"}:
+			if token in {"unvoted", "pending", "notvoted"}:
+				show_unvoted_only = True
+			elif token in {"active", "running", "closed", "all", "winners", "losers", "missed"}:
 				status_filter = "active" if token == "running" else token
 			elif token in {"today", "24h"}:
 				lookback_days = 1
@@ -3146,239 +3174,84 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			elif token == "asset" and idx + 1 < len(args_norm):
 				asset_filter = args_norm[idx + 1].upper().strip()
 	except Exception:
-		show_unvoted_only = False
+		pass
+
 	try:
-		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-		_nav_kbd = InlineKeyboardMarkup([
-			[
-				InlineKeyboardButton("📊 Performance", callback_data="nav_performance"),
-				InlineKeyboardButton("🚀 Upgrade", callback_data="nav_upgrade"),
-			],
-			[
-				InlineKeyboardButton("👤 Account", callback_data="nav_account"),
-				InlineKeyboardButton("🆘 Support", callback_data="nav_support"),
-			],
-		])
-	except Exception:
-		_nav_kbd = None
-	
-	# Import freshness validation at function level
-	from engine.price_validator import enrich_signal_with_live_price
+		from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+		from db.pg_features import list_delivered_signals_for_user
 
-	# Owner and admin always get VIP format
-	if tier.lower() in {"owner", "admin"}:
-		tier = "VIP"
-
-	signals_list: list[dict] = []
-
-	async def _filter_unvoted(signals_in: list[dict]) -> list[dict]:
-		if not show_unvoted_only or not signals_in:
-			return signals_in
-		try:
-			from sqlalchemy import select
-			from db.models import SignalEngagement, User
-			from db.session import get_session
-			signal_ids = [str(s.get("signal_id") or "") for s in signals_in if s.get("signal_id")]
-			if not signal_ids:
-				return []
-			async with get_session() as session:
-				user_row = (await session.execute(
-					select(User).where(User.telegram_user_id == int(user_id)).limit(1)
-				)).scalar_one_or_none()
-				if user_row is None:
-					return signals_in
-				engaged_rows = await session.execute(
-					select(SignalEngagement.signal_id)
-					.where(
-						SignalEngagement.user_id == int(user_row.id),
-						SignalEngagement.signal_id.in_(signal_ids),
-					)
-				)
-				engaged_set = {str(x) for x in (engaged_rows.scalars().all() or [])}
-				await session.commit()
-			return [s for s in signals_in if str(s.get("signal_id") or "") not in engaged_set]
-		except Exception:
-			return signals_in
-	
-	# FREE tier: show last 5 delivered signals from today (resolved + unresolved).
-	if tier_rank(tier) < tier_rank("PREMIUM"):
-		try:
-			from db.session import get_session
-			engine = get_engine_for_event_loop()
-			if engine is not None:
-				from db.pg_features import list_signals_sent_today
-				async with get_session() as session:
-					rows: list[Signal] = await list_signals_sent_today(session, telegram_user_id=int(user_id))
-					signals_list = []
-					for r in rows:
-						sig_dict = {
-							"signal_id": r.signal_id,
-							"asset": r.asset,
-							"timeframe": r.timeframe,
-							"direction": r.direction,
-							"entry": r.entry,
-							"stop_loss": r.stop_loss,
-							"take_profit": r.take_profit,
-							"rr_ratio": r.rr_estimate,
-							"score": r.score,
-							"created_at": getattr(r, "created_at", None),
-							"display_timezone": display_timezone,
-							"display_telegram_user_id": int(user_id),
-						}
-						
-						# Enrich with live price and freshness info
-						try:
-							sig_dict = enrich_signal_with_live_price(sig_dict)
-						except Exception:
-							pass
-						
-						signals_list.append(sig_dict)
-		except Exception as e:
-			_audit_logger.error(f"Error fetching delivered signals for {user_id}: {e}")
-			signals_list = []
-		
-		if not signals_list:
-			if update.message is not None:
-				await update.message.reply_text("✅ No signal proof cards yet today. Check back after the next cycle.")
-			return
-
-		signals_list = await _filter_unvoted(signals_list)
-		eligible = list(signals_list)
-
-		if not eligible:
-			if update.message is not None:
-				from core.tier_constants import TIER_SCORE_THRESHOLDS
-				free_min = int(float(TIER_SCORE_THRESHOLDS.get("free", FREE_MIN_SCORE)))
-				if show_unvoted_only:
-					await update.message.reply_text("✅ No unvoted FREE proof cards right now.")
-				else:
-					await update.message.reply_text(
-						f"⚠️ No FREE-eligible proof cards ({free_min}+) right now. Upgrade for full active feed access."
-					)
-			return
-		picked = eligible[:FREE_PROOF_FEED_LIMIT]
-		from .formatter import format_signal_free_new
-		for s in picked:
-			try:
-				formatted = format_signal_free_new(
-					s,
-					signals_sent_today=len(signals_list),
-					daily_limit=int(FREE_SIGNAL_DAILY_LIMIT),
-				)
-				if formatted and update.message is not None:
-					await update.message.reply_text(
-						formatted,
-						parse_mode="HTML",
-						reply_markup=_build_signal_action_keyboard(s),
-					)
-			except Exception as e:
-				_audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
-		if update.message is not None:
-			await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence, full TP ladder and execution tools.")
-		return
-	
-	# PREMIUM/VIP: show delivered signals in the requested user-facing window.
-	unresolved_signals: list[dict] = []
-	try:
-		from db.session import get_session
-		engine = get_engine_for_event_loop()
-		if engine is not None:
-			from db.pg_features import list_delivered_signals_for_user
-			async with get_session() as session:
-				rows: list[Signal] = await list_delivered_signals_for_user(
+		async def _query_rows():
+			# Interactive command path: use critical=True so it is not dropped as
+			# background telemetry. The outer wait_for keeps it bounded.
+			async with get_session(interactive=True) as session:
+				rows = await list_delivered_signals_for_user(
 					session,
 					telegram_user_id=int(user_id),
-					lookback_days=lookback_days,
-					status_filter=status_filter,
+					lookback_days=int(lookback_days),
+					status_filter=str(status_filter),
 					asset=asset_filter,
-					limit=50,
+					limit=int(limit),
 					sent_ok_only=True,
 				)
-				unresolved_signals = [
-					{
-						"signal_id": r.signal_id,
-						"asset": r.asset,
-						"timeframe": r.timeframe,
-						"direction": r.direction,
-						"entry": r.entry,
-						"stop_loss": r.stop_loss,
-						"take_profit": r.take_profit,
-						"rr_ratio": r.rr_estimate,
-						"score": r.score,
-						"confidence": getattr(r, 'confidence', 0.5),
-						"regime": getattr(r, 'regime', 'NEUTRAL'),
-						"strength": getattr(r, 'strength', 0.5),
-						"ml_probability": getattr(r, 'ml_probability', 0.5),
-						"strategy_name": r.strategy_name,
-						"strategy_group": r.strategy_group,
-						"created_at": r.created_at,
-						"status": getattr(r, "status", "active"),
-					}
-					for r in rows
-				]
-	except Exception as e:
-		_audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
-		unresolved_signals = []
+				await session.commit()
+				return list(rows or [])
 
-	# Tier-based filtering
-	tier_norm: str = str(tier or "").strip().lower()
-	is_vip: bool = tier_norm in {"vip", "owner", "admin"}
-	unresolved_signals = await _filter_unvoted(unresolved_signals)
-	filtered_signals = []
-	for s in unresolved_signals:
-		# PREMIUM/VIP/ADMIN/OWNER: show active unresolved signals user received.
-		filtered_signals.append(s)
+		db_timeout = _env_float("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS", 6.0, 2.0, 20.0)
+		rows = await asyncio.wait_for(_query_rows(), timeout=db_timeout)
 
-	if not filtered_signals:
-		if update.message is not None and not show_unvoted_only:
+		# Optional unvoted filter. Keep it bounded and skip it if the DB is busy;
+		# /signals must never hang behind engagement analytics.
+		if show_unvoted_only and rows:
+			try:
+				from sqlalchemy import select
+				from db.models import SignalEngagement, User
+				async def _engaged_ids():
+					async with get_session(interactive=True) as session:
+						user_row = (await session.execute(
+							select(User).where(User.telegram_user_id == int(user_id)).limit(1)
+						)).scalar_one_or_none()
+						if user_row is None:
+							return set()
+						signal_ids = [str(getattr(r, "signal_id", "") or "") for r in rows]
+						engaged_rows = await session.execute(
+							select(SignalEngagement.signal_id)
+							.where(SignalEngagement.user_id == int(user_row.id), SignalEngagement.signal_id.in_(signal_ids))
+						)
+						await session.commit()
+						return {str(x) for x in (engaged_rows.scalars().all() or [])}
+				engaged = await asyncio.wait_for(_engaged_ids(), timeout=min(3.0, db_timeout))
+				rows = [r for r in rows if str(getattr(r, "signal_id", "") or "") not in engaged]
+			except Exception as filter_err:
+				_audit_logger.info("[signals_command] unvoted filter skipped user=%s err=%s", user_id, filter_err)
+
+		if not rows:
 			asset_txt = f" for {asset_filter}" if asset_filter else ""
-			await update.message.reply_text(
-				f"No {status_filter} delivered signals{asset_txt} in the last {lookback_days} day(s)."
-			)
+			await message.reply_text(f"No {status_filter} delivered signals{asset_txt} in the last {lookback_days} day(s).")
 			return
-		if update.message is not None:
-			if show_unvoted_only:
-				await update.message.reply_text("✅ No unvoted active unresolved signals right now.")
-			else:
-				await update.message.reply_text(
-					"✅ No active unresolved signals in your range right now."
-				)
-		return
 
-	# Keep the list scannable. Full cards remain available through /signal <ref>
-	# and the inline Open buttons, avoiding Telegram floods of 50 large messages.
-	from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-
-	total_active = len(filtered_signals)
-	visible = filtered_signals[:10]
-	asset_txt = f" for {asset_filter}" if asset_filter else ""
-	lines = [
-		f"{status_filter.title()} signals{asset_txt}",
-		f"{total_active} delivered in the last {lookback_days} day(s)",
-		"",
-	]
-	button_rows = []
-	for idx, signal in enumerate(visible, 1):
-		ref = str(signal.get("signal_id") or "")
-		score = float(signal.get("score") or 0.0)
-		lines.append(
-			f"{idx}. {signal.get('asset')} {str(signal.get('direction') or '').upper()} "
-			f"{signal.get('timeframe')} | {score:.1f}% | {ref[:8]}"
-		)
-		if ref and idx <= 5:
-			button_rows.append([
-				InlineKeyboardButton(
-					f"Open {signal.get('asset')} {str(signal.get('direction') or '').upper()}",
-					callback_data=f"open_signal_{ref}",
-				)
-			])
-	if total_active > len(visible):
-		lines.extend(["", f"Showing {len(visible)} of {total_active}. Use filters such as /signals asset XAUUSD."])
-	lines.extend(["", "Open details with /signal <reference>."])
-	await update.message.reply_text(
-		"\n".join(lines),
-		reply_markup=InlineKeyboardMarkup(button_rows) if button_rows else _nav_kbd,
-	)
+		button_rows = []
+		lines = [
+			f"📊 Your {status_filter.title()} Signals",
+			f"{len(rows)} shown from the last {lookback_days} day(s)",
+			"",
+		]
+		for idx, r in enumerate(rows, 1):
+			ref = str(getattr(r, "signal_id", "") or "")
+			score = float(getattr(r, "score", 0.0) or 0.0)
+			asset = str(getattr(r, "asset", "") or "?")
+			direction = str(getattr(r, "direction", "") or "?").upper()
+			tf = str(getattr(r, "timeframe", "") or "?")
+			lines.append(f"{idx}. {asset} {direction} {tf} | {score:.1f}% | {ref[:12]}")
+			if ref and idx <= 8:
+				button_rows.append([InlineKeyboardButton(f"Open {asset} {direction}", callback_data=f"open_signal_{ref}")])
+		lines.extend(["", "Open details with /signal <reference> or tap a button."])
+		await message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(button_rows) if button_rows else None)
+	except asyncio.TimeoutError:
+		_audit_logger.warning("[signals_command] fast query timed out user=%s timeout_s=%s", user_id, os.getenv("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS"))
+		await message.reply_text("⚠️ /signals is busy because delivery/storage is active. Try again in a moment; signal delivery is still running.")
+	except Exception as exc:
+		_audit_logger.exception("[signals_command] failed user=%s err=%s", user_id, exc)
+		await message.reply_text(f"⚠️ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
 
 
 async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -3402,7 +3275,7 @@ async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		losses = 0
 		engine = get_engine_for_event_loop()
 		if engine is not None:
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				try:
 					recent_rows = (
 						await session.execute(
@@ -3662,7 +3535,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		# SignalDelivery.sent_ok.is_(True) before exposing a signal to the user.
 
 		if arg.lower() == "all":
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
 				await session.commit()
 			if not rows:
@@ -3677,7 +3550,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 		display_timezone = None
 		delivered_at = None
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			oc = None
 			if sig is not None:
@@ -3926,7 +3799,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				raise RuntimeError("Postgres not configured")
 			cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 			recorded_at_expr = func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at)
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				user_row = (
 					await session.execute(
 						select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
@@ -4006,7 +3879,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		import json
 		import os
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			# Ensure user exists
 			user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 
@@ -4202,7 +4075,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				engine = None
 		if engine is not None:
 			from db.pg_features import get_or_create_referral_code, get_referral_progress
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				code: str = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
 				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
 				await session.commit()
@@ -4259,7 +4132,7 @@ async def pricing_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		return
 	user_id = update.effective_user.id
 	msg, keyboard = await _compose_pricing_message(int(user_id))
-	await update.message.reply_text(msg, reply_markup=keyboard)
+	await update.message.reply_text(msg, parse_mode="HTML", reply_markup=keyboard)
 
 
 @require_tier("PREMIUM")
@@ -4824,7 +4697,7 @@ async def recap_command(update, context):
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				stats = await get_weekly_recap_stats(session, int(user_id))
 				await session.commit()
 			total = int((stats or {}).get("total") or 0)
@@ -4936,7 +4809,7 @@ async def start_command(update, context):
 			max_attempts = 2
 			for attempt in range(1, max_attempts + 1):
 				try:
-					async with get_session() as session:
+					async with get_session(interactive=True) as session:
 						logger.info("[/start] user_id=%s — DB session open, querying user row (attempt=%s)", user_id, attempt)
 						res: Result[Tuple[User]] = await asyncio.wait_for(
 							session.execute(select(User).where(User.telegram_user_id == int(user_id))),
@@ -5297,12 +5170,12 @@ async def performance_command(update, context):
 			# Fetch performance stats
 			stats = {}
 			try:
-				async with get_session() as session:
+				async with get_session(interactive=True) as session:
 					stats = await get_user_performance_30d(session, int(user_id))
 			except Exception as e:
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 				try:
-					async with get_session() as session:
+					async with get_session(interactive=True) as session:
 						stats = await _fallback_performance_stats(session, int(user_id))
 				except Exception as e2:
 					_audit_logger.error(f"/performance fallback query failed for user={user_id}: {e2}")
@@ -5335,7 +5208,7 @@ async def performance_command(update, context):
 					from db.models import SignalDelivery, User
 					cutoff: datetime = datetime.utcnow() - timedelta(days=30)
 					
-					async with get_session() as session:
+					async with get_session(interactive=True) as session:
 						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 						u = res_u.scalar_one_or_none()
 						if u is None:
@@ -5424,7 +5297,7 @@ async def quality_command(update, context) -> None:
 
 		cutoff = datetime.utcnow() - timedelta(hours=24)
 		rows = []
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			res = await session.execute(
 				text(
 					"""
@@ -5662,7 +5535,7 @@ async def gemini_audit_command(update, context) -> None:
 	from services.gemini_ml import audit_recent
 
 	try:
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			res = await audit_recent(session, limit=limit)
 		if not bool(res.get("ok", True)):
 			await update.message.reply_text(f"Audit failed: {res.get('error')}")
@@ -5780,7 +5653,7 @@ async def stats_command(update, context) -> None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
 			from sqlalchemy import select as _sel_s, func as _func_s
 			from db.models import Outcome as _Out, Signal as _Sig_s, SignalDelivery as _Deliv, User as _U_s
-			async with get_session() as session:
+			async with get_session(interactive=True) as session:
 				week = await get_weekly_recap_stats(session, int(user_id))
 				today_rows: list = await list_signals_sent_today(session, int(user_id))
 				# Fetch outcomes for signals delivered to this user (via SignalDelivery join)
@@ -5867,7 +5740,7 @@ async def history_command(update, context):
 			return
 
 		from db.pg_features import list_recent_signals_delivered
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			rows: list[Signal] = await list_recent_signals_delivered(
 				session,
 				telegram_user_id=int(user_id),
@@ -5980,7 +5853,7 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		from engine.risk_analytics import monte_carlo_monthly_projection
 
 		r_values: list[float] = []
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			user_row = (
 				await session.execute(select(User).where(User.telegram_user_id == uid).limit(1))
 			).scalar_one_or_none()
@@ -6123,7 +5996,7 @@ async def alerts_command(update, context) -> None:
 			engine = get_engine_for_event_loop()
 			if engine is not None:
 				from db.pg_features import get_alert_prefs
-				async with get_session() as session:
+				async with get_session(interactive=True) as session:
 					prefs = await get_alert_prefs(session, int(user_id))
 					await session.commit()
 					return dict(prefs or {})
@@ -6136,7 +6009,7 @@ async def alerts_command(update, context) -> None:
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import set_alert_prefs
-				async with get_session() as session:
+				async with get_session(interactive=True) as session:
 					prefs = await set_alert_prefs(
 						session,
 						int(user_id),
@@ -6218,7 +6091,7 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 		from db.models import User
 		from sqlalchemy import update as sa_update
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			await session.execute(
 				sa_update(User)
 				.where(User.telegram_user_id == user_id)
@@ -6247,7 +6120,7 @@ async def elite_command(update, context) -> None:
 			await update.message.reply_text("No elite signals available right now.")
 			return
 		cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			res = await session.execute(
 				select(Signal)
 				.where(Signal.created_at >= cutoff)
@@ -6311,7 +6184,7 @@ async def report_command(update, context) -> None:
 			await update.message.reply_text("No report data available right now.")
 			return
 		user_id = int(update.effective_user.id) if update.effective_user else 0
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			stats = await get_user_performance_30d(session, int(user_id))
 			await session.commit()
 		total = int(stats.get("total", 0) or 0)
@@ -6419,7 +6292,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			await update.message.reply_text("⚠️ Database not configured.")
 			return
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			# Resolve the DB user record to get the FK id used in signal_deliveries
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == user_id)
@@ -6731,7 +6604,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		from db.session import get_session
 		from db.models import MT5Credentials, User
 		from sqlalchemy import select
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == int(user_id))
 			)).scalar_one_or_none()
@@ -7461,7 +7334,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			LIMIT 15
 		""")
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			rows = (await session.execute(
 				query,
 				{
@@ -7719,7 +7592,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		from sqlalchemy import select
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			row = await session.execute(
 				select(User).where(User.telegram_user_id == int(user_id))
 			)
@@ -7787,7 +7660,7 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 		from db.models import User
 		from sqlalchemy import select, update as sa_update
 
-		async with get_session() as session:
+		async with get_session(interactive=True) as session:
 			row = await session.execute(
 				select(User).where(User.telegram_user_id == int(user_id))
 			)

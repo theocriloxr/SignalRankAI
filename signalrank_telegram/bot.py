@@ -1702,7 +1702,7 @@ async def _deliver_or_update_signal_async(
                 timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 4.0)),
             )
         except asyncio.TimeoutError:
-            if _env_true_local("DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN", True):
+            if _env_true_local("DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN", False):
                 logger.warning(
                     "[delivery] freshness timeout fail-open user=%s signal=%s asset=%s",
                     telegram_user_id,
@@ -1736,7 +1736,7 @@ async def _deliver_or_update_signal_async(
                 signal["current_price"] = float(freshness.live_price)
                 signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
     except Exception as exc:
-        if _env_true_local("DELIVERY_FRESHNESS_ERROR_FAIL_OPEN", True):
+        if _env_true_local("DELIVERY_FRESHNESS_ERROR_FAIL_OPEN", False):
             logger.warning("[delivery] freshness gate error fail-open user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
         else:
             logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
@@ -2713,7 +2713,7 @@ async def _send_signal_with_engagement_async(
             from sqlalchemy import select
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             global _vip_webhook_client
-            async with get_session(noncritical=True) as session:
+            async with get_session(critical=True) as session:
                 user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
                 stmt = pg_insert(ActiveSignalMessage).values(
                     user_id=user.id,
@@ -4622,7 +4622,7 @@ async def profile_debug_command(update, context):
             # User-triggered diagnostics must be able to run while background
             # delivery/outcome work is active. Treat this as an interactive
             # read path, not as disposable telemetry.
-            async with get_session(critical=True) as session:
+            async with get_session(interactive=True) as session:
                 prefs_obj = await get_user_trading_preferences(session, telegram_user_id)
                 await session.commit()
                 return prefs_obj
@@ -4663,7 +4663,22 @@ async def profile_debug_command(update, context):
     except Exception as exc:
         logger.exception("[profile_debug] failed: %s", exc)
         try:
-            await update.message.reply_text(f"Profile debug failed: {type(exc).__name__}: {exc}")
+            # Never leave an interactive command looking dead. If DB is under
+            # pressure, return a degraded but useful Redis/system diagnostic.
+            import html
+            try:
+                redis_diag = state.redis_diagnostics_sync()
+            except Exception as redis_err:
+                redis_diag = {"error": str(redis_err)}
+            fallback_text = (
+                "<b>Profile Debug</b>\n"
+                "⚠️ DB preference lookup is busy, but the bot is responsive.\n"
+                f"Error: <code>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</code>\n\n"
+                "<b>Redis/state</b>\n"
+                f"<pre>{html.escape(str(redis_diag))}</pre>\n"
+                "This means user commands are alive; DB background pressure still needs reducing if this repeats."
+            )
+            await update.message.reply_text(fallback_text, parse_mode="HTML")
         except Exception:
             pass
 
@@ -5683,20 +5698,23 @@ def run_bot() -> None:
 
             await query.answer("Opening signal…")
 
-            async with _gs_os() as _s:
+            async with _gs_os(interactive=True) as _s:
                 _u = await _gocu_os(_s, telegram_user_id=uid)
-                _row = (
-                    await _s.execute(
-                        _sel_os(_ASM)
-                        .where(
-                            _ASM.user_id == int(_u.id),
-                            _ASM.signal_id == str(raw),
-                            _ASM.is_active.is_(True),
-                        )
-                        .order_by(_ASM.id.desc())
-                        .limit(1)
+                _ref = str(raw).strip()
+                _stmt = (
+                    _sel_os(_ASM)
+                    .where(
+                        _ASM.user_id == int(_u.id),
+                        _ASM.is_active.is_(True),
                     )
-                ).scalar_one_or_none()
+                    .order_by(_ASM.id.desc())
+                    .limit(1)
+                )
+                if len(_ref) >= 36:
+                    _stmt = _stmt.where(_ASM.signal_id == _ref)
+                else:
+                    _stmt = _stmt.where(_ASM.signal_id.ilike(f"{_ref}%"))
+                _row = (await _s.execute(_stmt)).scalar_one_or_none()
                 await _s.commit()
 
             if _row is None:
@@ -5714,53 +5732,89 @@ def run_bot() -> None:
 
     application.add_handler(_CQH(_open_signal_callback, pattern=r"^open_signal_"))
 
-    # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
+    # 🔍 Check Outcome — resolve signal status and send a real response message.
+    # The global fast-ACK guard already answers the callback instantly, so this
+    # handler must not rely on a second popup answer. It replies/edits visibly.
     async def _check_outcome_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("check_outcome_", "", 1).strip()
+        uid = int(getattr(getattr(update, "effective_user", None), "id", 0) or 0)
         if not raw:
-            await query.answer("No signal ID found.", show_alert=True)
+            try:
+                await query.message.reply_text("⚠️ No signal reference was found for that button.")
+            except Exception:
+                pass
             return
         try:
             from db.session import get_session as _gs_oc
-            from db.models import Signal as _Sig, Outcome as _Out
+            from db.models import Signal as _Sig, Outcome as _Out, SignalLifecycle as _Life
             from sqlalchemy import select as _sel_oc
-            async with _gs_oc() as _s:
-                sig_row = (await _s.execute(
-                    _sel_oc(_Sig).where(_Sig.signal_id == raw).limit(1)
-                )).scalar_one_or_none()
-                out_row = (await _s.execute(
-                    _sel_oc(_Out).where(_Out.signal_id == raw).limit(1)
-                )).scalar_one_or_none() if sig_row else None
+            import asyncio as _asyncio
+
+            async def _load_outcome():
+                async with _gs_oc(interactive=True) as _s:
+                    _ref = str(raw).strip()
+                    sig_stmt = _sel_oc(_Sig)
+                    if len(_ref) >= 36:
+                        sig_stmt = sig_stmt.where(_Sig.signal_id == _ref)
+                    else:
+                        sig_stmt = sig_stmt.where(_Sig.signal_id.ilike(f"{_ref}%"))
+                    sig_row = (await _s.execute(sig_stmt.order_by(_Sig.created_at.desc()).limit(1))).scalar_one_or_none()
+                    out_row = None
+                    life_row = None
+                    if sig_row is not None:
+                        sid = str(getattr(sig_row, "signal_id", "") or "")
+                        out_row = (await _s.execute(_sel_oc(_Out).where(_Out.signal_id == sid).limit(1))).scalar_one_or_none()
+                        try:
+                            life_row = (await _s.execute(_sel_oc(_Life).where(_Life.signal_id == sid).limit(1))).scalar_one_or_none()
+                        except Exception:
+                            life_row = None
+                    await _s.commit()
+                    return sig_row, out_row, life_row
+
+            timeout_s = max(2.0, float(os.getenv("CHECK_OUTCOME_DB_TIMEOUT_SECONDS", "6") or 6))
+            sig_row, out_row, life_row = await _asyncio.wait_for(_load_outcome(), timeout=timeout_s)
+
             if sig_row is None:
-                await query.answer("❌ Signal not found in database.", show_alert=True)
-                return
-            asset     = getattr(sig_row, 'asset', '?')
-            direction = str(getattr(sig_row, 'direction', '?')).upper()
-            score     = getattr(sig_row, 'score', 0)
-            expired   = getattr(sig_row, 'expired', False)
-            created   = getattr(sig_row, 'created_at', None)
-            age_str   = ""
-            if created:
-                try:
-                    from datetime import datetime, timezone
-                    _c = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
-                    _mins = int((datetime.now(timezone.utc) - _c).total_seconds() / 60)
-                    age_str = f" | Age: {_mins}m"
-                except Exception:
-                    pass
-            if out_row:
-                outcome = str(getattr(out_row, 'status', 'unknown')).upper()
-                emoji = "✅" if outcome.startswith("TP") else ("🛑" if outcome == "SL" else "ℹ️")
-                msg = f"{emoji} {asset} {direction}\nOutcome: {outcome}\nScore: {score:.0f}{age_str}"
-            elif expired:
-                msg = f"⏰ {asset} {direction}\nStatus: Expired{age_str}"
+                msg = f"❌ Signal <code>{raw}</code> was not found. It may be too old or only a compact reference."
             else:
-                msg = f"🟢 {asset} {direction}\nStatus: Active (no outcome yet)\nScore: {score:.0f}{age_str}"
-            await query.answer(msg, show_alert=True)
+                asset = getattr(sig_row, 'asset', '?')
+                direction = str(getattr(sig_row, 'direction', '?')).upper()
+                score = float(getattr(sig_row, 'score', 0) or 0)
+                expired = bool(getattr(sig_row, 'expired', False))
+                created = getattr(sig_row, 'created_at', None)
+                age_str = ""
+                if created:
+                    try:
+                        from datetime import datetime, timezone
+                        _c = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+                        _mins = int((datetime.now(timezone.utc) - _c).total_seconds() / 60)
+                        age_str = f"\n⏳ Age: {_mins}m"
+                    except Exception:
+                        pass
+                if out_row:
+                    outcome = str(getattr(out_row, 'status', 'unknown')).upper()
+                    emoji = "✅" if outcome.startswith("TP") else ("🛑" if outcome == "SL" else "ℹ️")
+                    pnl = getattr(out_row, "pnl_pct", None)
+                    pnl_txt = f"\n📈 PnL: {float(pnl):+.2f}%" if pnl is not None else ""
+                    msg = f"{emoji} <b>Outcome</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nStatus: <b>{outcome}</b>\nScore: {score:.1f}%{pnl_txt}{age_str}"
+                elif life_row is not None:
+                    state_txt = str(getattr(life_row, "state", "ACTIVE") or "ACTIVE").replace("_", " ").title()
+                    last_price = getattr(life_row, "last_price", None)
+                    lp_txt = f"\nLast price: <code>{float(last_price):.6g}</code>" if last_price is not None else ""
+                    msg = f"🟢 <b>Signal Status</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nState: <b>{state_txt}</b>\nScore: {score:.1f}%{lp_txt}{age_str}"
+                elif expired:
+                    msg = f"⏰ <b>Signal Expired</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>{age_str}"
+                else:
+                    msg = f"🟢 <b>Signal Active</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nOutcome: not reached yet\nScore: {score:.1f}%{age_str}"
+            logger.info("[check_outcome] user=%s ref=%s ok=%s", uid, raw[:16], sig_row is not None)
+            await query.message.reply_text(msg, parse_mode="HTML")
         except Exception as _oc_err:
-            logger.debug("[check_outcome] error: %s", _oc_err)
-            await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
+            logger.warning("[check_outcome] failed user=%s ref=%s err=%s", uid, raw[:16], _oc_err)
+            try:
+                await query.message.reply_text("⚠️ Outcome check is busy right now. Signal delivery/outcome tracking is still running; try again shortly.")
+            except Exception:
+                pass
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
 

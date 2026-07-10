@@ -98,18 +98,21 @@ def _is_crypto(asset: str) -> bool:
 
 
 def _get_providers_for_asset(asset: str) -> List[str]:
+    """Get provider priority list for live-price checks.
+
+    The final-send gate must not reuse candle-cache prices. It needs a fresh
+    quote from a provider whose symbol mapping matches the asset class. Crypto
+    tries multiple spot/price sources; stocks, FX, and commodities prefer Yahoo
+    with the canonical mapper and optionally Polygon.
     """
-    Get provider priority list for asset.
-    
-    Strict routing:
-    - Crypto (USDT/*) → Binance → Bybit → CryptoCompare
-    - Stocks → Yahoo → Polygon
-    """
-    if _is_crypto(asset):
-        return ["binance", "bybit", "cryptocompare"]
-    else:
-        # Stocks and other assets
-        return ["yahoo", "polygon"]
+    try:
+        from services.asset_mapper import classify_asset
+        cls = str(classify_asset(asset)).lower()
+    except Exception:
+        cls = "crypto" if _is_crypto(asset) else "stock"
+    if cls == "crypto":
+        return ["binance", "bybit", "cryptocompare", "yahoo"]
+    return ["yahoo", "polygon"]
 
 
 # ============================================================================
@@ -130,7 +133,7 @@ async def _fetch_binance_price(symbol: str) -> Optional[float]:
             sym += "USDT"
         
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={sym}"
-        resp = requests.get(url, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -165,7 +168,7 @@ async def _fetch_bybit_price(symbol: str) -> Optional[float]:
             "symbol": sym,
         }
         
-        resp = requests.get(url, params=params, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, params=params, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -215,7 +218,7 @@ async def _fetch_cryptocompare_price(symbol: str) -> Optional[float]:
         if api_key:
             params["api_key"] = api_key
         
-        resp = requests.get(url, params=params, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, params=params, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -234,37 +237,50 @@ async def _fetch_cryptocompare_price(symbol: str) -> Optional[float]:
 
 
 async def _fetch_yahoo_price(symbol: str) -> Optional[float]:
-    """Fetch price from Yahoo Finance."""
+    """Fetch price from Yahoo Finance using provider-correct symbol mapping.
+
+    Previous code treated every non-USD ticker as FX and converted symbols like
+    META into META=X. That can return no data/ghost data and is one root cause
+    of stale stock signals. Use services.asset_mapper for stocks, FX,
+    commodities, and crypto fallbacks, and query the correct /chart endpoint.
+    """
     import requests
-    
+
     breaker = _get_breaker("yahoo")
     if not breaker.allow():
         return None
-    
+
     try:
-        # Yahoo format: BTC-USD -> BTCUSD=X
-        sym = symbol.upper().replace("/", "-")
-        if not sym.endswith("=X") and not sym.endswith("USD"):
-            if not sym.endswith("=X"):
-                sym = f"{sym}=X"
-        
-        url = f"https://query1.finance.yahoo.com/v8/finance/charts/{sym}"
-        resp = requests.get(url, timeout=5)
-        
+        try:
+            from services.asset_mapper import map_symbol
+            sym = map_symbol(symbol, "yfinance") or symbol.upper().strip()
+        except Exception:
+            sym = symbol.upper().strip()
+        if not sym:
+            breaker.record_failure()
+            return None
+
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+        resp = await asyncio.to_thread(requests.get, url, timeout=5)
+
         if resp.ok:
             data = resp.json()
             chart = data.get("chart", {})
             result = chart.get("result", [])
             if result:
-                meta = result[0].get("meta", {})
-                price = meta.get("regularMarketPrice")
+                meta = result[0].get("meta", {}) or {}
+                price = (
+                    meta.get("regularMarketPrice")
+                    or meta.get("previousClose")
+                    or meta.get("chartPreviousClose")
+                )
                 if price:
                     breaker.record_success()
                     return float(price)
-        
+
         breaker.record_failure()
         return None
-        
+
     except Exception as e:
         breaker.record_failure()
         logger.debug(f"[price] Yahoo error for {symbol}: {e}")
@@ -290,7 +306,7 @@ async def _fetch_polygon_price(symbol: str) -> Optional[float]:
         url = f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev"
         params = {"apiKey": api_key}
         
-        resp = requests.get(url, params=params, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, params=params, timeout=5)
         
         if resp.ok:
             data = resp.json()

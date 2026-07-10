@@ -122,6 +122,82 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _asset_class(symbol: str) -> str:
+    try:
+        from services.asset_mapper import classify_asset
+        cls = str(classify_asset(symbol)).lower()
+        if cls == "forex":
+            return "fx"
+        return cls
+    except Exception:
+        sym = str(symbol or "").upper().strip()
+        if sym.endswith(("USDT", "USDC", "BUSD", "BTC", "ETH")):
+            return "crypto"
+        if len(sym) == 6 and sym.isalpha():
+            return "fx"
+        if sym in {"XAUUSD", "XAGUSD", "GOLD", "SILVER", "USOIL", "OIL"}:
+            return "commodity"
+        return "stock"
+
+
+def _max_entry_drift_pct(symbol: str) -> float:
+    cls = _asset_class(symbol)
+    defaults = {
+        "crypto": 0.20,
+        "fx": 0.08,
+        "stock": 0.35,
+        "commodity": 0.20,
+        "index": 0.25,
+    }
+    env_by_cls = {
+        "crypto": "FINAL_SEND_MAX_DRIFT_CRYPTO_PCT",
+        "fx": "FINAL_SEND_MAX_DRIFT_FOREX_PCT",
+        "stock": "FINAL_SEND_MAX_DRIFT_STOCK_PCT",
+        "commodity": "FINAL_SEND_MAX_DRIFT_COMMODITY_PCT",
+        "index": "FINAL_SEND_MAX_DRIFT_INDEX_PCT",
+    }
+    return _env_float(env_by_cls.get(cls, "FINAL_SEND_MAX_DRIFT_DEFAULT_PCT"), defaults.get(cls, 0.20))
+
+
+async def _fetch_final_live_price(symbol: str) -> float | None:
+    """Fetch a fresh quote for final delivery validation.
+
+    This deliberately uses live quote endpoints rather than old candle/cache
+    values so missed entries are not labelled Fresh. It may use a very short
+    Redis cache only to dedupe concurrent user fanout for the same symbol.
+    """
+    try:
+        from data.get_live_price import get_cached_price, get_live_price
+        max_cache = max(0.0, _env_float("FINAL_SEND_LIVE_PRICE_MAX_CACHE_SECONDS", 10.0))
+        if _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", True):
+            return await get_live_price(symbol, timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0)))
+        return await get_cached_price(symbol, max_age_seconds=max_cache)
+    except Exception as exc:
+        logger.debug("[delivery_freshness] final live price fetch failed symbol=%s err=%s", symbol, exc)
+        return None
+
+
+def _all_targets_consumed(signal: dict[str, Any], live_price: float) -> bool:
+    targets = _target_prices(signal)
+    if not targets:
+        return False
+    direction = _direction(signal)
+    if direction == "short":
+        return all(float(live_price) <= t for t in targets)
+    return all(float(live_price) >= t for t in targets)
+
+
+def _first_target_hit(signal: dict[str, Any], live_price: float) -> bool:
+    targets = _target_prices(signal)
+    if not targets:
+        return False
+    direction = _direction(signal)
+    tp1 = targets[0]
+    if direction == "short":
+        return float(live_price) <= tp1
+    return float(live_price) >= tp1
+
+
 def _target_prices(signal: dict[str, Any]) -> list[float]:
     raw = (
         signal.get("take_profit")
@@ -257,13 +333,33 @@ async def validate_delivery_freshness(
         return age_result
 
     require_price = _env_bool("DELIVERY_REQUIRE_LIVE_PRICE", True) if require_live_price is None else bool(require_live_price)
-    live_price = cached_live_price
-    if live_price is None:
-        raw_price = sig.get("current_price") or sig.get("live_price")
-        try:
-            live_price = float(raw_price) if raw_price is not None else None
-        except Exception:
-            live_price = None
+    symbol = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
+
+    # Final send should be based on a fresh market quote, not the same candle
+    # payload that generated the signal. This prevents old META/BNB/XAU entries
+    # from being sent after TP/SL is already invalidated.
+    live_price = None
+    if _env_bool("FINAL_SEND_LIVE_PRICE_CHECK_ENABLED", True) and symbol:
+        live_price = await _fetch_final_live_price(symbol)
+
+    if live_price is None and not _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", True):
+        live_price = cached_live_price
+        if live_price is None:
+            raw_price = sig.get("current_price") or sig.get("live_price")
+            try:
+                live_price = float(raw_price) if raw_price is not None else None
+            except Exception:
+                live_price = None
+
+    if require_price and live_price is None:
+        return DeliveryFreshnessResult(
+            False,
+            "final_live_price_unavailable",
+            age_result.age_minutes,
+            age_result.max_age_minutes,
+            age_result.opportunity_remaining_pct,
+            None,
+        )
 
     try:
         from engine.stale_signal_validator import validate_signal_freshness
@@ -306,6 +402,37 @@ async def validate_delivery_freshness(
         logger.debug("[delivery_freshness] price revalidation skipped after error: %s", exc)
 
     if live_price is not None:
+        entry = _to_float(sig.get("entry"))
+        if entry is not None:
+            drift_pct = abs(float(live_price) - entry) / entry * 100.0
+            max_drift_pct = _max_entry_drift_pct(symbol)
+            if drift_pct > max_drift_pct:
+                return DeliveryFreshnessResult(
+                    False,
+                    f"final_entry_drift:{drift_pct:.2f}%>{max_drift_pct:.2f}%",
+                    age_result.age_minutes,
+                    age_result.max_age_minutes,
+                    age_result.opportunity_remaining_pct,
+                    float(live_price),
+                )
+        if _env_bool("REJECT_IF_TP1_ALREADY_HIT", True) and _first_target_hit(sig, float(live_price)):
+            return DeliveryFreshnessResult(
+                False,
+                "tp1_already_hit_before_send",
+                age_result.age_minutes,
+                age_result.max_age_minutes,
+                age_result.opportunity_remaining_pct,
+                float(live_price),
+            )
+        if _env_bool("REJECT_IF_ALL_TARGETS_ALREADY_HIT", True) and _all_targets_consumed(sig, float(live_price)):
+            return DeliveryFreshnessResult(
+                False,
+                "all_targets_already_consumed_before_send",
+                age_result.age_minutes,
+                age_result.max_age_minutes,
+                age_result.opportunity_remaining_pct,
+                float(live_price),
+            )
         rr_ok, rr_reason, _current_rr = _current_reward_risk(sig, float(live_price))
         if not rr_ok:
             return DeliveryFreshnessResult(
