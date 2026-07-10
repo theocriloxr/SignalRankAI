@@ -882,6 +882,8 @@ async def _send_message_async(
 
 
 _TG_SEND_LOCKS: dict[tuple[int, int], object] = {}
+_TG_GLOBAL_SEND_LOCKS: dict[int, object] = {}
+_TG_NEXT_SEND_AT: dict[int, float] = {}
 _TG_SEND_LOCKS_GUARD = threading.Lock()
 
 
@@ -896,6 +898,19 @@ def _telegram_chat_lock(chat_id: int):
             lock = asyncio.Lock()
             _TG_SEND_LOCKS[key] = lock
         return lock
+
+
+def _telegram_global_lock():
+    import asyncio
+
+    loop_id = id(asyncio.get_running_loop())
+    with _TG_SEND_LOCKS_GUARD:
+        lock = _TG_GLOBAL_SEND_LOCKS.get(loop_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _TG_GLOBAL_SEND_LOCKS[loop_id] = lock
+            _TG_NEXT_SEND_AT[loop_id] = 0.0
+        return lock, loop_id
 
 
 def _env_float_local(name: str, default: float) -> float:
@@ -938,13 +953,48 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
         while True:
             attempt += 1
             try:
-                if global_delay > 0:
-                    await asyncio.sleep(global_delay)
+                # Process-wide pacing: a plain per-coroutine sleep still allows bursts
+                # when many user-delivery tasks run concurrently. This shared lock
+                # enforces an actual bot-wide send interval while preserving per-chat
+                # serialization above. Increase TELEGRAM_BROADCAST_RPS only when paid
+                # broadcasts or multiple shards are configured.
+                try:
+                    configured_rps = float((os.getenv("TELEGRAM_BROADCAST_RPS") or "0").strip() or 0)
+                except Exception:
+                    configured_rps = 0.0
+                if configured_rps > 0:
+                    min_interval = 1.0 / max(1.0, configured_rps)
+                else:
+                    min_interval = max(0.0, float(global_delay or 0.0))
+                if min_interval > 0:
+                    global_lock, loop_id = _telegram_global_lock()
+                    async with global_lock:
+                        now = asyncio.get_running_loop().time()
+                        next_at = float(_TG_NEXT_SEND_AT.get(loop_id, 0.0) or 0.0)
+                        if next_at > now:
+                            await asyncio.sleep(max(0.0, next_at - now))
+                        _TG_NEXT_SEND_AT[loop_id] = asyncio.get_running_loop().time() + min_interval
+
                 send_timeout = max(3.0, _env_float_local("TELEGRAM_SEND_TIMEOUT_SECONDS", 10.0))
-                return await asyncio.wait_for(
-                    bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **kwargs),
-                    timeout=send_timeout,
-                )
+                send_kwargs = dict(kwargs or {})
+                if _env_true_local("TELEGRAM_ALLOW_PAID_BROADCAST", False):
+                    send_kwargs.setdefault("allow_paid_broadcast", True)
+                try:
+                    return await asyncio.wait_for(
+                        bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **send_kwargs),
+                        timeout=send_timeout,
+                    )
+                except TypeError as _type_err:
+                    # Older python-telegram-bot versions may not yet expose the
+                    # Bot API paid-broadcast argument. Retry without it instead
+                    # of dropping the message.
+                    if "allow_paid_broadcast" in send_kwargs:
+                        send_kwargs.pop("allow_paid_broadcast", None)
+                        return await asyncio.wait_for(
+                            bot.send_message(chat_id=int(chat_id), text=clean_message_text(str(text)), **send_kwargs),
+                            timeout=send_timeout,
+                        )
+                    raise _type_err
             except RetryAfter as exc:
                 retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
                 logger.warning(
@@ -3470,8 +3520,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         from services.opportunity_engine import rank_opportunities
         from db.session import get_session as _profile_get_session
 
-        async with _profile_get_session() as _profile_session:
-            _prefs = await get_user_trading_preferences(_profile_session, int(user_id))
+        async def _load_delivery_prefs():
+            async with _profile_get_session(noncritical=True) as _profile_session:
+                return await get_user_trading_preferences(_profile_session, int(user_id))
+
+        _prefs = await asyncio.wait_for(
+            _load_delivery_prefs(),
+            timeout=max(1.0, _env_float_local("DELIVERY_PREFS_TIMEOUT_SECONDS", 3.0)),
+        )
         user_trade_profile = str(getattr(_prefs, "trade_profile", "all") or "all")
         before_profile_count = len(signals_list)
         _filtered_signals = []

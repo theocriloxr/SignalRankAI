@@ -43,9 +43,15 @@ def _redis_max_connections() -> int:
 
 
 def _resolve_redis_url() -> Optional[str]:
-    # Always resolve to REDIS_URL (production)
-    val = (os.getenv("REDIS_URL") or "").strip()
-    return val if val else None
+    # State/delivery traffic can be moved to a second Redis so webhook intake
+    # is not competing with delivery locks, delivered-signal sets, and fanout
+    # coordination. Leave REDIS_URL for the webhook queue; set DELIVERY_REDIS_URL
+    # or STATE_REDIS_URL when adding a second Redis database.
+    for name in ("DELIVERY_REDIS_URL", "STATE_REDIS_URL", "SIGNALRANK_STATE_REDIS_URL", "REDIS_URL"):
+        val = (os.getenv(name) or "").strip()
+        if val:
+            return val
+    return None
 
 
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:

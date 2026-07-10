@@ -4200,10 +4200,36 @@ def main_loop(DRY_RUN: bool = False):
                 return dispatched_count
 
             try:
-                # Keep the engine loop responsive. Delivery is best-effort and
-                # bounded per-user above; this outer guard is only a final circuit
-                # breaker, not a normal 3-minute wait.
-                dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 60.0)))
+                # Scale-safe delivery mode. The engine's job is to find/store fresh
+                # opportunities. Telegram fanout is network-bound and must not hold
+                # the scanner hostage, especially as users grow. In background mode,
+                # deliver_all is submitted to the shared async worker loop and this
+                # engine cycle continues immediately. Disable only for local debugging.
+                if _env_bool("ENGINE_DELIVERY_ASYNC_FANOUT", True):
+                    try:
+                        from utils.async_runner import submit_background_coro
+                        try:
+                            from core.redis_state import state as _delivery_state
+                            _lock_key = "engine_delivery_fanout:active"
+                            _lock_ttl = max(15, int(_env_float("ENGINE_DELIVERY_FANOUT_LOCK_SECONDS", 90)))
+                            if _delivery_state.cache_get_sync(_lock_key):
+                                dispatched = 0
+                                logger.info("[engine] delivery fanout already active; skip scheduling candidates=%s", len(scored_signals_all or []))
+                            else:
+                                _delivery_state.cache_set_sync(_lock_key, "1", ex=_lock_ttl)
+                                submit_background_coro(deliver_all(), label="engine_deliver_all")
+                                dispatched = 0
+                                logger.info("[engine] delivery fanout scheduled background=true candidates=%s ttl=%ss", len(scored_signals_all or []), _lock_ttl)
+                        except Exception:
+                            submit_background_coro(deliver_all(), label="engine_deliver_all")
+                            dispatched = 0
+                            logger.info("[engine] delivery fanout scheduled background=true candidates=%s", len(scored_signals_all or []))
+                    except Exception:
+                        logger.exception("deliver_all background scheduling failed; falling back to bounded sync")
+                        dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 120.0)))
+                else:
+                    # Debug/single-user mode only. For production scale keep async fanout enabled.
+                    dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 120.0)))
             except Exception:
                 logger.exception("deliver_all failed")
                 dispatched = 0
