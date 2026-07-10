@@ -5146,6 +5146,28 @@ def run_bot() -> None:
 
     application.add_handler(build_connect_broker_conversation())
 
+    # ── Immediate callback ACK guard ─────────────────────────────────────────
+    # Telegram requires callback queries to be answered quickly. Heavy DB or
+    # delivery work can delay downstream handlers and make buttons look dead.
+    # This group runs before every concrete callback handler and only ACKs/logs.
+    try:
+        from telegram.ext import CallbackQueryHandler as _CQH_fast_ack
+        async def _fast_callback_ack(update, context):
+            query = getattr(update, "callback_query", None)
+            if query is None:
+                return
+            data = str(getattr(query, "data", "") or "")
+            uid = getattr(getattr(update, "effective_user", None), "id", None)
+            try:
+                await query.answer()
+                logger.info("[callback_ack] answered user=%s data=%s", uid, data[:64])
+            except Exception as ack_err:
+                logger.warning("[callback_ack] failed user=%s data=%s err=%s", uid, data[:64], ack_err)
+        application.add_handler(_CQH_fast_ack(_fast_callback_ack, pattern=r".*", block=True), group=-100)
+        logger.info("[bot] immediate callback ack guard registered group=-100")
+    except Exception as _cb_ack_err:
+        logger.warning("[bot] failed to register callback ack guard: %s", _cb_ack_err)
+
     # Subscription cancellation confirmation callbacks
     from .commands import cancel_confirm_callback, cancel_nevermind_callback
     from telegram.ext import CallbackQueryHandler as _CQH_cancel

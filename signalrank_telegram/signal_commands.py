@@ -38,6 +38,33 @@ RESOLVED_SIGNAL_STATUSES = {
 }
 
 
+def _signals_env_int(name: str, default: int, minimum: int = 1, maximum: int = 200) -> int:
+    try:
+        return max(minimum, min(maximum, int(float(os.getenv(name, str(default)) or default))))
+    except Exception:
+        return default
+
+def _signals_env_float(name: str, default: float, minimum: float = 1.0, maximum: float = 60.0) -> float:
+    try:
+        return max(minimum, min(maximum, float(os.getenv(name, str(default)) or default)))
+    except Exception:
+        return default
+
+async def _fetch_user_delivered_signals_fast(telegram_user_id: int, *, lookback_days: int, limit: int, status_filter: str = "active"):
+    from db.pg_features import list_delivered_signals_for_user
+    async with get_session() as session:
+        rows = await list_delivered_signals_for_user(
+            session,
+            telegram_user_id=int(telegram_user_id),
+            lookback_days=int(lookback_days),
+            status_filter=str(status_filter),
+            sent_ok_only=True,
+            limit=int(limit),
+        )
+        await session.commit()
+        return list(rows or [])
+
+
 def _is_signal_active(signal_row) -> bool:
     """Return whether a signal row should be treated as active/unresolved."""
     try:
@@ -92,11 +119,13 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     show_unvoted_only: bool = False
     display_timezone = None
     try:
-        async with get_session() as _timezone_session:
-            _timezone_user = (await _timezone_session.execute(
-                select(User).where(User.telegram_user_id == int(user_id))
-            )).scalar_one_or_none()
-            display_timezone = getattr(_timezone_user, "timezone", None)
+        async def _load_tz():
+            async with get_session() as _timezone_session:
+                _timezone_user = (await _timezone_session.execute(
+                    select(User).where(User.telegram_user_id == int(user_id))
+                )).scalar_one_or_none()
+                return getattr(_timezone_user, "timezone", None)
+        display_timezone = await asyncio.wait_for(_load_tz(), timeout=2.0)
     except Exception:
         display_timezone = None
     
@@ -155,15 +184,18 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # FREE tier: show last 5 delivered signals from today
     if tier_rank(tier) < tier_rank("PREMIUM"):
         try:
-            from db.pg_features import list_unresolved_signals_for_user
-            async with get_session() as session:
-                rows = await list_unresolved_signals_for_user(
-                    session,
-                    telegram_user_id=int(user_id),
-                    lookback_days=30,
-                )
-                signals_list = []
-                for r in rows:
+            db_timeout = _signals_env_float("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS", 8.0, 2.0, 30.0)
+            rows = await asyncio.wait_for(
+                _fetch_user_delivered_signals_fast(
+                    int(user_id),
+                    lookback_days=_signals_env_int("SIGNALS_COMMAND_LOOKBACK_DAYS", 7, 1, 30),
+                    limit=_signals_env_int("SIGNALS_COMMAND_LIMIT", 5, 1, 20),
+                    status_filter="active",
+                ),
+                timeout=db_timeout,
+            )
+            signals_list = []
+            for r in rows:
                     sig_dict = {
                         "signal_id": r.signal_id,
                         "asset": r.asset,
@@ -213,20 +245,27 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     _audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
             await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
             return
+        except asyncio.TimeoutError:
+            _audit_logger.warning("[signals_command] FREE query timed out user=%s", user_id)
+            await update.message.reply_text("⚠️ /signals is busy right now. Delivery is still running; try again in a moment or use /delivery_debug with a signal ID.")
+            return
         except Exception as e:
             _audit_logger.error(f"signals_command FREE tier error for {user_id}: {e}")
     
     # PREMIUM/VIP: unresolved active signals from last 30 days
     unresolved_signals = []
     try:
-        from db.pg_features import list_unresolved_signals_for_user
-        async with get_session() as session:
-            rows = await list_unresolved_signals_for_user(
-                session,
-                telegram_user_id=int(user_id),
-                lookback_days=30,
-            )
-            unresolved_signals = [
+        db_timeout = _signals_env_float("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS", 8.0, 2.0, 30.0)
+        rows = await asyncio.wait_for(
+            _fetch_user_delivered_signals_fast(
+                int(user_id),
+                lookback_days=_signals_env_int("SIGNALS_COMMAND_LOOKBACK_DAYS", 7, 1, 30),
+                limit=_signals_env_int("SIGNALS_COMMAND_LIMIT", 8, 1, 25),
+                status_filter="active",
+            ),
+            timeout=db_timeout,
+        )
+        unresolved_signals = [
                 {
                     "signal_id": r.signal_id,
                     "asset": r.asset,
@@ -249,6 +288,10 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 }
                 for r in rows
             ]
+    except asyncio.TimeoutError:
+        _audit_logger.warning("[signals_command] query timed out user=%s", user_id)
+        await update.message.reply_text("⚠️ /signals is busy right now. The bot is still delivering/tracking signals. Try again shortly or use /delivery_debug <signal_id>.")
+        return
     except Exception as e:
         _audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
     

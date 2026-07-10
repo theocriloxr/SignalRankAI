@@ -222,7 +222,9 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                 delivered_row = (
                     await session.execute(
                         text(
-                            "SELECT COUNT(DISTINCT signal_id) FROM signal_deliveries WHERE delivered_at >= :since AND sent_ok IS TRUE"
+                            "SELECT COUNT(*) FROM signal_deliveries "
+                            "WHERE sent_ok IS TRUE AND telegram_message_id IS NOT NULL "
+                            "AND COALESCE(delivery_confirmed_at, delivered_at_utc, delivered_at, last_attempt_at) >= :since"
                         ),
                         params,
                     )
