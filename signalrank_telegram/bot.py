@@ -2938,27 +2938,33 @@ def _audit_handler(command_name: str, handler):
                     except Exception:
                         meta["args"] = None
 
-                async with get_session() as session:
+                async def _write_command_audit() -> None:
                     try:
-                        from db.pg_features import record_bot_event
+                        # Audit is useful but must never delay command replies. During
+                        # signal delivery/storage bursts it intentionally fails fast.
+                        async with get_session(noncritical=True) as session:
+                            from db.pg_features import record_bot_event
 
-                        await record_bot_event(
-                            session,
-                            telegram_user_id=user_id,
-                            username=username,
-                            event_type="command",
-                            meta=meta,
-                        )
-                        await session.commit()
+                            await record_bot_event(
+                                session,
+                                telegram_user_id=user_id,
+                                username=username,
+                                event_type="command",
+                                meta=meta,
+                            )
+                            await session.commit()
                     except Exception as e:
                         _log_once(
                             "bot_event_audit_failed",
-                            f"[bot] bot_events audit write failed: {type(e).__name__}: {e}",
+                            f"[bot] bot_events audit skipped/failed: {type(e).__name__}: {e}",
                         )
+
+                audit_timeout = float(os.getenv("BOT_COMMAND_AUDIT_TIMEOUT_SECONDS", "1.0") or 1.0)
+                await asyncio.wait_for(_write_command_audit(), timeout=max(0.1, audit_timeout))
         except Exception as e:
             _log_once(
                 "bot_event_audit_outer_failed",
-                f"[bot] bot_events audit init failed: {type(e).__name__}: {e}",
+                f"[bot] bot_events audit skipped/failed: {type(e).__name__}: {e}",
             )
         try:
             return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
@@ -4612,9 +4618,17 @@ async def profile_debug_command(update, context):
         from services.trade_profiles import get_trade_profile
         import html
 
-        async with get_session(noncritical=True) as session:
-            prefs = await get_user_trading_preferences(session, telegram_user_id)
-            await session.commit()
+        async def _load_prefs_for_debug():
+            # User-triggered diagnostics must be able to run while background
+            # delivery/outcome work is active. Treat this as an interactive
+            # read path, not as disposable telemetry.
+            async with get_session(critical=True) as session:
+                prefs_obj = await get_user_trading_preferences(session, telegram_user_id)
+                await session.commit()
+                return prefs_obj
+
+        profile_timeout = float(os.getenv("PROFILE_DEBUG_DB_TIMEOUT_SECONDS", "8") or 8)
+        prefs = await asyncio.wait_for(_load_prefs_for_debug(), timeout=max(2.0, profile_timeout))
         try:
             profile = get_trade_profile(getattr(prefs, "trade_profile", "all"))
             profile_line = (
