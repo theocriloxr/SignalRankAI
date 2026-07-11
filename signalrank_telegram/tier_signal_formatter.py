@@ -5,6 +5,7 @@ VIP      : 🚨 VIP SIGNAL DETECTED
 """
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict as DictType, List, Optional
 
@@ -15,7 +16,11 @@ from engine.signal_metrics import (
     resolve_ml_probability,
     resolve_score_percent,
 )
-from engine.signal_explainability import build_signal_explanation
+
+try:
+    from engine.signal_explainability import build_signal_explanation
+except Exception:  # pragma: no cover - keep formatting available in lean runtimes.
+    build_signal_explanation = None
 
 
 # ---------------------------------------------------------------------------
@@ -284,8 +289,30 @@ def _signal_generated_time(signal: DictType[str, Any]) -> Optional[str]:
             created = created_at
         if getattr(created, "tzinfo", None) is None:
             created = created.replace(tzinfo=timezone.utc)
-        # Return in format: "2024-05-03 14:30 UTC"
-        return created.strftime("%Y-%m-%d %H:%M UTC")
+        from signalrank_telegram.timezones import format_user_datetime
+        return format_user_datetime(
+            created,
+            signal.get("display_timezone"),
+            signal.get("display_telegram_user_id"),
+        )
+    except Exception:
+        return None
+
+
+def _signal_delivery_time(signal: DictType[str, Any]) -> Optional[str]:
+    delivered_at = signal.get("delivered_at")
+    if not delivered_at:
+        return None
+    try:
+        if isinstance(delivered_at, str):
+            delivered_at = datetime.fromisoformat(delivered_at.replace("Z", "+00:00"))
+        from signalrank_telegram.timezones import format_user_datetime
+        return format_user_datetime(
+            delivered_at,
+            signal.get("display_timezone"),
+            signal.get("display_telegram_user_id"),
+            include_date=False,
+        )
     except Exception:
         return None
 
@@ -348,10 +375,86 @@ def _score_blurb(signal: DictType[str, Any]) -> str:
     return " • ".join(parts)
 
 
+def _ai_review_text(signal: DictType[str, Any]) -> Optional[str]:
+    """User-facing AI review summary.
+
+    Keep internal degradation strings out of paid signal messages. The raw
+    reason is still logged in engine/core.py, but users should see a clean
+    explanation such as "Local AI fallback 8.7/10" instead of
+    "ai_review_status=rate_limited_degraded;local_ai:...".
+    """
+    score = _safe_float(signal.get("gemini_review_score") or signal.get("ai_review_score"))
+    raw_reason = str(signal.get("gemini_review_reason") or signal.get("ai_review_reason") or "").strip()
+    if score is None and not raw_reason:
+        return None
+    if raw_reason in {"gemini_disabled", "gemini_disabled_no_key"}:
+        return None
+
+    reason = raw_reason
+    degraded = False
+    # Strip machine-only status prefixes. Preserve the useful explanation after
+    # the semicolon.
+    if "ai_review_status=" in reason:
+        degraded = True
+        if ";" in reason:
+            reason = reason.split(";", 1)[1]
+        else:
+            reason = ""
+    local = reason.startswith("local_ai:") or degraded
+    reason = reason.replace("local_ai:", "").replace("_", " ").strip(" ;,")
+    if reason.lower() in {"gemini ok", "ok"}:
+        reason = "quality checks passed"
+    if not reason:
+        reason = "quality checks passed"
+
+    label = "Local AI fallback" if local else "Gemini"
+    parts: List[str] = []
+    if score is not None and score > 0:
+        parts.append(f"{label} {score:.1f}/10")
+    else:
+        parts.append(label)
+    parts.append(reason[:90])
+    return " • ".join(parts) if parts else None
+
+
+def _execution_mode(signal: DictType[str, Any]) -> str:
+    mode = str(signal.get("execution_mode") or signal.get("trade_execution_mode") or "manual").strip().lower()
+    if mode in {"auto", "automatic", "autotrade", "auto_trade", "copy", "copy_trade"}:
+        return "auto"
+    if str(os.getenv("AUTO_TRADE_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}:
+        return "auto"
+    return "manual"
+
+
+def _tp_notes_for_execution(signal: DictType[str, Any]) -> List[str]:
+    if _execution_mode(signal) == "auto":
+        return [
+            "(Bot will auto-close 50% &amp; move SL to BE)",
+            "(Bot will auto-close 25%)",
+            "(Moonbag running risk-free)",
+        ]
+    return [
+        "(Suggested close 50% &amp; move SL to BE)",
+        "(Suggested close 25%)",
+        "(Optional runner; manual execution)",
+    ]
+
+
+def _best_rr(signal: DictType[str, Any], entry: Any, stop_loss: Any, tp_levels: List[float]) -> Optional[float]:
+    """Prefer actual target-derived R/R over profile minimum placeholders."""
+    rr_calc = _compute_rr(entry, stop_loss, tp_levels[-1] if tp_levels else None)
+    rr_signal = _safe_float(signal.get("risk_reward") or signal.get("rr_ratio") or signal.get("rr_estimate"))
+    # Profile min values such as 1.2 should not override real TP3-derived RR.
+    vals = [v for v in (rr_calc, rr_signal) if v is not None and v > 0]
+    if not vals:
+        return None
+    return max(vals)
+
+
 def _suggested_size_text(signal: DictType[str, Any]) -> Optional[str]:
     suggested = _safe_float(signal.get("suggested_position_size") or signal.get("position_size") or signal.get("lot_size"))
     if suggested is not None and suggested > 0:
-        return f"{suggested:.2f} units"
+        return f"{suggested:.2f} units (manual estimate; confirm account risk)"
     entry = _safe_float(signal.get("entry"))
     stop_loss = _safe_float(signal.get("stop_loss"))
     if entry is None or stop_loss is None:
@@ -369,7 +472,7 @@ def _suggested_size_text(signal: DictType[str, Any]) -> Optional[str]:
     size = risk_amount / risk_distance
     if size <= 0:
         return None
-    return f"{size:.2f} units ({risk_pct:.2f}% risk)"
+    return f"{size:.2f} units ({risk_pct:.2f}% risk basis; manual estimate)"
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +525,7 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
     generated_time = _signal_generated_time(signal)
+    delivered_time = _signal_delivery_time(signal)
 
     lines = [
         "🚨 <b>PREMIUM SIGNAL DETECTED</b> 🚨",
@@ -431,6 +535,8 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
 
     if generated_time:
         lines.append(f"🕐 Generated: {_h(generated_time)}")
+    if delivered_time:
+        lines.append(f"📡 Delivered: {_h(delivered_time)}")
 
     lines += [
         "",
@@ -439,18 +545,13 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         f"⚠️ Volatility: {volatility}",
     ]
 
-    explanation = build_signal_explanation(signal)
-    if explanation.get("summary"):
-        lines.append(f"🧠 Why: {_h(str(explanation['summary'])[:120])}")
-    for bullet in explanation.get("bullets", [])[:3]:
-        lines.append(f"• {_h(str(bullet))}")
-    if explanation.get("invalidation"):
-        lines.append(f"❌ Invalidation: {_h(str(explanation['invalidation'])[:100])}")
-
     # Optional: ML probability
     ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
         lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    ai_review = _ai_review_text(signal)
+    if ai_review:
+        lines.append(f"🧠 AI Review: {_h(ai_review)}")
 
     lines += [
         "",
@@ -468,23 +569,13 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
     elif len(tp_levels) == 1:
         lines.append(f"✅ TP: {_h(_fmt_price_clean(tp_levels[0], asset))}")
 
-    # R/R ratio
-    rr = signal.get("risk_reward") or signal.get("rr_ratio") or signal.get("rr_estimate")
-    if not rr and entry and sl and tp_levels:
-        try:
-            _e, _s, _t = float(entry), float(sl), float(tp_levels[-1])
-            rr = abs(_t - _e) / max(1e-9, abs(_e - _s))
-        except Exception:
-            pass
-    if rr:
-        try:
-            rr_val = float(rr)
-            if rr_val > 0:
-                lines.append(f"⚖️ Risk/Reward: 1:{rr_val:.1f}")
-        except Exception:
-            pass
-    elif rr_calc is not None:
-        lines.append(f"⚖️ Risk/Reward: 1:{rr_calc:.1f}")
+    # R/R ratio — actual target-derived RR, not merely profile minimum
+    rr = _best_rr(signal, entry, sl, tp_levels)
+    if rr is not None:
+        lines.append(f"⚖️ Risk/Reward: 1:{float(rr):.1f}")
+        profile_min_rr = _safe_float(signal.get("profile_min_rr") or signal.get("min_rr"))
+        if profile_min_rr and abs(float(profile_min_rr) - float(rr)) > 0.05:
+            lines.append(f"📏 Profile minimum: 1:{float(profile_min_rr):.2f}")
 
     if expected_profit is not None:
         lines.append(f"💰 Expected Profit: +{expected_profit:.2f}%")
@@ -500,6 +591,8 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🌍 Regime: {_h(str(regime))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
+    if _execution_mode(signal) == "manual":
+        lines.append("🖐️ Execution: Manual — confirm trade and size yourself")
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
     if age_text:
@@ -581,15 +674,10 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     expiry_text = _expiry_text(signal)
     suggested_size = _suggested_size_text(signal)
     generated_time = _signal_generated_time(signal)
+    delivered_time = _signal_delivery_time(signal)
 
-    # R/R — use last TP for best-case calculation
-    rr = signal.get("risk_reward") or signal.get("rr_ratio") or signal.get("rr_estimate")
-    if not rr and entry and sl and tp_levels:
-        try:
-            _e, _s, _t = float(entry), float(sl), float(tp_levels[-1])
-            rr = abs(_t - _e) / max(1e-9, abs(_e - _s))
-        except Exception:
-            pass
+    # R/R — use actual target-derived RR, not merely profile minimum
+    rr = _best_rr(signal, entry, sl, tp_levels)
 
     lines = [
         "🚨 <b>VIP SIGNAL DETECTED</b> 🚨",
@@ -599,16 +687,14 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
 
     if generated_time:
         lines.append(f"🕐 Generated: {_h(generated_time)}")
+    if delivered_time:
+        lines.append(f"📡 Delivered: {_h(delivered_time)}")
 
     lines += [
         "",
         "📊 <b>AI Analysis:</b>",
         f"🤖 Conviction Score: {score_val:.1f}%",
     ]
-
-    explanation = build_signal_explanation(signal)
-    if explanation.get("summary"):
-        lines.append(f"🧠 Why: {_h(str(explanation['summary'])[:120])}")
 
     # Order Block — VIP exclusive
     if order_block:
@@ -633,6 +719,9 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     ml_prob = resolve_ml_probability(signal)
     if ml_prob is not None:
         lines.append(f"🧠 ML Probability: {ml_prob * 100.0:.1f}%")
+    ai_review = _ai_review_text(signal)
+    if ai_review:
+        lines.append(f"🧠 AI Review: {_h(ai_review)}")
 
     # HTF Bias
     htf_bias = signal.get("htf_bias") or signal.get("higher_timeframe_bias")
@@ -648,8 +737,29 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     confluence = resolve_confluence_percent(signal)
     if confluence is not None:
         lines.append(f"📊 Confluence: {int(confluence)}%")
-    for bullet in explanation.get("bullets", [])[:4]:
-        lines.append(f"• {_h(str(bullet))}")
+
+    explanation = {}
+    if build_signal_explanation is not None:
+        try:
+            explanation = build_signal_explanation(signal)
+        except Exception:
+            explanation = {}
+    why = (
+        explanation.get("summary")
+        or signal.get("technical_reason")
+        or signal.get("trade_logic")
+        or signal.get("setup_rationale")
+    )
+    if not why:
+        strategy = str(signal.get("strategy") or signal.get("strategy_name") or "multi-factor setup")
+        direction_text = str(signal.get("direction") or "trade").upper()
+        timeframe_text = str(signal.get("timeframe") or "current timeframe")
+        regime_text = str(signal.get("market_regime") or signal.get("regime") or "current market regime")
+        why = (
+            f"{strategy} supports this {direction_text} setup on {timeframe_text}; "
+            f"risk and confluence checks passed for the {regime_text} regime."
+        )
+    lines.append(f"Why: {_h(str(why)[:180])}")
 
     lines += [
         "",
@@ -661,12 +771,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
     if sl is not None:
         lines.append(f"🛑 Stop Loss: {_h(_fmt_price_clean(sl, asset))}")
 
-    # TPs with auto-management annotations
-    _tp_notes = [
-        "(Bot will auto-close 50% &amp; move SL to BE)",
-        "(Bot will auto-close 25%)",
-        "(Moonbag running risk-free)",
-    ]
+    # TPs with profile-aware execution annotations
+    _tp_notes = _tp_notes_for_execution(signal)
     if tp_levels:
         for i, tp in enumerate(tp_levels[:3]):
             note = _tp_notes[i] if i < len(_tp_notes) else ""
@@ -709,6 +815,8 @@ def format_vip_signal(signal: DictType[str, Any]) -> str:
         lines.append(f"🧭 Strategy: {_h(str(strategy))}")
     if suggested_size:
         lines.append(f"📦 Suggested Size: {_h(suggested_size)}")
+    if _execution_mode(signal) == "manual":
+        lines.append("🖐️ Execution: Manual — confirm trade and size yourself")
     lines.append(f"🧾 Score Read: {_h(_score_blurb(signal))}")
     lines.append(f"🕒 Freshness: {_h(freshness)}")
     if age_text:

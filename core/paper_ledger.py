@@ -342,7 +342,7 @@ class PaperLedger:
             exit_time = datetime.utcnow()
         
         # Get position data
-        position_data = await self._get_position(position_id)
+        position_data = await self._get_position(position_id, user_id=user_id)
         
         if not position_data:
             logger.warning(f"[paper_ledger] Position not found: {position_id}")
@@ -410,12 +410,13 @@ class PaperLedger:
             logger.error(f"[paper_ledger] Failed to close position: {e}")
             return None
     
-    async def _get_position(self, position_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_position(self, position_id: str, user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """Get position data by ID."""
         import json
         
         if self._redis:
-            for user_id_prefix in range(100):  # Try common prefixes
+            prefixes = [int(user_id)] if user_id is not None else list(range(100))
+            for user_id_prefix in prefixes:
                 try:
                     data = self._redis.hget(f"paper_positions:{user_id_prefix}", position_id)
                     if data:
@@ -508,6 +509,32 @@ class PaperLedger:
         Returns:
             "TP" if take profit hit, "SL" if stop loss hit, None if neither
         """
+        def _first_tp(value: Any) -> Optional[float]:
+            import json
+
+            raw = value
+            if isinstance(raw, str):
+                text = raw.strip()
+                if not text:
+                    return None
+                try:
+                    raw = json.loads(text)
+                except Exception:
+                    raw = text
+            if isinstance(raw, dict):
+                raw = raw.get("price") or raw.get("tp") or raw.get("target") or raw.get("value")
+            if isinstance(raw, (list, tuple)):
+                for item in raw:
+                    tp = _first_tp(item)
+                    if tp is not None and tp > 0:
+                        return tp
+                return None
+            try:
+                tp = float(raw)
+                return tp if tp > 0 else None
+            except Exception:
+                return None
+
         positions = await self.get_open_positions(user_id)
         
         for pos in positions:
@@ -517,24 +544,21 @@ class PaperLedger:
             direction = pos.direction.lower()
             entry = pos.entry_price
             sl = pos.stop_loss
+            tp = _first_tp(pos.take_profit)
+
+            if current_price <= 0 or entry <= 0:
+                continue
             
             if direction == "long":
-                if current_price >= sl:  # For long, hits TP first
-                    # Check TP
-                    if pos.take_profit:
-                        tp = float(pos.take_profit)
-                        if current_price >= tp:
-                            return "TP"
-                    if current_price <= sl:
-                        return "SL"
+                if tp is not None and current_price >= tp:
+                    return "TP"
+                if sl > 0 and current_price <= sl:
+                    return "SL"
             else:  # short
-                if current_price <= sl:
-                    if pos.take_profit:
-                        tp = float(pos.take_profit)
-                        if current_price <= tp:
-                            return "TP"
-                    if current_price >= sl:
-                        return "SL"
+                if tp is not None and current_price <= tp:
+                    return "TP"
+                if sl > 0 and current_price >= sl:
+                    return "SL"
         
         return None
 
@@ -549,3 +573,43 @@ def get_paper_ledger() -> PaperLedger:
     if _paper_ledger is None:
         _paper_ledger = PaperLedger()
     return _paper_ledger
+
+
+async def sync_execution(
+    signal_id: str,
+    user_id: int,
+    order_id: str,
+    asset: str,
+    direction: str,
+    entry: float,
+    stop_loss: float,
+    take_profit: Any,
+    volume: float,
+    status: str = "executed",
+) -> Optional[PaperPosition]:
+    """Mirror a live broker execution into the paper ledger for tracking."""
+    signal = {
+        "signal_id": signal_id,
+        "broker_order_id": order_id,
+        "asset": asset,
+        "direction": direction,
+        "entry": entry,
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "execution_status": status,
+    }
+    ledger = get_paper_ledger()
+    position = await ledger.open_position(
+        user_id=int(user_id),
+        signal=signal,
+        size=float(volume or 0.0) if volume is not None else None,
+        risk_pct=1.0,
+    )
+    if position:
+        await ledger._add_ledger_entry(
+            int(user_id),
+            0.0,
+            "LIVE_SYNC",
+            f"Synced live order {order_id or 'unknown'} for {asset} {direction}",
+        )
+    return position

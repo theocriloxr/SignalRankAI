@@ -79,97 +79,19 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
         with trace_span("engine.process_asset_timeframe", asset=asset, timeframe=timeframe, include_ml=include_ml):
             market_state = await get_market_state_async(asset, [timeframe], include_ml=include_ml)
         tf_data = market_state.get("timeframes", {}).get(timeframe)
-        
-        # FIX: Even if no market state, try to generate with minimal data
         if not tf_data:
-            logger.warning(f"[engine] No market state for {asset} {timeframe}, attempting with minimal candles")
-            # Try minimal generation with fake candles - this allows fallback strategies to work
-            minimal_candles = [
-                {"open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000, "timestamp": 0}
-            ]
-            tf_data = {"candles": minimal_candles, "indicators": {}, "ml_score": None}
-        
+            return signals
         candles = tf_data.get("candles", [])
         indicators = tf_data.get("indicators", {})
         ml_prob = tf_data.get("ml_score") or tf_data.get("ml_probability")
-        
-        # FIX: Lower threshold from 50 to 5 to allow strategies to run with minimal data
-        if len(candles) < 5:
-            logger.warning(f"[engine] Insufficient candles ({len(candles)}) for {asset} {timeframe}, using minimal data")
-            # Use whatever we have, even if less than 5
-            if len(candles) == 0:
-                return signals
-        
+        if len(candles) < 50:
+            return signals
         market_data = {"candles": candles, "indicators": indicators, "ml_probability": ml_prob}
         strategy_signals = signal_gen.generate_signals(asset, timeframe, market_data)
-        
-        # FIX: If no signals generated, try with lower threshold
-        if not strategy_signals:
-            logger.info(f"[engine] No signals from strategies for {asset} {timeframe}, lowering threshold and retrying")
-            # Try again with lower score threshold (50 instead of 60)
-            for strategy in [
-                signal_gen._ema_crossover,
-                signal_gen._macd_histogram,
-                signal_gen._adx_directional,
-                signal_gen._supertrend,
-            ]:
-                try:
-                    sig = strategy(asset, timeframe, candles, indicators)
-                    if sig and sig.score >= 50:
-                        strategy_signals.append(sig)
-                except Exception:
-                    continue
-        
-        # FIX: If still no signals, generate a basic signal
-        if not strategy_signals and candles:
-            logger.info(f"[engine] No signals generated, creating emergency signal for {asset}")
-            close = candles[-1].get("close", 100) if candles else 100
-            from engine.strategies.signal_generator import StrategySignal
-            emergency_sig = StrategySignal(
-                asset=asset,
-                timeframe=timeframe,
-                direction="long",
-                entry=close,
-                stop_loss=close * 0.98,
-                take_profit=[
-                    {"price": close * 1.03, "pct": 3.0, "exit_percent": 33},
-                    {"price": close * 1.06, "pct": 6.0, "exit_percent": 33},
-                    {"price": close * 1.09, "pct": 9.0, "exit_percent": 34},
-                ],
-                score=60,
-                strategy_name="emergency",
-                strategy_group="fallback",
-                ml_features={},
-                confidence=0.5
-            )
-            strategy_signals.append(emergency_sig)
-        
         threshold_raw = str(os.getenv("ML_REJECTION_THRESHOLD") or "").strip()
         ml_threshold = float(threshold_raw) if threshold_raw else None
-        
-        # FIX: Lower or disable ML threshold to allow more signals through
-        if include_ml and ml_threshold is not None and ml_threshold > 0.5:
-            logger.info(f"[engine] Lowering ML threshold from {ml_threshold} to 0.3 for high-drift period")
-            ml_threshold = 0.3
-        
         for sig in strategy_signals:
-            # FIX: Build signal dict BEFORE dedup check with ALL required fingerprint fields
-            # This is critical - the dedup API expects a complete signal dict
-            signal_dict = {
-                "asset": asset,
-                "timeframe": timeframe,
-                "direction": sig.direction,
-                "entry": round(sig.entry, 3),  # Round to 3 decimals for consistent fingerprint
-                "stop_loss": round(sig.stop_loss, 3),  # Round to 3 decimals
-                "take_profit": sig.take_profit,
-                "score": sig.score,
-                "strategy_name": sig.strategy_name,
-                "strategy_group": sig.strategy_group,
-                "created_at": datetime.utcnow(),
-            }
-            # FIX: Use correct API - is_duplicate expects signal dict with all fingerprint fields
-            # The dict must have: asset, timeframe, direction, entry, stop_loss, strategy_name
-            is_dup = await dedup.is_duplicate(signal_dict)
+            is_dup = await dedup.is_duplicate(asset, timeframe, sig.direction, sig.entry)
             if is_dup:
                 logger.debug("Duplicate signal skipped: %s %s %s", asset, timeframe, sig.direction)
                 continue
@@ -218,7 +140,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     ml_probability=ml_prob_value,
                     rejection_reason="low_ml_score",
                     features=sig.ml_features,
-)
+                )
                 await persist_decision_log(
                     None,
                     asset,
@@ -228,8 +150,6 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                     meta={"ml_probability": ml_prob_value, "ml_threshold": ml_threshold},
                 )
                 continue
-            
-            # Valid signal - persist and track
             try:
                 adjusted_confidence, drift_meta = _apply_drift_confidence_adjustment(sig.confidence)
                 if adjusted_confidence is not None:
@@ -252,8 +172,7 @@ async def _process_asset_timeframe(asset: str, timeframe: str, include_ml: bool 
                 if signal_obj:
                     signals.append(signal_obj)
                     observe_signal_generated(asset, timeframe)
-                    # FIX: Use correct mark_seen API - register_signal doesn't exist
-                    await dedup.mark_seen(signal_dict)
+                    await dedup.register_signal(asset, timeframe, sig.direction, sig.entry)
                     if drift_meta:
                         await persist_decision_log(
                             signal_obj.signal_id,

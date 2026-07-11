@@ -17,6 +17,7 @@ import logging
 import threading
 import inspect
 import json
+import math
 import pathlib
 import urllib.error
 import urllib.request
@@ -27,25 +28,36 @@ from datetime import datetime, timedelta as _timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
+# Gemini signal-review circuit breaker. Railway logs showed repeated 429s
+# causing many slow per-signal HTTP attempts. These process-wide guards keep
+# the engine fast by degrading to local AI review for a cooldown window.
+_GEMINI_REVIEW_LOCK = threading.Lock()
+_GEMINI_RATE_LIMIT_UNTIL_MONO = 0.0
+_GEMINI_REVIEW_WINDOW_STARTED_MONO = 0.0
+_GEMINI_REVIEW_WINDOW_CALLS = 0
+
 # Hard blacklist for zombie stablecoins that persist in database
 # These have minimal volatility and should never be traded
-HARD_BLACKLIST = ["USDCUSDT", "USDTPERF", "DAIUSDT", "FDUSDUSDT", "USDTUSDC", "TUSDUSDT"]
+HARD_BLACKLIST = {
+    "USDCUSDT", "USDTPERF", "DAIUSDT", "FDUSDUSDT", "USDTUSDC",
+    "USDTUSDT", "TUSDUSDT", "USDEUSDT",
+}
 
 # Core engine pieces
 from signalrank_telegram.tier_delivery import TierDeliveryManager
 from engine.signal_analytics import signal_analytics
 
 # Data layer
-from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock
+from data.fetcher import is_crypto, is_binance_blocked, market_closed_reason, is_fx, is_stock, is_index, _get_provider_errors
 try:
     from data.fetcher import is_commodity
 except Exception:
     def is_commodity(asset: Any) -> bool:  # type: ignore
         return False
 from data.market_data import fetch_market_data_cached
-from data.market_hours import validate_data_quality, is_tradeable_now, rank_assets_by_priority
 from data.pair_discovery import get_all_trending_pairs, get_trending_stock_tickers, get_all_tradable_assets
 from data.indicators import calculate_indicators
+from data.indicator_schema import normalize_indicator_schema
 from data.news import get_news_sentiment
 
 # Engine pieces
@@ -58,6 +70,7 @@ from strategies import run_all_strategies
 from engine.consensus import apply_consensus_filter
 from engine.risk import calculate_dynamic_risk, risk_check
 from engine.scoring import calculate_signal_score as score_signal, calculate_confluence
+from engine.signal_metrics import resolve_confluence_percent
 
 # Portfolio Exposure Manager (Capital Protection)
 # Limits open trades per asset class + direction
@@ -70,143 +83,6 @@ except Exception:
     exposure_manager = _DummyExposureManager()
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from db.repository import persist_decision_log, persist_signal
-
-# ============================================================================
-# PRIORITY 1 FIX: Signal Deduplication Lock (Redis + PostgreSQL)
-# Prevents duplicate signals from being created in multi-process engine deployments
-# ============================================================================
-def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
-    """
-    Check if signal lock exists for asset+direction+timeframe.
-    Returns True if locked (should skip), False if not locked (can proceed).
-    
-    This implements a Redis-backed lock with key format: signal_lock:SOLUSDT:BUY:4H
-    TTL matches the timeframe cooldown (4h for 4H signals = 4 hours)
-    """
-    import os
-    import time
-    
-    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe.upper()}"
-    tf_seconds = {
-        "4h": 4 * 3600,      # 4 hours for 4H
-        "1h": 90 * 60,       # 90 minutes for 1H
-        "1d": 6 * 3600,      # 6 hours for 1D
-        "15m": 30 * 60,      # 30 minutes for 15m
-        "5m": 15 * 60,       # 15 minutes for 5m
-    }
-    ttl_seconds = tf_seconds.get(timeframe.lower(), 90 * 60)  # Default 90 min
-    
-    try:
-        existing = state.get_sync(lock_key)
-        if existing:
-            try:
-                lock_time = float(existing)
-                age = time.time() - lock_time
-                if age < ttl_seconds:
-                    logger.info(f"[signal_lock] Locked {asset} {direction} {timeframe} - age={age:.0f}s ttl={ttl_seconds}s")
-                    return True
-            except Exception:
-                logger.info(f"[signal_lock] Locked {asset} {direction} {timeframe} by state key")
-                return True
-        state.set_sync(lock_key, str(time.time()), ex=ttl_seconds + 60)
-        logger.info(f"[signal_lock] Acquired {asset} {direction} {timeframe} ttl={ttl_seconds}s")
-        return False
-    except Exception as e:
-        logger.debug(f"[signal_lock] Redis check failed: {e}")
-    
-    # Fallback: Check PostgreSQL for recent signal
-    try:
-        from db.session import get_session
-        from db.models import Signal
-        from sqlalchemy import select, and_
-        
-        cutoff = int(ttl_seconds)
-        from datetime import datetime, timedelta
-        cutoff_dt = datetime.utcnow() - timedelta(seconds=cutoff)
-        
-        async def _check_db():
-            async with get_session() as session:
-                result = await session.execute(
-                    select(Signal.signal_id).where(
-                        and_(
-                            Signal.asset == asset.upper(),
-                            Signal.timeframe == timeframe.lower(),
-                            Signal.direction == direction.lower(),
-                            Signal.created_at >= cutoff_dt,
-                            Signal.expired.is_(False),
-                            Signal.archived.is_(False),
-                        )
-                    ).limit(1)
-                )
-                return result.scalar_one_or_none() is not None
-        
-        from utils.async_runner import run_sync
-        if run_sync(_check_db()):
-            logger.info(f"[signal_lock] DB locked {asset} {direction} {timeframe}")
-            return True  # Locked by recent signal
-    except Exception as e:
-        logger.debug(f"[signal_lock] DB check failed: {e}")
-    
-    return False  # Not locked, proceed
-
-
-def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
-    """Release signal lock after successful storage."""
-    lock_key = f"signal_lock:{asset.upper()}:{direction.upper()}:{timeframe.upper()}"
-    try:
-        state.set_sync(lock_key, "", ex=1)
-        logger.info(f"[signal_lock] Released {asset} {direction} {timeframe}")
-    except Exception as e:
-        logger.debug(f"[signal_lock] Release failed: {e}")
-
-
-# ============================================================================
-# PRIORITY 1.3 FIX: Telegram Delivery Cooldown
-# Prevents same signal being sent multiple times to same user
-# ============================================================================
-def _check_delivery_cooldown(user_id: int, asset: str, direction: str, timeframe: str, tier: str = "free") -> bool:
-    """
-    Check if user has delivery cooldown for this asset.
-    Returns True if should skip (in cooldown), False if can send.
-    
-    TTL by tier:
-    - VIP = 4 hours
-    - Premium = 6 hours  
-    - Free = 12 hours
-    """
-    import os
-    import time
-    
-    tier_cooldown_hours = {
-        "vip": 4,
-        "premium": 6,
-        "free": 12,
-    }
-    cooldown_hours = tier_cooldown_hours.get(tier.lower(), 12)
-    cooldown_seconds = cooldown_hours * 3600
-    
-    # Build key: delivery:user_id:asset:direction
-    delivery_key = f"delivery:{user_id}:{asset.upper()}:{direction.upper()}"
-    
-    try:
-        if state.has_redis_sync():
-            existing = state.get_str_sync(delivery_key)
-            if existing:
-                try:
-                    ts = float(existing)
-                    age = time.time() - ts
-                    if age < cooldown_seconds:
-                        logger.info(f"[delivery_cooldown] User {user_id} cooldown for {asset} {direction} - age={age:.0f}s cooldown={cooldown_seconds}s")
-                        return True  # In cooldown, skip
-                except Exception:
-                    pass
-            # Set new cooldown
-            state.set_str_sync(delivery_key, str(time.time()), ttl=cooldown_seconds + 60)
-            return False  # No cooldown, can send
-    except Exception as e:
-        logger.debug(f"[delivery_cooldown] Check failed: {e}")
-    
-    return False  # No cooldown, can send
 from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from signalrank_telegram.bot import dispatch_signals_async
@@ -323,34 +199,91 @@ except Exception:
 
 _ml_rejection_tracker = MLRejectionTracker()
 
+
+def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
+    """Compatibility wrapper: return True when a signal thesis is already locked."""
+    try:
+        from signalrank_telegram.delivery_cooldown import check_signal_lock, set_signal_lock
+
+        if check_signal_lock(asset, direction, timeframe):
+            return True
+        set_signal_lock(asset, direction, timeframe)
+        return False
+    except Exception:
+        pass
+
+    try:
+        from engine.signal_lock import acquire_signal_lock
+
+        return not bool(run_sync(acquire_signal_lock(asset, direction, timeframe)))
+    except Exception as exc:
+        logger.debug("[signal_lock] compatibility wrapper failed: %s", exc)
+        return False
+
+
+def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
+    """Compatibility wrapper to release a signal thesis lock."""
+    try:
+        from signalrank_telegram.delivery_cooldown import clear_signal_lock
+
+        clear_signal_lock(asset, direction, timeframe)
+        return
+    except Exception:
+        pass
+    try:
+        from engine.signal_lock import release_signal_lock
+
+        run_sync(release_signal_lock(asset, direction, timeframe))
+    except Exception as exc:
+        logger.debug("[signal_lock] release compatibility wrapper failed: %s", exc)
+
+
+def _check_delivery_cooldown(user_id: int, asset: str, direction: str, timeframe: str, tier: str = "free") -> bool:
+    """Compatibility wrapper: return True when a user is in delivery cooldown."""
+    try:
+        from signalrank_telegram.delivery_cooldown import check_delivery_cooldown
+
+        return bool(check_delivery_cooldown(int(user_id), asset, direction))
+    except Exception:
+        pass
+    try:
+        from db.pg_features import check_delivery_cooldown
+
+        return bool(check_delivery_cooldown(int(user_id), asset, direction))
+    except Exception as exc:
+        logger.debug("[delivery_cooldown] compatibility wrapper failed: %s", exc)
+        return False
+
 # Threshold optimizer for auto-adjusting ML confidence thresholds
 _threshold_optimizer = None
-try:
-    from engine.threshold_optimizer import get_threshold_optimizer, refresh_thresholds
-    _threshold_optimizer = get_threshold_optimizer()
-except Exception as e:
-    logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
-# Fallback threshold optimizer that uses env var
-# FIX: LOWERED to 0.15 to match config.py and fix signal starvation
+
+
 class _FallbackThresholdOptimizer:
+    """Env-backed threshold optimizer used when the adaptive optimizer is unavailable."""
+
     def get_threshold(self) -> float:
-        return float(os.getenv('ML_PROB_THRESHOLD', '0.15') or 0.15)
-    
+        return float(os.getenv('ML_PROB_THRESHOLD', '0.40') or 0.40)
+
     async def analyze_and_adjust(self, force: bool = False):
         return None
-    
+
     def get_config(self):
         from datetime import datetime
         return type('Config', (), {
             'ml_prob_threshold': self.get_threshold(),
-            # FIXED: Lowered from 30 to 25 to match PREMIUM_SCORE_THRESHOLD in config.py (fixes max_score=100, final_signals=0)
-            'min_score_threshold': 25.0,
+            'min_score_threshold': 48.0,
             'confluence_min': 0.0,
             'last_updated': datetime.utcnow(),
             'source': 'env',
         })()
 
-_threshold_optimizer = _FallbackThresholdOptimizer()
+
+try:
+    from engine.threshold_optimizer import get_threshold_optimizer, refresh_thresholds
+    _threshold_optimizer = get_threshold_optimizer()
+except Exception as e:
+    logger.warning(f"[engine] threshold_optimizer import failed: {e}, using fallback")
+    _threshold_optimizer = _FallbackThresholdOptimizer()
 # Track threshold refresh intervals
 _last_threshold_refresh: datetime | None = None
 _threshold_refresh_interval_hours: int = 6
@@ -429,14 +362,120 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
         logger.debug('[engine] failed to persist diagnostic heatmap')
 
 
+def _local_ai_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]] | None = None) -> tuple[bool, float, str]:
+    """Deterministic fallback reviewer built from available signal metrics."""
+    def _f(value: Any, default: float = 0.0) -> float:
+        try:
+            numeric = float(value)
+            return numeric if math.isfinite(numeric) else default
+        except Exception:
+            return default
+
+    entry = _f(signal.get("entry") or signal.get("close_price"))
+    stop = _f(signal.get("stop_loss") or signal.get("stop"))
+    rr_values = [
+        _f(signal.get("rr_ratio")),
+        _f(signal.get("rr_estimate")),
+        _f(signal.get("risk_reward")),
+    ]
+    tp = _primary_take_profit(signal)
+    if entry > 0 and stop > 0 and tp:
+        risk = abs(entry - stop)
+        if risk > 0:
+            rr_values.append(abs(float(tp) - entry) / risk)
+    rr = max([v for v in rr_values if v > 0] or [0.0])
+    stop_pct = abs(entry - stop) / entry * 100.0 if entry > 0 and stop > 0 else 0.0
+    ml = _f(signal.get("ml_probability"))
+    if ml > 1.0:
+        ml = ml / 100.0
+    score = _f(signal.get("score") or signal.get("score_calibrated") or signal.get("score_final"))
+    confluence = resolve_confluence_percent(signal)
+    tf = str(signal.get("timeframe") or "").lower().strip()
+
+    review = 8.2
+    reasons: list[str] = []
+    if score >= 94:
+        review += 0.35
+        reasons.append("strong score")
+    elif score and score < 90:
+        review -= 0.45
+        reasons.append("score below elite band")
+    if ml >= 0.72:
+        review += 0.35
+        reasons.append("ML confirms")
+    elif ml and ml < 0.62:
+        review -= 0.7
+        reasons.append("ML weak")
+    if confluence is not None:
+        if confluence >= 60:
+            review += 0.25
+            reasons.append("confluence confirms")
+        elif confluence < 50:
+            review -= 0.65
+            reasons.append("low confluence")
+    if rr > 6.0:
+        review -= 1.1
+        reasons.append("overextended target ladder")
+    elif 1.2 <= rr <= 3.5:
+        review += 0.25
+        reasons.append("realistic target distance")
+    if stop_pct > 2.5:
+        review -= 1.0
+        reasons.append("wide stop for small accounts")
+    elif 0 < stop_pct <= 1.2:
+        review += 0.2
+        reasons.append("contained planned risk")
+    if tf in {"1d", "24h"}:
+        review -= 0.35
+        reasons.append("slow timeframe")
+    if candles is not None and len(candles) < 80:
+        review -= 0.25
+        reasons.append("limited candle depth")
+
+    review = max(1.0, min(10.0, review))
+    reason = "local_ai:" + ", ".join(reasons[:4] or ["quality checks passed"])
+    return review >= _env_float("QUALITY_MIN_LOCAL_AI_SCORE", 8.0), review, reason
+
+
 async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, Any]], news_sentiment: float | None) -> tuple[bool, float | None, str]:
+    fallback_enabled = _env_bool("AI_REVIEW_FALLBACK_ENABLED", True)
+    def _fallback() -> tuple[bool, float | None, str]:
+        if not fallback_enabled:
+            return True, None, "ai_review_fallback_disabled"
+        ok, score, reason = _local_ai_review_signal(signal, candles)
+        return ok, score, reason
+
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     if not api_key:
-        return True, None, "gemini_disabled_no_key"
+        return _fallback()
     if _env_bool("GEMINI_SIGNAL_REVIEW_ENABLED", True) is False:
-        return True, None, "gemini_disabled"
+        return _fallback()
 
     model = (os.getenv("GEMINI_SIGNAL_REVIEW_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip()
+
+    # Fast degradation guard. If Gemini is rate-limited or over per-window
+    # budget, skip the external HTTP call and use deterministic local review.
+    # This prevents a full engine cycle from taking many minutes while signals
+    # become stale.
+    global _GEMINI_RATE_LIMIT_UNTIL_MONO, _GEMINI_REVIEW_WINDOW_STARTED_MONO, _GEMINI_REVIEW_WINDOW_CALLS
+    if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+        now_mono = time.monotonic()
+        with _GEMINI_REVIEW_LOCK:
+            until = float(_GEMINI_RATE_LIMIT_UNTIL_MONO or 0.0)
+            if until and now_mono < until:
+                ok, score, reason = _fallback()
+                return ok, score, f"ai_review_status=rate_limited_circuit_open;{reason}"
+
+            window_s = max(10, _env_int("GEMINI_SIGNAL_REVIEW_WINDOW_SECONDS", 60))
+            max_calls = max(0, _env_int("GEMINI_SIGNAL_REVIEW_MAX_CALLS_PER_WINDOW", 6))
+            if not _GEMINI_REVIEW_WINDOW_STARTED_MONO or (now_mono - _GEMINI_REVIEW_WINDOW_STARTED_MONO) > window_s:
+                _GEMINI_REVIEW_WINDOW_STARTED_MONO = now_mono
+                _GEMINI_REVIEW_WINDOW_CALLS = 0
+            if max_calls == 0 or _GEMINI_REVIEW_WINDOW_CALLS >= max_calls:
+                ok, score, reason = _fallback()
+                return ok, score, f"ai_review_status=budget_degraded;{reason}"
+            _GEMINI_REVIEW_WINDOW_CALLS += 1
+
     payload = {
         "prompt": "Review this trade. Is this a high-probability institutional move or a retail trap? Rate 1-10. Only approve if > 8.",
         "technical_signal": {
@@ -474,7 +513,7 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/json")
         try:
-            timeout_s = max(3, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "10") or 10))
+            timeout_s = max(2, int(os.getenv("GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC", "4") or 4))
             with urllib.request.urlopen(req, timeout=timeout_s) as resp:
                 raw = resp.read().decode("utf-8", errors="ignore")
             lower = raw.lower()
@@ -500,14 +539,30 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
                         score = float(digit)
                         break
             if score is None:
-                return True, None, "gemini_unparsed_allow"
+                return _fallback()
             return (score > 8.0), score, "gemini_ok"
         except urllib.error.HTTPError as exc:
-            logger.warning("[engine] gemini review http_error=%s", getattr(exc, "code", "?"))
-            return True, None, f"gemini_http_{getattr(exc, 'code', 'error')}"
+            status_code = getattr(exc, "code", None)
+            if status_code == 429:
+                if _env_bool("GEMINI_SIGNAL_REVIEW_CIRCUIT_BREAKER_ENABLED", True):
+                    try:
+                        cooldown_s = max(30, _env_int("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", 900))
+                        with _GEMINI_REVIEW_LOCK:
+                            _GEMINI_RATE_LIMIT_UNTIL_MONO = time.monotonic() + cooldown_s
+                    except Exception:
+                        pass
+                _local_ok, local_score, local_reason = _fallback()
+                reason = f"ai_review_status=rate_limited_degraded;{local_reason}"
+                logger.warning(
+                    "[engine] gemini review http_error=429 %s action=fail_open",
+                    reason,
+                )
+                return True, local_score, reason
+            logger.warning("[engine] gemini review http_error=%s", status_code or "?")
+            return _fallback()
         except Exception as exc:
             logger.debug("[engine] gemini review failed: %s", exc)
-            return True, None, "gemini_failed_allow"
+            return _fallback()
 
     return await asyncio.to_thread(_do_request)
 
@@ -524,6 +579,70 @@ def _log_decision(decision: str, sig: Dict[str, Any], reason: str | None = None,
         _meta.setdefault("ml_probability", sig.get("ml_probability"))
         _meta.setdefault("strategy_name", sig.get("strategy_name"))
         _meta.setdefault("strategy_group", sig.get("strategy_group"))
+        try:
+            from services.decision_intelligence import build_decision_record, validate_decision_record
+
+            decision_signal = {
+                "signal_id": sig.get("signal_id"),
+                "asset": sig.get("asset"),
+                "timeframe": sig.get("timeframe"),
+                "direction": sig.get("direction") or _meta.get("direction"),
+                "entry": sig.get("entry") or _meta.get("entry"),
+                "stop_loss": sig.get("stop_loss") or _meta.get("stop_loss"),
+                "take_profit": sig.get("take_profit") or _meta.get("take_profit"),
+                "score": sig.get("score") or _meta.get("score"),
+                "ml_probability": sig.get("ml_probability") or _meta.get("ml_probability"),
+                "strategy_name": sig.get("strategy_name") or _meta.get("strategy_name"),
+                "strategy_group": sig.get("strategy_group") or _meta.get("strategy_group"),
+                "rr_ratio": sig.get("rr_ratio") or sig.get("rr_estimate"),
+                "regime": sig.get("regime") or _meta.get("regime"),
+                "session": sig.get("session") or _meta.get("session"),
+                "decision": decision,
+            }
+            votes_against = []
+            if decision in ("rejected", "skipped", "delayed", "suppressed") and reason:
+                votes_against.append({"gate": "engine", "reason": str(reason)})
+            news_assessment = {}
+            if "news_sentiment" in _meta:
+                news_assessment["sentiment_score"] = _meta.get("news_sentiment")
+            if "news_action" in _meta:
+                news_assessment["signal_action"] = _meta.get("news_action")
+            gemini_summary = {}
+            if "gemini_score" in _meta:
+                gemini_summary["score"] = _meta.get("gemini_score")
+            if "gemini_reason" in _meta:
+                gemini_summary["summary"] = _meta.get("gemini_reason")
+
+            decision_record = build_decision_record(
+                decision_signal,
+                votes_against=votes_against,
+                ml_prediction={
+                    "probability": decision_signal.get("ml_probability"),
+                    "threshold": _meta.get("threshold") or _meta.get("ml_threshold"),
+                    "verdict": "approve" if decision == "issued" else decision,
+                },
+                gemini_summary=gemini_summary,
+                news_assessment=news_assessment,
+                risk={
+                    "risk_reward": decision_signal.get("rr_ratio"),
+                    "stop_loss": decision_signal.get("stop_loss"),
+                    "risk_score": sig.get("risk_score") or _meta.get("risk_score"),
+                },
+                market_context={
+                    "regime": decision_signal.get("regime"),
+                    "session": decision_signal.get("session"),
+                    "volatility": sig.get("volatility") or _meta.get("volatility"),
+                },
+                shadow_prediction={
+                    "available": bool(_meta.get("shadow_prediction") or _meta.get("shadow_agreement")),
+                    "prediction": _meta.get("shadow_prediction"),
+                    "agreement": _meta.get("shadow_agreement"),
+                },
+            )
+            _meta["decision_intelligence"] = decision_record
+            _meta["decision_intelligence_validation"] = validate_decision_record(decision_record)
+        except Exception as exc:
+            logger.debug("[engine] decision intelligence enrichment skipped: %s", exc)
         run_sync(
             persist_decision_log(
                 sig.get("signal_id"),
@@ -586,19 +705,7 @@ except Exception:
     advanced_exit = _ExitStub()
 
 # Global stats tracker for Pulse reporting (fixes "Total Scanned: 0")
-# Uses Redis-backed GlobalStats for cross-process sharing between engine and Pulse workers
-try:
-    from core.redis_global_stats import global_stats as global_stats_instance
-    _using_redis_stats = True
-    logger.info("[engine] Using RedisGlobalStats for cross-process stats sharing")
-except ImportError:
-    # Fallback to legacy in-memory stats_manager
-    from engine.stats_manager import stats as global_stats_instance
-    _using_redis_stats = False
-    logger.info("[engine] Using legacy GlobalStats (in-memory) for stats")
-
-# Keep legacy stats import for backwards compatibility in this module
-from engine.stats_manager import stats as legacy_stats
+from engine.stats_manager import stats
 
 # Misc
 logger = logging.getLogger(__name__)
@@ -657,6 +764,82 @@ def _signal_roi_score(signal: Dict[str, Any]) -> float:
     return reward / risk
 
 
+def _signal_max_rr_score(signal: Dict[str, Any]) -> float:
+    values = [_signal_roi_score(signal)]
+    for key in ("risk_reward", "rr_ratio", "rr_estimate", "expected_rr"):
+        val = _safe_float(signal.get(key), 0.0)
+        if val > 0:
+            values.append(val)
+
+    entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+    raw_tp = signal.get("take_profit") or signal.get("targets") or signal.get("tp_levels")
+    if entry > 0 and stop > 0 and isinstance(raw_tp, (list, tuple)):
+        risk = abs(entry - stop)
+        if risk > 0:
+            for item in raw_tp:
+                try:
+                    target = item.get("price") or item.get("tp") or item.get("target") if isinstance(item, dict) else item
+                    target_v = float(target)
+                    if target_v > 0:
+                        values.append(abs(target_v - entry) / risk)
+                except Exception:
+                    continue
+    return max(values or [0.0])
+
+
+def _signal_stop_loss_pct(signal: Dict[str, Any]) -> float:
+    entry = _safe_float(signal.get("entry") or signal.get("close_price"))
+    stop = _safe_float(signal.get("stop_loss") or signal.get("stop"))
+    if entry <= 0 or stop <= 0:
+        return 0.0
+    return abs(entry - stop) / entry * 100.0
+
+
+def _signal_display_score(signal: Dict[str, Any]) -> float:
+    """Resolve the calibrated signal score for logs, storage, and promotion."""
+    display_max = _env_float("SCORE_DISPLAY_MAX", 99.5)
+    if not _env_bool("SCORE_ALLOW_HARD_100", False):
+        display_max = min(display_max, 99.5)
+    for primary_key in ("score_calibrated", "score_final", "score"):
+        try:
+            numeric = float(signal.get(primary_key))
+        except Exception:
+            continue
+        if math.isfinite(numeric) and numeric > 0:
+            return max(0.0, min(numeric, display_max))
+
+    best = 0.0
+    for value in (
+        signal.get("score_total"),
+        signal.get("score_composite"),
+        signal.get("composite_score"),
+        signal.get("_preview_score"),
+        signal.get("rank_score"),
+        signal.get("quality_score"),
+    ):
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if math.isfinite(numeric):
+            best = max(best, numeric)
+    return max(0.0, min(best, display_max))
+
+
+def _diagnostic_score(value: Any) -> float | None:
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    display_max = _env_float("SCORE_DISPLAY_MAX", 99.5)
+    if not _env_bool("SCORE_ALLOW_HARD_100", False):
+        display_max = min(display_max, 99.5)
+    return round(max(0.0, min(numeric, display_max)), 2)
+
+
 def _signal_variant_key(signal: Dict[str, Any]) -> tuple[str, str]:
     asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
     direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
@@ -669,11 +852,390 @@ def _asset_class_key(asset: str) -> str:
         return "crypto"
     if is_fx(sym):
         return "fx"
+    if is_index(sym):
+        return "index"
     if is_commodity(sym):
         return "commodity"
     if is_stock(sym):
         return "stock"
     return "other"
+
+
+def _env_float_for_class(env_prefix: str, asset_class: str, default: float) -> float:
+    keys = [
+        f"{env_prefix}_{asset_class.upper()}",
+        f"{env_prefix}_DEFAULT",
+    ]
+    for key in keys:
+        raw = os.getenv(key)
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            return float(str(raw).strip())
+        except Exception:
+            continue
+    return float(default)
+
+
+def _signal_adx_value(signal: Dict[str, Any]) -> float:
+    for key in ("adx", "adx_value", "trend_adx"):
+        value = _safe_float(signal.get(key), 0.0)
+        if value > 0:
+            return value
+    trend_text = str(signal.get("adx_trend") or "").lower()
+    if "strong" in trend_text:
+        return 30.0
+    if "weak" in trend_text:
+        return 15.0
+    return 0.0
+
+
+def _production_quality_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
+    """Class-aware final quality guard for production delivery."""
+    if not _env_bool("PRODUCTION_QUALITY_GUARD_ENABLED", True):
+        return True, ""
+
+    asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    asset_class = _asset_class_key(asset)
+    score = _signal_display_score(signal)
+    rr = _signal_roi_score(signal)
+    rr_cap_value = _signal_max_rr_score(signal)
+    stop_loss_pct = _signal_stop_loss_pct(signal)
+    ml_probability = _safe_float(signal.get("ml_probability"), 0.0)
+    confluence_pct = resolve_confluence_percent(signal)
+    gemini_score = _safe_float(signal.get("gemini_review_score") or signal.get("ai_review_score"), 0.0)
+    adx = _signal_adx_value(signal)
+    timeframe = str(signal.get("timeframe") or "").strip().lower()
+    direction = str(signal.get("direction") or "").strip().lower()
+
+    min_score_defaults = {
+        "fx": 94.0,
+        "crypto": 90.0,
+        "stock": 88.0,
+        "index": 90.0,
+        "commodity": 90.0,
+        "other": 90.0,
+    }
+    min_rr_defaults = {
+        "fx": 2.20,
+        "crypto": 2.00,
+        "stock": 1.80,
+        "index": 2.00,
+        "commodity": 2.00,
+        "other": 2.00,
+    }
+    min_ml_defaults = {
+        "fx": 0.68,
+        "crypto": 0.62,
+        "stock": 0.60,
+        "index": 0.62,
+        "commodity": 0.62,
+        "other": 0.62,
+    }
+    min_adx_defaults = {
+        "fx": 25.0,
+        "crypto": 22.0,
+        "stock": 20.0,
+        "index": 22.0,
+        "commodity": 22.0,
+        "other": 22.0,
+    }
+    min_confluence_defaults = {
+        "fx": 50.0,
+        "crypto": 50.0,
+        "stock": 45.0,
+        "index": 50.0,
+        "commodity": 50.0,
+        "other": 50.0,
+    }
+    max_stop_loss_pct_defaults = {
+        "fx": 0.80,
+        "crypto": 2.50,
+        "stock": 2.00,
+        "index": 1.20,
+        "commodity": 1.50,
+        "other": 2.00,
+    }
+    max_rr_defaults = {
+        "fx": 4.50,
+        "crypto": 4.00,
+        "stock": 3.50,
+        "index": 3.50,
+        "commodity": 3.50,
+        "other": 4.00,
+    }
+    profile_name = ""
+    profile_min_rr = None
+    if str(signal.get("target_model") or "").strip().lower() == "atr_profile":
+        try:
+            from services.trade_profiles import get_trade_profile, infer_trade_profile
+
+            profile = get_trade_profile(infer_trade_profile(signal))
+            profile_name = str(profile.name or "")
+            profile_min_rr = float(profile.min_rr)
+        except Exception:
+            profile_min_rr = None
+
+    min_rr_default = min_rr_defaults.get(asset_class, 2.0)
+    if profile_min_rr is not None and profile_min_rr > 0:
+        min_rr_default = max(1.0, float(profile_min_rr))
+
+    min_score = _env_float_for_class("QUALITY_MIN_SCORE", asset_class, min_score_defaults.get(asset_class, 90.0))
+    min_rr = _env_float_for_class("QUALITY_MIN_RR", asset_class, min_rr_default)
+    min_ml = _env_float_for_class("QUALITY_MIN_ML_PROB", asset_class, min_ml_defaults.get(asset_class, 0.62))
+    min_adx = _env_float_for_class("QUALITY_MIN_ADX", asset_class, min_adx_defaults.get(asset_class, 22.0))
+    min_confluence = _env_float_for_class(
+        "QUALITY_MIN_CONFLUENCE",
+        asset_class,
+        min_confluence_defaults.get(asset_class, 50.0),
+    )
+    max_stop_loss_pct = _env_float_for_class(
+        "QUALITY_MAX_STOP_LOSS_PCT",
+        asset_class,
+        max_stop_loss_pct_defaults.get(asset_class, 2.0),
+    )
+    max_rr = _env_float_for_class("QUALITY_MAX_RR", asset_class, max_rr_defaults.get(asset_class, 4.0))
+    min_gemini_score = _env_float_for_class("QUALITY_MIN_GEMINI_SCORE", asset_class, 8.0)
+
+    if score < min_score:
+        return False, f"quality_score {score:.1f} < {min_score:.1f} ({asset_class})"
+    if stop_loss_pct > max_stop_loss_pct:
+        return False, f"quality_stop_loss_pct {stop_loss_pct:.2f}% > {max_stop_loss_pct:.2f}% ({asset_class})"
+    if rr < min_rr:
+        profile_suffix = f", {profile_name}" if profile_name else ""
+        return False, f"quality_rr {rr:.2f} < {min_rr:.2f} ({asset_class}{profile_suffix})"
+    if rr_cap_value > max_rr:
+        return False, f"quality_rr {rr_cap_value:.2f} > {max_rr:.2f} ({asset_class})"
+    if ml_probability > 0 and ml_probability < min_ml:
+        return False, f"quality_ml {ml_probability:.2f} < {min_ml:.2f} ({asset_class})"
+    if confluence_pct is not None and confluence_pct < min_confluence:
+        return False, f"quality_confluence {confluence_pct:.0f}% < {min_confluence:.0f}% ({asset_class})"
+    if gemini_score > 0 and gemini_score < min_gemini_score:
+        return False, f"quality_gemini {gemini_score:.1f} < {min_gemini_score:.1f} ({asset_class})"
+    if adx > 0 and adx < min_adx:
+        return False, f"quality_adx {adx:.1f} < {min_adx:.1f} ({asset_class})"
+
+    if asset_class == "fx":
+        allowed_fx_tfs = {
+            tf.strip().lower()
+            for tf in str(os.getenv("QUALITY_FX_ALLOWED_TIMEFRAMES", "1m,5m,15m,1h,4h,1d")).split(",")
+            if tf.strip()
+        }
+        if timeframe and timeframe not in allowed_fx_tfs:
+            return False, f"quality_fx_timeframe {timeframe} not in {sorted(allowed_fx_tfs)}"
+
+        if _env_bool("QUALITY_FX_REQUIRE_MTF_ALIGNMENT", True):
+            sign = 1.0 if direction in {"long", "buy"} else -1.0
+            mtf_4h = _safe_float(signal.get("mtf_4h_trend"), 0.0)
+            mtf_1d = _safe_float(signal.get("mtf_1d_trend"), 0.0)
+            if mtf_4h and mtf_4h != sign:
+                return False, f"quality_fx_mtf_4h_mismatch {mtf_4h:+.0f}"
+            if mtf_1d and mtf_1d != sign:
+                return False, f"quality_fx_mtf_1d_mismatch {mtf_1d:+.0f}"
+
+    return True, ""
+
+
+def _quality_rejection_bucket(reason: str | None) -> str:
+    """Map quality-gate reasons to the admin pulse rejection buckets."""
+    text = str(reason or "").lower()
+    if any(token in text for token in ("ml", "gemini", "ai", "model", "probability")):
+        return "ml"
+    if any(token in text for token in ("confluence", "microstructure", "liquidity", "spread", "volume", "orderflow")):
+        return "microstructure"
+    if any(token in text for token in ("adx", "mtf", "regime", "session", "market_intelligence", "news", "volatility")):
+        return "regime"
+    if any(token in text for token in ("score", "threshold")):
+        return "score"
+    if "squeeze" in text:
+        return "squeeze"
+    return "other"
+
+
+def _increment_quality_rejection_stat(reason: str | None, amount: int = 1) -> str:
+    bucket = _quality_rejection_bucket(reason)
+    try:
+        if bucket == "ml":
+            stats.vetoed_ml += amount
+        elif bucket == "microstructure":
+            stats.vetoed_microstructure += amount
+        elif bucket == "regime":
+            stats.vetoed_regime += amount
+        elif bucket == "score":
+            stats.vetoed_score += amount
+        elif bucket == "squeeze":
+            stats.vetoed_squeeze += amount
+        else:
+            stats.vetoed_other += amount
+    except Exception:
+        pass
+    return bucket
+
+
+def _increment_engine_veto(reason: str, amount: int = 1) -> None:
+    try:
+        stats.increment_vetoed(reason, amount)
+    except Exception:
+        try:
+            if reason == "regime":
+                stats.vetoed_regime += amount
+            elif reason == "squeeze":
+                stats.vetoed_squeeze += amount
+            elif reason == "microstructure":
+                stats.vetoed_microstructure += amount
+            elif reason == "score":
+                stats.vetoed_score += amount
+            elif reason == "ml":
+                stats.vetoed_ml += amount
+            else:
+                stats.vetoed_other += amount
+        except Exception:
+            pass
+
+
+def _increment_engine_scanned(amount: int = 1) -> None:
+    try:
+        stats.increment_scanned(max(0, int(amount or 0)))
+    except Exception:
+        try:
+            stats.scanned += max(0, int(amount or 0))
+        except Exception:
+            pass
+
+
+def _compact_reason(reason: Any, max_len: int = 96) -> str:
+    text = str(reason or "unknown").strip()
+    if not text:
+        return "unknown"
+    text = " ".join(text.replace("\n", " ").replace("\r", " ").split())
+    return text[:max(16, int(max_len))]
+
+
+def _bump_cycle_reason(pipeline_stats: dict[str, Any], key: str, reason: Any) -> str:
+    reason_key = _compact_reason(reason)
+    bucket = pipeline_stats.setdefault(key, {})
+    if isinstance(bucket, dict):
+        bucket[reason_key] = int(bucket.get(reason_key, 0) or 0) + 1
+    return reason_key
+
+
+def _top_cycle_reasons(pipeline_stats: dict[str, Any], key: str, limit: int = 8) -> list[dict[str, Any]]:
+    bucket = pipeline_stats.get(key) or {}
+    if not isinstance(bucket, dict):
+        return []
+    rows = sorted(bucket.items(), key=lambda item: int(item[1] or 0), reverse=True)
+    return [{"reason": str(reason), "count": int(count or 0)} for reason, count in rows[:max(1, int(limit))]]
+
+
+def _publish_engine_cycle_state(payload: dict[str, Any], ttl_seconds: int = 7200) -> None:
+    """Persist compact latest-cycle telemetry for admin pulse/debug views."""
+    try:
+        state.set_sync("engine:last_cycle", json.dumps(payload, default=str), ex=max(60, int(ttl_seconds)))
+    except Exception:
+        logger.debug("[engine] failed to publish cycle state", exc_info=True)
+
+
+def _infer_max_score_absent_reason(pipeline_stats: dict[str, Any], market_fetch_error: str | None = None) -> str:
+    def _i(key: str) -> int:
+        try:
+            return int((pipeline_stats or {}).get(key) or 0)
+        except Exception:
+            return 0
+
+    if market_fetch_error:
+        return f"market_fetch_error:{market_fetch_error}"
+    attempted = _i("assets_attempted")
+    if attempted > 0 and _i("no_candles") >= attempted:
+        return "market_data:no_candles_all_assets"
+    if _i("market_data_assets") == 0 and attempted > 0:
+        return "market_data:no_assets_returned"
+    if _i("strategy_signals") == 0:
+        return "strategy_generation:no_strategy_signals"
+    if _i("normalized") == 0:
+        return "signal_controller:no_normalized_candidates"
+    if _i("consensus") == 0:
+        return "consensus:no_consensus_candidates"
+    if _i("selected") == 0:
+        return "selection:no_selected_candidates"
+    if _i("unique") == 0:
+        return "dedupe:no_unique_candidates"
+    if _i("strict_candidates") == 0:
+        return "candidate_gates:no_strict_candidates"
+    if _i("risk_passed") == 0:
+        return "risk_or_ml:no_risk_passed_candidates"
+    if _i("final_signals") == 0:
+        return "scoring_or_quality:no_final_signals"
+    if _i("stored") == 0:
+        return "storage:no_stored_signals"
+    return "unknown:no_score_recorded"
+
+
+async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
+    """Auto-quarantine weak live segments using aggregate outcomes only."""
+    if not _env_bool("SEGMENT_QUARANTINE_ENABLED", True):
+        return True, ""
+    try:
+        from sqlalchemy import text
+        from db.session import get_session, is_db_configured
+
+        if not is_db_configured():
+            return True, ""
+        asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+        asset_class = _asset_class_key(asset)
+        timeframe = str(signal.get("timeframe") or "").strip().lower() or "unknown"
+        strategy = str(signal.get("strategy_name") or "unknown").strip()[:64] or "unknown"
+        days = max(1, _env_int("SEGMENT_QUARANTINE_LOOKBACK_DAYS", 30))
+        min_trades = max(1, _env_int("SEGMENT_QUARANTINE_MIN_TRADES", 10))
+        min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
+        min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
+        since = datetime.utcnow() - _timedelta(days=days)
+        async with get_session(noncritical=True) as session:
+            row = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(o.id) AS outcomes,
+                               SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
+                               SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
+                               AVG(COALESCE(o.r_multiple, 0)) AS avg_r
+                        FROM outcomes o
+                        JOIN signals s ON s.signal_id = o.signal_id
+                        WHERE o.closed_at >= :since
+                          AND lower(COALESCE(s.asset_class, :asset_class)) = :asset_class
+                          AND lower(COALESCE(s.timeframe, 'unknown')) = :timeframe
+                          AND lower(COALESCE(s.strategy_name, 'unknown')) = :strategy
+                          AND lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                        """
+                    ),
+                    {
+                        "since": since,
+                        "asset_class": asset_class,
+                        "timeframe": timeframe,
+                        "strategy": strategy.lower(),
+                    },
+                )
+            ).mappings().first()
+            await session.commit()
+        outcomes = int((row or {}).get("outcomes") or 0)
+        wins = int((row or {}).get("wins") or 0)
+        losses = int((row or {}).get("losses") or 0)
+        terminal = wins + losses
+        avg_r = float((row or {}).get("avg_r") or 0.0)
+        if terminal < min_trades:
+            return True, ""
+        win_rate = wins / max(1, terminal) * 100.0
+        if win_rate < min_win_rate or avg_r < min_avg_r:
+            return (
+                False,
+                f"segment_quarantine {asset_class}/{timeframe}/{strategy} "
+                f"wr={win_rate:.1f}% avg_r={avg_r:.2f} n={terminal}",
+            )
+        return True, ""
+    except Exception as exc:
+        if _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+            return False, f"segment_quarantine_error {exc}"
+        logger.debug("[segment_quarantine] check failed: %s", exc)
+        return True, ""
 
 
 def _latest_candle_timestamp(candles: Any) -> datetime | None:
@@ -731,12 +1293,12 @@ def _collapse_signal_variants(signals: List[Dict[str, Any]]) -> List[Dict[str, A
 
         candidate_rank = (
             _signal_roi_score(signal),
-            _safe_float(signal.get("score")),
+            _signal_display_score(signal),
             _safe_float(signal.get("ml_probability")),
         )
         incumbent_rank = (
             _signal_roi_score(incumbent),
-            _safe_float(incumbent.get("score")),
+            _signal_display_score(incumbent),
             _safe_float(incumbent.get("ml_probability")),
         )
         if candidate_rank > incumbent_rank:
@@ -754,16 +1316,30 @@ def start_outage_alert_job():
             try:
                 unhealthy = []
                 try:
-                    from data.fetcher import get_unhealthy_providers
+                    from data.fetcher import consume_provider_recovery_alerts, get_unhealthy_providers
                     unhealthy = get_unhealthy_providers()
+                    if bot_token:
+                        for recovery in consume_provider_recovery_alerts():
+                            provider_name = str((recovery or {}).get("provider") or "provider")
+                            msg = f"✅ Provider recovered: {provider_name} is healthy again."
+                            for admin_id in (OWNER_IDS or []):
+                                try:
+                                    _requests.post(
+                                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                                        json={"chat_id": admin_id, "text": msg},
+                                        timeout=10,
+                                    )
+                                except Exception:
+                                    logger.exception("Failed to send provider recovery message")
                 except Exception:
                     unhealthy = []
                 if unhealthy and bot_token:
-                    from data.fetcher import should_alert_provider_outage
+                    from data.fetcher import provider_outage_alert_label, should_alert_provider_outage
                     for name, mins in unhealthy:
                         if not should_alert_provider_outage(name, mins):
                             continue
-                        msg = f"🚨 Provider outage: {name} has been down for {mins:.1f} minutes."
+                        stage = provider_outage_alert_label(name, mins)
+                        msg = f"🚨 Provider outage ({stage}): {name} has been down for {mins:.1f} minutes."
                         for admin_id in (OWNER_IDS or []):
                             try:
                                 _requests.post(
@@ -898,6 +1474,60 @@ def _normalize_asset_symbol(symbol: str) -> str:
     return s
 
 
+def _env_asset_blacklist() -> set[str]:
+    """Operator-controlled blacklist applied before cycle queue refresh.
+
+    Railway logs showed noisy symbols (USDTARS/USDTIDR/DOGEIDR/index proxies)
+    consuming batch slots and provider calls even after class-level tuning. Keep
+    this lightweight and deterministic: comma-separated, case-insensitive, and
+    normalized through _normalize_asset_symbol.
+    """
+    raw = os.getenv("ASSET_BLACKLIST") or os.getenv("ENGINE_ASSET_BLACKLIST") or ""
+    parsed = {
+        _normalize_asset_symbol(item)
+        for item in str(raw).replace(";", ",").split(",")
+        if str(item or "").strip()
+    }
+    return set(HARD_BLACKLIST) | parsed
+
+
+def _is_asset_blacklisted(asset: Any) -> bool:
+    return _normalize_asset_symbol(str(asset or "")) in _env_asset_blacklist()
+
+
+def _enabled_asset_classes() -> set[str]:
+    """Resolve runtime asset-class gates without changing the default universe.
+
+    ALL_ASSET_MODE=1 intentionally overrides CRYPTO_ONLY_MODE so Railway envs
+    can move out of verification mode without requiring a risky delete/reorder
+    of old variables.
+    """
+    if _env_bool("ALL_ASSET_MODE", False):
+        return {"crypto", "fx", "stock", "index", "commodity"}
+    if _env_bool("CRYPTO_ONLY_MODE", False):
+        return {"crypto"}
+    raw = (os.getenv("ASSET_CLASSES_ENABLED") or "").strip()
+    if not raw:
+        return {"crypto", "fx", "stock", "index", "commodity"}
+    aliases = {"forex": "fx", "stocks": "stock", "indices": "index", "commodities": "commodity"}
+    valid = {"crypto", "fx", "stock", "index", "commodity"}
+    parsed = {
+        aliases.get(item.strip().lower(), item.strip().lower())
+        for item in raw.split(",")
+        if item.strip()
+    }
+    enabled = parsed & valid
+    if enabled:
+        return enabled
+    logger.warning("[engine] ASSET_CLASSES_ENABLED=%s contains no valid classes; using defaults", raw)
+    return valid
+
+
+def _filter_assets_by_enabled_classes(assets: List[str]) -> List[str]:
+    enabled = _enabled_asset_classes()
+    return [asset for asset in (assets or []) if _asset_class_key(asset) in enabled]
+
+
 def _rotate_slice(items: List[str], start: int, size: int) -> List[str]:
     if size <= 0:
         return []
@@ -913,34 +1543,20 @@ def _rotate_slice(items: List[str], start: int, size: int) -> List[str]:
 
 async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]]) -> Dict[str, Dict]:
     concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
-    per_asset_timeout_default = 120.0 if is_binance_blocked() else 45.0
+    # Keep the per-asset deadline short enough that a few slow provider
+    # waterfalls cannot exceed the whole batch timeout and erase partial data.
+    per_asset_timeout_default = 30.0 if is_binance_blocked() else 20.0
     per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default))
     sem = asyncio.Semaphore(concurrency)
 
     async def _one(asset: str, tfs: List[str]):
         async with sem:
+            started = time.time()
             try:
-                started = time.time()
-                # FIX: Add per-asset timeout to prevent batch from hanging on slow providers
-                # This is the KEY FIX for signal starvation - without this, 
-                # a single slow FX provider can block the entire batch
-                try:
-                    data = await asyncio.wait_for(
-                        fetch_market_data_cached(asset, tfs),
-                        timeout=per_asset_timeout
-                    )
-                except asyncio.TimeoutError:
-                    # Log timeout and return empty to allow batch to continue
-                    elapsed = time.time() - started
-                    logger.warning(
-                        "[engine] TIMEOUT asset=%s elapsed=%.2fs timeout=%ss - "
-                        "Returning empty to prevent batch hang",
-                        asset,
-                        elapsed,
-                        per_asset_timeout,
-                    )
-                    return asset, {}
-                
+                data = await asyncio.wait_for(
+                    fetch_market_data_cached(asset, tfs),
+                    timeout=max(1.0, float(per_asset_timeout)),
+                )
                 elapsed = time.time() - started
                 if elapsed > max(5.0, per_asset_timeout):
                     logger.warning(
@@ -948,14 +1564,15 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                         asset,
                         elapsed,
                     )
-                if not data or not any(data.values()):
-                    # FIX: Add explicit error logging to diagnose WHY providers failed
-                    logger.error(
-                        "[engine][FATAL] All providers failed for %s, skipping... timeframes=%s - "
-                        "This is why strategy_signals=0 and max_score=None",
+                else:
+                    logger.info(
+                        "[engine] candle_fetch asset=%s status=done elapsed=%.2fs tfs=%s",
                         asset,
-                        tfs,
+                        elapsed,
+                        len(tfs or []),
                     )
+                if not data or not any(data.values()):
+                    logger.warning("[WARN] All providers failed for %s, skipping...", asset)
                     return asset, {}
                 # Ensure indicators are present per timeframe
                 for tf, tf_data in (data or {}).items():
@@ -963,25 +1580,46 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                         if not tf_data.get('indicators'):
                             tf_candles = tf_data.get('candles', [])
                             tf_data['indicators'] = calculate_indicators(tf_candles)
+                        if isinstance(tf_data.get('indicators'), dict):
+                            tf_data['indicators'] = normalize_indicator_schema(tf_data.get('indicators'))
                     except Exception:
                         logger.exception("indicator calc failed")
                 return asset, (data or {})
-            except Exception as e:
-                # FIX: Add explicit error logging with exception details
-                logger.error(
-                    "[engine][FATAL] CANDLE FETCH EXCEPTION for %s: %s - "
-                    "This is why strategy_signals=0 and max_score=None. "
-                    "Exception type: %s",
+            except asyncio.TimeoutError:
+                elapsed = time.time() - started
+                logger.warning(
+                    "[engine] candle_fetch asset=%s status=timeout elapsed=%.2fs timeout=%.2fs",
                     asset,
-                    str(e)[:200],
-                    type(e).__name__,
-                    exc_info=True,
+                    elapsed,
+                    per_asset_timeout,
                 )
+                return asset, {}
+            except Exception:
+                logger.exception(f"[engine] candle_fetch failed for {asset}")
                 return asset, {}
 
     tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
-    return {asset: data for asset, data in results}
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    out: Dict[str, Dict] = {}
+    for item in results:
+        if isinstance(item, Exception):
+            logger.warning("[engine] candle_fetch task failed: %s", _short_err(item))
+            continue
+        try:
+            asset, data = item
+            out[str(asset)] = data if isinstance(data, dict) else {}
+        except Exception as exc:
+            logger.warning("[engine] candle_fetch malformed result: %s", _short_err(exc))
+    success_count = sum(1 for value in out.values() if isinstance(value, dict) and any(value.values()))
+    logger.info(
+        "[engine] candle_fetch summary assets=%s success=%s failed=%s concurrency=%s timeout=%.2fs",
+        len(asset_to_timeframes or {}),
+        success_count,
+        max(0, len(asset_to_timeframes or {}) - success_count),
+        concurrency,
+        per_asset_timeout,
+    )
+    return out
 
 
 # Minimal helper: safe await-or-call for maybe-async functions
@@ -1001,9 +1639,9 @@ async def _maybe_await(func, *a, **k):
 # signal can reach at least one tier.  Signals scored 65-69 waste cooldown
 # slots and DB space while being unreachable by any tier; raising this to 70
 # prevents that.  Set PREMIUM_SCORE_THRESHOLD in env to override.
-# FIXED: Lowered from 48 to 30 to allow more signals through
-# This fixes "generated_signals=0" when data is available but score threshold blocks
-DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 30)
+# LOWERED from 55 to 48 to allow more signals through (fixes "Zero Signal" issue)
+# Based on log analysis and drift threshold adjustment
+DEFAULT_MIN_SCORE_THRESHOLD = _env_float("PREMIUM_SCORE_THRESHOLD", 48)
 _runtime_min_score_threshold = float(DEFAULT_MIN_SCORE_THRESHOLD)
 _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
 
@@ -1075,35 +1713,12 @@ def _current_min_score_threshold() -> float:
 
 
 def _current_ml_prob_threshold() -> float:
-    """
-    Get current ML probability threshold with dynamic AUC-based adjustment.
-    
-    Auto-adjusts threshold based on:
-    - Base threshold from optimizer/env
-    - Current ML model AUC (from Redis key ml:model:auc)
-    - Target AUC (default 0.85)
-    
-    If model is accurate (high AUC), threshold lowers -> more signals.
-    If model degraded (low AUC), threshold rises -> fewer signals.
-    """
-# Try dynamic threshold first (preferred)
-    try:
-        from engine.dynamic_threshold import calculate_dynamic_threshold
-        # LOWERED from 0.30 to 0.20 to allow more signals through when ML model degrades
-        # This fixes the issue where ALL signals are blocked at ML filter (risk_passed=0)
-        base_threshold = _env_float("ML_PROB_THRESHOLD", 0.20)
-        dynamic_thresh = calculate_dynamic_threshold(base_threshold=base_threshold)
-        return dynamic_thresh
-    except Exception as e:
-        logger.debug(f"[engine] Dynamic threshold unavailable: {e}")
-    
-    # Fallback to threshold optimizer
     try:
         if _threshold_optimizer is not None and hasattr(_threshold_optimizer, "get_threshold"):
-            return float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.30))
+            return float(_threshold_optimizer.get_threshold() or _env_float("ML_PROB_THRESHOLD", 0.55))
     except Exception:
         pass
-    return _env_float("ML_PROB_THRESHOLD", 0.30)
+    return _env_float("ML_PROB_THRESHOLD", 0.55)
 
 
 def load_tradable_assets() -> List[str]:
@@ -1147,7 +1762,7 @@ def main_loop(DRY_RUN: bool = False):
     fx_enabled = _env_bool('FX_ENABLED', True)
     stocks_enabled = _env_bool('STOCKS_ENABLED', True)
     _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
-    _tf_default = '1h,4h,24h'
+    _tf_default = '1m,5m,15m,1h,4h,24h'
     def _norm_tf(tf: str) -> str:
         _tf = str(tf or "").strip().lower()
         if _tf == "24h":
@@ -1163,20 +1778,9 @@ def main_loop(DRY_RUN: bool = False):
         return out
 
 
-# Cache for macro data fallback when providers fail
-    _macro_fallback_cache: Dict[str, float] = {}
-
     async def _fetch_macro_snapshot() -> Dict[str, float]:
-        """Fetch macro context once per cycle for all assets.
-        
-        FIX: Added rate-limiting delays between macro fetches to prevent Polygon 429 errors.
-        FIX: Added fallback to cached values when providers fail.
-        FIX: Added ticker format fallback for DXY (various sources use different formats).
-        """
-        global _last_macro_snapshot_at, _macro_snapshot_cache, _macro_fallback_cache
-        import random
-        import asyncio
-        
+        """Fetch macro context once per cycle for all assets."""
+        global _last_macro_snapshot_at, _macro_snapshot_cache
         now_dt = datetime.utcnow()
         if _macro_snapshot_cache is not None and _last_macro_snapshot_at is not None:
             elapsed = (now_dt - _last_macro_snapshot_at).total_seconds()
@@ -1195,99 +1799,25 @@ def main_loop(DRY_RUN: bool = False):
         except Exception:
             pass
 
-        async def _macro_tf(asset: str, timeframe: str = "1d", delay_between: float = 0.0) -> Dict[str, Any]:
-            """Fetch macro indicator with rate limiting delay.
-            
-            Args:
-                asset: Ticker symbol (e.g., DXY, VIX, US10Y)
-                timeframe: Timeframe for candles
-                delay_between: Seconds to delay before fetching (helps prevent rate limits)
-            """
-            # Apply rate limiting delay to prevent 429 errors for Polygon free tier
-            if delay_between > 0:
-                jitter = random.random() * 0.5  # Add jitter for randomization
-                await asyncio.sleep(delay_between + jitter)
-            
+        async def _macro_tf(asset: str, timeframe: str = "1d") -> Dict[str, Any]:
             try:
                 data = await fetch_market_data_cached(asset, [timeframe])
                 tf_data = (data or {}).get(timeframe) or {}
                 candles = tf_data.get("candles") or []
                 closes = [float(c.get("close") or 0.0) for c in candles if isinstance(c, dict)]
                 if len(closes) < 2:
-                    # Try fallback formats for DXY
-                    if asset == "DXY":
-                        retry_formats = ["USDX", "DX-Y", "USDXUSD", "DXYUSD"]
-                        for alt_format in retry_formats:
-                            if alt_format == asset:
-                                continue
-                            try:
-                                alt_data = await fetch_market_data_cached(alt_format, [timeframe])
-                                alt_tf = (alt_data or {}).get(timeframe) or {}
-                                alt_candles = alt_tf.get("candles") or []
-                                alt_closes = [float(c.get("close") or 0.0) for c in alt_candles if isinstance(c, dict)]
-                                if len(alt_closes) >= 2:
-                                    candles = alt_candles
-                                    closes = alt_closes
-                                    logger.info(f"[macro] DXY fetched using alt format: {alt_format}")
-                                    break
-                            except Exception:
-                                continue
-                if len(closes) < 2:
-                    # Use cached fallback if fetch failed
-                    cache_key = f"{asset}_last"
-                    cached = _macro_fallback_cache.get(cache_key)
-                    if cached is not None:
-                        logger.info(f"[macro] Using cached fallback for {asset}: {cached}")
-                        return {"trend": 0.0, "last": cached, "source": "cache_fallback"}
                     return {}
                 first = closes[0]
                 last = closes[-1]
                 trend = ((last - first) / first) if first else 0.0
-                # Cache successful values for fallback
-                _macro_fallback_cache[f"{asset}_last"] = float(last)
                 return {"trend": float(trend), "last": float(last), "source": tf_data.get("source") or ""}
-            except Exception as e:
-                logger.debug(f"[macro] Failed to fetch {asset}: {e}")
-                # Try fallback formats for DXY
-                if asset == "DXY":
-                    retry_formats = ["USDX", "DX-Y", "USDXUSD"]
-                    for alt_format in retry_formats:
-                        try:
-                            alt_data = await fetch_market_data_cached(alt_format, [timeframe])
-                            alt_tf = (alt_data or {}).get(timeframe) or {}
-                            alt_candles = alt_tf.get("candles") or []
-                            alt_closes = [float(c.get("close") or 0.0) for c in alt_candles if isinstance(c, dict)]
-                            if len(alt_closes) >= 2:
-                                first = alt_closes[0]
-                                last = alt_closes[-1]
-                                trend = ((last - first) / first) if first else 0.0
-                                _macro_fallback_cache[f"{asset}_last"] = float(last)
-                                logger.info(f"[macro] DXY fetched using alt format: {alt_format}")
-                                return {"trend": float(trend), "last": float(last), "source": "alt_format"}
-                        except Exception:
-                            continue
-                # Use cached fallback if all fetch attempts failed
-                cache_key = f"{asset}_last"
-                cached = _macro_fallback_cache.get(cache_key)
-                if cached is not None:
-                    logger.info(f"[macro] Using cached fallback for {asset} after error: {cached}")
-                    return {"trend": 0.0, "last": cached, "source": "cache_fallback"}
+            except Exception:
                 return {}
 
-# FIX: Add proactive rate limiting to prevent 429 errors BEFORE they happen
-        # This calls the provider-level rate limiter from data/providers.py
-        from data.providers import _macro_rate_limit
-        await _macro_rate_limit("DXY")   # Wait if needed before DXY fetch
-        await _macro_rate_limit("VIX")   # Wait if needed before VIX fetch
-        await _macro_rate_limit("US10Y")  # Wait if needed before US10Y fetch
-        await _macro_rate_limit("US02Y")  # Wait if needed before US02Y fetch
-
-        # FIX: Add delays between macro fetches to prevent Polygon 429 errors
-        # Polygon free tier allows 5 calls/minute, so we space them out
-        dxy = await _macro_tf("DXY", "1d", delay_between=0.0)  # First call no delay
-        vix = await _macro_tf("VIX", "1d", delay_between=2.5)  # 2.5s delay after DXY
-        us10 = await _macro_tf("US10Y", "1d", delay_between=2.5)  # 2.5s delay after VIX
-        us02 = await _macro_tf("US02Y", "1d", delay_between=2.5)  # 2.5s delay after US10Y
+        dxy = await _macro_tf("DXY", "1d")
+        vix = await _macro_tf("VIX", "1d")
+        us10 = await _macro_tf("US10Y", "1d")
+        us02 = await _macro_tf("US02Y", "1d")
 
         macro.update({
             "dxy_trend": float(dxy.get("trend") or 0.0),
@@ -1297,10 +1827,6 @@ def main_loop(DRY_RUN: bool = False):
             "btc_corr": 0.0,
             "spx_trend": 0.0,
         })
-        
-        # Log macro fetch status for diagnostics
-        logger.info(f"[macro] snapshot: dxy={dxy.get('last')} vix={vix.get('last')} us10y={us10.get('last')}")
-        
         _macro_snapshot_cache = dict(macro)
         _last_macro_snapshot_at = now_dt
         return macro
@@ -1317,6 +1843,7 @@ def main_loop(DRY_RUN: bool = False):
     fx_timeframes = _resolve_timeframes('FX_TIMEFRAMES')
     stock_timeframes = _resolve_timeframes('STOCK_TIMEFRAMES')
     commodity_timeframes = _resolve_timeframes('COMMODITY_TIMEFRAMES')
+    index_timeframes = _resolve_timeframes('INDEX_TIMEFRAMES')
 
     cycle_no = 0
 
@@ -1332,6 +1859,7 @@ def main_loop(DRY_RUN: bool = False):
             "crypto": 0,
             "fx": 0,
             "stock": 0,
+            "index": 0,
             "commodity": 0,
         }
 
@@ -1422,24 +1950,72 @@ def main_loop(DRY_RUN: bool = False):
                 msg = ", ".join([f"{p}:{r}" for p, r in closed_notes])
                 logger.info(f"[engine] cycle={cycle_no} market_closed skip={msg}")
 
+            try:
+                from engine.off_market import off_market_decision
+                _off_market = off_market_decision(open_assets, closed_notes)
+                if _off_market.throttle:
+                    logger.info(
+                        "[engine] off_market_throttle cycle=%s sleep_seconds=%s reason=%s",
+                        cycle_no, _off_market.sleep_seconds, _off_market.reason,
+                    )
+                    time.sleep(max(60, int(_off_market.sleep_seconds)))
+                    continue
+            except Exception as _off_market_err:
+                logger.debug("[engine] off_market_throttle check failed: %s", _off_market_err)
+
+            # Runtime verification gates are applied before partitioning and
+            # before the cycle queue is refreshed, so disabled classes cannot
+            # consume batch slots or be re-injected by class coverage logic.
+            _enabled_classes = _enabled_asset_classes()
+            _operator_blacklist = _env_asset_blacklist()
+            _pre_blacklist_count = len(open_assets)
+            open_assets = [
+                asset for asset in _filter_assets_by_enabled_classes(open_assets)
+                if _normalize_asset_symbol(asset) not in _operator_blacklist
+            ]
+            _blacklisted_count = max(0, _pre_blacklist_count - len(open_assets))
+            if _blacklisted_count and _env_bool("ENGINE_CYCLE_LOG", True):
+                logger.info(
+                    "[engine] asset blacklist removed=%s active_blacklist=%s",
+                    _blacklisted_count,
+                    sorted(list(_operator_blacklist))[:30],
+                )
+            logger.info(
+                "[engine] enabled asset classes=%s crypto_only=%s",
+                sorted(_enabled_classes),
+                _env_bool("CRYPTO_ONLY_MODE", False),
+            )
+
             # Partition
             crypto_assets = [a for a in open_assets if is_crypto(a)]
             fx_assets = [a for a in open_assets if is_fx(a)]
+            index_assets = [a for a in open_assets if is_index(a)]
             stock_assets = [a for a in open_assets if is_stock(a)]
             commodity_assets = [a for a in open_assets if is_commodity(a)]
-# FIX: Add CRYPTO_ENABLED and COMMODITY_ENABLED checks (matching config.py)
             fx_enabled = _env_bool('FX_ENABLED', True)
             stocks_enabled = _env_bool('STOCKS_ENABLED', True)
-            crypto_enabled = _env_bool('CRYPTO_ENABLED', True)
-            commodity_enabled = _env_bool('COMMODITY_ENABLED', True)
+            indices_enabled = _env_bool('INDICES_ENABLED', _env_bool('INDEX_ENABLED', True))
             if not fx_enabled:
                 fx_assets = []
             if not stocks_enabled:
                 stock_assets = []
-            if not crypto_enabled:
-                crypto_assets = []
-            if not commodity_enabled:
-                commodity_assets = []
+            if not indices_enabled:
+                index_assets = []
+            if _env_bool("ENGINE_CYCLE_LOG", True):
+                logger.info(
+                    "[engine] open universe by class: crypto=%s fx=%s stock=%s index=%s commodity=%s stocks_enabled=%s indices_enabled=%s",
+                    len(crypto_assets),
+                    len(fx_assets),
+                    len(stock_assets),
+                    len(index_assets),
+                    len(commodity_assets),
+                    bool(stocks_enabled),
+                    bool(indices_enabled),
+                )
+                if stocks_enabled and not stock_assets:
+                    logger.warning(
+                        "[engine] stock universe empty while STOCKS_ENABLED=1; check market hours, STOCK_TICKERS, and stock OHLC provider keys"
+                    )
 
             # ── Round-robin queue: cover every open asset once per round ──────────
             # Interleave asset classes so each batch has natural diversity
@@ -1447,7 +2023,7 @@ def main_loop(DRY_RUN: bool = False):
             _all_open: list[str] = []
             _cat_iters = [
                 iter(c)
-                for c in [crypto_assets, fx_assets, stock_assets, commodity_assets]
+                for c in [crypto_assets, fx_assets, stock_assets, index_assets, commodity_assets]
                 if c
             ]
             while _cat_iters:
@@ -1482,6 +2058,8 @@ def main_loop(DRY_RUN: bool = False):
                     return "crypto"
                 if is_fx(_a):
                     return "fx"
+                if is_index(_a):
+                    return "index"
                 if is_commodity(_a):
                     return "commodity"
                 return "stock"
@@ -1490,6 +2068,7 @@ def main_loop(DRY_RUN: bool = False):
                 "crypto": list(crypto_assets),
                 "fx": list(fx_assets),
                 "stock": list(stock_assets),
+                "index": list(index_assets),
                 "commodity": list(commodity_assets),
             }
             _required_classes = [k for k, v in _open_by_class.items() if v]
@@ -1565,6 +2144,18 @@ def main_loop(DRY_RUN: bool = False):
                     f"batch={cycle_assets} wakeup={cycle_no} classes={_selected_counts}"
                 )
 
+            cycle_started_at = datetime.now(timezone.utc)
+            cycle_started_monotonic = time.monotonic()
+            _cycle_state = {
+                "status": "started",
+                "cycle": int(cycle_no),
+                "round": getattr(_cycle_queue, "round_progress", ""),
+                "started_at": cycle_started_at.isoformat(),
+                "assets_attempted": int(cycle_assets),
+                "class_counts": dict(_selected_counts or {}),
+            }
+            _publish_engine_cycle_state(_cycle_state)
+
             # Build timeframes map
             asset_to_tfs: Dict[str, List[str]] = {}
             for asset in assets:
@@ -1572,6 +2163,8 @@ def main_loop(DRY_RUN: bool = False):
                     tfs = crypto_timeframes
                 elif is_fx(asset):
                     tfs = fx_timeframes
+                elif is_index(asset):
+                    tfs = index_timeframes or stock_timeframes
                 elif is_stock(asset):
                     tfs = stock_timeframes
                 elif is_commodity(asset):
@@ -1593,6 +2186,8 @@ def main_loop(DRY_RUN: bool = False):
             asset_to_tfs_degraded = {a: (tfs[:1] if a in degraded_assets else tfs) for a, tfs in asset_to_tfs.items()}
 
             # Fetch market data (async)
+            market_fetch_started = time.monotonic()
+            market_fetch_error = None
             try:
                 from utils.async_runner import run_sync
                 fetch_timeout_s = max(30.0, float(_env_float("ENGINE_MARKET_FETCH_TIMEOUT_SECONDS", 180.0) or 180.0))
@@ -1600,9 +2195,32 @@ def main_loop(DRY_RUN: bool = False):
                     _fetch_market_data_for_assets(asset_to_tfs_degraded),
                     timeout=fetch_timeout_s,
                 )
-            except Exception:
+            except Exception as _market_fetch_exc:
+                market_fetch_error = type(_market_fetch_exc).__name__
                 logger.exception("Market data fetch failed or timed out")
                 all_market_data = {}
+            market_fetch_ms = int((time.monotonic() - market_fetch_started) * 1000)
+            from data.market_data import (
+                count_usable_market_data_assets,
+                market_data_diagnostics,
+                market_data_usability,
+                usable_timeframe_payloads,
+            )
+            usable_market_data_assets = count_usable_market_data_assets(
+                all_market_data,
+                asset_to_tfs,
+            )
+            try:
+                _cycle_state.update({
+                    "status": "market_data_fetched",
+                    "market_fetch_ms": int(market_fetch_ms),
+                    "market_fetch_error": market_fetch_error,
+                    "market_data_assets": int(usable_market_data_assets),
+                    "missing_market_data_assets": int(max(0, cycle_assets - usable_market_data_assets)),
+                })
+                _publish_engine_cycle_state(_cycle_state)
+            except Exception:
+                pass
 
             try:
                 macro_snapshot = run_sync(_fetch_macro_snapshot(), timeout=30.0)
@@ -1611,26 +2229,60 @@ def main_loop(DRY_RUN: bool = False):
 
             scored_signals_all: List[Dict] = []
             max_candidate_score = None
-            # Fix 2: cycle-level set prevents duplicate asset+timeframe signals in the same batch
+            # Cycle-level sets prevent duplicate and opposite-direction same-asset
+            # signals in the same batch, even when they come from different TFs.
             _cycle_cooldown: set = set()
+            _cycle_asset_cooldown: set[str] = set()
             pipeline_stats = {
                 "strategy_signals": 0,
-            "normalized": 0,
-            "consensus": 0,
-            "selected": 0,
-            "unique": 0,
-            "strict_candidates": 0,
-            "risk_passed": 0,
-            "final_signals": 0,
-            "stored": 0,
-            "skipped_open_limit_asset": 0,
-            "skipped_open_limit_class": 0,
-            "skipped_cycle_cooldown": 0,
-            "skipped_db_cooldown": 0,
-            "skipped_confluence_block": 0,
-            "skipped_portfolio_exposure": 0,
-            "store_failed": 0,
-        }
+                "normalized": 0,
+                "consensus": 0,
+                "selected": 0,
+                "unique": 0,
+                "strict_candidates": 0,
+                "risk_passed": 0,
+                "final_signals": 0,
+                "stored": 0,
+                "no_candles": 0,
+                "stale_data": 0,
+                "no_strategy_signals": 0,
+                "validation_failed": 0,
+                "risk_failed": 0,
+                "advanced_filter_failed": 0,
+                "invalid_tp": 0,
+                "quality_rejected": 0,
+                "score_rejected": 0,
+                "risk_failed_reasons": {},
+                "advanced_filter_reasons": {},
+                "invalid_tp_reasons": {},
+                "quality_rejected_reasons": {},
+                "score_rejected_reasons": {},
+                "market_data_failure_reasons": {},
+                "no_consensus": 0,
+                "strategy_exception": 0,
+                "consensus_exception": 0,
+                "scoring_exception": 0,
+                "skipped_open_limit_asset": 0,
+                "skipped_open_limit_class": 0,
+                "skipped_cycle_cooldown": 0,
+                "skipped_cycle_asset_cooldown": 0,
+                "skipped_db_cooldown": 0,
+                "skipped_db_asset_cooldown": 0,
+                "skipped_confluence_block": 0,
+                "skipped_segment_quarantine": 0,
+                "skipped_portfolio_exposure": 0,
+                "store_failed": 0,
+            }
+            for _cls_name in ("crypto", "fx", "stock", "index", "commodity"):
+                pipeline_stats[f"selected_{_cls_name}_assets"] = int(_selected_counts.get(_cls_name, 0) or 0)
+                pipeline_stats[f"no_candles_{_cls_name}"] = 0
+                pipeline_stats[f"quality_rejected_{_cls_name}"] = 0
+            pipeline_stats["assets_attempted"] = int(cycle_assets)
+            pipeline_stats["market_fetch_ms"] = int(market_fetch_ms)
+            pipeline_stats["market_data_assets"] = int(usable_market_data_assets)
+            if market_fetch_error:
+                pipeline_stats["market_fetch_error"] = market_fetch_error
+            _increment_engine_scanned(cycle_assets)
 
             open_limit_per_asset = max(1, _env_int("OPEN_SIGNALS_MAX_PER_ASSET", 20))
             open_limit_per_class = max(1, _env_int("OPEN_SIGNALS_MAX_PER_CLASS", 20))
@@ -1702,12 +2354,12 @@ def main_loop(DRY_RUN: bool = False):
                 logger.debug(f"[engine] redis/db open-signal reconciliation failed: {_redis_reconcile_err}")
 
     # Per-asset pipeline
-            for asset in assets:
+            for _asset_index, asset in enumerate(assets, start=1):
                 # HARD_BLACKLIST check: skip zombie stablecoins
                 _norm_asset = _normalize_asset_symbol(asset)
-                if _norm_asset in HARD_BLACKLIST:
-                    logger.warning(f"[engine] HARDBLACKLIST: skipping zombie stablecoin {asset}")
-                    _record_gate_failure(asset, "hard_blacklist", "zombie_stablecoin")
+                if _is_asset_blacklisted(_norm_asset):
+                    logger.warning(f"[engine] ASSET_BLACKLIST: skipping {asset}")
+                    _record_gate_failure(asset, "asset_blacklist", "operator_or_hard_blacklist")
                     continue
                     
                 logger.info(f"[engine] pipeline: starting asset={asset}")
@@ -1716,66 +2368,62 @@ def main_loop(DRY_RUN: bool = False):
                     if isinstance(market_data, dict):
                         market_data["_macro"] = dict(macro_snapshot or {})
 
-# FIX: REMOVED the early-exit check that was skipping strategy execution
-                    # The original code had:
-                    #   if not has_candles: continue 
-                    # This caused the engine to skip ALL strategies BEFORE running them
-                    # if market data appeared empty, causing generated_signals=0
-                    
-                    # Instead, we now ALWAYS run strategies - they have their own fallback logic
-                    has_candles = any((tf_data.get('candles') for tf_data in market_data.values())) if isinstance(market_data, dict) else False
+                    # Required timeframes define strategy readiness. For crypto,
+                    # optional 1m/4h/1d failures must not veto valid 5m/15m/1h.
+                    usable_timeframes = usable_timeframe_payloads(market_data) if isinstance(market_data, dict) else {}
+                    _asset_usability = market_data_usability(
+                        asset,
+                        asset_to_tfs.get(asset, []),
+                        market_data if isinstance(market_data, dict) else {},
+                    )
+                    has_candles = bool(_asset_usability.get("usable"))
                     if not has_candles:
-                        logger.warning(f"[engine][DATA STARVATION] {asset} missing candles - continuing anyway to let strategies decide")
-
-# FIX: Add INDICATORS check - but be more lenient to prevent blocking valid data
-                    # Fixed: Allow signals through if ANY data exists, even with minimal indicators
-                    has_valid_indicators = False
-                    indicator_details = {}
-                    for tf_name, tf_data in market_data.items():
-                        if isinstance(tf_data, dict):
-                            ind = tf_data.get('indicators')
-                            # FIX: Be more lenient - accept any dict with at least 1 indicator
-                            if ind and isinstance(ind, dict) and len(ind) > 0:
-                                has_valid_indicators = True
-                                indicator_details[tf_name] = {
-                                    'total_indicators': len(ind),
-                                    'rsi': ind.get('rsi'),
-                                    'ema_fast': ind.get('ema_fast'),
-                                }
-                    
-                    if not has_valid_indicators:
-                        # Log but continue instead of skipping - let strategies decide
-                        logger.warning(
-                            f"[engine][INDICATOR WARNING] {asset} minimal indicators. "
-                            f"Continuing anyway - strategies will handle."
+                        logger.warning(f"[engine] No market data for asset={asset}")
+                        pipeline_stats["no_candles"] += 1
+                        pipeline_stats[f"no_candles_{_asset_class_key(asset)}"] = int(
+                            pipeline_stats.get(f"no_candles_{_asset_class_key(asset)}", 0) or 0
+                        ) + 1
+                        _provider_errors: list[str] = []
+                        for _tf in asset_to_tfs.get(asset, []):
+                            try:
+                                _provider_errors.extend(_get_provider_errors(asset, _tf)[:3])
+                            except Exception:
+                                continue
+                        _data_reason = _provider_errors[0] if _provider_errors else "no_usable_candles"
+                        _aggregation = market_data_diagnostics(
+                            asset,
+                            asset_to_tfs.get(asset, []),
+                            market_data if isinstance(market_data, dict) else {},
                         )
-                        # FIX: Don't skip - continue processing to allow fallback strategies to work
-                    
-                    logger.info(f"[engine] Indicators validated for {asset}: {indicator_details}")
+                        logger.warning(
+                            "[engine][market_data_audit] asset=%s usable=%s rejected=%s final_reason=%s",
+                            asset,
+                            _aggregation.get("usable_timeframes"),
+                            _aggregation.get("rejected_timeframes"),
+                            _aggregation.get("final_reason"),
+                        )
+                        _bump_cycle_reason(pipeline_stats, "market_data_failure_reasons", _data_reason)
+                        if _provider_errors:
+                            _provider_error_map = pipeline_stats.setdefault("market_data_provider_errors", {})
+                            if isinstance(_provider_error_map, dict):
+                                _provider_error_map[_norm_asset] = _provider_errors[:8]
+                            logger.warning(
+                                "[engine][market_data_audit] asset=%s errors=%s",
+                                asset,
+                                _provider_errors[:8],
+                            )
+                        _increment_engine_veto("other")
+                        _record_gate_failure(asset, "market_data", "no_candles")
+                        _maybe_log_heatmap(asset, cycle_no, 0)
+                        continue
 
-# Check data age for each timeframe
+                    # Check data age for each timeframe
                     # Data is considered stale if older than 2x the timeframe interval
                     # (e.g., 1h candles stale after 2 hours, allows for provider delays)
                     from core.tier_constants import CANDLE_STALENESS_MULTIPLIER
                     _TF_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800}
                     stale_data = False
-                    
-                    # DIAGNOSTIC: Log market_data contents BEFORE stale check
-                    _tf_count = len(market_data) if isinstance(market_data, dict) else 0
-                    _candle_counts = {}
-                    _indicator_counts = {}
-                    for _tf, _tf_data in (market_data or {}).items():
-                        if isinstance(_tf_data, dict):
-                            _candles = _tf_data.get('candles') or []
-                            _inds = _tf_data.get('indicators') or {}
-                            _candle_counts[_tf] = len(_candles) if isinstance(_candles, list) else 0
-                            _indicator_counts[_tf] = len(_inds) if isinstance(_inds, dict) else 0
-                    
-                    logger.info(
-                        f"[engine][DIAGNOSTIC] market_data_check asset={asset} tfs={_tf_count} "
-                        f"candle_counts={_candle_counts} indicator_counts={_indicator_counts}"
-                    )
-                    
+                    _required_crypto_tfs = {"5m", "15m", "1h"} if is_crypto(asset) else set()
                     for tf, tf_data in market_data.items():
                         if isinstance(tf_data, dict):
                             data_age = tf_data.get("data_age_seconds")
@@ -1792,7 +2440,15 @@ def main_loop(DRY_RUN: bool = False):
                                 )
                                 tf_data["latency_warning"] = True
                             elif data_age is not None and data_age > max_age:
+                                if _required_crypto_tfs and tf not in _required_crypto_tfs:
+                                    logger.warning(
+                                        "[engine] optional stale data ignored asset=%s tf=%s age=%ss max=%ss",
+                                        asset, tf, data_age, max_age,
+                                    )
+                                    continue
                                 logger.warning(f"[engine] Stale data for {asset} {tf}: age={data_age}s > max={max_age}s, skipping")
+                                pipeline_stats["stale_data"] += 1
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "stale_data", f"{tf}:{data_age:.0f}s>{max_age:.0f}s")
                                 _maybe_log_heatmap(asset, cycle_no, 0)
                                 stale_data = True
@@ -1804,6 +2460,7 @@ def main_loop(DRY_RUN: bool = False):
                     try:
                         if _is_no_trade_zone_sync(asset, buffer_minutes=60):
                             logger.info(f"[engine] no_trade_zone gate: skipping asset={asset} (high-impact event within 60 min)")
+                            _increment_engine_veto("regime")
                             _record_gate_failure(asset, "macro", "no_trade_zone_60m")
                             _maybe_log_heatmap(asset, cycle_no, 0)
                             continue
@@ -1816,12 +2473,10 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         regime = None
 
-# === PHASE 1 FIX: Increment global_stats_instance.scanned for each asset analyzed ===
-                    global_stats_instance.increment_scanned(1)
-                    
-                    # === PHASE 1 FIX: Check regime and track vetoes ===
+                    # Scan attempts are counted once per batch before early gates,
+                    # including no-candle/provider-timeout assets.
                     if regime is None or regime == "neutral" or regime == "unknown":
-                        global_stats_instance.increment_vetoed("regime", 1)
+                        _increment_engine_veto("regime")
                         
                     # News sentiment (non-critical)
                     try:
@@ -1830,31 +2485,8 @@ def main_loop(DRY_RUN: bool = False):
                     except Exception:
                         market_data['news_sentiment'] = None
 
-# Run strategies -> returns list of signals (each is a dict)
+    # Run strategies -> returns list of signals (each is a dict)
                     try:
-                        # FIX: Add diagnostic logging to identify why strategies output 0 signals
-                        # Get representative candle data before running strategies
-                        _tf_sample = list(market_data.keys())[0] if market_data else None
-                        _tf_data_sample = market_data.get(_tf_sample, {}) if _tf_sample else {}
-                        _candles_before_strategies = _tf_data_sample.get('candles', []) if isinstance(_tf_data_sample, dict) else []
-                        _candle_count = len(_candles_before_strategies)
-                        
-                        # Check for DATA STARVATION BEFORE strategy runs
-                        if not _candles_before_strategies or _candle_count == 0:
-                            logger.error(
-                                f"🚨 [engine][DIAGNOSTIC] {asset}: Data provider returned EMPTY dataframe! "
-                                f"This is WHY strategy_signals=0. Check yfinance ticker formatting."
-                            )
-                        elif _candle_count < 50:
-                            logger.warning(
-                                f"⚠️ [engine][DIAGNOSTIC] {asset}: Data provider only returned {_candle_count} candles! "
-                                f"Strategies with 50-period indicators will fail (return NaN). Need at least 100 candles."
-                            )
-                        else:
-                            logger.info(
-                                f"[engine][DIAGNOSTIC] {asset}: Have {_candle_count} candles before strategy run - OK"
-                            )
-                        
                         strategy_signals = run_all_strategies(asset, market_data, regime) or []
                         if not strategy_signals:
                             # Debug: log why no signals (indicator values that failed)
@@ -1868,10 +2500,14 @@ def main_loop(DRY_RUN: bool = False):
                             )
                     except Exception:
                         logger.exception(f"Strategies failed for {asset}")
+                        pipeline_stats["strategy_exception"] += 1
+                        _increment_engine_veto("other")
                         strategy_signals = []
 
                     pipeline_stats["strategy_signals"] += len(strategy_signals)
                     if not strategy_signals:
+                        pipeline_stats["no_strategy_signals"] += 1
+                        _increment_engine_veto("other")
                         # DEBUG: Log what's happening - regime, available TFs, indicators keys
                         _tf_list = list(market_data.keys()) if market_data else []
                         _ind_keys = list(market_data.get(list(market_data.keys())[0], {}).get('indicators', {}).keys()) if market_data else []
@@ -1896,17 +2532,22 @@ def main_loop(DRY_RUN: bool = False):
 
                     # Consensus filter - NO FALLBACK IN PROD
                     try:
-                        # PHASE 2: Pass regime_info to consensus filter for regime-aware weighting
-                        consensus_signals = apply_consensus_filter(normalized, regime_info=regime)
+                        consensus_signals = apply_consensus_filter(normalized)
                         _block_on_empty_consensus = _env_bool(
                             "CONSENSUS_BLOCK_ON_EMPTY",
                             _env_bool("PROD_MODE", False),
                         )
                         if not consensus_signals and _block_on_empty_consensus:
                             logger.warning(f"Consensus empty for {asset} - blocking (PROD policy)")
+                            pipeline_stats["no_consensus"] += 1
+                            _increment_engine_veto("other")
+                            _record_gate_failure(asset, "consensus", "empty")
+                            _maybe_log_heatmap(asset, cycle_no, 0)
                             continue  # Skip asset entirely
                     except Exception as e:
                         logger.error(f"Consensus failed for {asset}: {e}")
+                        pipeline_stats["consensus_exception"] += 1
+                        _increment_engine_veto("other")
                         consensus_signals = []
                     pipeline_stats["consensus"] += len(consensus_signals)
 
@@ -1965,6 +2606,8 @@ def main_loop(DRY_RUN: bool = False):
                                 sig.setdefault('rsi', ind.get('rsi', 50))
                                 sig.setdefault('macd_trend', ind.get('macd_trend', 0))
                                 sig.setdefault('volume_ratio', ind.get('volume_ratio', 1.0))
+                                sig.setdefault('adx', ind.get('adx', 0))
+                                sig.setdefault('atr_percent', ind.get('atr_percent', 0))
                                 sig.setdefault('nearest_support', ind.get('nearest_support', 0))
                                 sig.setdefault('nearest_resistance', ind.get('nearest_resistance', 0))
                                 sig.setdefault('close_price', ind.get('close_price', sig.get('entry', 0)))
@@ -1976,7 +2619,14 @@ def main_loop(DRY_RUN: bool = False):
                             sig['market_open_confirmed'] = True
                             sig['strategy_coverage_count'] = int(len(strategy_signals or []))
                             sig['news_sentiment'] = market_data.get('news_sentiment')
-                            sig['asset_class_enc'] = 0.0 if _asset_class(asset) == 'crypto' else 1.0 if _asset_class(asset) == 'fx' else 2.0 if _asset_class(asset) == 'commodity' else 3.0
+                            _asset_cls_for_features = _asset_class(asset)
+                            sig['asset_class_enc'] = (
+                                0.0 if _asset_cls_for_features == 'crypto'
+                                else 1.0 if _asset_cls_for_features == 'fx'
+                                else 2.0 if _asset_cls_for_features == 'commodity'
+                                else 4.0 if _asset_cls_for_features == 'index'
+                                else 3.0
+                            )
                             sig['dxy_trend'] = (market_data.get('_macro') or {}).get('dxy_trend', 0.0)
                             sig['vix_trend'] = (market_data.get('_macro') or {}).get('vix_trend', 0.0)
                             sig['us10y_trend'] = (market_data.get('_macro') or {}).get('us10y_trend', 0.0)
@@ -1985,17 +2635,12 @@ def main_loop(DRY_RUN: bool = False):
                             sig['minutes_until_high_impact_news'] = (market_data.get('_macro') or {}).get('minutes_until_high_impact_news', 0.0)
                             sig['news_event_impact_score'] = (market_data.get('_macro') or {}).get('news_event_impact_score', 0.0)
 
-# preview score (even if it doesn't pass validation/gates)
+                            # preview score (even if it doesn't pass validation/gates)
                             try:
                                 preview_score = float(score_signal(sig)) if score_signal else 0
                                 sig['_preview_score'] = preview_score
                                 if max_candidate_score is None or preview_score > max_candidate_score:
                                     max_candidate_score = preview_score
-                                # DEBUG: Log raw score for diagnosing 100.0 score issue
-                                logger.info(
-                                    f"[engine][SCORE_DEBUG] asset={sig.get('asset')} tf={sig.get('timeframe')} "
-                                    f"raw_score={preview_score} direction={sig.get('direction')}"
-                                )
                             except Exception as e:
                                 logger.debug(f"[engine] Failed to compute preview score: {e}")
                                 pass
@@ -2005,6 +2650,8 @@ def main_loop(DRY_RUN: bool = False):
                             ok, reason = validate_signal(sig)
                             if not ok:
                                 sig['rejection_reason'] = f"validation:{reason}"
+                                pipeline_stats["validation_failed"] += 1
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "trend", reason)
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2026,6 +2673,9 @@ def main_loop(DRY_RUN: bool = False):
                                 pass
                             if not risk_check(sig, account_state):
                                 sig['rejection_reason'] = 'risk/volatility'
+                                pipeline_stats["risk_failed"] += 1
+                                _bump_cycle_reason(pipeline_stats, "risk_failed_reasons", sig['rejection_reason'])
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "risk", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2036,6 +2686,7 @@ def main_loop(DRY_RUN: bool = False):
                                 conf_min = float(conf_raw) if conf_raw else None
                                 if conf_min is not None and conf < conf_min:
                                     sig['rejection_reason'] = f'confluence {conf:.1f}%'
+                                    _increment_engine_veto("microstructure")
                                     _record_gate_failure(asset, "trend", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"confluence": conf})
                                     continue
@@ -2049,6 +2700,7 @@ def main_loop(DRY_RUN: bool = False):
                                 _oppose = (_news >= _thr and _dir == 'short') or (_news <= -_thr and _dir == 'long')
                                 if _oppose:
                                     sig['rejection_reason'] = f"news_conflict sentiment={_news:.2f}"
+                                    _increment_engine_veto("regime")
                                     _record_gate_failure(asset, "news", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"news_sentiment": _news})
                                     continue
@@ -2062,58 +2714,18 @@ def main_loop(DRY_RUN: bool = False):
                             strict_candidates.append(sig)
                         except Exception:
                             logger.exception("candidate gating failed")
+                            pipeline_stats["scoring_exception"] += 1
+                            _increment_engine_veto("other")
 
                     pipeline_stats["strict_candidates"] += len(strict_candidates)
-
-                    # === FIX PROBLEM 3: Log candidate breakdown before risk filtering ===
-                    # Tracks symbol+direction+timeframe duplicates (33 from 20 assets anomaly)
-                    if _env_bool("ENGINE_PIPELINE_DEBUG", True):
-                        _candidate_breakdown: dict[str, list] = {}
-                        for _cand in strict_candidates:
-                            _key = f"{_cand.get('asset')}|{_cand.get('direction')}|{_cand.get('timeframe')}"
-                            _candidate_breakdown[_key] = _candidate_breakdown.get(_key, []) + [
-                                _cand.get("_preview_score") or _cand.get("score", 0)
-                            ]
-                        
-                        # Log duplicates
-                        for _key, _scores in _candidate_breakdown.items():
-                            if len(_scores) > 1:
-                                logger.warning(
-                                    f"[engine][CANDIDATE_DUP] %s count=%d scores=%s",
-                                    _key, len(_scores), _scores
-                                )
-                        
-                        # FIX PROBLEM 2: Log score distribution to identify why max_score always = 100.0
-                        _candidate_scores = [s.get("_preview_score") or s.get("score", 0) for s in strict_candidates]
-                        if _candidate_scores:
-                            _candidate_scores_sorted = sorted(_candidate_scores, reverse=True)
-                            _top_5 = _candidate_scores_sorted[:5]
-                            _avg_score = sum(_candidate_scores) / len(_candidate_scores) if _candidate_scores else 0
-                            _mid = len(_candidate_scores_sorted) // 2
-                            _median = _candidate_scores_sorted[_mid] if _candidate_scores else 0
-                            logger.info(
-                                f"[engine][SCORE_DIST] strict_candidates=%d top_5=%s avg=%.1f median=%.1f max=%.1f",
-                                len(strict_candidates),
-                                _top_5,
-                                _avg_score,
-                                _median,
-                                max(_candidate_scores) if _candidate_scores else 0,
-                            )
-
                     if not strict_candidates:
                         continue
 
-# ML advisory (non-blocking)
-                    # FIX: Check ML_FILTER_ACTIVE env var to override ml_filter.active flag
-                    # This ensures signals aren't blocked when ML model is unavailable
-                    _ml_filter_active = _env_bool("ML_FILTER_ACTIVE", True)
+    # ML advisory (non-blocking)
                     try:
                         from ml.inference import MLFilter
                         from ml.features import extract_features
                         ml_filter = MLFilter()
-                        # Override active flag with env var if set
-                        if not _ml_filter_active:
-                            ml_filter.active = False
                     except Exception:
                         ml_filter = None
 
@@ -2123,16 +2735,10 @@ def main_loop(DRY_RUN: bool = False):
                         prob = None
                         features = {}
                         try:
-                            # FIX: Use env var to determine if ML filter should be applied
-                            # If ml_filter.active is False OR ML_FILTER_ACTIVE=False, skip ML filtering
-                            if ml_filter and getattr(ml_filter, 'active', False) and _ml_filter_active:
+                            if ml_filter and getattr(ml_filter, 'active', False):
                                 features = extract_features(sig, market_data)
                                 threshold = _current_ml_prob_threshold()
                                 approved, prob = ml_filter.ml_filter(features, threshold=threshold)
-                            else:
-                                # FIX: ML filter disabled - allow all signals through
-                                approved = True
-                                prob = 0.5  # Default neutral probability
                         except Exception:
                             approved, prob = True, None
 
@@ -2157,7 +2763,7 @@ def main_loop(DRY_RUN: bool = False):
 
                         if not approved:
                             sig['ml_advisory'] = 'filtered_by_ml'
-                            global_stats_instance.increment_vetoed("ml", 1)  # FIX: Track ML rejections using Redis-backed stats
+                            _increment_engine_veto("ml")
                             _log_decision("rejected", sig, reason="ml_filter", meta={"ml_probability": prob})
                             try:
                                 run_sync(
@@ -2177,70 +2783,21 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.debug(f"[engine] Failed to record ML rejection: {e}")
                                 pass
                             continue
-# LOWERED threshold to 0.05 to allow more signals through when model is degraded
-# This fixes "generated_signals=0" issue - DEBUG FIX
-                    try:
-                        # LOWERED from 0.10 to 0.05 to fix ML blocking all signals
-                        # This is the PRIMARY fix for strict_candidates=33 -> risk_passed=0
-                        ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.05") or 0.05)
-                    except Exception:
-                        ml_hard_min = 0.05
-                    # DEBUG: Log ML probability for every signal to identify why it's being rejected
-                    if prob is not None:
-                        # Log if signal is being rejected due to ML probability
-                        if float(prob) < ml_hard_min:
-                            logger.warning(
-                                f"[RISK_DEBUG] ML_REJECTED asset={sig.get('asset')} "
-                                f"prob={prob:.4f} threshold={ml_hard_min:.4f} "
-                                f"direction={sig.get('direction')}"
-                            )
-                        else:
-                            logger.info(
-                                f"[RISK_DEBUG] ML_PASSED asset={sig.get('asset')} "
-                                f"prob={prob:.4f} threshold={ml_hard_min:.4f}"
-                            )
-                    else:
-                        logger.warning(
-                            f"[RISK_DEBUG] ML_PROB_NONE asset={sig.get('asset')} "
-                            f"threshold={ml_hard_min:.4f} - using default"
-                        )
-                    if prob is not None and float(prob) < ml_hard_min:
-                        sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
-                        _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
-                        continue
-                    sig['ml_probability'] = prob
-                    risk_passed.append(sig)
+                        # LOWERED from 0.55 to 0.40 to allow drifted model predictions (~56%) through
+                        # This addresses the ML drift issue where model outputs 56% but threshold was too high
+                        try:
+                            ml_hard_min = float(os.getenv("ML_HARD_FILTER_MIN", "0.40") or 0.40)
+                        except Exception:
+                            ml_hard_min = 0.40
+                        if prob is not None and float(prob) < ml_hard_min:
+                            sig['ml_advisory'] = 'filtered_by_ml_hard_threshold'
+                            _increment_engine_veto("ml")
+                            _log_decision("rejected", sig, reason="ml_hard_filter", meta={"ml_probability": prob, "threshold": ml_hard_min})
+                            continue
+                        sig['ml_probability'] = prob
+                        risk_passed.append(sig)
 
-# PROBLEM 1 FIX: Track WHY signals are rejected at risk/ML filter
-                    # This is the KEY DIAGNOSTIC - currently we have no visibility into WHY 33 candidates -> 0 risk_passed
-                    _risk_rejection_reasons: dict[str, int] = {}
-                    for _sig_idx, _sig in enumerate(strict_candidates):
-                        # Check if ML filter rejected this signal
-                        _ml_rejected = _sig.get('ml_advisory') is not None
-                        if _ml_rejected:
-                            _reason = "ml_filter"
-                            _risk_rejection_reasons[_reason] = _risk_rejection_reasons.get(_reason, 0) + 1
-                            continue
-                        # Check if already in risk_passed (meaning it passed)
-                        if _sig in risk_passed:
-                            continue
-                        # If not passed, record it as "risk_advanced_filters"
-                        _reason = "risk_advanced_filters"
-                        _risk_rejection_reasons[_reason] = _risk_rejection_reasons.get(_reason, 0) + 1
-                    
-                    # Log risk rejection reasons - THIS IS THE CRITICAL MISSING DIAGNOSTIC
-                    if _env_bool("ENGINE_PIPELINE_DEBUG", True) and _risk_rejection_reasons:
-                        logger.info(
-                            f"[engine][RISK_REJECTION] strict_candidates=%d risk_passed=%d reasons=%s",
-                            len(strict_candidates),
-                            len(risk_passed),
-                            _risk_rejection_reasons,
-                        )
-                    
                     pipeline_stats["risk_passed"] += len(risk_passed)
-                    pipeline_stats["risk_rejected_ml"] = pipeline_stats.get("risk_rejected_ml", 0) + _risk_rejection_reasons.get("ml_filter", 0)
-                    pipeline_stats["risk_rejected_risk"] = pipeline_stats.get("risk_rejected_risk", 0) + _risk_rejection_reasons.get("risk_advanced_filters", 0)
-                    
                     if not risk_passed:
                         continue
 
@@ -2361,8 +2918,11 @@ def main_loop(DRY_RUN: bool = False):
                             passed_filters, rejections = advanced_filters.run_all_filters(sig, market_filter_data, None)
                             if not passed_filters:
                                 sig['rejection_reason'] = ';'.join([str(r) for r in rejections or []])
+                                pipeline_stats["advanced_filter_failed"] += 1
+                                _bump_cycle_reason(pipeline_stats, "advanced_filter_reasons", sig['rejection_reason'])
+                                _increment_engine_veto("microstructure")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
-                                _log_decision("skipped", sig, reason=sig['rejection_reason'])
+                                _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"advanced_filter_rejections": list(rejections or [])})
                                 continue
 
                             # ultra quality (optional)
@@ -2370,6 +2930,7 @@ def main_loop(DRY_RUN: bool = False):
                                 should_trade, rejection, qscore = ultra_quality.apply_ultra_filter(sig)
                                 if not should_trade:
                                     sig['rejection_reason'] = f'ultra:{rejection}'
+                                    _increment_engine_veto("other")
                                     _record_gate_failure(asset, "ultra", sig['rejection_reason'])
                                     _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                     continue
@@ -2482,6 +3043,9 @@ def main_loop(DRY_RUN: bool = False):
 
                             if not tp:
                                 sig['rejection_reason'] = 'invalid_tp_structure'
+                                pipeline_stats["invalid_tp"] += 1
+                                _bump_cycle_reason(pipeline_stats, "invalid_tp_reasons", sig['rejection_reason'])
+                                _increment_engine_veto("other")
                                 _record_gate_failure(asset, "structure", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 continue
@@ -2489,15 +3053,45 @@ def main_loop(DRY_RUN: bool = False):
                             sig['stop_loss'] = sl
                             sig['take_profit'] = tp
 
-                            # PHASE 3: Detect and assign asset class for differentiated risk sizing
+                            # Trader-intent profile shaping: scalp/day/swing/position
+                            # signals get realistic ATR-based targets, expiry, and a
+                            # time-to-target score before production quality gates run.
                             try:
-                                from engine.risk import get_asset_class
-                                asset_class = get_asset_class(sig.get("asset", ""))
-                                sig["asset_class"] = asset_class
-                                logger.debug(f"[engine] Signal enriched: asset={sig.get('asset')} asset_class={asset_class}")
-                            except Exception as e:
-                                logger.warning(f"[engine] Failed to detect asset class: {e}")
-                                sig["asset_class"] = "stock"  # Default fallback
+                                if _env_bool("TRADE_PROFILE_ENGINE_ENABLED", True):
+                                    from services.trade_profiles import apply_trade_profile_to_signal
+
+                                    sig = apply_trade_profile_to_signal(sig)
+                            except Exception as _profile_err:
+                                logger.debug(f"[engine] trade profile shaping failed: {_profile_err}")
+
+                            # Market intelligence + multi-timeframe consensus + opportunity rank.
+                            # This classifies cases like 5m SELL inside 1h BUY as a pullback/counter-trend
+                            # setup instead of a plain directional signal.
+                            try:
+                                if _env_bool("SIGNAL_INTELLIGENCE_ENGINE_ENABLED", True):
+                                    from services.trading_intelligence import enrich_signal_intelligence
+
+                                    sig = enrich_signal_intelligence(
+                                        sig,
+                                        market_data=market_data if isinstance(market_data, dict) else {},
+                                        candles=candles if isinstance(candles, list) else [],
+                                    )
+                                if not bool(sig.get("trading_allowed", True)) and _env_bool("MARKET_INTELLIGENCE_HARD_BLOCK_ENABLED", False):
+                                    sig['rejection_reason'] = 'market_intelligence_block'
+                                    pipeline_stats["quality_rejected"] += 1
+                                    _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", sig['rejection_reason'])
+                                    _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
+                                    _record_gate_failure(asset, "market_intelligence", sig['rejection_reason'])
+                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                        "asset_health_score": sig.get("asset_health_score"),
+                                        "market_session": sig.get("market_session"),
+                                        "rejection_bucket": _rejection_bucket,
+                                    })
+                                    continue
+                            except Exception as _intel_err:
+                                logger.debug(f"[engine] signal intelligence enrichment failed: {_intel_err}")
+
+                            # ML-driven dynamic risk sizing hint (for formatters/executors).
                             try:
                                 _mlp = float(sig.get('ml_probability') or 0.0)
                                 if _mlp >= float(os.getenv('ML_HIGH_CONFIDENCE', '0.75') or 0.75):
@@ -2518,6 +3112,26 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 pass
 
+                            quality_ok, quality_reason = _production_quality_gate(sig)
+                            if not quality_ok:
+                                sig['rejection_reason'] = quality_reason
+                                pipeline_stats["quality_rejected"] += 1
+                                _bump_cycle_reason(pipeline_stats, "quality_rejected_reasons", quality_reason)
+                                _quality_cls = _asset_class_key(str(sig.get("asset") or asset))
+                                pipeline_stats[f"quality_rejected_{_quality_cls}"] = int(
+                                    pipeline_stats.get(f"quality_rejected_{_quality_cls}", 0) or 0
+                                ) + 1
+                                _rejection_bucket = _increment_quality_rejection_stat(quality_reason)
+                                _record_gate_failure(asset, "quality", quality_reason)
+                                _log_decision("skipped", sig, reason=quality_reason, meta={
+                                    "score": _signal_display_score(sig),
+                                    "rr": _signal_roi_score(sig),
+                                    "ml_probability": sig.get("ml_probability"),
+                                    "asset_class": _asset_class_key(str(sig.get("asset") or asset)),
+                                    "rejection_bucket": _rejection_bucket,
+                                })
+                                continue
+
                             # Final gates: score + expectancy
                             live_exp = float(sig.get('live_expectancy', 0.0) or 0.0)
                             if live_exp < 0.0:
@@ -2533,26 +3147,13 @@ def main_loop(DRY_RUN: bool = False):
                                 except Exception:
                                     pass
 
-# FIX Issue 2: Use >= to let perfect scores through, calculate real max_scores
-# Safe Parsing of Threshold
-                            # FIXED: Lowered default from 85.0 to 25.0 to allow more signals through
-                            # This fixes the issue where strict_candidates > 0 but final_signals = 0
-                            # because score threshold was too aggressive
-                            raw_force = os.getenv("PREMIUM_SCORE_THRESHOLD_FORCE", "25.0")
-                            try:
-                                if str(raw_force).lower() in ["true", "yes", "1"]:
-                                    threshold = 25.0
-                                else:
-                                    threshold = float(raw_force)
-                            except ValueError:
-                                threshold = 25.0
-
-                            # FIX: Change > to >= so perfect 100.0 scores can pass through
                             min_score_threshold = _current_min_score_threshold()
                             if sig.get('score', 0) < min_score_threshold:
                                 sig['rejection_reason'] = f"score {sig.get('score',0)} < {min_score_threshold}"
+                                pipeline_stats["score_rejected"] += 1
+                                _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig['rejection_reason'])
                                 _record_gate_failure(asset, "score", sig['rejection_reason'])
-                                global_stats_instance.increment_vetoed("score", 1)  # FIX: Track score rejections using Redis-backed stats
+                                _increment_engine_veto("score")
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"score": sig.get("score")})
                                 try:
                                     run_sync(
@@ -2572,17 +3173,12 @@ def main_loop(DRY_RUN: bool = False):
                                 except Exception as e:
                                     logger.debug(f"[engine] Failed to record score rejection: {e}")
                                 continue
-                            
-                            # Calculate real max_scores for monitoring
-                            scores_pre = [s.get("score", 0.0) for s in strict_candidates]
-                            max_score_pre_threshold = max(scores_pre) if scores_pre else 0.0
-                            
-                            scores_post = [s.get("score", 0.0) for s in final_signals]
-                            max_score = max(scores_post) if scores_post else 0.0
 
                             # Optional hard block remains available via env toggle.
                             if _env_bool("EXPECTANCY_HARD_BLOCK_ENABLED", False) and live_exp < 0.0:
                                 sig['rejection_reason'] = f"low expectancy {live_exp:.3f}"
+                                _bump_cycle_reason(pipeline_stats, "score_rejected_reasons", sig['rejection_reason'])
+                                _increment_engine_veto("score")
                                 _record_gate_failure(asset, "expectancy", sig['rejection_reason'])
                                 _log_decision("skipped", sig, reason=sig['rejection_reason'])
                                 try:
@@ -2607,24 +3203,27 @@ def main_loop(DRY_RUN: bool = False):
                             # Attach regime + timeframe-aware expiration so higher-timeframe
                             # setups are not invalidated too early.
                             sig['regime'] = regime
-                            _sig_tf = str(sig.get('timeframe') or '1h').strip().lower()
-                            _expiry_candles = max(1, _env_int('SIGNAL_EXPIRY_CANDLES', 2))
-                            try:
-                                sig['expires_at'] = signal_context.calculate_signal_expiration(
-                                    _sig_tf,
-                                    candles_validity=_expiry_candles,
-                                )
-                            except Exception:
-                                from datetime import timedelta as _timedelta
-                                _fallback_minutes = {
-                                    '1m': 30,
-                                    '5m': 90,
-                                    '15m': 180,
-                                    '1h': 720,
-                                    '4h': 2880,
-                                    '1d': 4320,
-                                }.get(_sig_tf, 720)
-                                sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
+                            if not sig.get("expires_at"):
+                                _sig_tf = str(sig.get('timeframe') or '1h').strip().lower()
+                                _expiry_candles = max(1, _env_int('SIGNAL_EXPIRY_CANDLES', 2))
+                                try:
+                                    sig['expires_at'] = signal_context.calculate_signal_expiration(
+                                        _sig_tf,
+                                        candles_validity=_expiry_candles,
+                                    )
+                                except Exception:
+                                    from datetime import timedelta as _timedelta
+                                    _fallback_minutes = {
+                                        '1m': 30,
+                                        '3m': 60,
+                                        '5m': 90,
+                                        '15m': 180,
+                                        '30m': 360,
+                                        '1h': 720,
+                                        '4h': 2880,
+                                        '1d': 4320,
+                                    }.get(_sig_tf, 720)
+                                    sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
 
                             try:
                                 gemini_ok, gemini_score, gemini_reason = run_sync(
@@ -2633,14 +3232,18 @@ def main_loop(DRY_RUN: bool = False):
                                         candles if isinstance(candles, list) else [],
                                         float(sig.get('news_sentiment') or 0.0) if sig.get('news_sentiment') is not None else None,
                                     ),
-                                    timeout=20.0,
+                                    timeout=max(3.0, _env_float("GEMINI_SIGNAL_REVIEW_SYNC_TIMEOUT_SEC", 6.0)),
                                 )
                                 sig['gemini_review_score'] = gemini_score
                                 sig['gemini_review_reason'] = gemini_reason
                                 if not gemini_ok:
                                     sig['rejection_reason'] = f"gemini:{gemini_reason}"
+                                    _rejection_bucket = _increment_quality_rejection_stat(sig['rejection_reason'])
                                     _record_gate_failure(asset, "gemini", sig['rejection_reason'])
-                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={"gemini_score": gemini_score})
+                                    _log_decision("skipped", sig, reason=sig['rejection_reason'], meta={
+                                        "gemini_score": gemini_score,
+                                        "rejection_bucket": _rejection_bucket,
+                                    })
                                     try:
                                         run_sync(
                                             _ml_rejection_tracker.persist_rejection(
@@ -2665,6 +3268,8 @@ def main_loop(DRY_RUN: bool = False):
                             final_signals.append(sig)
                         except Exception:
                             logger.exception("scoring/filtering failed for signal")
+                            pipeline_stats["scoring_exception"] += 1
+                            _increment_engine_veto("other")
 
                     collapsed_signals = _collapse_signal_variants(final_signals)
                     dropped_variants = max(0, len(final_signals) - len(collapsed_signals))
@@ -2673,18 +3278,6 @@ def main_loop(DRY_RUN: bool = False):
                     final_signals = collapsed_signals
 
                     pipeline_stats["final_signals"] += len(final_signals)
-
-                    # === DELIVERY STAGE LOGGING ===
-                    # Track signal lifecycle stages for debugging delivery issues
-                    # Stages: selected → stored → dispatched → delivered
-                    _delivery_stage_log = _env_bool("DELIVERY_STAGE_LOG", False)
-                    if _delivery_stage_log:
-                        logger.info(
-                            "[delivery_stage] stage=final_signals count=%d assets=%s",
-                            len(final_signals),
-                            [s.get('asset') for s in final_signals[:5]],
-                        )
-
                     # store final_signals
                     from datetime import timedelta as _timedelta  # ensure available in this scope
 
@@ -2702,28 +3295,73 @@ def main_loop(DRY_RUN: bool = False):
                     # One query for all (asset, timeframe) pairs in this batch instead of
                     # one query per signal inside the loop.  Builds a set of "cooled-down"
                     # keys so the loop only does an O(1) set-lookup per signal.
-                    _cd_mins = _env_int("SIGNAL_COOLDOWN_MINUTES", 30)
+                    _cd_mins = max(1, _env_int("SIGNAL_COOLDOWN_MINUTES", 30))
                     _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
+                    _asset_cd_hours = max(1, _env_int("ASSET_REPEAT_LOCK_HOURS", 12))
+                    _asset_cd_cutoff = datetime.utcnow() - _timedelta(hours=_asset_cd_hours)
                     _cooled_down_pairs: set[str] = set()
+                    _cooled_down_assets: set[str] = set()
                     try:
                         from db.session import get_session as _get_s_cd
                         from db.models import Signal as _SigModel
-                        from sqlalchemy import select as _sel_cd
+                        from sqlalchemy import select as _sel_cd, or_ as _or_cd, exists as _exists_cd
 
-                        async def _batch_cooldown_check() -> set[str]:
+                        async def _batch_cooldown_check() -> tuple[set[str], set[str]]:
+                            now_cd = datetime.utcnow()
+                            base_filters = [
+                                _SigModel.expired.is_(False),
+                                _SigModel.archived.is_(False),
+                            ]
+                            # Do not let rows whose expires_at has passed keep blocking new
+                            # signals forever if the expiration job has not archived them yet.
+                            if _env_bool("ACTIVE_SIGNAL_COOLDOWN_IGNORE_EXPIRED_BY_TIME", True):
+                                base_filters.append(_or_cd(_SigModel.expires_at.is_(None), _SigModel.expires_at >= now_cd))
+
+                            # Production-safe default: only DELIVERED signals block repeats.
+                            # Undelivered/reserved/formatter_failed/stale rows should not starve
+                            # the engine and produce final_signals>0 but stored=0 forever.
+                            if _env_bool("ASSET_REPEAT_LOCK_REQUIRE_DELIVERED", True):
+                                from db.models import SignalDelivery as _SigDelivery
+                                delivered_exists = _exists_cd().where(
+                                    _SigDelivery.signal_id == _SigModel.signal_id,
+                                    _SigDelivery.sent_ok.is_(True),
+                                    _SigDelivery.delivery_state.in_(("sent", "delivered", "confirmed")),
+                                )
+                                base_filters.append(delivered_exists)
+
                             async with _get_s_cd() as _cs:
                                 rows = (await _cs.execute(
                                     _sel_cd(_SigModel.asset, _SigModel.timeframe).where(
                                         _SigModel.created_at >= _cd_cutoff,
-                                        _SigModel.expired.is_(False),
-                                        _SigModel.archived.is_(False),
+                                        *base_filters,
                                     ).distinct()
                                 )).fetchall()
-                                return {f"{r[0]}_{r[1]}" for r in rows}
+                                asset_rows = (await _cs.execute(
+                                    _sel_cd(_SigModel.asset).where(
+                                        _SigModel.created_at >= _asset_cd_cutoff,
+                                        *base_filters,
+                                    ).distinct()
+                                )).fetchall()
+                                return (
+                                    {f"{r[0]}_{r[1]}" for r in rows},
+                                    {str(r[0] or "").upper().strip() for r in asset_rows if r[0]},
+                                )
 
-                        _cooled_down_pairs = run_sync(_batch_cooldown_check(), timeout=15.0)
+                        _cooled_down_pairs, _cooled_down_assets = run_sync(
+                            _batch_cooldown_check(),
+                            timeout=max(5.0, _env_float("COOLDOWN_PREFLIGHT_TIMEOUT_SECONDS", 15.0)),
+                        )
+                        logger.info(
+                            "[engine] cooldown precheck pairs=%s assets=%s require_delivered=%s asset_lock_h=%s",
+                            len(_cooled_down_pairs),
+                            len(_cooled_down_assets),
+                            _env_bool("ASSET_REPEAT_LOCK_REQUIRE_DELIVERED", True),
+                            _asset_cd_hours,
+                        )
                     except Exception as _bcd_err:
-                        logger.debug(f"[engine] batch cooldown pre-check failed, falling back to per-signal: {_bcd_err}")
+                        logger.debug(f"[engine] batch cooldown pre-check failed, failing open: {_bcd_err}")
+                        if _env_bool("COOLDOWN_PREFLIGHT_FAIL_OPEN", True):
+                            _cooled_down_pairs, _cooled_down_assets = set(), set()
 
                     stored_signals: list[dict] = []
                     for sig in final_signals:
@@ -2752,11 +3390,31 @@ def main_loop(DRY_RUN: bool = False):
                                 pipeline_stats["skipped_cycle_cooldown"] += 1
                                 logger.info(f"[engine] cooldown(cycle): skipping duplicate {_asset_tf_key}")
                                 continue
+                            if _asset_name in _cycle_asset_cooldown:
+                                pipeline_stats["skipped_cycle_asset_cooldown"] += 1
+                                logger.info(
+                                    f"[engine] cooldown(cycle-asset): skipping duplicate/opposite {_asset_name} "
+                                    f"tf={sig.get('timeframe')} dir={sig.get('direction')}"
+                                )
+                                continue
 
                             # DB cooldown — use pre-computed batch result (O(1) lookup)
                             if _asset_tf_key in _cooled_down_pairs:
                                 pipeline_stats["skipped_db_cooldown"] += 1
                                 logger.info(f"[engine] cooldown(db): active signal exists for {_asset_tf_key}, skipping")
+                                continue
+                            if _asset_name in _cooled_down_assets:
+                                pipeline_stats["skipped_db_asset_cooldown"] += 1
+                                logger.info(f"[engine] cooldown(db-asset): active signal exists for {_asset_name}, skipping")
+                                continue
+
+                            _segment_ok, _segment_reason = run_sync(
+                                _segment_quarantine_gate(sig),
+                                timeout=10.0,
+                            )
+                            if not _segment_ok:
+                                pipeline_stats["skipped_segment_quarantine"] += 1
+                                logger.info(f"[engine] {_segment_reason}; skipping {_asset_name}")
                                 continue
 
                             # ── Confluence Engine enrichment ───────────────────────────────────
@@ -2845,44 +3503,64 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception as _pex:
                                 logger.debug(f"[engine] portfolio exposure check failed: {_pex}")
 
-# === PRIORITY 1.1 FIX: Signal Lock Check ===
-                            # Check if signal lock exists for this asset+direction+timeframe
-                            # This prevents duplicate signal generation within cooldown window
-                            _sig_asset = str(sig.get('asset') or '').upper().strip()
-                            _sig_direction = str(sig.get('direction') or 'long').lower().strip()
-                            _sig_timeframe = str(sig.get('timeframe') or '1h').lower().strip()
-                            try:
-                                if _check_signal_lock(_sig_asset, _sig_direction, _sig_timeframe):
-                                    pipeline_stats["skipped_signal_lock"] = int(pipeline_stats.get("skipped_signal_lock", 0) or 0) + 1
-                                    logger.info(f"[signal_lock] skipping {_sig_asset} {sig.get('direction')} {sig.get('timeframe')} - lock exists")
-                                    continue
-                            except Exception as _sl_err:
-                                logger.debug(f"[signal_lock] check failed: {_sl_err}")
-                            # === END PRIORITY 1.1 FIX ===
-
                             # Stamp created_at
                             # store_signal_compat sets it on the DB row but doesn't write it back
                             # to the dict; without this every is_signal_fresh() call returns False.
                             sig.setdefault('created_at', datetime.utcnow())
+                            _resolved_score = _signal_display_score(sig)
+                            if _resolved_score > 0:
+                                sig["score"] = _resolved_score
                             logger.info(f"[engine] storing signal: {sig.get('asset')} tf={sig.get('timeframe')} score={sig.get('score')} confluence={sig.get('confluence_vote_count', '?')}/{sig.get('confluence_total', 15)}")
                             stored_signal_id = store_signal_compat(sig)
                             if stored_signal_id:
                                 sig["signal_id"] = str(stored_signal_id)
+                                try:
+                                    if _env_bool("TRADING_LEDGER_ENABLED", True):
+                                        async def _record_generated_event() -> None:
+                                            from db.session import get_session
+                                            from services.trading_ledger import record_signal_generated_event
+
+                                            async with get_session() as _ledger_session:
+                                                await record_signal_generated_event(
+                                                    _ledger_session,
+                                                    sig,
+                                                    str(stored_signal_id),
+                                                )
+                                                await _ledger_session.commit()
+
+                                        run_sync(_record_generated_event(), timeout=10.0)
+                                except Exception as _ledger_err:
+                                    logger.debug(f"[ledger] SignalGenerated append failed: {_ledger_err}")
                                 if _asset_name:
                                     open_counts_by_asset[_asset_name] = int(open_counts_by_asset.get(_asset_name, 0) + 1)
                                     open_counts_by_class[_asset_cls] = int(open_counts_by_class.get(_asset_cls, 0) + 1)
                                 scored_signals_all.append(sig)
                                 stored_signals.append(sig)
                                 _cycle_cooldown.add(_asset_tf_key)
+                                _cycle_asset_cooldown.add(_asset_name)
                                 pipeline_stats["stored"] += 1
-                                
-# === PHASE 1 FIX: Increment delivered when signal is stored ===
-                                global_stats_instance.increment_delivered(1)
                             else:
                                 pipeline_stats["store_failed"] += 1
                         except Exception as e:
                             pipeline_stats["store_failed"] += 1
-                            logger.exception("store_signal failed")
+                            try:
+                                _tp = sig.get("take_profit") or sig.get("targets") or []
+                                _tp1 = _tp[0] if isinstance(_tp, (list, tuple)) and _tp else sig.get("tp1")
+                            except Exception:
+                                _tp1 = sig.get("tp1")
+                            logger.exception(
+                                "store_signal failed asset=%s direction=%s timeframe=%s score=%s fingerprint=%s entry=%s stop_loss=%s tp1=%s exception_type=%s message=%s",
+                                sig.get("asset") or sig.get("symbol"),
+                                sig.get("direction"),
+                                sig.get("timeframe"),
+                                sig.get("score"),
+                                sig.get("fingerprint") or sig.get("signal_fingerprint"),
+                                sig.get("entry"),
+                                sig.get("stop_loss") or sig.get("stop"),
+                                _tp1,
+                                type(e).__name__,
+                                str(e),
+                            )
 
                             if not final_signals:
                                 _maybe_log_heatmap(asset, cycle_no, 0)
@@ -3009,6 +3687,41 @@ def main_loop(DRY_RUN: bool = False):
                 except Exception as e:
                     logger.exception(f"[engine] pipeline error for asset={asset}")
                     continue
+                finally:
+                    try:
+                        _progress_score = _diagnostic_score(max_candidate_score)
+                        _progress_absent_reason = (
+                            _infer_max_score_absent_reason(pipeline_stats, market_fetch_error)
+                            if max_candidate_score is None
+                            else ""
+                        )
+                        logger.info(
+                            "[engine] cycle_progress cycle=%s status=in_progress processed=%s/%s "
+                            "market_data_assets=%s strategy_signals=%s max_score_pre_threshold=%s "
+                            "final_signals=%s stored=%s max_score_absent_reason=%s",
+                            cycle_no,
+                            _asset_index,
+                            cycle_assets,
+                            usable_market_data_assets,
+                            pipeline_stats.get("strategy_signals", 0),
+                            _progress_score,
+                            pipeline_stats.get("final_signals", 0),
+                            pipeline_stats.get("stored", 0),
+                            _progress_absent_reason or "none",
+                        )
+                        _cycle_state.update({
+                            "status": "pipeline_in_progress",
+                            "assets_processed": int(_asset_index),
+                            "market_data_assets": int(usable_market_data_assets),
+                            "strategy_signals": int(pipeline_stats.get("strategy_signals", 0) or 0),
+                            "max_score_pre_threshold": _progress_score,
+                            "final_signals": int(pipeline_stats.get("final_signals", 0) or 0),
+                            "stored": int(pipeline_stats.get("stored", 0) or 0),
+                            "max_score_absent_reason": _progress_absent_reason or None,
+                        })
+                        _publish_engine_cycle_state(_cycle_state)
+                    except Exception:
+                        logger.debug("[engine] cycle progress checkpoint failed", exc_info=True)
 
             # DELIVERY PHASE
             delivery_mgr = TierDeliveryManager()
@@ -3070,13 +3783,20 @@ def main_loop(DRY_RUN: bool = False):
                     from db.session import get_session, is_db_configured
                     if not is_db_configured():
                         raise RuntimeError("DB not configured")
-                    from db.models import SignalDelivery
+                    from db.models import SignalDelivery, User
                     from sqlalchemy import select
 
                     async with get_session() as session:
+                        user_row = (
+                            await session.execute(
+                                select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
+                            )
+                        ).first()
+                        if not user_row:
+                            return list(signals or [])
                         result = await session.execute(
                             select(SignalDelivery.signal_id).where(
-                                SignalDelivery.user_id == int(user_id),
+                                SignalDelivery.user_id == int(user_row[0]),
                                 SignalDelivery.signal_id.in_(signal_ids),
                             )
                         )
@@ -3121,6 +3841,11 @@ def main_loop(DRY_RUN: bool = False):
                 skipped_daily_limit = 0
                 skipped_no_eligible_signals = 0
                 users_seen = 0
+                delivery_skip_reasons = pipeline_stats.setdefault("delivery_skip_reasons", {})
+
+                def _delivery_skip(reason: Any, amount: int = 1) -> None:
+                    key = _compact_reason(reason, max_len=72)
+                    delivery_skip_reasons[key] = int(delivery_skip_reasons.get(key, 0) or 0) + max(1, int(amount or 1))
                 # session management adapted to your codebase
                 try:
                     from db.session import get_session
@@ -3280,7 +4005,36 @@ def main_loop(DRY_RUN: bool = False):
                         if signals_sent_today >= daily_limit:
                             logger.info(f"[engine] daily limit reached for user={user_id} tier={user_tier}")
                             skipped_daily_limit += 1
+                            _delivery_skip("daily_limit")
                             continue
+
+                        user_trade_prefs = None
+                        try:
+                            from services.user_intelligence import get_user_trading_preferences as _get_user_trading_preferences
+
+                            async with _get_limit_session() as _profile_session:
+                                user_trade_prefs = await _get_user_trading_preferences(
+                                    _profile_session,
+                                    int(user_id),
+                                )
+                            logger.info(
+                                "[engine_profile_load] user=%s tier=%s profile=%s risk=%s assets=%s preferred=%s blocked=%s sessions=%s execution=%s",
+                                user_id,
+                                user_tier,
+                                getattr(user_trade_prefs, "trade_profile", "all"),
+                                getattr(user_trade_prefs, "risk_profile", "balanced"),
+                                ",".join(getattr(user_trade_prefs, "asset_classes", ()) or ()),
+                                ",".join(getattr(user_trade_prefs, "preferred_assets", ()) or ()),
+                                ",".join(getattr(user_trade_prefs, "blocked_assets", ()) or ()),
+                                ",".join(getattr(user_trade_prefs, "sessions", ()) or ()),
+                                getattr(user_trade_prefs, "execution_mode", "manual"),
+                            )
+                        except Exception as _profile_err:
+                            logger.debug(
+                                "[engine] trading preference lookup failed user=%s: %s",
+                                user_id,
+                                _profile_err,
+                            )
 
                         user_signals = []
                         for sig in _fresh_scored_signals:
@@ -3296,6 +4050,7 @@ def main_loop(DRY_RUN: bool = False):
                                 # Check signal freshness
                                 is_fresh, fresh_reason = is_signal_fresh(sig)
                                 if not is_fresh:
+                                    _delivery_skip(f"freshness:{fresh_reason}")
                                     logger.info(f"[engine] Skipping stale signal for {sig.get('asset')}: {fresh_reason}")
                                     continue
 
@@ -3315,6 +4070,7 @@ def main_loop(DRY_RUN: bool = False):
                                     # Check if SL/TP already hit
                                     should_skip, skip_reason = check_sl_tp_hit(sig, current_price)
                                     if should_skip:
+                                        _delivery_skip(f"opportunity_consumed:{skip_reason}")
                                         logger.info(f"[engine] Skipping signal for {asset}: {skip_reason}")
                                         continue
 
@@ -3326,18 +4082,77 @@ def main_loop(DRY_RUN: bool = False):
                                         sig['price_updated'] = True
                                     else:
                                         sig['price_updated'] = False
+                                        if not is_valid:
+                                            _delivery_skip(f"price_drift:{drift_reason}")
+                                            logger.info(
+                                                "[engine] price-drift skip user=%s asset=%s reason=%s",
+                                                user_id,
+                                                asset,
+                                                drift_reason,
+                                            )
+                                            continue
                                     sig['current_price'] = current_price
                             except Exception as e:
+                                _delivery_skip("price_validation_error")
                                 logger.warning(f"[engine] Price validation failed for signal: {e}")
                                 # Continue with signal delivery even if validation fails
 
+                            # Match the candidate to the user's trader profile before calling
+                            # Telegram dispatch. Dispatch applies the same filter again as a
+                            # final guard, but doing it here keeps delivery counters truthful.
+                            if user_trade_prefs is not None:
+                                try:
+                                    from services.trade_profiles import infer_trade_profile as _infer_trade_profile
+                                    from services.user_intelligence import signal_matches_preferences as _signal_matches_preferences
+
+                                    pref_ok, pref_reason = _signal_matches_preferences(sig, user_trade_prefs)
+                                    if not pref_ok:
+                                        _delivery_skip(f"profile:{pref_reason}")
+                                        logger.info(
+                                            "[engine] profile/preference skip user=%s profile=%s asset=%s tf=%s signal_profile=%s reason=%s",
+                                            user_id,
+                                            getattr(user_trade_prefs, "trade_profile", "all"),
+                                            sig.get("asset"),
+                                            sig.get("timeframe"),
+                                            _infer_trade_profile(sig),
+                                            pref_reason,
+                                        )
+                                        continue
+                                except Exception as _pref_err:
+                                    logger.debug(
+                                        "[engine] preference filter skipped user=%s asset=%s err=%s",
+                                        user_id,
+                                        sig.get("asset"),
+                                        _pref_err,
+                                    )
+
                             # Robust eligibility check with logging
                             try:
-                                eligible = delivery_mgr.should_send_signal(user_tier, float(sig.get('score', 0)), user_id=user_id)
-                                logger.info(f"[engine] Eligibility for user={user_id} tier={user_tier} score={sig.get('score', 0)}: {eligible}")
+                                delivery_score = _signal_display_score(sig)
+                                eligible = delivery_mgr.should_send_signal(user_tier, delivery_score, user_id=user_id)
+                                logger.info(
+                                    "[engine] eligibility user=%s tier=%s score=%s eligible=%s profile=%s asset=%s tf=%s",
+                                    user_id,
+                                    user_tier,
+                                    delivery_score,
+                                    eligible,
+                                    getattr(user_trade_prefs, "trade_profile", "all") if user_trade_prefs is not None else "all",
+                                    sig.get("asset"),
+                                    sig.get("timeframe"),
+                                )
                                 if eligible:
+                                    if user_trade_prefs is not None:
+                                        try:
+                                            sig["delivery_user_profile"] = str(getattr(user_trade_prefs, "trade_profile", "all") or "all")
+                                            sig["delivery_risk_profile"] = str(getattr(user_trade_prefs, "risk_profile", "balanced") or "balanced")
+                                            sig["delivery_execution_mode"] = str(getattr(user_trade_prefs, "execution_mode", "manual") or "manual")
+                                        except Exception:
+                                            pass
                                     user_signals.append(sig)
+                                else:
+                                    _delivery_skip(f"score_gate:{user_tier}")
                             except Exception as e:
+                                _delivery_skip("eligibility_error")
                                 logger.warning(f"[engine] Failed to check signal eligibility for user {user_id}: {e}")
                                 pass
 
@@ -3349,6 +4164,7 @@ def main_loop(DRY_RUN: bool = False):
                         #   3. `continue` skipped to next sig instead of next user
                         if not user_signals:
                             skipped_no_eligible_signals += 1
+                            _delivery_skip("user_no_candidates_after_filters")
                             continue
 
                         # Filter out signals already sent to this user (prevent duplicates)
@@ -3356,6 +4172,7 @@ def main_loop(DRY_RUN: bool = False):
                         if not user_signals:
                             logger.debug(f"[engine] All signals already sent to user {user_id}, skipping dispatch")
                             skipped_no_eligible_signals += 1
+                            _delivery_skip("already_delivered")
                             continue
 
                         if DRY_RUN:
@@ -3363,21 +4180,108 @@ def main_loop(DRY_RUN: bool = False):
                                 print(f"[DRY RUN][{user_tier}] {msg}")
                             dispatched_count += 1
                         else:
-                            await dispatch_signals_async(user_signals, user_id=user_id)
-                            dispatched_count += 1
+                            # Delivery must never hold the engine hostage. A single
+                            # slow Telegram/API/DB path used to keep deliver_all()
+                            # blocked until DELIVER_ALL_TIMEOUT_SECONDS, which made
+                            # signals stale and caused later store_signal calls to
+                            # time out. Keep dispatch per-user bounded and continue.
+                            try:
+                                _user_timeout = float(_env_float("DELIVERY_USER_TIMEOUT_SECONDS", 20.0))
+                            except Exception:
+                                _user_timeout = 20.0
+                            try:
+                                sent_count = await asyncio.wait_for(
+                                    dispatch_signals_async(user_signals, user_id=user_id),
+                                    timeout=max(3.0, float(_user_timeout)),
+                                )
+                            except asyncio.TimeoutError:
+                                sent_count = 0
+                                logger.warning(
+                                    "[engine] dispatch user timeout user=%s tier=%s candidates=%s timeout=%.1fs",
+                                    user_id,
+                                    user_tier,
+                                    len(user_signals),
+                                    max(3.0, float(_user_timeout)),
+                                )
+                                _delivery_skip("dispatch_user_timeout")
+                            except Exception as _dispatch_err:
+                                sent_count = 0
+                                logger.warning(
+                                    "[engine] dispatch user failed user=%s tier=%s candidates=%s err=%s",
+                                    user_id,
+                                    user_tier,
+                                    len(user_signals),
+                                    _dispatch_err,
+                                )
+                                _delivery_skip("dispatch_user_error")
+                            sent_count = int(sent_count or 0)
+                            if sent_count > 0:
+                                dispatched_count += 1
+                            else:
+                                logger.info(
+                                    "[engine] dispatch produced no Telegram sends user=%s tier=%s candidates=%s profile=%s",
+                                    user_id,
+                                    user_tier,
+                                    len(user_signals),
+                                    getattr(user_trade_prefs, "trade_profile", "unknown") if user_trade_prefs is not None else "unknown",
+                                )
+                                skipped_no_eligible_signals += 1
+                                _delivery_skip("dispatch_returned_zero")
                     except Exception:
+                        _delivery_skip("per_user_exception")
                         logger.exception("deliver_all per-user failed")
                 logger.info(
-                    "[engine] delivery summary: users_seen=%s users_dispatched=%s skipped_daily_limit=%s skipped_no_eligible=%s",
+                    "[engine] delivery summary: users_seen=%s users_dispatched=%s skipped_daily_limit=%s skipped_no_eligible=%s reasons=%s",
                     users_seen,
                     dispatched_count,
                     skipped_daily_limit,
                     skipped_no_eligible_signals,
+                    dict(sorted(delivery_skip_reasons.items(), key=lambda item: int(item[1]), reverse=True)[:12]),
                 )
                 return dispatched_count
 
             try:
-                dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 180.0)))
+                # Scale-safe delivery mode. The engine's job is to find/store fresh
+                # opportunities. Telegram fanout is network-bound and must not hold
+                # the scanner hostage, especially as users grow. In background mode,
+                # deliver_all is submitted to the shared async worker loop and this
+                # engine cycle continues immediately. Disable only for local debugging.
+                if _env_bool("ENGINE_DELIVERY_ASYNC_FANOUT", True):
+                    try:
+                        from utils.async_runner import submit_background_coro
+                        try:
+                            from core.redis_state import state as _delivery_state
+                            _lock_key = "engine_delivery_fanout:active"
+                            _lock_ttl = max(15, int(_env_float("ENGINE_DELIVERY_FANOUT_LOCK_SECONDS", 90)))
+                            if _delivery_state.cache_get_sync(_lock_key):
+                                dispatched = 0
+                                logger.info("[engine] delivery fanout already active; skip scheduling candidates=%s", len(scored_signals_all or []))
+                            else:
+                                _delivery_state.cache_set_sync(_lock_key, "1", ex=_lock_ttl)
+                                submit_background_coro(deliver_all(), label="engine_deliver_all")
+                                dispatched = 0
+                                try:
+                                    _redis_diag = _delivery_state.redis_diagnostics_sync()
+                                except Exception as _redis_diag_err:
+                                    _redis_diag = {"error": str(_redis_diag_err)}
+                                logger.info(
+                                    "[engine] delivery fanout scheduled background=true candidates=%s ttl=%ss redis_source=%s separate_delivery=%s connected=%s",
+                                    len(scored_signals_all or []),
+                                    _lock_ttl,
+                                    _redis_diag.get("active_source") or _redis_diag.get("connected_source"),
+                                    _redis_diag.get("using_separate_delivery_redis"),
+                                    _redis_diag.get("connected"),
+                                )
+                        except Exception:
+                            submit_background_coro(deliver_all(), label="engine_deliver_all")
+                            dispatched = 0
+                            logger.info("[engine] delivery fanout scheduled background=true candidates=%s", len(scored_signals_all or []))
+                    except Exception:
+                        logger.exception("deliver_all background scheduling failed; falling back to bounded sync")
+                        dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 120.0)))
+                else:
+                    # Debug/single-user mode only. For production scale keep async fanout enabled.
+                    dispatched = run_sync(deliver_all(), timeout=float(_env_float("DELIVER_ALL_TIMEOUT_SECONDS", 120.0)))
             except Exception:
                 logger.exception("deliver_all failed")
                 dispatched = 0
@@ -3419,19 +4323,50 @@ def main_loop(DRY_RUN: bool = False):
             except Exception:
                 pass
 
+            try:
+                pipeline_stats["quality_rejected_top"] = _top_cycle_reasons(pipeline_stats, "quality_rejected_reasons")
+                pipeline_stats["advanced_filter_top"] = _top_cycle_reasons(pipeline_stats, "advanced_filter_reasons")
+                pipeline_stats["risk_failed_top"] = _top_cycle_reasons(pipeline_stats, "risk_failed_reasons")
+                pipeline_stats["score_rejected_top"] = _top_cycle_reasons(pipeline_stats, "score_rejected_reasons")
+                pipeline_stats["invalid_tp_top"] = _top_cycle_reasons(pipeline_stats, "invalid_tp_reasons")
+                pipeline_stats["market_data_failure_top"] = _top_cycle_reasons(pipeline_stats, "market_data_failure_reasons")
+                if int(pipeline_stats.get("quality_rejected") or 0) or int(pipeline_stats.get("advanced_filter_failed") or 0):
+                    logger.info(
+                        "[engine][final_gate_audit] cycle=%s quality=%s advanced=%s risk=%s score=%s invalid_tp=%s data=%s",
+                        cycle_no,
+                        pipeline_stats.get("quality_rejected_top"),
+                        pipeline_stats.get("advanced_filter_top"),
+                        pipeline_stats.get("risk_failed_top"),
+                        pipeline_stats.get("score_rejected_top"),
+                        pipeline_stats.get("invalid_tp_top"),
+                        pipeline_stats.get("market_data_failure_top"),
+                    )
+            except Exception:
+                logger.debug("[engine] final gate audit summary failed", exc_info=True)
+
             # cycle logging
             if _env_bool("ENGINE_CYCLE_LOG", True):
                 try:
-                    top_score = max((s.get('score', 0) for s in scored_signals_all), default=None)
-                    if top_score is None:
-                        top_score = max_candidate_score
+                    top_score_raw = max((_signal_display_score(s) for s in scored_signals_all), default=None)
+                    if top_score_raw is None:
+                        top_score_raw = max_candidate_score
+                    top_score = _diagnostic_score(top_score_raw)
+                    max_candidate_score_display = _diagnostic_score(max_candidate_score)
+                    score_absent_reason = (
+                        _infer_max_score_absent_reason(pipeline_stats, market_fetch_error)
+                        if top_score_raw is None
+                        else ""
+                    )
                     if _env_bool("ENGINE_PIPELINE_DEBUG", True):
                         stats_str = " ".join([f"{k}={v}" for k, v in pipeline_stats.items()])
                     else:
                         stats_str = ""
+                    if score_absent_reason:
+                        stats_str = f"{stats_str} max_score_absent_reason={score_absent_reason}".strip()
                     print(
-                        f"[engine] cycle={cycle_no} assets={cycle_assets} generated_signals={len(scored_signals_all)} "
-                        f"max_score={top_score} max_score_pre_threshold={max_candidate_score} {stats_str}",
+                        f"[engine] cycle={cycle_no} status=completed assets={cycle_assets} generated_signals={len(scored_signals_all)} "
+                        f"max_score={top_score} max_score_pre_threshold={max_candidate_score_display} "
+                        f"max_score_raw={top_score_raw} max_score_raw_pre_threshold={max_candidate_score} {stats_str}",
                         flush=True,
                     )
                 except Exception as e:
@@ -3441,6 +4376,32 @@ def main_loop(DRY_RUN: bool = False):
             # ── Anti-stagnation: stamp last_analyzed_at for managed assets ────────
             # Only DB-pinned assets need the timestamp; env/discovered assets are
             # excluded so the managed_assets table stays minimal.
+            try:
+                _cycle_top_raw = max((_signal_display_score(s) for s in scored_signals_all), default=None)
+                if _cycle_top_raw is None:
+                    _cycle_top_raw = max_candidate_score
+                _score_absent_reason = (
+                    _infer_max_score_absent_reason(pipeline_stats, market_fetch_error)
+                    if _cycle_top_raw is None
+                    else ""
+                )
+                _cycle_state.update({
+                    "status": "completed",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "duration_ms": int((time.monotonic() - cycle_started_monotonic) * 1000),
+                    "generated_signals": int(len(scored_signals_all or [])),
+                    "dispatched": int(locals().get("dispatched", 0) or 0),
+                    "max_score": _diagnostic_score(_cycle_top_raw),
+                    "max_score_raw": _cycle_top_raw,
+                    "max_score_pre_threshold": _diagnostic_score(max_candidate_score),
+                    "max_score_raw_pre_threshold": max_candidate_score,
+                    "max_score_absent_reason": _score_absent_reason,
+                    "pipeline_stats": dict(pipeline_stats or {}),
+                })
+                _publish_engine_cycle_state(_cycle_state)
+            except Exception:
+                logger.debug("[engine] failed to publish completed cycle state", exc_info=True)
+
             _managed_set = set(_managed_assets)
             _batch_managed = [a for a in assets if a in _managed_set]
             if _batch_managed:
@@ -3468,7 +4429,7 @@ def main_loop(DRY_RUN: bool = False):
                     _candidates: list[str] = []
                     for _sig in scored_signals_all:
                         try:
-                            _score = _safe_float(_sig.get("score"), 0.0)
+                            _score = _signal_display_score(_sig)
                             _rr = _signal_roi_score(_sig)
                             _asset = _normalize_asset_symbol(str(_sig.get("asset") or "").upper())
                             if not _asset:
@@ -3489,7 +4450,13 @@ def main_loop(DRY_RUN: bool = False):
                             added = 0
                             async with _get_session() as _s:
                                 for _sym in _candidates:
-                                    _atype = "crypto" if is_crypto(_sym) else ("fx" if is_fx(_sym) else ("commodity" if is_commodity(_sym) else "stock"))
+                                    _atype = (
+                                        "crypto" if is_crypto(_sym)
+                                        else "fx" if is_fx(_sym)
+                                        else "index" if is_index(_sym)
+                                        else "commodity" if is_commodity(_sym)
+                                        else "stock"
+                                    )
                                     await _add_managed_asset(
                                         _s,
                                         symbol=_sym,

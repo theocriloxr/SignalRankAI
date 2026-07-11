@@ -9,7 +9,7 @@ from typing import Iterable
 
 import yfinance as yf
 
-from data.fetcher import async_get_candles
+from data.fetcher import async_get_candles, get_asset_type, _get_last_provider_used
 from db.market_cache import get_recent_candles
 from db.session import get_session
 import requests
@@ -21,6 +21,113 @@ from data.alternative_providers import fetch_onchain_context
 logger = logging.getLogger(__name__)
 
 _YF_COOLDOWN_UNTIL = 0.0
+_YF_NO_CANDLE_LAST_LOG: dict[tuple[str, str], float] = {}
+
+
+def usable_timeframe_payloads(market_data: dict, minimum_candles: int | None = None) -> dict:
+    """Return only timeframe payloads containing normalized, usable OHLCV candles."""
+    minimum = max(1, int(minimum_candles or _env_int("MARKET_CACHE_MIN_CANDLES", 20)))
+    usable: dict = {}
+    for timeframe, payload in (market_data or {}).items():
+        if str(timeframe).startswith("_") or not isinstance(payload, dict):
+            continue
+        candles = payload.get("candles")
+        if not isinstance(candles, list) or len(candles) < minimum:
+            continue
+        normalized = _sanitize_ohlcv(candles)
+        if len(normalized) < minimum or not _validate_ohlcv(normalized):
+            continue
+        payload["candles"] = normalized
+        usable[str(timeframe)] = payload
+    return usable
+
+
+CRYPTO_REQUIRED_TIMEFRAMES = ("5m", "15m", "1h")
+
+
+def market_data_usability(asset: str, requested: Iterable[str], market_data: dict) -> dict:
+    """Describe whether an asset has enough data to enter the strategy pipeline.
+
+    Crypto strategies require 5m/15m/1h. Other requested crypto timeframes are
+    enrichment only and therefore cannot make an otherwise usable asset fail.
+    Existing multi-asset behavior remains permissive: one usable timeframe is
+    sufficient for non-crypto assets.
+    """
+    requested_tfs = [str(tf).strip().lower() for tf in (requested or []) if str(tf).strip()]
+    usable = usable_timeframe_payloads(market_data)
+    asset_class = str(get_asset_type(asset) or "unknown").lower().strip()
+    required_tfs = list(CRYPTO_REQUIRED_TIMEFRAMES) if asset_class == "crypto" else []
+    optional_tfs = [tf for tf in requested_tfs if tf not in required_tfs]
+    required_status = {tf: tf in usable for tf in required_tfs}
+    optional_status = {tf: tf in usable for tf in optional_tfs}
+    provider_by_timeframe: dict[str, str] = {}
+    for tf in requested_tfs:
+        payload = (market_data or {}).get(tf)
+        source = payload.get("source") if isinstance(payload, dict) else None
+        provider_by_timeframe[tf] = str(source or _get_last_provider_used(asset, tf) or "missing")
+
+    if required_tfs:
+        missing_required = [tf for tf, ok in required_status.items() if not ok]
+        is_usable = not missing_required
+        final_reason = (
+            "usable_required_timeframes"
+            if is_usable
+            else f"missing_required_timeframe:{missing_required[0]}"
+        )
+    else:
+        is_usable = bool(usable)
+        final_reason = "usable_timeframe_available" if is_usable else "no_usable_timeframes"
+
+    return {
+        "asset": str(asset),
+        "asset_class": asset_class,
+        "required_timeframes": required_status,
+        "optional_timeframes": optional_status,
+        "provider_by_timeframe": provider_by_timeframe,
+        "usable_timeframes": sorted(usable),
+        "usable": bool(is_usable),
+        "final_reason": final_reason,
+    }
+
+
+def count_usable_market_data_assets(all_market_data: dict, asset_to_timeframes: dict) -> int:
+    """Count assets ready for strategies using the same contract as the engine."""
+    return sum(
+        1
+        for asset, payload in (all_market_data or {}).items()
+        if isinstance(payload, dict)
+        and market_data_usability(
+            asset,
+            (asset_to_timeframes or {}).get(asset, []),
+            payload,
+        ).get("usable")
+    )
+
+
+def market_data_diagnostics(asset: str, requested: Iterable[str], market_data: dict) -> dict:
+    minimum = max(1, _env_int("MARKET_CACHE_MIN_CANDLES", 20))
+    usable = usable_timeframe_payloads(market_data, minimum)
+    reasons: dict[str, str] = {}
+    for timeframe in requested or []:
+        payload = (market_data or {}).get(str(timeframe))
+        if not isinstance(payload, dict):
+            reasons[str(timeframe)] = "missing_payload"
+            continue
+        candles = payload.get("candles")
+        if not isinstance(candles, list):
+            reasons[str(timeframe)] = "candles_not_list"
+        elif len(candles) < minimum:
+            reasons[str(timeframe)] = f"insufficient_candles:{len(candles)}/{minimum}"
+        elif str(timeframe) not in usable:
+            reasons[str(timeframe)] = "invalid_ohlcv_schema"
+    result = {
+        "asset": str(asset),
+        "usable_timeframes": sorted(usable),
+        "rejected_timeframes": reasons,
+        "minimum_candles": minimum,
+    }
+    result.update(market_data_usability(asset, requested, market_data))
+    return result
 
 
 def _yf_timeout_seconds() -> float:
@@ -39,6 +146,20 @@ def _yf_cooldown_seconds() -> float:
 
 def _yf_available() -> bool:
     return time.time() >= float(_YF_COOLDOWN_UNTIL or 0.0)
+
+
+def _should_log_yf_no_candles(symbol: str, timeframe: str) -> bool:
+    try:
+        cooldown = float(os.getenv("NO_CANDLE_LOG_COOLDOWN_SECONDS", "900") or 900)
+    except Exception:
+        cooldown = 900.0
+    key = (str(symbol or "").upper().strip(), str(timeframe or "").lower().strip())
+    now = time.time()
+    last = float(_YF_NO_CANDLE_LAST_LOG.get(key) or 0.0)
+    if now - last < max(60.0, cooldown):
+        return False
+    _YF_NO_CANDLE_LAST_LOG[key] = now
+    return True
 
 
 def _set_yf_cooldown(reason: str) -> None:
@@ -98,7 +219,14 @@ async def _tradingview_indicators(asset: str, tf: str) -> dict:
             exchange=exchange,
             interval=tv_tf,
         )
-        analysis = handler.get_analysis()
+        try:
+            tv_timeout = max(0.5, float(os.getenv("TRADINGVIEW_ENRICHMENT_TIMEOUT_SECONDS", "2") or 2))
+        except Exception:
+            tv_timeout = 2.0
+        analysis = await asyncio.wait_for(
+            asyncio.to_thread(handler.get_analysis),
+            timeout=tv_timeout,
+        )
         indicators = getattr(analysis, "indicators", None)
         if isinstance(indicators, dict):
             return indicators
@@ -476,7 +604,8 @@ def _fetch_via_yfinance(symbol: str, timeframe: str, limit: int) -> list:
             continue
     
     # All variants failed
-    logger.warning(f"[yfinance] all variants exhausted for {symbol}, no candles found")
+    if _should_log_yf_no_candles(symbol, timeframe):
+        logger.warning(f"[yfinance] all variants exhausted for {symbol}, no candles found")
     return []
 
 
@@ -616,6 +745,18 @@ def _sanitize_ohlcv(candles: list) -> list:
             nc["high"] = h
             nc["low"] = l
             nc["close"] = close
+            if not nc.get("timestamp") and nc.get("time") is not None:
+                raw_ts = nc.get("time")
+                try:
+                    if isinstance(raw_ts, (int, float)):
+                        ts_val = int(float(raw_ts))
+                        nc["timestamp"] = ts_val
+                    else:
+                        parsed = pd.to_datetime(str(raw_ts), utc=True, errors="coerce")
+                        if not pd.isna(parsed):
+                            nc["timestamp"] = int(float(parsed.timestamp()) * 1000)
+                except Exception:
+                    pass
             out.append(nc)
         except Exception:
             continue
@@ -707,12 +848,15 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     limit = _env_int("MARKET_CACHE_READ_LIMIT", 200)
     use_cache = _env_bool("MARKET_CACHE_ENABLED", True)
     use_yfinance = _env_bool("YFINANCE_ENABLED", True)
+    is_crypto_asset = str(get_asset_type(asset) or "").lower() == "crypto"
+    if is_crypto_asset and not _env_bool("YFINANCE_CRYPTO_PRIMARY_ENABLED", False):
+        use_yfinance = False
 
     out: dict = {}
     
     # 1. Try yfinance first (primary source)
     if use_yfinance and _yf_available():
-        for tf in tfs:
+        async def _fetch_yf(tf: str):
             try:
                 yf_candles = await _fetch_yfinance_with_timeout(asset, tf, limit)
                 if yf_candles and len(yf_candles) >= want:
@@ -724,12 +868,11 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     else:
                         data_age = None
                     
-                    out[tf] = {
+                    return tf, {
                         "candles": yf_candles,
                         "source": "yfinance",
                         "data_age_seconds": data_age
                     }
-                    logger.info(f"[market_data] yfinance success for {asset} {tf}: {len(yf_candles)} candles")
                 else:
                     # FIX: Add QUALITY_GATE logging for visibility into data rejection reasons
                     got_candles = len(yf_candles) if yf_candles else 0
@@ -740,12 +883,25 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     logger.warning(f"yfinance failed/insufficient for {asset} {tf}, falling back to cache/REST")
             except Exception as e:
                 logger.warning(f"yfinance exception for {asset} {tf}: {e}")
+            return tf, {}
+
+        yf_results = await asyncio.gather(*[_fetch_yf(tf) for tf in tfs])
+        for tf, payload in yf_results:
+            if payload:
+                out[tf] = payload
+                logger.info(
+                    "[market_data] yfinance success for %s %s: %s candles",
+                    asset,
+                    tf,
+                    len(payload.get("candles") or []),
+                )
     elif use_yfinance and not _yf_available():
         logger.warning("[market_data] yfinance skipped due to cooldown")
 
-    # 2. Try cache for missing timeframes
+    # 2. Try cache for missing non-crypto timeframes. Crypto intentionally
+    # attempts live exchange providers first; cache is its final fallback.
     missing_after_yf = [tf for tf in tfs if tf not in out]
-    if use_cache and missing_after_yf:
+    if use_cache and missing_after_yf and not is_crypto_asset:
         try:
             async with get_session() as session:
                 for tf in missing_after_yf:
@@ -779,19 +935,25 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     missing = [tf for tf in tfs if tf not in out]
     if missing:
         rest: dict = {}
-        rest_timeout = float(_env_int("MARKET_REST_TIMEOUT_SECONDS", 60))
+        try:
+            rest_timeout = max(
+                1.0,
+                float(os.getenv("MARKET_TIMEFRAME_FETCH_TIMEOUT_SECONDS", "15") or 15),
+            )
+        except Exception:
+            rest_timeout = 15.0
 
         async def _fetch_one(tf: str):
             try:
-                strict_timeout = min(2.5, max(0.1, rest_timeout))
                 candles = await asyncio.wait_for(
                     async_get_candles(asset, tf),
-                    timeout=strict_timeout,
+                    timeout=rest_timeout,
                 )
                 if candles:
+                    provider = _get_last_provider_used(asset, tf)
                     return tf, {
                         "candles": candles,
-                        "source": "provider_fallback_chain",
+                        "source": provider or "provider_fallback_chain",
                     }
             except asyncio.TimeoutError:
                 logger.warning(f"[market_data] provider waterfall timeout for {asset} {tf}")
@@ -821,9 +983,14 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 if "data_age_seconds" not in payload:
                     payload["data_age_seconds"] = data_age
             
-            out[tf] = payload
+            # Never replace an already accepted live/cache payload with a
+            # later fallback result.
+            out.setdefault(tf, payload)
 
-            # Attach lightweight alternative-market signals (funding/open-interest/orderbook)
+            # Attach lightweight alternative-market signals once per asset, not once
+            # for every timeframe returned by the provider waterfall.
+            if tf != next(iter(rest), None) or not _env_bool("MARKET_ALTERNATIVE_SIGNALS_ENABLED", True):
+                continue
             try:
                 async def _fetch_alt():
                     try:
@@ -833,53 +1000,43 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                         if sym.endswith("USDT"):
                             bid_vol = ask_vol = 0.0
                             try:
-                                async with httpx.AsyncClient(timeout=2.0) as client:
-                                    bin_sym = format_ticker(sym, "binance")
-                                    # Funding rate (recent)
-                                    fr_url = f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={bin_sym}&limit=1"
-                                    r = await client.get(fr_url)
-                                    if r.status_code == 200:
-                                        j = r.json()
-                                        if isinstance(j, list) and j:
-                                            fr = j[0].get("fundingRate")
-                                            macro["funding_rate"] = float(fr) if fr is not None else 0.0
-                                    # Open interest
-                                    oi_url = f"https://fapi.binance.com/fapi/v1/openInterest?symbol={bin_sym}"
-                                    r2 = await client.get(oi_url)
-                                    if r2.status_code == 200:
-                                        j2 = r2.json()
-                                        oi = j2.get("openInterest")
-                                        try:
-                                            current_oi = float(oi)
-                                        except Exception:
-                                            current_oi = 0.0
-                                        prev_raw = state.get_sync(f"market:open_interest:{bin_sym}")
-                                        prev = None
-                                        try:
-                                            prev = float(prev_raw) if prev_raw is not None else None
-                                        except Exception:
-                                            prev = None
-                                        if prev and prev > 0:
-                                            macro["open_interest_change"] = (current_oi - prev) / prev
-                                        else:
-                                            macro["open_interest_change"] = 0.0
-                                        try:
-                                            state.set_sync(f"market:open_interest:{bin_sym}", str(current_oi))
-                                        except Exception:
-                                            pass
-                                    # Orderbook imbalance (top levels)
-                                    depth_url = f"https://api.binance.com/api/v3/depth?symbol={bin_sym}&limit=5"
-                                    r3 = await client.get(depth_url)
-                                    if r3.status_code == 200:
-                                        j3 = r3.json()
-                                        bids = j3.get("bids") or []
-                                        asks = j3.get("asks") or []
-                                        bid_vol = sum(float(b[1]) for b in bids[:5]) if bids else 0.0
-                                        ask_vol = sum(float(a[1]) for a in asks[:5]) if asks else 0.0
-                                        if (bid_vol + ask_vol) > 0:
-                                            macro["orderbook_imbalance"] = (bid_vol - ask_vol) / (bid_vol + ask_vol)
-                                        else:
-                                            macro["orderbook_imbalance"] = 0.0
+                                from engine.derivatives import default_squeeze_detector
+                                from engine.microstructure import default_order_book_analyzer
+
+                                funding_rate = await default_squeeze_detector.get_funding_rate(sym)
+                                if funding_rate is not None:
+                                    macro["funding_rate"] = float(funding_rate)
+
+                                async with httpx.AsyncClient(timeout=3.0) as client:
+                                    oi_response = await client.get(
+                                        "https://api.bybit.com/v5/market/open-interest",
+                                        params={
+                                            "category": "linear",
+                                            "symbol": sym,
+                                            "intervalTime": "5min",
+                                            "limit": 1,
+                                        },
+                                    )
+                                if oi_response.status_code == 200:
+                                    oi_rows = (oi_response.json().get("result") or {}).get("list") or []
+                                    current_oi = float(oi_rows[0].get("openInterest") or 0.0) if oi_rows else 0.0
+                                    prev_raw = state.get_sync(f"market:open_interest:{sym}")
+                                    prev = float(prev_raw) if prev_raw is not None else None
+                                    macro["open_interest_change"] = (
+                                        (current_oi - prev) / prev if prev and prev > 0 else 0.0
+                                    )
+                                    state.set_sync(f"market:open_interest:{sym}", str(current_oi))
+
+                                order_book = await default_order_book_analyzer.fetch_order_book(sym)
+                                if order_book:
+                                    bids = order_book.get("bids") or []
+                                    asks = order_book.get("asks") or []
+                                    bid_vol = sum(float(level[1]) for level in bids[:5]) if bids else 0.0
+                                    ask_vol = sum(float(level[1]) for level in asks[:5]) if asks else 0.0
+                                    total_volume = bid_vol + ask_vol
+                                    macro["orderbook_imbalance"] = (
+                                        (bid_vol - ask_vol) / total_volume if total_volume > 0 else 0.0
+                                    )
                             except Exception:
                                 pass
                         # Default zeros for non-crypto or failures
@@ -891,9 +1048,19 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     except Exception:
                         return {"funding_rate": 0.0, "open_interest_change": 0.0, "orderbook_imbalance": 0.0, "news_sentiment": 0.0}
 
-                macro = await _fetch_alt()
                 try:
-                    onchain = await fetch_onchain_context(sym)
+                    enrichment_timeout = max(
+                        0.5,
+                        float(os.getenv("MARKET_ENRICHMENT_TIMEOUT_SECONDS", "3") or 3),
+                    )
+                except Exception:
+                    enrichment_timeout = 3.0
+                macro = await asyncio.wait_for(_fetch_alt(), timeout=enrichment_timeout)
+                try:
+                    onchain = await asyncio.wait_for(
+                        fetch_onchain_context(sym),
+                        timeout=enrichment_timeout,
+                    )
                     if isinstance(onchain, dict):
                         macro.update(onchain)
                 except Exception:
@@ -918,7 +1085,11 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                 pass
 
             # Best-effort write-through into Postgres cache tables.
-        if _env_bool("MARKET_CACHE_WRITE_THROUGH", True):
+        # Per-candle Postgres writes can take longer than the engine's asset
+        # deadline and cause asyncio cancellation to discard valid exchange
+        # data. The websocket/cache ingestor remains the primary persistence
+        # path; opt in only when write latency is known to be safely bounded.
+        if _env_bool("MARKET_CACHE_WRITE_THROUGH", False):
             try:
                 from datetime import datetime
                 from db.market_cache import upsert_market_candle, upsert_market_tick
@@ -980,6 +1151,35 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
             except Exception:
                 pass
 
+    # 4. Crypto cache fallback. This runs only after OKX/Bybit/etc. have had
+    # the first chance, and stale cache rows are never accepted.
+    missing_after_rest = [tf for tf in tfs if tf not in out]
+    if use_cache and is_crypto_asset and missing_after_rest:
+        try:
+            async with get_session() as session:
+                for tf in missing_after_rest:
+                    candles = await get_recent_candles(session, symbol=asset, timeframe=tf, limit=limit)
+                    if not candles or len(candles) < want:
+                        continue
+                    candles = _sanitize_ohlcv(candles)
+                    if not _validate_ohlcv(candles):
+                        continue
+                    is_fresh, data_age = _check_staleness(candles, tf)
+                    if not is_fresh:
+                        logger.warning(
+                            "Cached candles for %s %s are stale (age=%.0fs), skipping cache",
+                            asset, tf, data_age,
+                        )
+                        continue
+                    out.setdefault(tf, {
+                        "candles": candles,
+                        "source": "postgres_cache",
+                        "data_age_seconds": data_age,
+                    })
+                await session.commit()
+        except Exception:
+            pass
+
     # If cache returned candles without indicators, compute them using existing fetcher pipeline:
     # easiest: re-run calculate_indicators for cached candles.
     try:
@@ -1013,4 +1213,18 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     except Exception:
         pass
 
+    diagnostics = market_data_diagnostics(asset, tfs, out)
+    logger.info(
+        "[market_data][asset_result] asset=%s asset_class=%s required=%s optional=%s "
+        "provider_by_timeframe=%s usable=%s final_reason=%s rejected=%s minimum=%s",
+        asset,
+        diagnostics["asset_class"],
+        diagnostics["required_timeframes"],
+        diagnostics["optional_timeframes"],
+        diagnostics["provider_by_timeframe"],
+        diagnostics["usable"],
+        diagnostics["final_reason"],
+        diagnostics["rejected_timeframes"],
+        diagnostics["minimum_candles"],
+    )
     return out

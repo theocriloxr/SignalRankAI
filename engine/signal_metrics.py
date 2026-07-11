@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+import os
+
 from typing import Any, Mapping, Optional
 
 
@@ -40,15 +43,42 @@ def resolve_confidence_ratio(signal: Mapping[str, Any]) -> Optional[float]:
 
 def resolve_score_percent(signal: Mapping[str, Any]) -> Optional[float]:
     """Resolve a 0..100 score percent."""
-    score = _safe_float(signal.get("score"))
+    score = None
+    for key in ("score_calibrated", "score", "score_final"):
+        score = _safe_float(signal.get(key))
+        if score is not None:
+            break
+    if score is None:
+        raw_score = _safe_float(signal.get("score_raw"))
+        if raw_score is not None and raw_score > 0:
+            score = _soft_cap_score(raw_score)
     if score is not None:
         if score <= 1.0:
-            return max(0.0, min(score * 100.0, 100.0))
-        return max(0.0, min(score, 100.0))
+            score = score * 100.0
+        display_max = _safe_float(os.getenv("SCORE_DISPLAY_MAX"))
+        if display_max is None:
+            display_max = 99.5
+        return max(0.0, min(score, display_max))
     conf = resolve_confidence_ratio(signal)
     if conf is not None:
-        return max(0.0, min(conf * 100.0, 100.0))
+        return max(0.0, min(conf * 100.0, 99.5))
     return None
+
+
+def _soft_cap_score(raw_score: float) -> float:
+    try:
+        raw_score = float(raw_score)
+    except Exception:
+        return 0.0
+    if not math.isfinite(raw_score):
+        return 0.0
+    raw_score = max(0.0, raw_score)
+    knee = max(50.0, min(_safe_float(os.getenv("SCORE_SOFT_CAP_KNEE")) or 90.0, 99.0))
+    ceiling = max(knee + 0.1, min(_safe_float(os.getenv("SCORE_SOFT_CAP_CEILING")) or 97.0, 100.0))
+    scale = max(1.0, _safe_float(os.getenv("SCORE_SOFT_CAP_SCALE")) or 25.0)
+    if raw_score <= knee:
+        return raw_score
+    return min(knee + ((ceiling - knee) * (1.0 - math.exp(-(raw_score - knee) / scale))), ceiling)
 
 
 def resolve_confluence_percent(signal: Mapping[str, Any]) -> Optional[float]:
@@ -70,6 +100,17 @@ def resolve_confluence_percent(signal: Mapping[str, Any]) -> Optional[float]:
         if score_norm <= 1.0:
             return max(0.0, min(score_norm * 100.0, 100.0))
         return max(0.0, min(score_norm, 100.0))
+
+    for container_key in ("score_components", "confidence_components", "score_breakdown"):
+        container = signal.get(container_key)
+        if not isinstance(container, Mapping):
+            continue
+        for key in ("confluence", "confluence_score", "confluence_pct", "confluence_percent"):
+            val = _safe_float(container.get(key))
+            if val is not None:
+                if val <= 1.0:
+                    return max(0.0, min(val * 100.0, 100.0))
+                return max(0.0, min(val, 100.0))
 
     long_votes = _safe_float(signal.get("long_votes"))
     short_votes = _safe_float(signal.get("short_votes"))
@@ -95,18 +136,23 @@ def resolve_confluence_total(signal: Mapping[str, Any]) -> Optional[int]:
 
 
 def resolve_ml_probability(signal: Mapping[str, Any]) -> Optional[float]:
-    """Resolve ML probability as a 0..1 ratio, derived if missing.
-    
-    FIX: Removed circular fallback where ml_probability was being inferred from
-    score/confidence which could feed back into scoring calculations.
-    Now only uses direct ML probability fields without derivation fallback.
-    """
-    # First priority: direct ML probability fields
+    """Resolve ML probability as a 0..1 ratio, derived if missing."""
     for key in ("ml_probability", "ml_prob", "ml_score", "ml_confidence"):
         val = _clamp_ratio(signal.get(key))
         if val is not None:
             return val
-    
-    # FIX: No longer derive from score/confidence to avoid circularity
-    # that was causing the score to saturate at 100.0
+
+    components: list[float] = []
+    conf = resolve_confidence_ratio(signal)
+    if conf is not None:
+        components.append(conf)
+    score = _clamp_ratio(signal.get("score"))
+    if score is not None:
+        components.append(score)
+    confluence = resolve_confluence_percent(signal)
+    if confluence is not None:
+        components.append(max(0.0, min(confluence / 100.0, 1.0)))
+
+    if components:
+        return sum(components) / len(components)
     return None

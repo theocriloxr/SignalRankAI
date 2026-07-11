@@ -1,45 +1,661 @@
-"""
-SignalRankAI — Database Session (Hardened)
-
-Implements transient connection lifecycle:
-  - NullPool: each DB interaction gets a fresh connection and returns immediately
-  - Strict async context manager usage for sessions
-  - Thread-local sync engine for non-async worker paths
-  - Defensive logging and compatibility helper exports
-"""
-
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import random
+import socket as _socket
 import threading
-import traceback
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from config import config, resolve_database_url as _config_resolve_database_url, prefer_ipv4_database_url
 
 logger = logging.getLogger(__name__)
 
-_global_engine: Optional[AsyncEngine] = None
+_T = TypeVar("_T")
+
+
+def _engine_connect_args() -> dict[str, Any]:
+    try:
+        connect_timeout = float((os.getenv("DB_CONNECT_TIMEOUT") or "15").strip())
+    except Exception:
+        connect_timeout = 15.0
+    try:
+        command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "45").strip())
+    except Exception:
+        command_timeout = 45.0
+    app_name = (os.getenv("DB_APP_NAME") or "signalrankai").strip() or "signalrankai"
+    return {
+        "timeout": connect_timeout,
+        "command_timeout": command_timeout,
+        "server_settings": {"application_name": app_name},
+    }
+
+
+def _prefer_ipv4_url(url: str) -> str:
+    return prefer_ipv4_database_url(url)
+
+
+def get_database_url() -> Optional[str]:
+    url = _config_resolve_database_url(async_driver=True)
+    if not url:
+        raise ValueError(
+            "DATABASE_URL is not set. Set DATABASE_URL (or DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL) "
+            "as an environment variable."
+        )
+    return _prefer_ipv4_url(url)
+
+
+def get_database_url_or_none() -> Optional[str]:
+    try:
+        return get_database_url()
+    except ValueError:
+        return None
+
+
+def _pool_int(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int((os.getenv(name) or str(default)).strip()))
+    except Exception:
+        return default
+
+
+def _pool_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _is_railway_runtime() -> bool:
+    railway_markers = (
+        "RAILWAY_SERVICE_NAME",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_REPLICA_ID",
+        "RAILWAY_PUBLIC_DOMAIN",
+        "RAILWAY_PRIVATE_DOMAIN",
+    )
+    if any(bool((os.getenv(name) or "").strip()) for name in railway_markers):
+        return True
+    db_markers = (
+        "DATABASE_URL",
+        "DATABASE_PRIVATE_URL",
+        "DATABASE_PUBLIC_URL",
+        "POSTGRES_URL",
+        "POSTGRES_PRIVATE_URL",
+    )
+    return any("railway" in (os.getenv(name) or "").strip().lower() for name in db_markers)
+
+
+def _effective_pool_settings() -> tuple[int, int]:
+    pool_size = _pool_int("DB_POOL_SIZE", 5, minimum=1)
+    max_overflow = _pool_int("DB_MAX_OVERFLOW", 2, minimum=0)
+
+    # NullPool remains available for pgbouncer/transient debugging, but pooled
+    # connections are the default so caps can be enforced explicitly.
+    if _pool_bool("DB_USE_NULLPOOL", False):
+        logger.info("[db] Using NullPool - connection pooling disabled for Railway compatibility")
+        return 0, 0
+
+    if _is_railway_runtime():
+        disable_requested = _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False)
+        allow_uncapped = _pool_bool("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
+        if disable_requested and not allow_uncapped:
+            logger.warning(
+                "[db] DB_POOL_DISABLE_RAILWAY_CAP ignored on Railway; set "
+                "DB_POOL_ALLOW_UNCAPPED_RAILWAY=1 only when Postgres max_connections is proven sufficient"
+            )
+        if disable_requested and allow_uncapped:
+            logger.warning("[db] Railway DB pool cap disabled by explicit operator override")
+            return pool_size, max_overflow
+
+        # Fail-safe monolith limits. A stale Railway variable such as
+        # DB_POOL_SIZE=200 or DB_POOL_SIZE_RAILWAY=20 must not reserve a large
+        # pool. Operators can still use the explicit two-flag override above
+        # after confirming the database connection budget.
+        railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
+        railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
+        original_pool_size = pool_size
+        original_max_overflow = max_overflow
+        pool_size = min(pool_size, railway_pool_cap)
+        max_overflow = min(max_overflow, railway_overflow_cap)
+        if (pool_size, max_overflow) != (original_pool_size, original_max_overflow):
+            logger.warning(
+                "[db] Railway pool cap applied requested_pool=%s requested_overflow=%s "
+                "effective_pool=%s effective_overflow=%s",
+                original_pool_size,
+                original_max_overflow,
+                pool_size,
+                max_overflow,
+            )
+    else:
+        global_pool_cap_raw = os.getenv("DB_POOL_GLOBAL_CAP")
+        if global_pool_cap_raw:
+            global_pool_cap = _pool_int("DB_POOL_GLOBAL_CAP", pool_size, minimum=1)
+            pool_size = min(pool_size, global_pool_cap)
+        global_overflow_cap_raw = os.getenv("DB_MAX_OVERFLOW_GLOBAL_CAP")
+        if global_overflow_cap_raw:
+            global_overflow_cap = _pool_int("DB_MAX_OVERFLOW_GLOBAL_CAP", max_overflow, minimum=0)
+            max_overflow = min(max_overflow, global_overflow_cap)
+
+    return pool_size, max_overflow
+
+
+def _default_session_gate_limit() -> int:
+    pool_size, max_overflow = _effective_pool_settings()
+    if pool_size == 0 and max_overflow == 0:
+        return _pool_int("DB_NULLPOOL_SESSION_GATE_DEFAULT", 8, minimum=1)
+    configured_capacity = max(1, int(pool_size or 0) + int(max_overflow or 0))
+    default_cap = _pool_int("DB_SESSION_GATE_DEFAULT_CAP", 40, minimum=1)
+    return max(1, min(configured_capacity, default_cap))
+
+
+def create_engine() -> Optional[AsyncEngine]:
+    url = get_database_url_or_none()
+    if not url:
+        return None
+    pool_size, max_overflow = _effective_pool_settings()
+    
+    # Use NullPool when pool_size is 0 (NullPool mode enabled)
+    if pool_size == 0 and max_overflow == 0:
+        return create_async_engine(
+            url,
+            poolclass=NullPool,
+            connect_args=_engine_connect_args(),
+        )
+    
+    return create_async_engine(
+        url,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+        pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
+        pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
+        connect_args=_engine_connect_args(),
+    )
+
+
+def create_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, expire_on_commit=False)
+
+
+_engines_by_loop: dict[int, AsyncEngine] = {}
+_sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
-_thread_local = threading.local()
+_sync_thread_local = threading.local()
+_session_gate_limit = max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", _default_session_gate_limit(), minimum=1))
+_session_gate = threading.BoundedSemaphore(_session_gate_limit)
+
+# Background/noncritical work gets its own small gate before it can even wait
+# for a real DB session. This lets heavy features run continuously without
+# starving interactive Telegram commands, signal delivery proof writes, or
+# signal storage. The value is intentionally smaller than the main gate.
+_background_gate_limit = max(1, min(_session_gate_limit, _pool_int("DB_BACKGROUND_MAX_CONCURRENT_SESSIONS", max(1, min(2, _session_gate_limit // 2 or 1)), minimum=1)))
+_background_gate = threading.BoundedSemaphore(_background_gate_limit)
+
+_session_metrics_lock = threading.Lock()
+_session_metrics: dict[str, int] = {
+    "opened": 0,
+    "closed": 0,
+    "active": 0,
+    "waiting": 0,
+    "errors": 0,
+    "critical_waiting": 0,
+    "critical_active": 0,
+    "interactive_waiting": 0,
+    "interactive_active": 0,
+    "background_waiting": 0,
+    "background_active": 0,
+    "background_dropped": 0,
+    "noncritical_dropped": 0,
+}
+_critical_db_lock = threading.Lock()
+_critical_db_inflight = 0
+
+
+def _truthy_env(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def critical_db_work_active() -> bool:
+    with _critical_db_lock:
+        return _critical_db_inflight > 0
+
+
+def _mark_critical_db_start() -> None:
+    global _critical_db_inflight
+    with _critical_db_lock:
+        _critical_db_inflight += 1
+
+
+def _mark_critical_db_end() -> None:
+    global _critical_db_inflight
+    with _critical_db_lock:
+        _critical_db_inflight = max(0, _critical_db_inflight - 1)
+
+# Backward compatibility for legacy call-sites that still import
+# `_get_global_engine` / `_global_engine` from this module.
+_global_engine: Optional[AsyncEngine] = None
+
+
+def _loop_identity() -> int:
+    """Return a stable identity for the current async loop context.
+
+    This prevents reusing an AsyncEngine across different event loops,
+    which causes asyncpg queue/connection warnings and loop-bound errors.
+    """
+    try:
+        return id(asyncio.get_running_loop())
+    except RuntimeError:
+        # Fallback for sync contexts that may call into async helpers.
+        return -int(threading.get_ident())
+
+
+def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
+    if loop_id in _engines_by_loop:
+        return _engines_by_loop[loop_id]
+    with _engine_lock:
+        if loop_id in _engines_by_loop:
+            return _engines_by_loop[loop_id]
+        try:
+            url = get_database_url()
+        except ValueError as exc:
+            logger.critical("[db] DATABASE_URL is not configured: %s", exc)
+            return None
+
+        pool_size, max_overflow = _effective_pool_settings()
+
+        # Keep only the first event loop backed by a persistent Railway pool.
+        # Auxiliary loops use transient connections so every short-lived loop
+        # cannot reserve its own independent pool.
+        auxiliary_nullpool = bool(
+            _engines_by_loop
+            and _is_railway_runtime()
+            and (
+                _pool_bool("DB_AUX_LOOPS_USE_NULLPOOL", True)
+                or _pool_bool("DB_AUXILIARY_NULLPOOL", True)
+            )
+        )
+        if _is_railway_runtime() and pool_size > 5:
+            logger.warning(
+                "[db] unsafe Railway monolith pool configuration pool_size=%s; recommended DB_POOL_SIZE=2",
+                pool_size,
+            )
+        if (pool_size == 0 and max_overflow == 0) or auxiliary_nullpool:
+            engine = create_async_engine(
+                url,
+                poolclass=NullPool,
+                connect_args=_engine_connect_args(),
+            )
+        else:
+            engine = create_async_engine(
+                url,
+                pool_size=pool_size,
+                max_overflow=max_overflow,
+                pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+                pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
+                pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
+                connect_args=_engine_connect_args(),
+            )
+        _engines_by_loop[loop_id] = engine
+        _sessionmakers_by_loop[loop_id] = async_sessionmaker(engine, expire_on_commit=False)
+        try:
+            from sqlalchemy.engine.url import make_url as _mku
+
+            _mu = _mku(url)
+            _masked = f"{_mu.drivername}://{_mu.username}:***@{_mu.host}:{_mu.port}/{_mu.database}"
+        except Exception:
+            _masked = "<url parse error>"
+        logger.info(
+            "[db] async engine initialised loop=%s url=%s pool_size=%s max_overflow=%s auxiliary_nullpool=%s",
+            loop_id,
+            _masked,
+            pool_size,
+            max_overflow,
+            auxiliary_nullpool,
+        )
+        return engine
+
+
+def _get_sessionmaker_for_loop(loop_id: int) -> Optional[async_sessionmaker[AsyncSession]]:
+    if loop_id in _sessionmakers_by_loop:
+        return _sessionmakers_by_loop[loop_id]
+    _get_engine_for_loop(loop_id)
+    return _sessionmakers_by_loop.get(loop_id)
+
+
+def get_engine_for_event_loop() -> Optional[AsyncEngine]:
+    return _get_engine_for_loop(_loop_identity())
+
+
+def _get_global_engine() -> Optional[AsyncEngine]:
+    """Compatibility shim: return engine for current loop/thread context."""
+    global _global_engine
+    _global_engine = get_engine_for_event_loop()
+    return _global_engine
+
+
+def get_sessionmaker_for_event_loop() -> Optional[async_sessionmaker[AsyncSession]]:
+    return _get_sessionmaker_for_loop(_loop_identity())
+
+
+def is_db_configured() -> bool:
+    return get_database_url_or_none() is not None
+
+
+def get_pool_diagnostics() -> dict[str, Any]:
+    """Return local SQLAlchemy pool diagnostics for admin health commands."""
+    loop_id = _loop_identity()
+    engine = _engines_by_loop.get(loop_id)
+    pool_size, max_overflow = _effective_pool_settings()
+    with _session_metrics_lock:
+        session_metrics = dict(_session_metrics)
+    info: dict[str, Any] = {
+        "configured": is_db_configured(),
+        "loop_id": loop_id,
+        "engine_count": len(_engines_by_loop),
+        "sessionmaker_count": len(_sessionmakers_by_loop),
+        "effective_pool_size": pool_size,
+        "effective_max_overflow": max_overflow,
+        "railway_runtime": _is_railway_runtime(),
+        "nullpool": bool(pool_size == 0 and max_overflow == 0),
+        "session_limit": int(_session_gate_limit),
+        "background_session_limit": int(_background_gate_limit),
+        "session_metrics": session_metrics,
+    }
+    if engine is None:
+        info["engine_ready"] = False
+        return info
+    info["engine_ready"] = True
+    try:
+        pool = engine.sync_engine.pool
+        info["pool_class"] = type(pool).__name__
+        for attr in ("size", "checkedin", "checkedout", "overflow"):
+            try:
+                value = getattr(pool, attr)
+                info[attr] = int(value() if callable(value) else value)
+            except Exception:
+                pass
+        try:
+            status = getattr(pool, "status", None)
+            if callable(status):
+                info["status"] = str(status())
+        except Exception:
+            pass
+    except Exception as exc:
+        info["pool_error"] = f"{type(exc).__name__}: {exc}"
+    return info
+
+
+async def collect_database_health() -> dict[str, Any]:
+    """Collect local pool and optional Postgres activity metrics."""
+    diagnostics = get_pool_diagnostics()
+    result: dict[str, Any] = {"pool": diagnostics, "postgres": {}, "ok": bool(diagnostics.get("configured"))}
+    if not diagnostics.get("configured"):
+        return result
+    try:
+        from sqlalchemy import text
+
+        async with get_session(interactive=True) as session:
+            activity = await session.execute(
+                text(
+                    """
+                    SELECT state, COUNT(*) AS count
+                    FROM pg_stat_activity
+                    WHERE datname = current_database()
+                    GROUP BY state
+                    """
+                )
+            )
+            result["postgres"]["activity_by_state"] = {
+                str(state or "unknown"): int(count or 0)
+                for state, count in activity.fetchall()
+            }
+            max_conn = await session.execute(text("SHOW max_connections"))
+            result["postgres"]["max_connections"] = str(max_conn.scalar_one_or_none() or "")
+            await session.commit()
+    except Exception as exc:
+        result["ok"] = False
+        result["postgres"]["error"] = f"{type(exc).__name__}: {exc}"
+    return result
+
+
+def is_transient_db_error(exc: BaseException) -> bool:
+    txt = str(exc or "").lower()
+    markers = (
+        "toomanyconnectionserror",
+        "too many clients already",
+        "connection reset by peer",
+        "server closed the connection unexpectedly",
+        "terminating connection due to administrator command",
+        "could not connect to server",
+        "connection refused",
+        "connection is closed",
+    )
+    return any(m in txt for m in markers)
+
+
+async def run_with_db_retry(
+    operation: Callable[[], Awaitable[_T]],
+    *,
+    retries: int | None = None,
+    base_delay_s: float = 0.5,
+    max_delay_s: float = 2.0,
+    jitter_ratio: float = 0.10,
+) -> _T:
+    attempts = retries if retries is not None else _pool_int("DB_RETRY_ATTEMPTS", 3, minimum=0)
+    attempts = max(0, int(attempts))
+    attempt = 0
+    while True:
+        try:
+            return await operation()
+        except Exception as exc:
+            if attempt >= attempts or (not is_transient_db_error(exc)):
+                raise
+            delay = min(max_delay_s, base_delay_s * (2**attempt))
+            jitter = delay * max(0.0, jitter_ratio) * random.random()
+            wait_for = delay + jitter
+            logger.warning(
+                "[db] transient failure retry=%s/%s wait_s=%.2f err=%s",
+                attempt + 1,
+                attempts,
+                wait_for,
+                exc,
+            )
+            await asyncio.sleep(wait_for)
+            attempt += 1
+
+
+class NoncriticalWriteDropped(RuntimeError):
+    """Raised when best-effort telemetry is dropped to protect critical DB work."""
+
+
+@asynccontextmanager
+async def get_session(*, noncritical: bool = False, critical: bool = False, interactive: bool = False) -> AsyncIterator[AsyncSession]:
+    """Yield an async DB session with a process-wide priority gate.
+
+    Priority classes:
+    - critical=True: signal storage/delivery proof, must make progress.
+    - interactive=True: user commands/buttons, must stay responsive.
+    - noncritical=True: background/heavy jobs, outcome scans, analytics, pulses.
+
+    Noncritical callers pass through a separate small background gate before
+    they may wait for the real session gate. This lets heavy features keep
+    running, but prevents them from occupying every DB slot and making Telegram
+    feel dead.
+    """
+    if critical and noncritical:
+        noncritical = False
+    if interactive:
+        noncritical = False
+
+    base_timeout = _pool_int(
+        "DB_SESSION_GATE_TIMEOUT_SECONDS",
+        _pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+        minimum=1,
+    )
+    if critical:
+        timeout_s = float(_pool_int(
+            "DB_CRITICAL_SESSION_GATE_TIMEOUT_SECONDS",
+            _pool_int("SIGNAL_STORE_TIMEOUT_SECONDS", max(45, base_timeout), minimum=1),
+            minimum=1,
+        ))
+    elif interactive:
+        timeout_s = float(_pool_int("DB_INTERACTIVE_SESSION_GATE_TIMEOUT_SECONDS", min(8, base_timeout), minimum=1))
+    else:
+        timeout_s = float(base_timeout)
+
+    acquired = False
+    bg_acquired = False
+    drop_noncritical = bool(
+        noncritical and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
+    )
+
+    # Treat interactive waits as critical pressure so best-effort background
+    # jobs can pause/defer while a user is tapping buttons or running commands.
+    critical_scope = bool(critical or (interactive and _truthy_env("DB_INTERACTIVE_PAUSES_BACKGROUND", True)))
+    if critical_scope:
+        _mark_critical_db_start()
+        with _session_metrics_lock:
+            if critical:
+                _session_metrics["critical_waiting"] = int(_session_metrics.get("critical_waiting", 0) or 0) + 1
+            if interactive:
+                _session_metrics["interactive_waiting"] = int(_session_metrics.get("interactive_waiting", 0) or 0) + 1
+
+    try:
+        if noncritical:
+            # Limit background concurrency before it can contend for main DB slots.
+            bg_timeout = float(_pool_int("DB_BACKGROUND_SESSION_GATE_TIMEOUT_SECONDS", 2, minimum=0))
+            bg_drop_busy = _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
+            with _session_metrics_lock:
+                _session_metrics["background_waiting"] = int(_session_metrics.get("background_waiting", 0) or 0) + 1
+            try:
+                if bg_drop_busy:
+                    bg_acquired = _background_gate.acquire(blocking=False)
+                else:
+                    bg_acquired = await asyncio.to_thread(_background_gate.acquire, True, bg_timeout)
+            finally:
+                with _session_metrics_lock:
+                    _session_metrics["background_waiting"] = max(0, int(_session_metrics.get("background_waiting", 0) or 0) - 1)
+            if not bg_acquired:
+                with _session_metrics_lock:
+                    _session_metrics["errors"] += 1
+                    _session_metrics["background_dropped"] = int(_session_metrics.get("background_dropped", 0) or 0) + 1
+                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
+                raise NoncriticalWriteDropped("noncritical DB work deferred: background DB gate busy")
+            with _session_metrics_lock:
+                _session_metrics["background_active"] = int(_session_metrics.get("background_active", 0) or 0) + 1
+
+            # Optional fast-defer when signal storage or interactive command work is active.
+            if critical_db_work_active() and _truthy_env("DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False):
+                with _session_metrics_lock:
+                    _session_metrics["errors"] += 1
+                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
+                raise NoncriticalWriteDropped("noncritical DB work deferred: critical/interactive DB work active")
+
+        if drop_noncritical:
+            acquired = _session_gate.acquire(blocking=False)
+        else:
+            with _session_metrics_lock:
+                _session_metrics["waiting"] += 1
+            try:
+                acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
+            finally:
+                with _session_metrics_lock:
+                    _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
+
+        if not acquired:
+            with _session_metrics_lock:
+                _session_metrics["errors"] += 1
+                if drop_noncritical:
+                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
+            if drop_noncritical:
+                raise NoncriticalWriteDropped("noncritical DB work deferred: session gate busy")
+            raise TimeoutError(
+                f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
+                "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"
+            )
+
+        session_local = _get_sessionmaker_for_loop(_loop_identity())
+        if session_local is None:
+            _session_gate.release()
+            acquired = False
+            raise RuntimeError("DATABASE_URL is not configured")
+        with _session_metrics_lock:
+            _session_metrics["opened"] += 1
+            _session_metrics["active"] += 1
+            if critical:
+                _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
+                _session_metrics["critical_active"] = int(_session_metrics.get("critical_active", 0) or 0) + 1
+            if interactive:
+                _session_metrics["interactive_waiting"] = max(0, int(_session_metrics.get("interactive_waiting", 0) or 0) - 1)
+                _session_metrics["interactive_active"] = int(_session_metrics.get("interactive_active", 0) or 0) + 1
+        try:
+            async with session_local() as session:
+                try:
+                    yield session
+                except Exception:
+                    with _session_metrics_lock:
+                        _session_metrics["errors"] += 1
+                    raise
+                finally:
+                    await session.close()
+        finally:
+            with _session_metrics_lock:
+                _session_metrics["closed"] += 1
+                _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
+                if critical:
+                    _session_metrics["critical_active"] = max(0, int(_session_metrics.get("critical_active", 0) or 0) - 1)
+                if interactive:
+                    _session_metrics["interactive_active"] = max(0, int(_session_metrics.get("interactive_active", 0) or 0) - 1)
+            if acquired:
+                _session_gate.release()
+                acquired = False
+    finally:
+        if bg_acquired:
+            with _session_metrics_lock:
+                _session_metrics["background_active"] = max(0, int(_session_metrics.get("background_active", 0) or 0) - 1)
+            _background_gate.release()
+        if critical_scope:
+            with _session_metrics_lock:
+                if critical:
+                    _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
+                if interactive:
+                    _session_metrics["interactive_waiting"] = max(0, int(_session_metrics.get("interactive_waiting", 0) or 0) - 1)
+            _mark_critical_db_end()
+
+
+@asynccontextmanager
+async def async_session() -> AsyncIterator[AsyncSession]:
+    async with get_session() as session:
+        yield session
 
 
 def _normalize_database_url(raw: str, *, async_driver: bool) -> str:
     raw = str(raw or "").strip()
     if not raw:
         return ""
-
-    if raw.startswith("postgresql+asyncpg://"):
-        return raw if async_driver else raw.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
-    if raw.startswith("postgresql+psycopg2://"):
-        return raw if not async_driver else raw.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    async_scheme = "postgresql+asyncpg://"
+    sync_scheme = "postgresql+psycopg2://"
+    if raw.startswith(async_scheme):
+        return raw if async_driver else raw.replace(async_scheme, sync_scheme, 1)
+    if raw.startswith(sync_scheme):
+        return raw if not async_driver else raw.replace(sync_scheme, async_scheme, 1)
     if raw.startswith("postgres://"):
-        return raw.replace("postgres://", "postgresql+asyncpg://" if async_driver else "postgresql+psycopg2://", 1)
+        return raw.replace("postgres://", async_scheme if async_driver else sync_scheme, 1)
     if raw.startswith("postgresql://"):
-        return raw.replace("postgresql://", "postgresql+asyncpg://" if async_driver else "postgresql+psycopg2://", 1)
-
+        return raw.replace("postgresql://", async_scheme if async_driver else sync_scheme, 1)
     return raw
 
 
@@ -49,263 +665,102 @@ def _build_pg_dsn_from_parts(*, async_driver: bool) -> Optional[str]:
     password = (os.getenv("PGPASSWORD") or os.getenv("POSTGRES_PASSWORD") or os.getenv("DATABASE_PASSWORD") or "").strip()
     database = (os.getenv("PGDATABASE") or os.getenv("POSTGRES_DB") or os.getenv("DATABASE_NAME") or "").strip()
     port = (os.getenv("PGPORT") or os.getenv("POSTGRES_PORT") or os.getenv("DATABASE_PORT") or "").strip()
-
     if not host or not user or not database:
         return None
-
     from urllib.parse import quote_plus
 
     scheme = "postgresql+asyncpg" if async_driver else "postgresql+psycopg2"
-    user_enc = quote_plus(user)
-    auth = user_enc if not password else f"{user_enc}:{quote_plus(password)}"
+    auth = quote_plus(user) if not password else f"{quote_plus(user)}:{quote_plus(password)}"
     netloc = f"{auth}@{host}"
     if port:
         netloc = f"{netloc}:{port}"
-
-    dsn = f"{scheme}://{netloc}/{database}"
+    dsn = f"{scheme}://{netloc}/{quote_plus(database)}"
     sslmode = (os.getenv("PGSSLMODE") or os.getenv("DATABASE_SSLMODE") or os.getenv("DB_SSLMODE") or "").strip()
     if sslmode:
-        sep = "&" if "?" in dsn else "?"
-        dsn = f"{dsn}{sep}sslmode={quote_plus(sslmode)}"
+        dsn += f"?sslmode={quote_plus(sslmode)}"
     return dsn
 
 
 def resolve_database_url(*, async_driver: bool = True) -> str:
-    """
-    Resolve database URL with deterministic priority:
-      1) PGBOUNCER_URL
-      2) DATABASE_URL / DATABASE_PRIVATE_URL / DATABASE_PUBLIC_URL / POSTGRES_URL / POSTGRESQL_URL
-      3) DSN synthesized from PG* environment variables
-    """
-    candidates: list[str] = []
-
-    pgbouncer = (os.getenv("PGBOUNCER_URL") or "").strip()
-    if pgbouncer:
-        candidates.append(pgbouncer)
-
-    for key in ("DATABASE_URL", "DATABASE_PRIVATE_URL", "DATABASE_PUBLIC_URL", "POSTGRES_URL", "POSTGRESQL_URL"):
-        raw = (os.getenv(key) or "").strip()
-        if raw:
-            candidates.append(raw)
-
+    """Resolve DB URL for legacy callers, including PG* env var fallback."""
+    configured = _config_resolve_database_url(async_driver=async_driver)
+    if configured:
+        return _normalize_database_url(configured, async_driver=async_driver)
     built = _build_pg_dsn_from_parts(async_driver=async_driver)
-    if built:
-        candidates.append(built)
-
-    for raw in candidates:
-        normalized = _normalize_database_url(raw, async_driver=async_driver)
-        if normalized:
-            return normalized
-
-    return ""
+    return built or ""
 
 
 def _create_engine_from_url(url: str) -> AsyncEngine:
-    from sqlalchemy.ext.asyncio import create_async_engine
-    from sqlalchemy.pool import NullPool
-
-    connect_args: dict[str, Any] = {}
-
-    statement_timeout_ms = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000") or 30000)
-    command_timeout_s = int(os.getenv("DB_COMMAND_TIMEOUT_S", "30") or 30)
-
-    connect_args["server_settings"] = {
-        "statement_timeout": str(statement_timeout_ms),
-        "application_name": "signalrankAI",
-    }
-    connect_args["command_timeout"] = command_timeout_s
-
-    ssl_mode = os.getenv("PGSSLMODE", "prefer").lower()
-    if ssl_mode in ("require", "verify-ca", "verify-full"):
-        import ssl as _ssl
-
-        ctx = _ssl.create_default_context()
-        if ssl_mode != "verify-full":
-            ctx.check_hostname = False
-            ctx.verify_mode = _ssl.CERT_NONE
-        connect_args["ssl"] = ctx
-
+    pool_size, max_overflow = _effective_pool_settings()
+    if pool_size == 0 and max_overflow == 0:
+        return create_async_engine(url, poolclass=NullPool, connect_args=_engine_connect_args())
     return create_async_engine(
         url,
-        poolclass=NullPool,
-        echo=os.getenv("DB_ECHO", "0").lower() in ("1", "true"),
-        pool_pre_ping=False,
-        connect_args=connect_args,
+        pool_size=pool_size,
+        max_overflow=max_overflow,
+        pool_timeout=_pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
+        pool_recycle=_pool_int("DB_POOL_RECYCLE_SECONDS", 1800, minimum=30),
+        pool_pre_ping=_pool_bool("DB_POOL_PRE_PING", True),
+        connect_args=_engine_connect_args(),
     )
-
-
-def _get_global_engine() -> Optional[AsyncEngine]:
-    global _global_engine
-
-    if _global_engine is not None:
-        return _global_engine
-
-    with _engine_lock:
-        if _global_engine is not None:
-            return _global_engine
-
-        url = resolve_database_url(async_driver=True)
-        if not url:
-            logger.warning("[db] DATABASE_URL not set — DB engine not created")
-            return None
-
-        try:
-            _global_engine = _create_engine_from_url(url)
-            logger.info("[db] Async engine created (NullPool)")
-        except Exception:
-            logger.error("[db] Failed to create async engine: %s", traceback.format_exc())
-            _global_engine = None
-
-    return _global_engine
-
-
-def get_engine_for_event_loop() -> Optional[AsyncEngine]:
-    return _get_global_engine()
-
-
-def is_db_configured() -> bool:
-    return bool(resolve_database_url(async_driver=True))
-
-
-def get_database_url() -> str:
-    url = resolve_database_url(async_driver=True)
-    if not url:
-        raise RuntimeError("DATABASE_URL is not configured")
-    return url
-
-
-def get_database_url_or_none() -> Optional[str]:
-    url = resolve_database_url(async_driver=True)
-    return url or None
-
-
-def create_engine() -> Optional[AsyncEngine]:
-    return get_engine_for_event_loop()
-
-
-def is_transient_db_error(exc: BaseException) -> bool:
-    """
-    Backward-compatible transient DB error classifier used by db.pg_features.
-
-    Returns True for temporary/transport-level database errors that are
-    typically safe to retry.
-    """
-    try:
-        msg = f"{type(exc).__name__}: {exc}".lower()
-    except Exception:
-        msg = ""
-
-    transient_markers = (
-        "timeout",
-        "timed out",
-        "connection reset",
-        "connection refused",
-        "connection aborted",
-        "could not connect",
-        "too many clients",
-        "deadlock",
-        "serialization",
-        "transient",
-        "temporarily unavailable",
-        "server closed the connection",
-        "connection is closed",
-    )
-    return any(marker in msg for marker in transient_markers)
-
-
-@asynccontextmanager
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    engine = _get_global_engine()
-    if engine is None:
-        raise RuntimeError(
-            "DATABASE_URL is not configured. Set it as an environment variable before starting the bot."
-        )
-
-    async_session_factory = async_sessionmaker(
-        bind=engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
-
-    async with async_session_factory() as session:
-        try:
-            yield session
-        except Exception:
-            try:
-                await session.rollback()
-            except Exception:
-                logger.debug("[db] rollback failed: %s", traceback.format_exc())
-            raise
 
 
 def get_sync_session():
+    """Return a synchronous SQLAlchemy session for worker/maintenance paths."""
     from sqlalchemy import create_engine as create_sync_engine
     from sqlalchemy.orm import sessionmaker as sync_sessionmaker
-    from sqlalchemy.pool import NullPool
+    from sqlalchemy.pool import NullPool as SyncNullPool
 
-    if not hasattr(_thread_local, "sync_engine"):
+    if not hasattr(_sync_thread_local, "sync_engine"):
         url = resolve_database_url(async_driver=False)
         if not url:
             raise RuntimeError("DATABASE_URL not configured")
-
-        connect_args = {}
+        connect_args: dict[str, Any] = {}
         ssl_mode = os.getenv("PGSSLMODE", "prefer").lower()
-        if ssl_mode in ("require",):
+        if ssl_mode == "require":
             connect_args["sslmode"] = "require"
-
-        _thread_local.sync_engine = create_sync_engine(
+        _sync_thread_local.sync_engine = create_sync_engine(
             url,
-            poolclass=NullPool,
-            echo=False,
+            poolclass=SyncNullPool,
+            echo=_pool_bool("DB_ECHO", False),
             connect_args=connect_args,
         )
-
-    Session = sync_sessionmaker(bind=_thread_local.sync_engine, expire_on_commit=False)
+    Session = sync_sessionmaker(bind=_sync_thread_local.sync_engine, expire_on_commit=False)
     return Session()
 
 
 async def init_db() -> None:
-    engine = _get_global_engine()
+    """Create database tables from ORM metadata when an engine is configured."""
+    engine = get_engine_for_event_loop()
     if engine is None:
         logger.warning("[db] Cannot init_db: engine not created")
         return
+    from db.models import Base
 
-    try:
-        from db.models import Base
-
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("[db] Schema initialized")
-    except Exception:
-        logger.error("[db] init_db failed: %s", traceback.format_exc())
-        raise
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def dispose_engine() -> None:
+    """Dispose all cached async engines and the thread-local sync engine."""
     global _global_engine
     with _engine_lock:
-        if _global_engine is not None:
-            try:
-                await _global_engine.dispose()
-                logger.info("[db] Engine disposed")
-            except Exception:
-                logger.debug("[db] dispose failed: %s", traceback.format_exc())
-            finally:
-                _global_engine = None
-
-
-__all__ = [
-    "get_session",
-    "get_sync_session",
-    "get_engine_for_event_loop",
-    "is_db_configured",
-    "resolve_database_url",
-    "get_database_url",
-    "get_database_url_or_none",
-    "create_engine",
-    "init_db",
-    "dispose_engine",
-    "_get_global_engine",
-    "is_transient_db_error",
-]
+        engines = list(_engines_by_loop.values())
+        _engines_by_loop.clear()
+        _sessionmakers_by_loop.clear()
+        _global_engine = None
+    for engine in engines:
+        try:
+            await engine.dispose()
+        except Exception as exc:
+            logger.debug("[db] dispose failed: %s", exc)
+    sync_engine = getattr(_sync_thread_local, "sync_engine", None)
+    if sync_engine is not None:
+        try:
+            sync_engine.dispose()
+        except Exception as exc:
+            logger.debug("[db] sync dispose failed: %s", exc)
+        try:
+            delattr(_sync_thread_local, "sync_engine")
+        except Exception:
+            pass

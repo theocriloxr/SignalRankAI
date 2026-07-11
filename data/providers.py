@@ -15,7 +15,7 @@ import asyncio
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 
 import requests
 from utils.async_runner import run_sync
@@ -35,6 +35,16 @@ except Exception:
 _PROVIDER_LAST_CALL = {}
 _PROVIDER_COOLDOWN = {}
 _CANDLES_CACHE: dict[str, tuple[float, list]] = {}
+_MACRO_LAST_CALL: dict[str, float] = {}
+_MACRO_MIN_DELAY: dict[str, float] = {
+    "DXY": 12.0,
+    "VIX": 12.0,
+    "US10Y": 12.0,
+    "US02Y": 12.0,
+    "^GSPC": 3.0,
+    "^DJI": 3.0,
+    "^IXIC": 3.0,
+}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -59,73 +69,6 @@ def _is_cooldown_active(provider: str) -> bool:
         return False
 
 
-# ============================================================================
-# MACRO INDEX RATE LIMITING - Prevent 429 errors before they happen
-# ============================================================================
-
-# Track last call times and delays for macro indices separately
-_MACRO_LAST_CALL: dict[str, float] = {}
-_MACRO_MIN_DELAY: dict[str, float] = {
-    # FIX: Polygon free tier allows 5 calls/minute, so space these out
-    # These are called sequentially by engine/core.py _fetch_macro_snapshot()
-    "DXY": 12.0,      # 12s between DXY calls (TwelveData)
-    "VIX": 12.0,      # 12s between VIX calls (Polygon)
-    "US10Y": 12.0,   # 12s between US10Y calls (Polygon)
-    "US02Y": 12.0,   # 12s between US02Y calls (Polygon)
-    # Yahoo Finance has higher limits, but still delay to avoid hammering
-    "^GSPC": 3.0,   # S&P 500
-    "^DJI": 3.0,     # Dow Jones
-    "^IXIC": 3.0,    # Nasdaq
-}
-
-
-def _macro_rate_limit(symbol: str) -> float:
-    """Apply rate limiting for macro indices to prevent 429 errors.
-    
-    This is called BEFORE making API calls to prevent rate limiting.
-    Polygon free tier: 5 calls/minute = 12s between calls
-    
-    Args:
-        symbol: Ticker symbol (e.g., DXY, VIX, US10Y)
-        
-    Returns:
-        Seconds to sleep (0 if no delay needed)
-    """
-    import random
-    
-    # Normalize symbol
-    sym = (symbol or "").upper().strip()
-    
-    # Check if this is a macro index
-    min_delay = _MACRO_MIN_DELAY.get(sym, 0.0)
-    if min_delay <= 0:
-        return 0.0
-    
-    # Calculate elapsed time since last call
-    now = time.monotonic()
-    last_call = _MACRO_LAST_CALL.get(sym, 0.0)
-    elapsed = now - last_call if last_call else 0.0
-    
-    # If enough time has passed, no delay needed
-    if elapsed >= min_delay:
-        _MACRO_LAST_CALL[sym] = now
-        return 0.0
-    
-    # Calculate delay needed with jitter to prevent thundering herd
-    delay_needed = min_delay - elapsed
-    
-    # Add random jitter: [delay, delay * 1.5]
-    jitter = random.random() * 0.5 * delay_needed
-    total_delay = delay_needed + jitter
-    
-    logger.debug(f"[macro_rate_limit] sleeping {total_delay:.1f}s before fetching {sym}")
-    time.sleep(total_delay)
-    
-    # Update last call time
-    _MACRO_LAST_CALL[sym] = time.monotonic()
-    return total_delay
-
-
 def _rate_limit(provider: str, wait: float) -> None:
     try:
         last = float(_PROVIDER_LAST_CALL.get(provider) or 0.0)
@@ -137,6 +80,27 @@ def _rate_limit(provider: str, wait: float) -> None:
         pass
     finally:
         _PROVIDER_LAST_CALL[provider] = time.monotonic()
+
+
+def _macro_rate_limit(symbol: str) -> float:
+    """Rate-limit macro index fetches to reduce 429s from free data APIs."""
+    import random
+
+    sym = str(symbol or "").upper().strip()
+    min_delay = float(_MACRO_MIN_DELAY.get(sym, 0.0) or 0.0)
+    if min_delay <= 0:
+        return 0.0
+    now = time.monotonic()
+    last_call = float(_MACRO_LAST_CALL.get(sym, 0.0) or 0.0)
+    elapsed = now - last_call if last_call else min_delay
+    if elapsed >= min_delay:
+        _MACRO_LAST_CALL[sym] = now
+        return 0.0
+    delay = (min_delay - elapsed) * (1.0 + random.random() * 0.5)
+    logger.debug("[macro_rate_limit] sleeping %.1fs before fetching %s", delay, sym)
+    time.sleep(delay)
+    _MACRO_LAST_CALL[sym] = time.monotonic()
+    return delay
 
 
 def _cache_key(symbol: str, timeframe: str) -> str:
@@ -247,27 +211,12 @@ def _fetch_binance_ccxt_sync(symbol: str, timeframe: str, limit: int = 200) -> L
         if proxy_url:
             exchange_config["proxies"] = {"http": proxy_url, "https": proxy_url}
             exchange_config["proxy"] = proxy_url
-
         exchange = ccxt.binance(exchange_config)
-        try:
-            rows = exchange.fetch_ohlcv(
-                _normalize_binance_symbol(symbol),
-                timeframe=_map_binance_timeframe(timeframe),
-                limit=max(20, int(limit or 200)),
-            )
-        finally:
-            try:
-                close = getattr(exchange, "close", None)
-                if callable(close):
-                    maybe = close()
-                    if asyncio.iscoroutine(maybe):
-                        try:
-                            asyncio.run(maybe)
-                        except RuntimeError:
-                            pass
-            except Exception:
-                pass
-
+        rows = exchange.fetch_ohlcv(
+            _normalize_binance_symbol(symbol),
+            timeframe=_map_binance_timeframe(timeframe),
+            limit=max(20, int(limit or 200)),
+        )
         out: List[Dict] = []
         for row in rows or []:
             try:
@@ -325,13 +274,10 @@ def _coingecko_symbol_to_id(symbol: str) -> Optional[str]:
     return None
 
 
-def fetch_coingecko_market_chart(symbol: str, days: int = 30) -> List[Dict]:
+def fetch_coingecko_market_chart(symbol: str, days: int = 7) -> List[Dict]:
     """Fetch simple market chart (prices) from CoinGecko as a lightweight OHLCV fallback.
 
     Returns a list of dicts with timestamp (ms), open/high/low/close/volume where available.
-    
-    FIX: Changed days default from 7 to 30 to ensure enough candles for technical indicators.
-    30 days * 24h = 720 candles for 1h timeframe - enough for 200-period EMAs.
     """
     try:
         coin_id = _coingecko_symbol_to_id(symbol)
@@ -407,65 +353,6 @@ def fetch_cryptopanic_news(limit: int = 10, currencies: Optional[List[str]] = No
         return out
     except Exception:
         return []
-
-# ============================================================================
-# NEWS API - High-impact economic news for trading protection
-# ============================================================================
-
-async def get_today_high_impact_news() -> List[Dict[str, Any]]:
-    """
-    Fetch today's high-impact economic events (USD-related).
-    
-    This function provides news events for the News Killswitch to block
-    trades during high-impact events (FOMC, NFP, CPI, etc.).
-    
-    Returns:
-        List of event dicts with: title, currency, impact, timestamp
-    """
-    try:
-        # Try to import from economic calendar service (preferred)
-        from services.economic_calendar import fetch_economic_events
-        events = await fetch_economic_events(force_refresh=False)
-        
-        # Filter for high-impact USD events
-        high_impact = []
-        for e in events:
-            if e.get("impact") == "high" and e.get("currency") == "USD":
-                event_time = e.get("event_time")
-                if event_time:
-                    high_impact.append({
-                        "title": e.get("title", ""),
-                        "currency": e.get("currency", "USD"),
-                        "impact": e.get("impact", "high"),
-                        "timestamp": event_time,
-                        "source": e.get("source", "finnhub"),
-                    })
-        
-        return high_impact
-    except Exception:
-        pass
-    
-# Fallback: try database cache
-    try:
-        from worker.news_sync_worker import get_cached_high_impact_events
-        events = await get_cached_high_impact_events(hours=24)
-        
-        # Convert to expected format
-        return [
-            {
-                "title": e.get("title", ""),
-                "currency": e.get("currency", "USD"),
-                "impact": e.get("impact", "high"),
-                "timestamp": e.get("event_date"),
-                "source": e.get("source", "db"),
-            }
-            for e in events
-        ]
-    except Exception:
-        pass
-    
-    return []
-
 
 async def _fetch_binance_ccxt_async(symbol: str, timeframe: str, limit: int = 200) -> List[Dict]:
     """Async CCXT adapter using ccxt.async_support with optional proxy support.
@@ -723,10 +610,6 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     if _is_cooldown_active("yahoo"):
         return []
 
-    # FIX: Yahoo Finance returns NaN for volume on Forex pairs (no central exchange).
-    # We need to fill these with 0 BEFORE processing to prevent data loss.
-    # This is the notorious "NaN Volume" bug that causes 260 candles to become 0.
-
     # Normalize symbols for Yahoo
     # - FX: EURUSD / EUR-USD -> EURUSD=X
     # - Crypto: BTCUSDT -> BTC-USD
@@ -767,13 +650,11 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
     
     _rate_limit("yahoo", 0.5)  # Yahoo is pretty lenient
     
-    def _fetch_history():
-        import pandas as pd
+    def _fetch_history() -> "pd.DataFrame":
         ticker = yf.Ticker(symbol)
         return ticker.history(period=period, interval=interval)
 
-    async def _fetch_with_timeout():
-        import pandas as pd
+    async def _fetch_with_timeout() -> "pd.DataFrame":
         timeout_s = float(os.getenv("YFINANCE_TIMEOUT_SECONDS", "6") or 6)
         return await asyncio.wait_for(
             asyncio.to_thread(_fetch_history),
@@ -785,12 +666,6 @@ def fetch_yahoo_candles(symbol: str, timeframe: str) -> List[Dict]:
         
         if hist.empty:
             return []
-        
-        # FIX: Fill NaN volume with 0 for Forex pairs BEFORE processing.
-        # Yahoo Finance returns NaN for volume on Forex pairs since there's no central exchange.
-        # Without this fix, subsequent code that checks for NaN or uses dropna() would discard all rows.
-        if "Volume" in hist.columns:
-            hist["Volume"] = hist["Volume"].fillna(0)
         
         candles = []
         for idx, row in hist.iterrows():
@@ -953,11 +828,9 @@ def fetch_coingecko_candles(symbol: str, timeframe: str) -> List[Dict]:
     if _is_cooldown_active("coingecko"):
         return []
 
-# CoinGecko /coins/{id}/ohlc: days param
-    # FIX: Extended from 7 to 14 days for 1h to ensure 50+ candles for 50-period indicators
-    # Previously only returned ~42 candles which caused indicators to return NaN (50-period EMA needs 50+ candles)
-    days_map = {"5m": 2, "15m": 3, "1h": 14, "4h": 60, "1d": 365}
-    days = days_map.get(timeframe, 14)
+    # CoinGecko /coins/{id}/ohlc: days param
+    days_map = {"5m": 1, "15m": 1, "1h": 7, "4h": 30, "1d": 365}
+    days = days_map.get(timeframe, 7)
 
     url = f"https://api.coingecko.com/api/v3/coins/{cg_id}/ohlc"
     params = {"vs_currency": "usd", "days": days}
@@ -1094,11 +967,10 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
     except Exception:
         pass
 
-# 2) CoinGecko market chart fallback for crypto
-    # FIX: Use days=30 to ensure enough candles for technical indicators
+    # 2) CoinGecko market chart fallback for crypto
     try:
         if is_crypto_sym:
-            cg = fetch_coingecko_market_chart(symbol, days=30)
+            cg = fetch_coingecko_market_chart(symbol, days=7)
             if cg and len(cg) >= 1:
                 return cg[-limit:]
     except Exception:
@@ -1123,3 +995,43 @@ def fetch_candles_waterfall(symbol: str, timeframe: str, limit: int = 200) -> Li
         pass
 
     return []
+
+
+async def get_today_high_impact_news() -> List[Dict]:
+    """Fetch today's high-impact USD economic events for news/risk gates."""
+    try:
+        from services.economic_calendar import fetch_economic_events
+
+        events = await fetch_economic_events(force_refresh=False)
+        out: List[Dict] = []
+        for event in events or []:
+            if str(event.get("impact") or "").lower() == "high" and str(event.get("currency") or "").upper() == "USD":
+                out.append(
+                    {
+                        "title": event.get("title", ""),
+                        "currency": event.get("currency", "USD"),
+                        "impact": event.get("impact", "high"),
+                        "timestamp": event.get("event_time") or event.get("timestamp"),
+                        "source": event.get("source", "economic_calendar"),
+                    }
+                )
+        return out
+    except Exception:
+        pass
+
+    try:
+        from worker.news_sync_worker import get_cached_high_impact_events
+
+        events = await get_cached_high_impact_events(hours=24)
+        return [
+            {
+                "title": event.get("title", ""),
+                "currency": event.get("currency", "USD"),
+                "impact": event.get("impact", "high"),
+                "timestamp": event.get("event_time") or event.get("timestamp"),
+                "source": event.get("source", "cache"),
+            }
+            for event in (events or [])
+        ]
+    except Exception:
+        return []

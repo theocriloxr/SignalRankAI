@@ -14,12 +14,10 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
-    Index,
     String,
     Text,
     JSON,
     UniqueConstraint,
-    text,
 )
 # Lazy-load PostgreSQL UUID dialect to avoid Railway startup crashes
 try:
@@ -63,6 +61,15 @@ class User(Base):
     auto_signals_daily_limit: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_daily_drawdown_pct: Mapped[float] = mapped_column(Float, default=8.0, nullable=False)
     timezone: Mapped[Optional[str]] = mapped_column(String(64))
+    timezone_source: Mapped[Optional[str]] = mapped_column(String(24))
+    timezone_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    timezone_auto_update: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_location_lat: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_lon: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_accuracy_m: Mapped[Optional[float]] = mapped_column(Float)
+    last_location_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    locale: Mapped[Optional[str]] = mapped_column(String(16))
+    time_format: Mapped[str] = mapped_column(String(8), default="12h", nullable=False)
     dca_profile: Mapped[Optional[str]] = mapped_column(String(32))
 
 
@@ -87,16 +94,6 @@ User.subscriptions = relationship("Subscription", back_populates="user")
 
 class Signal(Base):
     __tablename__ = "signals"
-    __table_args__ = (
-        Index(
-            "ix_signals_active_thesis",
-            "asset",
-            "direction",
-            "timeframe",
-            unique=True,
-            postgresql_where=text("status = 'active'"),
-        ),
-    )
 
     signal_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     asset: Mapped[str] = mapped_column(String(32), index=True)
@@ -115,6 +112,10 @@ class Signal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     fingerprint: Mapped[Optional[str]] = mapped_column(String(128), index=True)
     ml_probability: Mapped[Optional[float]] = mapped_column(Float)
+    trade_profile: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    asset_class: Mapped[Optional[str]] = mapped_column(String(16), index=True)
+    target_model: Mapped[Optional[str]] = mapped_column(String(32))
+    expected_duration: Mapped[Optional[str]] = mapped_column(String(64))
     expires_at: Mapped[Optional[datetime]]
     expired: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -123,9 +124,7 @@ class Signal(Base):
     mfe_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     # MAE = Maximum Adverse Excursion (how far into loss before closing)
     mae_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    # PHASE 3: Asset class classification for differentiated risk sizing
-    # Values: "crypto" (high vol, wide stops), "forex" (standard), "stock" (low vol, tight stops)
-    asset_class: Mapped[Optional[str]] = mapped_column(String(32), nullable=True, index=True)
+    performance_version: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
 
     outcomes = relationship("Outcome", back_populates="signal", cascade="all, delete-orphan")
 
@@ -135,9 +134,6 @@ logger.info("✅ Signal model defined successfully")
 
 class Outcome(Base):
     __tablename__ = "outcomes"
-    __table_args__ = (
-        UniqueConstraint("signal_id", name="uq_outcomes_signal_id"),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
@@ -152,11 +148,6 @@ class Outcome(Base):
     canonical_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     vip_fill_outcome: Mapped[Optional[str]] = mapped_column(String(16))
     sentiment_outcome: Mapped[Optional[str]] = mapped_column(String(16))
-    
-    # PHASE 2: Strategy performance tracking columns for regime-specific weighting
-    strategy_name: Mapped[Optional[str]] = mapped_column(String(64), index=True)
-    asset_class: Mapped[Optional[str]] = mapped_column(String(32), index=True)
-    regime: Mapped[Optional[str]] = mapped_column(String(32), index=True)
 
     signal: Mapped[Signal] = relationship(back_populates="outcomes")
 
@@ -260,7 +251,21 @@ class SignalDelivery(Base):
     tier_at_send: Mapped[str] = mapped_column(String(16), default="free", nullable=False)
     delivered_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     sent_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    delivery_state: Mapped[str] = mapped_column(String(16), default="reserved", nullable=False)
     attempt_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    dispatch_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    telegram_send_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    delivery_confirmed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    telegram_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    telegram_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    telegram_api_result: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    generated_at_utc: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    delivered_at_utc: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    display_timezone: Mapped[Optional[str]] = mapped_column(String(64))
+    display_generated_at: Mapped[Optional[str]] = mapped_column(String(64))
+    display_delivered_at: Mapped[Optional[str]] = mapped_column(String(64))
+    delivery_latency_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    signal_age_at_delivery_seconds: Mapped[Optional[int]] = mapped_column(Integer)
     last_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_error: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -305,6 +310,85 @@ class ActiveSignalMessage(Base):
     message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SignalLifecycle(Base):
+    __tablename__ = "signal_lifecycles"
+
+    signal_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("signals.signal_id"), primary_key=True
+    )
+    state: Mapped[str] = mapped_column(String(32), default="WATCHING_FOR_ENTRY", index=True)
+    generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    watch_started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    entry_touched_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    tp1_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    tp2_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    tp3_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    sl_hit_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    breakeven_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    expired_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_price: Mapped[Optional[float]] = mapped_column(Float)
+    last_checked_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    max_price_seen: Mapped[Optional[float]] = mapped_column(Float)
+    min_price_seen: Mapped[Optional[float]] = mapped_column(Float)
+    mfe_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    mae_pct: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    mfe_r: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    mae_r: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    entry_latency_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_tp1_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_tp2_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_tp3_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    time_to_sl_seconds: Mapped[Optional[int]] = mapped_column(Integer)
+    tp1_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tp2_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    tp3_before_sl: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reversed_after_tp1: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class SignalTrackingEvent(Base):
+    __tablename__ = "signal_tracking_events"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "event_type", name="uq_signal_tracking_event_stage"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    event_time: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    price: Mapped[Optional[float]] = mapped_column(Float)
+    r_multiple: Mapped[Optional[float]] = mapped_column(Float)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    notified_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class SignalEventNotification(Base):
+    __tablename__ = "signal_event_notifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "signal_id", "event_type", "user_id",
+            name="uq_signal_event_notification_recipient",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("signal_tracking_events.id"), index=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True)
+    event_type: Mapped[str] = mapped_column(String(32), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    delivery_id: Mapped[Optional[int]] = mapped_column(ForeignKey("signal_deliveries.id"))
+    chat_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    source_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    sent_message_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    delivery_state: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    sent_ok: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class EconomicEvent(Base):

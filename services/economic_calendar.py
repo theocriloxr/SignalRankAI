@@ -1,14 +1,13 @@
 """Economic Calendar & Macro News Protector.
 
-Fetches upcoming high-impact economic events and enforces a no-trade
-buffer around USD red-folder releases. Supports both DB cache (from worker)
-and direct API calls.
+Fetches upcoming high-impact economic events and enforces a 30-minute
+no-trade buffer around USD red-folder releases.
 
 Providers (in priority order):
-    1. Redis cache (populated by worker/news_sync_worker.py)
-    2. Database EconomicEvent table (populated by worker)
-    3. Finnhub API (requires FINNHUB_API_KEY)
-    4. Static fallback list
+    1. Redis/DB cached normalized events
+    2. Fair Economy/Forex Factory weekly JSON feed (free, no key)
+    3. Finnhub (optional FINNHUB_API_KEY fallback)
+    4. Static timing hints when every live source is unavailable
 
 Usage::
     from services.economic_calendar import is_no_trade_zone, fetch_economic_events
@@ -35,7 +34,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _EVENTS_CACHE: list[dict] = []
 _CACHE_FETCHED_AT: Optional[datetime] = None
-_CACHE_TTL_SECONDS = 3600  # refresh once per hour
+_CACHE_TTL_SECONDS = max(300, int(os.getenv("ECONOMIC_CALENDAR_CACHE_TTL_SECONDS", "3600") or 3600))
+_REQUEST_TIMEOUT_SECONDS = max(2.0, float(os.getenv("ECONOMIC_CALENDAR_TIMEOUT_SECONDS", "8") or 8))
+_FOREX_FACTORY_URL = (
+    os.getenv("FOREX_FACTORY_CALENDAR_URL")
+    or "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+).strip()
 
 # ---------------------------------------------------------------------------
 # Known high-impact USD events (month, day pattern matching)
@@ -63,35 +67,40 @@ _USD_SENSITIVE_SYMBOLS = {
 
 # Pre-trade buffer: no new signals N minutes before and after a red event
 NO_TRADE_BUFFER_MINUTES = int(os.getenv("NO_TRADE_BUFFER_MINUTES", "30"))
-
-# Redis key for caching events (shared with worker)
 REDIS_EVENTS_KEY = "signalrankai:economic_events:v1"
+VOLATILITY_BUFFER_MULTIPLIER = float(os.getenv("NEWS_VOLATILITY_BUFFER_MULTIPLIER", "1.0") or 1.0)
 
-# Volatility buffer: multiplier for SL during high-impact events
-# Set to 1.0 to disable, 1.5 for 50% wider SL
-VOLATILITY_BUFFER_MULTIPLIER = float(os.getenv("NEWS_VOLATILITY_BUFFER_MULTIPLIER", "1.0"))
-
-
-# ---------------------------------------------------------------------------
-# Load from Redis (shared cache from worker)
-# ---------------------------------------------------------------------------
 
 async def _load_events_from_redis() -> list[dict]:
-    """Load events from Redis cache (populated by news_sync_worker)."""
+    """Load events from the shared Redis cache when available."""
     try:
         from core.redis_state import state
+
         cached = state.get_sync(REDIS_EVENTS_KEY)
         if cached:
             events = json.loads(cached)
-            logger.info(f"[economic_calendar] Loaded {len(events)} events from Redis")
-            return events
-    except Exception as e:
-        logger.debug(f"[economic_calendar] Redis cache not available: {e}")
+            if not isinstance(events, list):
+                return []
+            normalized = []
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                item = dict(event)
+                raw_time = item.get("event_time")
+                if isinstance(raw_time, str) and raw_time:
+                    try:
+                        item["event_time"] = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+                    except Exception:
+                        item["event_time"] = None
+                normalized.append(item)
+            return normalized
+    except Exception as exc:
+        logger.debug("[economic_calendar] Redis cache unavailable: %s", exc)
     return []
 
 
 async def _load_events_from_db() -> list[dict]:
-    """Load events from EconomicEvent table in DB."""
+    """Load upcoming economic events from the DB cache when available."""
     try:
         from db.repository import get_economic_events
         from db.session import get_session, run_with_db_retry
@@ -99,22 +108,26 @@ async def _load_events_from_db() -> list[dict]:
         async def _fetch() -> list[dict]:
             async with get_session() as session:
                 events = await get_economic_events(session, hours_ahead=168)
-                return [
-                    {
-                        "title": e.title,
-                        "currency": e.currency,
-                        "impact": e.impact,
-                        "event_time": e.event_date,
-                        "source": e.source or "db",
-                    }
-                    for e in events
-                    if e.impact_level == "high"
-                ]
+                out = []
+                for event in events:
+                    impact = str(getattr(event, "impact", "") or "").lower()
+                    if impact not in {"high", "medium"}:
+                        continue
+                    out.append(
+                        {
+                            "title": getattr(event, "title", ""),
+                            "currency": getattr(event, "currency", ""),
+                            "impact": impact,
+                            "event_time": getattr(event, "event_date", None),
+                            "source": getattr(event, "source", None) or "db",
+                        }
+                    )
+                return out
 
         return await run_with_db_retry(_fetch)
-    except Exception as e:
-        logger.debug(f"[economic_calendar] DB not available: {e}")
-    return []
+    except Exception as exc:
+        logger.debug("[economic_calendar] DB cache unavailable: %s", exc)
+        return []
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +149,7 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
         "token": api_key,
     }
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
@@ -165,6 +178,73 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
         return []
 
 
+async def _fetch_forex_factory(from_dt: datetime, to_dt: datetime) -> list[dict]:
+    """Fetch the free weekly calendar feed used by Forex Factory/Fair Economy."""
+    if not _FOREX_FACTORY_URL:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT_SECONDS, follow_redirects=True) as client:
+            response = await client.get(
+                _FOREX_FACTORY_URL,
+                headers={"User-Agent": "SignalRankAI/1.0 economic-calendar"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, list):
+            return []
+
+        events: list[dict] = []
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+            impact = str(raw.get("impact") or "low").strip().lower()
+            if impact not in {"high", "medium"}:
+                continue
+            raw_time = raw.get("date") or raw.get("event_time") or raw.get("time")
+            try:
+                event_time = datetime.fromisoformat(str(raw_time).replace("Z", "+00:00"))
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=timezone.utc)
+                event_time = event_time.astimezone(timezone.utc)
+            except Exception:
+                continue
+            if event_time < from_dt or event_time > to_dt:
+                continue
+            events.append(
+                {
+                    "title": str(raw.get("title") or raw.get("event") or "Economic event"),
+                    "currency": str(raw.get("country") or raw.get("currency") or "").upper(),
+                    "impact": impact,
+                    "event_time": event_time,
+                    "forecast": raw.get("forecast"),
+                    "previous": raw.get("previous"),
+                    "actual": raw.get("actual"),
+                    "source": "forex_factory",
+                }
+            )
+        logger.info("[economic_calendar] Forex Factory feed returned %d events", len(events))
+        return events
+    except Exception as exc:
+        logger.warning("[economic_calendar] Forex Factory feed failed: %s", exc)
+        return []
+
+
+def _store_events_in_redis(events: list[dict]) -> None:
+    try:
+        from core.redis_state import state
+
+        serializable = []
+        for event in events:
+            item = dict(event)
+            event_time = item.get("event_time")
+            if isinstance(event_time, datetime):
+                item["event_time"] = event_time.isoformat()
+            serializable.append(item)
+        state.set_sync(REDIS_EVENTS_KEY, json.dumps(serializable), ex=_CACHE_TTL_SECONDS)
+    except Exception as exc:
+        logger.debug("[economic_calendar] Redis cache write unavailable: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # Main public API
 # ---------------------------------------------------------------------------
@@ -172,18 +252,12 @@ async def _fetch_finnhub(from_dt: datetime, to_dt: datetime) -> list[dict]:
 async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
     """Return a list of upcoming high-impact economic events.
 
-    Cache priority (first available wins):
-    1. Redis cache (populated by news_sync_worker) - fastest
-    2. DB EconomicEvent table - medium speed  
-    3. In-memory cache (from previous API calls)
-    4. Finnhub API - slowest, requires network
-    5. Static fallback - last resort
+    Results are cached for ``_CACHE_TTL_SECONDS`` seconds.  Pass
+    ``force_refresh=True`` to bypass the cache.
     """
     global _EVENTS_CACHE, _CACHE_FETCHED_AT
 
     now = datetime.now(tz=timezone.utc)
-    
-    # Check in-memory cache first
     if (
         not force_refresh
         and _CACHE_FETCHED_AT is not None
@@ -192,31 +266,32 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
     ):
         return _EVENTS_CACHE
 
-    # Try Redis cache first (fastest, from worker)
-    redis_events = await _load_events_from_redis()
-    if redis_events:
-        _EVENTS_CACHE = redis_events
-        _CACHE_FETCHED_AT = now
-        logger.info(f"[economic_calendar] Using Redis cache: {len(redis_events)} events")
-        return redis_events
-
-    # Try DB cache
-    db_events = await _load_events_from_db()
-    if db_events:
-        _EVENTS_CACHE = db_events
-        _CACHE_FETCHED_AT = now
-        logger.info(f"[economic_calendar] Using DB cache: {len(db_events)} events")
-        return db_events
-
-    # Fallback to API
     from_dt = now - timedelta(hours=1)
     to_dt = now + timedelta(days=7)
-    events = await _fetch_finnhub(from_dt, to_dt)
+
+    events = await _load_events_from_redis()
+    if events:
+        _EVENTS_CACHE = events
+        _CACHE_FETCHED_AT = now
+        return events
+
+    events = await _load_events_from_db()
+    if events:
+        _EVENTS_CACHE = events
+        _CACHE_FETCHED_AT = now
+        return events
+
+    events = await _fetch_forex_factory(from_dt, to_dt)
+    if not events:
+        events = await _fetch_finnhub(from_dt, to_dt)
 
     if not events:
         logger.warning(
             "[economic_calendar] All API providers failed; using fallback static list"
         )
+        # Emit a synthetic "unknown time" warning record so engine can still
+        # see there are events — callers check is_no_trade_zone() which will
+        # gracefully return False for events without event_time.
         events = [
             {**e, "event_time": None, "source": "fallback"}
             for e in _FALLBACK_EVENTS
@@ -224,6 +299,7 @@ async def fetch_economic_events(force_refresh: bool = False) -> list[dict]:
 
     _EVENTS_CACHE = events
     _CACHE_FETCHED_AT = now
+    _store_events_in_redis(events)
     logger.info(f"[economic_calendar] Cache refreshed: {len(events)} events")
     return events
 
@@ -325,17 +401,10 @@ def is_no_trade_zone_sync(
     dt: Optional[datetime] = None,
     buffer_minutes: int = NO_TRADE_BUFFER_MINUTES,
 ) -> bool:
-    """Synchronous wrapper for ``is_no_trade_zone`` — safe to call from sync code.
-    
-    FIX: Uses asyncio.to_thread() instead of asyncio.run() to avoid blocking
-    the event loop. asyncio.run() creates a NEW loop which conflicts with
-    any existing running loop.
-    """
+    """Synchronous wrapper for ``is_no_trade_zone`` — safe to call from sync code."""
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # Use asyncio.to_thread() to run async code in thread pool
-            # This is non-blocking and works correctly inside a running loop
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(
@@ -344,16 +413,8 @@ def is_no_trade_zone_sync(
                 )
                 return future.result(timeout=6.0)
         else:
-            # No running loop - we can use run_until_complete
             return loop.run_until_complete(is_no_trade_zone(symbol, dt, buffer_minutes))
-    except asyncio.RuntimeError as e:
-        # FIX: Handle "asyncio.run() cannot be called from a running event loop"
-        # This is the exact error that causes the silent starvation bug
-        logger.warning(f"[economic_calendar] is_no_trade_zone_sync blocked, using fallback: {e}")
-        # Return False (allow trading) as safe fallback instead of blocking
-        return False
-    except Exception as e:
-        logger.warning(f"[economic_calendar] is_no_trade_zone_sync error: {e}")
+    except Exception:
         return False
 
 
@@ -385,44 +446,25 @@ async def get_upcoming_events_summary(hours_ahead: int = 24) -> str:
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# Volatility Buffer - adjust SL/position size for high-impact news
-# ---------------------------------------------------------------------------
-
 async def get_volatility_buffer_info() -> dict:
+    """Return SL/position adjustments for current high-impact news windows."""
     if VOLATILITY_BUFFER_MULTIPLIER <= 1.0:
-        return {
-            'active': False,
-            'sl_multiplier': 1.0,
-            'position_reducer': 1.0,
-            'reason': '',
-        }
-
+        return {"active": False, "sl_multiplier": 1.0, "position_reducer": 1.0, "event": None}
     now = datetime.now(tz=timezone.utc)
     events = await fetch_economic_events()
-
-    buffer_window = 120
     for event in events:
-        if event.get('currency') != 'USD' or event.get('impact') != 'high':
+        if event.get("currency") != "USD" or event.get("impact") != "high":
             continue
-        event_time = event.get('event_time')
+        event_time = event.get("event_time")
         if event_time is None:
             continue
         if event_time.tzinfo is None:
             event_time = event_time.replace(tzinfo=timezone.utc)
-
-        delta_min = (event_time - now).total_seconds() / 60.0
-        if -buffer_window <= delta_min <= buffer_window:
+        if abs((now - event_time).total_seconds()) <= NO_TRADE_BUFFER_MINUTES * 60:
             return {
-                'active': True,
-                'sl_multiplier': VOLATILITY_BUFFER_MULTIPLIER,
-                'position_reducer': 1.0 / VOLATILITY_BUFFER_MULTIPLIER,
-                'reason': event.get('title', 'High Impact Event'),
+                "active": True,
+                "sl_multiplier": VOLATILITY_BUFFER_MULTIPLIER,
+                "position_reducer": 1.0 / VOLATILITY_BUFFER_MULTIPLIER,
+                "event": event,
             }
-
-    return {
-        'active': False,
-        'sl_multiplier': 1.0,
-        'position_reducer': 1.0,
-        'reason': '',
-    }
+    return {"active": False, "sl_multiplier": 1.0, "position_reducer": 1.0, "event": None}

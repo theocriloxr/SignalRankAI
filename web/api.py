@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -18,6 +19,7 @@ from db.repository import (
 from db.session import get_session, is_db_configured
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key")
 
@@ -48,17 +50,12 @@ async def get_user_by_apikey(
     if await state.rate_limited(ip_uid, limit=240, window_seconds=60):
         raise HTTPException(status_code=429, detail="Too many requests (ip)")
 
-    try:
-        async with get_session() as session:
-            owner = await get_api_token_owner(session, api_key, required_scope="signals:read")
-            await session.commit()
-            if owner is None:
-                raise HTTPException(status_code=401, detail="Invalid API key")
-            return int(owner)
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database unavailable")
+    async with get_session() as session:
+        owner = await get_api_token_owner(session, api_key, required_scope="signals:read")
+        await session.commit()
+        if owner is None:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        return int(owner)
 
 
 @app.get("/signals")
@@ -68,27 +65,22 @@ async def get_signals(
 ):
     if not is_db_configured():
         raise HTTPException(status_code=503, detail="Database unavailable")
-    try:
-        async with get_session() as session:
-            rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
-            await session.commit()
-            result = [
-                {
-                    "signal_id": r.signal_id,
-                    "asset": r.asset,
-                    "timeframe": r.timeframe,
-                    "direction": r.direction,
-                    "entry": r.entry,
-                    "stop_loss": r.stop_loss,
-                    "take_profit": r.take_profit,
-                    "score": r.score,
-                }
-                for r in rows[:limit]
-            ]
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database unavailable")
+    async with get_session() as session:
+        rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
+        await session.commit()
+        result = [
+            {
+                "signal_id": r.signal_id,
+                "asset": r.asset,
+                "timeframe": r.timeframe,
+                "direction": r.direction,
+                "entry": r.entry,
+                "stop_loss": r.stop_loss,
+                "take_profit": r.take_profit,
+                "score": r.score,
+            }
+            for r in rows[:limit]
+        ]
     return {"signals": result}
 
 
@@ -120,8 +112,9 @@ async def rotate_api_token(payload: dict):
             await session.commit()
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database unavailable")
+    except Exception as exc:
+        logger.warning("[api] token rotation unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"token": raw, "expires_at": expires.isoformat(), "scope": scope}
 
 
@@ -138,8 +131,9 @@ async def revoke_token(payload: dict):
             await session.commit()
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database unavailable")
+    except Exception as exc:
+        logger.warning("[api] token revoke unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail="Database unavailable") from exc
     return {"revoked": revoked}
 
 
@@ -149,14 +143,9 @@ async def get_current_token_meta(
 ):
     if not is_db_configured():
         raise HTTPException(status_code=503, detail="Database unavailable")
-    try:
-        async with get_session() as session:
-            meta = await get_latest_active_api_token_meta(session, int(telegram_user_id))
-            await session.commit()
-    except HTTPException:
-        raise
-    except Exception:
-        raise HTTPException(status_code=503, detail="Database unavailable")
+    async with get_session() as session:
+        meta = await get_latest_active_api_token_meta(session, int(telegram_user_id))
+        await session.commit()
     if meta is None:
         raise HTTPException(status_code=404, detail="No active token")
     return meta

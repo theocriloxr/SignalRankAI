@@ -20,111 +20,85 @@ from data.fetcher import async_get_candles, get_asset_type as _get_asset_type
 _audit_logger = logging.getLogger("audit")
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# SIGNAL STATUS CONSTANTS - Fix for "/signals says no signals" bug
-# ============================================================================
-# The bug: Command queries only for "active" or "unresolved" signals
-# while trades exist with status "issued", "open", "pending"
-# Solution: Use a consistent set of active statuses for ALL queries
-
-# All signal statuses that should be considered "active" (not resolved/expired)
-ACTIVE_SIGNAL_STATUSES = {
-    "issued",
-    "open", 
-    "active",
-    "pending"
-}
-
-# Reserved statuses that mean signal has a definitive outcome
+ACTIVE_SIGNAL_STATUSES = {"issued", "open", "active", "pending"}
 RESOLVED_SIGNAL_STATUSES = {
-    "tp", "tp1", "tp2", "tp3",      # Take profit hit
-    "sl",                                 # Stop loss hit
-    "invalid", "invalidated",              # Market moved against position
-    "missed", "time_stop",                # Price never reached entry
-    "cancelled", "cancel",                # Cancelled signal
-    "breakeven", "be",                    # Breakeven exit
+    "tp",
+    "tp1",
+    "tp2",
+    "tp3",
+    "sl",
+    "invalid",
+    "invalidated",
+    "missed",
+    "time_stop",
+    "cancelled",
+    "cancel",
+    "breakeven",
+    "be",
 }
+
+
+def _signals_env_int(name: str, default: int, minimum: int = 1, maximum: int = 200) -> int:
+    try:
+        return max(minimum, min(maximum, int(float(os.getenv(name, str(default)) or default))))
+    except Exception:
+        return default
+
+def _signals_env_float(name: str, default: float, minimum: float = 1.0, maximum: float = 60.0) -> float:
+    try:
+        return max(minimum, min(maximum, float(os.getenv(name, str(default)) or default)))
+    except Exception:
+        return default
+
+async def _fetch_user_delivered_signals_fast(telegram_user_id: int, *, lookback_days: int, limit: int, status_filter: str = "active"):
+    from db.pg_features import list_delivered_signals_for_user
+    async with get_session() as session:
+        rows = await list_delivered_signals_for_user(
+            session,
+            telegram_user_id=int(telegram_user_id),
+            lookback_days=int(lookback_days),
+            status_filter=str(status_filter),
+            sent_ok_only=True,
+            limit=int(limit),
+        )
+        await session.commit()
+        return list(rows or [])
 
 
 def _is_signal_active(signal_row) -> bool:
-    """Check if a signal should be considered active/unresolved.
-    
-    A signal is active if:
-    - It has no outcome recorded (not resolved)
-    - It's not explicitly marked as expired
-    - It's not archived
-    """
+    """Return whether a signal row should be treated as active/unresolved."""
     try:
-        # No outcome = still active
-        has_outcome = False
-        try:
-            from sqlalchemy import select
-            from db.models import Outcome
-            from db.session import get_session
-            
-            # Quick check - don't need full session for this
-            engine = get_engine_for_event_loop()
-            if engine is not None:
-                import asyncio
-                async def _check():
-                    async with get_session() as session:
-                        result = await session.execute(
-                            select(Outcome.id).where(Outcome.signal_id == str(signal_row.signal_id)).limit(1)
-                        )
-                        return result.scalar_one_or_none() is not None
-                has_outcome = asyncio.get_event_loop().run_until_complete(_check())
-        except Exception:
-            pass
-        
-        if has_outcome:
+        if getattr(signal_row, "expired", False) or getattr(signal_row, "archived", False):
             return False
-        
-        # Check flags
-        if getattr(signal_row, 'expired', False):
+        status = str(getattr(signal_row, "status", "") or "").strip().lower()
+        if status in RESOLVED_SIGNAL_STATUSES:
             return False
-        if getattr(signal_row, 'archived', False):
-            return False
-            
         return True
     except Exception:
-        return True  # Default to active on error
+        return True
 
 
 def _get_signal_status_display(signal_row, outcome_status: str = None) -> str:
-    """Get human-readable status for a signal.
-    
-    Args:
-        signal_row: Signal database row
-        outcome_status: Outcome status string if outcome exists
-    """
+    """Return a compact human-readable signal status."""
     if outcome_status:
-        status_str = str(outcome_status).upper()
-        if status_str.startswith('TP'):
-            return f"✅ WIN ({status_str})"
-        elif status_str == 'SL':
-            return "❌ STOP LOSS"
-        elif status_str in {'INVALID', 'INVALIDATED'}:
-            return "⚠️ INVALIDATED (SL hit before entry)"
-        elif status_str in {'MISSED', 'TIME_STOP'}:
-            return "⏰ MISSED (price never reached entry)"
-        else:
-            return f"📊 {status_str}"
-    
-    # Check signal flags
-    if getattr(signal_row, 'expired', False):
-        return "⏰ EXPIRED"
-    if getattr(signal_row, 'archived', False):
-        return "📦 ARCHIVED"
-    
-    return "🟢 ACTIVE"
-
+        status = str(outcome_status or "").upper()
+        if status.startswith("TP"):
+            return f"WIN ({status})"
+        if status == "SL":
+            return "STOP LOSS"
+        if status in {"INVALID", "INVALIDATED"}:
+            return "INVALIDATED"
+        if status in {"MISSED", "TIME_STOP"}:
+            return "MISSED"
+        return status
+    if getattr(signal_row, "expired", False):
+        return "EXPIRED"
+    if getattr(signal_row, "archived", False):
+        return "ARCHIVED"
+    return "ACTIVE"
 
 async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show user's signals with tier-specific formatting.
-    
-    FIX: Now fetches ALL signals including resolved/invalidated ones to show users what happened.
-    Shows status info: Active, Invalidated (SL hit before entry), Missed, Expired.
-    """
+    """Show user's signals with tier-specific formatting."""
     if await _public_guard(update):
         return
     if update.message is None and getattr(update, "callback_query", None) is not None:
@@ -136,8 +110,24 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     
     user_id: int = update.effective_user.id
+    try:
+        from signalrank_telegram.commands import maybe_prompt_timezone
+        await maybe_prompt_timezone(update.message, int(user_id))
+    except Exception:
+        pass
     tier: str = _effective_tier(user_id)
     show_unvoted_only: bool = False
+    display_timezone = None
+    try:
+        async def _load_tz():
+            async with get_session() as _timezone_session:
+                _timezone_user = (await _timezone_session.execute(
+                    select(User).where(User.telegram_user_id == int(user_id))
+                )).scalar_one_or_none()
+                return getattr(_timezone_user, "timezone", None)
+        display_timezone = await asyncio.wait_for(_load_tz(), timeout=2.0)
+    except Exception:
+        display_timezone = None
     
     try:
         arg0 = str((context.args or [""])[0] or "").strip().lower()
@@ -194,11 +184,18 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # FREE tier: show last 5 delivered signals from today
     if tier_rank(tier) < tier_rank("PREMIUM"):
         try:
-            from db.pg_features import list_signals_sent_today
-            async with get_session() as session:
-                rows = await list_signals_sent_today(session, telegram_user_id=int(user_id))
-                signals_list = []
-                for r in rows:
+            db_timeout = _signals_env_float("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS", 8.0, 2.0, 30.0)
+            rows = await asyncio.wait_for(
+                _fetch_user_delivered_signals_fast(
+                    int(user_id),
+                    lookback_days=_signals_env_int("SIGNALS_COMMAND_LOOKBACK_DAYS", 7, 1, 30),
+                    limit=_signals_env_int("SIGNALS_COMMAND_LIMIT", 5, 1, 20),
+                    status_filter="active",
+                ),
+                timeout=db_timeout,
+            )
+            signals_list = []
+            for r in rows:
                     sig_dict = {
                         "signal_id": r.signal_id,
                         "asset": r.asset,
@@ -210,6 +207,8 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         "rr_ratio": r.rr_estimate,
                         "score": r.score,
                         "created_at": getattr(r, "created_at", None),
+                        "display_timezone": display_timezone,
+                        "display_telegram_user_id": int(user_id),
                     }
                     try:
                         sig_dict = enrich_signal_with_live_price(sig_dict)
@@ -244,142 +243,60 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         )
                 except Exception as e:
                     _audit_logger.error(f"Error formatting free signal for {user_id}: {e}")
-                await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
-                return
+            await update.message.reply_text("👆 Upgrade to PREMIUM for full signal intelligence.")
+            return
+        except asyncio.TimeoutError:
+            _audit_logger.warning("[signals_command] FREE query timed out user=%s", user_id)
+            await update.message.reply_text("⚠️ /signals is busy right now. Delivery is still running; try again in a moment or use /delivery_debug with a signal ID.")
+            return
         except Exception as e:
             _audit_logger.error(f"signals_command FREE tier error for {user_id}: {e}")
     
-# PREMIUM/VIP: ALL signals from last 48 hours including resolved/invalidated ones
-    # FIX: Show signals regardless of sent_ok status (delivery may have failed but signal exists)
-    # This fixes the issue where "No active unresolved signals" shows despite stored signals
-    all_signals = []
+    # PREMIUM/VIP: unresolved active signals from last 30 days
+    unresolved_signals = []
     try:
-        from sqlalchemy import select
-        from db.models import Signal, SignalDelivery, User, Outcome
-        from datetime import datetime, timedelta, timezone
-        
-        async with get_session() as session:
-            # Get user
-            user_row = (await session.execute(
-                select(User).where(User.telegram_user_id == int(user_id)).limit(1)
-            )).scalar_one_or_none()
-            
-            if user_row is None:
-                await update.message.reply_text("⚠️ User not found. Start with /start")
-                return
-            
-# FIX: Get signals from last 48 hours - NO sent_ok filter
-            # This ensures signals without successful delivery still show
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
-            
-            # CRITICAL FIX: Remove sent_ok filter to show ALL delivered signals
-            # The old filter .where(SignalDelivery.sent_ok.is_(True)) caused:
-            # "No active unresolved signals" while trades existed in DB
-            # Signals can exist without successful delivery (network errors, etc)
-            # We now show ALL signals delivered to user regardless of sent_ok
-            rows = (
-                await session.execute(
-                    select(Signal, SignalDelivery.delivered_at)
-                    .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
-                    .where(
-                        SignalDelivery.user_id == user_row.id,
-                        # REMOVED: SignalDelivery.sent_ok.is_(True) - was causing "no signals" bug
-                        SignalDelivery.delivered_at >= cutoff,
-                    )
-                    .order_by(SignalDelivery.delivered_at.desc())
-                    .limit(50)
-                )
-            ).all()
-            
-            # Get outcomes for these signals
-            signal_ids = [r[0].signal_id for r in rows]
-            outcomes_map = {}
-            if signal_ids:
-                outcome_rows = (
-                    await session.execute(
-                        select(Outcome.signal_id, Outcome.status)
-                        .where(Outcome.signal_id.in_(signal_ids))
-                    )
-                ).all()
-                outcomes_map = {row[0]: row[1] for row in outcome_rows}
-            
-            # Build signal dicts with status info
-            for sig_row, delivered_at in rows:
-                outcome_status = outcomes_map.get(sig_row.signal_id)
-                status_str = str(outcome_status).upper() if outcome_status else None
-                
-                # Determine signal status display
-                if status_str:
-                    if status_str.startswith('TP'):
-                        signal_status = f"✅ WIN ({status_str})"
-                    elif status_str == 'SL':
-                        signal_status = "❌ STOP LOSS"
-                    elif status_str in {'INVALID', 'INVALIDATED'}:
-                        signal_status = "⚠️ INVALIDATED (SL hit before entry)"
-                    elif status_str in {'MISSED', 'TIME_STOP'}:
-                        signal_status = "⏰ MISSED (price never reached entry)"
-                    else:
-                        signal_status = f"📊 {status_str}"
-                elif getattr(sig_row, 'expired', False):
-                    signal_status = "⏰ EXPIRED"
-                else:
-                    signal_status = "🟢 ACTIVE"
-                
-                all_signals.append({
-                    "signal_id": sig_row.signal_id,
-                    "asset": sig_row.asset,
-                    "timeframe": sig_row.timeframe,
-                    "direction": sig_row.direction,
-                    "entry": sig_row.entry,
-                    "stop_loss": sig_row.stop_loss,
-                    "take_profit": sig_row.take_profit,
-                    "rr_ratio": sig_row.rr_estimate,
-                    "score": sig_row.score,
-                    "regime": getattr(sig_row, 'regime', 'NEUTRAL'),
-                    "strategy_name": sig_row.strategy_name,
-                    "created_at": sig_row.created_at,
-                    "signal_status": signal_status,
-                })
+        db_timeout = _signals_env_float("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS", 8.0, 2.0, 30.0)
+        rows = await asyncio.wait_for(
+            _fetch_user_delivered_signals_fast(
+                int(user_id),
+                lookback_days=_signals_env_int("SIGNALS_COMMAND_LOOKBACK_DAYS", 7, 1, 30),
+                limit=_signals_env_int("SIGNALS_COMMAND_LIMIT", 8, 1, 25),
+                status_filter="active",
+            ),
+            timeout=db_timeout,
+        )
+        unresolved_signals = [
+                {
+                    "signal_id": r.signal_id,
+                    "asset": r.asset,
+                    "timeframe": r.timeframe,
+                    "direction": r.direction,
+                    "entry": r.entry,
+                    "stop_loss": r.stop_loss,
+                    "take_profit": r.take_profit,
+                    "rr_ratio": r.rr_estimate,
+                    "score": r.score,
+                    "confidence": getattr(r, 'confidence', 0.5),
+                    "regime": getattr(r, 'regime', 'NEUTRAL'),
+                    "strength": getattr(r, 'strength', 0.5),
+                    "ml_probability": getattr(r, 'ml_probability', 0.5),
+                    "strategy_name": r.strategy_name,
+                    "strategy_group": r.strategy_group,
+                    "created_at": r.created_at,
+                    "display_timezone": display_timezone,
+                    "display_telegram_user_id": int(user_id),
+                }
+                for r in rows
+            ]
+    except asyncio.TimeoutError:
+        _audit_logger.warning("[signals_command] query timed out user=%s", user_id)
+        await update.message.reply_text("⚠️ /signals is busy right now. The bot is still delivering/tracking signals. Try again shortly or use /delivery_debug <signal_id>.")
+        return
     except Exception as e:
-        _audit_logger.error(f"Error fetching signals for {user_id}: {e}")
+        _audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
     
-    # Try fallback to unresolved if the new function fails
-    if not all_signals:
-        try:
-            from db.pg_features import list_unresolved_signals_for_user
-            async with get_session() as session:
-                rows = await list_unresolved_signals_for_user(
-                    session,
-                    telegram_user_id=int(user_id),
-                    lookback_days=30,
-                )
-                all_signals = [
-                    {
-                        "signal_id": r.signal_id,
-                        "asset": r.asset,
-                        "timeframe": r.timeframe,
-                        "direction": r.direction,
-                        "entry": r.entry,
-                        "stop_loss": r.stop_loss,
-                        "take_profit": r.take_profit,
-                        "rr_ratio": r.rr_estimate,
-                        "score": r.score,
-                        "confidence": getattr(r, 'confidence', 0.5),
-                        "regime": getattr(r, 'regime', 'NEUTRAL'),
-                        "strength": getattr(r, 'strength', 0.5),
-                        "ml_probability": getattr(r, 'ml_probability', 0.5),
-                        "strategy_name": r.strategy_name,
-                        "strategy_group": r.strategy_group,
-                        "created_at": r.created_at,
-                        "outcome_status": None,
-                    }
-                    for r in rows
-                ]
-        except Exception as e:
-            _audit_logger.error(f"Error fetching unresolved signals for {user_id}: {e}")
-    
-    all_signals = await _filter_unvoted(all_signals)
-    filtered_signals = all_signals  # PREMIUM/VIP get all signals
+    unresolved_signals = await _filter_unvoted(unresolved_signals)
+    filtered_signals = unresolved_signals  # PREMIUM/VIP get all unresolved
     
     if not filtered_signals:
         await update.message.reply_text(

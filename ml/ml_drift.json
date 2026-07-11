@@ -1,6 +1,6 @@
 {
-  "accuracy": 0.6583333333333333,
-  "auc": 0.7088661551577152,
+  "accuracy": 0.65,
+  "auc": 0.6847115657857346,
   "feature_means": {
     "score_normalized": 0.6612049341201782,
     "risk_reward_ratio": 1.762264370918274,
@@ -36,8 +36,6 @@
     "minutes_until_high_impact_news": 203.74961853027344,
     "news_event_impact_score": 0.36162683367729187,
     "spx_trend": -0.0006230625440366566,
-    "btc_corr": 0.15229515731334686,
-    "asset_enc": 3.43666672706604,
-    "timeframe_enc": 1.6341667175292969
+    "btc_corr": 0.15229515731334686
   }
 }

@@ -92,7 +92,7 @@ class SignalMonitor:
             from sqlalchemy import select
             from core.tier_constants import ACTIVE_SIGNAL_LOOKBACK_HOURS
             
-            async with get_session() as session:
+            async with get_session(noncritical=True) as session:
                 # Get signals created in last N hours that are not archived
                 cutoff = datetime.utcnow() - timedelta(hours=ACTIVE_SIGNAL_LOOKBACK_HOURS)
                 stmt = select(Signal).where(
@@ -202,7 +202,7 @@ class SignalMonitor:
             from db.models import SignalDelivery
             from sqlalchemy import select
             
-            async with get_session() as session:
+            async with get_session(noncritical=True) as session:
                 stmt = select(SignalDelivery.user_id).where(
                     SignalDelivery.signal_id == signal_id
                 ).distinct()
@@ -220,7 +220,7 @@ class SignalMonitor:
             from db.models import Signal
             from sqlalchemy import select, update
             
-            async with get_session() as session:
+            async with get_session(noncritical=True) as session:
                 stmt = update(Signal).where(
                     Signal.signal_id == signal_id
                 ).values(archived=True)

@@ -205,6 +205,37 @@ def build_outcome_payload(signal_id: str, outcome: str, data: dict) -> dict:
 
 # ─── Signature ────────────────────────────────────────────────────────────────
 
+def generate_webhook_payload(signal: dict) -> dict:
+    """
+    Backward-compatible signal webhook payload builder.
+
+    Older integrations import this function directly. Keep it as a thin wrapper
+    around the canonical native payload while attaching explanation metadata.
+    """
+    payload = build_native_payload(signal)
+    try:
+        from engine.signal_explainability import build_signal_explanation
+
+        explanation = build_signal_explanation(signal)
+    except Exception as exc:
+        logger.debug("[webhook] explanation metadata unavailable: %s", exc)
+        explanation = {}
+
+    technical_reason = str(
+        signal.get("technical_reason")
+        or signal.get("trade_logic")
+        or signal.get("setup_rationale")
+        or payload.get("trade_logic")
+        or ""
+    ).strip()
+
+    payload["meta"] = {
+        "technical_reason": technical_reason,
+        "explanation": explanation,
+    }
+    return payload
+
+
 def sign_payload(payload: dict) -> str:
     """
     Generate HMAC-SHA256 signature for a payload.
@@ -345,6 +376,7 @@ __all__ = [
     "build_pinescript_payload",
     "build_cornix_payload",
     "build_outcome_payload",
+    "generate_webhook_payload",
     "dispatch_webhook",
     "broadcast_signal_webhook",
     "broadcast_outcome_webhook",

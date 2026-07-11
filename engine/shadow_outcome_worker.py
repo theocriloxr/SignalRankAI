@@ -54,7 +54,7 @@ class ShadowOutcomeWorker:
                 try:
                     cutoff = datetime.utcnow() - timedelta(minutes=self._min_age_minutes)
                     
-                    async with get_session() as session:
+                    async with get_session(noncritical=True) as session:
                         # 1. Fetch a batch of untracked signals
                         stmt = (
                             select(MLRejectedSignal)

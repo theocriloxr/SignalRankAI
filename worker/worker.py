@@ -1,3 +1,4 @@
+
 #
 # SignalRankAI Async Worker Entrypoint
 #
@@ -19,10 +20,47 @@ import threading
 from typing import Optional
 
 from core.redis_state import state
-from db.session import get_session, run_with_db_retry, is_db_configured
+from db.session import get_session, run_with_db_retry, is_db_configured, is_transient_db_error
 from db.repository import expire_subscriptions
 
 logger = logging.getLogger(__name__)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _env_bool_any(names: tuple[str, ...], default: bool = False) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None:
+            return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
+    return bool(default)
+
+
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float((os.getenv(name) or str(default)).strip()))
+    except Exception:
+        return float(default)
+
+
+def _is_railway_runtime() -> bool:
+    markers = (
+        "RAILWAY_SERVICE_NAME",
+        "RAILWAY_ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_PROJECT_ID",
+        "RAILWAY_SERVICE_ID",
+        "RAILWAY_DEPLOYMENT_ID",
+        "RAILWAY_REPLICA_ID",
+    )
+    return any(bool((os.getenv(name) or "").strip()) for name in markers)
+
+
 
 
 class Worker:
@@ -66,14 +104,41 @@ class Worker:
     async def run(self) -> None:
         heartbeat_interval_s = max(60, int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "300") or 300))
         managed_tasks: dict[str, dict[str, object]] = {}
+        running_on_railway = _is_railway_runtime()
+        task_stagger_s = _env_float(
+            "WORKER_TASK_START_STAGGER_SECONDS",
+            3.0 if running_on_railway else 0.0,
+            minimum=0.0,
+        )
+        restart_base_s = _env_float("WORKER_TASK_RESTART_BASE_SECONDS", 5.0, minimum=1.0)
+        restart_db_base_s = _env_float(
+            "WORKER_TASK_DB_RESTART_BASE_SECONDS",
+            60.0 if running_on_railway else 15.0,
+            minimum=5.0,
+        )
+        restart_max_s = _env_float("WORKER_TASK_RESTART_MAX_SECONDS", 300.0, minimum=restart_base_s)
+
+        async def _delayed_start(name: str, factory, delay_s: float):
+            if delay_s > 0:
+                logger.info("[worker] task %s scheduled after %.1fs startup stagger", name, delay_s)
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=delay_s)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+            return await factory()
 
         def _register_task(name: str, factory, restart_on_failure: bool = True) -> None:
             try:
-                task = self._spawn_task(name, factory())
+                delay_s = task_stagger_s * len(managed_tasks)
+                task = self._spawn_task(name, _delayed_start(name, factory, delay_s))
                 managed_tasks[name] = {
                     "task": task,
                     "factory": factory,
                     "restart": bool(restart_on_failure),
+                    "restart_count": 0,
+                    "next_restart_at": 0.0,
+                    "restart_pending": False,
                 }
                 logger.info("[worker] task started: %s", name)
             except Exception as exc:
@@ -81,19 +146,11 @@ class Worker:
 
         _register_task("expiry_loop", lambda: self._expiry_loop(), restart_on_failure=True)
 
-        # News sync worker - fetches economic calendar every 6 hours
-        # This populates the economic_events table for news filter
-        _enable_news_sync = str(os.getenv("WORKER_NEWS_SYNC_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
-        if _enable_news_sync:
-            try:
-                from worker.news_sync_worker import start_news_sync_worker as _start_news
-                _register_task("news_sync", lambda: _start_news(), restart_on_failure=True)
-                logger.info("[worker] NewsSyncWorker started")
-            except Exception as e:
-                logger.warning("[worker] Failed to start news sync worker: %s", e)
-
-        # Start real-time TP/SL outcome tracker
-        _enable_worker_tracker = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        # Start real-time TP/SL outcome tracker — this is the core monitoring loop
+        # that detects when signals hit their targets and notifies users.
+        # Default to ON in all deployments so every generated signal is tracked.
+        # Override with WORKER_OUTCOME_TRACKER_ENABLED=0 to explicitly disable.
+        _enable_worker_tracker = _env_bool_any(("WORKER_OUTCOME_TRACKER_ENABLED", "REALTIME_OUTCOME_TRACKER_ENABLED"), True)
         if _enable_worker_tracker:
             try:
                 from engine.realtime_outcome_tracker import outcome_tracker
@@ -101,13 +158,12 @@ class Worker:
                 logger.info("[worker] RealtimeOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
-        
-# Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = str(os.getenv("WORKER_SHADOW_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        # Start shadow outcome tracker for ML-rejected signals
+        _enable_shadow = _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), True)
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
-                _register_task("shadow_outcome_tracker", lambda: shadow_outcome_worker.start(), restart_on_failure=True)
+                _register_task("shadow_outcome_tracker", lambda: self._shadow_outcome_tracker_loop(shadow_outcome_worker), restart_on_failure=True)
                 logger.info("[worker] ShadowOutcomeTracker started")
             except Exception as e:
                 logger.warning("[worker] Failed to start shadow outcome tracker: %s", e)
@@ -140,27 +196,24 @@ class Worker:
                 logger.exception("[worker] Failed to start WS ingestor")
 
         # ML daily retrain loop (optional)
-        # FIX: ML training runs directly in the async event loop using await
-        # Previously used asyncio.to_thread() which doesn't work with async functions
         if config.ML_TRAIN_ENABLED:
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
-                logger.info("[worker] ML train loop registered")
             except Exception as e:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
-        # Data drift monitor loop (enabled by default)
+        # Data drift monitor loop (enabled by default).
         if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start drift monitor loop: %s", e)
-        
         import time
         last_heartbeat = time.time()
         try:
             while not self._stop.is_set():
                 await asyncio.sleep(1.0)
+                now_mono = time.monotonic()
                 for name, spec in list(managed_tasks.items()):
                     task = spec.get("task")
                     if not isinstance(task, asyncio.Task):
@@ -171,12 +224,36 @@ class Worker:
                     restart = bool(spec.get("restart", False))
                     if restart and not self._stop.is_set():
                         try:
+                            exc: BaseException | None = None
+                            if not task.cancelled():
+                                with contextlib.suppress(Exception):
+                                    exc = task.exception()
+                            if not bool(spec.get("restart_pending", False)):
+                                restart_count = int(spec.get("restart_count", 0) or 0) + 1
+                                spec["restart_count"] = restart_count
+                                if exc is not None and is_transient_db_error(exc):
+                                    delay_s = min(restart_max_s, restart_db_base_s * (2 ** min(restart_count - 1, 4)))
+                                else:
+                                    delay_s = min(restart_max_s, restart_base_s * (2 ** min(restart_count - 1, 4)))
+                                spec["next_restart_at"] = now_mono + delay_s
+                                spec["restart_pending"] = True
+                                logger.warning(
+                                    "[worker] task %s ended; restart scheduled in %.1fs (attempt=%s db_error=%s)",
+                                    name,
+                                    delay_s,
+                                    restart_count,
+                                    bool(exc is not None and is_transient_db_error(exc)),
+                                )
+                                continue
+                            if now_mono < float(spec.get("next_restart_at", 0.0) or 0.0):
+                                continue
                             factory = spec.get("factory")
                             if factory is None:
                                 continue
                             logger.warning("[worker] restarting crashed task: %s", name)
                             new_task = self._spawn_task(name, factory())
                             spec["task"] = new_task
+                            spec["restart_pending"] = False
                         except Exception as exc:
                             logger.error("[worker] failed to restart task %s: %s", name, exc, exc_info=True)
 
@@ -202,12 +279,12 @@ class Worker:
                 logger.info("[worker] task stopped: %s", name)
 
     async def _expiry_loop(self) -> None:
-        """Runs periodically - cleans up expired subscriptions."""
+        # Runs periodically; safe no-op when DATABASE_URL not configured.
         while not self._stop.is_set():
             try:
                 if is_db_configured():
                     async def _do_expire() -> None:
-                        async with get_session() as session:
+                        async with get_session(noncritical=True) as session:
                             _ = await expire_subscriptions(session)
                             await session.commit()
                     await run_with_db_retry(_do_expire)
@@ -217,33 +294,38 @@ class Worker:
 
     async def _ml_train_loop(self) -> None:
         """Periodically retrain the ML model from Postgres outcomes."""
-        # ADDED: Debug log to confirm function is being called
-        logger.info("[worker] INSIDE ML TRAIN LOOP - function entered")
-        
+        # Import inside to avoid startup failures if deps missing in minimal envs
         try:
             from ml import train_model as ml_train
-            logger.info("[worker] ML train_model import succeeded")
-        except Exception as exc:
-            logger.error("[worker] ML train loop disabled (import failed): %s", exc, exc_info=True)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("[worker] ML train loop disabled (import failed): %s", exc)
             return
 
         interval = max(3600, int(getattr(config, "ML_TRAIN_INTERVAL_SECONDS", 86400) or 86400))
-        logger.info("[worker] ML train loop interval set to %s seconds", interval)
+        initial_delay = _env_float(
+            "ML_TRAIN_STARTUP_DELAY_SECONDS",
+            300.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            logger.info("[worker] ML train loop delayed %.1fs to avoid startup DB pressure", initial_delay)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
 
         while not self._stop.is_set():
             try:
-                # FIX: ml_train.main is an async function, so we await it directly
-                # Previously used asyncio.to_thread() which doesn't work with async functions
-                # and causes silent failures with no logs
-                logger.info("[worker] ML training starting...")
                 ok = await ml_train.main()
                 if ok:
                     logger.info("[worker] ML model retrained successfully")
                 else:
                     logger.info("[worker] ML model retrain skipped/failed (insufficient data)")
-            except Exception as exc:
+            except Exception as exc:  # pragma: no cover
                 logger.error("[worker] ML train loop error: %s", exc)
 
+            # Sleep until next window or until stop requested
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
@@ -267,10 +349,20 @@ class Worker:
 
     async def _drift_monitor_loop(self) -> None:
         """Compare live feature distributions against baseline and alert admins on drift."""
-        import time as drift_time
         interval = max(900, int(os.getenv("ML_DRIFT_CHECK_INTERVAL_SECONDS", "3600") or 3600))
         psi_threshold = float(os.getenv("ML_DRIFT_PSI_THRESHOLD", "0.25") or 0.25)
         retrain_on_drift = str(os.getenv("ML_DRIFT_RETRAIN_ON_DETECT", "1")).strip().lower() in {"1", "true", "yes", "on"}
+        initial_delay = _env_float(
+            "ML_DRIFT_STARTUP_DELAY_SECONDS",
+            180.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
 
         while not self._stop.is_set():
             try:
@@ -303,7 +395,7 @@ class Worker:
                     try:
                         state.set_sync("signalrankai:ml:drift:mode", "penalize", ex=max(1800, interval * 2))
                         state.set_sync("signalrankai:ml:drift:severity", f"{severity:.6f}", ex=max(1800, interval * 2))
-                        state.set_sync("signalrankai:ml:drift:detected_at", str(drift_time.time()), ex=max(1800, interval * 2))
+                        state.set_sync("signalrankai:ml:drift:detected_at", str(time.time()), ex=max(1800, interval * 2))
                     except Exception:
                         pass
                     await self._notify_admin_drift(result)
@@ -349,6 +441,28 @@ class Worker:
             with contextlib.suppress(Exception):
                 await outcome_tracker.stop()
 
+    async def _shadow_outcome_tracker_loop(self, shadow_outcome_worker) -> None:
+        await shadow_outcome_worker.start()
+        try:
+            while not self._stop.is_set():
+                task = getattr(shadow_outcome_worker, "_task", None)
+                if isinstance(task, asyncio.Task) and task.done():
+                    exc = None
+                    try:
+                        exc = task.exception()
+                    except Exception:
+                        exc = None
+                    if exc is not None:
+                        raise exc
+                    break
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    continue
+        finally:
+            with contextlib.suppress(Exception):
+                await shadow_outcome_worker.stop()
+
     async def _notify_admin_drift(self, result: dict) -> None:
         token = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
         if not token:
@@ -390,17 +504,22 @@ async def _amain() -> None:
     def _handle_sig(*_: object) -> None:
         worker.request_stop()
 
+    # NOTE: `loop.add_signal_handler` only works in the main thread on Unix.
+    # In RUN_MODE=all we run the worker in a background thread, so skip
+    # installing signal handlers there.
     if threading.current_thread() is threading.main_thread():
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, _handle_sig)
             except NotImplementedError:
+                # Windows event loop may not support add_signal_handler
                 pass
 
     await worker.run()
 
 
 def main() -> None:
+    # Worker is a long-running loop; do not apply run_sync timeout.
     run_sync(_amain(), timeout=None)
 
 

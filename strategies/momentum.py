@@ -1,5 +1,6 @@
 from .base import BaseStrategy
 from .dynamic_targets import calculate_dynamic_targets
+from data.indicator_schema import normalize_indicator_schema
 
 
 def momentum_strategies(asset, timeframe, market_data):
@@ -51,8 +52,8 @@ class RSIMomentumStrategy(BaseStrategy):
     name = "RSI Momentum"
     
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         
@@ -125,8 +126,8 @@ class MACDMomentumStrategy(BaseStrategy):
     name = "MACD Momentum"
     
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         
@@ -197,8 +198,8 @@ class StochRSIMomentumStrategy(BaseStrategy):
     name = "Stoch RSI Momentum"
     
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         

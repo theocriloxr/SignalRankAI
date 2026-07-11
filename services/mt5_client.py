@@ -434,7 +434,13 @@ async def link_mt5_account(
     from db.session import get_session
     from db.repository import get_or_create_user
 
-    result: Dict[str, Any] = {"success": False, "metaapi_account_id": None, "error": None}
+    result: Dict[str, Any] = {
+        "success": False,
+        "credentials_saved": False,
+        "executable": False,
+        "metaapi_account_id": None,
+        "error": None,
+    }
 
     if not is_encryption_available():
         result["error"] = "Encryption not configured (ENCRYPTION_KEY missing)"
@@ -507,6 +513,8 @@ async def link_mt5_account(
             )
             await session.commit()
             result["success"] = True
+            result["credentials_saved"] = True
+            result["executable"] = bool(metaapi_account_id)
             result["metaapi_account_id"] = metaapi_account_id
     except Exception as exc:
         result["error"] = f"DB save failed: {exc}"
@@ -539,3 +547,95 @@ async def get_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
             return r[0] if r and r[0] else None
     except Exception:
         return None
+
+
+async def ensure_user_mt5_account_id(telegram_user_id: int) -> Optional[str]:
+    """Return an executable MetaApi account id, reprovisioning saved MT5 credentials if needed."""
+    existing = await get_user_mt5_account_id(int(telegram_user_id))
+    if existing:
+        return existing
+    if not _check_token():
+        return None
+    try:
+        from db.session import get_session
+        from services.security import decrypt_secret
+        from sqlalchemy import text
+
+        async with get_session() as session:
+            row = await session.execute(
+                text(
+                    """
+                    SELECT c.mt5_login, c.password_encrypted, c.server
+                    FROM   mt5_credentials c
+                    JOIN   users u ON u.id = c.user_id
+                    WHERE  u.telegram_user_id = :tid
+                    ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC NULLS LAST
+                    LIMIT 1
+                    """
+                ),
+                {"tid": int(telegram_user_id)},
+            )
+            found = row.fetchone()
+        if not found:
+            return None
+        password = decrypt_secret(str(found[1] or ""))
+        if not password:
+            logger.warning("[mt5_client] saved MT5 credentials could not be decrypted for user=%s", telegram_user_id)
+            return None
+        result = await link_mt5_account(
+            telegram_user_id=int(telegram_user_id),
+            mt5_login=str(found[0] or ""),
+            mt5_password=password,
+            mt5_server=str(found[2] or ""),
+        )
+        return str(result.get("metaapi_account_id") or "").strip() or None
+    except Exception:
+        logger.debug("[mt5_client] ensure account id failed", exc_info=True)
+        return None
+
+
+async def get_user_mt5_link_status(telegram_user_id: int) -> Dict[str, Any]:
+    """Return MT5 linked/executable state for a Telegram user."""
+    status: Dict[str, Any] = {
+        "linked": False,
+        "executable": False,
+        "metaapi_account_id": None,
+        "mt5_login": None,
+        "server": None,
+    }
+    try:
+        from db.session import get_session
+        from sqlalchemy import text
+        async with get_session() as session:
+            row = await session.execute(
+                text(
+                    """
+                    SELECT c.mt5_login, c.server, c.metaapi_account_id
+                    FROM   mt5_credentials c
+                    JOIN   users u ON u.id = c.user_id
+                    WHERE  u.telegram_user_id = :tid
+                    ORDER BY c.updated_at DESC NULLS LAST, c.created_at DESC NULLS LAST
+                    LIMIT 1
+                    """
+                ),
+                {"tid": int(telegram_user_id)},
+            )
+            found = row.fetchone()
+        if not found:
+            return status
+        status["linked"] = True
+        status["mt5_login"] = found[0]
+        status["server"] = found[1]
+        status["metaapi_account_id"] = found[2]
+        status["executable"] = bool(found[2])
+
+        # Credentials may be saved while MetaApi provisioning was temporarily
+        # unavailable. Re-attempt provisioning on status checks when possible.
+        if status["linked"] and not status["executable"]:
+            recovered_account_id = await ensure_user_mt5_account_id(int(telegram_user_id))
+            if recovered_account_id:
+                status["metaapi_account_id"] = recovered_account_id
+                status["executable"] = True
+    except Exception:
+        logger.debug("[mt5_client] get link status failed", exc_info=True)
+    return status

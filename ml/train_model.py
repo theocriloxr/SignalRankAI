@@ -211,20 +211,13 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
     return out
 
 
-async def load_training_data_sync(lookback_days: int = 90):
-    """Load signals + outcomes from Postgres using async session.
-
-    FIX: Use async session throughout to avoid event loop starvation.
-    When ML training runs concurrently with the engine, using sync sessions
-    blocks the connection pool and starves other async tasks (like the engine)
-    from getting DB connections.
-    """
-    logger.info("[ml] Starting load_training_data_sync...")
+async def load_training_data(lookback_days: int = 90):
+    """Load signals + outcomes from Postgres."""
     try:
         from db.session import get_session
+
         from db.models import Signal, Outcome, MarketCandle, MLRejectedSignal
         from sqlalchemy import select, desc
-        logger.info("[ml] Fetching signals from DB (async)...")
 
         def _parse_tp(raw_tp):
             if raw_tp is None:
@@ -253,7 +246,6 @@ async def load_training_data_sync(lookback_days: int = 90):
                     return 0.0
 
         async def _load_candles(symbol: str, timeframe: str, created_at: datetime, limit: int = 80):
-            """Load candles asynchronously - FIX: Was sync, now async to prevent starvation."""
             if not symbol or not timeframe or not created_at:
                 return []
             cutoff_ms = int(created_at.timestamp() * 1000)
@@ -777,8 +769,7 @@ def engineer_features(df):
         'price_acceleration_3_10', 'velocity_abs_3', 'velocity_abs_10',
         'atr_rel', 'atr_regime_clamped', 'relative_volume_clamped',
         'mtf_4h_trend', 'mtf_1d_trend',
-        'funding_rate', 'open_interest_change', 'dxy_trend', 'vix_trend', 'us10y_trend', 'yield_spread', 'minutes_since_high_impact_news', 'minutes_until_high_impact_news', 'news_event_impact_score',
-        'spx_trend', 'btc_corr', 'asset_enc', 'timeframe_enc',
+        'funding_rate', 'open_interest_change', 'dxy_trend', 'vix_trend', 'us10y_trend', 'yield_spread', 'minutes_since_high_impact_news', 'minutes_until_high_impact_news', 'news_event_impact_score', 'spx_trend', 'btc_corr',
     ]
 
     X_train = X[feature_cols].fillna(0.0).astype(np.float32)
@@ -801,6 +792,11 @@ def engineer_features(df):
     timestamps = pd.to_datetime(X['created_at'], errors='coerce')
 
     return X_train, y_train, feature_cols, sample_weights, timestamps
+
+
+async def load_training_data_sync(lookback_days: int = 90):
+    """Backward-compatible alias for the async training data loader."""
+    return await load_training_data(lookback_days)
 
 
 def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=None):
@@ -827,17 +823,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     if sample_weights is not None:
         w_tr = np.asarray(sample_weights.iloc[idx_tr], dtype=np.float32)
 
-    # FIX: Calculate scale_pos_weight to address class imbalance
-    # Dataset has ~5x more losers (0) than winners (1)
-    neg_count = int((y_tr == 0).sum())
-    pos_count = int((y_tr == 1).sum())
-    scale_pos_weight = 1.0
-    if pos_count > 0 and neg_count > 0:
-        scale_pos_weight = float(neg_count) / float(pos_count)
-        logger.info(f"[ml] Class imbalance: neg=%s pos=%s scale_pos_weight=%.2f", 
-                    neg_count, pos_count, scale_pos_weight)
-    
-    # Train model with class imbalance handling
+    # Train model
     model = xgb.XGBClassifier(
         n_estimators=100,
         max_depth=5,
@@ -845,7 +831,6 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
         subsample=0.8,
         colsample_bytree=0.8,
         objective='binary:logistic',
-        scale_pos_weight=scale_pos_weight,  # FIX: Handle class imbalance
         random_state=42,
         verbosity=1,
     )
@@ -873,22 +858,6 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
 
     logger.info(f"Test Accuracy: {acc:.4f}")
     logger.info(f"Test AUC: {auc:.4f}")
-
-    # FIX: Store AUC in Redis for dynamic threshold calculation
-    # This enables the engine to auto-adjust threshold based on ML model performance
-    try:
-        import redis as _redis_client
-        import os as _os_env
-        
-        _redis_url = _os_env.getenv("REDIS_URL")
-        if _redis_url:
-            _r = _redis_client.from_url(_redis_url, decode_responses=True)
-            _r.set("ml:model:auc", float(auc))
-            _r.set("ml:model:auc:last_updated", datetime.utcnow().isoformat())
-            _r.close()
-            logger.info(f"[ml] Stored AUC={auc:.4f} in Redis for dynamic threshold")
-    except Exception as _e:
-        logger.debug(f"[ml] Failed to store AUC in Redis: {_e}")
     logger.info(f"Confusion Matrix:\n{confusion_matrix(y_te, y_pred)}")
     logger.info(f"Classification Report:\n{classification_report(y_te, y_pred)}")
 
@@ -959,12 +928,6 @@ def save_model(model, feature_cols, calibration_x=None, calibration_y=None, trai
 
     logger.info(f"Model saved to {model_path}")
     return model_path
-
-
-# Alias for backwards compatibility - main() expects load_training_data
-async def load_training_data(lookback_days: int = 90):
-    """Alias for load_training_data_sync for backwards compatibility."""
-    return await load_training_data_sync(lookback_days)
 
 
 async def main(lookback_days: int | None = None):

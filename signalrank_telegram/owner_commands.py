@@ -1073,7 +1073,7 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     from datetime import datetime, timedelta
-    from sqlalchemy import select, func
+    from sqlalchemy import select, func, or_
     from db.models import SignalDelivery, Signal, Outcome
     from data.fetcher import get_asset_type
 
@@ -1084,8 +1084,55 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     stats: dict[tuple[str, str], dict[str, int]] = {}
     total_delivered = 0
+    reserved_not_sent = 0
+    pending_reserved = 0
+    failed_reserved = 0
+    stale_reserved = 0
 
     async with get_session() as session:
+        try:
+            stale_cutoff = datetime.utcnow() - timedelta(minutes=15)
+            reserved_res = await session.execute(
+                select(func.count(SignalDelivery.id))
+                .where(SignalDelivery.delivered_at >= cutoff, SignalDelivery.sent_ok.is_(False))
+            )
+            reserved_not_sent = int(reserved_res.scalar_one_or_none() or 0)
+
+            pending_res = await session.execute(
+                select(func.count(SignalDelivery.id)).where(
+                    SignalDelivery.delivered_at >= cutoff,
+                    SignalDelivery.sent_ok.is_(False),
+                    SignalDelivery.last_error.is_(None),
+                    SignalDelivery.last_attempt_at >= stale_cutoff,
+                )
+            )
+            pending_reserved = int(pending_res.scalar_one_or_none() or 0)
+
+            failed_res = await session.execute(
+                select(func.count(SignalDelivery.id)).where(
+                    SignalDelivery.delivered_at >= cutoff,
+                    SignalDelivery.sent_ok.is_(False),
+                    SignalDelivery.last_error.is_not(None),
+                )
+            )
+            failed_reserved = int(failed_res.scalar_one_or_none() or 0)
+
+            stale_res = await session.execute(
+                select(func.count(SignalDelivery.id)).where(
+                    SignalDelivery.delivered_at >= cutoff,
+                    SignalDelivery.sent_ok.is_(False),
+                    SignalDelivery.last_error.is_(None),
+                    or_(
+                        SignalDelivery.last_attempt_at.is_(None),
+                        SignalDelivery.last_attempt_at < stale_cutoff,
+                    ),
+                )
+            )
+            stale_reserved = int(stale_res.scalar_one_or_none() or 0)
+        except Exception:
+            reserved_not_sent = 0
+            pending_reserved = failed_reserved = stale_reserved = 0
+
         totals_res = await session.execute(
             select(
                 SignalDelivery.tier_at_send,
@@ -1136,11 +1183,20 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     total_tracked = sum((v.get("wins", 0) + v.get("losses", 0)) for v in stats.values())
+    coverage_pct = (total_tracked / total_delivered * 100.0) if total_delivered > 0 else 0.0
     tier_order = {"FREE": 0, "PREMIUM": 1, "VIP": 2, "ADMIN": 3, "OWNER": 4}
     asset_order = {"crypto": 0, "fx": 1, "stock": 2, "commodity": 3}
 
     tiers_present = sorted({k[0] for k in stats.keys()}, key=lambda t: tier_order.get(t, 99))
-    lines = [f"QA report (last {days}d)", f"Delivered: {total_delivered}, tracked: {total_tracked}"]
+    lines = [
+        f"QA report (last {days}d)",
+        f"Delivered: {total_delivered}, tracked: {total_tracked}, coverage: {coverage_pct:.1f}%",
+    ]
+    if reserved_not_sent:
+        lines.append(
+            "Reserved but not confirmed sent: "
+            f"{reserved_not_sent} (pending={pending_reserved}, failed={failed_reserved}, stale={stale_reserved})"
+        )
 
     for tier in tiers_present:
         tier_lines = []
@@ -1172,5 +1228,9 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     lines.append("")
     lines.append("Notes: wins=tp/tp1/tp2/tp3/partial_tp; losses=sl")
+    if total_delivered > 0 and coverage_pct < 80.0:
+        lines.append(
+            "Coverage warning: tracked outcomes are too sparse for a reliable expected win-rate estimate."
+        )
     await update.message.reply_text("\n".join(lines))
 

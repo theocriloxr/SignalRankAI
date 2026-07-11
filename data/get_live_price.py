@@ -32,6 +32,19 @@ class PriceCircuitConfig:
     open_seconds: float = 30.0  # Stay open for 30s
 
 
+@dataclass(frozen=True)
+class LivePriceQuote:
+    """Structured live quote used by the final-send validation gate."""
+    symbol: str
+    price: float
+    provider: str
+    fetched_at: float
+    latency_ms: int
+    confidence: float = 1.0
+    is_stale: bool = False
+    stale_reason: str | None = None
+
+
 class PriceCircuitBreaker:
     """Circuit breaker for price providers."""
     
@@ -98,18 +111,21 @@ def _is_crypto(asset: str) -> bool:
 
 
 def _get_providers_for_asset(asset: str) -> List[str]:
+    """Get provider priority list for live-price checks.
+
+    The final-send gate must not reuse candle-cache prices. It needs a fresh
+    quote from a provider whose symbol mapping matches the asset class. Crypto
+    tries multiple spot/price sources; stocks, FX, and commodities prefer Yahoo
+    with the canonical mapper and optionally Polygon.
     """
-    Get provider priority list for asset.
-    
-    Strict routing:
-    - Crypto (USDT/*) → Binance → Bybit → CryptoCompare
-    - Stocks → Yahoo → Polygon
-    """
-    if _is_crypto(asset):
-        return ["binance", "bybit", "cryptocompare"]
-    else:
-        # Stocks and other assets
-        return ["yahoo", "polygon"]
+    try:
+        from services.asset_mapper import classify_asset
+        cls = str(classify_asset(asset)).lower()
+    except Exception:
+        cls = "crypto" if _is_crypto(asset) else "stock"
+    if cls == "crypto":
+        return ["binance", "bybit", "cryptocompare", "yahoo"]
+    return ["yahoo", "polygon"]
 
 
 # ============================================================================
@@ -130,7 +146,7 @@ async def _fetch_binance_price(symbol: str) -> Optional[float]:
             sym += "USDT"
         
         url = f"https://api.binance.com/api/v3/ticker/price?symbol={sym}"
-        resp = requests.get(url, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -165,7 +181,7 @@ async def _fetch_bybit_price(symbol: str) -> Optional[float]:
             "symbol": sym,
         }
         
-        resp = requests.get(url, params=params, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, params=params, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -215,7 +231,7 @@ async def _fetch_cryptocompare_price(symbol: str) -> Optional[float]:
         if api_key:
             params["api_key"] = api_key
         
-        resp = requests.get(url, params=params, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, params=params, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -234,37 +250,50 @@ async def _fetch_cryptocompare_price(symbol: str) -> Optional[float]:
 
 
 async def _fetch_yahoo_price(symbol: str) -> Optional[float]:
-    """Fetch price from Yahoo Finance."""
+    """Fetch price from Yahoo Finance using provider-correct symbol mapping.
+
+    Previous code treated every non-USD ticker as FX and converted symbols like
+    META into META=X. That can return no data/ghost data and is one root cause
+    of stale stock signals. Use services.asset_mapper for stocks, FX,
+    commodities, and crypto fallbacks, and query the correct /chart endpoint.
+    """
     import requests
-    
+
     breaker = _get_breaker("yahoo")
     if not breaker.allow():
         return None
-    
+
     try:
-        # Yahoo format: BTC-USD -> BTCUSD=X
-        sym = symbol.upper().replace("/", "-")
-        if not sym.endswith("=X") and not sym.endswith("USD"):
-            if not sym.endswith("=X"):
-                sym = f"{sym}=X"
-        
-        url = f"https://query1.finance.yahoo.com/v8/finance/charts/{sym}"
-        resp = requests.get(url, timeout=5)
-        
+        try:
+            from services.asset_mapper import map_symbol
+            sym = map_symbol(symbol, "yfinance") or symbol.upper().strip()
+        except Exception:
+            sym = symbol.upper().strip()
+        if not sym:
+            breaker.record_failure()
+            return None
+
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}"
+        resp = await asyncio.to_thread(requests.get, url, timeout=5)
+
         if resp.ok:
             data = resp.json()
             chart = data.get("chart", {})
             result = chart.get("result", [])
             if result:
-                meta = result[0].get("meta", {})
-                price = meta.get("regularMarketPrice")
+                meta = result[0].get("meta", {}) or {}
+                price = (
+                    meta.get("regularMarketPrice")
+                    or meta.get("previousClose")
+                    or meta.get("chartPreviousClose")
+                )
                 if price:
                     breaker.record_success()
                     return float(price)
-        
+
         breaker.record_failure()
         return None
-        
+
     except Exception as e:
         breaker.record_failure()
         logger.debug(f"[price] Yahoo error for {symbol}: {e}")
@@ -290,7 +319,7 @@ async def _fetch_polygon_price(symbol: str) -> Optional[float]:
         url = f"https://api.polygon.io/v2/aggs/ticker/{sym}/prev"
         params = {"apiKey": api_key}
         
-        resp = requests.get(url, params=params, timeout=5)
+        resp = await asyncio.to_thread(requests.get, url, params=params, timeout=5)
         
         if resp.ok:
             data = resp.json()
@@ -314,89 +343,76 @@ async def _fetch_polygon_price(symbol: str) -> Optional[float]:
 # Primary API with Circuit Breaker & Failover
 # ============================================================================
 
+async def get_live_price_quote(
+    symbol: str,
+    timeout: float = 5.0,
+) -> Optional[LivePriceQuote]:
+    """Get a structured live quote with provider attribution.
+
+    This is the preferred API for final-send validation because it preserves
+    provider, latency, and staleness metadata instead of returning a naked float.
+    """
+    if not symbol:
+        return None
+
+    symbol = symbol.upper().strip()
+    providers = _get_providers_for_asset(symbol)
+
+    for provider in providers:
+        started = time.perf_counter()
+        try:
+            price = None
+            if provider == "binance":
+                price = await asyncio.wait_for(_fetch_binance_price(symbol), timeout=timeout)
+            elif provider == "bybit":
+                price = await asyncio.wait_for(_fetch_bybit_price(symbol), timeout=timeout)
+            elif provider == "cryptocompare":
+                price = await asyncio.wait_for(_fetch_cryptocompare_price(symbol), timeout=timeout)
+            elif provider == "yahoo":
+                price = await asyncio.wait_for(_fetch_yahoo_price(symbol), timeout=timeout)
+            elif provider == "polygon":
+                price = await asyncio.wait_for(_fetch_polygon_price(symbol), timeout=timeout)
+
+            if price and price > 0:
+                quote = LivePriceQuote(
+                    symbol=symbol,
+                    price=float(price),
+                    provider=provider,
+                    fetched_at=time.time(),
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    confidence=1.0,
+                    is_stale=False,
+                )
+                logger.info(
+                    "[price] %s: %s provider=%s latency_ms=%s",
+                    symbol, quote.price, provider, quote.latency_ms,
+                )
+                return quote
+
+            logger.debug("[price] %s: provider=%s failed/invalid, trying next", symbol, provider)
+
+        except asyncio.TimeoutError:
+            logger.debug("[price] %s: %s timeout", symbol, provider)
+            continue
+        except Exception as e:
+            logger.debug("[price] %s: %s error: %s", symbol, provider, e)
+            continue
+
+    logger.warning("[price] All providers failed for %s", symbol)
+    return None
+
+
 async def get_live_price(
     symbol: str,
     timeout: float = 5.0,
 ) -> Optional[float]:
+    """Get live price with circuit breaker and automatic failover.
+
+    Compatibility wrapper around get_live_price_quote. New final-send code should
+    use get_live_price_quote so it can inspect provider metadata.
     """
-    Get live price with circuit breaker and automatic failover.
-    
-    This is the MAIN entry point - replaces all direct price fetches.
-    
-    Features:
-    - Strict asset routing (crypto vs stocks)
-    - Circuit breaker per provider
-    - Automatic failover on rate limits
-    - Prevents "Ghost Price" from wrong provider
-    
-    Args:
-        symbol: Asset symbol (e.g., "BTCUSDT", "AAPL")
-        timeout: Maximum wait time in seconds
-        
-    Returns:
-        Live price or None if unavailable
-    """
-    if not symbol:
-        return None
-    
-    symbol = symbol.upper().strip()
-    
-    # Get provider priority for asset type
-    providers = _get_providers_for_asset(symbol)
-    
-    # Try each provider with circuit breaker
-    for provider in providers:
-        try:
-            price = None
-            
-            if provider == "binance":
-                price = await asyncio.wait_for(
-                    _fetch_binance_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "bybit":
-                price = await asyncio.wait_for(
-                    _fetch_bybit_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "cryptocompare":
-                price = await asyncio.wait_for(
-                    _fetch_cryptocompare_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "yahoo":
-                price = await asyncio.wait_for(
-                    _fetch_yahoo_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "polygon":
-                price = await asyncio.wait_for(
-                    _fetch_polygon_price(symbol),
-                    timeout=timeout,
-                )
-            
-            if price and price > 0:
-                logger.info(
-                    f"[price] {symbol}: {price} (provider={provider})"
-                )
-                return price
-            
-            # Provider failed or returned invalid price - continue to next
-            logger.debug(
-                f"[price] {symbol}: provider={provider} failed/invalid, "
-                f"trying next..."
-            )
-            
-        except asyncio.TimeoutError:
-            logger.debug(f"[price] {symbol}: {provider} timeout")
-            continue
-        except Exception as e:
-            logger.debug(f"[price] {symbol}: {provider} error: {e}")
-            continue
-    
-    # All providers failed
-    logger.warning(f"[price] All providers failed for {symbol}")
-    return None
+    quote = await get_live_price_quote(symbol, timeout=timeout)
+    return float(quote.price) if quote is not None else None
 
 
 async def get_cached_price(
@@ -475,6 +491,8 @@ def get_circuit_breaker_status() -> Dict[str, Dict[str, Any]]:
 
 
 __all__ = [
+    "LivePriceQuote",
+    "get_live_price_quote",
     "get_live_price",
     "get_cached_price",
     "get_price",

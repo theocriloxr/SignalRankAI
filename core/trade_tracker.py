@@ -112,6 +112,11 @@ def _allow_external_price_fallback() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _allow_provider_waterfall() -> bool:
+    raw = str(_env_get("TRADE_TRACKER_ALLOW_PROVIDER_WATERFALL", "0")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _latest_tick_price(symbol: str):
     try:
         payload = state.get_latest_tick_sync(symbol)
@@ -137,6 +142,7 @@ def _trade_state_payload(trade) -> dict:
         "direction": trade.direction,
         "open_time": trade.open_time,
         "targets_hit": list(getattr(trade, "targets_hit", []) or []),
+        "entry_reached": bool(getattr(trade, "entry_reached", True)),
         "signal": dict(getattr(trade, "signal", {}) or {}),
     }
 
@@ -167,6 +173,8 @@ def _load_open_trades_from_state(force: bool = False) -> None:
             targets_hit = payload.get("targets_hit") if isinstance(payload, dict) else None
             if isinstance(targets_hit, list):
                 trade.targets_hit = list(targets_hit)
+            if isinstance(payload, dict) and "entry_reached" in payload:
+                trade.entry_reached = bool(payload.get("entry_reached"))
             open_trades_list.append(trade)
             existing_keys.add(key)
         except Exception:
@@ -218,6 +226,7 @@ class TradeRecord:
         self.close_time = None
         self.outcome = None  # "TP" | "SL"
         self.signal = signal  # Keep reference to original signal
+        self.entry_reached = bool(signal.get("entry_reached", True))
         # Helper: ensure targets list for easier checks
         if self.target is None:
             self.targets = []
@@ -236,23 +245,15 @@ open_trades_list = []
 
 
 def _trade_key(signal: dict) -> tuple:
-    """Generate unique key for trade tracking.
-    
-    FIX: Changed to exclude timeframe from the key.
-    Previously, same asset+direction on different timeframes was treated as different trades,
-    causing duplicate "Trade opened" entries. Now we use only symbol+direction for deduplication.
-    This allows the same trading idea on multiple timeframes to share one trade record.
-    """
     signal_id = signal.get("id") or signal.get("signal_id")
     if signal_id:
         return ("signal_id", str(signal_id))
     symbol = str(signal.get("symbol") or signal.get("asset") or "").upper().strip()
     direction = str(signal.get("direction") or signal.get("side") or "long").lower().strip()
-    # Remove timeframe from key to prevent duplicate trades across timeframes
-    # The same asset+direction should be tracked as ONE trade, regardless of timeframe
+    timeframe = str(signal.get("timeframe") or signal.get("tf") or "").lower().strip()
     entry = signal.get("entry") or signal.get("price") or signal.get("entry_price")
     stop = signal.get("stop") or signal.get("stop_loss") or signal.get("stopLoss")
-    return ("fallback", symbol, direction, str(entry), str(stop))
+    return ("fallback", symbol, direction, timeframe, str(entry), str(stop))
 
 def open_trades():
     try:
@@ -368,31 +369,24 @@ def _get_current_price(symbol):
                 return price
         except Exception as e:
             logger.debug(f"Binance API failed for {symbol}: {e}")
-            # Record failure early so immediate subsequent calls observe backoff
-            try:
-                _record_price_failure(symbol)
-            except Exception:
-                pass
-            return None
     
-    # Last-resort: try unified providers waterfall for recent candles
-    try:
-        from data.providers import fetch_candles_waterfall
-        candles = fetch_candles_waterfall(symbol, "1h", limit=5)
-        if candles:
-            # Use the last close
-            last = candles[-1]
-            price = float(last.get("close") or last.get("c") or 0)
-            if price and price > 0:
-                try:
-                    _set_price_cache(symbol, price)
-                except Exception:
-                    pass
-                logger.debug(f"Got price for {symbol} from providers.waterfall: {price}")
-                _record_price_success(symbol)
-                return price
-    except Exception:
-        pass
+    if _allow_provider_waterfall():
+        try:
+            from data.providers import fetch_candles_waterfall
+            candles = fetch_candles_waterfall(symbol, "1h", limit=5)
+            if candles:
+                last = candles[-1]
+                price = float(last.get("close") or last.get("c") or 0)
+                if price and price > 0:
+                    try:
+                        _set_price_cache(symbol, price)
+                    except Exception:
+                        pass
+                    logger.debug(f"Got price for {symbol} from providers.waterfall: {price}")
+                    _record_price_success(symbol)
+                    return price
+        except Exception:
+            pass
 
     next_retry_ts = _record_price_failure(symbol)
     state = _get_backoff_state(symbol)
@@ -482,12 +476,12 @@ def price_hit_tp(trade, market_data=None):
 
 def price_hit_sl(trade, market_data=None):
     """
-    Check if stop loss is hit based on current price versus stop level.
-    For LONG: Stop-loss triggers when current price <= stop.
-    For SHORT: Stop-loss triggers when current price >= stop.
-
-    This direct comparison intentionally counts gap moves beyond stop
-    as stop-loss hits even if entry was not reached first.
+    Check if stop loss is hit AFTER confirming entry was reached.
+    For LONG: Price must have reached entry level before SL can trigger
+    For SHORT: Price must have reached entry level before SL can trigger
+    
+    This prevents "SL-before-entry" invalidations where the price hits
+    the stop loss before ever reaching the entry price.
     """
     # Get current price from market_data or fetch it
     current_price = _resolve_market_price(getattr(trade, "symbol", None), market_data)
@@ -497,9 +491,10 @@ def price_hit_sl(trade, market_data=None):
     if current_price is None:
         return False
     
-    # Normalize direction and stop.
+    # Normalize direction, stop, and entry
     direction = (getattr(trade, "direction", "LONG") or "LONG").upper()
     stop = getattr(trade, "stop", None)
+    entry = getattr(trade, "entry", None)
     
     if stop is None:
         return False
@@ -510,7 +505,33 @@ def price_hit_sl(trade, market_data=None):
     except Exception:
         return False
 
-    # Check SL directly. Gaps beyond stop should still count as a stop-loss.
+    # Queued trades can opt into entry gating with entry_reached=False. Active
+    # trades default to True so legacy/open-position SL accounting remains valid.
+    if entry is not None and not bool(getattr(trade, "entry_reached", True)):
+        try:
+            entry_val = float(entry)
+            if direction == "LONG":
+                # For LONG: price should have reached or exceeded entry level
+                entry_reached = current_price >= entry_val
+            else:
+                # For SHORT: price should have reached or dropped to entry level
+                entry_reached = current_price <= entry_val
+            
+            if entry_reached:
+                trade.entry_reached = True
+                _persist_trade_state(trade)
+            else:
+                # Price hasn't reached entry yet - don't check SL
+                logger.debug(
+                    f"Entry not yet reached for {trade.symbol} {direction}: "
+                    f"entry={entry_val}, current={current_price}, stop={stop_val}"
+                )
+                return False
+        except Exception:
+            # If entry parsing fails, allow SL check to proceed
+            pass
+    
+    # Now check SL (original logic) - entry was verified reached
     if direction == "LONG":
         if current_price <= stop_val:
             logger.info(f"SL hit for {trade.symbol} LONG: price={current_price} <= stop={stop_val}")

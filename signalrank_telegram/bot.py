@@ -4,6 +4,28 @@ from core.redis_state import state, mark_signal_delivered_sync
 from core.telemetry import observe_signal_dispatch
 from apscheduler.schedulers.background import BackgroundScheduler
 
+
+async def _handle_unknown_command(update, context):
+    """Reply gracefully to unsupported Telegram commands."""
+    try:
+        if getattr(update, "message", None) is not None:
+            await update.message.reply_text("Unknown command. Send /help for available commands.")
+    except Exception:
+        pass
+
+
+def _increment_successful_delivery_stat() -> None:
+    try:
+        from engine.stats_manager import stats as _global_stats
+        _global_stats.increment_delivered(1)
+    except Exception:
+        pass
+
+
+def is_formatter_failure_terminal(delivery_state: str | None) -> bool:
+    return str(delivery_state or "").strip().lower() == "formatter_failed"
+
+
 def resend_unsent_signals_job():
     """Scheduled job: resend top-scored unsent signals to eligible users.
 
@@ -52,6 +74,13 @@ def resend_unsent_signals_job():
         logger.debug(f"[resend] advisory lock unavailable, continuing without lock: {_lock_err}")
 
     try:
+        try:
+            from db.session import critical_db_work_active
+            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", True):
+                logger.info("[resend] skipped: critical DB work active")
+                return
+        except Exception:
+            pass
         run_sync(_resend_unsent_signals_async())
     except Exception:
         logger.exception("[resend] resend_unsent_signals_job failed")
@@ -75,7 +104,12 @@ async def _resend_unsent_signals_async():
         )
         from signalrank_telegram.tier_delivery import TierDeliveryManager
         from signalrank_telegram.access import resolve_user_tier
-        from .formatter import format_signal
+        from .formatter import format_signal, signal_format_diagnostics
+        from services.trade_profiles import infer_trade_profile
+        from services.user_intelligence import (
+            get_user_trading_preferences,
+            signal_matches_preferences,
+        )
         import asyncio
 
         delivery_mgr = TierDeliveryManager()
@@ -84,8 +118,27 @@ async def _resend_unsent_signals_async():
         # get_all_user_ids_compat() (which uses run_sync() internally and would
         # spawn a nested thread+event-loop inside the already-running loop).
         from db.pg_features import list_all_user_telegram_ids
-        async with get_session() as _uid_session:
-            user_ids = await list_all_user_telegram_ids(_uid_session)
+        from sqlalchemy import select
+        from db.models import SignalDelivery
+        formatter_failed_signal_ids: set[str] = set()
+        try:
+            async with get_session(noncritical=True) as _bootstrap_session:
+                user_ids = await list_all_user_telegram_ids(_bootstrap_session)
+                raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=100)
+                failed_rows = await _bootstrap_session.execute(
+                    select(SignalDelivery.signal_id).where(
+                        SignalDelivery.delivery_state == "formatter_failed"
+                    )
+                )
+                formatter_failed_signal_ids = {
+                    str(value) for value in (failed_rows.scalars().all() or []) if value
+                }
+                await _bootstrap_session.commit()
+        except Exception as bootstrap_err:
+            if type(bootstrap_err).__name__ == "NoncriticalWriteDropped":
+                logger.info("[resend] skipped: DB gate busy during bootstrap")
+                return
+            raise
         # Always include configured owner/admin IDs as a fallback audience,
         # even if user rows are missing in DB due onboarding races.
         try:
@@ -123,21 +176,19 @@ async def _resend_unsent_signals_async():
         except Exception:
             pass
 
-        # Fetch signals from the last 24 h, limit 100 rows, then rank by score
-        async with get_session() as session:
-            try:
-                raw_signals = await list_active_signals(session, max_age_days=1, limit=100)
-                await session.commit()
-            except Exception:
-                raw_signals = []
+        # The bootstrap DB session is released before formatting and sending.
+        if formatter_failed_signal_ids:
+            raw_signals = [
+                signal for signal in (raw_signals or [])
+                if str(getattr(signal, "signal_id", "") or "") not in formatter_failed_signal_ids
+            ]
+            logger.info("[resend] suppressed formatter_failed signals=%s", len(formatter_failed_signal_ids))
 
         if not raw_signals:
             logger.info("[resend] no active signals found in last 24h")
             return
 
-# FIX: Lowered from 75 to 70 to allow signals scoring ~75 to be delivered
-        # Engine scores hover around 75.04 which were being filtered out
-        resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "70") or 70)
+        resend_min_score = float(os.getenv("RESEND_MIN_SCORE", "75") or 75)
         resend_max_signals = int(os.getenv("RESEND_MAX_SIGNALS", "8") or 8)
 
         # Keep highest-quality signals only to avoid flooding users.
@@ -162,6 +213,38 @@ async def _resend_unsent_signals_async():
                 continue
 
         signals = list(best_by_bucket.values())[:max(1, resend_max_signals)]
+        try:
+            from engine.delivery_freshness import evaluate_signal_age
+
+            fresh_ranked = []
+            for s in signals:
+                payload = {c.key: getattr(s, c.key, None) for c in s.__table__.columns} if hasattr(s, "__table__") else dict(getattr(s, "__dict__", {}) or {})
+                age_result = evaluate_signal_age(payload)
+                if age_result.ok:
+                    fresh_ranked.append(s)
+                    continue
+                sid = str(getattr(s, "signal_id", "") or "")
+                logger.info(
+                    "[resend] skipped stale signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    sid,
+                    getattr(s, "asset", ""),
+                    getattr(s, "timeframe", ""),
+                    age_result.reason,
+                    float(age_result.age_minutes or 0.0),
+                    float(age_result.max_age_minutes or 0.0),
+                    float(age_result.opportunity_remaining_pct or 0.0),
+                )
+                try:
+                    async with get_session() as _exp_s:
+                        from db.pg_features import expire_signal as _expire
+                        await _expire(_exp_s, sid)
+                        await _exp_s.commit()
+                except Exception:
+                    pass
+            signals = fresh_ranked
+        except Exception as _fresh_err:
+            logger.warning("[resend] freshness age gate failed; no stale signals delivered: %s", _fresh_err)
+            signals = []
 
         if not signals:
             logger.info(
@@ -175,6 +258,8 @@ async def _resend_unsent_signals_async():
         failed_count = 0
         skipped_eligibility_count = 0
         skipped_already_delivered_count = 0
+        skipped_profile_count = 0
+        user_prefs_cache = {}
 
         # Single Bot instance, properly initialised — avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
@@ -274,6 +359,37 @@ async def _resend_unsent_signals_async():
                             skipped_already_delivered_count += 1
                             continue
 
+                        try:
+                            prefs = user_prefs_cache.get(int(user_id))
+                            if prefs is None:
+                                async with get_session() as _pref_session:
+                                    prefs = await get_user_trading_preferences(
+                                        _pref_session,
+                                        int(user_id),
+                                    )
+                                user_prefs_cache[int(user_id)] = prefs
+                            pref_ok, pref_reason = signal_matches_preferences(sig_dict, prefs)
+                            if not pref_ok:
+                                skipped_profile_count += 1
+                                logger.info(
+                                    "[resend] profile skip user=%s profile=%s signal=%s asset=%s tf=%s signal_profile=%s reason=%s",
+                                    user_id,
+                                    getattr(prefs, "trade_profile", "all"),
+                                    signal_id,
+                                    sig_dict.get("asset"),
+                                    sig_dict.get("timeframe"),
+                                    infer_trade_profile(sig_dict),
+                                    pref_reason,
+                                )
+                                continue
+                        except Exception as _profile_err:
+                            logger.debug(
+                                "[resend] profile filter failed user=%s signal=%s err=%s",
+                                user_id,
+                                signal_id,
+                                _profile_err,
+                            )
+
                         # Tier, score, and daily-limit gate
                         score = float(getattr(sig, 'score', 0) or 0)
                         # No Redis dependency in resend flow; DB delivery table is the source of truth.
@@ -291,13 +407,39 @@ async def _resend_unsent_signals_async():
                             continue
 
                         # Format and send
-                        display_tier = gate_tier
+                        display_tier = _display_tier_for_delivery(gate_tier)
                         text = format_signal(sig_dict, user_tier=gate_tier, display_tier=display_tier)
                         if not text or not str(text).strip():
-                            logger.info(
-                                f"[resend] Skipped signal {signal_id} for user {user_id} "
-                                f"(tier={user_tier}): formatter returned empty text"
+                            diagnostics = signal_format_diagnostics(sig_dict)
+                            logger.error(
+                                "[resend] formatter_failed user=%s tier=%s details=%s",
+                                user_id, user_tier, diagnostics,
                             )
+                            try:
+                                async with get_session() as db_session:
+                                    reserved = await record_signal_delivery(
+                                        db_session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal_id),
+                                        tier_at_send=str(gate_tier),
+                                    )
+                                    if reserved:
+                                        await mark_signal_delivery_result(
+                                            db_session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(signal_id),
+                                            sent_ok=False,
+                                            error=("formatter_missing_required:" + ",".join(
+                                                diagnostics.get("missing_required") or []
+                                            ))[:1000],
+                                            delivery_state="formatter_failed",
+                                        )
+                                    await db_session.commit()
+                            except Exception as formatter_db_err:
+                                logger.warning(
+                                    "[resend] could not persist formatter_failed signal=%s user=%s err=%s",
+                                    signal_id, user_id, formatter_db_err,
+                                )
                             continue
                         # Pre-send reservation in DB (attempt tracked even if network fails).
                         reserved = False
@@ -318,33 +460,35 @@ async def _resend_unsent_signals_async():
                             continue
 
                         try:
-                            await _deliver_or_update_signal_async(
+                            delivery_proof = await _deliver_or_update_signal_async(
                                 bot=bot,
                                 telegram_user_id=int(user_id),
                                 signal=dict(sig_dict or {}),
                                 display_tier=str(display_tier),
                             )
-                            async with get_session() as db_session:
-                                await mark_signal_delivery_result(
-                                    db_session,
-                                    telegram_user_id=int(user_id),
-                                    signal_id=str(signal_id),
-                                    sent_ok=True,
+                            confirmed = await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=str(signal_id),
+                                proof=delivery_proof,
+                                delivery_state="sent" if delivery_proof else "skipped",
+                            )
+                            if not confirmed:
+                                logger.info(
+                                    "[resend] delivery not confirmed user=%s signal=%s proof=%s",
+                                    user_id,
+                                    signal_id,
+                                    delivery_proof,
                                 )
-                                await db_session.commit()
+                                continue
+                            _increment_successful_delivery_stat()
                         except Exception as send_err:
-                            try:
-                                async with get_session() as db_session:
-                                    await mark_signal_delivery_result(
-                                        db_session,
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(signal_id),
-                                        sent_ok=False,
-                                        error=str(send_err),
-                                    )
-                                    await db_session.commit()
-                            except Exception:
-                                pass
+                            await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=str(signal_id),
+                                proof=None,
+                                error=str(send_err),
+                                delivery_state="failed",
+                            )
                             raise send_err
 
                         await asyncio.sleep(0.5)
@@ -358,15 +502,13 @@ async def _resend_unsent_signals_async():
                         if "bot was blocked by the user" in _err_text.lower():
                             logger.info(f"[resend] User {user_id} blocked bot; suppressing retries for signal {signal_id}")
                             try:
-                                async with get_session() as db_session:
-                                    await record_signal_delivery(
-                                        db_session,
-                                        telegram_user_id=int(user_id),
-                                        signal_id=str(signal_id),
-                                        tier_at_send=f"{str(gate_tier)[:8]}_blk",
-                                    )
-                                    await db_session.commit()
-                                delivered_user_ids.add(int(user_id))
+                                await _mark_delivery_with_telegram_proof(
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(signal_id),
+                                    proof=None,
+                                    error="telegram_bot_blocked",
+                                    delivery_state="blocked",
+                                )
                             except Exception:
                                 pass
                         else:
@@ -377,12 +519,13 @@ async def _resend_unsent_signals_async():
                 # unresolved signals should remain active until real expiry/outcome rules do it.
 
         logger.info(
-            "[resend] summary: users=%s candidate_signals=%s delivered=%s failed=%s skipped_eligibility=%s skipped_already_delivered=%s",
+            "[resend] summary: users=%s candidate_signals=%s delivered=%s failed=%s skipped_eligibility=%s skipped_profile=%s skipped_already_delivered=%s",
             len(user_ids),
             len(signals),
             delivered_count,
             failed_count,
             skipped_eligibility_count,
+            skipped_profile_count,
             skipped_already_delivered_count,
         )
 
@@ -397,6 +540,9 @@ from signalrank_telegram.httpx_config import httpx_client
 
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
+        import uuid as _uuid
+        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
+        err_ref = f"ERR-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
         command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
@@ -502,7 +648,7 @@ import logging
 import time
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from core.performance import performance_tracker
 from db.pg_compat import get_all_user_ids_compat
@@ -537,15 +683,29 @@ from .commands import (
     analyze_command,
     risk_command,
     alerts_command,
+    mode_command,
     elite_command,
     early_command,
     report_command,
     language_command,
+    timezone_command,
+    timezone_location_handler,
+    timezone_keep_utc_message_handler,
+    travelmode_command,
+    settings_command,
     feedback_command,
     notify_command,
     filter_command,
     selfcheck_command,
     ops_health_command,
+    system_command,
+    db_health_command,
+    delivery_debug_command,
+    signal_debug_command,
+    format_debug_command,
+    engine_debug_command,
+    profile_command,
+    mission_command,
     myid_command,
     account_command,
     dashboard_command,
@@ -554,6 +714,7 @@ from .commands import (
     market_command,
     gemini_analyze_command,
     gemini_audit_command,
+    codex_audit_command,
     reports_command,
     gemini_predict_command,
     admin_command,
@@ -642,9 +803,45 @@ def _mask_db_url_host(url: str) -> str:
 
 def _normalized_delivery_tier(tier: str | None) -> str:
     t = str(tier or "free").strip().lower()
-    if t in ("owner", "admin"):
-        return "vip"
-    return t
+    if t in ("owner", "admin", "vip", "premium", "free"):
+        return t
+    return "free"
+
+
+def _display_tier_for_delivery(tier: str | None) -> str:
+    """Owner/admin use VIP formatting while keeping owner/admin delivery gates."""
+    t = str(tier or "free").strip().lower()
+    return "vip" if t in {"owner", "admin"} else _normalized_delivery_tier(t)
+
+
+def _delivery_score(signal: dict | None) -> float:
+    """Resolve calibrated signal score aliases used by engine/ranking paths."""
+    if not isinstance(signal, dict):
+        return 0.0
+    for primary_key in ("score", "score_calibrated", "score_final"):
+        try:
+            numeric = float(signal.get(primary_key))
+        except Exception:
+            continue
+        if numeric > 0:
+            return max(0.0, min(numeric, 100.0))
+
+    best = 0.0
+    for value in (
+        signal.get("score_total"),
+        signal.get("score_composite"),
+        signal.get("composite_score"),
+        signal.get("_preview_score"),
+        signal.get("rank_score"),
+        signal.get("quality_score"),
+    ):
+        try:
+            numeric = float(value)
+        except Exception:
+            continue
+        if numeric > best:
+            best = numeric
+    return max(0.0, min(best, 100.0))
 
 
 
@@ -657,14 +854,14 @@ async def _send_message_async(
     telemetry_started_at: float | None = None,
     telemetry_tier: str | None = None,
     telemetry_regime: str | None = None,
-) -> None:
+) -> object:
     # Global fix: escape text for Markdown/MarkdownV2 parse modes
     try:
         if parse_mode and parse_mode.lower().startswith("markdown"):
             from telegram.helpers import escape_markdown
             version = 2 if "v2" in parse_mode.lower() else 1
             text = escape_markdown(str(text), version=version)
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        msg = await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode=parse_mode)
         if telemetry_started_at is not None:
             observe_signal_dispatch(
                 max(0.0, time.perf_counter() - float(telemetry_started_at)),
@@ -672,6 +869,7 @@ async def _send_message_async(
                 regime=telemetry_regime,
                 status="ok",
             )
+        return msg
     except Exception:
         if telemetry_started_at is not None:
             observe_signal_dispatch(
@@ -681,6 +879,205 @@ async def _send_message_async(
                 status="error",
             )
         raise
+
+
+_TG_SEND_LOCKS: dict[tuple[int, int], object] = {}
+_TG_GLOBAL_SEND_LOCKS: dict[int, object] = {}
+_TG_NEXT_SEND_AT: dict[int, float] = {}
+_TG_SEND_LOCKS_GUARD = threading.Lock()
+
+
+def _telegram_chat_lock(chat_id: int):
+    import asyncio
+
+    loop_id = id(asyncio.get_running_loop())
+    key = (loop_id, int(chat_id))
+    with _TG_SEND_LOCKS_GUARD:
+        lock = _TG_SEND_LOCKS.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _TG_SEND_LOCKS[key] = lock
+        return lock
+
+
+def _telegram_global_lock():
+    import asyncio
+
+    loop_id = id(asyncio.get_running_loop())
+    with _TG_SEND_LOCKS_GUARD:
+        lock = _TG_GLOBAL_SEND_LOCKS.get(loop_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _TG_GLOBAL_SEND_LOCKS[loop_id] = lock
+            _TG_NEXT_SEND_AT[loop_id] = 0.0
+        return lock, loop_id
+
+
+def _env_float_local(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
+
+
+def _env_true_local(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, **kwargs):
+    """Send one Telegram message with per-chat serialization and RetryAfter backoff."""
+    import asyncio
+    import os
+    from telegram.error import RetryAfter
+    from signalrank_telegram.message_style import clean_message_text
+
+    try:
+        global_delay = float((os.getenv("TELEGRAM_GLOBAL_SEND_DELAY_SECONDS") or "0.08").strip())
+    except Exception:
+        global_delay = 0.08
+    try:
+        max_retry_after = float((os.getenv("TELEGRAM_RETRY_AFTER_MAX_SECONDS") or "180").strip())
+    except Exception:
+        max_retry_after = 180.0
+    try:
+        max_attempts = max(1, int((os.getenv("TELEGRAM_SEND_MAX_ATTEMPTS") or "2").strip()))
+    except Exception:
+        max_attempts = 2
+
+    lock = _telegram_chat_lock(int(chat_id))
+    async with lock:
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                # Process-wide pacing: a plain per-coroutine sleep still allows bursts
+                # when many user-delivery tasks run concurrently. This shared lock
+                # enforces an actual bot-wide send interval while preserving per-chat
+                # serialization above. Increase TELEGRAM_BROADCAST_RPS only when paid
+                # broadcasts or multiple shards are configured.
+                try:
+                    configured_rps = float((os.getenv("TELEGRAM_BROADCAST_RPS") or "0").strip() or 0)
+                except Exception:
+                    configured_rps = 0.0
+                if configured_rps > 0:
+                    min_interval = 1.0 / max(1.0, configured_rps)
+                else:
+                    min_interval = max(0.0, float(global_delay or 0.0))
+                if min_interval > 0:
+                    global_lock, loop_id = _telegram_global_lock()
+                    async with global_lock:
+                        now = asyncio.get_running_loop().time()
+                        next_at = float(_TG_NEXT_SEND_AT.get(loop_id, 0.0) or 0.0)
+                        if next_at > now:
+                            await asyncio.sleep(max(0.0, next_at - now))
+                        _TG_NEXT_SEND_AT[loop_id] = asyncio.get_running_loop().time() + min_interval
+
+                send_timeout = max(3.0, _env_float_local("TELEGRAM_SEND_TIMEOUT_SECONDS", 10.0))
+                send_kwargs = dict(kwargs or {})
+                rich_message = send_kwargs.pop("rich_message", None)
+                if _env_true_local("TELEGRAM_ALLOW_PAID_BROADCAST", False):
+                    send_kwargs.setdefault("allow_paid_broadcast", True)
+                clean_text = clean_message_text(str(text))
+                send_started = time.perf_counter()
+                if _delivery_trace_enabled():
+                    logger.info(
+                        "[telegram_send_start] chat=%s attempt=%s/%s text_len=%s timeout=%.1fs rps=%.2f paid=%s reply_markup=%s",
+                        chat_id, attempt, max_attempts, len(clean_text), send_timeout, configured_rps,
+                        bool(send_kwargs.get("allow_paid_broadcast")), bool(send_kwargs.get("reply_markup")),
+                    )
+                try:
+                    if rich_message is not None and _env_true_local("TELEGRAM_RICH_MESSAGES_ENABLED", False):
+                        try:
+                            from signalrank_telegram.rich_messages import send_rich_message_raw
+                            msg = await asyncio.wait_for(
+                                send_rich_message_raw(
+                                    bot,
+                                    chat_id=int(chat_id),
+                                    rich_html=str(rich_message),
+                                    timeout=send_timeout,
+                                    **send_kwargs,
+                                ),
+                                timeout=send_timeout + 1.0,
+                            )
+                            if _delivery_success_trace_enabled():
+                                logger.info(
+                                    "[telegram_rich_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=%s",
+                                    chat_id, getattr(msg, "message_id", None), attempt,
+                                    int((time.perf_counter() - send_started) * 1000),
+                                    bool(send_kwargs.get("allow_paid_broadcast")),
+                                )
+                            return msg
+                        except Exception as rich_err:
+                            logger.warning(
+                                "[telegram_rich_send_fallback] chat=%s err=%s falling_back_to_send_message",
+                                chat_id, rich_err,
+                            )
+
+                    msg = await asyncio.wait_for(
+                        bot.send_message(chat_id=int(chat_id), text=clean_text, **send_kwargs),
+                        timeout=send_timeout,
+                    )
+                    if _delivery_success_trace_enabled():
+                        logger.info(
+                            "[telegram_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=%s",
+                            chat_id, getattr(msg, "message_id", None), attempt,
+                            int((time.perf_counter() - send_started) * 1000),
+                            bool(send_kwargs.get("allow_paid_broadcast")),
+                        )
+                    return msg
+                except TypeError as _type_err:
+                    # Older python-telegram-bot versions may not yet expose the
+                    # Bot API paid-broadcast argument. Retry without it instead
+                    # of dropping the message.
+                    if "allow_paid_broadcast" in send_kwargs:
+                        logger.warning(
+                            "[telegram_send_paid_arg_unsupported] chat=%s retrying_without_paid_broadcast err=%s",
+                            chat_id, _type_err,
+                        )
+                        send_kwargs.pop("allow_paid_broadcast", None)
+                        msg = await asyncio.wait_for(
+                            bot.send_message(chat_id=int(chat_id), text=clean_text, **send_kwargs),
+                            timeout=send_timeout,
+                        )
+                        if _delivery_success_trace_enabled():
+                            logger.info(
+                                "[telegram_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=false",
+                                chat_id, getattr(msg, "message_id", None), attempt,
+                                int((time.perf_counter() - send_started) * 1000),
+                            )
+                        return msg
+                    raise _type_err
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[telegram_send_timeout] chat=%s attempt=%s/%s timeout=%.1fs text_len=%s",
+                    chat_id, attempt, max_attempts, send_timeout, len(str(text or "")),
+                )
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(0.5)
+            except RetryAfter as exc:
+                retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
+                logger.warning(
+                    "[telegram] flood control chat=%s retry_after=%.1fs attempt=%s/%s",
+                    chat_id,
+                    retry_after,
+                    attempt,
+                    max_attempts,
+                )
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(max(1.0, retry_after) + 0.5)
+            except Exception as exc:
+                logger.warning(
+                    "[telegram_send_error] chat=%s attempt=%s/%s err_type=%s err=%s",
+                    chat_id, attempt, max_attempts, type(exc).__name__, exc,
+                )
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(0.5)
 
 
 def _safe_float(value, default: float = 0.0) -> float:
@@ -695,6 +1092,32 @@ def _env_int(name: str, default: int) -> int:
         return int(os.getenv(name, str(default)) or default)
     except Exception:
         return int(default)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _env_bool_any(names: tuple[str, ...], default: bool = False) -> bool:
+    for name in names:
+        raw = os.getenv(name)
+        if raw is not None:
+            return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+    return bool(default)
+
+
+def _delivery_trace_enabled() -> bool:
+    return _env_true_local("DELIVERY_TRACE_ENABLED", True)
+
+
+def _delivery_success_trace_enabled() -> bool:
+    # Success logs are enabled by default while we prove the production path.
+    # For high-volume 100k fanout, set TELEGRAM_SEND_SUCCESS_LOG_ENABLED=0
+    # after verification to reduce log volume.
+    return _env_true_local("TELEGRAM_SEND_SUCCESS_LOG_ENABLED", True)
 
 
 def _first_take_profit(signal: dict | None) -> float | None:
@@ -756,12 +1179,12 @@ def _collapse_signal_variants(signals_list: list[dict]) -> list[dict]:
             continue
         candidate_rank = (
             _signal_roi_score(signal),
-            _safe_float(signal.get("score")),
+            _delivery_score(signal),
             _safe_float(signal.get("ml_probability")),
         )
         incumbent_rank = (
             _signal_roi_score(incumbent),
-            _safe_float(incumbent.get("score")),
+            _delivery_score(incumbent),
             _safe_float(incumbent.get("ml_probability")),
         )
         if candidate_rank > incumbent_rank:
@@ -770,7 +1193,7 @@ def _collapse_signal_variants(signals_list: list[dict]) -> list[dict]:
     collapsed.sort(
         key=lambda signal: (
             _signal_roi_score(signal),
-            _safe_float(signal.get("score")),
+            _delivery_score(signal),
             _safe_float(signal.get("ml_probability")),
         ),
         reverse=True,
@@ -848,21 +1271,61 @@ async def _is_asset_delivery_locked(
     telegram_user_id: int,
     asset: str,
     lock_hours: int | None = None,
+    *,
+    current_signal_id: str | None = None,
 ) -> bool:
+    """Return whether this user should be blocked from another signal for `asset`.
+
+    Production note: the dispatch path reserves a SignalDelivery row before the
+    Telegram send. Without excluding the current signal / ignoring unsent rows,
+    that reservation can lock itself and produce `Creating new delivery` followed
+    by `skipped duplicate asset due to lock`, which means no Telegram message is
+    actually sent. These env guards keep the anti-spam lock useful without
+    blocking owner verification or the same in-flight delivery.
+    """
     try:
         from datetime import datetime, timedelta
-        from sqlalchemy import and_, func, select
+        from sqlalchemy import and_, func, not_, or_, select
         from db.session import get_session
         from db.models import Outcome, Signal, SignalDelivery, User
+        from services.asset_position_manager import get_user_asset_position_state
+
+        def _env_true(name: str, default: str = "0") -> bool:
+            return str(os.getenv(name, default) or default).strip().lower() in {"1", "true", "yes", "on"}
 
         symbol = str(asset or "").upper().strip()
         if not symbol:
             return False
 
+        # Owner/admin emergency bypass is intentionally checked before the
+        # position-manager lock so production verification cannot be blocked by
+        # stale historical rows.
+        if _env_true("OWNER_DELIVERY_BYPASS_ASSET_LOCK") or _env_true("DELIVERY_ASSET_LOCK_FAIL_OPEN_FOR_OWNER"):
+            try:
+                from config import ADMIN_IDS, OWNER_IDS
+                privileged = {int(x) for x in (OWNER_IDS or set())} | {int(x) for x in (ADMIN_IDS or set())}
+                if int(telegram_user_id) in privileged:
+                    logger.info(
+                        f"[asset_lock] owner/admin bypass user={telegram_user_id} asset={symbol} "
+                        f"signal={current_signal_id or ''}"
+                    )
+                    return False
+            except Exception:
+                pass
+
         hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+        # Let Railway env shorten the lock during verification. 12h remains the
+        # recommended production value, but do not force it here.
+        hours = max(0, hours)
         if hours <= 0:
             return False
         cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        require_sent_ok = _env_true("DELIVERY_ASSET_LOCK_REQUIRE_SENT_OK", "1")
+        ignore_unsent = _env_true("DELIVERY_ASSET_LOCK_IGNORE_UNSENT", "1")
+        stale_minutes = int(os.getenv("DELIVERY_ASSET_LOCK_IGNORE_STALE_MINUTES", "180") or 180)
+        stale_cutoff = datetime.utcnow() - timedelta(minutes=max(1, stale_minutes))
+        current_signal_id = str(current_signal_id or "").strip() or None
 
         async with get_session() as session:
             user = (
@@ -874,24 +1337,74 @@ async def _is_asset_delivery_locked(
                 await session.commit()
                 return False
 
+            try:
+                # Skip the heavier position-manager lock while doing sent-ok-only
+                # delivery lock verification. Otherwise stale undelivered active
+                # positions can still block the first real Telegram send.
+                if not require_sent_ok:
+                    state_row = await get_user_asset_position_state(
+                        session,
+                        telegram_user_id=int(telegram_user_id),
+                        asset=symbol,
+                        cooldown_hours=float(hours),
+                        unresolved_block_hours=float(os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS", "168") or 168),
+                    )
+                    if state_row.is_locked:
+                        await session.commit()
+                        return True
+            except Exception:
+                pass
+
+            filters = [
+                SignalDelivery.user_id == user.id,
+                SignalDelivery.delivered_at >= cutoff,
+                func.upper(Signal.asset) == symbol,
+                Signal.archived == False,
+                Signal.expired == False,
+            ]
+            if current_signal_id:
+                filters.append(Signal.signal_id != current_signal_id)
+            if require_sent_ok:
+                filters.append(SignalDelivery.sent_ok.is_(True))
+            elif ignore_unsent:
+                filters.append(
+                    or_(
+                        SignalDelivery.sent_ok.is_(True),
+                        and_(
+                            SignalDelivery.sent_ok.is_(False),
+                            SignalDelivery.last_error.isnot(None),
+                        ),
+                    )
+                )
+            else:
+                filters.append(
+                    or_(
+                        SignalDelivery.sent_ok.is_(True),
+                        and_(
+                            SignalDelivery.sent_ok.is_(False),
+                            SignalDelivery.last_error.is_(None),
+                            SignalDelivery.delivered_at >= stale_cutoff,
+                        ),
+                    )
+                )
+
             locked_count = (
                 await session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
                     .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
-                    .where(
-                        SignalDelivery.user_id == user.id,
-                        SignalDelivery.delivered_at >= cutoff,
-                        func.upper(Signal.asset) == symbol,
-                        Signal.archived == False,
-                        Signal.expired == False,
-                        Outcome.id.is_(None),
-                    )
+                    .where(*filters)
                 )
             ).scalar_one()
             await session.commit()
-            return int(locked_count or 0) > 0
+            locked = int(locked_count or 0) > 0
+            if locked:
+                logger.info(
+                    f"[asset_lock] locked user={telegram_user_id} asset={symbol} count={int(locked_count or 0)} "
+                    f"require_sent_ok={require_sent_ok} ignore_unsent={ignore_unsent} signal={current_signal_id or ''}"
+                )
+            return locked
     except Exception as exc:
         logger.debug(f"[asset_lock] check failed for user={telegram_user_id} asset={asset}: {exc}")
         return False
@@ -965,37 +1478,65 @@ async def _load_signal_engagement_counts(signal_id: str) -> dict[str, int]:
     return counts
 
 
+_TELEGRAM_CALLBACK_DATA_MAX_BYTES = 64
+
+
+def _compact_signal_callback_id(signal_id: object) -> str:
+    """Return a Telegram callback-safe signal id/reference."""
+    raw = str(signal_id or "").strip()
+    if not raw:
+        return ""
+    return raw[:36]
+
+
+def _signal_callback_data(prefix: str, signal_id: object, suffix: str = "") -> str:
+    payload = _compact_signal_callback_id(signal_id)
+    data = f"{prefix}{payload}{suffix}"
+    while payload and len(data.encode("utf-8")) > _TELEGRAM_CALLBACK_DATA_MAX_BYTES:
+        payload = payload[:-1]
+        data = f"{prefix}{payload}{suffix}"
+    return data
+
+
 def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: dict[str, int] | None = None):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
     counts = counts or {}
     taking_it = int(counts.get("taking_it", 0) or 0)
     watching = int(counts.get("watching", 0) or 0)
+    callback_signal_id = _compact_signal_callback_id(signal_id)
     rows = [[
-        InlineKeyboardButton(f"🔥 Taking It ({taking_it})", callback_data=f"signal_reaction_{signal_id}|taking_it"),
-        InlineKeyboardButton(f"👀 Watching ({watching})", callback_data=f"signal_reaction_{signal_id}|watching"),
+        InlineKeyboardButton(
+            f"🔥 Taking It ({taking_it})",
+            callback_data=_signal_callback_data("signal_reaction_", callback_signal_id, "|taking_it"),
+        ),
+        InlineKeyboardButton(
+            f"👀 Watching ({watching})",
+            callback_data=_signal_callback_data("signal_reaction_", callback_signal_id, "|watching"),
+        ),
     ]]
 
     # Always include compact callback payload so button remains available
     # even when detailed numeric payload would exceed Telegram's 64-byte limit.
-    if str(signal_id or "").strip():
+    if callback_signal_id:
         rows.append([
-            InlineKeyboardButton("⚡ Take Trade", callback_data=f"mt5_trade_{str(signal_id)[:36]}")
+            InlineKeyboardButton("⚡ Take Trade", callback_data=_signal_callback_data("mt5_trade_", callback_signal_id))
         ])
 
     rows.append([
-        InlineKeyboardButton("📈 Monitor", callback_data=f"monitor_signal_{signal_id}"),
-        InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{str(signal_id)[:36]}"),
+        InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+        InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ])
     return InlineKeyboardMarkup(rows)
 
 
 def _build_monitor_keyboard(signal_id: str):
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    callback_signal_id = _compact_signal_callback_id(signal_id)
 
     return InlineKeyboardMarkup([[ 
-        InlineKeyboardButton("🔄 Refresh", callback_data=f"monitor_signal_{signal_id}"),
-        InlineKeyboardButton("🔍 Check Outcome", callback_data=f"check_outcome_{str(signal_id)[:36]}"),
+        InlineKeyboardButton("🔄 Refresh", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+        InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ]])
 
 
@@ -1121,21 +1662,130 @@ async def _deliver_or_update_signal_async(
     telegram_user_id: int,
     signal: dict,
     display_tier: str,
-) -> bool:
+) -> dict | None:
     """Prefer editing existing active message over sending a near-duplicate new one."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    try:
-        from signalrank_telegram.delivery_cooldown import check_delivery_cooldown, set_delivery_cooldown
-    except Exception:
-        check_delivery_cooldown = None
-        set_delivery_cooldown = None
 
     signal_id = str(signal.get("signal_id") or "").strip()
+    asset_for_log = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    tf_for_log = str(signal.get("timeframe") or "").strip()
+    if _delivery_trace_enabled():
+        logger.info(
+            "[delivery_attempt_start] user=%s signal=%s asset=%s tf=%s display_tier=%s profile=%s",
+            telegram_user_id, signal_id or signal.get("id"), asset_for_log, tf_for_log, display_tier,
+            signal.get("delivery_user_profile") or signal.get("trade_profile") or "unknown",
+        )
+    try:
+        from db.models import User
+        from db.session import get_session
+        from sqlalchemy import select
+        from datetime import datetime, timezone
+
+        async with get_session(noncritical=True) as _tz_session:
+            _tz_user = (await _tz_session.execute(
+                select(User).where(User.telegram_user_id == int(telegram_user_id))
+            )).scalar_one_or_none()
+        signal["display_timezone"] = getattr(_tz_user, "timezone", None)
+        signal["display_telegram_user_id"] = int(telegram_user_id)
+        signal["delivered_at"] = datetime.now(timezone.utc)
+        try:
+            from signalrank_telegram.timezones import travel_timezone_refresh_due
+            if _tz_user is not None and travel_timezone_refresh_due(_tz_user):
+                reminder_key = f"travel_timezone_prompted:{int(telegram_user_id)}"
+                already_prompted = await state.cache_get(reminder_key)
+                if not already_prompted:
+                    from signalrank_telegram.commands import _timezone_location_keyboard
+                    await _telegram_send_message_guarded(
+                        bot,
+                        chat_id=int(telegram_user_id),
+                        text=(
+                            f"Travel mode is on. Your saved timezone is "
+                            f"{getattr(_tz_user, 'timezone', None) or 'UTC'}. "
+                            "If you changed location, update it below."
+                        ),
+                        reply_markup=_timezone_location_keyboard(),
+                    )
+                    await state.cache_set(reminder_key, "1", ex=14 * 24 * 3600)
+        except Exception as _travel_prompt_error:
+            logger.debug("[timezone] travel reminder skipped: %s", _travel_prompt_error)
+    except Exception:
+        signal.setdefault("display_timezone", None)
+        signal.setdefault("display_telegram_user_id", int(telegram_user_id))
+    try:
+        from engine.delivery_freshness import validate_delivery_freshness
+
+        _cached_live_price = None
+        try:
+            _raw_price = signal.get("current_price") or signal.get("live_price")
+            _cached_live_price = float(_raw_price) if _raw_price is not None else None
+        except Exception:
+            _cached_live_price = None
+        try:
+            freshness = await asyncio.wait_for(
+                validate_delivery_freshness(
+                    signal,
+                    user_profile=signal.get("delivery_user_profile") or signal.get("trade_profile"),
+                    cached_live_price=_cached_live_price,
+                ),
+                timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 4.0)),
+            )
+        except asyncio.TimeoutError:
+            if _env_true_local("DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN", False):
+                logger.warning(
+                    "[delivery] freshness timeout fail-open user=%s signal=%s asset=%s",
+                    telegram_user_id,
+                    signal_id or signal.get("id"),
+                    signal.get("asset") or signal.get("symbol"),
+                )
+                freshness = None
+            else:
+                logger.info(
+                    "[delivery] blocked freshness timeout user=%s signal=%s asset=%s",
+                    telegram_user_id,
+                    signal_id or signal.get("id"),
+                    signal.get("asset") or signal.get("symbol"),
+                )
+                return None
+        if freshness is not None:
+            if not freshness.ok:
+                logger.info(
+                    "[delivery] blocked stale signal user=%s signal=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    telegram_user_id,
+                    signal_id or signal.get("id"),
+                    signal.get("asset") or signal.get("symbol"),
+                    signal.get("timeframe"),
+                    freshness.reason,
+                    float(freshness.age_minutes or 0.0),
+                    float(freshness.max_age_minutes or 0.0),
+                    float(freshness.opportunity_remaining_pct or 0.0),
+                )
+                return None
+            if freshness.live_price is not None:
+                signal["current_price"] = float(freshness.live_price)
+                signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
+    except Exception as exc:
+        if _env_true_local("DELIVERY_FRESHNESS_ERROR_FAIL_OPEN", False):
+            logger.warning("[delivery] freshness gate error fail-open user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
+        else:
+            logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
+            return None
+
     text = format_signal(signal, display_tier=display_tier)
     if not text or not str(text).strip():
-        return False
+        logger.warning(
+            "[delivery_format_empty] user=%s signal=%s asset=%s tf=%s display_tier=%s",
+            telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+            signal.get("timeframe"), display_tier,
+        )
+        return None
+    if _delivery_trace_enabled():
+        logger.info(
+            "[delivery_format_ok] user=%s signal=%s asset=%s tf=%s text_len=%s",
+            telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+            signal.get("timeframe"), len(str(text)),
+        )
 
-    if signal_id:
+    if signal_id and _env_true_local("DELIVERY_SIGNAL_UPDATE_ENABLED", False):
         editable = await _find_editable_signal_message(int(telegram_user_id), signal)
         if editable is not None:
             try:
@@ -1146,16 +1796,19 @@ async def _deliver_or_update_signal_async(
                         f"[signal_update] skipped non-material update user={telegram_user_id} "
                         f"old={editable.get('old_signal_id')} new={signal_id}"
                     )
-                    return True
+                    return None
 
                 counts = await _load_signal_engagement_counts(signal_id)
                 keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
-                await bot.edit_message_text(
-                    chat_id=int(editable["chat_id"]),
-                    message_id=int(editable["message_id"]),
-                    text=text,
-                    parse_mode="HTML",
-                    reply_markup=keyboard,
+                edited_msg = await asyncio.wait_for(
+                    bot.edit_message_text(
+                        chat_id=int(editable["chat_id"]),
+                        message_id=int(editable["message_id"]),
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=keyboard,
+                    ),
+                    timeout=max(3.0, _env_float_local("TELEGRAM_EDIT_TIMEOUT_SECONDS", 8.0)),
                 )
 
                 await _mark_signal_message_updated(
@@ -1165,59 +1818,94 @@ async def _deliver_or_update_signal_async(
                 )
 
                 jump_keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("Go to signal", callback_data=f"open_signal_{signal_id[:36]}")]]
+                    [[InlineKeyboardButton(
+                        "Go to signal",
+                        url=_build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"])),
+                    )]]
                 )
-                await bot.send_message(
+                notice_msg = await _telegram_send_message_guarded(
+                    bot,
                     chat_id=int(telegram_user_id),
                     text=f"♻️ <b>Signal updated</b> — {update_reason}.",
                     parse_mode="HTML",
                     reply_markup=jump_keyboard,
                 )
-                return True
+                acknowledged = edited_msg or notice_msg
+                message_id = getattr(acknowledged, "message_id", None)
+                if message_id is None:
+                    raise RuntimeError("Telegram edit completed without a message acknowledgement")
+                return {
+                    "mode": "updated",
+                    "chat_id": int(
+                        getattr(getattr(acknowledged, "chat", None), "id", editable["chat_id"])
+                    ),
+                    "message_id": int(message_id),
+                    "edited_chat_id": int(editable["chat_id"]),
+                    "edited_message_id": int(editable["message_id"]),
+                }
             except Exception as exc:
                 logger.debug(f"[signal_update] edit path failed; fallback to fresh send: {exc}")
 
     try:
         signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-        if signal_asset and await _is_asset_delivery_locked(int(telegram_user_id), signal_asset):
-            logger.info(
-                f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
-                f"asset={signal_asset} signal={signal_id or signal.get('id')}"
-            )
-            return True
-
-        if check_delivery_cooldown is not None and signal_asset:
-            raw_direction = str(signal.get("direction") or "").strip().lower()
-            cooldown_direction = "BUY" if raw_direction in {"long", "buy"} else "SELL" if raw_direction in {"short", "sell"} else raw_direction.upper()
-            if cooldown_direction and check_delivery_cooldown(int(telegram_user_id), signal_asset, cooldown_direction):
-                logger.info(
-                    f"[delivery_cooldown] skipped duplicate delivery: user={telegram_user_id} "
-                    f"asset={signal_asset} direction={cooldown_direction} signal={signal_id or signal.get('id')}"
+        if signal_asset:
+            _asset_lock_timeout = max(0.5, _env_float_local("DELIVERY_ASSET_LOCK_TIMEOUT_SECONDS", 2.0))
+            try:
+                _locked = await asyncio.wait_for(
+                    _is_asset_delivery_locked(
+                        int(telegram_user_id),
+                        signal_asset,
+                        current_signal_id=signal_id or str(signal.get('id') or ''),
+                    ),
+                    timeout=_asset_lock_timeout,
                 )
-                return True
+            except asyncio.TimeoutError:
+                _locked = False
+                logger.warning(
+                    "[asset_lock] pre-send timeout fail-open user=%s asset=%s signal=%s timeout=%.1fs",
+                    telegram_user_id,
+                    signal_asset,
+                    signal_id or signal.get('id'),
+                    _asset_lock_timeout,
+                )
+            if _locked:
+                logger.info(
+                    f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
+                    f"asset={signal_asset} signal={signal_id or signal.get('id')}"
+                )
+                return None
     except Exception as exc:
         logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
 
-    await _send_signal_with_engagement_async(
-        bot,
-        chat_id=int(telegram_user_id),
-        text=str(text),
-        signal_id=signal_id or str(signal.get("id") or ""),
-        telegram_user_id=int(telegram_user_id),
-        signal=signal,
+    send_timeout = max(3.0, _env_float_local("DELIVERY_SEND_TIMEOUT_SECONDS", 12.0))
+    if _delivery_trace_enabled():
+        logger.info(
+            "[delivery_telegram_send_begin] user=%s signal=%s asset=%s tf=%s timeout=%.1fs",
+            telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+            signal.get("timeframe"), send_timeout,
+        )
+    sent_msg = await asyncio.wait_for(
+        _send_signal_with_engagement_async(
+            bot,
+            chat_id=int(telegram_user_id),
+            text=str(text),
+            signal_id=signal_id or str(signal.get("id") or ""),
+            telegram_user_id=int(telegram_user_id),
+            signal=signal,
+        ),
+        timeout=send_timeout,
     )
-
-    try:
-        if set_delivery_cooldown is not None:
-            signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-            raw_direction = str(signal.get("direction") or "").strip().lower()
-            cooldown_direction = "BUY" if raw_direction in {"long", "buy"} else "SELL" if raw_direction in {"short", "sell"} else raw_direction.upper()
-            if signal_asset and cooldown_direction:
-                set_delivery_cooldown(int(telegram_user_id), signal_asset, cooldown_direction, str(display_tier or "free"))
-    except Exception as exc:
-        logger.debug(f"[delivery_cooldown] set failed for user={telegram_user_id}: {exc}")
-
-    return True
+    proof = {
+        "mode": "sent",
+        "chat_id": int(getattr(getattr(sent_msg, "chat", None), "id", telegram_user_id)),
+        "message_id": int(getattr(sent_msg, "message_id")),
+    }
+    logger.info(
+        "[delivery_telegram_send_ok] user=%s signal=%s asset=%s tf=%s chat_id=%s message_id=%s",
+        telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
+        signal.get("timeframe"), proof.get("chat_id"), proof.get("message_id"),
+    )
+    return proof
 
 
 def _deliver_or_update_signal_sync(
@@ -1242,21 +1930,79 @@ def _deliver_or_update_signal_sync(
                 sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
                 if sig_id:
                     mark_signal_delivered_sync(int(telegram_user_id), sig_id)
-                try:
-                    from signalrank_telegram.delivery_cooldown import set_delivery_cooldown
-
-                    signal_asset = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-                    raw_direction = str(signal.get("direction") or "").strip().lower()
-                    cooldown_direction = "BUY" if raw_direction in {"long", "buy"} else "SELL" if raw_direction in {"short", "sell"} else raw_direction.upper()
-                    if signal_asset and cooldown_direction:
-                        set_delivery_cooldown(int(telegram_user_id), signal_asset, cooldown_direction, str(display_tier or "free"))
-                except Exception as cooldown_err:
-                    logger.debug(f"[delivery_cooldown] sync set failed: {cooldown_err}")
             except Exception as redis_err:
                 logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {redis_err}")
         return ok
     except Exception as exc:
         logger.debug(f"[dispatch] deliver_or_update failed: {exc}")
+        return False
+
+
+async def _mark_delivery_with_telegram_proof(
+    *,
+    telegram_user_id: int,
+    signal_id: str,
+    proof: dict | None,
+    error: str | None = None,
+    delivery_state: str | None = None,
+) -> bool:
+    """Persist Telegram delivery state; success requires a Telegram chat/message ack.
+
+    This path is critical after Telegram already accepted a message: if the DB
+    proof write is left pending/unsent, the resend and asset-lock logic can
+    become confused. Bound it with its own timeout and use critical session
+    priority so proof updates don't sit behind outcome/background work.
+    """
+    from db.session import get_session
+    from db.pg_features import mark_signal_delivery_result
+
+    async def _write_proof() -> bool:
+        proof_d = dict(proof or {})
+        chat_id = proof_d.get("chat_id")
+        message_id = proof_d.get("message_id")
+        has_ack = chat_id is not None and message_id is not None
+        async with get_session(critical=True) as db_session:
+            ok = await mark_signal_delivery_result(
+                db_session,
+                telegram_user_id=int(telegram_user_id),
+                signal_id=str(signal_id),
+                sent_ok=bool(has_ack and not error),
+                error=None if has_ack and not error else str(error or "delivery_not_confirmed"),
+                telegram_chat_id=int(chat_id) if chat_id is not None else None,
+                telegram_message_id=int(message_id) if message_id is not None else None,
+                telegram_api_result=proof_d,
+                delivery_state=str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+            )
+            await db_session.commit()
+            success = bool(ok and has_ack and not error)
+            logger.info(
+                "[delivery_proof_write] user=%s signal=%s sent_ok=%s chat_id=%s message_id=%s state=%s error=%s",
+                telegram_user_id, signal_id, success, chat_id, message_id,
+                str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+                None if success else str(error or "delivery_not_confirmed"),
+            )
+            return success
+
+    try:
+        return bool(await asyncio.wait_for(
+            _write_proof(),
+            timeout=max(2.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 10.0)),
+        ))
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[delivery] proof write timeout user=%s signal=%s timeout=%.1fs",
+            telegram_user_id,
+            signal_id,
+            max(2.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 10.0)),
+        )
+        return False
+    except Exception as exc:
+        logger.warning(
+            "[delivery] proof write failed user=%s signal=%s err=%s",
+            telegram_user_id,
+            signal_id,
+            exc,
+        )
         return False
 
 
@@ -1558,9 +2304,6 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
 
         bot = Bot(token=_require_telegram_token())
         asset = str(signal.get("asset") or "")
-        detail = str(detail or "N/A")
-        ok = bool(ok)
-        reason_code = str(reason_code or "unknown").lower().strip()
         if ok:
             # Send a clean execution receipt after successful AUTO placement.
             _send_message_with_retry_sync(
@@ -1963,27 +2706,41 @@ async def _send_signal_with_engagement_async(
     signal_id: str,
     telegram_user_id: int,
     signal: dict | None = None,
-) -> None:
+) -> object:
     """Send a signal message with engagement buttons (+ ⚡ MT5 button for PREMIUM+)
     and save message_id to ActiveSignalMessage for live-edit support."""
     counts = await _load_signal_engagement_counts(str(signal_id))
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
     try:
         _dispatch_started = time.perf_counter()
-        msg = await bot.send_message(
+        rich_html = None
+        try:
+            if _env_true_local("TELEGRAM_RICH_MESSAGES_ENABLED", False) and signal:
+                from signalrank_telegram.rich_messages import build_signal_rich_html
+                rich_html = build_signal_rich_html(signal, fallback_text=text)
+        except Exception as _rich_build_err:
+            logger.debug("[telegram_rich_build_failed] signal=%s err=%s", signal_id, _rich_build_err)
+            rich_html = None
+        msg = await _telegram_send_message_guarded(
+            bot,
             chat_id=chat_id,
             text=text,
             reply_markup=keyboard,
             parse_mode="HTML",
+            rich_message=rich_html,
         )
         try:
             from web.app import telegram_dispatch_latency_seconds
-            
             telegram_dispatch_latency_seconds.labels(status="ok").observe(
                 max(0.0, time.perf_counter() - _dispatch_started)
             )
         except Exception:
             pass
+        logger.info(
+            "[send_signal_ok] user=%s signal=%s chat_id=%s message_id=%s text_len=%s",
+            telegram_user_id, signal_id, getattr(getattr(msg, "chat", None), "id", chat_id),
+            getattr(msg, "message_id", None), len(str(text or "")),
+        )
         # Persist message location so tiered_executor can live-edit it later
         try:
             from db.session import get_session
@@ -1993,7 +2750,7 @@ async def _send_signal_with_engagement_async(
             from sqlalchemy import select
             from sqlalchemy.dialects.postgresql import insert as pg_insert
             global _vip_webhook_client
-            async with get_session() as session:
+            async with get_session(critical=True) as session:
                 user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
                 stmt = pg_insert(ActiveSignalMessage).values(
                     user_id=user.id,
@@ -2016,7 +2773,7 @@ async def _send_signal_with_engagement_async(
                             )
                         )
                     ).scalars().first()
-                    if wh_row and signal:
+                    if _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False) and wh_row and signal:
                         if _vip_webhook_client is None:
                             _vip_webhook_client = httpx.AsyncClient(timeout=8)
                         payload = {
@@ -2046,9 +2803,21 @@ async def _send_signal_with_engagement_async(
                 except Exception as _wh_exc:
                     logger.debug(f"[vip_webhook] dispatch failed for user={telegram_user_id}: {_wh_exc}")
                 await session.commit()
+                logger.info(
+                    "[active_message_saved] user=%s signal=%s chat_id=%s message_id=%s",
+                    telegram_user_id, signal_id, chat_id, getattr(msg, "message_id", None),
+                )
         except Exception as _e:
-            logger.debug(f"[engage] Failed to save ActiveSignalMessage: {_e}")
-    except Exception:
+            logger.warning(f"[active_message_save_failed] user={telegram_user_id} signal={signal_id} err={_e}")
+        return msg
+    except Exception as send_exc:
+        logger.warning(
+            "[send_signal] keyboard send failed chat_id=%s user=%s signal_id=%s err=%s",
+            chat_id,
+            telegram_user_id,
+            signal_id,
+            send_exc,
+        )
         try:
             from web.app import telegram_dispatch_latency_seconds
             telegram_dispatch_latency_seconds.labels(status="fallback").observe(
@@ -2057,7 +2826,7 @@ async def _send_signal_with_engagement_async(
         except Exception:
             pass
         # Fallback: send without buttons so the signal still reaches the user
-        await bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
+        return await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode="HTML")
 
 
 def _send_signal_with_engagement_sync(
@@ -2067,21 +2836,22 @@ def _send_signal_with_engagement_sync(
     signal_id: str,
     telegram_user_id: int,
     signal: dict | None = None,
-) -> None:
+) -> object | None:
     """Sync wrapper for _send_signal_with_engagement_async."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        run_sync(_send_signal_with_engagement_async(
+        return run_sync(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
-        return
     try:
-        loop.create_task(_send_signal_with_engagement_async(
+        task = loop.create_task(_send_signal_with_engagement_async(
             bot, int(chat_id), str(text), str(signal_id), int(telegram_user_id), signal
         ))
+        task.add_done_callback(_consume_telegram_task_result)
     except Exception as _e:
         logger.debug(f"[send_signal] Failed to schedule engagement send: {_e}")
+    return None
 
 
 def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None = None) -> None:
@@ -2098,10 +2868,23 @@ def _send_message_sync(bot: Bot, chat_id: int, text: str, parse_mode: str | None
         return
     # If we're already in an event loop, schedule it.
     try:
-        loop.create_task(_send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode))
+        task = loop.create_task(
+            _send_message_async(bot, int(chat_id), str(text), parse_mode=parse_mode)
+        )
+        task.add_done_callback(_consume_telegram_task_result)
     except Exception as e:
         logger.debug(f"[send_message] Failed to create async task for message: {e}")
         pass
+
+
+def _consume_telegram_task_result(task: asyncio.Task) -> None:
+    """Own fire-and-forget Telegram tasks so failures are observed and logged."""
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        logger.debug("[telegram] background send task cancelled")
+    except Exception as exc:
+        logger.warning("[telegram] background send failed: %s", exc)
 
 
 async def _send_message_with_retry(
@@ -2110,33 +2893,20 @@ async def _send_message_with_retry(
     text: str,
     parse_mode: str | None = None,
     reply_markup=None,
-) -> None:
+) -> object:
     """Async send with Telegram flood-control retry and pacing."""
-    import asyncio
-    from telegram.error import RetryAfter
-
-    import time
-    last_heartbeat = time.time()
-    while True:
-        try:
-            now = time.time()
-            if now - last_heartbeat > 60:
-                print(f"[bot] heartbeat: polling loop running", flush=True)
-                last_heartbeat = now
-            send_text = str(text)
-            if parse_mode and parse_mode.lower().startswith("markdown"):
-                from telegram.helpers import escape_markdown
-                version = 2 if "v2" in parse_mode.lower() else 1
-                send_text = escape_markdown(send_text, version=version)
-            await bot.send_message(
-                chat_id=int(chat_id),
-                text=send_text,
-                parse_mode=parse_mode,
-                reply_markup=reply_markup,
-            )
-            return
-        except RetryAfter as e:
-            await asyncio.sleep(float(getattr(e, "retry_after", 1.0) or 1.0))
+    send_text = str(text)
+    if parse_mode and parse_mode.lower().startswith("markdown"):
+        from telegram.helpers import escape_markdown
+        version = 2 if "v2" in parse_mode.lower() else 1
+        send_text = escape_markdown(send_text, version=version)
+    return await _telegram_send_message_guarded(
+        bot,
+        chat_id=int(chat_id),
+        text=send_text,
+        parse_mode=parse_mode,
+        reply_markup=reply_markup,
+    )
 
 
 def _send_message_with_retry_sync(
@@ -2145,9 +2915,9 @@ def _send_message_with_retry_sync(
     text: str,
     parse_mode: str | None = None,
     reply_markup=None,
-) -> None:
+) -> object | None:
     """Sync wrapper for _send_message_with_retry, safe in background threads."""
-    run_sync(_send_message_with_retry(
+    return run_sync(_send_message_with_retry(
         bot,
         int(chat_id),
         str(text),
@@ -2158,12 +2928,33 @@ def _send_message_with_retry_sync(
 
 def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
+        import uuid as _uuid
+        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
+        err_ref = f"ERR-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
+        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
         # That would make start_command see the user as "not new" and prevent referral attribution.
         # start_command already handles user creation + start auditing in a single transaction.
         if str(command_name) == "start":
-            return await handler(update, context)
+            try:
+                return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
+            except asyncio.TimeoutError:
+                logger.warning("[cmd:%s] timed out ref=%s after %ss", command_name, err_ref, command_timeout_s)
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(f"That command timed out. Reference: {err_ref}")
+                except Exception:
+                    pass
+                return
+            except Exception as exc:
+                logger.exception("[cmd:%s] handler failed ref=%s: %s", command_name, err_ref, exc)
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(f"The command could not complete right now. Reference: {err_ref}")
+                except Exception:
+                    pass
+                return
 
         try:
             from db.session import get_engine_for_event_loop, get_session
@@ -2184,30 +2975,46 @@ def _audit_handler(command_name: str, handler):
                     except Exception:
                         meta["args"] = None
 
-                async with get_session() as session:
+                async def _write_command_audit() -> None:
                     try:
-                        from db.pg_features import record_bot_event
+                        # Audit is useful but must never delay command replies. During
+                        # signal delivery/storage bursts it intentionally fails fast.
+                        async with get_session(noncritical=True) as session:
+                            from db.pg_features import record_bot_event
 
-                        await record_bot_event(
-                            session,
-                            telegram_user_id=user_id,
-                            username=username,
-                            event_type="command",
-                            meta=meta,
-                        )
-                        await session.commit()
+                            await record_bot_event(
+                                session,
+                                telegram_user_id=user_id,
+                                username=username,
+                                event_type="command",
+                                meta=meta,
+                            )
+                            await session.commit()
                     except Exception as e:
                         _log_once(
                             "bot_event_audit_failed",
-                            f"[bot] bot_events audit write failed: {type(e).__name__}: {e}",
+                            f"[bot] bot_events audit skipped/failed: {type(e).__name__}: {e}",
                         )
+
+                audit_timeout = float(os.getenv("BOT_COMMAND_AUDIT_TIMEOUT_SECONDS", "1.0") or 1.0)
+                await asyncio.wait_for(_write_command_audit(), timeout=max(0.1, audit_timeout))
         except Exception as e:
             _log_once(
                 "bot_event_audit_outer_failed",
-                f"[bot] bot_events audit init failed: {type(e).__name__}: {e}",
+                f"[bot] bot_events audit skipped/failed: {type(e).__name__}: {e}",
             )
         try:
-            return await handler(update, context)
+            return await asyncio.wait_for(handler(update, context), timeout=command_timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning("[cmd:%s] timed out ref=%s after %ss", command_name, err_ref, command_timeout_s)
+            try:
+                if getattr(update, "message", None):
+                    await update.message.reply_text(
+                        f"That command is taking too long right now. Reference: {err_ref}"
+                    )
+            except Exception:
+                pass
+            return
         except Exception as _cmd_err:
             # Detect DB/connection errors and give the user actionable feedback
             # instead of silent failure.
@@ -2216,18 +3023,26 @@ def _audit_handler(command_name: str, handler):
                 "connection refused", "could not connect", "no route to host",
                 "password authentication failed", "database error",
                 "asyncpg", "operational error", "connection pool",
+                "too many clients already", "toomanyconnectionserror",
                 "ssl", "timeout expired", "could not translate host",
             ))
+            logger.exception("[cmd:%s] handler failed ref=%s db=%s: %s", command_name, err_ref, _is_db_err, _cmd_err)
             if _is_db_err:
                 try:
                     if getattr(update, "message", None):
                         await update.message.reply_text(
-                            "⚠️ Database connection error. Please try again later."
+                            f"Database connection pressure detected. Please try again shortly. Ref: {err_ref}"
                         )
                 except Exception:
                     pass
             else:
-                raise  # Let the on_error handler log unexpected errors
+                try:
+                    if getattr(update, "message", None):
+                        await update.message.reply_text(
+                            f"The command could not complete right now. Reference: {err_ref}"
+                        )
+                except Exception:
+                    pass
 
     return _inner
 
@@ -2527,6 +3342,28 @@ def _schedule_bot_jobs(scheduler: BackgroundScheduler) -> None:
     
     Note: Functions are referenced directly since they're defined in this same module.
     """
+    if scheduler is None:
+        return
+
+    try:
+        existing_ids = {str(job.id) for job in (scheduler.get_jobs() or [])}
+    except Exception:
+        existing_ids = set()
+
+    # run_bot() already registers canonical jobs with these IDs. Avoid adding
+    # legacy duplicate jobs with alternate IDs/intervals.
+    canonical_ids = {
+        "resend_unsent_signals_job",
+        "distribute_random_signals_to_free_users_job",
+        "downgrade_expired_subscriptions_job",
+        "auto_delete_old_signals_job",
+    }
+    if canonical_ids.intersection(existing_ids):
+        logger.info(
+            "[sched] skipping legacy _schedule_bot_jobs registration; canonical jobs already configured"
+        )
+        return
+
     # CRITICAL: FREE signal distribution job - runs every 30 minutes
     # This distributes random signals from the global pool to FREE tier users
     try:
@@ -2682,39 +3519,41 @@ def _dispatch_free_fomo_unlock_for_signal(signal: dict) -> int:
 
         bot = Bot(token=_require_telegram_token())
         unlock_msg = _format_free_fomo_unlock_message(signal)
-        sent = 0
+        async def _dispatch_recipients() -> int:
+            confirmed_count = 0
+            for uid in recipients:
+                try:
+                    await _send_message_with_retry(
+                        bot,
+                        chat_id=int(uid),
+                        text=unlock_msg,
+                        parse_mode="HTML",
+                    )
+                    delivery_proof = await _deliver_or_update_signal_async(
+                        bot,
+                        telegram_user_id=int(uid),
+                        signal=dict(signal or {}),
+                        display_tier="free",
+                    )
+                    if await _mark_delivery_with_telegram_proof(
+                        telegram_user_id=int(uid),
+                        signal_id=str(signal_id),
+                        proof=delivery_proof,
+                        delivery_state="sent" if delivery_proof else "skipped",
+                    ):
+                        confirmed_count += 1
+                except Exception as exc:
+                    await _mark_delivery_with_telegram_proof(
+                        telegram_user_id=int(uid),
+                        signal_id=str(signal_id),
+                        proof=None,
+                        error=str(exc),
+                        delivery_state="failed",
+                    )
+                    logger.debug("[fomo_free] send failed user=%s err=%s", uid, exc)
+            return confirmed_count
 
-        for uid in recipients:
-            try:
-                _send_message_with_retry_sync(bot, chat_id=int(uid), text=unlock_msg, parse_mode="HTML")
-                if _deliver_or_update_signal_sync(
-                    bot,
-                    telegram_user_id=int(uid),
-                    signal=dict(signal or {}),
-                    display_tier="free",):
-                # Global fix: escape text for Markdown/MarkdownV2 parse modes
-                    send_text = str(text)
-                if parse_mode and parse_mode.lower().startswith("markdown"):
-                    try:
-                        from telegram.helpers import escape_markdown
-                        version = 2 if "v2" in parse_mode.lower() else 1
-                        send_text = escape_markdown(send_text, version=version)
-                    except Exception:
-                        pass
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    run_sync(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode, telemetry_started_at=time.perf_counter(), telemetry_tier=tier, telemetry_regime=regime))
-                    return
-                # If we're already in an event loop, schedule it.
-                try:
-                    loop.create_task(_send_message_async(bot, int(chat_id), send_text, parse_mode=parse_mode, telemetry_started_at=time.perf_counter(), telemetry_tier=tier, telemetry_regime=regime))
-                except Exception as e:
-                    logger.debug(f"[send_message] Failed to create async task for message: {e}")
-                    pass
-            except Exception as e:
-                logger.debug(f"[fomo_free] Failed to send free fomo message to user {uid}: {e}")
-                continue
+        sent = int(run_sync(_dispatch_recipients()) or 0)
         if sent:
             logger.info(f"[fomo_free] dispatched signal={signal_id[:8]} to free_users={sent}")
         return int(sent)
@@ -2763,7 +3602,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     # Global kill-switch (do not dispatch/queue)
     try:
         if state.get_killswitch_sync().enabled:
-            return
+            return 0
     except Exception as e:
         logger.debug(f"[dispatch] Failed to check killswitch: {e}")
         pass
@@ -2777,6 +3616,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         signals_list = (vip_list + prem_list)
     else:
         signals_list = list(strategy_signals or [])
+    user_trade_profile = "all"
 
     # Canonical tier quality gate: enforce per-tier score thresholds centrally,
     # independent of caller/source (engine, resend, callbacks, etc.).
@@ -2784,7 +3624,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         gated_signals: list[dict] = []
         for _sig in (signals_list or []):
             try:
-                _score = float((_sig or {}).get('score', 0) or 0)
+                _score = _delivery_score(_sig)
                 if delivery_mgr.should_send_signal(routing_tier, _score, user_id=None):
                     gated_signals.append(_sig)
             except Exception:
@@ -2819,13 +3659,78 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     except Exception as e:
         _log_once('user_prefs_filter_error', f'[dispatch] User prefs filter error: {e}')
 
+    # --- PERSONALIZED TRADING INTELLIGENCE FILTERING ---
+    try:
+        from services.user_intelligence import get_user_trading_preferences, signal_matches_preferences
+        from services.opportunity_engine import rank_opportunities
+        from db.session import get_session as _profile_get_session
+
+        async def _load_delivery_prefs():
+            async with _profile_get_session(noncritical=True) as _profile_session:
+                return await get_user_trading_preferences(_profile_session, int(user_id))
+
+        _prefs = await asyncio.wait_for(
+            _load_delivery_prefs(),
+            timeout=max(1.0, _env_float_local("DELIVERY_PREFS_TIMEOUT_SECONDS", 3.0)),
+        )
+        user_trade_profile = str(getattr(_prefs, "trade_profile", "all") or "all")
+        logger.info(
+            "[profile_apply] user=%s tier=%s trade_profile=%s risk=%s asset_classes=%s preferred=%s blocked=%s sessions=%s notification=%s execution=%s candidates_before=%s",
+            user_id, routing_tier, user_trade_profile, getattr(_prefs, "risk_profile", "unknown"),
+            ",".join(getattr(_prefs, "asset_classes", ()) or ()),
+            ",".join(getattr(_prefs, "preferred_assets", ()) or ()),
+            ",".join(getattr(_prefs, "blocked_assets", ()) or ()),
+            ",".join(getattr(_prefs, "sessions", ()) or ()),
+            getattr(_prefs, "notification_style", "unknown"), getattr(_prefs, "execution_mode", "unknown"),
+            len(signals_list),
+        )
+        before_profile_count = len(signals_list)
+        _filtered_signals = []
+        for sig in signals_list:
+            ok, reason = signal_matches_preferences(sig, _prefs)
+            if ok:
+                _filtered_signals.append(sig)
+            else:
+                logger.debug("[dispatch] user=%s personalized_filter_drop reason=%s asset=%s", user_id, reason, sig.get("asset"))
+        signals_list = rank_opportunities(_filtered_signals, _prefs)
+        for _sig in signals_list:
+            try:
+                _sig["delivery_user_profile"] = user_trade_profile
+                _sig["delivery_risk_profile"] = str(getattr(_prefs, "risk_profile", "balanced") or "balanced")
+                _sig["delivery_execution_mode"] = str(getattr(_prefs, "execution_mode", "manual") or "manual")
+            except Exception:
+                pass
+        dropped_profile_count = max(0, before_profile_count - len(signals_list))
+        logger.info(
+            "[profile_apply_result] user=%s profile=%s candidates_after=%s dropped=%s",
+            user_id, user_trade_profile, len(signals_list), dropped_profile_count,
+        )
+        if dropped_profile_count:
+            logger.info(
+                "[dispatch] user=%s profile=%s risk=%s dropped=%s nonmatching_signals",
+                user_id,
+                _prefs.trade_profile,
+                _prefs.risk_profile,
+                dropped_profile_count,
+            )
+    except Exception as e:
+        _log_once('trade_profile_filter_error', f'[dispatch] Trading preference filter error: {e}')
+
     if not signals_list:
-        return
+        logger.info(
+            "[dispatch] no deliverable signals after profile/preferences user=%s profile=%s tier=%s",
+            user_id,
+            user_trade_profile,
+            routing_tier,
+        )
+        return 0
 
     # --- FRESHNESS FILTERING ---
-    # Keep this path non-blocking (avoid sync HTTP calls in async dispatch loop).
+    # Final freshness gate before reservation/delivery. This enforces hard age
+    # limits by timeframe/profile, opportunity decay, price drift, and TP/SL
+    # already-hit checks.
     try:
-        from engine.stale_signal_validator import validate_signal_freshness
+        from engine.delivery_freshness import validate_delivery_freshness
 
         fresh_signals = []
         for sig in signals_list:
@@ -2835,24 +3740,36 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
             except Exception:
                 _cached_price = None
 
-            is_fresh, reason, live_price = await validate_signal_freshness(
+            freshness = await validate_delivery_freshness(
                 sig,
+                user_profile=user_trade_profile,
                 cached_live_price=_cached_price,
             )
-            if not is_fresh:
+            if not freshness.ok:
                 sig_id = sig.get('signal_id') or sig.get('id', 'unknown')
                 asset = sig.get('asset', 'unknown')
-                logger.info(f"[dispatch] Filtered stale signal {sig_id} for user {user_id}: asset={asset} reason={reason}")
+                logger.info(
+                    "[dispatch] filtered stale signal=%s user=%s asset=%s tf=%s reason=%s age=%.1fm max=%.1fm remaining=%.1f%%",
+                    sig_id,
+                    user_id,
+                    asset,
+                    sig.get("timeframe"),
+                    freshness.reason,
+                    float(freshness.age_minutes or 0.0),
+                    float(freshness.max_age_minutes or 0.0),
+                    float(freshness.opportunity_remaining_pct or 0.0),
+                )
             else:
-                if live_price is not None:
-                    sig["current_price"] = float(live_price)
+                if freshness.live_price is not None:
+                    sig["current_price"] = float(freshness.live_price)
+                sig["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
                 fresh_signals.append(sig)
         
         signals_list = fresh_signals
         
         if not signals_list:
             logger.info(f"[dispatch] All signals filtered as stale for user {user_id}")
-            return
+            return 0
     except Exception as e:
         logger.warning(f"[dispatch] Freshness filtering failed for user {user_id}: {e}")
         # Continue with unfiltered signals on error
@@ -2922,7 +3839,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         )
 
     if not signals_list:
-        return
+        return 0
 
     # Dispatch diagnostics (debug-level only)
     try:
@@ -2939,15 +3856,14 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
 
         if engine is not None:
             effective_tier = routing_tier
-            display_tier = routing_tier
+            display_tier = _display_tier_for_delivery(tier)
             
-            # OWNER and ADMIN always get VIP format for ALL notifications
             if tier == 'free' and extra_left > 0:
                 effective_tier = 'premium'
                 display_tier = 'premium'
 
 
-            if effective_tier in ('premium', 'vip'):
+            if effective_tier in ('premium', 'vip', 'admin', 'owner'):
                 bot = Bot(token=_require_telegram_token())
                 limit = TIER_LIMITS.get(routing_tier, 0)
                 if tier == 'free' and extra_left > 0:
@@ -2959,7 +3875,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     from core.tier_constants import TIER_DAILY_LIMITS
 
                     to_send: list[dict] = []
-                    async with get_session() as session:
+                    async with get_session(critical=True) as session:
                         daily_limit = TIER_DAILY_LIMITS.get(
                             str(effective_tier),
                             TIER_DAILY_LIMITS.get("free", 3),
@@ -2971,7 +3887,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             if daily_limit != float('inf') and (already_sent_today + len(to_send)) >= int(daily_limit):
                                 break
                             try:
-                                _score = float((signal or {}).get('score', 0) or 0)
+                                _score = _delivery_score(signal)
                                 if delivery_mgr is not None and not delivery_mgr.should_send_signal(
                                     str(effective_tier),
                                     _score,
@@ -2983,6 +3899,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             if await _is_asset_delivery_locked(
                                 int(user_id),
                                 str(signal.get('asset') or signal.get('symbol') or ''),
+                                current_signal_id=str(signal.get('signal_id') or signal.get('id') or ''),
                             ):
                                 logger.debug(
                                     f"[dispatch] asset lock skip user={user_id} "
@@ -3011,12 +3928,21 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             payload.setdefault("rr_ratio", s.rr_estimate)
                             payload.setdefault("score", s.score)
                             payload.setdefault("regime", s.regime)
+                            payload["delivery_user_profile"] = user_trade_profile
+                            payload["delivery_tier"] = str(effective_tier)
+                            logger.info(
+                                "[delivery_reserve_ok] user=%s signal=%s asset=%s tf=%s tier=%s profile=%s",
+                                user_id, s.signal_id, s.asset, s.timeframe, effective_tier, user_trade_profile,
+                            )
                             to_send.append(payload)
                         await session.commit()
                     return to_send
 
                 try:
-                    reserved = await _reserve()
+                    reserved = await asyncio.wait_for(
+                        _reserve(),
+                        timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_TIMEOUT_SECONDS", 8.0)),
+                    )
                     reserve_failed = False
                 except Exception as e:
                     reserved = []
@@ -3037,7 +3963,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     async def _reserve_one(_signal: dict) -> dict | None:
                         from db.pg_features import get_or_create_signal, record_signal_delivery
 
-                        async with get_session() as session:
+                        async with get_session(critical=True) as session:
                             s = await get_or_create_signal(session, _signal)
                             ok = await record_signal_delivery(
                                 session,
@@ -3067,8 +3993,12 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     for signal in signals_list:
                         if sent >= int(limit):
                             break
+                        reserved_signal = None
                         try:
-                            reserved_signal = await _reserve_one(signal)
+                            reserved_signal = await asyncio.wait_for(
+                                _reserve_one(signal),
+                                timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 8.0)),
+                            )
                             if not reserved_signal:
                                 logger.debug(
                                     "[dispatch] Fallback dedupe skip: user=%s signal=%s",
@@ -3078,19 +4008,45 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 continue
 
                             logger.debug(f"[dispatch] Fallback direct send: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                            if await _deliver_or_update_signal_async(
+                            delivery_proof = await _deliver_or_update_signal_async(
                                 bot,
                                 telegram_user_id=int(user_id),
                                 signal=reserved_signal,
                                 display_tier=display_tier,
+                            )
+                            if await _mark_delivery_with_telegram_proof(
+                                telegram_user_id=int(user_id),
+                                signal_id=str(reserved_signal.get("signal_id") or ""),
+                                proof=delivery_proof,
+                                delivery_state="sent" if delivery_proof else "skipped",
                             ):
                                 sent += 1
+                                logger.info(
+                                    "[dispatch_sent_ok] user=%s signal=%s asset=%s tf=%s tier=%s profile=%s sent_count=%s",
+                                    user_id, reserved_signal.get("signal_id"), reserved_signal.get("asset"),
+                                    reserved_signal.get("timeframe"), effective_tier, user_trade_profile, sent,
+                                )
                                 try:
                                     _auto_execute_signal_if_enabled(
                                         telegram_user_id=int(user_id),
                                         signal=dict(reserved_signal or {}),
                                         routing_tier=str(effective_tier),
                                     )
+                                except Exception:
+                                    pass
+                                _increment_successful_delivery_stat()
+                            else:
+                                try:
+                                    from db.pg_features import mark_signal_delivery_result
+                                    async with get_session() as session:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(reserved_signal.get("signal_id") or ""),
+                                            sent_ok=False,
+                                            error="deliver_or_update_returned_false",
+                                        )
+                                        await session.commit()
                                 except Exception:
                                     pass
                             if tier == 'free' and extra_left > 0:
@@ -3100,26 +4056,67 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                     logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                     pass
                         except Exception as e:
+                            try:
+                                if reserved_signal:
+                                    from db.pg_features import mark_signal_delivery_result
+                                    async with get_session() as session:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(user_id),
+                                            signal_id=str(reserved_signal.get("signal_id") or ""),
+                                            sent_ok=False,
+                                            error=str(e),
+                                        )
+                                        await session.commit()
+                            except Exception:
+                                pass
                             logger.debug(f"[dispatch] Exception in fallback send: {e}")
                             continue
-                    return
+                    return int(sent)
 
+                sent = 0
                 for signal in reserved:
                     try:
                         logger.debug(f"[dispatch] Sending reserved signal: user={user_id} signal={signal.get('asset')} id={signal.get('signal_id', 'n/a')}")
-                        _ok_send = await _deliver_or_update_signal_async(
+                        delivery_proof = await _deliver_or_update_signal_async(
                             bot,
                             telegram_user_id=int(user_id),
                             signal=signal,
                             display_tier=display_tier,
                         )
-                        if _ok_send:
+                        if await _mark_delivery_with_telegram_proof(
+                            telegram_user_id=int(user_id),
+                            signal_id=str(signal.get("signal_id") or ""),
+                            proof=delivery_proof,
+                            delivery_state="sent" if delivery_proof else "skipped",
+                        ):
+                            sent += 1
+                            logger.info(
+                                "[dispatch_sent_ok] user=%s signal=%s asset=%s tf=%s tier=%s profile=%s sent_count=%s",
+                                user_id, signal.get("signal_id"), signal.get("asset"), signal.get("timeframe"),
+                                effective_tier, user_trade_profile, sent,
+                            )
                             try:
                                 _auto_execute_signal_if_enabled(
                                     telegram_user_id=int(user_id),
                                     signal=dict(signal or {}),
                                     routing_tier=str(effective_tier),
                                 )
+                            except Exception:
+                                pass
+                            _increment_successful_delivery_stat()
+                        else:
+                            try:
+                                from db.pg_features import mark_signal_delivery_result
+                                async with get_session() as session:
+                                    await mark_signal_delivery_result(
+                                        session,
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(signal.get("signal_id") or ""),
+                                        sent_ok=False,
+                                        error="deliver_or_update_returned_false",
+                                    )
+                                    await session.commit()
                             except Exception:
                                 pass
                         if tier == 'free' and extra_left > 0:
@@ -3129,9 +4126,22 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 logger.debug(f"[dispatch] Failed to consume extra signal for user {user_id}: {e}")
                                 pass
                     except Exception as e:
+                        try:
+                            from db.pg_features import mark_signal_delivery_result
+                            async with get_session() as session:
+                                await mark_signal_delivery_result(
+                                    session,
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(signal.get("signal_id") or ""),
+                                    sent_ok=False,
+                                    error=str(e),
+                                )
+                                await session.commit()
+                        except Exception:
+                            pass
                         logger.debug(f"[dispatch] Exception in reserved send: {e}")
                         continue
-                return
+                return int(sent)
 
             # FREE with extra signals: send highest scoring available signal immediately
             if tier == 'free' and extra_left > 0:
@@ -3201,15 +4211,29 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 try:
                                     # Determine display tier: VIP for owner/admin, PREMIUM otherwise
                                     signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'premium'
-                                    if await _deliver_or_update_signal_async(
+                                    await session.commit()
+                                    delivery_proof = await _deliver_or_update_signal_async(
                                         bot,
                                         telegram_user_id=int(user_id),
                                         signal=sig_dict,
                                         display_tier=signal_display_tier,
+                                    )
+                                    if await _mark_delivery_with_telegram_proof(
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(best_sig.signal_id),
+                                        proof=delivery_proof,
+                                        delivery_state="sent" if delivery_proof else "skipped",
                                     ):
                                         sent_count += 1
                                         state.consume_extra_signals_sync(int(user_id), 1)
                                 except Exception as e:
+                                    await _mark_delivery_with_telegram_proof(
+                                        telegram_user_id=int(user_id),
+                                        signal_id=str(best_sig.signal_id),
+                                        proof=None,
+                                        error=str(e),
+                                        delivery_state="failed",
+                                    )
                                     logger.warning(f"[dispatch] Failed to send extra signal to user {user_id}: {e}")
                                     pass
                         await session.commit()
@@ -3254,7 +4278,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     )
                     user = res_user.scalar_one_or_none()
                     if not user:
-                        return
+                        return 0
                     
                     # Check how many signals user already received today from DB
                     from core.tier_constants import TIER_DAILY_LIMITS
@@ -3276,7 +4300,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     
                     if remaining <= 0:
                         logger.info(f"[bot] daily limit reached for user={user_id} tier={user_tier_actual} sent={signals_sent_today}")
-                        return  # Already hit daily limit
+                        return 0  # Already hit daily limit
                     
                     # Get one random available signal at a time to avoid burst delivery.
                     available_signals = await get_random_available_signals_for_free_user(
@@ -3284,8 +4308,9 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     )
                     
                     if not available_signals:
-                        return  # No signals available
+                        return 0  # No signals available
                     
+                    sent_count = 0
                     # Send each signal
                     for sig in available_signals:
                         try:
@@ -3342,32 +4367,47 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             try:
                                 # Determine display tier: VIP for owner/admin, FREE for others
                                 signal_display_tier = 'vip' if tier in ('owner', 'admin') else 'free'
-                                if not await _deliver_or_update_signal_async(
+                                await session.commit()
+                                delivery_proof = await _deliver_or_update_signal_async(
                                     bot,
                                     telegram_user_id=int(user_id),
                                     signal=sig_dict,
                                     display_tier=signal_display_tier,
+                                )
+                                if not await _mark_delivery_with_telegram_proof(
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(sig.signal_id),
+                                    proof=delivery_proof,
+                                    delivery_state="sent" if delivery_proof else "skipped",
                                 ):
                                     continue
+                                sent_count += 1
                             except Exception as e:
-                                logger.debug(f"[dispatch] Failed to track signal delivery in Redis: {e}")
+                                await _mark_delivery_with_telegram_proof(
+                                    telegram_user_id=int(user_id),
+                                    signal_id=str(sig.signal_id),
+                                    proof=None,
+                                    error=str(e),
+                                    delivery_state="failed",
+                                )
+                                logger.debug(f"[dispatch] Failed to deliver free signal: {e}")
                                 pass
                     
                     await session.commit()
+                    return sent_count
 
             # In production, FREE delivery should be driven by queued scheduler jobs
             # (distribute_random_signals_to_free_users_job + resend job) to keep timing
             # randomized and prevent burst/spam behavior from engine dispatch loops.
             if str(os.getenv("FREE_DIRECT_DISPATCH", "1")).strip().lower() in {"1", "true", "yes"}:
                 try:
-                    await _send_random_signals_immediately()
-                    return
+                    return int(await _send_random_signals_immediately() or 0)
                 except Exception as e:
                     _log_once(
                         "free_random_send_failed",
                         f"[bot] free random signal delivery failed: {type(e).__name__}: {e}",
                     )
-            return
+            return 0
     except Exception as e:
         _log_once(
             "dispatch_pg_path_failed",
@@ -3375,58 +4415,20 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         )
 
     if routing_tier in ('premium', 'vip'):
-        from core.tier_constants import TIER_DAILY_LIMITS
-
-        # Check daily limit from DB deliveries
-        signals_sent_today = int(_count_signals_sent_today_sync(int(user_id)) or 0)
-        
-        daily_limit = TIER_DAILY_LIMITS.get(
+        logger.error(
+            "[dispatch] suppressed untracked premium/vip fallback user=%s tier=%s; "
+            "the PostgreSQL reservation path must recover before delivery",
+            user_id,
             routing_tier,
-            TIER_DAILY_LIMITS.get("free", 3),
         )
-        
-        if signals_sent_today >= daily_limit:
-            logger.info(f"[bot] daily limit reached for user={user_id} tier={tier} sent={signals_sent_today}")
-            return
-        
-        bot = Bot(token=_require_telegram_token())
-        limit = TIER_LIMITS.get(routing_tier, 0)
-        sent = 0
-        display_tier = routing_tier
-        for signal in signals_list:
-            # Check if we've hit the daily limit
-            if signals_sent_today + sent >= daily_limit:
-                break
-            if sent >= limit:
-                break
-            try:
-                if not await _deliver_or_update_signal_async(
-                    bot,
-                    telegram_user_id=int(user_id),
-                    signal=signal,
-                    display_tier=display_tier,
-                ):
-                    continue
-                try:
-                    _auto_execute_signal_if_enabled(
-                        telegram_user_id=int(user_id),
-                        signal=dict(signal or {}),
-                        routing_tier=str(routing_tier),
-                    )
-                except Exception:
-                    pass
-                sent += 1
-            except Exception as e:
-                logger.warning(f"[dispatch] Failed to dispatch signal to user {user_id}: {e}")
-                continue
-        return
+        return 0
 
     # FREE: queue delayed summary (legacy mode).
     # Default is FOMO unlock dispatch on VIP TP1 events.
     try:
         if _is_free_fomo_dispatch_only_enabled():
             logger.debug(f"[dispatch] free queue skipped (FREE_FOMO_DISPATCH_ONLY=1) user={user_id}")
-            return
+            return 0
 
         from db.session import get_engine_for_event_loop, get_session
         engine = get_engine_for_event_loop()
@@ -3449,6 +4451,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     if not ok:
                         break
                 await session.commit()
+            return 0
 
         try:
             await _queue()
@@ -3462,9 +4465,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         try:
             bot = Bot(token=_require_telegram_token())
             await _send_message_async(bot, chat_id=user_id, text=_format_free_preview(signals_list[0]))
+            return 1
         except Exception as e:
             logger.warning(f"[dispatch] Failed to send free preview to user {user_id}: {e}")
             pass
+    return 0
 
 
 def dispatch_signals(strategy_signals, user_id, regime=None):
@@ -3525,13 +4530,25 @@ def distribute_random_signals_to_free_users_job():
     # The FOMO mode is for unlocking signals on VIP TP1 events, not for disabling
     # the regular queue distribution.
 
+    if not _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
+        logger.info("[free_distribution] disabled by env")
+        return
+
+    try:
+        from db.session import critical_db_work_active
+        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+            logger.info("[free_distribution] skipped: critical DB work active")
+            return
+    except Exception:
+        pass
+
     logger.info("🎲 Distributing random signals to FREE users...")
     try:
         from db.session import get_session
         from db.pg_features import queue_random_free_signals_for_all_users
 
         async def _do_distribute():
-            async with get_session() as session:
+            async with get_session(noncritical=True) as session:
                 count = await queue_random_free_signals_for_all_users(session)
                 if count > 0:
                     logger.info(f"📬 Queued signals for {count} FREE user(s)")
@@ -3625,6 +4642,84 @@ _bot_scheduler = None  # keeps the BackgroundScheduler alive after run_bot() ret
 # notifications). Must be assigned during run_bot() startup.
 application = None
 
+async def profile_debug_command(update, context):
+    """Owner-facing profile/Redis audit for proving profile propagation."""
+    try:
+        user = getattr(update, "effective_user", None)
+        message = getattr(update, "message", None)
+        telegram_user_id = int(getattr(user, "id", 0) or 0)
+        if telegram_user_id <= 0 or message is None:
+            return
+        from db.session import get_session
+        from services.user_intelligence import get_user_trading_preferences, format_preferences
+        from services.trade_profiles import get_trade_profile
+        import html
+
+        async def _load_prefs_for_debug():
+            # User-triggered diagnostics must be able to run while background
+            # delivery/outcome work is active. Treat this as an interactive
+            # read path, not as disposable telemetry.
+            async with get_session(interactive=True) as session:
+                prefs_obj = await get_user_trading_preferences(session, telegram_user_id)
+                await session.commit()
+                return prefs_obj
+
+        profile_timeout = float(os.getenv("PROFILE_DEBUG_DB_TIMEOUT_SECONDS", "8") or 8)
+        prefs = await asyncio.wait_for(_load_prefs_for_debug(), timeout=max(2.0, profile_timeout))
+        try:
+            profile = get_trade_profile(getattr(prefs, "trade_profile", "all"))
+            profile_line = (
+                f"Resolved profile: {profile.name} | timeframes={','.join(profile.timeframes)} | "
+                f"expiry={profile.expiry_minutes}m | min_rr={profile.min_rr}"
+            )
+        except Exception as profile_err:
+            profile_line = f"Resolved profile error: {profile_err}"
+        try:
+            redis_diag = state.redis_diagnostics_sync()
+        except Exception as redis_err:
+            redis_diag = {"error": str(redis_err)}
+        text = (
+            "<b>Profile Debug</b>\n"
+            f"User: <code>{telegram_user_id}</code>\n"
+            f"Tier: <code>{html.escape(str(resolve_user_tier(telegram_user_id) or 'unknown'))}</code>\n\n"
+            f"<pre>{html.escape(format_preferences(prefs))}</pre>\n"
+            f"<pre>{html.escape(profile_line)}</pre>\n"
+            "<b>Redis/state</b>\n"
+            f"<pre>{html.escape(str(redis_diag))}</pre>\n"
+            "Logs to look for: <code>[profile_apply]</code>, <code>[profile_apply_result]</code>, "
+            "<code>[dispatch_sent_ok]</code>, <code>[delivery_proof_write]</code>."
+        )
+        logger.info(
+            "[profile_debug] user=%s tier=%s profile=%s risk=%s execution=%s redis_source=%s separate_delivery=%s",
+            telegram_user_id, resolve_user_tier(telegram_user_id), getattr(prefs, "trade_profile", "unknown"),
+            getattr(prefs, "risk_profile", "unknown"), getattr(prefs, "execution_mode", "unknown"),
+            redis_diag.get("active_source") or redis_diag.get("connected_source"),
+            redis_diag.get("using_separate_delivery_redis"),
+        )
+        await message.reply_text(text, parse_mode="HTML")
+    except Exception as exc:
+        logger.exception("[profile_debug] failed: %s", exc)
+        try:
+            # Never leave an interactive command looking dead. If DB is under
+            # pressure, return a degraded but useful Redis/system diagnostic.
+            import html
+            try:
+                redis_diag = state.redis_diagnostics_sync()
+            except Exception as redis_err:
+                redis_diag = {"error": str(redis_err)}
+            fallback_text = (
+                "<b>Profile Debug</b>\n"
+                "⚠️ DB preference lookup is busy, but the bot is responsive.\n"
+                f"Error: <code>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</code>\n\n"
+                "<b>Redis/state</b>\n"
+                f"<pre>{html.escape(str(redis_diag))}</pre>\n"
+                "This means user commands are alive; DB background pressure still needs reducing if this repeats."
+            )
+            await update.message.reply_text(fallback_text, parse_mode="HTML")
+        except Exception:
+            pass
+
+
 def run_bot() -> None:
 
     """Run the Telegram polling bot.
@@ -3639,10 +4734,6 @@ def run_bot() -> None:
     # FastAPI webhook route.  Local development is unaffected (no
     # RAILWAY_SERVICE_NAME → polling as before, unless TELEGRAM_USE_WEBHOOK=1
     # is set explicitly).
-    # NOTE: _job_defaults literal included early to make scheduler defaults
-    # easily discoverable via `inspect.getsource(run_bot)` in tests and
-    # diagnostics. The real `_job_defaults` used later may override this.
-    _job_defaults = {"coalesce": True, "max_instances": 1, "misfire_grace_time": 60}
     if not os.getenv("TELEGRAM_USE_WEBHOOK") and os.getenv("RAILWAY_SERVICE_NAME"):
         os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
         logger.info("[bot] TELEGRAM_USE_WEBHOOK defaulted to 1 (Railway deployment detected)")
@@ -3774,28 +4865,6 @@ def run_bot() -> None:
     async def _on_error(update, context) -> None:
         err = getattr(context, "error", None)
         err_text = str(err or "")
-        
-    # FIX: For callback queries, ALWAYS answer to stop the loading circle
-        # even if there's an error. This prevents buttons from spinning forever.
-        query = getattr(update, "callback_query", None)
-        if query is not None:
-            is_stale = (
-                "Query is too old" in err_text
-                or "response timeout expired" in err_text
-                or "query id is invalid" in err_text
-            )
-            if not is_stale:
-                # For non-stale errors, try to answer with an error message
-                # This is CRITICAL to stop the button from spinning
-                try:
-                    await query.answer("Something went wrong. Please try again.", show_alert=True)
-                except Exception:
-                    pass  # Already answered or can't answer
-                logger.warning(f"[bot] callback error handled: {err}")
-            else:
-                logger.info("[bot] stale callback ignored: %s", err_text)
-            return  # Don't proceed with error handler for callbacks
-        
         # Harmless Telegram callback race: user tapped an old button and the
         # callback query answer window already expired.
         if (
@@ -3806,7 +4875,7 @@ def run_bot() -> None:
             logger.info("[bot] stale callback ignored: %s", err_text)
             return
         print(f"[bot] error: {err}", flush=True)
-            # Alert all owners about every unhandled exception so nothing is silent
+        # Alert all owners about every unhandled exception so nothing is silent
         try:
             import traceback
             tb = "".join(traceback.format_exception(type(err), err, err.__traceback__)) if err else "(no traceback)"
@@ -3834,6 +4903,8 @@ def run_bot() -> None:
             ("signals", "Latest signals"),
             ("signal", "Signal by reference"),
             ("performance", "Performance"),
+            ("profile", "Trading profile"),
+            ("mission", "Signal Mission Control"),
             ("invite", "Invite"),
             ("support", "Support"),
         ]
@@ -3866,6 +4937,9 @@ def run_bot() -> None:
             ("owner_users", "Owner: user list"),
             ("owner_revenue", "Owner: revenue"),
             ("provider_status", "Owner: provider health"),
+            ("system", "Owner: system health"),
+            ("db_health", "Owner: database health"),
+            ("engine_debug", "Owner: engine diagnostics"),
             ("qa_report", "Owner: QA report"),
         ]
         try:
@@ -3993,6 +5067,17 @@ def run_bot() -> None:
             logger.info("[bot] RealtimeOutcomeTracker stopped")
         except Exception as _e:
             logger.debug(f"[bot] RealtimeOutcomeTracker stop error: {_e}")
+        for module_name, instance_name in (
+            ("engine.derivatives", "default_squeeze_detector"),
+            ("engine.microstructure", "default_order_book_analyzer"),
+            ("engine.market_circuit_breaker", "default_market_circuit_breaker"),
+        ):
+            try:
+                module = __import__(module_name, fromlist=[instance_name])
+                instance = getattr(module, instance_name)
+                await instance.close()
+            except Exception as _e:
+                logger.debug("[bot] HTTP client close skipped %s: %s", module_name, _e)
 
     application.post_init = _post_init
     application.post_stop = _post_stop
@@ -4005,12 +5090,16 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
+    application.add_handler(CommandHandler("profile", _audit_handler("profile", profile_command)))
+    application.add_handler(CommandHandler("profile_debug", _audit_handler("profile_debug", profile_debug_command)))
+    application.add_handler(CommandHandler("mission", _audit_handler("mission", mission_command)))
     application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
     application.add_handler(CommandHandler("gemini", _audit_handler("gemini", gemini_command)))
     application.add_handler(CommandHandler("gemini_review", _audit_handler("gemini_review", gemini_review_command)))
     application.add_handler(CommandHandler("gemini_analyze", _audit_handler("gemini_analyze", gemini_analyze_command)))
     application.add_handler(CommandHandler("gemini_audit", _audit_handler("gemini_audit", gemini_audit_command)))
     application.add_handler(CommandHandler("gemini_predict", _audit_handler("gemini_predict", gemini_predict_command)))
+    application.add_handler(CommandHandler("codex_audit", _audit_handler("codex_audit", codex_audit_command)))
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
     application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
@@ -4025,9 +5114,6 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("simulate", _audit_handler("simulate", simulate_command)))
     application.add_handler(CommandHandler("risk", _audit_handler("risk", risk_command)))
     application.add_handler(CommandHandler("alerts", _audit_handler("alerts", alerts_command)))
-    
-    # Mode command - set user execution mode
-    from .commands import mode_command
     application.add_handler(CommandHandler("mode", _audit_handler("mode", mode_command)))
     
     # New commands for live prices and portfolio
@@ -4045,6 +5131,12 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("recap", _audit_handler("recap", recap_command)))
     application.add_handler(CommandHandler("selfcheck", _audit_handler("selfcheck", selfcheck_command)))
     application.add_handler(CommandHandler("ops_health", _audit_handler("ops_health", ops_health_command)))
+    application.add_handler(CommandHandler("system", _audit_handler("system", system_command)))
+    application.add_handler(CommandHandler("db_health", _audit_handler("db_health", db_health_command)))
+    application.add_handler(CommandHandler("delivery_debug", _audit_handler("delivery_debug", delivery_debug_command)))
+    application.add_handler(CommandHandler("signal_debug", _audit_handler("signal_debug", signal_debug_command)))
+    application.add_handler(CommandHandler("format_debug", _audit_handler("format_debug", format_debug_command)))
+    application.add_handler(CommandHandler("engine_debug", _audit_handler("engine_debug", engine_debug_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
     application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
@@ -4062,49 +5154,11 @@ def run_bot() -> None:
                 pass
         application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_placeholder)))
 
-    # Unknown command handler: capture any /unknown_command and respond gracefully
-async def _handle_unknown_command(update, context):
-    """
-    Handle unknown commands - but ONLY truly unknown ones.
-    This handler checks against COMMAND_TIERS to avoid shadowing real commands.
-    
-    CRITICAL FIX: The old handler caught ALL commands with filters.COMMAND, shadowing
-    legitimate commands registered AFTER this handler (like /mt5_link, /referral, etc.)
-    """
-    try:
-        if getattr(update, "message", None) is not None:
-            # Get the command that was attempted
-            command_text = update.message.text.strip().split()[0].lower()
-            command = command_text.lstrip('/')
-            
-            # Import the command registry
-            from signalrank_telegram.command_access import COMMAND_TIERS
-            
-            # Check if it's a registered command (but perhaps the handler is broken/missing)
-            if command in COMMAND_TIERS:
-                # This command IS registered - the issue is handler order or missing handler
-                logger.warning(f"Unknown command handler caught /{command} which IS in COMMAND_TIERS - handler may be broken or registered after this handler")
-                await update.message.reply_text(
-                    f"⚠️ Command /{command} is available but not working correctly.\n\n"
-                    "This may be a temporary issue. Please try /help for available commands\n"
-                    "or contact support if the problem persists."
-                )
-                return
-            
-            # Truly unknown command - not in registry at all
-            await update.message.reply_text(
-                f"Unknown command: /{command}\n\n"
-                "Send /help for available commands."
-            )
-    except Exception:
-        pass
-    
-# FIXED: Move unknown command handler to the END to avoid shadowing other commands
-# The old registration at line ~4006 was BEFORE many important commands were registered
-# This was causing "Unknown command" even for commands like /mt5_link, /referral, etc.
-# Now we register it AFTER all other commands
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))
+    application.add_handler(CommandHandler("timezone", _audit_handler("timezone", timezone_command)))
+    application.add_handler(CommandHandler("travelmode", _audit_handler("travelmode", travelmode_command)))
+    application.add_handler(CommandHandler("settings", _audit_handler("settings", settings_command)))
     application.add_handler(CommandHandler("reports", _audit_handler("reports", reports_command)))
     application.add_handler(CommandHandler("referral_leaderboard", _audit_handler("referral_leaderboard", referral_leaderboard_command)))
     application.add_handler(CommandHandler("referral_rewards", _audit_handler("referral_rewards", referral_rewards_command)))
@@ -4158,6 +5212,28 @@ async def _handle_unknown_command(update, context):
 
     application.add_handler(build_connect_broker_conversation())
 
+    # ── Immediate callback ACK guard ─────────────────────────────────────────
+    # Telegram requires callback queries to be answered quickly. Heavy DB or
+    # delivery work can delay downstream handlers and make buttons look dead.
+    # This group runs before every concrete callback handler and only ACKs/logs.
+    try:
+        from telegram.ext import CallbackQueryHandler as _CQH_fast_ack
+        async def _fast_callback_ack(update, context):
+            query = getattr(update, "callback_query", None)
+            if query is None:
+                return
+            data = str(getattr(query, "data", "") or "")
+            uid = getattr(getattr(update, "effective_user", None), "id", None)
+            try:
+                await query.answer()
+                logger.info("[callback_ack] answered user=%s data=%s", uid, data[:64])
+            except Exception as ack_err:
+                logger.warning("[callback_ack] failed user=%s data=%s err=%s", uid, data[:64], ack_err)
+        application.add_handler(_CQH_fast_ack(_fast_callback_ack, pattern=r".*", block=True), group=-100)
+        logger.info("[bot] immediate callback ack guard registered group=-100")
+    except Exception as _cb_ack_err:
+        logger.warning("[bot] failed to register callback ack guard: %s", _cb_ack_err)
+
     # Subscription cancellation confirmation callbacks
     from .commands import cancel_confirm_callback, cancel_nevermind_callback
     from telegram.ext import CallbackQueryHandler as _CQH_cancel
@@ -4183,7 +5259,7 @@ async def _handle_unknown_command(update, context):
     # ── Help/Navigation buttons ─────────────────────────────────────────────
     from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
-    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|trade_now.*|mt5_link_guide|mt5_settings|mt5_status|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
+    application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|timezone_.*|trade_now.*|mt5_link_guide|mt5_settings|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
 
     # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
     from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard, force_market_scan_command
@@ -4192,7 +5268,8 @@ async def _handle_unknown_command(update, context):
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))
     application.add_handler(CommandHandler("force_market_scan", _audit_handler("force_market_scan", force_market_scan_command)))
     application.add_handler(CommandHandler("blast_terms", _audit_handler("blast_terms", blast_terms_command)))
-# NOTE: Commands are intentionally registered once above. Avoid duplicate
+
+    # NOTE: Commands are intentionally registered once above. Avoid duplicate
     # add_handler calls, which can execute the same command twice per update.
 
     # Lightweight command registry audit to catch missing handlers.
@@ -4235,11 +5312,6 @@ async def _handle_unknown_command(update, context):
         user_id = update.effective_user.id if update.effective_user else None
         if user_id is None:
             return
-        
-        # CRITICAL FIX: Add diagnostic logging and answer immediately
-        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, user_id)
-        await query.answer()  # Stop loading circle IMMEDIATELY
-        
         try:
             # Callback data: signal_reaction_<signal_id>|<reaction>
             data = (query.data or "").replace("signal_reaction_", "", 1)
@@ -4296,17 +5368,14 @@ async def _handle_unknown_command(update, context):
         query = update.callback_query
         user_id = update.effective_user.id if update.effective_user else None
         chat_id = update.effective_chat.id if update.effective_chat else None
-        signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
-        
-        # CRITICAL FIX: Answer immediately + log callback hit
-        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, user_id)
-        await query.answer("Refreshing monitor…", show_alert=False)
-        
         if user_id is None or chat_id is None:
+            await query.answer()
             return
+        signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
         if not signal_id:
             await query.answer("No signal selected.", show_alert=True)
             return
+        await query.answer("Refreshing monitor…", show_alert=False)
         try:
             text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
             from db.session import get_session as _gs_mon
@@ -4467,7 +5536,7 @@ async def _handle_unknown_command(update, context):
             return
 
         try:
-            from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
+            from services.mt5_client import ensure_user_mt5_account_id, validate_slippage, execute_trade
             from db.session import get_session as _gs_mt5
             from db.models import User as _UserMT5
             from sqlalchemy import select as _sel_mt5
@@ -4547,10 +5616,12 @@ async def _handle_unknown_command(update, context):
             except Exception:
                 pass
 
-            account_id = await get_user_mt5_account_id(user_id)
+            account_id = await ensure_user_mt5_account_id(user_id)
             if not account_id:
                 await query.edit_message_text(
-                    "⚠️ No MT5 account linked.\nUse /mt5_link <login> <password> <server> first."
+                    "No executable MT5 bridge is ready.\n"
+                    "Credentials may be saved, but MetaApi has not returned an executable account ID yet.\n"
+                    "Run /mt5_status, then /mt5_link again if the bridge still shows NOT READY."
                 )
                 return
             within_tol, slip, live_px = await validate_slippage(account_id, asset, entry)
@@ -4647,10 +5718,6 @@ async def _handle_unknown_command(update, context):
     async def _open_signal_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
-        
-        # CRITICAL FIX: Add diagnostic logging and answer immediately
-        logger.warning("CALLBACK HIT: data=%s user=%s", query.data, update.effective_user.id)
-        
         if not raw:
             await query.answer("Signal reference missing.", show_alert=True)
             return
@@ -4668,20 +5735,23 @@ async def _handle_unknown_command(update, context):
 
             await query.answer("Opening signal…")
 
-            async with _gs_os() as _s:
+            async with _gs_os(interactive=True) as _s:
                 _u = await _gocu_os(_s, telegram_user_id=uid)
-                _row = (
-                    await _s.execute(
-                        _sel_os(_ASM)
-                        .where(
-                            _ASM.user_id == int(_u.id),
-                            _ASM.signal_id == str(raw),
-                            _ASM.is_active.is_(True),
-                        )
-                        .order_by(_ASM.id.desc())
-                        .limit(1)
+                _ref = str(raw).strip()
+                _stmt = (
+                    _sel_os(_ASM)
+                    .where(
+                        _ASM.user_id == int(_u.id),
+                        _ASM.is_active.is_(True),
                     )
-                ).scalar_one_or_none()
+                    .order_by(_ASM.id.desc())
+                    .limit(1)
+                )
+                if len(_ref) >= 36:
+                    _stmt = _stmt.where(_ASM.signal_id == _ref)
+                else:
+                    _stmt = _stmt.where(_ASM.signal_id.ilike(f"{_ref}%"))
+                _row = (await _s.execute(_stmt)).scalar_one_or_none()
                 await _s.commit()
 
             if _row is None:
@@ -4699,236 +5769,105 @@ async def _handle_unknown_command(update, context):
 
     application.add_handler(_CQH(_open_signal_callback, pattern=r"^open_signal_"))
 
-    # 🔍 Check Outcome — query DB for signal status / outcome and show as popup
+    # 🔍 Check Outcome — resolve signal status and send a real response message.
+    # The global fast-ACK guard already answers the callback instantly, so this
+    # handler must not rely on a second popup answer. It replies/edits visibly.
     async def _check_outcome_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("check_outcome_", "", 1).strip()
+        uid = int(getattr(getattr(update, "effective_user", None), "id", 0) or 0)
         if not raw:
-            await query.answer("No signal ID found.", show_alert=True)
+            try:
+                await query.message.reply_text("⚠️ No signal reference was found for that button.")
+            except Exception:
+                pass
             return
         try:
             from db.session import get_session as _gs_oc
-            from db.models import Signal as _Sig, Outcome as _Out
+            from db.models import Signal as _Sig, Outcome as _Out, SignalLifecycle as _Life
             from sqlalchemy import select as _sel_oc
-            async with _gs_oc() as _s:
-                sig_row = (await _s.execute(
-                    _sel_oc(_Sig).where(_Sig.signal_id == raw).limit(1)
-                )).scalar_one_or_none()
-                out_row = (await _s.execute(
-                    _sel_oc(_Out).where(_Out.signal_id == raw).limit(1)
-                )).scalar_one_or_none() if sig_row else None
+            import asyncio as _asyncio
+
+            async def _load_outcome():
+                async with _gs_oc(interactive=True) as _s:
+                    _ref = str(raw).strip()
+                    sig_stmt = _sel_oc(_Sig)
+                    if len(_ref) >= 36:
+                        sig_stmt = sig_stmt.where(_Sig.signal_id == _ref)
+                    else:
+                        sig_stmt = sig_stmt.where(_Sig.signal_id.ilike(f"{_ref}%"))
+                    sig_row = (await _s.execute(sig_stmt.order_by(_Sig.created_at.desc()).limit(1))).scalar_one_or_none()
+                    out_row = None
+                    life_row = None
+                    if sig_row is not None:
+                        sid = str(getattr(sig_row, "signal_id", "") or "")
+                        out_row = (await _s.execute(_sel_oc(_Out).where(_Out.signal_id == sid).limit(1))).scalar_one_or_none()
+                        try:
+                            life_row = (await _s.execute(_sel_oc(_Life).where(_Life.signal_id == sid).limit(1))).scalar_one_or_none()
+                        except Exception:
+                            life_row = None
+                    await _s.commit()
+                    return sig_row, out_row, life_row
+
+            timeout_s = max(2.0, float(os.getenv("CHECK_OUTCOME_DB_TIMEOUT_SECONDS", "6") or 6))
+            sig_row, out_row, life_row = await _asyncio.wait_for(_load_outcome(), timeout=timeout_s)
+
             if sig_row is None:
-                await query.answer("❌ Signal not found in database.", show_alert=True)
-                return
-            asset     = getattr(sig_row, 'asset', '?')
-            direction = str(getattr(sig_row, 'direction', '?')).upper()
-            score     = getattr(sig_row, 'score', 0)
-            expired   = getattr(sig_row, 'expired', False)
-            created   = getattr(sig_row, 'created_at', None)
-            age_str   = ""
-            if created:
-                try:
-                    from datetime import datetime, timezone
-                    _c = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
-                    _mins = int((datetime.now(timezone.utc) - _c).total_seconds() / 60)
-                    age_str = f" | Age: {_mins}m"
-                except Exception:
-                    pass
-            if out_row:
-                outcome = str(getattr(out_row, 'status', 'unknown')).upper()
-                emoji = "✅" if outcome.startswith("TP") else ("🛑" if outcome == "SL" else "ℹ️")
-                msg = f"{emoji} {asset} {direction}\nOutcome: {outcome}\nScore: {score:.0f}{age_str}"
-            elif expired:
-                msg = f"⏰ {asset} {direction}\nStatus: Expired{age_str}"
+                msg = f"❌ Signal <code>{raw}</code> was not found. It may be too old or only a compact reference."
             else:
-                msg = f"🟢 {asset} {direction}\nStatus: Active (no outcome yet)\nScore: {score:.0f}{age_str}"
-            await query.answer(msg, show_alert=True)
+                asset = getattr(sig_row, 'asset', '?')
+                direction = str(getattr(sig_row, 'direction', '?')).upper()
+                score = float(getattr(sig_row, 'score', 0) or 0)
+                expired = bool(getattr(sig_row, 'expired', False))
+                created = getattr(sig_row, 'created_at', None)
+                age_str = ""
+                if created:
+                    try:
+                        from datetime import datetime, timezone
+                        _c = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
+                        _mins = int((datetime.now(timezone.utc) - _c).total_seconds() / 60)
+                        age_str = f"\n⏳ Age: {_mins}m"
+                    except Exception:
+                        pass
+                if out_row:
+                    outcome = str(getattr(out_row, 'status', 'unknown')).upper()
+                    emoji = "✅" if outcome.startswith("TP") else ("🛑" if outcome == "SL" else "ℹ️")
+                    pnl = getattr(out_row, "pnl_pct", None)
+                    pnl_txt = f"\n📈 PnL: {float(pnl):+.2f}%" if pnl is not None else ""
+                    msg = f"{emoji} <b>Outcome</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nStatus: <b>{outcome}</b>\nScore: {score:.1f}%{pnl_txt}{age_str}"
+                elif life_row is not None:
+                    state_txt = str(getattr(life_row, "state", "ACTIVE") or "ACTIVE").replace("_", " ").title()
+                    last_price = getattr(life_row, "last_price", None)
+                    lp_txt = f"\nLast price: <code>{float(last_price):.6g}</code>" if last_price is not None else ""
+                    msg = f"🟢 <b>Signal Status</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nState: <b>{state_txt}</b>\nScore: {score:.1f}%{lp_txt}{age_str}"
+                elif expired:
+                    msg = f"⏰ <b>Signal Expired</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>{age_str}"
+                else:
+                    msg = f"🟢 <b>Signal Active</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nOutcome: not reached yet\nScore: {score:.1f}%{age_str}"
+            logger.info("[check_outcome] user=%s ref=%s ok=%s", uid, raw[:16], sig_row is not None)
+            await query.message.reply_text(msg, parse_mode="HTML")
         except Exception as _oc_err:
-            logger.debug("[check_outcome] error: %s", _oc_err)
-            await query.answer("⚠️ Could not retrieve signal status right now.", show_alert=True)
+            logger.warning("[check_outcome] failed user=%s ref=%s err=%s", uid, raw[:16], _oc_err)
+            try:
+                await query.message.reply_text("⚠️ Outcome check is busy right now. Signal delivery/outcome tracking is still running; try again shortly.")
+            except Exception:
+                pass
 
     application.add_handler(_CQH(_check_outcome_callback, pattern=r"^check_outcome_"))
 
-# ── GUARANTEED CATCH-ALL CALLBACK HANDLER ─────────────────────────────────────
-    # MUST be registered LAST. Catches any callback_data not matched above.
-    # Calls query.answer() immediately (stops spinner), then routes to specific logic.
-    # This is self-contained — no external imports that could silently fail.
+    try:
+        from .callback_handlers import create_global_callback_handler
+        application.add_handler(create_global_callback_handler())
+    except Exception as _global_cb_err:
+        logger.warning("[bot] global callback fallback registration failed: %s", _global_cb_err)
 
-    async def _global_callback_safety_net(update, context):
-        """
-        Safety net for ALL inline keyboard callbacks.
-
-        This handler answers the query FIRST (stops the loading spinner)
-        then routes to the appropriate handler logic.
-
-        WHY THIS EXISTS: If any specific CallbackQueryHandler above fails to match
-        a callback_data string (e.g. due to regex mismatch or import error),
-        Telegram waits 30s for query.answer() that never comes. The button spins
-        forever and nothing appears in logs.
-        """
-        query = update.callback_query
-        if query is None:
-            return
-
-        data = getattr(query, "data", "") or ""
-        user_id = getattr(getattr(query, "from_user", None), "id", None)
-
-        # STEP 1: LOG (before any await — proves handler was reached)
-        logger.warning(
-            "[CALLBACK_SAFETY_NET] data=%r user=%s msg_id=%s",
-            data,
-            user_id,
-            getattr(getattr(query, "message", None), "message_id", None),
-        )
-
-        # STEP 2: ANSWER IMMEDIATELY — stops spinner regardless of what follows
-        try:
-            await query.answer()
-        except Exception:
-            pass  # Already answered or expired
-
-        if not data:
-            return
-
-        # STEP 3: Route to appropriate handler
-        try:
-            chat_id = getattr(getattr(query.message, "chat", None), "id", None) if query.message else None
-
-            if data.startswith("signal_reaction_"):
-                # Parse: signal_reaction_<signal_id>|<reaction>
-                payload = data[len("signal_reaction_"):]
-                if "|" in payload:
-                    signal_id, reaction = payload.split("|", 1)
-                    if reaction in ("taking_it", "watching"):
-                        try:
-                            from db.session import get_session
-                            from db.models import SignalEngagement
-                            from db.pg_features import get_or_create_user
-                            from sqlalchemy import select
-                            async with get_session() as session:
-                                user = await get_or_create_user(session, telegram_user_id=int(user_id or 0))
-                                existing = (await session.execute(
-                                    select(SignalEngagement).where(
-                                        SignalEngagement.user_id == user.id,
-                                        SignalEngagement.signal_id == signal_id.strip(),
-                                    )
-                                )).scalar_one_or_none()
-                                if existing:
-                                    existing.reaction = reaction
-                                else:
-                                    session.add(SignalEngagement(user_id=user.id, signal_id=signal_id.strip(), reaction=reaction))
-                                await session.commit()
-                            emoji = "🔥" if reaction == "taking_it" else "👀"
-                            await query.answer(f"{emoji} Noted!")
-                        except Exception as _e:
-                            logger.debug("[safety_net] reaction error: %s", _e)
-
-            elif data.startswith("monitor_signal_"):
-                signal_id = data[len("monitor_signal_"):].strip()
-                try:
-                    text, _, expires_at = await _build_monitor_snapshot(signal_id)
-                    keyboard = _build_monitor_keyboard(signal_id)
-                    if chat_id:
-                        await context.bot.send_message(
-                            chat_id=int(chat_id), text=text,
-                            parse_mode="HTML", reply_markup=keyboard,
-                        )
-                except Exception as _e:
-                    logger.debug("[safety_net] monitor error: %s", _e)
-                    if chat_id:
-                        await context.bot.send_message(chat_id=int(chat_id), text="⚠️ Could not load monitor.")
-
-            elif data.startswith("check_outcome_"):
-                signal_id = data[len("check_outcome_"):].strip()
-                try:
-                    from db.session import get_session
-                    from db.models import Signal, Outcome
-                    from sqlalchemy import select
-                    async with get_session() as session:
-                        sig = (await session.execute(select(Signal).where(Signal.signal_id == signal_id).limit(1))).scalar_one_or_none()
-                        out = (await session.execute(select(Outcome).where(Outcome.signal_id == signal_id).limit(1))).scalar_one_or_none() if sig else None
-                        await session.commit()
-                    if sig:
-                        status = str(getattr(out, "status", None) or ("expired" if getattr(sig, "expired", False) else "active")).upper()
-                        await query.answer(f"{getattr(sig, 'asset', '?')} {str(getattr(sig, 'direction', '?')).upper()}: {status}", show_alert=True)
-                    else:
-                        await query.answer("Signal not found.", show_alert=True)
-                except Exception as _e:
-                    logger.debug("[safety_net] check_outcome error: %s", _e)
-
-            elif data.startswith("ask_gemini_"):
-                signal_id = data[len("ask_gemini_"):].strip()
-                try:
-                    from db.session import get_session
-                    from db.models import Signal
-                    from sqlalchemy import select
-                    async with get_session() as session:
-                        sig = (await session.execute(select(Signal).where(Signal.signal_id == signal_id).limit(1))).scalar_one_or_none()
-                        await session.commit()
-                    if sig and chat_id:
-                        asset = str(getattr(sig, "asset", "?")).upper()
-                        direction = str(getattr(sig, "direction", "?")).upper()
-                        score = getattr(sig, "score", 0)
-                        strategy = str(getattr(sig, "strategy_name", "") or "")
-
-                        explanation = (
-                            f"🤖 <b>Why This Signal?</b>\n\n"
-                            f"<b>{asset}</b> {direction}\n"
-                            f"Score: <b>{score:.0f}/100</b>\n"
-                            + (f"Strategy: <b>{strategy}</b>\n" if strategy else "") +
-                            "\n<i>Generated from technical confluence, ML validation, and market structure analysis.</i>"
-                        )
-                        try:
-                            from services.gemini_ml import ask_gemini_signal_explanation
-                            sig_dict = {"asset": asset, "direction": direction, "score": score, "strategy_name": strategy}
-                            gemini_text = await ask_gemini_signal_explanation(sig_dict)
-                            if gemini_text:
-                                explanation = f"🤖 <b>Gemini: {asset} {direction}</b>\n\n{gemini_text}"
-                        except Exception:
-                            pass
-                        await context.bot.send_message(chat_id=int(chat_id), text=explanation, parse_mode="HTML")
-                except Exception as _e:
-                    logger.debug("[safety_net] ask_gemini error: %s", _e)
-
-            elif data.startswith("signal_chart_"):
-                signal_id = data[len("signal_chart_"):].strip()
-                if chat_id:
-                    await context.bot.send_message(
-                        chat_id=int(chat_id),
-                        text="📊 Chart generation requires the signal chart module. Coming soon.",
-                    )
-
-            elif data.startswith("locked_"):
-                feature = data[len("locked_"):].strip().replace("_", " ").title()
-                if chat_id:
-                    await context.bot.send_message(
-                        chat_id=int(chat_id),
-                        text=(
-                            f"🔒 <b>{feature} — Premium Feature</b>\n\n"
-                            "Upgrade to access full signal details.\n"
-                            "→ /upgrade"
-                        ),
-                        parse_mode="HTML",
-                    )
-
-            else:
-                logger.info("[safety_net] unrouted callback: %r", data)
-
-        except Exception as _route_err:
-            logger.exception("[CALLBACK_SAFETY_NET] routing error for data=%r: %s", data, _route_err)
-
-# ALSO move the MessageHandler(filters.COMMAND) to HERE — at the very END
-    # so it never shadows the specific CommandHandlers registered above.
-    # (Removed it from the middle of handler registration)
+    # True fallback: keep this after every concrete CommandHandler so it does
+    # not shadow valid commands registered later in the setup flow.
+    application.add_handler(MessageHandler(filters.LOCATION, _audit_handler("timezone_location", timezone_location_handler)))
+    application.add_handler(MessageHandler(filters.Regex(r"^Keep UTC$"), _audit_handler("timezone_keep_utc", timezone_keep_utc_message_handler)))
     application.add_handler(MessageHandler(filters.COMMAND, _audit_handler("unknown_command", _handle_unknown_command)))
-    logger.info("[bot] Unknown command handler registered (last, correct position)")
 
-    # Register catch-all LAST with pattern=None (matches every callback_data)
-    from telegram.ext import CallbackQueryHandler as _CQH_safety
-    application.add_handler(_CQH_safety(_global_callback_safety_net, pattern=None))
-    logger.info("[bot] Global callback safety net registered (catch-all)")
-
-    # In webhook mode, handlers are now fully registered.
+    # In webhook mode, handlers are now fully registered. Mark readiness here so
     # railway_main can begin processing updates while non-critical jobs continue
     # bootstrapping in this thread.
     _refresh_webhook_handlers_ready("post_handler_registration")
@@ -4985,6 +5924,16 @@ async def _handle_unknown_command(update, context):
 
     # Initialize and schedule jobs
     def send_outcome_notifications():
+        if not _env_bool("SEND_OUTCOME_NOTIFICATIONS_ENABLED", True):
+            logger.info("[outcome_notify] disabled by env")
+            return
+        try:
+            from db.session import critical_db_work_active
+            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+                logger.info("[outcome_notify] skipped: critical DB work active")
+                return
+        except Exception:
+            pass
         # Send outcome notifications only once per outcome (notified_at tracks this).
         # Fetches unnotified outcomes and sends them to all users who received the signal.
         # Once sent and marked as notified, the outcome will never be resent.
@@ -4996,12 +5945,15 @@ async def _handle_unknown_command(update, context):
                 list_unnotified_outcomes,
                 list_delivery_recipients_for_signal,
                 mark_outcome_notified,
+                claim_outcome_notification_for_delivery,
+                mark_outcome_notification_delivered,
+                mark_outcome_notification_failed,
                 get_alert_prefs,
             )
             from datetime import datetime
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
-                async with get_session() as session:
+                async with get_session(noncritical=True) as session:
                     rows = await list_unnotified_outcomes(session, limit=50)
                     out = []
                     for oc, sig in rows:
@@ -5023,6 +5975,8 @@ async def _handle_unknown_command(update, context):
                 pending = []
             if not pending:
                 return
+
+            outcome_bot = Bot(token=_require_telegram_token())
 
             for oc, sig, recipients in pending:
                 status = str(getattr(oc, 'status', '') or '').lower()
@@ -5177,7 +6131,17 @@ async def _handle_unknown_command(update, context):
                     except Exception:
                         delivered_signal = None
 
-                    signal_data = delivered_signal.__dict__ if delivered_signal else sig.__dict__
+                    signal_data = dict(delivered_signal.__dict__ if delivered_signal else sig.__dict__)
+                    signal_data.setdefault("asset", asset)
+                    signal_data.setdefault("symbol", asset)
+                    signal_data.setdefault("timeframe", timeframe or "1h")
+                    signal_data.setdefault("id", ref)
+                    signal_data.setdefault("signal_id", ref)
+                    signal_data.setdefault("direction", getattr(sig, "direction", "") or "")
+                    signal_data.setdefault("entry", getattr(sig, "entry", None))
+                    signal_data.setdefault("stop_loss", getattr(sig, "stop_loss", None))
+                    signal_data.setdefault("targets", getattr(sig, "take_profit", None))
+                    signal_data.setdefault("tp_levels", getattr(sig, "take_profit", None))
 
                     # Outcome notification logic by tier
                     notify = False
@@ -5199,6 +6163,26 @@ async def _handle_unknown_command(update, context):
                         logger.debug(f"[outcome] Failed to fetch current market price for {asset}: {e}")
                         pass
 
+                    def _format_sl_closed_message() -> str:
+                        try:
+                            entry_v = float(signal_data.get("entry") or 0)
+                            sl_v = float(signal_data.get("stop_loss") or 0)
+                        except Exception:
+                            entry_v, sl_v = 0.0, 0.0
+                        actual_pct = abs(float(getattr(oc, "percent", 0) or 0.0))
+                        planned_pct = abs(((entry_v - sl_v) / entry_v) * 100.0) if entry_v and sl_v else 0.0
+                        risk_pct = planned_pct if planned_pct > 0 else actual_pct
+                        extra = ""
+                        if actual_pct > 0 and risk_pct > 0 and actual_pct > (risk_pct + 0.25):
+                            extra = f"Market move at close: <b>-{actual_pct:.2f}%</b>\n"
+                        return (
+                            "âŒ <b>Trade Closed</b>\n"
+                            f"<b>{asset}</b> hit Stop Loss.\n"
+                            f"Planned risk: <b>-{risk_pct:.2f}%</b>\n"
+                            f"{extra}"
+                            "Status: Awaiting next high-probability setup."
+                        )
+
                     if user_tier in ("owner", "admin", "vip"):
                         if tp_level_num in (1, 2, 3):
                             notify = True
@@ -5216,6 +6200,7 @@ async def _handle_unknown_command(update, context):
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
                             )
+                            msg = _format_sl_closed_message()
                     elif user_tier == "premium":
                         if tp_level_num in (1, 2, 3):
                             notify = True
@@ -5233,6 +6218,7 @@ async def _handle_unknown_command(update, context):
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
                             )
+                            msg = _format_sl_closed_message()
                     elif str(tier_at_send).lower() == "free":
                         if tp_level_num > 0 or status == "tp":
                             notify = True
@@ -5250,16 +6236,58 @@ async def _handle_unknown_command(update, context):
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
                             )
+                            msg = _format_sl_closed_message()
 
                     if notify and msg:
                         eligible_count += 1
+                        notification_id = None
                         try:
+                            async def _claim_notification() -> int | None:
+                                from db.models import OutcomeNotification
+                                from sqlalchemy import select as _select
+
+                                async with get_session() as session:
+                                    row = (
+                                        await session.execute(
+                                            _select(OutcomeNotification)
+                                            .where(
+                                                OutcomeNotification.outcome_id == int(getattr(oc, "id")),
+                                                OutcomeNotification.signal_id == str(ref),
+                                                OutcomeNotification.telegram_user_id == int(telegram_user_id),
+                                                OutcomeNotification.outcome_status == str(status)[:16],
+                                            )
+                                            .order_by(OutcomeNotification.id.desc())
+                                            .limit(1)
+                                        )
+                                    ).scalar_one_or_none()
+                                    if row is None:
+                                        await session.commit()
+                                        return None
+                                    claimed = await claim_outcome_notification_for_delivery(session, int(row.id))
+                                    await session.commit()
+                                    return int(row.id) if claimed else None
+
+                            notification_id = run_sync(_claim_notification())
+                            if not notification_id:
+                                logger.debug(
+                                    "[outcome] notification already claimed/delivered ref=%s user=%s status=%s",
+                                    ref_short,
+                                    telegram_user_id,
+                                    status,
+                                )
+                                continue
                             _send_message_with_retry_sync(
-                                application.bot,
+                                outcome_bot,
                                 chat_id=int(telegram_user_id),
                                 text=msg,
                                 parse_mode="HTML",
                             )
+                            async def _mark_notification_delivered(notification_id: int) -> None:
+                                async with get_session() as session:
+                                    await mark_outcome_notification_delivered(session, int(notification_id))
+                                    await session.commit()
+
+                            run_sync(_mark_notification_delivered(int(notification_id)))
                             try:
                                 import asyncio
                                 run_sync(asyncio.sleep(0.5))
@@ -5268,13 +6296,25 @@ async def _handle_unknown_command(update, context):
                             sent_count += 1
                         except Exception as e:
                             logger.warning(f"[outcome] Failed to send outcome notification to user {telegram_user_id}: {e}")
+                            if notification_id:
+                                try:
+                                    async def _mark_notification_failed(notification_id: int, error: str) -> None:
+                                        async with get_session() as session:
+                                            await mark_outcome_notification_failed(
+                                                session,
+                                                int(notification_id),
+                                                error=error,
+                                            )
+                                            await session.commit()
+
+                                    run_sync(_mark_notification_failed(int(notification_id), str(e)))
+                                except Exception:
+                                    pass
                             failed_count += 1
                             pass
 
                 mark_notified = False
-                if sent_count > 0:
-                    mark_notified = True
-                elif len(recipients or []) == 0:
+                if len(recipients or []) == 0:
                     # No recipients for this signal; avoid permanent retry loop.
                     mark_notified = True
                 elif eligible_count == 0 and quiet_deferred_count == 0:
@@ -6105,6 +7145,7 @@ async def _handle_unknown_command(update, context):
                     get_alert_prefs as get_alert_prefs_pg,
                     get_due_free_signal_summaries as get_due_free_signal_summaries_pg,
                     mark_free_signal_summaries_sent as mark_free_signal_summaries_sent_pg,
+                    mark_signal_delivery_result,
                     record_signal_delivery,
                 )
                 from datetime import datetime
@@ -6171,10 +7212,16 @@ async def _handle_unknown_command(update, context):
                             items_to_skip = items[per_user_limit:]
 
                             status = 'sent'
+                            telegram_proof = None
                             if items_to_send:
                                 msg = _format_free_delayed_digest(items_to_send)
                                 try:
-                                    await _send_message_with_retry(bot, chat_id=int(uid), text=msg)
+                                    sent_msg = await _send_message_with_retry(bot, chat_id=int(uid), text=msg)
+                                    telegram_proof = {
+                                        "mode": "digest",
+                                        "chat_id": int(getattr(getattr(sent_msg, "chat", None), "id", uid)),
+                                        "message_id": int(getattr(sent_msg, "message_id")),
+                                    }
                                     await asyncio.sleep(0.5)
                                     logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
                                 except Exception as e:
@@ -6187,6 +7234,7 @@ async def _handle_unknown_command(update, context):
                                         [it["id"] for it in items_to_send],
                                         [it["signal_id"] for it in items_to_send],
                                         status,
+                                        telegram_proof,
                                     )
                                 )
 
@@ -6198,6 +7246,7 @@ async def _handle_unknown_command(update, context):
                                         [it["id"] for it in items_to_skip],
                                         [it["signal_id"] for it in items_to_skip],
                                         'expired',
+                                        None,
                                     )
                                 )
 
@@ -6206,16 +7255,28 @@ async def _handle_unknown_command(update, context):
                         return 0
 
                     async with get_session() as session:
-                        for uid, ids, signal_ids, status in actions:
+                        for uid, ids, signal_ids, status, telegram_proof in actions:
                             await mark_free_signal_summaries_sent_pg(session, ids, status=status)
                             if status == 'sent':
                                 for sid in signal_ids:
-                                    await record_signal_delivery(
+                                    reserved = await record_signal_delivery(
                                         session,
                                         telegram_user_id=int(uid),
                                         signal_id=str(sid),
                                         tier_at_send='free',
                                     )
+                                    if reserved:
+                                        await mark_signal_delivery_result(
+                                            session,
+                                            telegram_user_id=int(uid),
+                                            signal_id=str(sid),
+                                            sent_ok=bool(telegram_proof),
+                                            error=None if telegram_proof else "missing_telegram_ack",
+                                            telegram_chat_id=(telegram_proof or {}).get("chat_id"),
+                                            telegram_message_id=(telegram_proof or {}).get("message_id"),
+                                            telegram_api_result=dict(telegram_proof or {}),
+                                            delivery_state="sent" if telegram_proof else "failed",
+                                        )
                         await session.commit()
                     return len(actions)
 
@@ -6900,7 +7961,24 @@ async def _handle_unknown_command(update, context):
     # Closure functions defined inside run_bot() cannot be pickled for
     # SQLAlchemy — they are added to the implicit default MemoryJobStore.
     _jobstores: dict = {}
-    if _sched_sync_url:
+    _running_on_railway_sched = any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "RAILWAY_SERVICE_NAME",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_DEPLOYMENT_ID",
+            "RAILWAY_REPLICA_ID",
+        )
+    )
+    _persistent_jobstore_default = "0" if _running_on_railway_sched else "1"
+    _persistent_jobstore_enabled = str(
+        os.getenv("BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED", _persistent_jobstore_default)
+        or _persistent_jobstore_default
+    ).strip().lower() in {"1", "true", "yes", "y", "on"}
+    if _sched_sync_url and _persistent_jobstore_enabled:
         try:
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore as _SAJobStore
             _jobstore_engine_options = {
@@ -6926,6 +8004,12 @@ async def _handle_unknown_command(update, context):
                 _sa_err,
             )
 
+    if _sched_sync_url and not _persistent_jobstore_enabled:
+        logger.info(
+            "[sched] persistent SQLAlchemyJobStore disabled; using MemoryJobStore "
+            "(set BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED=1 to persist jobs)"
+        )
+
     # _sa: alias for the store to use for picklable module-level jobs.
     _sa = "persistent" if "persistent" in _jobstores else "default"
 
@@ -6940,7 +8024,7 @@ async def _handle_unknown_command(update, context):
     scheduler = None
     if _scheduler_enabled:
         from apscheduler.executors.pool import ThreadPoolExecutor as _APThreadPoolExecutor
-        _running_on_railway = bool((os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+        _running_on_railway = _running_on_railway_sched
         _sched_default_workers = 4 if _running_on_railway else 12
         _sched_workers = max(2, _env_int("BOT_SCHEDULER_MAX_WORKERS", _sched_default_workers))
         _executors = {
@@ -6988,6 +8072,11 @@ async def _handle_unknown_command(update, context):
                 "1" if _running_on_railway else "0",
             )
         ).strip().lower() in {"1", "true", "yes", "on"}
+        _outcome_start_delay_seconds = max(
+            30,
+            int(os.getenv("OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS", os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "90")) or 90),
+        )
+        _outcome_first_run = datetime.utcnow() + timedelta(seconds=_outcome_start_delay_seconds)
 
         if _minimal_scheduler_mode:
             logger.info("[sched] minimal mode enabled: scheduling only core closure jobs")
@@ -7006,6 +8095,7 @@ async def _handle_unknown_command(update, context):
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
+                next_run_time=_outcome_first_run,
             )
             scheduler.add_job(
                 refresh_monitor_snapshots_job,
@@ -7065,6 +8155,7 @@ async def _handle_unknown_command(update, context):
                 id='send_outcome_notifications',
                 replace_existing=True,
                 max_instances=1,
+                next_run_time=_outcome_first_run,
             )
             scheduler.add_job(
                 smart_exit_guard_job,
@@ -7209,29 +8300,45 @@ async def _handle_unknown_command(update, context):
             )
         except Exception as _proxy_job_err:
             logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err)
+        resend_interval_seconds = max(
+            60,
+            int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "180") or 180),
+        )
+        resend_start_delay_seconds = max(
+            _outcome_start_delay_seconds + 30,
+            int(os.getenv("RESEND_UNSENT_STARTUP_DELAY_SECONDS", os.getenv("RESEND_START_DELAY_SECONDS", "30")) or 30),
+        )
         scheduler.add_job(
             resend_unsent_signals_job,
             'interval',
-            minutes=1,
+            seconds=resend_interval_seconds,
             id='resend_unsent_signals_job',
             replace_existing=True,
             max_instances=1,
             coalesce=True,
-            misfire_grace_time=20,
+            misfire_grace_time=min(120, resend_interval_seconds),
             jobstore=_sa,
-            next_run_time=datetime.utcnow(),
+            next_run_time=datetime.utcnow() + timedelta(seconds=resend_start_delay_seconds),
         )
-        scheduler.add_job(
-            distribute_random_signals_to_free_users_job,
-            'interval',
-            minutes=15,
-            id='distribute_random_signals_to_free_users_job',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=120,
-            jobstore=_sa,
-        )
+        if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
+            free_start_delay_seconds = max(
+                resend_start_delay_seconds + 60,
+                int(os.getenv("FREE_DISTRIBUTION_STARTUP_DELAY_SECONDS", "150") or 150),
+            )
+            scheduler.add_job(
+                distribute_random_signals_to_free_users_job,
+                'interval',
+                minutes=15,
+                id='distribute_random_signals_to_free_users_job',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=120,
+                jobstore=_sa,
+                next_run_time=datetime.utcnow() + timedelta(seconds=free_start_delay_seconds),
+            )
+        else:
+            logger.info("[sched] distribute_random_signals_to_free_users_job disabled by env")
         scheduler.add_job(
             downgrade_expired_subscriptions_job,
             'cron',

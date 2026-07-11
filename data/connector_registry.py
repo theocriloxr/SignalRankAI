@@ -12,6 +12,7 @@ available and falls back to legacy functions in `data.providers`.
 from typing import Callable, List, Tuple
 import asyncio
 import inspect
+import os
 
 
 def _wrap_callable(fn: Callable, /) -> Callable:
@@ -48,6 +49,92 @@ def _wrap_to_async(fn: Callable) -> Callable:
     return _call_async
 
 
+def _env_enabled(name: str, default: bool = True) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
+    """Return production provider hierarchy by asset class.
+
+    Binance is intentionally opt-in/demoted because Railway regions are often
+    geo-blocked. Keep CoinGecko as last-resort crypto metadata/candle fallback.
+    """
+    kind = str(kind or "").lower().strip()
+    binance_enabled = _env_enabled("BINANCE_MARKET_DATA_ENABLED", False)
+    crypto: List[Tuple[str, Callable]] = [
+        ("okx_connector", getattr(c, "okx_get_candles", None)),
+        ("bybit_connector", getattr(c, "bybit_get_candles", None)),
+        ("coinbase_connector", getattr(c, "coinbase_get_candles", None)),
+        ("kraken_connector", getattr(c, "kraken_get_candles", None)),
+        (
+            "cryptocompare_connector",
+            (
+                getattr(c, "cryptocompare_get_candles_async", None)
+                if async_mode
+                else getattr(c, "cryptocompare_get_candles", None)
+            )
+            or getattr(c, "cryptocompare_get_candles", None),
+        ),
+    ]
+    if binance_enabled:
+        crypto.append(("binance_connector", getattr(c, "binance_get_candles", None)))
+
+    if kind == "crypto":
+        configured = [
+            item.strip().lower().replace("_connector", "")
+            for item in (os.getenv("CRYPTO_MARKET_DATA_PROVIDERS") or "").split(",")
+            if item.strip()
+        ]
+        if configured:
+            by_alias = {
+                name.replace("_connector", ""): (name, fn)
+                for name, fn in crypto
+            }
+            selected = [by_alias[name] for name in configured if name in by_alias]
+            if selected:
+                crypto = selected
+        return crypto
+    if kind in ("fx", "forex"):
+        return [
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
+            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+        ]
+    if kind == "commodity":
+        return [
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("fmp_connector", getattr(c, "fmp_get_candles", None)),
+            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+        ]
+    if kind == "index":
+        return [
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("fmp_connector", getattr(c, "fmp_get_candles", None)),
+            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+        ]
+    return [
+        ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+        ("fmp_connector", getattr(c, "fmp_get_candles", None)),
+        ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+        ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+        ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
+        ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+        ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+    ]
+
+
 def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     """Return sync (name, callable) providers for `asset_type`.
 
@@ -71,41 +158,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     except Exception:
         c = None
 
-    if kind == "crypto":
-        # CRYPTO: ONLY use crypto exchanges (NOT stock/fx providers!)
-        ordered = [
-            ("binance_connector", getattr(c, "binance_get_candles", None)),
-            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
-            ("cryptocompare_connector", getattr(c, "cryptocompare_get_candles", None)),
-            ("coingecko_connector", getattr(c, "coingecko_get_candles", None)),
-        ]
-    elif kind == "commodity":
-        # COMMODITIES (Gold, Silver, Oil): Prefer OANDA/TwelveData, NOT crypto exchanges!
-        # This prevents the WTI=$4.01 ghost price bug
-        ordered = [
-            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
-            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
-        ]
-    elif kind in ("fx", "forex"):
-        # FOREX: Prefer OANDA/TwelveData (not crypto exchanges!)
-        ordered = [
-            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
-            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
-        ]
-    else:
-        # STOCKS: Prefer premium feeds first, then yfinance safety net.
-        # Note: Polygon has strict rate limits, TwelveData is more generous
-        ordered = [
-            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
-            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
-        ]
+    ordered = _provider_order(kind, c, async_mode=False)
 
     for name, fn in ordered:
         if fn is not None:
@@ -144,34 +197,13 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
     """
     providers: List[Tuple[str, Callable]] = []
     kind = str(asset_type or "").lower().strip()
-    if kind == "commodity":
-        kind = "stock"
 
     try:
         from data import connectors as c
     except Exception:
         c = None
 
-    if kind == "crypto":
-        ordered = [
-            ("binance_connector", getattr(c, "binance_get_candles", None)),
-            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
-            (
-                "cryptocompare_connector",
-                getattr(c, "cryptocompare_get_candles_async", None)
-                or getattr(c, "cryptocompare_get_candles", None),
-            ),
-            ("coingecko_connector", getattr(c, "coingecko_get_candles", None)),
-        ]
-    else:
-        # Traditional assets: premium feeds first, then yfinance fallback.
-        ordered = [
-            ("polygon_connector", getattr(c, "polygon_get_candles", None)),
-            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
-        ]
+    ordered = _provider_order(kind, c, async_mode=True)
 
     for name, fn in ordered:
         if fn is not None:

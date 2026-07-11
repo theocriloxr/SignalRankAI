@@ -7,6 +7,15 @@ import httpx
 PAYSTACK_SECRET = os.getenv("PAYSTACK_SECRET_KEY")
 PAYSTACK_BASE_URL = os.getenv("PAYSTACK_BASE_URL", "https://api.paystack.co")
 
+_DEFAULT_DURATIONS = {
+    "PREMIUM_WEEKLY": 7,
+    "PREMIUM_MONTHLY": 30,
+    "PREMIUM_QUARTERLY": 90,
+    "VIP_WEEKLY": 7,
+    "VIP_MONTHLY": 30,
+    "WEEKLY_PLAN": 7,
+}
+
 def verify_signature(payload, signature):
     computed = hmac.new(
         PAYSTACK_SECRET.encode(),
@@ -42,7 +51,10 @@ async def process_event(event):
     
     # Map duration string to days if duration_days not provided
     if duration_days is None:
-        from paystack.paystack import DURATIONS
+        try:
+            from paystack.paystack import DURATIONS  # type: ignore
+        except Exception:
+            DURATIONS = _DEFAULT_DURATIONS
         key = f"{tier}_{duration}".upper()
         duration_days = DURATIONS.get(key, 7)
     

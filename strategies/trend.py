@@ -1,22 +1,27 @@
 from .base import BaseStrategy
 from .dynamic_targets import calculate_dynamic_targets
+from data.indicator_schema import missing_indicators, normalize_indicator_schema
+import logging
+
+logger = logging.getLogger(__name__)
 
 # --- Trend Strategies ---
 class EMATrendStrategy(BaseStrategy):
     name = "EMA Trend"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
-        
-        # Use available EMA indicator with fallback to ema_50 or trend_ema
-        ema_trend = ind.get('ema_trend') or ind.get('ema_50') or ind.get('trend_ema') or 0
-        if not ema_trend:
+        missing = missing_indicators(ind, ("ema_fast", "ema_slow", "ema_trend"))
+        if missing:
+            logger.warning("EMA Trend missing indicators: %s available=%s", missing, list(ind.keys())[:12])
             return None
-            
         # LONG: EMA bullish stack
-        if ind['ema_fast'] > ind['ema_slow'] and ind['ema_slow'] > ema_trend:
+        ema_fast = float(ind.get('ema_fast') or 0)
+        ema_slow = float(ind.get('ema_slow') or 0)
+        ema_trend = float(ind.get('ema_trend') or 0)
+        if ema_fast > ema_slow and ema_slow > ema_trend:
             entry = candles[-1]['close']
             regime = ind.get('regime', 'neutral')
             quality = 0.9  # High confidence for strong EMA alignment
@@ -41,8 +46,8 @@ class EMATrendStrategy(BaseStrategy):
                 'rr_ratio': levels['rr_ratio'],
                 'reasoning': f"EMA fast > EMA slow > EMA trend. Uptrend confirmed — LONG. R:R={levels['rr_ratio']:.2f}"
             }
-# SHORT: EMA bearish stack
-        if ind['ema_fast'] < ind['ema_slow'] and ind['ema_slow'] < ema_trend:
+        # SHORT: EMA bearish stack
+        if ema_fast < ema_slow and ema_slow < ema_trend:
             entry = candles[-1]['close']
             regime = ind.get('regime', 'neutral')
             quality = 0.9
@@ -72,8 +77,8 @@ class EMATrendStrategy(BaseStrategy):
 class SupertrendStrategy(BaseStrategy):
     name = "Supertrend"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles:
             return None
         entry = candles[-1]['close']
@@ -130,8 +135,8 @@ class SupertrendStrategy(BaseStrategy):
 class ADXTrendStrategy(BaseStrategy):
     name = "ADX Trend"
     def evaluate(self, market_data):
-        ind = market_data['indicators']
-        candles = market_data['candles']
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
+        candles = market_data.get('candles') or []
         if not candles or ind.get('adx', 0) <= 25:
             return None
         entry = candles[-1]['close']
@@ -188,27 +193,6 @@ class ADXTrendStrategy(BaseStrategy):
         return None
 
 def trend_strategies(asset, timeframe, market_data):
-    """Run all trend strategies with stale data consistency check."""
-    # PHASE 1 FIX #4: Stale Data Consistency - 24-hour check
-    # Verify data is recent (not stale) - last candle should be within reasonable time
-    if not market_data or 'candles' not in market_data or 'indicators' not in market_data:
-        return []
-    
-    candles = market_data.get('candles', [])
-    if not candles or len(candles) < 20:
-        return []  # Insufficient data for reliable signals
-    
-    # Check data freshness - reject if older than 24 hours
-    try:
-        from datetime import datetime, timedelta, timezone
-        last_ts = candles[-1].get('timestamp', 0)
-        if last_ts > 0:
-            last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
-            if datetime.now(timezone.utc) - last_time > timedelta(hours=24):
-                return []  # Stale data, skip signal
-    except Exception:
-        pass  # If timestamp check fails, proceed anyway
-    
     strategies = [EMATrendStrategy(), SupertrendStrategy(), ADXTrendStrategy()]
     signals = []
     for strat in strategies:

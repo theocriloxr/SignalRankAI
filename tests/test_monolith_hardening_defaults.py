@@ -53,14 +53,12 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
             os.environ.pop("DB_MAX_OVERFLOW", None)
             os.environ.pop("RAILWAY_SERVICE_NAME", None)  # Simulate non-Railway environment
             os.environ.pop("RAILWAY_ENVIRONMENT", None)
-            os.environ.pop("DB_USE_NULLPOOL", None)
             dbs.get_engine_for_event_loop()
 
         mocked_create_engine.assert_called_once()
         kwargs = mocked_create_engine.call_args.kwargs
-        # When not on Railway, expect pool_size=5; when on Railway, expect pool_size=2
-        self.assertIn(kwargs.get("pool_size"), [2, 5])
-        self.assertEqual(kwargs.get("max_overflow"), 3)
+        self.assertEqual(kwargs.get("pool_size"), 5)
+        self.assertEqual(kwargs.get("max_overflow"), 2)
 
     def test_db_pool_is_capped_on_railway(self):
         import db.session as dbs
@@ -70,13 +68,76 @@ class TestMonolithHardeningDefaults(unittest.TestCase):
         with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
              patch.dict(os.environ, {"RAILWAY_SERVICE_NAME": "signalrankai", "DB_POOL_SIZE": "15", "DB_MAX_OVERFLOW": "5"}, clear=False), \
              patch("db.session.create_async_engine") as mocked_create_engine:
-            os.environ.pop("DB_USE_NULLPOOL", None)
             dbs.get_engine_for_event_loop()
 
         mocked_create_engine.assert_called_once()
         kwargs = mocked_create_engine.call_args.kwargs
-        self.assertLessEqual(kwargs.get("pool_size"), 3)
+        self.assertEqual(kwargs.get("pool_size"), 2)
         self.assertEqual(kwargs.get("max_overflow"), 0)
+
+    def test_db_pool_is_capped_with_railway_project_marker(self):
+        import db.session as dbs
+
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
+        with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
+             patch.dict(os.environ, {"RAILWAY_PROJECT_ID": "project", "DB_POOL_SIZE": "16", "DB_MAX_OVERFLOW": "6"}, clear=False), \
+             patch("db.session.create_async_engine") as mocked_create_engine:
+            dbs.get_engine_for_event_loop()
+
+        kwargs = mocked_create_engine.call_args.kwargs
+        self.assertEqual(kwargs.get("pool_size"), 2)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
+
+    def test_db_pool_disable_railway_cap_requires_uncapped_override(self):
+        import db.session as dbs
+
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
+        with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
+             patch.dict(
+                 os.environ,
+                 {
+                     "RAILWAY_DEPLOYMENT_ID": "deployment",
+                     "DB_POOL_SIZE": "16",
+                     "DB_MAX_OVERFLOW": "6",
+                     "DB_POOL_DISABLE_RAILWAY_CAP": "1",
+                 },
+                 clear=False,
+             ), \
+             patch("db.session.create_async_engine") as mocked_create_engine:
+            os.environ.pop("DB_POOL_ALLOW_UNCAPPED_RAILWAY", None)
+            dbs.get_engine_for_event_loop()
+
+        kwargs = mocked_create_engine.call_args.kwargs
+        self.assertEqual(kwargs.get("pool_size"), 2)
+        self.assertEqual(kwargs.get("max_overflow"), 0)
+
+    def test_railway_absolute_pool_cap_overrides_bad_railway_cap_env(self):
+        import db.session as dbs
+
+        dbs._engines_by_loop.clear()
+        dbs._sessionmakers_by_loop.clear()
+        with patch("db.session.get_database_url", return_value="postgresql+asyncpg://u:p@localhost:5432/db"), \
+             patch.dict(
+                 os.environ,
+                 {
+                     "RAILWAY_PROJECT_ID": "project",
+                    "DB_POOL_SIZE": "16",
+                    "DB_MAX_OVERFLOW": "6",
+                    "DB_POOL_SIZE_RAILWAY": "16",
+                    "DB_MAX_OVERFLOW_RAILWAY": "6",
+                    "DB_POOL_RAILWAY_ABSOLUTE_CAP": "8",
+                    "DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP": "2",
+                },
+                clear=False,
+            ), \
+             patch("db.session.create_async_engine") as mocked_create_engine:
+            dbs.get_engine_for_event_loop()
+
+        kwargs = mocked_create_engine.call_args.kwargs
+        self.assertEqual(kwargs.get("pool_size"), 8)
+        self.assertEqual(kwargs.get("max_overflow"), 2)
 
 
 if __name__ == "__main__":

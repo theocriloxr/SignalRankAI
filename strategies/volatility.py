@@ -1,27 +1,32 @@
-def volatility_strategies(asset, timeframe, market_data):
-    strat = VolatilityStrategy()
-    signal = strat.evaluate(market_data)
-    return [signal] if signal else []
+import logging
 
-
+from data.indicator_schema import missing_indicators, normalize_indicator_schema
 from .base import BaseStrategy
+
+logger = logging.getLogger(__name__)
 
 # --- Volatility Strategies ---
 class ATRBreakoutStrategy(BaseStrategy):
     name = "ATR Breakout"
     def evaluate(self, market_data):
-        ind = market_data.get('indicators') or {}
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
         candles = market_data.get('candles') or []
-        
-        # Use available indicators with fallbacks
-        atr = ind.get('atr') or 0
-        bb = ind.get('bollinger') or {}
-        bb_width = bb.get('width') if bb else (ind.get('bollinger_width') or ind.get('bb_width') or 0)
-        
-        if not candles or not atr or not bb_width:
+        bollinger = ind.get('bollinger') if isinstance(ind.get('bollinger'), dict) else {}
+        width = bollinger.get('width') or ind.get('bollinger_width')
+        missing = missing_indicators(ind, ("atr",))
+        if width in (None, ""):
+            missing.append("bollinger.width")
+        if not candles or missing:
+            logger.warning(
+                "%s missing indicators: %s available=%s",
+                self.name,
+                missing,
+                sorted(ind.keys())[:12],
+            )
             return None
-            
-        if atr > 1.5 * bb_width:
+        atr = float(ind.get('atr') or 0)
+        width_f = float(width or 0)
+        if atr > 1.5 * width_f and candles:
             entry = candles[-1]['close']
             stop = candles[-1]['low']
             target = entry + (entry - stop) * 2
@@ -38,71 +43,42 @@ class ATRBreakoutStrategy(BaseStrategy):
 class BBWidthVolatilityStrategy(BaseStrategy):
     name = "BB Width Volatility"
     def evaluate(self, market_data):
-        ind = market_data.get('indicators') or {}
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
         candles = market_data.get('candles') or []
-        
-        bb_width = ind.get('bollinger_width') or ind.get('bb_width') or 0
-        
-        if not candles or bb_width <= 0.05:
-            return None
-            
-        entry = candles[-1]['close']
-        stop = candles[-1]['low']
-        target = entry + (entry - stop) * 2
-        return {
-            'direction': 'BUY',
-            'entry': entry,
-            'stop': stop,
-            'targets': target,
-            'confidence': 0.75,
-            'reasoning': f"Bollinger width {bb_width:.4f} > 0.05. Volatility expansion for BUY."
-        }
+        if ind.get('bollinger_width', 0) > 0.05 and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
+            return {
+                'direction': 'BUY',
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
+                'confidence': 0.75,
+                'reasoning': f"Bollinger width > 0.05. Volatility expansion for BUY."
+            }
+        return None
 
 class KeltnerVolatilityStrategy(BaseStrategy):
     name = "Keltner Volatility"
     def evaluate(self, market_data):
-        ind = market_data.get('indicators') or {}
+        ind = normalize_indicator_schema(market_data.get('indicators') or {})
         candles = market_data.get('candles') or []
-        
-        kelt_width = ind.get('keltner_width') or ind.get('kc_width') or 0
-        
-        if not candles or kelt_width <= 0.04:
-            return None
-            
-        entry = candles[-1]['close']
-        stop = candles[-1]['low']
-        target = entry + (entry - stop) * 2
-        return {
-            'direction': 'BUY',
-            'entry': entry,
-            'stop': stop,
-            'targets': target,
-            'confidence': 0.7,
-            'reasoning': f"Keltner width {kelt_width:.4f} > 0.04. Volatility signal for BUY."
-        }
+        if ind.get('keltner_width', 0) > 0.04 and candles:
+            entry = candles[-1]['close']
+            stop = candles[-1]['low']
+            target = entry + (entry - stop) * 2
+            return {
+                'direction': 'BUY',
+                'entry': entry,
+                'stop': stop,
+                'targets': target,
+                'confidence': 0.7,
+                'reasoning': f"Keltner width > 0.04. Volatility signal for BUY."
+            }
+        return None
 
 def volatility_strategies(asset, timeframe, market_data):
-    """Run all volatility strategies with stale data consistency check."""
-    # PHASE 1 FIX #4: Stale Data Consistency - 24-hour check
-    # Verify data is recent (not stale) - last candle should be within reasonable time
-    if not market_data or 'candles' not in market_data or 'indicators' not in market_data:
-        return []
-    
-    candles = market_data.get('candles', [])
-    if not candles or len(candles) < 20:
-        return []  # Insufficient data for reliable signals
-    
-    # Check data freshness - reject if older than 24 hours
-    try:
-        from datetime import datetime, timedelta, timezone
-        last_ts = candles[-1].get('timestamp', 0)
-        if last_ts > 0:
-            last_time = datetime.fromtimestamp(last_ts / 1000, tz=timezone.utc)
-            if datetime.now(timezone.utc) - last_time > timedelta(hours=24):
-                return []  # Stale data, skip signal
-    except Exception:
-        pass  # If timestamp check fails, proceed anyway
-    
     strategies = [ATRBreakoutStrategy(), BBWidthVolatilityStrategy(), KeltnerVolatilityStrategy()]
     signals = []
     for strat in strategies:

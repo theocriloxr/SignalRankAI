@@ -162,15 +162,30 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INTEGER DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS accepted_terms BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone_source VARCHAR(24)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone_updated_at TIMESTAMP",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone_auto_update BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_lat FLOAT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_lon FLOAT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_accuracy_m FLOAT",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMP",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS locale VARCHAR(16)",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS time_format VARCHAR(8) NOT NULL DEFAULT '12h'",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS dca_profile VARCHAR(32)",
                     # subscriptions
                     "ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS bonus_days INTEGER NOT NULL DEFAULT 0",
                     # signals
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS status VARCHAR(16) NOT NULL DEFAULT 'issued'",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS ml_probability FLOAT",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS trade_profile VARCHAR(16)",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS asset_class VARCHAR(16)",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS target_model VARCHAR(32)",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expected_duration VARCHAR(64)",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS expired BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE signals ADD COLUMN IF NOT EXISTS is_near_order_block BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE signals ADD COLUMN IF NOT EXISTS performance_version INTEGER NOT NULL DEFAULT 1",
+                    "ALTER TABLE signals ALTER COLUMN performance_version SET DEFAULT 2",
                     # referrals
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS is_successful BOOLEAN NOT NULL DEFAULT FALSE",
                     "ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_applied BOOLEAN NOT NULL DEFAULT FALSE",
@@ -182,7 +197,21 @@ def run_startup_ops(run_mode: str) -> None:
                     "ALTER TABLE outcomes ADD COLUMN IF NOT EXISTS sentiment_outcome VARCHAR(16)",
                     # signal_deliveries (0023 migration belt-and-suspenders)
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS sent_ok BOOLEAN NOT NULL DEFAULT FALSE",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_state VARCHAR(16) NOT NULL DEFAULT 'reserved'",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS attempt_count INTEGER NOT NULL DEFAULT 1",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS dispatch_started_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_send_started_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_confirmed_at TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_chat_id BIGINT",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_message_id BIGINT",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS telegram_api_result JSON DEFAULT '{}'::json",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS generated_at_utc TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivered_at_utc TIMESTAMP",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS display_timezone VARCHAR(64)",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS display_generated_at VARCHAR(64)",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS display_delivered_at VARCHAR(64)",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS delivery_latency_seconds INTEGER",
+                    "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS signal_age_at_delivery_seconds INTEGER",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_attempt_at TIMESTAMP",
                     "ALTER TABLE signal_deliveries ADD COLUMN IF NOT EXISTS last_error TEXT",
                 ]
@@ -191,8 +220,112 @@ def run_startup_ops(run_mode: str) -> None:
                         cur.execute(stmt)
                     except Exception:
                         pass  # column already exists or table not yet created
+                _lifecycle_tables = [
+                    """CREATE TABLE IF NOT EXISTS signal_lifecycles (
+                        signal_id VARCHAR(36) PRIMARY KEY REFERENCES signals(signal_id),
+                        state VARCHAR(32) NOT NULL DEFAULT 'WATCHING_FOR_ENTRY',
+                        generated_at TIMESTAMP, watch_started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                        entry_touched_at TIMESTAMP, tp1_hit_at TIMESTAMP, tp2_hit_at TIMESTAMP,
+                        tp3_hit_at TIMESTAMP, sl_hit_at TIMESTAMP, breakeven_at TIMESTAMP,
+                        expired_at TIMESTAMP, closed_at TIMESTAMP, last_price FLOAT,
+                        last_checked_at TIMESTAMP, max_price_seen FLOAT, min_price_seen FLOAT,
+                        mfe_pct FLOAT NOT NULL DEFAULT 0, mae_pct FLOAT NOT NULL DEFAULT 0,
+                        mfe_r FLOAT NOT NULL DEFAULT 0, mae_r FLOAT NOT NULL DEFAULT 0,
+                        entry_latency_seconds INTEGER, time_to_tp1_seconds INTEGER,
+                        time_to_tp2_seconds INTEGER, time_to_tp3_seconds INTEGER,
+                        time_to_sl_seconds INTEGER, tp1_before_sl BOOLEAN NOT NULL DEFAULT FALSE,
+                        tp2_before_sl BOOLEAN NOT NULL DEFAULT FALSE,
+                        tp3_before_sl BOOLEAN NOT NULL DEFAULT FALSE,
+                        reversed_after_tp1 BOOLEAN NOT NULL DEFAULT FALSE,
+                        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+                    )""",
+                    """CREATE TABLE IF NOT EXISTS signal_tracking_events (
+                        id BIGSERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36) NOT NULL REFERENCES signals(signal_id),
+                        event_type VARCHAR(32) NOT NULL, event_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                        price FLOAT, r_multiple FLOAT, meta JSON NOT NULL DEFAULT '{}'::json,
+                        notified_at TIMESTAMP,
+                        CONSTRAINT uq_signal_tracking_event_stage UNIQUE(signal_id, event_type)
+                    )""",
+                    """CREATE TABLE IF NOT EXISTS signal_event_notifications (
+                        id BIGSERIAL PRIMARY KEY,
+                        event_id BIGINT NOT NULL REFERENCES signal_tracking_events(id),
+                        signal_id VARCHAR(36) NOT NULL REFERENCES signals(signal_id),
+                        event_type VARCHAR(32) NOT NULL,
+                        user_id INTEGER NOT NULL REFERENCES users(id), telegram_user_id BIGINT NOT NULL,
+                        delivery_id INTEGER REFERENCES signal_deliveries(id), chat_id BIGINT,
+                        source_message_id BIGINT, sent_message_id BIGINT,
+                        delivery_state VARCHAR(16) NOT NULL DEFAULT 'pending',
+                        sent_ok BOOLEAN NOT NULL DEFAULT FALSE, error TEXT,
+                        created_at TIMESTAMP NOT NULL DEFAULT NOW(), sent_at TIMESTAMP,
+                        CONSTRAINT uq_signal_event_notification_recipient
+                            UNIQUE(signal_id, event_type, user_id)
+                    )""",
+                    "CREATE INDEX IF NOT EXISTS ix_signal_lifecycles_state ON signal_lifecycles(state)",
+                    "CREATE INDEX IF NOT EXISTS ix_signal_tracking_events_signal ON signal_tracking_events(signal_id)",
+                    "CREATE INDEX IF NOT EXISTS ix_signal_event_notifications_state ON signal_event_notifications(delivery_state)",
+                ]
+                for stmt in _lifecycle_tables:
+                    try:
+                        cur.execute(stmt)
+                    except Exception:
+                        pass
                 try:
                     cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_status ON signals(status)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_trade_profile ON signals(trade_profile)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signals_asset_class ON signals(asset_class)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_state ON signal_deliveries(delivery_state)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute("CREATE INDEX IF NOT EXISTS ix_signal_deliveries_telegram_msg ON signal_deliveries(telegram_chat_id, telegram_message_id)")
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        """
+                        UPDATE signal_deliveries
+                        SET sent_ok = FALSE,
+                            delivery_state = 'invalid',
+                            delivery_confirmed_at = NULL,
+                            last_error = COALESCE(last_error, 'startup_invariant_missing_telegram_ack')
+                        WHERE sent_ok IS TRUE
+                          AND (telegram_chat_id IS NULL OR telegram_message_id IS NULL)
+                        """
+                    )
+                    invalid_successes = int(cur.rowcount or 0)
+                    if invalid_successes:
+                        print(
+                            f"[auto_ops] repaired {invalid_successes} false-positive signal deliveries without Telegram proof",
+                            flush=True,
+                        )
+                except Exception:
+                    pass
+                try:
+                    cur.execute(
+                        """
+                        UPDATE signal_deliveries
+                        SET delivery_state = 'retry',
+                            last_error = COALESCE(last_error, 'stale_reservation_recovered')
+                        WHERE delivery_state IN ('reserved', 'sending')
+                          AND COALESCE(last_attempt_at, dispatch_started_at, delivered_at) < NOW() - INTERVAL '5 minutes'
+                        """
+                    )
+                    stale_reservations = int(cur.rowcount or 0)
+                    if stale_reservations:
+                        print(
+                            f"[auto_ops] released {stale_reservations} stale signal delivery reservations for retry",
+                            flush=True,
+                        )
                 except Exception:
                     pass
                 conn.commit()

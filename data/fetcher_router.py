@@ -18,7 +18,6 @@ Usage:
 """
 import os
 import logging
-import traceback
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -82,61 +81,31 @@ class DataRouter:
         except ImportError:
             self._legacy_providers = None
         
-        # ==============================================================
-        # MULTI-PROVIDER FALLBACK CHAINS (STARVATION_FIX_V6 - COMPREHENSIVE)
-        # Priority: Direct exchanges -> Free tier APIs -> yfinance safety net
-        # 
-        # CRITICAL FIX: Geo-blocking bypass for Railway/Nigeria users
-        # - Binance is blocked in some regions (Railway) - DO NOT USE AS PRIMARY
-        # - Bybit works when Binance is blocked
-        # - CryptoCompare works worldwide as last resort
-        # ==============================================================
-        
-        # CRITICAL: Move Binance to LAST in crypto chain (behind Bybit)
-        # It fails with "Service unavailable from a restricted location" on Railway
-        # Bybit has similar liquidity and works when Binance is geo-blocked
+        # Crypto: Bybit -> CryptoCompare -> CoinGecko
         self._crypto_providers = [
-            ("bybit", self._get_bybit_candles),         # PRIMARY - works when Binance blocked
-            ("kucoin", self._get_kucoin_candles),       # No API key - free tier
-            ("cryptocompare", self._get_cryptocompare_candles),  # Worldwide
-            ("coingecko", self._get_coingecko_candles), # Free - works worldwide
-            ("yahoo", self._get_yahoo_candles),        # Safety net
-            ("binance", self._get_binance_candles),   # LAST - may fail on Railway
+            ("bybit", self._get_bybit_candles),
+            ("cryptocompare", self._get_cryptocompare_candles),
+            ("coingecko", self._get_coingecko_candles),
         ]
         
-        # Stocks: Twelve Data -> Tiingo -> FMP -> yfinance
-        # - Twelve Data: Free tier 800/day, key in TWELVEDATA_API_KEY
-        # - Tiingo: Free tier 500 req/hr, requires registration
-        # - FMP: Free tier 250/day, key in FMP_API_KEY
-        self._stock_providers = [
-            ("twelvedata", self._get_twelvedata_candles),  # PRIMARY for stocks
-            ("tiingo", self._get_tiingo_candles),
-            ("fmp", self._get_fmp_candles),
-            ("yahoo", self._get_yahoo_candles),           # Safety net
-        ]
-        
-        # Forex: Twelve Data -> AlphaVantage -> Yahoo -> Stooq
-        # - Twelve Data: Best for Forex pairs (primary)
-        # - AlphaVantage: Good for major pairs, key in ALPHA_VANTAGE_KEY
-        # - Yahoo: Works for major FX
-        # - Stooq: Last resort for exotic pairs
+        # Forex: Polygon -> Twelve Data -> OANDA
         self._fx_providers = [
-            ("twelvedata", self._get_twelvedata_candles),  # PRIMARY - best Forex coverage
-            ("alpha_vantage", self._get_alpha_vantage_candles),  # Good fallback
-            ("yahoo", self._get_yahoo_candles),          # Works for majors
-            ("stooq", self._get_stooq_candles),          # Last resort for exotics
+            ("polygon", self._get_polygon_candles),
+            ("twelvedata", self._get_twelvedata_candles),
+            ("oanda", self._get_oanda_candles),
         ]
         
-        # Commodities: Twelve Data -> Yahoo -> Stooq
-        # CRITICAL FIX: Tiingo does NOT support commodities (WTI, BRENT, XAU, XAG)
-        # Twelve Data: Best commodity coverage
-        # Yahoo: Good for Gold, Oil, Natural Gas
-        # Stooq: Last resort
+        # Stocks: Polygon -> Twelve Data -> Yahoo
+        self._stock_providers = [
+            ("polygon", self._get_polygon_candles),
+            ("twelvedata", self._get_twelvedata_candles),
+            ("yahoo", self._get_yahoo_candles),
+        ]
+        
+        # Commodities: Twelve Data -> Yahoo
         self._commodity_providers = [
-            ("twelvedata", self._get_twelvedata_candles),  # PRIMARY - best commodity coverage
-            ("yahoo", self._get_yahoo_candles),          # Works for Gold, Oil
-            ("stooq", self._get_stooq_candles),          # Last resort
-            # Tiingo removed - does NOT support commodities!
+            ("twelvedata", self._get_twelvedata_candles),
+            ("yahoo", self._get_yahoo_candles),
         ]
         
         self._providers_initialized = True
@@ -211,78 +180,6 @@ class DataRouter:
         except Exception:
             pass
         return []
-    
-    def _get_binance_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch crypto candles from Binance REST API."""
-        try:
-            from data.connectors.binance_adapter import get_candles as binance_get_candles
-            return binance_get_candles(symbol, timeframe) or []
-        except Exception as e:
-            logger.error("❌ FATAL CRASH in binance adapter for %s!", symbol)
-            logger.error(traceback.format_exc())
-            return []
-        
-    def _get_kucoin_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch from KuCoin (NO API KEY - free crypto)."""
-        try:
-            from data.connectors.kucoin_adapter import get_candles as kucoin_get_candles
-            return kucoin_get_candles(symbol, timeframe) or []
-        except Exception as e:
-            logger.error("❌ FATAL CRASH in kucoin adapter for %s!", symbol)
-            logger.error(traceback.format_exc())
-            return []
-        
-    
-    def _get_tiingo_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch from Tiingo (requires TIINGO_API_KEY)."""
-        try:
-            from data.connectors.tiingo_adapter import get_candles as tiingo_get_candles
-            return tiingo_get_candles(symbol, timeframe) or []
-        except Exception as e:
-            logger.error("❌ FATAL CRASH in tiingo adapter for %s!", symbol)
-            logger.error(traceback.format_exc())
-            return []
-        
-    
-    def _get_fmp_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch from Financial Modeling Prep (requires FMP_API_KEY)."""
-        try:
-            from data.connectors.fmp_adapter import get_candles as fmp_get_candles
-            return fmp_get_candles(symbol, timeframe) or []
-        except Exception as e:
-            logger.error("❌ FATAL CRASH in fmp adapter for %s!", symbol)
-            logger.error(traceback.format_exc())
-            return []
-      
-    
-    def _get_fcs_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch from FCS API (requires FCS_API_KEY)."""
-        try:
-            from data.connectors.fcs_adapter import get_candles as fcs_get_candles
-            return fcs_get_candles(symbol, timeframe) or []
-        except Exception as e:
-            logger.error("❌ FATAL CRASH in fcs adapter for %s!", symbol)
-            logger.error(traceback.format_exc())
-            return []
-        
-    def _get_alpha_vantage_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch from Alpha Vantage (requires ALPHA_VANTAGE_API_KEY)."""
-        try:
-            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_alpha_vantage_candles"):
-                return self._legacy_providers.fetch_alpha_vantage_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
-    
-    def _get_stooq_candles(self, symbol: str, timeframe: str) -> List[Dict]:
-        """Fetch from Stooq (free Japanese/Asian data)."""
-        try:
-            if self._legacy_providers and hasattr(self._legacy_providers, "fetch_stooq_candles"):
-                return self._legacy_providers.fetch_stooq_candles(symbol, timeframe) or []
-        except Exception:
-            pass
-        return []
-        
     
     def _get_providers_for_asset_class(self, asset_class: str) -> List[tuple[str, callable]]:
         """Get provider list for asset class."""

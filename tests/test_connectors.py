@@ -61,6 +61,80 @@ class TestConnectorsAndValidators(unittest.TestCase):
             self.assertEqual(len(out), 2)
             self.assertEqual(out[0]["open"], 100.0)
 
+    def test_okx_adapter_parses_public_candles(self):
+        from data.connectors.okx_adapter import get_candles
+
+        payload = {
+            "code": "0",
+            "data": [
+                ["1620003600000", "105", "115", "95", "110", "1200"],
+                ["1620000000000", "100", "110", "90", "105", "1000"],
+            ],
+        }
+
+        class DummyClient:
+            async def get(self, *args, **kwargs):
+                resp = MagicMock()
+                resp.status_code = 200
+                resp.json.return_value = payload
+                return resp
+
+        with patch("data.connectors.okx_adapter.httpx_client.get_client", return_value=DummyClient()):
+            out = get_candles("BTCUSDT", "1h", limit=10)
+
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["timestamp"], 1620000000000)
+        self.assertEqual(out[0]["close"], 105.0)
+
+    def test_coinbase_adapter_parses_public_candles(self):
+        from data.connectors.coinbase_adapter import get_candles
+
+        payload = [
+            [1620003600, 95, 115, 105, 110, 1200],
+            [1620000000, 90, 110, 100, 105, 1000],
+        ]
+
+        class DummyClient:
+            async def get(self, *args, **kwargs):
+                resp = MagicMock()
+                resp.status_code = 200
+                resp.json.return_value = payload
+                return resp
+
+        with patch("data.connectors.coinbase_adapter.httpx_client.get_client", return_value=DummyClient()):
+            out = get_candles("BTCUSDT", "1h", limit=10)
+
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["timestamp"], 1620000000000)
+        self.assertEqual(out[0]["open"], 100.0)
+
+    def test_kraken_adapter_parses_public_candles(self):
+        from data.connectors.kraken_adapter import get_candles
+
+        payload = {
+            "error": [],
+            "result": {
+                "XXBTZUSD": [
+                    [1620000000, "100", "110", "90", "105", "102", "1000", 10],
+                    [1620003600, "105", "115", "95", "110", "107", "1200", 11],
+                ],
+                "last": 1620003600,
+            },
+        }
+
+        class DummyClient:
+            async def get(self, *args, **kwargs):
+                resp = MagicMock()
+                resp.status_code = 200
+                resp.json.return_value = payload
+                return resp
+
+        with patch("data.connectors.kraken_adapter.httpx_client.get_client", return_value=DummyClient()):
+            out = get_candles("BTCUSDT", "1h", limit=10)
+
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["volume"], 1000.0)
+
 
 if __name__ == "__main__":
     unittest.main()

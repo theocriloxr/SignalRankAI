@@ -143,7 +143,7 @@ class PublicTrackRecord:
                         'result': r.result,
                         'pnl_pct': r.pnl_pct,
                         'pnl_r': r.pnl_r,
-                        'closed_at': r.closed_at.isoformat(),
+                        'closed_at': r.closed_at.isoformat()
                     }
                     for r in self.records
                 ],

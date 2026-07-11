@@ -43,27 +43,6 @@ except ImportError:
 def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime_strategies=None):
     signals = []
 
-    # === FIX: STRATEGY STARVATION - Add diagnostic logging ===
-    logger_local = logging.getLogger(__name__)
-    if not market_data:
-        logger_local.warning(f"[strategies] No market_data for {asset}, skipping")
-        return signals
-    
-    # Check data structure before running strategies
-    tf_count = len(market_data) if isinstance(market_data, dict) else 0
-    indicators_found = 0
-    candles_found = 0
-    for tf_name, tf_data in market_data.items():
-        if isinstance(tf_data, dict):
-            if 'indicators' in tf_data and tf_data['indicators']:
-                indicators_found += 1
-            if 'candles' in tf_data and tf_data.get('candles'):
-                candles_found += len(tf_data['candles'])
-    
-    logger_local.info(f"[strategies] pipeline start: {asset} tfs={tf_count} indicators_present={indicators_found} candles={candles_found}")
-    
-    # === END FIX ===
-
     # Multi-timeframe bias: get higher timeframe (HTF) bias for each asset
     def get_htf_bias(market_data):
         # Use 4h or 1d as HTF, fallback to None
@@ -91,10 +70,6 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
     imp_enabled = _env_bool("IMP_STRATEGY_ENABLED", True)
     imp_only_mode = _env_bool("IMP_ONLY_MODE", False)
     from .stock import stock_strategies
-    
-    # === FIX: Force fallback to run BEFORE returning empty ===
-    # Store initial signal count after IMP runs
-    initial_signal_count = 0
 
     # Direction normalization: strategies may emit 'BUY'/'SELL' (old) or
     # 'LONG'/'SHORT' (new). Normalize to 'LONG'/'SHORT'.
@@ -112,53 +87,9 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
             except Exception:
                 pass
 
-# === FIX: Track signal count after IMP ===
-    initial_signal_count = len(signals)
-    
-    # Log initial signal status
-    if initial_signal_count > 0:
-        logger_local.info(f"[strategies] IMP generated {initial_signal_count} signals for {asset}")
-    else:
-        logger_local.debug(f"[strategies] IMP generated no signals for {asset}, trying other strategies")
-    
-    # === FIX: Don't short-circuit on imp_only_mode if fallback should run ===
-    # imp_only_mode only skips non-IMP strategies, but should still allow fallback
-    
-    if imp_only_mode and not (use_fallback and FALLBACK_AVAILABLE and not signals):
-        logger_local.debug(f"[strategies] Returning {len(signals)} IMP signals for {asset}")
+    if imp_only_mode:
         return signals
 
-    # === FIX: Force run_all to ensure all strategies run unless imp_only_mode is EXPLICITLY enabled ===
-    # If imp_only_mode is set, skip non-IMP strategies but STILL allow fallback to run
-    if imp_only_mode:
-        # In IMP-only mode: skip main strategy groups but force fallback
-        logger_local.debug(f"[strategies] IMP-only mode for {asset}, will run fallback if no signals")
-    else:
-        run_all = True  # Force all strategies to run to ensure we get signals
-    
-    # Always ensure we have at least some strategy signals before failing
-    # This is critical to prevent signal starvation
-    if not signals:
-        logger_local.warning(f"[strategies] No signals after IMP for {asset}, continuing with other strategies")
-
-    # === FIX: Pre-select first available timeframe for fallback (prevent undefined timeframe bug) ===
-    fallback_timeframe = None
-    fallback_tf_data = None
-    for tf in ["1h", "4h", "1d", "15m", "5m"]:
-        if tf in market_data and isinstance(market_data[tf], dict):
-            if market_data[tf].get('candles') or market_data[tf].get('indicators'):
-                fallback_timeframe = tf
-                fallback_tf_data = market_data[tf]
-                break
-    
-    # Fallback to first available
-    if fallback_timeframe is None and market_data:
-        for tf_name, tf_data in market_data.items():
-            if isinstance(tf_data, dict):
-                fallback_timeframe = tf_name
-                fallback_tf_data = tf_data
-                break
-    
     for timeframe, data in market_data.items():
         if not isinstance(data, dict):
             continue
@@ -199,96 +130,66 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
                 sig['weight'] = strategy_weights.get(sig.get('strategy', sig.get('name', '')), 1) if strategy_weights else 1
                 signals.append(sig)
 
+        def _run_group(group_name, producer):
+            try:
+                for sig in producer() or []:
+                    _add(sig)
+            except Exception as exc:
+                logger.warning(
+                    "[strategies] group failed asset=%s timeframe=%s group=%s error=%s",
+                    asset,
+                    timeframe,
+                    group_name,
+                    exc,
+                    exc_info=True,
+                )
+
         # Run main strategy groups
         if "trend" in groups:
-            for sig in trend_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("trend", lambda: trend_strategies(asset, timeframe, data))
         if "stock" in groups:
-            for sig in stock_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("stock", lambda: stock_strategies(asset, timeframe, data))
         if "momentum" in groups:
-            for sig in momentum_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("momentum", lambda: momentum_strategies(asset, timeframe, data))
         if "volatility" in groups:
-            for sig in volatility_strategies(asset, timeframe, data):
-                _add(sig)
+            _run_group("volatility", lambda: volatility_strategies(asset, timeframe, data))
         if "structure" in groups:
-            for sig in structure_strategy(asset, timeframe, data):
-                _add(sig)
+            _run_group("structure", lambda: structure_strategy(asset, timeframe, data))
         if "liquidity" in groups:
-            for sig in liquidity_sweep_strategies(asset, market_data):
-                _add(sig)
+            _run_group("liquidity", lambda: liquidity_sweep_strategies(asset, market_data))
         if "fibonacci" in groups:
-            for sig in fibonacci_confluence_strategies(asset, market_data):
-                _add(sig)
+            _run_group("fibonacci", lambda: fibonacci_confluence_strategies(asset, market_data))
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
-            try:
-                for sig in tradingview_strategies(asset, timeframe, data):
-                    _add(sig)
-            except Exception as e:
-                try:
-                    logging.getLogger(__name__).error(f"TradingView strategy error: {e}")
-                except Exception:
-                    pass
+            _run_group("tradingview", lambda: tradingview_strategies(asset, timeframe, data))
     
-# === FALLBACK STRATEGIES ===
-    # FIX: Use pre-selected fallback timeframe (fixes undefined timeframe bug)
-    # Force fallback to run if fallback is enabled BUT either:
-    # 1. No signals at all (original logic), OR  
-    # 2. initial_signal_count > 0 but those were filtered out by allowed_direction check
-    # This ensures the engine produces signals even when IMP-only mode or HTF filtering removes initial signals
-    if use_fallback and FALLBACK_AVAILABLE and (not signals or (initial_signal_count > 0 and len(signals) == 0)):
-        logger_local.debug(f"[strategies] No main strategy signals for {asset}, running fallback strategies")
+    # === FALLBACK STRATEGIES ===
+    # If no signals generated from main strategies and fallback is enabled, try fallback strategies
+    # This ensures the engine produces signals even when market conditions don't align with strict strategies
+    if use_fallback and FALLBACK_AVAILABLE and not signals:
+        logger.debug(f"[strategies] No main strategy signals for {asset}, running fallback strategies")
         try:
-            if fallback_tf_data is None or fallback_timeframe is None:
-                # Get a single timeframe data for fallback (use first available)
-                tf_data = None
-                for tf in ["1h", "4h", "1d"]:
-                    if tf in market_data:
-                        tf_data = market_data[tf]
-                        fallback_timeframe = tf
-                        break
-                
-                if tf_data is None:
-                    # Use first available timeframe
-                    for tf_name, td in market_data.items():
-                        if isinstance(td, dict):
-                            tf_data = td
-                            fallback_timeframe = tf_name
-                            break
-            else:
-                tf_data = fallback_tf_data
+            # Get a single timeframe data for fallback (use first available)
+            tf_data = None
+            for tf in ["1h", "4h", "1d"]:
+                if tf in market_data:
+                    tf_data = market_data[tf]
+                    break
             
-            if tf_data and isinstance(tf_data, dict) and fallback_timeframe:
-                fallback_sigs = fallback_strategies(asset, fallback_timeframe, tf_data)
+            if tf_data is None:
+                # Use first available timeframe
+                tf_data = list(market_data.values())[0] if market_data else {}
+            
+            if tf_data and isinstance(tf_data, dict):
+                fallback_sigs = fallback_strategies(asset, timeframe, tf_data)
                 for sig in fallback_sigs:
                     sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
                     sig['is_fallback'] = True  # Mark as fallback
                     signals.append(sig)
                 
                 if fallback_sigs:
-                    logger_local.info(f"[strategies] Fallback generated {len(fallback_sigs)} signals for {asset}")
+                    logger.info(f"[strategies] Fallback generated {len(fallback_sigs)} signals for {asset}")
         except Exception as e:
-            logger_local.debug(f"[strategies] Fallback strategies error: {e}")
+            logger.debug(f"[strategies] Fallback strategies error: {e}")
             pass
-    
-    # === ULTIMATE EMERGENCY FALLBACK ===
-    # FIX: If NO signals after all strategies, call emergency signal generator
-    # This is the last-resort safety net to prevent zero-signal generation
-    if not signals:
-        logger_local.warning(f"[strategies] NO SIGNALS after all strategy groups for {asset}, attempting EMERGENCY fallback")
-        try:
-            from STRATEGY_DEBUG_FIX import force_emergency_signals
-            emergency_sigs = force_emergency_signals(asset, market_data, regime)
-            for sig in emergency_sigs:
-                sig['direction'] = _DIR_MAP.get(str(sig.get('direction', '') or '').upper(), sig.get('direction', 'LONG'))
-                sig['is_emergency'] = True  # Mark as emergency
-                signals.append(sig)
-            
-            if emergency_sigs:
-                logger_local.info(f"[strategies] EMERGENCY generated {len(emergency_sigs)} signals for {asset}")
-        except Exception as e:
-            logger_local.debug(f"[strategies] EMERGENCY fallback error: {e}")
-            # Don't fail - try other methods
     
     return signals

@@ -395,15 +395,10 @@ def rank_signals(signals):
                 "regime_confidence": 50.0,
             }
         
-        # Use composite score as primary ranking metric
-        # If composite is significantly different from score_final, prefer composite
         composite = conf_components.get("composite_score", score_final)
         
-        # Blend composite with score_final for final ranking (70% composite, 30% original)
-        ranking_score = (0.7 * composite) + (0.3 * score_final)
-        
         # Persist all scores for downstream consumers
-        signal['score_final'] = ranking_score
+        signal['score_final'] = score_final
         signal['score_ml'] = ml_score if ml_prob is not None else None
         signal['score_composite'] = composite
         signal['score_base'] = base_score
@@ -417,10 +412,11 @@ def rank_signals(signals):
         signal['regime_confidence'] = conf_components.get("regime_confidence", 50.0)
         signal['composite_score'] = composite
         
-        # Tier allocation using composite score
-        if ranking_score >= vip_threshold:
+        # Tier allocation preserves the existing live-weighted ranking contract.
+        # Composite confidence is emitted as metadata for downstream intelligence.
+        if score_final >= vip_threshold:
             vip.append(signal)
-        elif ranking_score >= premium_threshold:
+        elif score_final >= premium_threshold:
             premium.append(signal)
         else:
             free.append(signal)

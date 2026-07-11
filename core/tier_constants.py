@@ -1,259 +1,248 @@
+"""Shared tier constants and limits for signal delivery.
+
+CANONICAL TIER & DELIVERY MODEL (2026-04-12):
+
+Tier Quality Tiers (Score-based):
+  - FREE: 60+ (broad access)
+  - PREMIUM: 80+ (higher quality standard)
+  - VIP: 80+ (highest quality standard)
+  - ADMIN: 0+ (all signals for monitoring)
+  - OWNER: 0+ (unlimited, receives everything)
+
+Daily Limits (PER DELIVERED SIGNALS to user):
+  - FREE: 3 signals/day (hard cap)
+  - PREMIUM: 10 signals/day (hard cap, resets at user's local midnight)
+  - VIP: 20 signals/day (quality-based soft cap, pauses after 20)
+  - OWNER: unlimited
+
+Signal Depth (TP Levels Shown):
+  - FREE: TP1, TP2, SL (TP2 is their 'max')
+  - PREMIUM: TP1, TP2, SL (same depth as FREE)
+  - VIP: TP1, TP2, TP3, SL (full ladder, TP3 is their 'max')
+  - OWNER: All TP levels + all outcomes
+
+Delivery Model:
+  - Engine generates signals in cycles
+  - Signals are RANDOMLY SAMPLED to eligible users per tier
+  - Random sampling is PURE (users can permanently miss some signals)
+  - Daily limits enforce DELIVERED signals (not eligible signals)
+  - Upgrade backfill: only signals already sampled to user (no re-delivery of missed ones)
+  - Outcome tracking is strict per (user, signal) pair
+
+Outcome Rules:
+  - Once TP is hit on a signal, no SL outcome can be recorded
+  - TP progression shows as \"1/3\", \"2/3\", \"3/3\"
+  - SL outcome only recorded if no TP was hit
+  - Trailing SL: track outcomes against CURRENT SL, not original SL
+
+NEW PRODUCTION UPGRADES (2024):
+  - EXPECTANCY_MIN=0.15 (live block below this)
+  - DD_SOFT_THROTTLE=0.06, DD_HARD=0.12
+  - CANDLE_STALENESS_MULTIPLIER=1.5 (stricter freshness)
 """
-SignalRankAI — Tier Constants (PERFECTED)
 
-Single source of truth for all tier-based limits, thresholds, and feature flags.
-All modules MUST import from here rather than defining their own tier logic.
-
-Tier hierarchy:
-  FREE < PREMIUM < VIP = ADMIN = OWNER
-
-Subscription tiers:
-  free     → 3 signals/day, limited format, no exact levels
-  premium  → 10 signals/day, full format, no TP3, no AI
-  vip      → 30 signals/day, VIP format, all levels, Gemini AI, MT5 auto
-  admin    → Same as VIP (staff access)
-  owner    → Same as VIP (platform owner)
-"""
-
-from __future__ import annotations
-
-import os
-from typing import Dict
+import os as _os
+from typing import Final
 
 
-# ─── Daily signal limits per tier ─────────────────────────────────────────────
+def _env_int_limit(name: str, default: int) -> int:
+    try:
+        return max(0, int(float(_os.getenv(name, str(default)) or default)))
+    except Exception:
+        return int(default)
 
-TIER_DAILY_LIMITS: Dict[str, int] = {
-    "free":    int(os.getenv("FREE_DAILY_LIMIT",    "3")   or 3),
-    "premium": int(os.getenv("PREMIUM_DAILY_LIMIT", "10")  or 10),
-    "vip":     int(os.getenv("VIP_DAILY_LIMIT",     "30")  or 30),
-    "admin":   int(os.getenv("VIP_DAILY_LIMIT",     "30")  or 30),  # Same as VIP
-    "owner":   int(os.getenv("VIP_DAILY_LIMIT",     "30")  or 30),  # Same as VIP
+
+# Tier daily signal limits (DELIVERED signals per user)
+TIER_DAILY_LIMITS: Final[dict[str, float]] = {
+    "free": float(_env_int_limit("FREE_SIGNAL_DAILY_LIMIT", 3)),
+    "premium": float(_env_int_limit("PREMIUM_SIGNAL_DAILY_LIMIT", 15)),
+    "vip": float(_env_int_limit("VIP_SIGNAL_DAILY_LIMIT", 30)),
+    "owner": float(_env_int_limit("OWNER_SIGNAL_DAILY_LIMIT", 100)),
+    "admin": float(_env_int_limit("ADMIN_SIGNAL_DAILY_LIMIT", 100)),
 }
 
-
-# ─── Minimum score thresholds for signal delivery ─────────────────────────────
-
-TIER_MIN_SCORES: Dict[str, float] = {
-    "free":    float(os.getenv("FREE_MIN_SCORE",    "55") or 55),   # Any decent signal
-    "premium": float(os.getenv("PREMIUM_MIN_SCORE", "60") or 60),   # Above average
-    "vip":     float(os.getenv("VIP_MIN_SCORE",     "72") or 72),   # High conviction only
-    "admin":   float(os.getenv("VIP_MIN_SCORE",     "72") or 72),
-    "owner":   float(os.getenv("VIP_MIN_SCORE",     "72") or 72),
+# Tier quality score thresholds (minimum signal score to be eligible)
+TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
+  "free": 80.0,      # Must be 80+ for FREE (upgraded from 60)
+  "premium": 80.0,   # Higher quality standard
+  "vip": 80.0,       # Highest quality standard
+    "owner": 0.0,      # No score gate
+    "admin": 0.0,      # Admin receives all signals
 }
 
-# Backward-compatible alias expected by multiple modules/tests
-TIER_SCORE_THRESHOLDS: Dict[str, float] = TIER_MIN_SCORES
-
-
-# ─── Tier feature flags ────────────────────────────────────────────────────────
-
-TIER_FEATURES: Dict[str, Dict[str, bool]] = {
+# Signal depth per tier (how many TP levels shown)
+TIER_SIGNAL_DEPTH: Final[dict[str, dict]] = {
     "free": {
-        "exact_entry":      False,
-        "exact_sl":         False,
-        "exact_tp1":        False,   # Shows "near zone" only
-        "tp2":              False,
-        "tp3":              False,
-        "r_multiple":       False,
-        "regime":           False,
-        "gemini_ai":        False,
-        "mt5_execute":      False,
-        "webhook_api":      False,
-        "live_monitoring":  False,
-        "performance_stats":False,
-        "signal_chart":     False,
-        "outcome_detail":   False,   # Only sees win/loss, no %
-        "signal_history":   False,
-        "priority_delivery":False,
+        "max_tp_level": 2,  # Shows TP1, TP2
+        "show_tp3": False,
+        "show_sl": True,
+        "detail_level": "basic",  # Limited details, with upgrade prompt
     },
     "premium": {
-        "exact_entry":      True,
-        "exact_sl":         True,
-        "exact_tp1":        True,
-        "tp2":              True,
-        "tp3":              False,   # No TP3 for premium
-        "r_multiple":       True,
-        "regime":           False,
-        "gemini_ai":        False,
-        "mt5_execute":      True,    # Manual execution only
-        "webhook_api":      False,
-        "live_monitoring":  True,
-        "performance_stats":True,
-        "signal_chart":     True,
-        "outcome_detail":   True,
-        "signal_history":   True,
-        "priority_delivery":False,
+        "max_tp_level": 2,  # Shows TP1, TP2
+        "show_tp3": False,
+        "show_sl": True,
+        "detail_level": "full",
     },
     "vip": {
-        "exact_entry":      True,
-        "exact_sl":         True,
-        "exact_tp1":        True,
-        "tp2":              True,
-        "tp3":              True,    # Full TP3 for VIP
-        "r_multiple":       True,
-        "regime":           True,    # Market regime context
-        "gemini_ai":        True,    # 🤖 Ask Gemini Why
-        "mt5_execute":      True,    # Manual + AUTO execution
-        "webhook_api":      True,    # Webhook for Cornix/PineConnector
-        "live_monitoring":  True,
-        "performance_stats":True,
-        "signal_chart":     True,
-        "outcome_detail":   True,
-        "signal_history":   True,
-        "priority_delivery":True,    # Gets signals before premium/free
+        "max_tp_level": 3,  # Shows TP1, TP2, TP3
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "full",
+    },
+    "owner": {
+        "max_tp_level": 3,
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "full",
+    },
+    "admin": {
+        "max_tp_level": 3,
+        "show_tp3": True,
+        "show_sl": True,
+        "detail_level": "full",
     },
 }
 
-# Admin and owner have same features as VIP
-TIER_FEATURES["admin"] = TIER_FEATURES["vip"]
-TIER_FEATURES["owner"] = TIER_FEATURES["vip"]
+# Tier upgrade prompt frequency (for FREE users)
+UPGRADE_PROMPT_FREQUENCY: Final[str] = "smart"  # Show on strategic signals to maximize conversion
+UPGRADE_PROMPT_FREQUENCY_INT: Final[int] = 3  # Every 3rd signal, or based on signal quality
 
-
-# ─── Tier rank for comparison ──────────────────────────────────────────────────
-
-TIER_RANK: Dict[str, int] = {
-    "free":    0,
-    "premium": 1,
-    "vip":     2,
-    "admin":   2,
-    "owner":   2,
+# Signal freshness: max age in seconds before signal is considered stale.
+# Keep this strict and centralized as the single source for freshness policy.
+MAX_SIGNAL_AGE_SECONDS: Final[dict[str, int]] = {
+    "crypto":    300,    # 5 min
+  "fx":        300,    # 5 min
+  "stock":     300,    # 5 min
+  "commodity": 300,    # 5 min
 }
+
+# Price drift tolerance: max fractional deviation from entry price (not %).
+# These mirror the % values in engine/stale_signal_validator._CLASS_THRESHOLDS.
+PRICE_DRIFT_TOLERANCE: Final[dict[str, float]] = {
+    "crypto":    0.020,  # 2.0 % — volatile 24/7 market; full cycle can take 30-120 s
+    "fx":        0.003,  # 0.3 % — tight spreads; FX moves slowly relative to crypto
+    "stock":     0.010,  # 1.0 % — intraday moves justify 1 % tolerance
+    "commodity": 0.008,  # 0.8 % — between FX and stock volatility
+}
+
+# Candle staleness multiplier: max age = timeframe * this value
+# For Railway Hobby tier, use 24x to allow signals even if data is hours behind
+_is_railway = bool((_os.getenv("RAILWAY_SERVICE_NAME") or "").strip() or (_os.getenv("RAILWAY_ENVIRONMENT") or "").strip())
+CANDLE_STALENESS_MULTIPLIER: Final[float] = float(_os.getenv("CANDLE_STALENESS_MULTIPLIER", "24.0" if _is_railway else "1.5"))
+
+# NEW PRODUCTION RISK CONSTANTS
+EXPECTANCY_MIN: Final[float] = 0.15  # Block signals from assets/strategies with expectancy < 0.15
+DD_SOFT_THROTTLE: Final[float] = 0.06  # Throttle signals at 6% drawdown
+DD_HARD_LIMIT: Final[float] = 0.12  # Hard stop at 12% drawdown
+
+# News sentiment threshold for conflict detection
+STRONG_SENTIMENT_THRESHOLD: Final[int] = 2
+
+# Active signal monitoring
+ACTIVE_SIGNAL_LOOKBACK_HOURS: Final[int] = 24
+
+# FREE tier specific constants
+FREE_MIN_SCORE: Final[int] = 80  # Minimum signal score for FREE tier eligibility (upgraded from 60)
+FREE_SIGNAL_DAILY_LIMIT: Final[int] = _env_int_limit("FREE_SIGNAL_DAILY_LIMIT", 3)  # Daily signal limit for FREE users
+FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
+
+
+TIER_RANK: Final[dict[str, int]] = {
+    "free": 0,
+    "premium": 1,
+    "vip": 2,
+    "admin": 3,
+    "owner": 4,
+}
+
+TIER_MIN_SCORES: Final[dict[str, float]] = TIER_SCORE_THRESHOLDS
+
+
+TIER_FEATURES: Final[dict[str, set[str]]] = {
+    "free": {"basic_signals", "proof_feed"},
+    "premium": {"basic_signals", "exact_levels", "live_monitoring", "performance_stats"},
+    "vip": {
+        "basic_signals",
+        "exact_levels",
+        "tp3",
+        "gemini_ai",
+        "mt5_execute",
+        "webhook_api",
+        "live_monitoring",
+        "performance_stats",
+        "signal_chart",
+        "priority_delivery",
+    },
+    "admin": {"*"},
+    "owner": {"*"},
+}
+
+TIER_PRICES_NGN: Final[dict[str, int]] = {
+    "premium": int(_os.getenv("PREMIUM_PRICE_NGN", "5000") or 5000),
+    "vip": int(_os.getenv("VIP_PRICE_NGN", "15000") or 15000),
+}
+
+TIER_PRICES_USD: Final[dict[str, float]] = {
+    "premium": float(_os.getenv("PREMIUM_PRICE_USD", "10.0") or 10.0),
+    "vip": float(_os.getenv("VIP_PRICE_USD", "30.0") or 30.0),
+}
+
+TIER_BILLING_PERIODS: Final[dict[str, str]] = {
+    "premium": "monthly",
+    "vip": "monthly",
+}
+
+TIER_DISPLAY_NAMES: Final[dict[str, str]] = {
+    "free": "Free",
+    "premium": "Premium",
+    "vip": "VIP",
+    "admin": "Admin",
+    "owner": "Owner",
+}
+
+TIER_EMOJIS: Final[dict[str, str]] = {
+    "free": "",
+    "premium": "",
+    "vip": "",
+    "admin": "",
+    "owner": "",
+}
+
+TIER_ASSET_COOLDOWN_HOURS: Final[dict[str, int]] = {
+    "free": int(_os.getenv("FREE_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "premium": int(_os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "vip": int(_os.getenv("VIP_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "admin": int(_os.getenv("ADMIN_ASSET_COOLDOWN_HOURS", "12") or 12),
+    "owner": int(_os.getenv("OWNER_ASSET_COOLDOWN_HOURS", "12") or 12),
+}
+
+VIP_MAX_CAPACITY: Final[int] = int(_os.getenv("VIP_MAX_CAPACITY", "30") or 30)
 
 
 def tier_rank(tier: str) -> int:
-    """Return numeric rank for tier comparison (higher = more access)."""
-    return TIER_RANK.get(str(tier or "free").lower(), 0)
+    """Return numeric rank for tier comparison; higher means more access."""
+    return TIER_RANK.get(str(tier or "free").strip().lower(), 0)
 
 
 def normalize_tier(tier: str | None) -> str:
-    """Normalize a tier string to canonical lowercase form."""
+    """Normalize tier labels to canonical lowercase keys."""
     t = str(tier or "free").strip().lower()
-    if t in ("owner", "admin"):
-        return "vip"  # Owner/admin get VIP features
-    if t not in TIER_RANK:
-        return "free"
-    return t
+    return t if t in TIER_RANK else "free"
 
 
 def has_feature(tier: str, feature: str) -> bool:
-    """Check if a tier has a specific feature enabled."""
-    t = str(tier or "free").strip().lower()
-    return bool(TIER_FEATURES.get(t, TIER_FEATURES["free"]).get(feature, False))
+    """Return whether a tier has a named feature flag."""
+    features = TIER_FEATURES.get(normalize_tier(tier), TIER_FEATURES["free"])
+    return "*" in features or str(feature or "").strip() in features
 
 
-def get_daily_limit(tier: str) -> int:
-    """Return the daily signal limit for a tier."""
-    t = str(tier or "free").strip().lower()
-    return int(TIER_DAILY_LIMITS.get(t, TIER_DAILY_LIMITS["free"]))
+def get_daily_limit(tier: str) -> float:
+    """Return the daily delivered-signal limit for a tier."""
+    return TIER_DAILY_LIMITS.get(normalize_tier(tier), TIER_DAILY_LIMITS["free"])
 
 
 def get_min_score(tier: str) -> float:
-    """Return the minimum signal score threshold for a tier."""
-    t = str(tier or "free").strip().lower()
-    return float(TIER_MIN_SCORES.get(t, TIER_MIN_SCORES["free"]))
+    """Return the minimum delivery score for a tier."""
+    return TIER_SCORE_THRESHOLDS.get(normalize_tier(tier), TIER_SCORE_THRESHOLDS["free"])
 
-
-# ─── Pricing ──────────────────────────────────────────────────────────────────
-
-TIER_PRICES_NGN: Dict[str, int] = {
-    "premium": int(os.getenv("PREMIUM_PRICE_NGN", "5000")  or 5000),
-    "vip":     int(os.getenv("VIP_PRICE_NGN",     "15000") or 15000),
-}
-
-TIER_PRICES_USD: Dict[str, float] = {
-    "premium": float(os.getenv("PREMIUM_PRICE_USD", "10.0") or 10.0),
-    "vip":     float(os.getenv("VIP_PRICE_USD",     "30.0") or 30.0),
-}
-
-TIER_BILLING_PERIODS: Dict[str, str] = {
-    "premium": "monthly",
-    "vip":     "monthly",
-}
-
-
-# ─── Tier display names ────────────────────────────────────────────────────────
-
-TIER_DISPLAY_NAMES: Dict[str, str] = {
-    "free":    "Free",
-    "premium": "Premium ⭐",
-    "vip":     "VIP 👑",
-    "admin":   "Admin 🛡️",
-    "owner":   "Owner 🔑",
-}
-
-TIER_EMOJIS: Dict[str, str] = {
-    "free":    "🆓",
-    "premium": "⭐",
-    "vip":     "👑",
-    "admin":   "🛡️",
-    "owner":   "🔑",
-}
-
-
-# ─── Asset repeat cooldown (prevents sending same asset twice) ─────────────────
-
-TIER_ASSET_COOLDOWN_HOURS: Dict[str, int] = {
-    "free":    int(os.getenv("FREE_ASSET_COOLDOWN_HOURS",    "12") or 12),
-    "premium": int(os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8")  or 8),
-    "vip":     int(os.getenv("VIP_ASSET_COOLDOWN_HOURS",     "4")  or 4),
-    "admin":   int(os.getenv("VIP_ASSET_COOLDOWN_HOURS",     "4")  or 4),
-    "owner":   int(os.getenv("VIP_ASSET_COOLDOWN_HOURS",     "4")  or 4),
-}
-
-
-# ─── Engine / strategy compatibility constants ────────────────────────────────
-# Backward-compatible export used by strategies.dynamic_targets and related
-# expectancy/risk gates. This value is intentionally env-configurable.
-EXPECTANCY_MIN: float = float(os.getenv("EXPECTANCY_MIN", "0.0") or 0.0)
-
-
-# ─── Risk drawdown controls / compatibility constants ─────────────────────────
-# Backward-compatible exports used by engine.risk and related risk governance.
-DD_SOFT_THROTTLE: float = float(os.getenv("DD_SOFT_THROTTLE", "0.10") or 0.10)
-DD_HARD_LIMIT: float = float(os.getenv("DD_HARD_LIMIT", "0.20") or 0.20)
-
-
-# ─── Candle freshness / staleness constants ───────────────────────────────────
-# Used by engine core data-age gate: max_age = tf_seconds * CANDLE_STALENESS_MULTIPLIER
-CANDLE_STALENESS_MULTIPLIER: float = float(
-    os.getenv("CANDLE_STALENESS_MULTIPLIER", "2.0") or 2.0
-)
-
-
-# ─── News / sentiment gating constants ────────────────────────────────────────
-# Strong opposing sentiment threshold used by engine news confirmation gate.
-STRONG_SENTIMENT_THRESHOLD: float = float(
-    os.getenv("STRONG_SENTIMENT_THRESHOLD", "2.0") or 2.0
-)
-
-
-# ─── VIP capacity cap ─────────────────────────────────────────────────────────
-
-VIP_MAX_CAPACITY: int = int(os.getenv("VIP_MAX_CAPACITY", "30") or 30)
-
-
-__all__ = [
-    "TIER_DAILY_LIMITS",
-    "TIER_MIN_SCORES",
-    "TIER_SCORE_THRESHOLDS",
-    "TIER_FEATURES",
-    "TIER_RANK",
-    "TIER_PRICES_NGN",
-    "TIER_PRICES_USD",
-    "TIER_BILLING_PERIODS",
-    "TIER_DISPLAY_NAMES",
-    "TIER_EMOJIS",
-    "TIER_ASSET_COOLDOWN_HOURS",
-    "EXPECTANCY_MIN",
-    "DD_SOFT_THROTTLE",
-    "DD_HARD_LIMIT",
-    "CANDLE_STALENESS_MULTIPLIER",
-    "STRONG_SENTIMENT_THRESHOLD",
-    "VIP_MAX_CAPACITY",
-    "tier_rank",
-    "normalize_tier",
-    "has_feature",
-    "get_daily_limit",
-    "get_min_score",
-]

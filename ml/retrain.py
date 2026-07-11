@@ -239,7 +239,7 @@ async def retrain_model() -> bool:
                 await session.execute(
                     text(
                         "INSERT INTO runtime_state(key, value, expires_at, updated_at) "
-                        "VALUES (:k, :v::jsonb, NULL, NOW()) "
+                        "VALUES (:k, CAST(:v AS JSONB), NULL, NOW()) "
                         "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, expires_at=NULL, updated_at=NOW()"
                     ),
                     {"k": key, "v": json.dumps({"payload": model_data})},

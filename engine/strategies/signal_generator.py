@@ -91,14 +91,12 @@ class SignalGenerator:
             self._chart_patterns,
             self._htf_trend_ltf_entry,
             self._triple_timeframe,
-]
+        ]
         
         for strategy in strategies:
             try:
                 sig = strategy(asset, timeframe, candles, indicators)
-                # LOWERED from 70 to 60 to fix zero signals issue
-                # This allows more signals through during low-volatility periods
-                if sig and sig.score >= 60:
+                if sig and sig.score >= 70:
                     signals.append(sig)
             except Exception as e:
                 logger.debug(f"Strategy {strategy.__name__} failed: {e}")

@@ -35,7 +35,7 @@ class OnChainAlpha:
     """
     On-chain data analyzer for whale detection.
     
-    Uses the configured providers in data.alternative_providers.
+    Uses configured providers in data.alternative_providers.
     """
     
     def __init__(self):
@@ -73,7 +73,7 @@ class OnChainAlpha:
             # Fail open - allow trade if check fails
             return False, f"onchain_error_{str(e)[:20]}"
     
-    async def _check_exchange_inflows(self, asset: str, direction: str) -> Tuple[bool, str]:
+    async def _check_exchange_inflows(self, asset: str, direction: str = "long") -> Tuple[bool, str]:
         """Check configured on-chain context for exchange-flow vetoes."""
         try:
             from data.alternative_providers import fetch_onchain_context
@@ -105,6 +105,7 @@ class OnChainAlpha:
                     )
 
             return False, f"no_spike_detected source={source}"
+            
         except Exception as e:
             logger.debug(f"[onchain] Inflow check failed: {e}")
             return False, f"api_error_{str(e)[:20]}"

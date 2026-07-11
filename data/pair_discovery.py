@@ -56,6 +56,7 @@ from utils import proxy_manager
 BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr'
 BYBIT_API = 'https://api.bybit.com/v5/market/tickers'
 BYBIT_CATEGORY = 'linear'
+OKX_TICKERS_API = 'https://www.okx.com/api/v5/market/tickers'
 FX_API = 'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&apikey={api_key}'
 
 _BINANCE_DISABLED_REASON: str | None = None
@@ -81,7 +82,8 @@ _HARDCODED_CRYPTO_PAIRS: list[str] = [
 # These pairs have minimal volatility and should not generate "trend" signals
 STABLECOIN_PAIRS: set[str] = {
     "USDCUSDT", "USDCPERF", "DAIUSDT", "BUSDUSDT", "FDUSDUSDT",
-    "USDTUSDC", "TUSDUSDT", "USDDUSDT", "FRAXUSDT", "MIMUSDT",
+    "USDTUSDC", "USDTUSDT", "TUSDUSDT", "USDEUSDT", "USDDUSDT",
+    "FRAXUSDT", "MIMUSDT",
 }
 
 
@@ -246,6 +248,32 @@ def _bybit_top_crypto_pairs(top_n: int) -> list[str]:
     if _BYBIT_DISABLED_REASON is not None:
         return []
 
+
+def _okx_top_crypto_pairs(top_n: int) -> list[str]:
+    """Return liquid OKX USDT spot instruments in engine symbol format."""
+    try:
+        response = requests.get(OKX_TICKERS_API, params={"instType": "SPOT"}, timeout=8)
+        payload = response.json() if response.ok else {}
+        if not response.ok or str(payload.get("code") or "") != "0":
+            return []
+        ranked = sorted(
+            payload.get("data") or [],
+            key=lambda row: float(row.get("volCcy24h") or 0.0),
+            reverse=True,
+        )
+        pairs = []
+        for row in ranked:
+            instrument = str(row.get("instId") or "").upper().strip()
+            if not instrument.endswith("-USDT"):
+                continue
+            pairs.append(instrument.replace("-", ""))
+            if len(pairs) >= max(1, int(top_n)):
+                break
+        return _filter_blacklisted(pairs)
+    except Exception as exc:
+        logger.debug("[pair_discovery] OKX provider failed: %s", exc)
+        return []
+
     try:
         limit = max(1, int(top_n))
     except Exception:
@@ -337,9 +365,12 @@ def get_trending_crypto_pairs(top_n=20):
         logger.warning("[pair_discovery] Binance explicitly requested but failed, using hardcoded fallback")
         return exclude_pairs(_filter_blacklisted(_HARDCODED_CRYPTO_PAIRS[:top_n]))
     
-# FIX: On Railway - prefer Bybit as primary (less likely to be geo-blocked than Binance)
+# On Railway use the same public source that currently succeeds for candles.
     if is_railway:
-        logger.info("[pair_discovery] Railway detected, trying Bybit first to avoid Binance geoblock")
+        logger.info("[pair_discovery] Railway detected, trying OKX discovery first")
+        result = _okx_top_crypto_pairs(top_n)
+        if result:
+            return exclude_pairs(_filter_blacklisted(result))
         result = _bybit_top_crypto_pairs(top_n)
         if result:
             return exclude_pairs(_filter_blacklisted(result))
@@ -356,8 +387,10 @@ def get_trending_crypto_pairs(top_n=20):
     all_enabled = provider in {"all", "auto", ""} and _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True)
     if all_enabled:
         provider_jobs = {
-            "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
+            "okx": lambda: _okx_top_crypto_pairs(top_n=max(1, int(top_n))),
+            "bybit": lambda: _bybit_top_crypto_pairs(top_n=max(1, int(top_n))),
             "cryptocompare": lambda: _filter_blacklisted(_cryptocompare_top_crypto_pairs(top_n=max(1, int(top_n)))),
+            "binance": lambda: _binance_top_crypto_pairs(top_n=max(1, int(top_n))),
         }
         results: dict[str, list[str]] = {}
         with ThreadPoolExecutor(max_workers=len(provider_jobs)) as ex:
@@ -370,14 +403,21 @@ def get_trending_crypto_pairs(top_n=20):
                     logger.warning("[pair_discovery] crypto provider %s failed: %s", name, e)
                     results[name] = []
         merged = _merge_provider_results(
-            [results.get("binance", []), results.get("cryptocompare", [])],
+            [results.get("okx", []), results.get("bybit", []), results.get("cryptocompare", []), results.get("binance", [])],
             limit=max(1, int(top_n)),
         )
         if merged:
             return exclude_pairs(merged)
 
-    # Final fail-open fallback: try Binance first, then CryptoCompare, then HARDCODED
-    # Try CryptoCompare first (safer for Railway)
+    # Final fail-open fallback: try Bybit, then CryptoCompare, then Binance, then HARDCODED.
+    fallback = _okx_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(_filter_blacklisted(fallback))
+
+    fallback = _bybit_top_crypto_pairs(top_n)
+    if fallback:
+        return exclude_pairs(_filter_blacklisted(fallback))
+
     fallback = _cryptocompare_top_crypto_pairs(top_n)
     if fallback:
         return exclude_pairs(_filter_blacklisted(fallback))
@@ -428,14 +468,15 @@ def get_all_trending_pairs():
     except Exception:
         top_n = 30
     stock_top_n = max(1, int(os.getenv("STOCK_TRENDING_TOP_N", "20")))
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=5) as ex:
         futures = {
             "crypto": ex.submit(partial(get_trending_crypto_pairs, top_n=max(1, top_n))),
             "fx": ex.submit(get_trending_fx_pairs),
             "stocks": ex.submit(partial(get_trending_stock_tickers, top_n=stock_top_n)),
+            "indices": ex.submit(partial(get_trending_index_tickers, top_n=max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))),
             "commodities": ex.submit(partial(get_trending_commodity_tickers, 10)),
         }
-        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "commodities": []}
+        out: dict[str, list[str]] = {"crypto": [], "fx": [], "stocks": [], "indices": [], "commodities": []}
         for k, fut in futures.items():
             try:
                 out[k] = list(fut.result() or [])
@@ -445,8 +486,9 @@ def get_all_trending_pairs():
     crypto = out["crypto"]
     fx = out["fx"]
     stocks = out["stocks"]
+    indices = out["indices"]
     commodities = out["commodities"]
-    return crypto + fx + stocks + commodities
+    return crypto + fx + stocks + indices + commodities
 
 
 def get_trending_stock_tickers(top_n=20):
@@ -532,23 +574,88 @@ def get_trending_stock_tickers(top_n=20):
     return sp500_liquid[:top_n]
 
 
+def get_trending_index_tickers(top_n=20):
+    """Return configured index/CFD symbols.
+
+    Index discovery is intentionally env-driven because broker/index symbol
+    names vary heavily across MT5, Yahoo, TradingView, and CFD providers.
+    """
+    manual = (os.getenv("INDEX_TICKERS") or "").strip()
+    if manual:
+        return [t.strip().upper() for t in manual.split(",") if t.strip()][:top_n]
+    return [
+        "US500",
+        "NAS100",
+        "US30",
+        "GER40",
+        "UK100",
+        "JP225",
+        "FRA40",
+        "EU50",
+        "AUS200",
+        "HK50",
+    ][:top_n]
+
+
 def get_all_tradable_assets(crypto_limit=20, stock_limit=20):
     """
-    Get all tradable assets (crypto + FX + stocks).
+    Get all tradable assets (crypto + FX + stocks + indices + commodities).
     
     Returns:
-        dict with keys: crypto, fx, stocks, commodities
+        dict with keys: crypto, fx, stocks, indices, commodities
     """
     crypto = get_trending_crypto_pairs(crypto_limit)
     fx = get_trending_fx_pairs()
     stocks = get_trending_stock_tickers(stock_limit)
+    indices = get_trending_index_tickers(max(1, int(os.getenv("INDEX_TRENDING_TOP_N", "20"))))
     commodities = get_trending_commodity_tickers(10)
     
     return {
         "crypto": crypto,
         "fx": fx,
         "stocks": stocks,
+        "indices": indices,
         "commodities": commodities,
+    }
+
+
+def get_asset_discovery_snapshot(force_refresh: bool = False) -> dict:
+    """Return observable dynamic-discovery state for owner/admin diagnostics."""
+    try:
+        universe = get_latest_asset_universe(force_refresh=force_refresh)
+    except Exception as exc:
+        universe = {}
+        error = str(exc)[:200]
+    else:
+        error = ""
+
+    if not isinstance(universe, dict):
+        universe = {}
+    normalized = {
+        "crypto": list(universe.get("crypto") or []),
+        "fx": list(universe.get("fx") or []),
+        "stocks": list(universe.get("stocks") or []),
+        "indices": list(universe.get("indices") or []),
+        "commodities": list(universe.get("commodities") or []),
+    }
+    all_symbols: list[str] = []
+    for values in normalized.values():
+        all_symbols.extend(str(x or "").upper().strip() for x in values if str(x or "").strip())
+    return {
+        "last_refresh_age_seconds": max(0.0, time.time() - float(_ASSET_UNIVERSE_LAST_REFRESH or 0)),
+        "refresh_interval_seconds": int(_ASSET_UNIVERSE_REFRESH_INTERVAL),
+        "counts": {key: len(value) for key, value in normalized.items()},
+        "total": len(set(all_symbols)),
+        "samples": {key: value[:10] for key, value in normalized.items()},
+        "providers": {
+            "binance_disabled": bool(_BINANCE_DISABLED_REASON),
+            "binance_reason": _BINANCE_DISABLED_REASON,
+            "bybit_disabled": bool(_BYBIT_DISABLED_REASON),
+            "bybit_reason": _BYBIT_DISABLED_REASON,
+            "crypto_provider": (os.getenv("CRYPTO_DATA_PROVIDER") or "auto").strip() or "auto",
+            "auto_all_providers": _is_true(os.getenv("AUTO_DISCOVERY_ALL_PROVIDERS"), True),
+        },
+        "error": error,
     }
 
 # Example usage:

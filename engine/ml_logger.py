@@ -5,6 +5,7 @@ Logs ML predictions to the database for drift analysis and model improvement.
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -155,7 +156,33 @@ async def log_ml_training_data(
         else:
             status = outcome_status or "unknown"
         
-        # Create training data record
+        raw_r = float(outcome_r_multiple) if outcome_r_multiple is not None else None
+        try:
+            clip_min = float(os.getenv("TRAINING_R_CLIP_MIN", "-5") or -5)
+            clip_max = float(os.getenv("TRAINING_R_CLIP_MAX", "10") or 10)
+        except Exception:
+            clip_min, clip_max = -5.0, 10.0
+        if clip_min > clip_max:
+            clip_min, clip_max = clip_max, clip_min
+        training_r = min(clip_max, max(clip_min, raw_r)) if raw_r is not None else None
+        meta = dict(outcome_meta or {})
+        meta.update(
+            {
+                "raw_r_multiple": raw_r,
+                "training_r_multiple": training_r,
+                "r_clipped": bool(raw_r is not None and training_r != raw_r),
+            }
+        )
+        if meta["r_clipped"]:
+            logger.warning(
+                "[ml_logger] Clipped anomalous R-multiple signal=%s raw=%.2f training=%.2f",
+                signal_id,
+                raw_r,
+                training_r,
+            )
+
+        # Create training data record. Preserve the raw result in metadata while
+        # keeping extreme outliers out of model training.
         training_data = MLPastTrainingData(
             signal_id=signal_id,
             asset=asset,
@@ -166,18 +193,22 @@ async def log_ml_training_data(
             take_profit=tp_str,
             ml_probability=float(ml_probability) if ml_probability else None,
             outcome_status=status,
-            outcome_r_multiple=float(outcome_r_multiple) if outcome_r_multiple else None,
-            outcome_percent=float(outcome_percent) if outcome_percent else None,
-            outcome_meta=outcome_meta or {},
+            outcome_r_multiple=training_r,
+            outcome_percent=float(outcome_percent) if outcome_percent is not None else None,
+            outcome_meta=meta,
             signal_created_at=signals_created_at,
             outcome_closed_at=outcome_closed_at,
         )
         session.add(training_data)
         await session.commit()
         
+        r_label = f"{training_r:.2f}" if training_r is not None else "n/a"
         logger.info(
-            f"[ml_logger] Saved training data: {asset} {timeframe} "
-            f"outcome={status} r={outcome_r_multiple:.2f}"
+            "[ml_logger] Saved training data: %s %s outcome=%s r=%s",
+            asset,
+            timeframe,
+            status,
+            r_label,
         )
         return True
         

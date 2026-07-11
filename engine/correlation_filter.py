@@ -221,13 +221,15 @@ class PortfolioExposureManager:
 
     def _get_asset_class(self, asset: str) -> str:
         """Determine asset class from symbol."""
-        from data.fetcher import is_crypto, is_fx, is_stock
+        from data.fetcher import is_crypto, is_fx, is_stock, is_index
 
         s = str(asset or "").upper().strip()
         if is_crypto(s):
             return "crypto"
         if is_fx(s):
             return "fx"
+        if is_index(s):
+            return "index"
         if is_stock(s):
             return "stock"
         # Default to crypto for crypto symbols

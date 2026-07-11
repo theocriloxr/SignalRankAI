@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import queue
+import time
 from typing import Any
 
 
@@ -163,3 +164,40 @@ def run_sync(coro, timeout: float | None = None) -> Any:
         except Exception:
             pass
         raise
+
+
+def submit_background_coro(coro, *, label: str = "background"):
+    """Submit a coroutine to the shared background loop without blocking the caller.
+
+    This is for best-effort work such as Telegram fanout where the engine must
+    keep scanning and storing fresh signals instead of waiting on network sends.
+    The returned Future can be observed by tests/diagnostics, but callers should
+    not block on it in the hot path.
+    """
+    bg_loop = _ensure_background_loop()
+    started = time.perf_counter()
+    try:
+        import logging
+        logging.getLogger(__name__).info("[%s] background coroutine submitted", label)
+    except Exception:
+        pass
+    fut = asyncio.run_coroutine_threadsafe(coro, bg_loop)
+
+    def _log_result(done_fut):
+        elapsed_ms = int((time.perf_counter() - started) * 1000)
+        try:
+            result = done_fut.result()
+            try:
+                import logging
+                logging.getLogger(__name__).info("[%s] background coroutine finished elapsed_ms=%s result=%s", label, elapsed_ms, result)
+            except Exception:
+                pass
+        except BaseException as exc:  # pragma: no cover - defensive logging path
+            try:
+                import logging
+                logging.getLogger(__name__).warning("[%s] background coroutine failed elapsed_ms=%s err_type=%s err=%s", label, elapsed_ms, type(exc).__name__, exc)
+            except Exception:
+                pass
+
+    fut.add_done_callback(_log_result)
+    return fut

@@ -82,6 +82,7 @@ async def is_signal_locked(asset: str, direction: str, timeframe: str, strategy_
             result = state.get_str_sync(key)
             if result:
                 logger.info(f"[signal_lock] Lock exists: {key}")
+                return True
     except Exception as e:
         logger.debug(f"[signal_lock] Redis check failed: {e}")
     
@@ -250,19 +251,30 @@ async def active_signal_exists_for_asset(asset: str, direction: str, timeframe: 
         
         cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
         
+        import os
+        from sqlalchemy import or_, exists as sa_exists
+        filters = [
+            Signal.asset == str(asset).upper(),
+            Signal.direction == str(direction).lower(),
+            Signal.timeframe == str(timeframe).lower(),
+            Signal.archived == False,
+            Signal.expired == False,
+            Signal.created_at >= cutoff,
+        ]
+        if str(os.getenv("ACTIVE_SIGNAL_COOLDOWN_IGNORE_EXPIRED_BY_TIME", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+            filters.append(or_(Signal.expires_at.is_(None), Signal.expires_at >= datetime.utcnow()))
+        if str(os.getenv("ASSET_REPEAT_LOCK_REQUIRE_DELIVERED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+            from db.models import SignalDelivery
+            filters.append(sa_exists().where(
+                SignalDelivery.signal_id == Signal.signal_id,
+                SignalDelivery.sent_ok == True,
+                SignalDelivery.delivery_state.in_(("sent", "delivered", "confirmed")),
+            ))
+
         async with get_session() as session:
             result = await session.execute(
                 select(Signal.signal_id)
-                .where(
-                    and_(
-                        Signal.asset == str(asset).upper(),
-                        Signal.direction == str(direction).lower(),
-                        Signal.timeframe == str(timeframe).lower(),
-                        Signal.archived == False,
-                        Signal.expired == False,
-                        Signal.created_at >= cutoff,
-                    )
-                )
+                .where(and_(*filters))
                 .limit(1)
             )
             exists = result.scalar_one_or_none() is not None

@@ -84,21 +84,9 @@ class SqueezeDetector:
             return "NEUTRAL"
         
         try:
-            # Public Binance Futures API (No keys required)
-            url = f"https://fapi.binance.com/fapi/v1/premiumIndex"
-            params = {"symbol": asset.upper()}
-            
-            session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    logger.debug(
-                        f"[derivatives] Funding API returned {response.status} "
-                        f"for {asset}, defaulting to NEUTRAL"
-                    )
-                    return "NEUTRAL"
-                
-                data = await response.json()
-                funding_rate = float(data.get('lastFundingRate', 0))
+            funding_rate = await self.get_funding_rate(asset)
+            if funding_rate is None:
+                return "NEUTRAL"
                 
                 # Log the funding rate for debugging
                 funding_rate_pct = funding_rate * 100
@@ -127,7 +115,6 @@ class SqueezeDetector:
                 
                 # Neutral - no extreme funding rate
                 return "NEUTRAL"
-                
         except Exception as e:
             logger.debug(
                 f"[derivatives] Funding rate check failed for {asset}: {e}. "
@@ -149,17 +136,44 @@ class SqueezeDetector:
             return None
             
         try:
-            url = f"https://fapi.binance.com/fapi/v1/premiumIndex"
-            params = {"symbol": asset.upper()}
-            
             session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    return None
-                
-                data = await response.json()
-                return float(data.get('lastFundingRate', 0))
-                
+            symbol = asset.upper()
+            providers = [
+                item.strip().lower()
+                for item in os.getenv("CRYPTO_DERIVATIVES_PROVIDERS", "bybit,okx,binance").split(",")
+                if item.strip()
+            ]
+            for provider in providers:
+                try:
+                    if provider == "bybit":
+                        url = "https://api.bybit.com/v5/market/tickers"
+                        params = {"category": "linear", "symbol": symbol}
+                    elif provider == "okx":
+                        base = symbol[:-4] if symbol.endswith("USDT") else symbol
+                        url = "https://www.okx.com/api/v5/public/funding-rate"
+                        params = {"instId": f"{base}-USDT-SWAP"}
+                    elif provider == "binance":
+                        url = "https://fapi.binance.com/fapi/v1/premiumIndex"
+                        params = {"symbol": symbol}
+                    else:
+                        continue
+                    async with session.get(url, params=params) as response:
+                        if response.status != 200:
+                            continue
+                        data = await response.json()
+                    if provider == "bybit":
+                        rows = (data.get("result") or {}).get("list") or []
+                        value = rows[0].get("fundingRate") if rows else None
+                    elif provider == "okx":
+                        rows = data.get("data") or []
+                        value = rows[0].get("fundingRate") if rows else None
+                    else:
+                        value = data.get("lastFundingRate")
+                    if value is not None:
+                        return float(value)
+                except Exception as provider_exc:
+                    logger.debug("[derivatives] provider=%s funding failed: %s", provider, provider_exc)
+            return None
         except Exception as e:
             logger.debug(f"[derivatives] Failed to get funding rate for {asset}: {e}")
             return None

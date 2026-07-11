@@ -8,6 +8,7 @@ import hashlib
 import os
 import sys
 import threading
+import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -32,6 +33,9 @@ _ACTIVE_TRADES_KEY = "signalrankai:trades:active"
 _LATEST_TICK_KEY = "signalrankai:market:last_tick"
 _MARKET_TICK_CHANNEL_PREFIX = "signalrankai:tick:"
 
+logger = logging.getLogger(__name__)
+_REDIS_SOURCE_LOGGED = False
+
 
 def _webhook_queue_key() -> str:
     return (os.getenv("TELEGRAM_UPDATES_QUEUE_KEY") or _WEBHOOK_QUEUE_KEY).strip() or _WEBHOOK_QUEUE_KEY
@@ -42,10 +46,52 @@ def _redis_max_connections() -> int:
     return 200
 
 
+def _mask_redis_url(url: str | None) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    try:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(text)
+        host = parsed.hostname or "unknown"
+        port = f":{parsed.port}" if parsed.port else ""
+        db = parsed.path or ""
+        return f"{parsed.scheme or 'redis'}://***@{host}{port}{db}"
+    except Exception:
+        return "redis://***"
+
+
+def _resolve_redis_url_with_source() -> tuple[Optional[str], str]:
+    # State/delivery traffic can be moved to a second Redis so webhook intake
+    # is not competing with delivery locks, delivered-signal sets, and fanout
+    # coordination. Leave REDIS_URL for the webhook queue; set DELIVERY_REDIS_URL
+    # or STATE_REDIS_URL when adding a second Redis database.
+    for name in ("DELIVERY_REDIS_URL", "STATE_REDIS_URL", "SIGNALRANK_STATE_REDIS_URL", "REDIS_URL"):
+        val = (os.getenv(name) or "").strip()
+        if val:
+            return val, name
+    return None, "none"
+
+
 def _resolve_redis_url() -> Optional[str]:
-    # Always resolve to REDIS_URL (production)
-    val = (os.getenv("REDIS_URL") or "").strip()
-    return val if val else None
+    return _resolve_redis_url_with_source()[0]
+
+
+def redis_state_diagnostics() -> dict[str, Any]:
+    url, source = _resolve_redis_url_with_source()
+    main_url = (os.getenv("REDIS_URL") or "").strip()
+    delivery_url = (os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    state_url = (os.getenv("STATE_REDIS_URL") or "").strip()
+    return {
+        "active_source": source,
+        "active_url": _mask_redis_url(url),
+        "redis_url_set": bool(main_url),
+        "delivery_redis_url_set": bool(delivery_url),
+        "state_redis_url_set": bool(state_url),
+        "using_separate_delivery_redis": bool(delivery_url and main_url and delivery_url != main_url),
+        "using_separate_state_redis": bool(state_url and main_url and state_url != main_url),
+        "fallback_to_main_redis": source == "REDIS_URL",
+    }
 
 
 def mark_signal_delivered_sync(user_id: int, signal_id: str) -> None:
@@ -154,6 +200,8 @@ class RedisState:
     def __init__(self) -> None:
         self._memory: Dict[str, Any] = {}
         self._redis_sync: Any = None
+        self._redis_source: str = "none"
+        self._redis_masked_url: str = ""
         self._pg_dsn: Optional[str] = None
         self._cache_max = int(os.getenv("STATE_CACHE_MAX_KEYS", "4096") or 4096)
         self._cache: "OrderedDict[str, tuple[Any, float | None]]" = OrderedDict()
@@ -168,7 +216,19 @@ class RedisState:
             self._ensure_flush_worker()
 
     def _redis_url(self) -> Optional[str]:
-        return _resolve_redis_url()
+        url, source = _resolve_redis_url_with_source()
+        self._redis_source = source
+        self._redis_masked_url = _mask_redis_url(url)
+        return url
+
+    def redis_diagnostics_sync(self) -> dict[str, Any]:
+        data = redis_state_diagnostics()
+        data.update({
+            "connected": self._get_redis_sync() is not None,
+            "connected_source": self._redis_source,
+            "connected_url": self._redis_masked_url,
+        })
+        return data
 
     def _get_pg_dsn(self) -> Optional[str]:
         if self._pg_dsn is not None:
@@ -297,8 +357,32 @@ class RedisState:
             # Validate connectivity once.
             client.ping()
             self._redis_sync = client
+            try:
+                global _REDIS_SOURCE_LOGGED
+                if not _REDIS_SOURCE_LOGGED:
+                    diag = redis_state_diagnostics()
+                    logger.info(
+                        "[redis_state] connected source=%s url=%s separate_delivery=%s separate_state=%s fallback_to_main=%s",
+                        self._redis_source,
+                        self._redis_masked_url,
+                        diag.get("using_separate_delivery_redis"),
+                        diag.get("using_separate_state_redis"),
+                        diag.get("fallback_to_main_redis"),
+                    )
+                    _REDIS_SOURCE_LOGGED = True
+            except Exception:
+                pass
             return self._redis_sync
-        except Exception:
+        except Exception as exc:
+            try:
+                logger.warning(
+                    "[redis_state] connect failed source=%s url=%s err=%s",
+                    self._redis_source,
+                    self._redis_masked_url,
+                    exc,
+                )
+            except Exception:
+                pass
             self._redis_sync = None
             return None
 

@@ -285,7 +285,7 @@ def institutional_momentum_pulse_strategies(asset: str, market_data: dict) -> li
         if _env_bool("IMP_FX_OVERLAP_ONLY", False):
             if not _is_london_ny_overlap():
                 return []
-        elif _env_bool("IMP_FX_SESSION_FILTER_ENABLED", True):
+        elif _env_bool("IMP_FX_SESSION_FILTER_ENABLED", "IMP_FX_ALLOWED_SESSIONS" in os.environ):
             if not _fx_session_allowed():
                 return []
 

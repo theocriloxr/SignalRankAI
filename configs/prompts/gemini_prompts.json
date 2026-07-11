@@ -1,0 +1,11 @@
+{
+  "version": "gemini_prompts_v1_2026_07_11",
+  "templates": {
+    "news_sentiment": "Analyze these news headlines for {asset} and determine the market sentiment.\n\nHeadlines:\n{headlines_text}\n\nReply ONLY with one of these exact words:\n- BULLISH (if news is positive/optimistic for price going up)\n- BEARISH (if news is negative/pessimistic for price going down)\n- NEUTRAL (if news is mixed or neutral)\n\nDo not explain. Just reply with one word.",
+    "signal_explanation": "Explain this trading signal in 2-4 concise sentences. Include why now, what confirms it, and what invalidates it.\n\nSignal: {signal}",
+    "market_regime": "Classify the current market regime for {asset}. Reply with a short JSON-like summary containing regime, confidence, and reason.\n\nData: {market_data}",
+    "custom_question": "Question: {question}\n\nContext: {context}",
+    "cro_confluence": "You are an institutional Chief Risk Officer with 20 years of experience in macro trading. Review the signal and current news. Approve only if macro/news risk does not invalidate the technical setup.\n\nSignal:\n{signal}\n\nHeadlines:\n{headlines_text}\n\nReply with APPROVE or VETO, then one concise reason.",
+    "risk_review": "Analyze this trade for risk. Rate 1-10 (10 = highest risk). Keep the response concise and mention only the biggest risk factors.\n\nSignal:\n{signal}\n\nMarket context:\n{market_context}"
+  }
+}

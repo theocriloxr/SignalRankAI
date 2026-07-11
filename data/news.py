@@ -44,7 +44,7 @@ def fetch_news_headlines(asset: str, lookback_minutes: int = 120) -> List[Tuple[
     headlines = []
     
     # 1. Try NewsAPI
-    newsapi_key = os.getenv("NEWSAPI_KEY", "").strip()
+    newsapi_key = (os.getenv("NEWSAPI_KEY") or os.getenv("NEWS_API_KEY") or "").strip()
     if newsapi_key:
         try:
             # Map asset to search query

@@ -5,7 +5,7 @@ import json
 import hmac
 import hashlib
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -217,8 +217,12 @@ async def persist_decision_log(
     
     IMPORTANT: With NullPool enabled, failing to commit causes data loss!
     """
+    if str(os.getenv("DECISION_LOG_WRITE_ENABLED", "1") or "1").strip().lower() not in {
+        "1", "true", "yes", "on",
+    }:
+        return 0
     try:
-        async with get_session() as session:
+        async with get_session(noncritical=True) as session:
             dl = DecisionLog(
                 signal_id=signal_id,
                 asset=asset,
@@ -239,7 +243,10 @@ async def persist_decision_log(
                 return 0
     except Exception as e:
         import logging
-        logging.exception(f"Failed to persist decision log: {e}")
+        if type(e).__name__ == "NoncriticalWriteDropped":
+            logging.getLogger(__name__).warning("Decision log dropped because DB gate is busy")
+        else:
+            logging.exception(f"Failed to persist decision log: {e}")
         return 0
 
 
@@ -459,34 +466,23 @@ async def mark_webhook_event_processed(
         await session.rollback()
         return False
 
+
 async def get_economic_events(session, hours_ahead: int = 168) -> List["EconomicEvent"]:
-    """Get upcoming high-impact economic events from DB.
-    
-    Args:
-        session: Database session
-        hours_ahead: How many hours ahead to look (default 7 days)
-    
-    Returns:
-        List of EconomicEvent records
-    """
+    """Get upcoming medium/high-impact economic events from DB."""
     from db.models import EconomicEvent
-    from sqlalchemy import select, and_
-    from datetime import datetime, timezone, timedelta
-    
-    now = datetime.now(timezone.utc)
-    window_end = now + timedelta(hours=hours_ahead)
-    
+
+    now = datetime.utcnow()
+    window_end = now + timedelta(hours=max(0, int(hours_ahead or 0)))
     try:
         result = await session.execute(
-            select(EconomicEvent).where(
-                and_(
-                    EconomicEvent.event_date >= now,
-                    EconomicEvent.event_date <= window_end,
-                    EconomicEvent.impact.in_(["high", "medium"])
-                )
-            ).order_by(EconomicEvent.event_date)
+            select(EconomicEvent)
+            .where(
+                EconomicEvent.event_date >= now,
+                EconomicEvent.event_date <= window_end,
+                EconomicEvent.impact.in_(["high", "medium"]),
+            )
+            .order_by(EconomicEvent.event_date)
         )
         return list(result.scalars().all())
     except Exception:
         return []
-
