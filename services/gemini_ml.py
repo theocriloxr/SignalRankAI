@@ -29,6 +29,14 @@ import asyncio
 logger = logging.getLogger("GeminiValidator")
 _LAST_REVIEW_KEY = "gemini_last_review"
 
+try:
+    from services.prompt_registry import render_prompt, prompt_version
+except Exception:  # pragma: no cover - defensive import fallback
+    def render_prompt(name: str, **context):
+        return str(context), "prompt_registry_unavailable"
+    def prompt_version():
+        return "prompt_registry_unavailable"
+
 # Setup Client (New SDK: google-genai)
 client = None
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
@@ -108,14 +116,20 @@ async def quantize_news_sentiment(asset: str, headlines: List[str]) -> float:
 
 
 async def ask_gemini_signal_explanation(signal: dict) -> Optional[str]:
-    """Generate a short plain-English explanation for a signal."""
+    """Generate a short plain-English explanation for a signal.
+
+    The prompt is versioned outside Python source; the version is attached to
+    the in-memory signal payload for downstream persistence/auditing when the
+    caller stores it.
+    """
     if not gemini_available():
         return None
-    prompt = (
-        "Explain this trading signal in 2-4 concise sentences. Include why now, "
-        "what confirms it, and what invalidates it.\n\n"
-        f"Signal: {signal}"
-    )
+    prompt, version = render_prompt("signal_explanation", signal=signal)
+    try:
+        if isinstance(signal, dict):
+            signal.setdefault("ai_prompt_version", version)
+    except Exception:
+        pass
     return await _call_gemini(prompt, max_tokens=300)
 
 
@@ -123,23 +137,20 @@ async def ask_gemini_custom_question(question: str, context: Optional[dict] = No
     """Answer an operator-supplied Gemini question with optional context."""
     if not gemini_available():
         return None
-    prompt = f"Question: {question}\n\nContext: {context or {}}"
+    prompt, _version = render_prompt("custom_question", question=question, context=context or {})
     return await _call_gemini(prompt, max_tokens=500)
 
 
 async def analyze_market_regime(asset: str, market_data: dict) -> dict:
     """Ask Gemini for market-regime context, falling back to neutral."""
-    fallback = {"regime": "NEUTRAL", "confidence": 0.0, "reason": "gemini_unavailable"}
+    fallback = {"regime": "NEUTRAL", "confidence": 0.0, "reason": "gemini_unavailable", "prompt_version": prompt_version()}
     if not gemini_available():
         return fallback
-    prompt = (
-        f"Classify the current market regime for {asset}. Reply with a short JSON-like "
-        f"summary containing regime, confidence, and reason.\n\nData: {market_data}"
-    )
+    prompt, version = render_prompt("market_regime", asset=asset, market_data=market_data)
     response = await _call_gemini(prompt, max_tokens=250)
     if not response:
         return fallback
-    return {"regime": "AI_REVIEWED", "confidence": 0.5, "reason": response[:500]}
+    return {"regime": "AI_REVIEWED", "confidence": 0.5, "reason": response[:500], "prompt_version": version}
 
 
 async def get_news_sentiment(asset: str, headlines: list) -> str:
@@ -164,17 +175,7 @@ async def get_news_sentiment(asset: str, headlines: list) -> str:
         # Format headlines for prompt
         headlines_text = "\n".join([f"- {h}" for h in headlines[:10]])
         
-        prompt = f"""Analyze these news headlines for {asset} and determine the market sentiment.
-
-Headlines:
-{headlines_text}
-
-Reply ONLY with one of these exact words:
-- BULLISH (if news is positive/optimistic for price going up)
-- BEARISH (if news is negative/pessimistic for price going down)
-- NEUTRAL (if news is mixed or neutral)
-
-Do not explain. Just reply with one word."""
+        prompt, _version = render_prompt("news_sentiment", asset=asset, headlines_text=headlines_text)
         
         # New SDK: client.models.generate_content()
         response = client.models.generate_content(

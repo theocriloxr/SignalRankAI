@@ -32,6 +32,19 @@ class PriceCircuitConfig:
     open_seconds: float = 30.0  # Stay open for 30s
 
 
+@dataclass(frozen=True)
+class LivePriceQuote:
+    """Structured live quote used by the final-send validation gate."""
+    symbol: str
+    price: float
+    provider: str
+    fetched_at: float
+    latency_ms: int
+    confidence: float = 1.0
+    is_stale: bool = False
+    stale_reason: str | None = None
+
+
 class PriceCircuitBreaker:
     """Circuit breaker for price providers."""
     
@@ -330,89 +343,76 @@ async def _fetch_polygon_price(symbol: str) -> Optional[float]:
 # Primary API with Circuit Breaker & Failover
 # ============================================================================
 
+async def get_live_price_quote(
+    symbol: str,
+    timeout: float = 5.0,
+) -> Optional[LivePriceQuote]:
+    """Get a structured live quote with provider attribution.
+
+    This is the preferred API for final-send validation because it preserves
+    provider, latency, and staleness metadata instead of returning a naked float.
+    """
+    if not symbol:
+        return None
+
+    symbol = symbol.upper().strip()
+    providers = _get_providers_for_asset(symbol)
+
+    for provider in providers:
+        started = time.perf_counter()
+        try:
+            price = None
+            if provider == "binance":
+                price = await asyncio.wait_for(_fetch_binance_price(symbol), timeout=timeout)
+            elif provider == "bybit":
+                price = await asyncio.wait_for(_fetch_bybit_price(symbol), timeout=timeout)
+            elif provider == "cryptocompare":
+                price = await asyncio.wait_for(_fetch_cryptocompare_price(symbol), timeout=timeout)
+            elif provider == "yahoo":
+                price = await asyncio.wait_for(_fetch_yahoo_price(symbol), timeout=timeout)
+            elif provider == "polygon":
+                price = await asyncio.wait_for(_fetch_polygon_price(symbol), timeout=timeout)
+
+            if price and price > 0:
+                quote = LivePriceQuote(
+                    symbol=symbol,
+                    price=float(price),
+                    provider=provider,
+                    fetched_at=time.time(),
+                    latency_ms=int((time.perf_counter() - started) * 1000),
+                    confidence=1.0,
+                    is_stale=False,
+                )
+                logger.info(
+                    "[price] %s: %s provider=%s latency_ms=%s",
+                    symbol, quote.price, provider, quote.latency_ms,
+                )
+                return quote
+
+            logger.debug("[price] %s: provider=%s failed/invalid, trying next", symbol, provider)
+
+        except asyncio.TimeoutError:
+            logger.debug("[price] %s: %s timeout", symbol, provider)
+            continue
+        except Exception as e:
+            logger.debug("[price] %s: %s error: %s", symbol, provider, e)
+            continue
+
+    logger.warning("[price] All providers failed for %s", symbol)
+    return None
+
+
 async def get_live_price(
     symbol: str,
     timeout: float = 5.0,
 ) -> Optional[float]:
+    """Get live price with circuit breaker and automatic failover.
+
+    Compatibility wrapper around get_live_price_quote. New final-send code should
+    use get_live_price_quote so it can inspect provider metadata.
     """
-    Get live price with circuit breaker and automatic failover.
-    
-    This is the MAIN entry point - replaces all direct price fetches.
-    
-    Features:
-    - Strict asset routing (crypto vs stocks)
-    - Circuit breaker per provider
-    - Automatic failover on rate limits
-    - Prevents "Ghost Price" from wrong provider
-    
-    Args:
-        symbol: Asset symbol (e.g., "BTCUSDT", "AAPL")
-        timeout: Maximum wait time in seconds
-        
-    Returns:
-        Live price or None if unavailable
-    """
-    if not symbol:
-        return None
-    
-    symbol = symbol.upper().strip()
-    
-    # Get provider priority for asset type
-    providers = _get_providers_for_asset(symbol)
-    
-    # Try each provider with circuit breaker
-    for provider in providers:
-        try:
-            price = None
-            
-            if provider == "binance":
-                price = await asyncio.wait_for(
-                    _fetch_binance_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "bybit":
-                price = await asyncio.wait_for(
-                    _fetch_bybit_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "cryptocompare":
-                price = await asyncio.wait_for(
-                    _fetch_cryptocompare_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "yahoo":
-                price = await asyncio.wait_for(
-                    _fetch_yahoo_price(symbol),
-                    timeout=timeout,
-                )
-            elif provider == "polygon":
-                price = await asyncio.wait_for(
-                    _fetch_polygon_price(symbol),
-                    timeout=timeout,
-                )
-            
-            if price and price > 0:
-                logger.info(
-                    f"[price] {symbol}: {price} (provider={provider})"
-                )
-                return price
-            
-            # Provider failed or returned invalid price - continue to next
-            logger.debug(
-                f"[price] {symbol}: provider={provider} failed/invalid, "
-                f"trying next..."
-            )
-            
-        except asyncio.TimeoutError:
-            logger.debug(f"[price] {symbol}: {provider} timeout")
-            continue
-        except Exception as e:
-            logger.debug(f"[price] {symbol}: {provider} error: {e}")
-            continue
-    
-    # All providers failed
-    logger.warning(f"[price] All providers failed for {symbol}")
-    return None
+    quote = await get_live_price_quote(symbol, timeout=timeout)
+    return float(quote.price) if quote is not None else None
 
 
 async def get_cached_price(
@@ -491,6 +491,8 @@ def get_circuit_breaker_status() -> Dict[str, Dict[str, Any]]:
 
 
 __all__ = [
+    "LivePriceQuote",
+    "get_live_price_quote",
     "get_live_price",
     "get_cached_price",
     "get_price",

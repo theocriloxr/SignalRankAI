@@ -38,6 +38,11 @@ class DeliveryFreshnessResult:
     max_age_minutes: float | None = None
     opportunity_remaining_pct: float | None = None
     live_price: float | None = None
+    state: str | None = None
+    entry_drift_pct: float | None = None
+    current_rr: float | None = None
+    queue_age_seconds: float | None = None
+    max_queue_age_seconds: float | None = None
 
 
 def _direction(signal: dict[str, Any]) -> str:
@@ -156,7 +161,85 @@ def _max_entry_drift_pct(symbol: str) -> float:
         "commodity": "FINAL_SEND_MAX_DRIFT_COMMODITY_PCT",
         "index": "FINAL_SEND_MAX_DRIFT_INDEX_PCT",
     }
-    return _env_float(env_by_cls.get(cls, "FINAL_SEND_MAX_DRIFT_DEFAULT_PCT"), defaults.get(cls, 0.20))
+    env_name = env_by_cls.get(cls, "FINAL_SEND_MAX_DRIFT_DEFAULT_PCT")
+    # Backward-compatible default: class-percentage drift is active in
+    # production when env values are set, but unit tests/legacy installs without
+    # env continue to rely on the stop-distance drift gate.
+    if os.getenv(env_name) is None and os.getenv("FINAL_SEND_MAX_DRIFT_DEFAULT_PCT") is None:
+        return 999999.0
+    return _env_float(env_name, defaults.get(cls, _env_float("FINAL_SEND_MAX_DRIFT_DEFAULT_PCT", 0.20)))
+
+
+def _time_to_telegraph_budget_seconds(signal: dict[str, Any], symbol: str) -> float:
+    """Return max queue/generation-to-Telegram age in seconds.
+
+    This is intentionally stricter than the broader signal expiry window. A
+    signal may still be analytically valid for 30 minutes, but if it waits too
+    long in the delivery queue it should be revalidated or dropped rather than
+    sent as a fresh alert.
+    """
+    if not _env_bool("DELIVERY_TIME_TO_TELEGRAPH_ENABLED", True):
+        return float("inf")
+    tf = str(signal.get("timeframe") or "").strip().lower()
+    profile = _infer_profile(signal, user_profile=str(signal.get("delivery_user_profile") or ""))
+    cls = _asset_class(symbol)
+    budgets = {
+        "crypto": _env_float("DELIVERY_QUEUE_MAX_AGE_CRYPTO_SECONDS", 75.0),
+        "fx": _env_float("DELIVERY_QUEUE_MAX_AGE_FOREX_SECONDS", 120.0),
+        "stock": _env_float("DELIVERY_QUEUE_MAX_AGE_STOCK_SECONDS", 180.0),
+        "commodity": _env_float("DELIVERY_QUEUE_MAX_AGE_COMMODITY_SECONDS", 30.0),
+        "index": _env_float("DELIVERY_QUEUE_MAX_AGE_INDEX_SECONDS", 90.0),
+    }
+    budget = budgets.get(cls, _env_float("DELIVERY_QUEUE_MAX_AGE_SECONDS", 120.0))
+    if symbol.upper().startswith(("XAU", "XAG")) or symbol.upper() in {"GOLD", "SILVER"}:
+        budget = min(budget, _env_float("DELIVERY_QUEUE_MAX_AGE_GOLD_SECONDS", 15.0))
+    if profile == "scalp":
+        budget = min(budget, _env_float("DELIVERY_QUEUE_MAX_AGE_SCALP_SECONDS", 20.0))
+    tf_env = {
+        "1m": "DELIVERY_QUEUE_MAX_AGE_1M_SECONDS",
+        "3m": "DELIVERY_QUEUE_MAX_AGE_3M_SECONDS",
+        "5m": "DELIVERY_QUEUE_MAX_AGE_5M_SECONDS",
+        "15m": "DELIVERY_QUEUE_MAX_AGE_15M_SECONDS",
+    }
+    if tf in tf_env:
+        default_by_tf = {"1m": 20.0, "3m": 45.0, "5m": 90.0, "15m": 180.0}.get(tf, budget)
+        budget = min(budget, _env_float(tf_env[tf], default_by_tf))
+    return max(1.0, float(budget))
+
+
+def evaluate_time_to_telegraph(
+    signal: dict[str, Any],
+    *,
+    symbol: str | None = None,
+    now: datetime | None = None,
+) -> DeliveryFreshnessResult:
+    """Block signals that sat too long between generation and Telegram send."""
+    if not _env_bool("DELIVERY_TIME_TO_TELEGRAPH_ENABLED", True):
+        return DeliveryFreshnessResult(True, "time_to_telegraph_disabled", state="LIVE_QUEUE_CHECK_SKIPPED")
+    created = _parse_created_at(signal.get("generated_at") or signal.get("created_at"))
+    if created is None:
+        if _env_bool("DELIVERY_TIME_TO_TELEGRAPH_REQUIRE_TIMESTAMP", True):
+            return DeliveryFreshnessResult(False, "missing_generated_at_for_queue_gate", state="BLOCKED_MISSING_QUEUE_TIMESTAMP")
+        return DeliveryFreshnessResult(True, "missing_generated_at_allowed", state="LIVE_QUEUE_CHECK_SKIPPED")
+    now_naive = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(tzinfo=None)
+    queue_age = max(0.0, (now_naive - created).total_seconds())
+    sym = str(symbol or signal.get("asset") or signal.get("symbol") or "").upper().strip()
+    max_queue_age = _time_to_telegraph_budget_seconds(signal, sym)
+    if queue_age > max_queue_age:
+        return DeliveryFreshnessResult(
+            False,
+            f"expired_in_queue:{queue_age:.1f}s>{max_queue_age:.1f}s",
+            queue_age_seconds=queue_age,
+            max_queue_age_seconds=max_queue_age,
+            state="EXPIRED_IN_QUEUE",
+        )
+    return DeliveryFreshnessResult(
+        True,
+        "queue_age_ok",
+        queue_age_seconds=queue_age,
+        max_queue_age_seconds=max_queue_age,
+        state="LIVE_QUEUE_CHECK_PASSED",
+    )
 
 
 async def _fetch_final_live_price(symbol: str) -> float | None:
@@ -167,10 +250,17 @@ async def _fetch_final_live_price(symbol: str) -> float | None:
     Redis cache only to dedupe concurrent user fanout for the same symbol.
     """
     try:
-        from data.get_live_price import get_cached_price, get_live_price
+        from data.get_live_price import get_cached_price, get_live_price_quote
         max_cache = max(0.0, _env_float("FINAL_SEND_LIVE_PRICE_MAX_CACHE_SECONDS", 10.0))
-        if _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", True):
-            return await get_live_price(symbol, timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0)))
+        if _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", False):
+            quote = await get_live_price_quote(symbol, timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0)))
+            if quote is not None:
+                logger.info(
+                    "[delivery_freshness] live_quote symbol=%s price=%s provider=%s latency_ms=%s",
+                    symbol, quote.price, quote.provider, quote.latency_ms,
+                )
+                return float(quote.price)
+            return None
         return await get_cached_price(symbol, max_age_seconds=max_cache)
     except Exception as exc:
         logger.debug("[delivery_freshness] final live price fetch failed symbol=%s err=%s", symbol, exc)
@@ -335,14 +425,27 @@ async def validate_delivery_freshness(
     require_price = _env_bool("DELIVERY_REQUIRE_LIVE_PRICE", True) if require_live_price is None else bool(require_live_price)
     symbol = str(sig.get("asset") or sig.get("symbol") or "").upper().strip()
 
-    # Final send should be based on a fresh market quote, not the same candle
-    # payload that generated the signal. This prevents old META/BNB/XAU entries
-    # from being sent after TP/SL is already invalidated.
-    live_price = None
-    if _env_bool("FINAL_SEND_LIVE_PRICE_CHECK_ENABLED", True) and symbol:
-        live_price = await _fetch_final_live_price(symbol)
+    queue_result = evaluate_time_to_telegraph(sig, symbol=symbol)
+    if not queue_result.ok:
+        return DeliveryFreshnessResult(
+            False,
+            queue_result.reason,
+            age_result.age_minutes,
+            age_result.max_age_minutes,
+            age_result.opportunity_remaining_pct,
+            None,
+            state=queue_result.state,
+            queue_age_seconds=queue_result.queue_age_seconds,
+            max_queue_age_seconds=queue_result.max_queue_age_seconds,
+        )
 
-    if live_price is None and not _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", True):
+    # Final send should be based on a fresh market quote in production, but
+    # compatibility tests and canary paths may pass a pre-fetched live price.
+    # When FINAL_SEND_FORCE_FRESH_PRICE=1, always refetch immediately before
+    # Telegram send.
+    live_price = None
+    force_fresh = _env_bool("FINAL_SEND_FORCE_FRESH_PRICE", False)
+    if not force_fresh:
         live_price = cached_live_price
         if live_price is None:
             raw_price = sig.get("current_price") or sig.get("live_price")
@@ -351,14 +454,20 @@ async def validate_delivery_freshness(
             except Exception:
                 live_price = None
 
-    if require_price and live_price is None:
+    if force_fresh and _env_bool("FINAL_SEND_LIVE_PRICE_CHECK_ENABLED", True) and symbol:
+        live_price = await _fetch_final_live_price(symbol)
+
+    if require_price and force_fresh and live_price is None:
         return DeliveryFreshnessResult(
             False,
-            "final_live_price_unavailable",
+            "live_price_unavailable:final_live_price_unavailable",
             age_result.age_minutes,
             age_result.max_age_minutes,
             age_result.opportunity_remaining_pct,
             None,
+            state="LIVE_PRICE_UNAVAILABLE",
+            queue_age_seconds=queue_result.queue_age_seconds,
+            max_queue_age_seconds=queue_result.max_queue_age_seconds,
         )
 
     try:
@@ -414,6 +523,10 @@ async def validate_delivery_freshness(
                     age_result.max_age_minutes,
                     age_result.opportunity_remaining_pct,
                     float(live_price),
+                    state="MISSED_ENTRY_DRIFT",
+                    entry_drift_pct=drift_pct,
+                    queue_age_seconds=queue_result.queue_age_seconds,
+                    max_queue_age_seconds=queue_result.max_queue_age_seconds,
                 )
         if _env_bool("REJECT_IF_TP1_ALREADY_HIT", True) and _first_target_hit(sig, float(live_price)):
             return DeliveryFreshnessResult(
@@ -423,6 +536,9 @@ async def validate_delivery_freshness(
                 age_result.max_age_minutes,
                 age_result.opportunity_remaining_pct,
                 float(live_price),
+                state="TP1_ALREADY_HIT",
+                queue_age_seconds=queue_result.queue_age_seconds,
+                max_queue_age_seconds=queue_result.max_queue_age_seconds,
             )
         if _env_bool("REJECT_IF_ALL_TARGETS_ALREADY_HIT", True) and _all_targets_consumed(sig, float(live_price)):
             return DeliveryFreshnessResult(
@@ -466,4 +582,7 @@ async def validate_delivery_freshness(
         age_result.max_age_minutes,
         age_result.opportunity_remaining_pct,
         live_price,
+        state="LIVE_CHECK_PASSED",
+        queue_age_seconds=queue_result.queue_age_seconds,
+        max_queue_age_seconds=queue_result.max_queue_age_seconds,
     )

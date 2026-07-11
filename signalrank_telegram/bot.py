@@ -977,6 +977,7 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
 
                 send_timeout = max(3.0, _env_float_local("TELEGRAM_SEND_TIMEOUT_SECONDS", 10.0))
                 send_kwargs = dict(kwargs or {})
+                rich_message = send_kwargs.pop("rich_message", None)
                 if _env_true_local("TELEGRAM_ALLOW_PAID_BROADCAST", False):
                     send_kwargs.setdefault("allow_paid_broadcast", True)
                 clean_text = clean_message_text(str(text))
@@ -988,6 +989,33 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                         bool(send_kwargs.get("allow_paid_broadcast")), bool(send_kwargs.get("reply_markup")),
                     )
                 try:
+                    if rich_message is not None and _env_true_local("TELEGRAM_RICH_MESSAGES_ENABLED", False):
+                        try:
+                            from signalrank_telegram.rich_messages import send_rich_message_raw
+                            msg = await asyncio.wait_for(
+                                send_rich_message_raw(
+                                    bot,
+                                    chat_id=int(chat_id),
+                                    rich_html=str(rich_message),
+                                    timeout=send_timeout,
+                                    **send_kwargs,
+                                ),
+                                timeout=send_timeout + 1.0,
+                            )
+                            if _delivery_success_trace_enabled():
+                                logger.info(
+                                    "[telegram_rich_send_ok] chat=%s message_id=%s attempt=%s elapsed_ms=%s paid=%s",
+                                    chat_id, getattr(msg, "message_id", None), attempt,
+                                    int((time.perf_counter() - send_started) * 1000),
+                                    bool(send_kwargs.get("allow_paid_broadcast")),
+                                )
+                            return msg
+                        except Exception as rich_err:
+                            logger.warning(
+                                "[telegram_rich_send_fallback] chat=%s err=%s falling_back_to_send_message",
+                                chat_id, rich_err,
+                            )
+
                     msg = await asyncio.wait_for(
                         bot.send_message(chat_id=int(chat_id), text=clean_text, **send_kwargs),
                         timeout=send_timeout,
@@ -2685,12 +2713,21 @@ async def _send_signal_with_engagement_async(
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
     try:
         _dispatch_started = time.perf_counter()
+        rich_html = None
+        try:
+            if _env_true_local("TELEGRAM_RICH_MESSAGES_ENABLED", False) and signal:
+                from signalrank_telegram.rich_messages import build_signal_rich_html
+                rich_html = build_signal_rich_html(signal, fallback_text=text)
+        except Exception as _rich_build_err:
+            logger.debug("[telegram_rich_build_failed] signal=%s err=%s", signal_id, _rich_build_err)
+            rich_html = None
         msg = await _telegram_send_message_guarded(
             bot,
             chat_id=chat_id,
             text=text,
             reply_markup=keyboard,
             parse_mode="HTML",
+            rich_message=rich_html,
         )
         try:
             from web.app import telegram_dispatch_latency_seconds

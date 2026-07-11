@@ -1950,6 +1950,19 @@ def main_loop(DRY_RUN: bool = False):
                 msg = ", ".join([f"{p}:{r}" for p, r in closed_notes])
                 logger.info(f"[engine] cycle={cycle_no} market_closed skip={msg}")
 
+            try:
+                from engine.off_market import off_market_decision
+                _off_market = off_market_decision(open_assets, closed_notes)
+                if _off_market.throttle:
+                    logger.info(
+                        "[engine] off_market_throttle cycle=%s sleep_seconds=%s reason=%s",
+                        cycle_no, _off_market.sleep_seconds, _off_market.reason,
+                    )
+                    time.sleep(max(60, int(_off_market.sleep_seconds)))
+                    continue
+            except Exception as _off_market_err:
+                logger.debug("[engine] off_market_throttle check failed: %s", _off_market_err)
+
             # Runtime verification gates are applied before partitioning and
             # before the cycle queue is refreshed, so disabled classes cannot
             # consume batch slots or be re-injected by class coverage logic.
