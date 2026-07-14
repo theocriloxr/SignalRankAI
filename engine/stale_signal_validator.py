@@ -406,7 +406,10 @@ async def validate_signal_freshness(
         return True, "price_unavailable_skip", None
 
     # Ghost price detection using secondary source
-    use_ghost_check = _env_bool("GHOST_PRICE_CHECK", True)
+    # A final-delivery LivePriceQuote has already passed provider health,
+    # source-time, quote-kind, optional cross-provider-deviation, and market
+    # checks. Do not add a second unbounded network fetch at that boundary.
+    use_ghost_check = _env_bool("GHOST_PRICE_CHECK", True) and not bool(signal.get("_trusted_live_quote"))
     if use_ghost_check:
         secondary_price = await _get_secondary_price(symbol)
         if secondary_price and secondary_price > 0:

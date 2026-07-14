@@ -1714,38 +1714,25 @@ async def _deliver_or_update_signal_async(
     try:
         from engine.delivery_freshness import validate_delivery_freshness
 
-        _cached_live_price = None
-        try:
-            _raw_price = signal.get("current_price") or signal.get("live_price")
-            _cached_live_price = float(_raw_price) if _raw_price is not None else None
-        except Exception:
-            _cached_live_price = None
         try:
             freshness = await asyncio.wait_for(
                 validate_delivery_freshness(
                     signal,
                     user_profile=signal.get("delivery_user_profile") or signal.get("trade_profile"),
-                    cached_live_price=_cached_live_price,
+                    final_send=True,
+                    delivery_tier=display_tier,
                 ),
-                timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 4.0)),
+                timeout=max(1.0, _env_float_local("DELIVERY_FRESHNESS_TIMEOUT_SECONDS", 6.0)),
             )
         except asyncio.TimeoutError:
-            if _env_true_local("DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN", False):
-                logger.warning(
-                    "[delivery] freshness timeout fail-open user=%s signal=%s asset=%s",
-                    telegram_user_id,
-                    signal_id or signal.get("id"),
-                    signal.get("asset") or signal.get("symbol"),
-                )
-                freshness = None
-            else:
-                logger.info(
-                    "[delivery] blocked freshness timeout user=%s signal=%s asset=%s",
-                    telegram_user_id,
-                    signal_id or signal.get("id"),
-                    signal.get("asset") or signal.get("symbol"),
-                )
-                return None
+            logger.info(
+                "[delivery] blocked final validation timeout user=%s signal=%s asset=%s tier=%s",
+                telegram_user_id,
+                signal_id or signal.get("id"),
+                signal.get("asset") or signal.get("symbol"),
+                display_tier,
+            )
+            return None
         if freshness is not None:
             if not freshness.ok:
                 logger.info(
@@ -1763,12 +1750,25 @@ async def _deliver_or_update_signal_async(
             if freshness.live_price is not None:
                 signal["current_price"] = float(freshness.live_price)
                 signal["opportunity_remaining_pct"] = freshness.opportunity_remaining_pct
+            signal["live_validation"] = {
+                "state": getattr(freshness, "state", "LIVE_CHECK_PASSED"),
+                "policy_version": getattr(freshness, "policy_version", None),
+                "quote_provider": getattr(freshness, "quote_provider", None),
+                "quote_request_id": getattr(freshness, "quote_request_id", None),
+                "quote_kind": getattr(freshness, "quote_kind", None),
+                "quote_source_timestamp": getattr(freshness, "quote_source_timestamp", None),
+                "quote_source_age_seconds": getattr(freshness, "quote_source_age_seconds", None),
+                "rules": list(getattr(freshness, "rule_results", ()) or ()),
+            }
     except Exception as exc:
-        if _env_true_local("DELIVERY_FRESHNESS_ERROR_FAIL_OPEN", False):
-            logger.warning("[delivery] freshness gate error fail-open user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
-        else:
-            logger.warning("[delivery] freshness gate error user=%s signal=%s err=%s", telegram_user_id, signal_id, exc)
-            return None
+        logger.warning(
+            "[delivery] blocked final validation error user=%s signal=%s tier=%s err=%s",
+            telegram_user_id,
+            signal_id,
+            display_tier,
+            exc,
+        )
+        return None
 
     text = format_signal(signal, display_tier=display_tier)
     if not text or not str(text).strip():

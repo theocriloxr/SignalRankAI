@@ -1,9 +1,12 @@
 """Market hours and holiday calendar for all asset types."""
 import math
+import os
+from dataclasses import dataclass
 from datetime import datetime, date, time, timezone
 from typing import Optional, Tuple
 import logging
 import pytz
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +216,108 @@ def is_fx_low_liquidity(now_utc: Optional[datetime] = None) -> bool:
     return now.date() in FX_REDUCED_LIQUIDITY
 
 
+@dataclass(frozen=True, slots=True)
+class MarketSessionStatus:
+    symbol: str
+    asset_class: str
+    is_open: bool
+    reason: str
+    session: str
+    calendar: str
+    checked_at: datetime
+
+
+def get_market_session_status(
+    symbol: str,
+    now_utc: Optional[datetime] = None,
+) -> MarketSessionStatus:
+    """Return the authoritative, timezone-aware final-delivery market state.
+
+    Unknown/empty instruments fail closed. Crypto is 24/7; FX, commodities,
+    and index CFDs use explicit weekend/maintenance windows; US cash equities
+    and cash indices use America/New_York so DST is not approximated manually.
+    """
+    from services.asset_mapper import canonicalize_symbol, classify_asset
+
+    raw_symbol = str(symbol or "").upper().strip()
+    canonical = canonicalize_symbol(symbol)
+    asset_class = classify_asset(canonical)
+    now = now_utc or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    else:
+        now = now.astimezone(timezone.utc)
+
+    def result(is_open: bool, reason: str, session: str, calendar: str) -> MarketSessionStatus:
+        return MarketSessionStatus(canonical, asset_class, is_open, reason, session, calendar, now)
+
+    if not canonical or asset_class == "unknown":
+        return result(False, "unsupported_or_missing_instrument", "closed", "unsupported")
+
+    if asset_class == "crypto":
+        return result(True, "crypto_24_7", "continuous", "crypto_24_7")
+
+    weekday = now.weekday()
+    minute_utc = now.hour * 60 + now.minute
+
+    if asset_class == "forex":
+        holiday = is_fx_holiday(now)
+        if holiday:
+            return result(False, holiday, "closed", "fx_24_5")
+        if weekday == 5:
+            return result(False, "FX closed Saturday", "closed", "fx_24_5")
+        if weekday == 6 and minute_utc < 22 * 60:
+            return result(False, "FX closed Sunday until 22:00 UTC", "closed", "fx_24_5")
+        if weekday == 4 and minute_utc >= 22 * 60:
+            return result(False, "FX closed Friday after 22:00 UTC", "closed", "fx_24_5")
+        return result(True, "FX continuous session open", "continuous", "fx_24_5")
+
+    if asset_class == "commodity":
+        holiday = is_commodity_holiday(now)
+        if holiday:
+            return result(False, holiday, "closed", "commodity_23_5")
+        if weekday == 5:
+            return result(False, "Commodities closed Saturday", "closed", "commodity_23_5")
+        if weekday == 6 and minute_utc < 23 * 60:
+            return result(False, "Commodities closed Sunday until 23:00 UTC", "closed", "commodity_23_5")
+        if weekday == 4 and minute_utc >= 22 * 60:
+            return result(False, "Commodities closed Friday after 22:00 UTC", "closed", "commodity_23_5")
+        if weekday in (0, 1, 2, 3) and 21 * 60 <= minute_utc < 22 * 60:
+            return result(False, "Commodities closed daily maintenance 21:00-22:00 UTC", "maintenance", "commodity_23_5")
+        return result(True, "Commodity session open", "continuous", "commodity_23_5")
+
+    explicit_index_mode = (os.getenv("INDEX_MARKET_MODE") or "").strip().lower()
+    cash_index_symbol = raw_symbol.startswith("^") or raw_symbol in {"SPX", "GSPC", "NDX", "DJI", "IXIC"}
+    index_mode = explicit_index_mode or ("cash" if cash_index_symbol else "cfd")
+    if asset_class == "index" and index_mode != "cash":
+        if weekday == 5:
+            return result(False, "Indices closed Saturday", "closed", "index_cfd_23_5")
+        if weekday == 6 and minute_utc < int(float(os.getenv("INDEX_SUNDAY_OPEN_HOUR_UTC", "22"))) * 60:
+            return result(False, "Indices closed Sunday before index CFD open", "closed", "index_cfd_23_5")
+        if weekday == 4 and minute_utc >= int(float(os.getenv("INDEX_FRIDAY_CLOSE_HOUR_UTC", "22"))) * 60:
+            return result(False, "Indices closed Friday after index CFD close", "closed", "index_cfd_23_5")
+        if weekday in (0, 1, 2, 3) and 21 * 60 <= minute_utc < 22 * 60:
+            return result(False, "Indices closed daily maintenance 21:00-22:00 UTC", "maintenance", "index_cfd_23_5")
+        return result(True, "Index CFD session open", "continuous", "index_cfd_23_5")
+
+    if asset_class in {"stock", "index"}:
+        holiday = is_stock_holiday(now)
+        calendar = "us_equity" if asset_class == "stock" else "us_cash_index"
+        if holiday:
+            return result(False, holiday, "closed", calendar)
+        now_et = now.astimezone(ZoneInfo("America/New_York"))
+        if now_et.weekday() >= 5:
+            label = "cash-index" if asset_class == "index" else "US cash market"
+            return result(False, f"{label} closed weekend", "closed", calendar)
+        local_minute = now_et.hour * 60 + now_et.minute
+        if not (9 * 60 + 30 <= local_minute < 16 * 60):
+            label = "cash-index" if asset_class == "index" else "US cash market"
+            return result(False, f"{label} closed outside 09:30-16:00 ET", "closed", calendar)
+        return result(True, "US cash session open", "cash", calendar)
+
+    return result(False, f"unsupported_asset_class:{asset_class}", "closed", "unsupported")
+
+
 # Additional Market Session Verification (for engine/core.py)
 def is_market_session_open(symbol: str) -> bool:
     """
@@ -225,42 +330,7 @@ def is_market_session_open(symbol: str) -> bool:
     Returns:
         bool: True if market is open for this asset class, False otherwise
     """
-    sym = symbol.upper().strip().replace("=X", "")
-    now_utc = datetime.now(pytz.utc)
-    weekday = now_utc.weekday()  # Monday = 0, Sunday = 6
-    current_time = now_utc.time()
-
-    # 1. Crypto Asset Coverage (24/7/365)
-    if any(crypto in sym for crypto in ["BTC", "ETH", "SOL", "USDT", "ADA", "AAVE"]):
-        return True
-        
-    # 2. Forex Session Coverage (Sydney, Tokyo, London, New York)
-    # Open continuous from Sunday 22:00 UTC to Friday 22:00 UTC
-    if len(sym) == 6 or any(fx in sym for fx in ["EUR", "GBP", "USD", "JPY", "AUD", "CAD", "CHF"]):
-        if weekday == 5:  # Saturday: Closed
-            return False
-        if weekday == 6 and current_time < time(22, 0):  # Sunday pre-open: Closed
-            return False
-        if weekday == 4 and current_time >= time(22, 0):  # Friday post-close: Closed
-            return False
-        return True
-
-    # 3. Commodities Coverage (XAUUSD, XAGUSD, WTI, BRENT, Natural Gas)
-    # Generally open Mon-Fri with a daily 1-hour maintenance break from 21:00 to 22:00 UTC
-    if any(comm in sym for comm in ["XAU", "XAG", "WTI", "BRENT", "OIL", "GAS"]):
-        if weekday in [5, 6]:  # Weekend closed
-            return False
-        if time(21, 0) <= current_time < time(22, 0):  # Maintenance window
-            return False
-        return True
-
-    # 4. Indices Coverage (US30, US500, SPX, DJI, VIX) & Major Stock Markets (NYSE, NASDAQ)
-    # Active standard exchange sessions Mon-Fri 14:30 UTC to 21:00 UTC (09:30 AM - 04:00 PM EST)
-    if weekday in [5, 6]:
-        return False
-    market_start = time(14, 30)
-    market_end = time(21, 0)
-    return market_start <= current_time <= market_end
+    return get_market_session_status(symbol).is_open
 
 
 # =============================================================================

@@ -16,6 +16,7 @@ Usage:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 # ---------------------------------------------------------------------------
@@ -180,6 +181,45 @@ _STOCK_MAP: Dict[str, Dict[str, str]] = {
         "twelvedata": "MSFT",
         "mt5": "MSFT",
     },
+    "META": {
+        "yfinance": "META",
+        "polygon": "META",
+        "twelvedata": "META",
+        "mt5": "META",
+    },
+}
+
+_INDEX_MAP: Dict[str, Dict[str, str]] = {
+    "US500": {
+        "yfinance": "^GSPC",
+        "polygon": "I:SPX",
+        "twelvedata": "SPX",
+        "mt5": "US500",
+    },
+    "NAS100": {
+        "yfinance": "^NDX",
+        "polygon": "I:NDX",
+        "twelvedata": "NDX",
+        "mt5": "NAS100",
+    },
+    "US30": {
+        "yfinance": "^DJI",
+        "polygon": "I:DJI",
+        "twelvedata": "DJI",
+        "mt5": "US30",
+    },
+    "GER40": {
+        "yfinance": "^GDAXI",
+        "polygon": None,
+        "twelvedata": "DAX",
+        "mt5": "GER40",
+    },
+    "UK100": {
+        "yfinance": "^FTSE",
+        "polygon": None,
+        "twelvedata": "FTSE",
+        "mt5": "UK100",
+    },
 }
 
 # Combined lookup: canonical -> providers
@@ -188,6 +228,7 @@ _ALL_MAPS.update(_CRYPTO_MAP)
 _ALL_MAPS.update(_FX_MAP)
 _ALL_MAPS.update(_COMMODITY_MAP)
 _ALL_MAPS.update(_STOCK_MAP)
+_ALL_MAPS.update(_INDEX_MAP)
 
 # Asset class lookup
 _ASSET_CLASS: Dict[str, str] = {}
@@ -199,22 +240,77 @@ for sym in _COMMODITY_MAP:
     _ASSET_CLASS[sym] = "commodity"
 for sym in _STOCK_MAP:
     _ASSET_CLASS[sym] = "stock"
+for sym in _INDEX_MAP:
+    _ASSET_CLASS[sym] = "index"
+
+
+_ALIASES = {
+    "BTCUSD": "BTCUSDT",
+    "ETHUSD": "ETHUSDT",
+    "BNBUSD": "BNBUSDT",
+    "SP500": "US500",
+    "SPX500": "US500",
+    "S&P500": "US500",
+    "US100": "NAS100",
+    "USTEC": "NAS100",
+    "DJ30": "US30",
+    "DE40": "GER40",
+    "DAX40": "GER40",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentSpec:
+    canonical_symbol: str
+    asset_class: str
+    tick_size: float
+    session_calendar: str
+    final_quote_kinds: tuple[str, ...]
+    provider_symbols: Dict[str, Optional[str]]
+
+
+def canonicalize_symbol(symbol: str) -> str:
+    """Normalize namespaced/common aliases without guessing arbitrary tickers."""
+    raw = str(symbol or "").upper().strip()
+    if ":" in raw and raw.split(":", 1)[0] in {
+        "CRYPTO", "FX", "FOREX", "FORX", "COMMODITY", "EQUITY", "STOCK", "INDEX"
+    }:
+        raw = raw.split(":", 1)[1]
+    compact = raw.replace("/", "").replace("_", "").replace("-", "")
+    if compact.startswith("^"):
+        reverse = {"^GSPC": "US500", "^NDX": "NAS100", "^DJI": "US30", "^GDAXI": "GER40", "^FTSE": "UK100"}
+        return reverse.get(compact, compact)
+    if compact in _ALIASES:
+        return _ALIASES[compact]
+    if compact in _ALL_MAPS:
+        return compact
+    # Preserve punctuation in legitimate stock tickers such as BRK-B. Only
+    # collapse separators when the result is recognizably a market pair.
+    currencies = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "XAU", "XAG"}
+    pair_like = (
+        len(compact) == 6
+        and compact[:3] in currencies
+        and compact[3:] in currencies
+    ) or compact.endswith(("USDT", "USDC", "BUSD"))
+    return compact if pair_like else raw
 
 
 def classify_asset(symbol: str) -> str:
     """Return asset class: 'crypto', 'forex', 'commodity', 'stock', or 'unknown'."""
-    s = symbol.upper().strip()
+    s = canonicalize_symbol(symbol)
     cls = _ASSET_CLASS.get(s)
     if cls:
         return cls
     # Heuristic fallbacks
     if s.endswith("USDT") or s.endswith("USDC") or s.endswith("BTC") or s.endswith("ETH"):
         return "crypto"
+    if s in {"XAUUSD", "XAGUSD", "USOIL", "UKOIL", "WTI", "BRENT", "GOLD", "SILVER", "OIL"}:
+        return "commodity"
+    if s in {"SPX", "GSPC", "NDX", "DJI", "IXIC", "VIX"} or s.startswith(("US500", "NAS100", "US30", "GER40", "UK100", "JPN225")):
+        return "index"
     if len(s) == 6 and s.isalpha():
         return "forex"
-    if s in {"XAUUSD", "XAGUSD", "USOIL", "UKOIL"}:
-        return "commodity"
-    return "stock"
+    return "stock" if s else "unknown"
 
 
 def map_symbol(symbol: str, provider: str) -> Optional[str]:
@@ -223,7 +319,7 @@ def map_symbol(symbol: str, provider: str) -> Optional[str]:
     Returns None if the provider doesn't support this asset.
     Falls back to the original symbol when no explicit mapping is defined.
     """
-    s = symbol.upper().strip()
+    s = canonicalize_symbol(symbol)
     p = provider.lower().strip()
     entry = _ALL_MAPS.get(s)
     if entry is not None:
@@ -269,7 +365,7 @@ def map_symbol(symbol: str, provider: str) -> Optional[str]:
 
 def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
     """Return a dict of {provider: symbol} for all known providers for this asset."""
-    s = symbol.upper().strip()
+    s = canonicalize_symbol(symbol)
     entry = _ALL_MAPS.get(s)
     if entry:
         return dict(entry)
@@ -292,6 +388,13 @@ def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
             "mt5": s,
             "oanda": f"{s[:3]}_{s[3:]}" if len(s) == 6 else s,
         }
+    if cls == "index":
+        return {
+            "yfinance": map_symbol(s, "yfinance"),
+            "polygon": map_symbol(s, "polygon"),
+            "twelvedata": map_symbol(s, "twelvedata"),
+            "mt5": s,
+        }
     # stock / commodity fallback
     return {
         "yfinance": s,
@@ -299,3 +402,41 @@ def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
         "twelvedata": s,
         "mt5": s,
     }
+
+
+def get_instrument_spec(symbol: str) -> InstrumentSpec:
+    """Return the canonical mapping and final-quote capabilities for a symbol."""
+    canonical = canonicalize_symbol(symbol)
+    asset_class = classify_asset(canonical)
+    tick_sizes = {
+        "crypto": 0.00000001,
+        "forex": 0.00001,
+        "commodity": 0.01,
+        "stock": 0.01,
+        "index": 0.1,
+    }
+    calendars = {
+        "crypto": "crypto_24_7",
+        "forex": "fx_24_5",
+        "commodity": "commodity_23_5",
+        "stock": "us_equity",
+        "index": "index_cfd_or_cash",
+    }
+    return InstrumentSpec(
+        canonical_symbol=canonical,
+        asset_class=asset_class,
+        tick_size=tick_sizes.get(asset_class, 0.01),
+        session_calendar=calendars.get(asset_class, "unsupported"),
+        final_quote_kinds=("trade", "bid_ask", "ticker", "db_tick"),
+        provider_symbols=get_all_providers_for_asset(canonical),
+    )
+
+
+__all__ = [
+    "InstrumentSpec",
+    "canonicalize_symbol",
+    "classify_asset",
+    "get_all_providers_for_asset",
+    "get_instrument_spec",
+    "map_symbol",
+]

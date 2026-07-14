@@ -8,7 +8,10 @@ async def test_fresh_signal_returns_telegram_ack(monkeypatch):
     import engine.delivery_freshness as freshness_module
     import signalrank_telegram.bot as bot_module
 
+    observed = {}
+
     async def _fresh(*_args, **_kwargs):
+        observed.update(_kwargs)
         return SimpleNamespace(
             ok=True,
             live_price=100.1,
@@ -38,6 +41,9 @@ async def test_fresh_signal_returns_telegram_ack(monkeypatch):
     )
 
     assert proof == {"mode": "sent", "chat_id": 1234, "message_id": 77}
+    assert observed["final_send"] is True
+    assert observed["delivery_tier"] == "premium"
+    assert "cached_live_price" not in observed
 
 
 @pytest.mark.asyncio

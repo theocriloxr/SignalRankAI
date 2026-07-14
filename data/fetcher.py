@@ -1622,6 +1622,14 @@ def market_closed_reason(asset, now_utc: datetime | None = None) -> str | None:
     - Stocks: Default to US market hours (NYSE/NASDAQ): Mon–Fri 13:30–20:00 UTC
       Note: This is a simplified schedule (no holidays). Override via env if needed.
     """
+    try:
+        from data.market_hours import get_market_session_status
+
+        session = get_market_session_status(str(asset or ""), now_utc=now_utc)
+        return None if session.is_open else session.reason
+    except Exception as exc:
+        logger.debug("[market_hours] canonical session check failed; using legacy rules: %s", exc)
+
     if is_crypto(asset):
         return None
 
