@@ -2931,7 +2931,12 @@ def _audit_handler(command_name: str, handler):
         import uuid as _uuid
         command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
         err_ref = f"ERR-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
-        command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
+        try:
+            from signalrank_telegram.command_resilience import acknowledge_command
+
+            await acknowledge_command(update, context)
+        except Exception:
+            pass
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
         # That would make start_command see the user as "not new" and prevent referral attribution.
@@ -2957,9 +2962,10 @@ def _audit_handler(command_name: str, handler):
                 return
 
         try:
+            from db.priority import DBPriority
             from db.session import get_engine_for_event_loop, get_session
-            engine = get_engine_for_event_loop()
-            if engine is not None and getattr(update, "effective_user", None) is not None:
+            from signalrank_telegram.command_resilience import schedule_background_task
+            if getattr(update, "effective_user", None) is not None:
                 user_id = int(update.effective_user.id)
                 username = None
                 try:
@@ -2977,9 +2983,11 @@ def _audit_handler(command_name: str, handler):
 
                 async def _write_command_audit() -> None:
                     try:
+                        if get_engine_for_event_loop() is None:
+                            return
                         # Audit is useful but must never delay command replies. During
                         # signal delivery/storage bursts it intentionally fails fast.
-                        async with get_session(noncritical=True) as session:
+                        async with get_session(priority=DBPriority.ANALYTICS) as session:
                             from db.pg_features import record_bot_event
 
                             await record_bot_event(
@@ -2997,7 +3005,10 @@ def _audit_handler(command_name: str, handler):
                         )
 
                 audit_timeout = float(os.getenv("BOT_COMMAND_AUDIT_TIMEOUT_SECONDS", "1.0") or 1.0)
-                await asyncio.wait_for(_write_command_audit(), timeout=max(0.1, audit_timeout))
+                schedule_background_task(
+                    asyncio.wait_for(_write_command_audit(), timeout=max(0.1, audit_timeout)),
+                    name=f"command-audit:{command_name}:{user_id}",
+                )
         except Exception as e:
             _log_once(
                 "bot_event_audit_outer_failed",

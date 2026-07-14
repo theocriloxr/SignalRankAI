@@ -3176,14 +3176,52 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	except Exception:
 		pass
 
+	from signalrank_telegram.command_resilience import command_response_cache
+
+	cache_key = ":".join([
+		"signals",
+		str(user_id),
+		str(status_filter),
+		str(lookback_days),
+		str(limit),
+		str(asset_filter or "*"),
+		"unvoted" if show_unvoted_only else "all",
+	])
+
+	async def _reply_with_cached_response() -> bool:
+		cached = command_response_cache.get(cache_key)
+		if cached is None or not isinstance(cached.value, dict):
+			return False
+		payload = cached.value
+		text = str(payload.get("text") or "")
+		if not text:
+			return False
+		age = max(1, int(round(cached.age_seconds)))
+		text = f"{text}\n\nCached {age}s ago; live data is temporarily busy."
+		button_rows = []
+		try:
+			from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+			for row in list(payload.get("buttons") or []):
+				button_rows.append([
+					InlineKeyboardButton(str(label), callback_data=str(callback_data))
+					for label, callback_data in row
+				])
+			markup = InlineKeyboardMarkup(button_rows) if button_rows else None
+		except Exception:
+			markup = None
+		await message.reply_text(text, reply_markup=markup)
+		return True
+
 	try:
 		from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+		from db.priority import DBPriority
 		from db.pg_features import list_delivered_signals_for_user
 
 		async def _query_rows():
-			# Interactive command path: use critical=True so it is not dropped as
-			# background telemetry. The outer wait_for keeps it bounded.
-			async with get_session(interactive=True) as session:
+			# Interactive command path gets the reserved foreground read lane. The
+			# outer wait_for bounds the query itself as well as admission.
+			async with get_session(priority=DBPriority.INTERACTIVE) as session:
 				rows = await list_delivered_signals_for_user(
 					session,
 					telegram_user_id=int(user_id),
@@ -3206,7 +3244,7 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				from sqlalchemy import select
 				from db.models import SignalEngagement, User
 				async def _engaged_ids():
-					async with get_session(interactive=True) as session:
+					async with get_session(priority=DBPriority.INTERACTIVE) as session:
 						user_row = (await session.execute(
 							select(User).where(User.telegram_user_id == int(user_id)).limit(1)
 						)).scalar_one_or_none()
@@ -3226,10 +3264,13 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 		if not rows:
 			asset_txt = f" for {asset_filter}" if asset_filter else ""
-			await message.reply_text(f"No {status_filter} delivered signals{asset_txt} in the last {lookback_days} day(s).")
+			empty_text = f"No {status_filter} delivered signals{asset_txt} in the last {lookback_days} day(s)."
+			command_response_cache.set(cache_key, {"text": empty_text, "buttons": []})
+			await message.reply_text(empty_text)
 			return
 
 		button_rows = []
+		button_specs = []
 		lines = [
 			f"📊 Your {status_filter.title()} Signals",
 			f"{len(rows)} shown from the last {lookback_days} day(s)",
@@ -3243,15 +3284,22 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 			tf = str(getattr(r, "timeframe", "") or "?")
 			lines.append(f"{idx}. {asset} {direction} {tf} | {score:.1f}% | {ref[:12]}")
 			if ref and idx <= 8:
-				button_rows.append([InlineKeyboardButton(f"Open {asset} {direction}", callback_data=f"open_signal_{ref}")])
+				button_text = f"Open {asset} {direction}"
+				callback_data = f"open_signal_{ref}"
+				button_rows.append([InlineKeyboardButton(button_text, callback_data=callback_data)])
+				button_specs.append([(button_text, callback_data)])
 		lines.extend(["", "Open details with /signal <reference> or tap a button."])
-		await message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(button_rows) if button_rows else None)
+		response_text = "\n".join(lines)
+		command_response_cache.set(cache_key, {"text": response_text, "buttons": button_specs})
+		await message.reply_text(response_text, reply_markup=InlineKeyboardMarkup(button_rows) if button_rows else None)
 	except asyncio.TimeoutError:
 		_audit_logger.warning("[signals_command] fast query timed out user=%s timeout_s=%s", user_id, os.getenv("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS"))
-		await message.reply_text("⚠️ /signals is busy because delivery/storage is active. Try again in a moment; signal delivery is still running.")
+		if not await _reply_with_cached_response():
+			await message.reply_text("⚠️ /signals is busy because delivery/storage is active. Try again in a moment; signal delivery is still running.")
 	except Exception as exc:
 		_audit_logger.exception("[signals_command] failed user=%s err=%s", user_id, exc)
-		await message.reply_text(f"⚠️ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
+		if not await _reply_with_cached_response():
+			await message.reply_text(f"⚠️ Could not load /signals right now: {type(exc).__name__}. Try again shortly.")
 
 
 async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
