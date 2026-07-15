@@ -723,6 +723,7 @@ async def get_session(
         if is_background and critical_db_work_active() and _truthy_env(
             "DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False
         ):
+            _priority_admission.record_deferred(resolved)
             _priority_admission.record_dropped(resolved)
             with _session_metrics_lock:
                 _session_metrics["errors"] += 1
@@ -771,6 +772,7 @@ async def get_session(
                         0, _session_metrics["background_waiting"] - 1
                     )
             if not bg_acquired:
+                _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)
                 with _session_metrics_lock:
                     _session_metrics["errors"] += 1
@@ -803,14 +805,17 @@ async def get_session(
                 if is_background:
                     _session_metrics["noncritical_dropped"] += 1
             if is_background:
+                _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)
                 raise NoncriticalWriteDropped(
                     "background DB work deferred: session gate busy"
                 )
             if is_analytics:
+                _priority_admission.record_deferred(resolved)
                 raise AnalyticsWorkDeferred(
                     "analytics DB work deferred: session gate busy"
                 )
+            _priority_admission.record_timeout(resolved)
             raise TimeoutError(
                 f"Timed out waiting for {resolved.value} DB session after {timeout_s:.2f}s"
             )

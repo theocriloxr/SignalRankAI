@@ -106,6 +106,8 @@ Canonical checkpoint result: **435 passed, 31 failed, 2 errors**.
 
 Final Pass 2 working-tree result: **447 passed, 31 failed, 2 errors**, 32 warnings, in 83.49 seconds. The 12 additional passes are the Pass 2 verification tests; the inherited failure/error counts are unchanged.
 
+After that repository run, a metrics-only change added explicit deferred/timeout accounting for the physical-gate fallback path. Its focused verification completed with **22 passed**, 4 warnings, and source compilation passed; it does not alter admission or command behavior.
+
 The 31 inherited failures remain in previously identified web/payment, readiness, DB-pool expectation, lifecycle/outcome mocks, encoding, and source-contract areas. The two errors are unchanged Windows ACL failures while pytest creates `tmp_path` fixtures.
 
 ### Exact collection and compilation

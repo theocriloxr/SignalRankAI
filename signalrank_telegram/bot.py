@@ -1011,6 +1011,14 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                                 )
                             return msg
                         except Exception as rich_err:
+                            from delivery.service import (
+                                TelegramDeliveryAmbiguous,
+                                is_ambiguous_send_error,
+                            )
+                            if is_ambiguous_send_error(rich_err):
+                                raise TelegramDeliveryAmbiguous(
+                                    f"rich send outcome unknown: {type(rich_err).__name__}"
+                                ) from rich_err
                             logger.warning(
                                 "[telegram_rich_send_fallback] chat=%s err=%s falling_back_to_send_message",
                                 chat_id, rich_err,
@@ -1050,14 +1058,15 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                             )
                         return msg
                     raise _type_err
-            except asyncio.TimeoutError:
+            except asyncio.TimeoutError as exc:
                 logger.warning(
                     "[telegram_send_timeout] chat=%s attempt=%s/%s timeout=%.1fs text_len=%s",
                     chat_id, attempt, max_attempts, send_timeout, len(str(text or "")),
                 )
-                if attempt >= max_attempts:
-                    raise
-                await asyncio.sleep(0.5)
+                from delivery.service import TelegramDeliveryAmbiguous
+                raise TelegramDeliveryAmbiguous(
+                    f"Bot API timeout chat={chat_id} attempt={attempt}"
+                ) from exc
             except RetryAfter as exc:
                 retry_after = min(max_retry_after, float(getattr(exc, "retry_after", 1.0) or 1.0))
                 logger.warning(
@@ -1071,6 +1080,13 @@ async def _telegram_send_message_guarded(bot: Bot, *, chat_id: int, text: str, *
                     raise
                 await asyncio.sleep(max(1.0, retry_after) + 0.5)
             except Exception as exc:
+                from delivery.service import TelegramDeliveryAmbiguous, is_ambiguous_send_error
+                if is_ambiguous_send_error(exc):
+                    if isinstance(exc, TelegramDeliveryAmbiguous):
+                        raise
+                    raise TelegramDeliveryAmbiguous(
+                        f"Bot API network outcome unknown: {type(exc).__name__}"
+                    ) from exc
                 logger.warning(
                     "[telegram_send_error] chat=%s attempt=%s/%s err_type=%s err=%s",
                     chat_id, attempt, max_attempts, type(exc).__name__, exc,
@@ -1657,6 +1673,100 @@ async def _mark_signal_message_updated(user_id: int, old_signal_id: str, new_sig
         logger.debug(f"[signal_update] map update failed: {exc}")
 
 
+async def _persist_delivery_phase(
+    *,
+    telegram_user_id: int,
+    signal_id: str,
+    delivery_state: str,
+    error: str | None = None,
+) -> bool:
+    """Durably advance the existing reservation before Telegram I/O."""
+    if not str(signal_id or "").strip():
+        return False
+    try:
+        from db.pg_features import mark_signal_delivery_state
+        from db.priority import DBPriority
+        from db.session import get_session
+
+        async def _write() -> bool:
+            async with get_session(priority=DBPriority.CRITICAL) as session:
+                advanced = await mark_signal_delivery_state(
+                    session,
+                    telegram_user_id=int(telegram_user_id),
+                    signal_id=str(signal_id),
+                    delivery_state=str(delivery_state),
+                    error=error,
+                )
+                if advanced:
+                    await session.commit()
+                else:
+                    await session.rollback()
+                return bool(advanced)
+
+        return bool(
+            await asyncio.wait_for(
+                _write(),
+                timeout=max(2.0, _env_float_local("DELIVERY_PHASE_TIMEOUT_SECONDS", 8.0)),
+            )
+        )
+    except Exception as exc:
+        logger.warning(
+            "[delivery_phase_write_failed] user=%s signal=%s state=%s err=%s",
+            telegram_user_id,
+            signal_id,
+            delivery_state,
+            exc,
+        )
+        return False
+
+
+async def _stash_telegram_delivery_receipt(
+    *,
+    telegram_user_id: int,
+    signal: dict,
+    mode: str,
+    chat_id: int,
+    message_id: int,
+    replaces_signal_id: str | None = None,
+) -> dict:
+    """Create the common rich/plain/edit proof and immediately stash its ack."""
+    from delivery.receipts import DeliveryReceipt, receipt_store
+    from delivery.service import DeliveryOperation
+
+    signal_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
+    operation = DeliveryOperation(
+        user_id=int(telegram_user_id),
+        signal_id=signal_id,
+        channel_id=int(chat_id),
+        signal_version=str(signal.get("delivery_signal_version") or "1"),
+        delivery_kind=str(signal.get("delivery_kind") or "signal"),
+    )
+    receipt = DeliveryReceipt.accepted(
+        operation,
+        message_id=int(message_id),
+        mode=str(mode or "sent"),
+        replaces_signal_id=replaces_signal_id,
+    )
+    stashed = await receipt_store.stash(receipt)
+    proof = {
+        "mode": str(mode or "sent"),
+        "chat_id": int(chat_id),
+        "message_id": int(message_id),
+        "delivery_receipt": receipt.as_dict(),
+        "receipt_stashed": bool(stashed),
+    }
+    if _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False):
+        task = asyncio.create_task(
+            _dispatch_vip_signal_webhook_after_receipt(
+                telegram_user_id=int(telegram_user_id),
+                signal=dict(signal or {}),
+            ),
+            name=f"vip-webhook-{signal_id[:12]}",
+        )
+        task.add_done_callback(_consume_telegram_task_result)
+    return proof
+
+
 async def _deliver_or_update_signal_async(
     bot: Bot,
     telegram_user_id: int,
@@ -1675,6 +1785,17 @@ async def _deliver_or_update_signal_async(
             telegram_user_id, signal_id or signal.get("id"), asset_for_log, tf_for_log, display_tier,
             signal.get("delivery_user_profile") or signal.get("trade_profile") or "unknown",
         )
+    if not await _persist_delivery_phase(
+        telegram_user_id=int(telegram_user_id),
+        signal_id=signal_id,
+        delivery_state="VALIDATING",
+    ):
+        logger.warning(
+            "[delivery] blocked because validation phase was not durable user=%s signal=%s",
+            telegram_user_id,
+            signal_id,
+        )
+        return None
     try:
         from db.models import User
         from db.session import get_session
@@ -1732,6 +1853,12 @@ async def _deliver_or_update_signal_async(
                 signal.get("asset") or signal.get("symbol"),
                 display_tier,
             )
+            await _persist_delivery_phase(
+                telegram_user_id=int(telegram_user_id),
+                signal_id=signal_id,
+                delivery_state="BLOCKED",
+                error="final_validation_timeout",
+            )
             return None
         if freshness is not None:
             if not freshness.ok:
@@ -1745,6 +1872,12 @@ async def _deliver_or_update_signal_async(
                     float(freshness.age_minutes or 0.0),
                     float(freshness.max_age_minutes or 0.0),
                     float(freshness.opportunity_remaining_pct or 0.0),
+                )
+                await _persist_delivery_phase(
+                    telegram_user_id=int(telegram_user_id),
+                    signal_id=signal_id,
+                    delivery_state="BLOCKED",
+                    error=str(getattr(freshness, "reason", None) or "final_validation_blocked"),
                 )
                 return None
             if freshness.live_price is not None:
@@ -1767,6 +1900,12 @@ async def _deliver_or_update_signal_async(
             signal_id,
             display_tier,
             exc,
+        )
+        await _persist_delivery_phase(
+            telegram_user_id=int(telegram_user_id),
+            signal_id=signal_id,
+            delivery_state="BLOCKED",
+            error=f"final_validation_error:{type(exc).__name__}",
         )
         return None
 
@@ -1798,6 +1937,13 @@ async def _deliver_or_update_signal_async(
                     )
                     return None
 
+                if not await _persist_delivery_phase(
+                    telegram_user_id=int(telegram_user_id),
+                    signal_id=signal_id,
+                    delivery_state="SENDING",
+                ):
+                    return None
+
                 counts = await _load_signal_engagement_counts(signal_id)
                 keyboard = _build_signal_keyboard(signal_id, signal=signal, counts=counts)
                 edited_msg = await asyncio.wait_for(
@@ -1811,39 +1957,49 @@ async def _deliver_or_update_signal_async(
                     timeout=max(3.0, _env_float_local("TELEGRAM_EDIT_TIMEOUT_SECONDS", 8.0)),
                 )
 
-                await _mark_signal_message_updated(
-                    int(editable["user_id"]),
-                    str(editable["old_signal_id"]),
-                    signal_id,
-                )
-
                 jump_keyboard = InlineKeyboardMarkup(
                     [[InlineKeyboardButton(
                         "Go to signal",
                         url=_build_signal_message_link(int(editable["chat_id"]), int(editable["message_id"])),
                     )]]
                 )
-                notice_msg = await _telegram_send_message_guarded(
-                    bot,
-                    chat_id=int(telegram_user_id),
-                    text=f"♻️ <b>Signal updated</b> — {update_reason}.",
-                    parse_mode="HTML",
-                    reply_markup=jump_keyboard,
+                proof = await _stash_telegram_delivery_receipt(
+                    telegram_user_id=int(telegram_user_id),
+                    signal=signal,
+                    mode="updated",
+                    chat_id=int(editable["chat_id"]),
+                    message_id=int(editable["message_id"]),
+                    replaces_signal_id=str(editable["old_signal_id"]),
                 )
-                acknowledged = edited_msg or notice_msg
-                message_id = getattr(acknowledged, "message_id", None)
-                if message_id is None:
-                    raise RuntimeError("Telegram edit completed without a message acknowledgement")
-                return {
-                    "mode": "updated",
-                    "chat_id": int(
-                        getattr(getattr(acknowledged, "chat", None), "id", editable["chat_id"])
+                proof["edited_chat_id"] = int(editable["chat_id"])
+                proof["edited_message_id"] = int(editable["message_id"])
+                proof["edited_old_signal_id"] = str(editable["old_signal_id"])
+                notice_task = asyncio.create_task(
+                    _telegram_send_message_guarded(
+                        bot,
+                        chat_id=int(telegram_user_id),
+                        text=f"♻️ <b>Signal updated</b> — {update_reason}.",
+                        parse_mode="HTML",
+                        reply_markup=jump_keyboard,
                     ),
-                    "message_id": int(message_id),
-                    "edited_chat_id": int(editable["chat_id"]),
-                    "edited_message_id": int(editable["message_id"]),
-                }
+                    name=f"signal-update-notice-{signal_id[:12]}",
+                )
+                notice_task.add_done_callback(_consume_telegram_task_result)
+                return proof
             except Exception as exc:
+                from delivery.service import TelegramDeliveryAmbiguous, is_ambiguous_send_error
+                if is_ambiguous_send_error(exc):
+                    if isinstance(exc, TelegramDeliveryAmbiguous):
+                        raise
+                    raise TelegramDeliveryAmbiguous(
+                        f"Telegram edit outcome unknown: {type(exc).__name__}"
+                    ) from exc
+                await _persist_delivery_phase(
+                    telegram_user_id=int(telegram_user_id),
+                    signal_id=signal_id,
+                    delivery_state="FAILED_PRE_SEND",
+                    error=f"edit_fallback:{type(exc).__name__}",
+                )
                 logger.debug(f"[signal_update] edit path failed; fallback to fresh send: {exc}")
 
     try:
@@ -1873,6 +2029,12 @@ async def _deliver_or_update_signal_async(
                     f"[dispatch] skipped duplicate asset due to lock: user={telegram_user_id} "
                     f"asset={signal_asset} signal={signal_id or signal.get('id')}"
                 )
+                await _persist_delivery_phase(
+                    telegram_user_id=int(telegram_user_id),
+                    signal_id=signal_id,
+                    delivery_state="BLOCKED",
+                    error="asset_delivery_locked",
+                )
                 return None
     except Exception as exc:
         logger.debug(f"[asset_lock] pre-send check failed for user={telegram_user_id}: {exc}")
@@ -1884,22 +2046,41 @@ async def _deliver_or_update_signal_async(
             telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
             signal.get("timeframe"), send_timeout,
         )
-    sent_msg = await asyncio.wait_for(
-        _send_signal_with_engagement_async(
-            bot,
-            chat_id=int(telegram_user_id),
-            text=str(text),
-            signal_id=signal_id or str(signal.get("id") or ""),
-            telegram_user_id=int(telegram_user_id),
-            signal=signal,
-        ),
-        timeout=send_timeout,
+    if not await _persist_delivery_phase(
+        telegram_user_id=int(telegram_user_id),
+        signal_id=signal_id,
+        delivery_state="SENDING",
+    ):
+        logger.warning(
+            "[delivery] blocked because sending phase was not durable user=%s signal=%s",
+            telegram_user_id,
+            signal_id,
+        )
+        return None
+    try:
+        sent_msg = await asyncio.wait_for(
+            _send_signal_with_engagement_async(
+                bot,
+                chat_id=int(telegram_user_id),
+                text=str(text),
+                signal_id=signal_id or str(signal.get("id") or ""),
+                telegram_user_id=int(telegram_user_id),
+                signal=signal,
+            ),
+            timeout=send_timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        from delivery.service import TelegramDeliveryAmbiguous
+        raise TelegramDeliveryAmbiguous(
+            f"delivery boundary timeout user={telegram_user_id} signal={signal_id}"
+        ) from exc
+    proof = await _stash_telegram_delivery_receipt(
+        telegram_user_id=int(telegram_user_id),
+        signal=signal,
+        mode="sent",
+        chat_id=int(getattr(getattr(sent_msg, "chat", None), "id", telegram_user_id)),
+        message_id=int(getattr(sent_msg, "message_id")),
     )
-    proof = {
-        "mode": "sent",
-        "chat_id": int(getattr(getattr(sent_msg, "chat", None), "id", telegram_user_id)),
-        "message_id": int(getattr(sent_msg, "message_id")),
-    }
     logger.info(
         "[delivery_telegram_send_ok] user=%s signal=%s asset=%s tf=%s chat_id=%s message_id=%s",
         telegram_user_id, signal_id or signal.get("id"), signal.get("asset") or signal.get("symbol"),
@@ -1953,15 +2134,54 @@ async def _mark_delivery_with_telegram_proof(
     become confused. Bound it with its own timeout and use critical session
     priority so proof updates don't sit behind outcome/background work.
     """
+    from db.priority import DBPriority
     from db.session import get_session
     from db.pg_features import mark_signal_delivery_result
+    from delivery.receipts import DeliveryReceipt, receipt_store
+    from delivery.service import DeliveryOperation, canonical_delivery_state
+
+    proof_d = dict(proof or {})
+    chat_id = proof_d.get("chat_id")
+    message_id = proof_d.get("message_id")
+    has_ack = chat_id is not None and message_id is not None
+    receipt: DeliveryReceipt | None = None
+    if has_ack and not error:
+        try:
+            receipt_payload = proof_d.get("delivery_receipt")
+            if isinstance(receipt_payload, dict):
+                receipt = DeliveryReceipt.from_dict(receipt_payload)
+            else:
+                receipt = DeliveryReceipt.accepted(
+                    DeliveryOperation(
+                        user_id=int(telegram_user_id),
+                        signal_id=str(signal_id),
+                        channel_id=int(chat_id),
+                    ),
+                    message_id=int(message_id),
+                    mode=str(proof_d.get("mode") or "sent"),
+                )
+                proof_d["delivery_receipt"] = receipt.as_dict()
+            if not bool(proof_d.get("receipt_stashed")):
+                proof_d["receipt_stashed"] = bool(await receipt_store.stash(receipt))
+        except Exception as receipt_exc:
+            # Proof can still commit directly. If DB also fails, the durable
+            # SENDING row prevents a blind duplicate and requires repair.
+            proof_d["receipt_stashed"] = False
+            logger.warning(
+                "[delivery_receipt_prepare_failed] user=%s signal=%s err=%s",
+                telegram_user_id,
+                signal_id,
+                receipt_exc,
+            )
 
     async def _write_proof() -> bool:
-        proof_d = dict(proof or {})
-        chat_id = proof_d.get("chat_id")
-        message_id = proof_d.get("message_id")
-        has_ack = chat_id is not None and message_id is not None
-        async with get_session(critical=True) as db_session:
+        target_state = canonical_delivery_state(
+            delivery_state,
+            sent_ok=bool(has_ack and not error),
+            proof_ok=bool(has_ack),
+            error=error,
+        )
+        async with get_session(priority=DBPriority.CRITICAL) as db_session:
             ok = await mark_signal_delivery_result(
                 db_session,
                 telegram_user_id=int(telegram_user_id),
@@ -1971,14 +2191,16 @@ async def _mark_delivery_with_telegram_proof(
                 telegram_chat_id=int(chat_id) if chat_id is not None else None,
                 telegram_message_id=int(message_id) if message_id is not None else None,
                 telegram_api_result=proof_d,
-                delivery_state=str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+                delivery_state=target_state.value,
             )
             await db_session.commit()
             success = bool(ok and has_ack and not error)
+            if success and receipt is not None:
+                await receipt_store.acknowledge(receipt)
             logger.info(
                 "[delivery_proof_write] user=%s signal=%s sent_ok=%s chat_id=%s message_id=%s state=%s error=%s",
                 telegram_user_id, signal_id, success, chat_id, message_id,
-                str(proof_d.get("mode") or delivery_state or ("sent" if has_ack else "failed")),
+                target_state.value,
                 None if success else str(error or "delivery_not_confirmed"),
             )
             return success
@@ -2741,76 +2963,17 @@ async def _send_signal_with_engagement_async(
             telegram_user_id, signal_id, getattr(getattr(msg, "chat", None), "id", chat_id),
             getattr(msg, "message_id", None), len(str(text or "")),
         )
-        # Persist message location so tiered_executor can live-edit it later
-        try:
-            from db.session import get_session
-            from db.models import ActiveSignalMessage, UserWebhook
-            from db.pg_features import get_or_create_user
-            import httpx
-            from sqlalchemy import select
-            from sqlalchemy.dialects.postgresql import insert as pg_insert
-            global _vip_webhook_client
-            async with get_session(critical=True) as session:
-                user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
-                stmt = pg_insert(ActiveSignalMessage).values(
-                    user_id=user.id,
-                    signal_id=str(signal_id),
-                    chat_id=int(chat_id),
-                    message_id=int(msg.message_id),
-                    is_active=True,
-                ).on_conflict_do_update(
-                    constraint="uq_active_signal_msg_user_signal",
-                    set_={"message_id": int(msg.message_id), "is_active": True},
-                )
-                await session.execute(stmt)
-                # VIP webhook dispatch (best effort, async)
-                try:
-                    wh_row = (
-                        await session.execute(
-                            select(UserWebhook).where(
-                                UserWebhook.user_id == int(user.id),
-                                UserWebhook.is_active.is_(True),
-                            )
-                        )
-                    ).scalars().first()
-                    if _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False) and wh_row and signal:
-                        if _vip_webhook_client is None:
-                            _vip_webhook_client = httpx.AsyncClient(timeout=8)
-                        payload = {
-                            "event": "signal",
-                            "signal_id": str(signal_id),
-                            "user_id": int(telegram_user_id),
-                            "asset": signal.get("asset"),
-                            "timeframe": signal.get("timeframe"),
-                            "direction": signal.get("direction"),
-                            "entry": signal.get("entry"),
-                            "stop_loss": signal.get("stop_loss"),
-                            "take_profit": signal.get("take_profit"),
-                            "score": signal.get("score"),
-                            "ml_probability": signal.get("ml_probability"),
-                        }
-                        headers = {}
-                        if getattr(wh_row, "secret_token", None):
-                            headers["X-SignalRank-Signature"] = str(wh_row.secret_token)
-                        resp = await _vip_webhook_client.post(str(wh_row.webhook_url), json=payload, headers=headers)
-                        if int(resp.status_code) >= 400:
-                            logger.warning(
-                                "[vip_webhook] non-2xx user=%s status=%s url=%s",
-                                telegram_user_id,
-                                resp.status_code,
-                                wh_row.webhook_url,
-                            )
-                except Exception as _wh_exc:
-                    logger.debug(f"[vip_webhook] dispatch failed for user={telegram_user_id}: {_wh_exc}")
-                await session.commit()
-                logger.info(
-                    "[active_message_saved] user=%s signal=%s chat_id=%s message_id=%s",
-                    telegram_user_id, signal_id, chat_id, getattr(msg, "message_id", None),
-                )
-        except Exception as _e:
-            logger.warning(f"[active_message_save_failed] user={telegram_user_id} signal={signal_id} err={_e}")
+        # No DB or webhook work is permitted between Telegram acceptance and
+        # receipt stashing. ActiveSignalMessage is saved atomically with proof.
         return msg
     except Exception as send_exc:
+        from delivery.service import TelegramDeliveryAmbiguous, is_ambiguous_send_error
+        if is_ambiguous_send_error(send_exc):
+            if isinstance(send_exc, TelegramDeliveryAmbiguous):
+                raise
+            raise TelegramDeliveryAmbiguous(
+                f"engagement send outcome unknown: {type(send_exc).__name__}"
+            ) from send_exc
         logger.warning(
             "[send_signal] keyboard send failed chat_id=%s user=%s signal_id=%s err=%s",
             chat_id,
@@ -2827,6 +2990,70 @@ async def _send_signal_with_engagement_async(
             pass
         # Fallback: send without buttons so the signal still reaches the user
         return await _telegram_send_message_guarded(bot, chat_id=chat_id, text=text, parse_mode="HTML")
+
+
+async def _dispatch_vip_signal_webhook_after_receipt(
+    *,
+    telegram_user_id: int,
+    signal: dict,
+) -> None:
+    """Best-effort legacy webhook fanout after Telegram proof is recoverable."""
+    if not _env_true_local("VIP_WEBHOOK_DISPATCH_ENABLED", False):
+        return
+    try:
+        import httpx
+        from sqlalchemy import select
+
+        from db.models import UserWebhook
+        from db.pg_features import get_or_create_user
+        from db.priority import DBPriority
+        from db.session import get_session
+
+        global _vip_webhook_client
+        async with get_session(priority=DBPriority.BACKGROUND) as session:
+            user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
+            wh_row = (
+                await session.execute(
+                    select(UserWebhook).where(
+                        UserWebhook.user_id == int(user.id),
+                        UserWebhook.is_active.is_(True),
+                    )
+                )
+            ).scalars().first()
+        if wh_row is None:
+            return
+        if _vip_webhook_client is None:
+            _vip_webhook_client = httpx.AsyncClient(timeout=8)
+        payload = {
+            "event": "signal",
+            "signal_id": str(signal.get("signal_id") or signal.get("id") or ""),
+            "user_id": int(telegram_user_id),
+            "asset": signal.get("asset"),
+            "timeframe": signal.get("timeframe"),
+            "direction": signal.get("direction"),
+            "entry": signal.get("entry"),
+            "stop_loss": signal.get("stop_loss"),
+            "take_profit": signal.get("take_profit"),
+            "score": signal.get("score"),
+            "ml_probability": signal.get("ml_probability"),
+        }
+        headers = {}
+        if getattr(wh_row, "secret_token", None):
+            headers["X-SignalRank-Signature"] = str(wh_row.secret_token)
+        response = await _vip_webhook_client.post(
+            str(wh_row.webhook_url),
+            json=payload,
+            headers=headers,
+        )
+        if int(response.status_code) >= 400:
+            logger.warning(
+                "[vip_webhook] non-2xx user=%s status=%s url=%s",
+                telegram_user_id,
+                response.status_code,
+                wh_row.webhook_url,
+            )
+    except Exception as exc:
+        logger.debug("[vip_webhook] dispatch failed for user=%s: %s", telegram_user_id, exc)
 
 
 def _send_signal_with_engagement_sync(
@@ -4998,6 +5225,14 @@ def run_bot() -> None:
             logger.warning(f"[bot] Failed to set bot commands: {e}")
             pass
 
+        try:
+            from delivery.worker import start_delivery_receipt_reconciler
+
+            start_delivery_receipt_reconciler(app)
+            logger.info("[delivery_receipt_reconciler] startup scheduled")
+        except Exception as exc:
+            logger.warning("[delivery_receipt_reconciler] startup failed: %s", exc)
+
         # Outcome tracker is worker-owned in monolith runtime.
         logger.info("[bot] RealtimeOutcomeTracker startup skipped (worker-owned)")
 
@@ -5072,6 +5307,12 @@ def run_bot() -> None:
 
     async def _post_stop(app):
         """Gracefully stop background tasks when the bot shuts down."""
+        try:
+            from delivery.worker import stop_delivery_receipt_reconciler
+
+            await stop_delivery_receipt_reconciler(app)
+        except Exception as exc:
+            logger.debug("[delivery_receipt_reconciler] stop error: %s", exc)
         try:
             from engine.realtime_outcome_tracker import outcome_tracker
             await outcome_tracker.stop()

@@ -3325,7 +3325,9 @@ def main_loop(DRY_RUN: bool = False):
                                 delivered_exists = _exists_cd().where(
                                     _SigDelivery.signal_id == _SigModel.signal_id,
                                     _SigDelivery.sent_ok.is_(True),
-                                    _SigDelivery.delivery_state.in_(("sent", "delivered", "confirmed")),
+                                    _SigDelivery.delivery_state.in_((
+                                        "sent", "delivered", "confirmed", "SENT", "CONFIRMED", "RECONCILED",
+                                    )),
                                 )
                                 base_filters.append(delivered_exists)
 

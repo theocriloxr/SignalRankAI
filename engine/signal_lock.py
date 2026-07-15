@@ -268,7 +268,9 @@ async def active_signal_exists_for_asset(asset: str, direction: str, timeframe: 
             filters.append(sa_exists().where(
                 SignalDelivery.signal_id == Signal.signal_id,
                 SignalDelivery.sent_ok == True,
-                SignalDelivery.delivery_state.in_(("sent", "delivered", "confirmed")),
+                SignalDelivery.delivery_state.in_((
+                    "sent", "delivered", "confirmed", "SENT", "CONFIRMED", "RECONCILED",
+                )),
             ))
 
         async with get_session() as session:

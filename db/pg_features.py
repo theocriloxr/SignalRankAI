@@ -37,6 +37,13 @@ from db.models import (
 from db.repository import activate_subscription, get_or_create_user, normalize_tier
 from db.session import is_transient_db_error
 from core.tier_constants import TIER_DAILY_LIMITS
+from delivery.service import (
+    DeliveryOperation,
+    DeliveryState,
+    canonical_delivery_state,
+    forbids_blind_retry,
+    transition_allowed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -960,8 +967,23 @@ async def record_signal_delivery(
     telegram_user_id: int,
     signal_id: str,
     tier_at_send: str,
+    *,
+    channel_id: int | None = None,
+    signal_version: str = "1",
+    delivery_kind: str = "signal",
 ) -> bool:
     user: User = await get_or_create_user(session, telegram_user_id=telegram_user_id)
+    operation = DeliveryOperation(
+        user_id=int(telegram_user_id),
+        signal_id=str(signal_id),
+        channel_id=int(channel_id if channel_id is not None else telegram_user_id),
+        signal_version=str(signal_version or "1"),
+        delivery_kind=str(delivery_kind or "signal"),
+    )
+    operation_payload = {
+        "delivery_operation": operation.as_dict(),
+        "idempotency_key": operation.idempotency_key,
+    }
 
     # Dedupe at two levels:
     # - per-user: don't send the same trade twice to the same user
@@ -1224,16 +1246,37 @@ async def record_signal_delivery(
         )
         .order_by(SignalDelivery.id.desc())
         .limit(1)
+        .with_for_update()
     )
     existing_delivery = existing_delivery_res.scalar_one_or_none()
     if existing_delivery is not None:
         if bool(getattr(existing_delivery, "sent_ok", False)):
             return False
-        existing_state = str(getattr(existing_delivery, "delivery_state", "") or "").lower()
-        if existing_state in {"blocked", "formatter_failed"}:
+        existing_result = dict(getattr(existing_delivery, "telegram_api_result", None) or {})
+        existing_key = str(
+            existing_result.get("idempotency_key")
+            or (existing_result.get("delivery_operation") or {}).get("idempotency_key")
+            or ""
+        )
+        if existing_key and existing_key != operation.idempotency_key:
+            # The current compatibility schema is unique by user+signal.  Until
+            # the planned schema reconciliation expands that constraint, never
+            # collapse a second channel/version into the first operation.
+            logger.error(
+                "[delivery_idempotency_conflict] user=%s signal=%s existing_key=%s requested_key=%s",
+                user.id,
+                signal_id,
+                existing_key,
+                operation.idempotency_key,
+            )
+            return False
+        existing_state = canonical_delivery_state(
+            getattr(existing_delivery, "delivery_state", None)
+        )
+        if forbids_blind_retry(existing_state):
             logger.info(
                 "[dedup] terminal delivery state=%s user=%s signal=%s",
-                existing_state,
+                existing_state.value,
                 user.id,
                 signal_id,
             )
@@ -1263,8 +1306,9 @@ async def record_signal_delivery(
         existing_delivery.dispatch_started_at = _utcnow()
         existing_delivery.telegram_send_started_at = None
         existing_delivery.delivery_confirmed_at = None
-        existing_delivery.delivery_state = "reserved"
+        existing_delivery.delivery_state = DeliveryState.RESERVED.value
         existing_delivery.sent_ok = False
+        existing_delivery.telegram_api_result = {**existing_result, **operation_payload}
         try:
             existing_delivery.attempt_count = int(getattr(existing_delivery, "attempt_count", 0) or 0) + 1
         except Exception:
@@ -1280,11 +1324,12 @@ async def record_signal_delivery(
         signal_id=signal_id,
         tier_at_send=tier_s,
         sent_ok=False,
-        delivery_state="reserved",
+        delivery_state=DeliveryState.RESERVED.value,
         attempt_count=1,
         dispatch_started_at=_utcnow(),
         last_attempt_at=_utcnow(),
         delivered_at=_utcnow(),
+        telegram_api_result=operation_payload,
     )
     session.add(delivery)
     try:
@@ -1739,7 +1784,7 @@ async def mark_signal_delivery_result(
     telegram_api_result: dict | None = None,
     delivery_state: str | None = None,
 ) -> bool:
-    """Update delivery attempt result after Telegram/webhook dispatch."""
+    """Update a delivery result with monotonic proof and active-message CAS."""
     user_res = await session.execute(
         select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
     )
@@ -1755,6 +1800,7 @@ async def mark_signal_delivery_result(
         )
         .order_by(SignalDelivery.id.desc())
         .limit(1)
+        .with_for_update()
     )
     row = row_res.scalar_one_or_none()
     if row is None:
@@ -1765,6 +1811,52 @@ async def mark_signal_delivery_result(
     if sent_ok and not proof_ok:
         sent_ok = False
         error = error or "missing_telegram_ack"
+
+    current_state = canonical_delivery_state(
+        getattr(row, "delivery_state", None),
+        sent_ok=bool(getattr(row, "sent_ok", False)),
+        proof_ok=(
+            getattr(row, "telegram_chat_id", None) is not None
+            and getattr(row, "telegram_message_id", None) is not None
+        ),
+    )
+    target_state = canonical_delivery_state(
+        delivery_state,
+        sent_ok=bool(sent_ok),
+        proof_ok=bool(proof_ok),
+        error=error,
+    )
+    existing_proof_ok = bool(
+        getattr(row, "sent_ok", False)
+        and getattr(row, "telegram_chat_id", None) is not None
+        and getattr(row, "telegram_message_id", None) is not None
+    )
+    if existing_proof_ok:
+        if sent_ok and proof_ok and (
+            int(getattr(row, "telegram_chat_id")) != int(telegram_chat_id)
+            or int(getattr(row, "telegram_message_id")) != int(telegram_message_id)
+        ):
+            logger.error(
+                "[delivery_duplicate_ack_ignored] user=%s signal=%s existing=%s/%s duplicate=%s/%s",
+                telegram_user_id,
+                signal_id,
+                row.telegram_chat_id,
+                row.telegram_message_id,
+                telegram_chat_id,
+                telegram_message_id,
+            )
+        # Confirmation is monotonic. A late failure or second acknowledgement
+        # may not erase/replace the proof that made this operation authoritative.
+        return True
+    if not transition_allowed(current_state, target_state, proof_ok=bool(sent_ok and proof_ok)):
+        logger.info(
+            "[delivery_transition_ignored] user=%s signal=%s current=%s target=%s",
+            telegram_user_id,
+            signal_id,
+            current_state.value,
+            target_state.value,
+        )
+        return False
 
     row.sent_ok = bool(sent_ok)
     row.last_attempt_at = now
@@ -1795,17 +1887,112 @@ async def mark_signal_delivery_result(
             pass
         row.delivery_confirmed_at = now
         row.delivered_at = now
-        row.delivery_state = str(delivery_state or "sent")[:16]
+        row.delivery_state = target_state.value
         row.telegram_chat_id = int(telegram_chat_id) if telegram_chat_id is not None else None
         row.telegram_message_id = int(telegram_message_id) if telegram_message_id is not None else None
-        row.telegram_api_result = dict(telegram_api_result or {})
+        merged_api_result = {
+            **dict(getattr(row, "telegram_api_result", None) or {}),
+            **dict(telegram_api_result or {}),
+        }
+        row.telegram_api_result = merged_api_result
+
+        edited_old_signal_id = str(merged_api_result.get("edited_old_signal_id") or "").strip()
+        if edited_old_signal_id and edited_old_signal_id != str(signal_id):
+            old_active = (
+                await session.execute(
+                    select(ActiveSignalMessage)
+                    .where(
+                        ActiveSignalMessage.user_id == int(user.id),
+                        ActiveSignalMessage.signal_id == edited_old_signal_id,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if old_active is not None:
+                old_active.is_active = False
+
+        active_result = await session.execute(
+            select(ActiveSignalMessage)
+            .where(
+                ActiveSignalMessage.user_id == int(user.id),
+                ActiveSignalMessage.signal_id == str(signal_id),
+            )
+            .limit(1)
+        )
+        active_message = active_result.scalar_one_or_none()
+        if active_message is None:
+            session.add(
+                ActiveSignalMessage(
+                    user_id=int(user.id),
+                    signal_id=str(signal_id),
+                    chat_id=int(telegram_chat_id),
+                    message_id=int(telegram_message_id),
+                    is_active=True,
+                )
+            )
+        else:
+            active_message.chat_id = int(telegram_chat_id)
+            active_message.message_id = int(telegram_message_id)
+            active_message.is_active = True
     else:
-        row.delivery_state = str(delivery_state or "failed")[:16]
+        row.delivery_state = target_state.value
     # Reservation owns the attempt counter. Confirmation must not turn one
     # Telegram API attempt into two in diagnostics.
     if int(getattr(row, "attempt_count", 0) or 0) < 1:
         row.attempt_count = 1
     row.last_error = (str(error)[:1000] if error else None)
+    await session.flush()
+    return True
+
+
+async def mark_signal_delivery_state(
+    session: AsyncSession,
+    *,
+    telegram_user_id: int,
+    signal_id: str,
+    delivery_state: DeliveryState | str,
+    error: str | None = None,
+) -> bool:
+    """Advance a reserved operation before Telegram transmission."""
+    user = (
+        await session.execute(
+            select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
+        )
+    ).scalar_one_or_none()
+    if user is None:
+        return False
+    row = (
+        await session.execute(
+            select(SignalDelivery)
+            .where(
+                SignalDelivery.user_id == int(user.id),
+                SignalDelivery.signal_id == str(signal_id),
+            )
+            .order_by(SignalDelivery.id.desc())
+            .limit(1)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        return False
+    current = canonical_delivery_state(
+        getattr(row, "delivery_state", None),
+        sent_ok=bool(getattr(row, "sent_ok", False)),
+        proof_ok=(
+            getattr(row, "telegram_chat_id", None) is not None
+            and getattr(row, "telegram_message_id", None) is not None
+        ),
+    )
+    target = canonical_delivery_state(delivery_state, error=error)
+    if not transition_allowed(current, target):
+        return False
+    now = _utcnow()
+    row.delivery_state = target.value
+    row.last_attempt_at = now
+    if target is DeliveryState.SENDING:
+        row.telegram_send_started_at = now
+    if error:
+        row.last_error = str(error)[:1000]
     await session.flush()
     return True
 

@@ -27,11 +27,19 @@ async def test_fresh_signal_returns_telegram_ack(monkeypatch):
     async def _send(*_args, **_kwargs):
         return SimpleNamespace(message_id=77, chat=SimpleNamespace(id=1234))
 
+    async def _phase(**_kwargs):
+        return True
+
+    async def _stash(_receipt):
+        return True
+
     monkeypatch.setattr(freshness_module, "validate_delivery_freshness", _fresh)
     monkeypatch.setattr(bot_module, "format_signal", lambda *_args, **_kwargs: "signal")
     monkeypatch.setattr(bot_module, "_find_editable_signal_message", _no_edit)
     monkeypatch.setattr(bot_module, "_is_asset_delivery_locked", _unlocked)
     monkeypatch.setattr(bot_module, "_send_signal_with_engagement_async", _send)
+    monkeypatch.setattr(bot_module, "_persist_delivery_phase", _phase)
+    monkeypatch.setattr("delivery.receipts.receipt_store.stash", _stash)
 
     proof = await bot_module._deliver_or_update_signal_async(
         bot=SimpleNamespace(),
@@ -40,7 +48,11 @@ async def test_fresh_signal_returns_telegram_ack(monkeypatch):
         display_tier="premium",
     )
 
-    assert proof == {"mode": "sent", "chat_id": 1234, "message_id": 77}
+    assert proof["mode"] == "sent"
+    assert proof["chat_id"] == 1234
+    assert proof["message_id"] == 77
+    assert proof["receipt_stashed"] is True
+    assert proof["delivery_receipt"]["idempotency_key"]
     assert observed["final_send"] is True
     assert observed["delivery_tier"] == "premium"
     assert "cached_live_price" not in observed
@@ -63,11 +75,15 @@ async def test_signal_without_telegram_message_id_cannot_be_confirmed(monkeypatc
     async def _send(*_args, **_kwargs):
         return SimpleNamespace(message_id=None, chat=SimpleNamespace(id=1234))
 
+    async def _phase(**_kwargs):
+        return True
+
     monkeypatch.setattr(freshness_module, "validate_delivery_freshness", _fresh)
     monkeypatch.setattr(bot_module, "format_signal", lambda *_args, **_kwargs: "signal")
     monkeypatch.setattr(bot_module, "_find_editable_signal_message", _none)
     monkeypatch.setattr(bot_module, "_is_asset_delivery_locked", _unlocked)
     monkeypatch.setattr(bot_module, "_send_signal_with_engagement_async", _send)
+    monkeypatch.setattr(bot_module, "_persist_delivery_phase", _phase)
 
     with pytest.raises((TypeError, ValueError)):
         await bot_module._deliver_or_update_signal_async(

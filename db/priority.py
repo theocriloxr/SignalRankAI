@@ -160,6 +160,16 @@ class DBAdmissionController:
         with self._condition:
             self._metrics[priority]["dropped"] += 1
 
+    def record_deferred(self, priority: DBPriority | str) -> None:
+        priority = self.normalize(priority)
+        with self._condition:
+            self._metrics[priority]["deferred"] += 1
+
+    def record_timeout(self, priority: DBPriority | str) -> None:
+        priority = self.normalize(priority)
+        with self._condition:
+            self._metrics[priority]["timeouts"] += 1
+
     def snapshot(self) -> dict[str, Any]:
         with self._condition:
             classes: dict[str, dict[str, int | float]] = {}
