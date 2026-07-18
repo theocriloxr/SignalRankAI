@@ -139,6 +139,20 @@ def lifecycle_state_for_outcome(status: str | None) -> str:
     return ACTIVE_TRADE
 
 
+def outcome_status_for_lifecycle(value: SignalLifecycle | str | None) -> str | None:
+    """Map durable lifecycle truth back to its outcome read projection."""
+    state = normalize_lifecycle_state(value)
+    return {
+        TP1_HIT: "tp1",
+        TP2_HIT: "tp2",
+        TP3_HIT: "tp3",
+        SL_HIT: "sl",
+        BREAKEVEN_STOP: "partial_win_be",
+        MISSED_ENTRY: "missed_entry",
+        EXPIRED: "expired",
+    }.get(state)
+
+
 _OUTCOME_PROGRESS = {
     "": 0,
     "pending": 0,
@@ -185,5 +199,6 @@ __all__ = [
     "lifecycle_state_for_outcome",
     "lifecycle_transition_allowed",
     "normalize_lifecycle_state",
+    "outcome_status_for_lifecycle",
     "outcome_transition_allowed",
 ]

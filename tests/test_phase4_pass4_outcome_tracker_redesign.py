@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -30,6 +32,7 @@ from engine.realtime_outcome_tracker import (
     OutcomePriceObservation,
     RealtimeOutcomeTracker,
     _fetch_outcome_quotes,
+    _get_outcome_quote,
 )
 
 
@@ -93,6 +96,15 @@ def test_outcome_projection_accepts_replay_but_rejects_reordering():
     assert not outcome_transition_allowed("sl", "tp1")
 
 
+def test_transition_service_locks_before_monotonic_event_commit():
+    from engine.signal_lifecycle import record_lifecycle_event
+
+    source = inspect.getsource(record_lifecycle_event)
+    assert ".with_for_update()" in source
+    assert "event_transition_allowed(lifecycle.state, event_type)" in source
+    assert "dispatch_event_notifications(" not in source
+
+
 @pytest.mark.asyncio
 async def test_quote_batch_fetches_each_unique_asset_once(monkeypatch):
     calls: list[str] = []
@@ -112,6 +124,40 @@ async def test_quote_batch_fetches_each_unique_asset_once(monkeypatch):
 
     assert sorted(calls) == ["BTCUSDT", "ETHUSDT"]
     assert set(quotes) == {"BTCUSDT", "ETHUSDT"}
+
+
+@pytest.mark.asyncio
+async def test_typed_quote_rejects_stale_provider_observation(monkeypatch):
+    from data.provider_types import (
+        BreakerState,
+        LivePriceQuote,
+        ProviderHealthState,
+        QuoteKind,
+    )
+
+    now = time.time()
+    stale_quote = LivePriceQuote(
+        symbol="BTCUSDT",
+        price=100.0,
+        provider="fake",
+        fetched_at=now,
+        latency_ms=1,
+        asset_class="crypto",
+        source_timestamp=now - 3600,
+        provider_health=ProviderHealthState.HEALTHY.value,
+        breaker_state=BreakerState.CLOSED.value,
+        quote_kind=QuoteKind.TRADE.value,
+    )
+    monkeypatch.setattr(
+        "data.get_live_price.get_live_price_result",
+        AsyncMock(return_value=stale_quote),
+    )
+
+    observation = await _get_outcome_quote("BTCUSDT")
+
+    assert observation.price is None
+    assert observation.provider_trusted is False
+    assert "source_age_exceeded" in str(observation.reason)
 
 
 @pytest.mark.asyncio
@@ -190,6 +236,38 @@ async def test_replayed_lower_tp_does_not_downgrade_or_repersist(monkeypatch):
 
     lifecycle_event.assert_not_awaited()
     persist.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_replay_repairs_lagging_outcome_projection(monkeypatch):
+    lifecycle_event = AsyncMock()
+    persist = AsyncMock()
+    monkeypatch.setattr(
+        "engine.signal_lifecycle.update_lifecycle_observation",
+        AsyncMock(return_value=TP2_HIT),
+    )
+    monkeypatch.setattr("engine.signal_lifecycle.record_lifecycle_event", lifecycle_event)
+    monkeypatch.setattr("engine.realtime_outcome_tracker._persist_outcome", persist)
+    monkeypatch.setattr("engine.realtime_outcome_tracker._publish_outcome_snapshot", AsyncMock())
+
+    await RealtimeOutcomeTracker()._check_signal(
+        _signal(
+            lifecycle_state=TP2_HIT,
+            lifecycle_last_price=102.0,
+            highest_tp_hit=2,
+            prev_outcome_status="tp1",
+            prev_outcome_meta={"tp_hit_index": 1},
+        ),
+        observation=_observation(101.5),
+    )
+
+    lifecycle_event.assert_not_awaited()
+    persist.assert_awaited_once_with(
+        "00000000-0000-0000-0000-000000000123",
+        "tp2",
+        100.0,
+        102.0,
+    )
 
 
 @pytest.mark.asyncio

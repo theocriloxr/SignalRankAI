@@ -454,6 +454,7 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                     "expires_at": s.expires_at,
                     "lifecycle_state": str(getattr(lifecycle, "state", "") or "WATCHING_FOR_ENTRY"),
                     "highest_tp_hit": _database_tp_progress(lifecycle, o),
+                    "lifecycle_last_price": getattr(lifecycle, "last_price", None),
                     "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
                 }
                 for s, o, lifecycle in rows
@@ -519,6 +520,7 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
                     "expires_at": s.expires_at,
                     "lifecycle_state": "WATCHING_FOR_ENTRY",
                     "highest_tp_hit": 0,
+                    "lifecycle_last_price": None,
                     "entry_touched_at": None,
                 }
             )
@@ -1530,9 +1532,12 @@ class RealtimeOutcomeTracker:
         from core.signal_lifecycle import (
             ACTIVE_TRADE,
             MISSED_ENTRY,
+            TERMINAL_SIGNAL_STATES,
             WATCHING_FOR_ENTRY,
             highest_tp_for_state,
             normalize_lifecycle_state,
+            outcome_status_for_lifecycle,
+            outcome_transition_allowed,
         )
         from engine.signal_lifecycle import (
             entry_was_touched,
@@ -1578,6 +1583,22 @@ class RealtimeOutcomeTracker:
         )
         signal["lifecycle_state"] = lifecycle_state
         prev_tp = max(prev_tp, highest_tp_for_state(lifecycle_state))
+
+        # Repair a missing/lagging Outcome projection after a lifecycle event
+        # committed but its downstream upsert failed. Replays remain monotonic.
+        projected_status = outcome_status_for_lifecycle(lifecycle_state)
+        previous_status = str(signal.get("prev_outcome_status") or "").lower()
+        if (
+            projected_status
+            and projected_status != previous_status
+            and outcome_transition_allowed(previous_status, projected_status)
+        ):
+            projection_price = float(signal.get("lifecycle_last_price") or price)
+            await _persist_outcome(signal_id, projected_status, entry, projection_price)
+            signal["prev_outcome_status"] = projected_status
+        if lifecycle_state in TERMINAL_SIGNAL_STATES:
+            await publish_snapshot()
+            return
 
         # Entry is authoritative. A signal cannot hit TP or SL until the market
         # has actually traded through its entry level.
