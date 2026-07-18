@@ -6035,10 +6035,34 @@ def run_bot() -> None:
                 pass
             return
         try:
+            import asyncio as _asyncio
+            from engine.outcome_snapshots import (
+                format_outcome_snapshot as _format_outcome_snapshot,
+                read_cached_outcome_snapshot as _read_cached_outcome_snapshot,
+            )
+
+            _snapshot_timeout = max(
+                0.1,
+                float(os.getenv("CHECK_OUTCOME_SNAPSHOT_TIMEOUT_SECONDS", "0.75") or 0.75),
+            )
+            try:
+                _snapshot = await _asyncio.wait_for(
+                    _read_cached_outcome_snapshot(raw),
+                    timeout=_snapshot_timeout,
+                )
+            except Exception:
+                _snapshot = None
+            if _snapshot is not None:
+                logger.info("[check_outcome] user=%s ref=%s snapshot_hit=true", uid, raw[:16])
+                await query.message.reply_text(
+                    _format_outcome_snapshot(_snapshot),
+                    parse_mode="HTML",
+                )
+                return
+
             from db.session import get_session as _gs_oc
             from db.models import Signal as _Sig, Outcome as _Out, SignalLifecycle as _Life
             from sqlalchemy import select as _sel_oc
-            import asyncio as _asyncio
 
             async def _load_outcome():
                 async with _gs_oc(interactive=True) as _s:

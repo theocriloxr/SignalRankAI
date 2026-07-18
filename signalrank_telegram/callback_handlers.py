@@ -293,6 +293,23 @@ async def _handle_check_outcome(
     
     try:
         await query.answer("Checking outcome...")
+
+        from engine.outcome_snapshots import (
+            format_outcome_snapshot,
+            read_cached_outcome_snapshot,
+        )
+
+        try:
+            snapshot = await read_cached_outcome_snapshot(signal_id)
+        except Exception:
+            snapshot = None
+        if snapshot is not None:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=format_outcome_snapshot(snapshot),
+                parse_mode="HTML",
+            )
+            return
         
         # Load outcome from DB
         from db.session import get_session

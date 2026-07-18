@@ -1652,6 +1652,7 @@ async def upsert_outcome(
     canonical_outcome: str | None = None,
     vip_fill_outcome: str | None = None,
     sentiment_outcome: str | None = None,
+    queue_notifications: bool = True,
 ) -> Outcome:
     signal_id_str = str(signal_id)
     now = _utcnow()
@@ -1723,7 +1724,7 @@ async def upsert_outcome(
         _meta.pop("notified", None)
         _meta.pop("notified_at", None)
         oc.meta = _meta
-        if oc.closed_at is not None:
+        if queue_notifications and oc.closed_at is not None:
             await queue_outcome_notifications_for_outcome(
                 session,
                 int(getattr(oc, "id")),
