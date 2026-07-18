@@ -148,12 +148,19 @@ async def _handle_mt5_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         user_id = query.from_user.id
         tier = resolve_user_tier(user_id)
         
-        # Check tier for premium
-        from signalrank_telegram.commands import tier_rank
-        if tier_rank(tier) < tier_rank("PREMIUM"):
+        from core.tier_policy import evaluate_button_access
+        decision = evaluate_button_access("mt5_trade", tier)
+        if not decision.allowed:
+            try:
+                from services.upgrade_intents import schedule_upgrade_intent
+                schedule_upgrade_intent(
+                    int(user_id), decision, action="mt5_trade", source="telegram_button"
+                )
+            except Exception:
+                pass
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text="🔒 Premium feature. Use /upgrade to unlock.",
+                text=decision.reason,
             )
             return
         

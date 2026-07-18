@@ -613,8 +613,9 @@ def format_premium_signal(signal: DictType[str, Any]) -> str:
 
     lines += [
         "",
-        "<i>⚠️ Note: This trade will run naked. Upgrade to VIP to unlock "
-        "Auto-Breakeven, Partial Profit Taking, and Smart Risk Sizing! /upgrade</i>",
+        "<i>VIP adds the TP3 management ladder and execution preflight. "
+        "Every tier still requires the same freshness, risk, consent, and kill-switch checks. "
+        "No outcome is guaranteed. /upgrade</i>",
     ]
 
     return "\n".join(lines)

@@ -24,13 +24,11 @@ from .signal_commands import signals_command, proof_command
 from .account_commands import performance_command, history_command, apikey_command
 from .mt5_commands import mt5_link_command, mt5_status_command
 from .utils import tier_rank, _effective_tier, _public_guard
+from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 
 TIER_RANKS: dict[str, int] = {
-	"FREE": 0,
-	"PREMIUM": 1,
-	"VIP": 2,
-	"ADMIN": 3,
-	"OWNER": 3,
+	tier: canonical_tier_rank(tier)
+	for tier in ("FREE", "PREMIUM", "VIP", "ADMIN", "OWNER")
 }
 FREE_PROOF_FEED_LIMIT = 5
 
@@ -76,12 +74,22 @@ def require_tier(min_tier):
 				return
 			tier: str = _effective_tier(user_id)
 			if tier_rank(tier) < tier_rank(min_tier):
+				cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
 				try:
 					from .command_access import check_command_access
 					cmd_name = func.__name__.replace("_command", "").replace("async ", "").strip()
 					_, reason = check_command_access(cmd_name, tier)
 				except Exception:
 					reason: str = f"🔒 You can't access this on {str(tier).upper()} tier.\nUse /upgrade to subscribe to unlock it."
+				decision = evaluate_command_access(cmd_name, tier)
+				reason = decision.reason
+				try:
+					from services.upgrade_intents import schedule_upgrade_intent
+					schedule_upgrade_intent(
+						int(user_id), decision, action=cmd_name, source="telegram_command"
+					)
+				except Exception:
+					pass
 				await update.message.reply_text(reason)
 				return
 			result = func(update, context)
@@ -302,14 +310,16 @@ async def _build_plan_keyboard(user_id: int, *, include_navigation: bool) -> obj
 
 
 async def _compose_pricing_message(user_id: int) -> tuple[str, object | None]:
+	from core.tier_policy import get_entitlements
+
 	_, vip_seats_left, vip_sold_out = await _get_live_vip_seat_state()
 	vip_line = _vip_plan_line(MarkdownV2=False, seats_left=vip_seats_left, sold_out=vip_sold_out)
 	prem_month_price = int(os.getenv("PREMIUM_MONTHLY_PRICE_NGN", "24000"))
 	prem_qtr_price = int(os.getenv("PREMIUM_QUARTERLY_PRICE_NGN", "56000"))
 	prem_year_price = int(os.getenv("PREMIUM_YEARLY_PRICE_NGN", "192000"))
-	free_limit = int(os.getenv("FREE_SIGNAL_DAILY_LIMIT", "3") or 3)
-	premium_limit = int(os.getenv("PREMIUM_SIGNAL_DAILY_LIMIT", "15") or 15)
-	vip_limit = int(os.getenv("VIP_SIGNAL_DAILY_LIMIT", "30") or 30)
+	free_limit = get_entitlements("FREE").daily_signal_limit
+	premium_limit = get_entitlements("PREMIUM").daily_signal_limit
+	vip_limit = get_entitlements("VIP").daily_signal_limit
 	msg = (
 		"🚀 SignalRankAI — Plans Built Around Trader Value\n\n"
 		"🆓 Free — proof feed + limited educational signals\n"
@@ -2658,11 +2668,12 @@ def _help_page_definitions() -> dict[int, dict[str, object]]:
 		1: {"title": "🟢 Basics & Free", "required_tier": "FREE", "commands": [], "footer": "Tip: start with /proof, /signals, /status, and /upgrade if you want more access."},
 		2: {"title": "⭐️ Premium Analytics", "required_tier": "PREMIUM", "commands": [], "footer": "⭐️ Upgrade to unlock these features."},
 		3: {"title": "💎 VIP Exclusive", "required_tier": "VIP", "commands": [], "footer": "💎 VIP includes all Free and Premium commands plus these exclusives."},
-		4: {"title": "👑 Admin & God Mode", "required_tier": "ADMIN", "commands": [], "footer": "Restricted admin surface."},
+		4: {"title": "👑 Admin Operations", "required_tier": "ADMIN", "commands": [], "footer": "Restricted, audited admin surface."},
+		5: {"title": "👑 Owner Controls", "required_tier": "OWNER", "commands": [], "footer": "Restricted owner-only surface."},
 	}
 
 	hidden = {"unlock", "broadcast", "dev_invalidate", "dev_force_signal"}
-	page_by_tier = {"FREE": 1, "PREMIUM": 2, "VIP": 3, "ADMIN": 4, "OWNER": 4}
+	page_by_tier = {"FREE": 1, "PREMIUM": 2, "VIP": 3, "ADMIN": 4, "OWNER": 5}
 
 	for cmd, required_tier in sorted((COMMAND_TIERS or {}).items(), key=lambda kv: (str(kv[1]), str(kv[0]))):
 		cmd_l = str(cmd or "").strip().lower()
@@ -2679,8 +2690,10 @@ def _help_authorized_pages(user_id: int) -> list[int]:
 	pages = [1, 2, 3]
 	try:
 		uid = int(user_id)
-		if uid in ADMIN_IDS or uid in OWNER_IDS:
+		if uid in ADMIN_IDS:
 			pages.append(4)
+		if uid in OWNER_IDS:
+			pages.extend((4, 5))
 	except Exception:
 		pass
 	return pages
@@ -2691,9 +2704,11 @@ def _help_page_is_locked(user_id: int, page: int) -> bool:
 	page_defs = _help_page_definitions()
 	page_info = page_defs.get(int(page), {})
 	required_tier = str(page_info.get("required_tier") or "FREE")
-	if int(page) == 4:
+	if int(page) in {4, 5}:
 		try:
 			uid = int(user_id)
+			if int(page) == 5:
+				return uid not in OWNER_IDS
 			return uid not in ADMIN_IDS and uid not in OWNER_IDS
 		except Exception:
 			return True

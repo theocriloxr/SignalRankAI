@@ -5623,6 +5623,27 @@ def run_bot() -> None:
         if user_id is None or chat_id is None:
             await query.answer()
             return
+        try:
+            from core.tier_policy import evaluate_button_access
+            from services.upgrade_intents import schedule_upgrade_intent
+            from signalrank_telegram.access import resolve_user_tier
+
+            monitor_tier = (resolve_user_tier(int(user_id)) or "FREE").upper()
+            monitor_decision = evaluate_button_access("monitor_signal", monitor_tier)
+            if not monitor_decision.allowed:
+                schedule_upgrade_intent(
+                    int(user_id),
+                    monitor_decision,
+                    action="monitor_signal",
+                    source="telegram_button",
+                )
+                await query.answer("Lifecycle monitoring requires Premium.", show_alert=False)
+                await context.bot.send_message(chat_id=int(chat_id), text=monitor_decision.reason)
+                return
+        except Exception as tier_exc:
+            logger.debug("[monitor] tier check failed closed: %s", tier_exc)
+            await query.answer("Unable to verify monitor access right now.", show_alert=True)
+            return
         signal_id = (query.data or "").replace("monitor_signal_", "", 1).strip()
         if not signal_id:
             await query.answer("No signal selected.", show_alert=True)
@@ -5715,7 +5736,7 @@ def run_bot() -> None:
 
     application.add_handler(_CQH(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
-    # ⚡ Take Trade — one-click MT5 execution (PREMIUM/VIP) or upsell (FREE)
+    # Execution preflight is VIP-only. Actual execution remains safety-gated.
     # Callback data: mt5_trade_<signal_id>|<asset>|<direction>|<entry>|<sl>|<tp>
     async def _mt5_trade_callback(update, context):
         query = update.callback_query
@@ -5727,22 +5748,22 @@ def run_bot() -> None:
         # ── Tier gate: FREE users see an upsell paywall ───────────────────────
         _ut = "FREE"
         try:
+            from core.tier_policy import evaluate_button_access
             from signalrank_telegram.access import resolve_user_tier
-            from signalrank_telegram.commands import tier_rank
             _ut = (resolve_user_tier(int(user_id)) or "FREE").upper()
-            if tier_rank(_ut) < tier_rank("PREMIUM"):
-                await query.answer("🔒 Premium feature", show_alert=False)
+            _decision = evaluate_button_access("mt5_trade", _ut)
+            if not _decision.allowed:
+                try:
+                    from services.upgrade_intents import schedule_upgrade_intent
+                    schedule_upgrade_intent(
+                        int(user_id), _decision, action="mt5_trade", source="telegram_button"
+                    )
+                except Exception:
+                    pass
+                await query.answer("🔒 VIP execution preflight required", show_alert=False)
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
-                    text=(
-                        "🔒 *Premium Feature Locked!*\n\n"
-                        "Auto-trading directly from Telegram is reserved for our paid members.\n\n"
-                        "⭐️ *Premium Benefits:* 1-click execution, faster signals, and full asset coverage.\n\n"
-                        "👑 *VIP Benefits:* Everything in Premium, plus custom risk management, "
-                        "dedicated support, and exclusive market insights.\n\n"
-                        "🚀 Type /upgrade right now to unlock these features and catch this trade!"
-                    ),
-                    parse_mode="MarkdownV2",
+                    text=_decision.reason,
                 )
                 return
         except Exception as _te:
