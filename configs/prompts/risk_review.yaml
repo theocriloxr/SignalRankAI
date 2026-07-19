@@ -1,0 +1,3 @@
+version: risk-review-v1
+purpose: summarize risk, stop placement, and exposure constraints
+deterministic_veto: true

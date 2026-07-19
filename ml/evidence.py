@@ -45,7 +45,11 @@ class EvidenceManifest:
 
     @property
     def manifest_hash(self) -> str:
-        return hashlib.sha256(_canonical(self.to_dict()).encode("utf-8")).hexdigest()
+        payload = self.to_dict()
+        # Wall-clock creation time is metadata, not dataset identity.  It is
+        # excluded so rerunning an identical manifest produces the same hash.
+        payload.pop("created_at", None)
+        return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
 
 
 def build_manifest(

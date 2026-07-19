@@ -358,6 +358,12 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "support": Tier.FREE, "status": Tier.FREE, "liveprice": Tier.FREE,
         "market": Tier.FREE, "myid": Tier.FREE, "account": Tier.FREE,
         "leaderboard": Tier.FREE, "tiers": Tier.FREE, "unlock": Tier.FREE,
+        # Safe public-testing and paper/education surfaces.
+        "public_test_status": Tier.FREE, "paper_balance": Tier.FREE,
+        "paper_positions": Tier.FREE, "paper_performance": Tier.FREE,
+        "receipt": Tier.FREE, "receipts": Tier.FREE,
+        "report_issue": Tier.FREE, "performance_truth": Tier.FREE,
+        "provider_health": Tier.FREE, "automaton_status": Tier.FREE,
         # Premium workflow.
         "performance": Tier.PREMIUM, "stats": Tier.PREMIUM,
         "history": Tier.PREMIUM, "risk": Tier.PREMIUM,
@@ -367,6 +373,8 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "reports": Tier.PREMIUM, "notify": Tier.PREMIUM,
         "portfolio": Tier.PREMIUM, "mission": Tier.PREMIUM,
         "quality": Tier.PREMIUM, "execution": Tier.PREMIUM,
+        "signal_quality": Tier.PREMIUM, "winrate": Tier.PREMIUM,
+        "shadow_report": Tier.PREMIUM, "strategy_leaderboard": Tier.PREMIUM,
         "drawdown": Tier.PREMIUM, "setlot": Tier.PREMIUM,
         "mystats": Tier.PREMIUM, "referral": Tier.PREMIUM,
         "mt5": Tier.PREMIUM, "mt5link": Tier.PREMIUM,
@@ -387,6 +395,8 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "ops_health": Tier.ADMIN, "system": Tier.ADMIN,
         "db_health": Tier.ADMIN, "engine_debug": Tier.ADMIN,
         "blast_terms": Tier.ADMIN, "assets": Tier.ADMIN,
+        "release_guard": Tier.ADMIN, "automaton_report": Tier.ADMIN,
+        "admin_receipt_lookup": Tier.ADMIN, "admin_payment_lookup": Tier.ADMIN,
         # Owner-only controls.
         "dev_pause": Tier.OWNER, "dev_resume": Tier.OWNER,
         "dev_force_signal": Tier.OWNER, "dev_invalidate": Tier.OWNER,

@@ -749,6 +749,21 @@ from .owner_commands import (
     broadcast_command,
 )
 
+from .extended_commands import (
+    public_test_status_command,
+    release_guard_command,
+    automaton_status_command,
+    automaton_report_command,
+    paper_balance_command,
+    paper_positions_command,
+    paper_performance_command,
+    receipt_command,
+    receipts_command,
+    report_issue_command,
+    performance_truth_command,
+    provider_health_command,
+)
+
 # Import tier-based notification manager
 from engine.tier_notifications import TierNotificationManager
 
@@ -5341,6 +5356,18 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("faq", _audit_handler("faq", faq_command)))
     application.add_handler(CommandHandler("disclaimer", _audit_handler("disclaimer", disclaimer_command)))
     application.add_handler(CommandHandler("support", _audit_handler("support", support_command)))
+    application.add_handler(CommandHandler("public_test_status", _audit_handler("public_test_status", public_test_status_command)))
+    application.add_handler(CommandHandler("release_guard", _audit_handler("release_guard", release_guard_command)))
+    application.add_handler(CommandHandler("automaton_status", _audit_handler("automaton_status", automaton_status_command)))
+    application.add_handler(CommandHandler("automaton_report", _audit_handler("automaton_report", automaton_report_command)))
+    application.add_handler(CommandHandler("paper_balance", _audit_handler("paper_balance", paper_balance_command)))
+    application.add_handler(CommandHandler("paper_positions", _audit_handler("paper_positions", paper_positions_command)))
+    application.add_handler(CommandHandler("paper_performance", _audit_handler("paper_performance", paper_performance_command)))
+    application.add_handler(CommandHandler("receipt", _audit_handler("receipt", receipt_command)))
+    application.add_handler(CommandHandler("receipts", _audit_handler("receipts", receipts_command)))
+    application.add_handler(CommandHandler("report_issue", _audit_handler("report_issue", report_issue_command)))
+    application.add_handler(CommandHandler("performance_truth", _audit_handler("performance_truth", performance_truth_command)))
+    application.add_handler(CommandHandler("provider_health", _audit_handler("provider_health", provider_health_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
     application.add_handler(CommandHandler("profile", _audit_handler("profile", profile_command)))
     application.add_handler(CommandHandler("profile_debug", _audit_handler("profile_debug", profile_debug_command)))

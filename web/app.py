@@ -68,6 +68,16 @@ try:
 except Exception as exc:  # pragma: no cover - optional during minimal boots
     logger.debug("versioned API router unavailable during import: %s", type(exc).__name__)
 
+# Preserve the dedicated Paystack ingress router as a compatibility alias.
+# The inline routes below remain available for existing clients; this mounts
+# the canonical raw-body/background-task handler at `/webhook/paystack`.
+try:
+    from payments.paystack_webhook import router as paystack_ingress_router
+
+    app.include_router(paystack_ingress_router)
+except Exception as exc:  # pragma: no cover - optional during minimal boots
+    logger.debug("Paystack ingress router unavailable during import: %s", type(exc).__name__)
+
 # CORS for Telegram web apps (future)
 app.add_middleware(
     CORSMiddleware,
@@ -831,7 +841,6 @@ ENGINE = None
 try:
     from web.api import router as _api_router
 
-    app.include_router(_api_router, prefix="/api/v1")
     app.include_router(_api_router)
 except Exception as exc:  # pragma: no cover - optional during minimal boots
     logger.warning("[web] API router registration skipped: %s", type(exc).__name__)

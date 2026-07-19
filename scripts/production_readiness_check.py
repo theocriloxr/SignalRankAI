@@ -29,6 +29,12 @@ REQUIRED_FILES = (
     "web/app.py",
     "signalrank_telegram/bot.py",
     "signalrank_telegram/commands.py",
+    "scripts/architecture_smoke.py",
+    "scripts/schema_audit.py",
+    "scripts/release_guard.py",
+    "core/automaton.py",
+    "ml/evidence.py",
+    "payments/receipt_service.py",
 )
 
 REQUIRED_ENV_TEMPLATE_KEYS = (
@@ -37,6 +43,9 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
     "OWNER_IDS",
     "PAYSTACK_SECRET_KEY",
     "GEMINI_API_KEY",
+    "PUBLIC_TESTING_MODE",
+    "AUTOMATON_STARTING_BALANCE_USD",
+    "FINAL_SEND_LIVE_PRICE_CHECK_ENABLED",
 )
 
 REQUIRED_WEB_MARKERS = (

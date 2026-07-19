@@ -77,6 +77,32 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
     event = str(body.get("event") or "")
     data  = body.get("data") or {}
 
+    # Record the provider event before scheduling side effects.  A duplicate
+    # delivery is acknowledged but never enqueued a second time.
+    try:
+        from db.session import get_session, is_db_configured
+        from db.repository import paystack_event_identity, mark_webhook_event_processed
+
+        if is_db_configured():
+            event_id, payload_hash = paystack_event_identity(body, raw_body)
+            async with get_session() as session:
+                is_new = await mark_webhook_event_processed(
+                    session,
+                    provider="paystack",
+                    event_id=event_id,
+                    event_type=event or "unknown",
+                    reference=str(data.get("reference") or "") or None,
+                    payload_hash=payload_hash,
+                    meta={"route": "/webhook/paystack"},
+                )
+                await session.commit()
+            if not is_new:
+                return {"status": "ok", "idempotent": True}
+    except Exception as exc:
+        # Keep ingress available during a DB outage; the mutation worker will
+        # remain disabled unless payment processing is explicitly enabled.
+        logger.warning("[paystack_webhook] idempotency tracking unavailable: %s", type(exc).__name__)
+
     logger.info("[paystack_webhook] Received event: %s", event)
 
     # ── Dispatch event processing in background ───────────────────────────────
@@ -89,6 +115,16 @@ async def paystack_webhook(request: Request, background_tasks: BackgroundTasks):
 async def _process_event(event: str, data: dict) -> None:
     """Process a Paystack webhook event."""
     try:
+        import os
+
+        if str(os.getenv("PAYMENTS_ENABLED") or "").strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            logger.info("[paystack_webhook] payment mutation disabled by configuration")
+            return
         from payments.paystack import (
             process_subscription_create,
             process_charge_success,

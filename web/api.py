@@ -75,7 +75,22 @@ async def authenticate_api_key(
 
     try:
         async with get_session() as session:
-            owner = await get_api_token_owner(session, token, required_scope=required_scope)
+            # Distinguish an unknown/expired credential (401) from a valid
+            # credential that lacks the requested scope (403).  The repository
+            # intentionally returns ``None`` for both cases, so perform the
+            # identity check first and apply scope policy second.
+            owner_any = await get_api_token_owner(session, token, required_scope="")
+            if owner_any is None:
+                owner = None
+                scope_denied = False
+            elif required_scope:
+                owner = await get_api_token_owner(
+                    session, token, required_scope=required_scope
+                )
+                scope_denied = owner is None
+            else:
+                owner = owner_any
+                scope_denied = False
             await session.commit()
     except HTTPException:
         raise
@@ -83,7 +98,9 @@ async def authenticate_api_key(
         logger.warning("[api] token lookup unavailable: %s", type(exc).__name__)
         raise HTTPException(status_code=503, detail="Token service unavailable") from exc
     if owner is None:
-        raise HTTPException(status_code=401, detail="Invalid, expired, revoked, or insufficient API key")
+        if scope_denied:
+            raise HTTPException(status_code=403, detail="API key scope insufficient")
+        raise HTTPException(status_code=401, detail="Invalid, expired, or revoked API key")
     return int(owner)
 
 

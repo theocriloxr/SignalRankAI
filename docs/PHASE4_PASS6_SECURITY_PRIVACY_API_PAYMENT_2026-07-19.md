@@ -31,15 +31,18 @@ tested. Safety-sensitive behavior remains opt-in and fail-closed.
 - Routed Paystack activation through the canonical idempotent repository
   transaction and rejected events without a reference, positive amount, or
   supported NGN currency.
+- Mounted the dedicated Paystack ingress compatibility router with durable
+  event identity tracking and a default-off mutation worker.
 
 ## Verification
 
 ```text
 python -m pytest tests/test_broker_permission_validation.py \
   tests/test_paystack_webhook.py tests/test_web_api_tokens.py \
-  tests/test_telemetry.py tests/test_enterprise_features.py -q --tb=short
+  tests/test_telemetry.py tests/test_enterprise_features.py \
+  tests/test_phase4_pass6_security_api_payments.py -q --tb=short
 
-85 passed
+91 passed
 ```
 
 The broader deterministic repository suite continues to be run by the parent

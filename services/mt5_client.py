@@ -25,7 +25,22 @@ from typing import Any, Dict, Optional, Tuple
 
 import aiohttp
 
+from core.security import redact_secrets
+
 logger = logging.getLogger(__name__)
+
+
+def _safe_error_body(body: str) -> str:
+    """Return bounded, redacted provider diagnostics without secret leakage."""
+    try:
+        import json
+
+        parsed = json.loads(str(body or ""))
+        return str(redact_secrets(parsed))[:200]
+    except Exception:
+        # Plain-text provider responses may echo request credentials.  Status
+        # and URL are sufficient diagnostics; never log arbitrary body text.
+        return "<non-json provider response>"
 
 # ---------------------------------------------------------------------------
 # URL helpers
@@ -87,7 +102,7 @@ async def _http_get(url: str, params: Dict | None = None) -> Optional[Dict]:
                 if resp.status in (200, 201):
                     return await resp.json()
                 body = await resp.text()
-                logger.error("[mt5_client] GET %s → %d  %s", url, resp.status, body[:200])
+                logger.error("[mt5_client] GET %s → %d  %s", url, resp.status, _safe_error_body(body))
                 return None
     except Exception as exc:
         logger.error("[mt5_client] GET %s failed: %s", url, exc)
@@ -112,7 +127,7 @@ async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
                     except Exception:
                         return {"status": resp.status}
                 body = await resp.text()
-                logger.error("[mt5_client] POST %s → %d  %s", url, resp.status, body[:200])
+                logger.error("[mt5_client] POST %s → %d  %s", url, resp.status, _safe_error_body(body))
                 return None
     except Exception as exc:
         logger.error("[mt5_client] POST %s failed: %s", url, exc)
@@ -134,7 +149,7 @@ async def _http_put(url: str, payload: Dict) -> bool:
                 if resp.status in (200, 201, 204):
                     return True
                 body = await resp.text()
-                logger.error("[mt5_client] PUT %s → %d  %s", url, resp.status, body[:200])
+                logger.error("[mt5_client] PUT %s → %d  %s", url, resp.status, _safe_error_body(body))
                 return False
     except Exception as exc:
         logger.error("[mt5_client] PUT %s failed: %s", url, exc)
