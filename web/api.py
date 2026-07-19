@@ -73,9 +73,15 @@ async def authenticate_api_key(
     if await state.rate_limited(ip_uid, limit=240, window_seconds=60):
         raise HTTPException(status_code=429, detail="Too many requests (ip)")
 
-    async with get_session() as session:
-        owner = await get_api_token_owner(session, token, required_scope=required_scope)
-        await session.commit()
+    try:
+        async with get_session() as session:
+            owner = await get_api_token_owner(session, token, required_scope=required_scope)
+            await session.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("[api] token lookup unavailable: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Token service unavailable") from exc
     if owner is None:
         raise HTTPException(status_code=401, detail="Invalid, expired, revoked, or insufficient API key")
     return int(owner)
@@ -169,6 +175,10 @@ async def get_current_token_meta(owner_id: int = Depends(get_user_by_apikey)):
 # Compatibility application for imports that previously served web.api alone.
 app = FastAPI(title="SignalRankAI API")
 app.include_router(router, prefix="/api/v1")
+# Compatibility aliases for clients that consumed the original web service
+# before the ``/api/v1`` prefix was introduced.  Keep the versioned routes as
+# canonical while allowing a zero-downtime migration for existing clients.
+app.include_router(router)
 
 
 __all__ = [

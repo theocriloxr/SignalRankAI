@@ -17,12 +17,17 @@ _DEFAULT_DURATIONS = {
 }
 
 def verify_signature(payload, signature):
+    secret = (os.getenv("PAYSTACK_WEBHOOK_SECRET") or os.getenv("PAYSTACK_SECRET_KEY") or "").strip()
+    if not secret or not signature:
+        return False
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
     computed = hmac.new(
-        PAYSTACK_SECRET.encode(),
+        secret.encode(),
         payload,
         hashlib.sha512
     ).hexdigest()
-    return hmac.compare_digest(computed, signature)
+    return hmac.compare_digest(computed, str(signature).strip())
 
 def handle_webhook(request):
     signature = request.headers.get("x-paystack-signature")
@@ -40,6 +45,16 @@ async def process_event(event):
     
     data = event.get("data", {})
     metadata = data.get("metadata", {})
+
+    # A charge event without a durable provider reference or a positive NGN
+    # amount cannot be safely applied to entitlements.  Signature validity
+    # alone proves origin, not product/user/amount correctness.
+    reference = str(data.get("reference") or "").strip()
+    if not reference:
+        return {"processed": False, "reason": "Missing payment reference"}
+    currency = str(data.get("currency") or "NGN").strip().upper()
+    if currency != "NGN":
+        return {"processed": False, "reason": "Unsupported payment currency"}
     
     telegram_user_id = metadata.get("telegram_user_id")
     if not telegram_user_id:
@@ -58,7 +73,12 @@ async def process_event(event):
         key = f"{tier}_{duration}".upper()
         duration_days = DURATIONS.get(key, 7)
     
-    amount = int(data.get("amount", 0)) // 100  # kobo to naira
+    try:
+        amount = int(data.get("amount", 0)) // 100  # kobo to naira
+    except (TypeError, ValueError):
+        return {"processed": False, "reason": "Invalid payment amount"}
+    if amount <= 0:
+        return {"processed": False, "reason": "Invalid payment amount"}
     
     # Handle extra signals purchase
     if duration == "EXTRA" or metadata.get("extra_count"):
@@ -73,15 +93,23 @@ async def process_event(event):
     # Activate subscription
     try:
         from db.session import get_session
-        from signalrank_telegram.payment_handler import activate_subscription
+        # Use the repository primitive as the single entitlement authority.
+        # The Telegram helper historically exposed an incompatible signature
+        # and is not present in minimal web deployments.
+        from db.repository import activate_subscription
         async with get_session() as session:
             await activate_subscription(
                 session,
                 telegram_user_id=int(telegram_user_id),
                 tier=tier,
                 duration_days=int(duration_days),
-                amount_paid=amount,
-                payment_provider="paystack",
+                paystack_reference=str(data.get("reference") or "") or None,
+                meta={
+                    "provider": "paystack",
+                    "amount_ngn": amount,
+                    "currency": str(data.get("currency") or "NGN"),
+                    "event": event_type,
+                },
             )
             await session.commit()
     except Exception as e:
