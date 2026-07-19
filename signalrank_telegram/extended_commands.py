@@ -52,6 +52,18 @@ async def paper_performance_command(update, context) -> None:
     await _reply(update, "Paper performance is reported separately from backtest, shadow, manual, and live outcomes. Sample size is required before claims.")
 
 
+async def paper_history_command(update, context) -> None:
+    await _reply(update, "Paper history is virtual-only and provenance-separated. No live broker orders are included in this ledger.")
+
+
+async def paper_reset_command(update, context) -> None:
+    await _reply(update, "Paper reset requires an audited owner action; this public command does not mutate balances.")
+
+
+async def paper_settings_command(update, context) -> None:
+    await _reply(update, "Paper settings are isolated from live risk. Configure only virtual balance, fill assumptions, spread, and slippage in the paper environment.")
+
+
 async def receipt_command(update, context) -> None:
     args = getattr(context, "args", []) or []
     receipt = receipt_service.get(args[0]) if args else None
@@ -66,6 +78,39 @@ async def receipts_command(update, context) -> None:
 
 async def report_issue_command(update, context) -> None:
     await _reply(update, "Please describe the issue (stale signal, button, payment, receipt, profile, or outcome). Do not send credentials or secrets.")
+
+
+async def payment_help_command(update, context) -> None:
+    await _reply(update, "Payment help: include your Paystack reference and account ID. Never send card, bank, API-key, or broker credentials. Use /support for escalation.")
+
+
+async def refund_request_command(update, context) -> None:
+    await _reply(update, "Refund requests are reviewed manually after payment verification. Send the Paystack reference through /support; no automatic payout is performed.")
+
+
+async def contact_admin_command(update, context) -> None:
+    await _reply(update, "Contact support with /support. Include the command, timestamp, and a short description; do not include secrets or credentials.")
+
+
+async def tester_feedback_command(update, context) -> None:
+    await _reply(update, "Tester feedback categories: bad/stale signal, broken button, payment/receipt, profile, or wrong outcome. Describe what happened and include the signal ID if available.")
+
+
+async def automaton_pause_command(update, context) -> None:
+    await _reply(update, "Automaton pause is a safe recommendation surface; no real-money execution is enabled. Use owner controls to change operational state.")
+
+
+async def automaton_resume_command(update, context) -> None:
+    await _reply(update, "Automaton resume requires owner approval and remains simulation/paper-only. Real trading and copy trading stay disabled.")
+
+
+async def automaton_reset_paper_command(update, context) -> None:
+    await _reply(update, "Paper reset is not performed by a public command. Paper balances are virtual and isolated from live funds; contact an owner for an audited reset.")
+
+
+async def codexops_command(update, context) -> None:
+    command = str(getattr(getattr(update, "message", None), "text", "") or "").split(maxsplit=1)[0].lstrip("/") or "codex_audit"
+    await _reply(update, f"CodexOps {command}: READ_ONLY_AUDIT mode. No production writes, deployments, payments, secrets, or trades are permitted.")
 
 
 async def performance_truth_command(update, context) -> None:

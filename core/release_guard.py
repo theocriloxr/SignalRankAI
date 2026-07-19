@@ -53,7 +53,13 @@ def evaluate_release(
         GuardCheck("delivery_proof", supplied.get("delivery_proof", True) is True, "delivery proof contract"),
         GuardCheck("outcome_tracker", supplied.get("outcome_tracker", True) is True, "outcome lifecycle contract"),
         GuardCheck("performance_truth", supplied.get("performance_truth", True) is True, "provenance-separated metrics"),
-        GuardCheck("payments_limited", not flags.payments_enabled or _flag("PAYMENTS_PUBLIC_TEST_MODE", False), "payments disabled or explicit test mode"),
+        GuardCheck(
+            "payments_limited",
+            not flags.payments_enabled
+            or _flag("PAYMENTS_PUBLIC_TEST_MODE", False)
+            or not _flag("PAYMENTS_PUBLIC_ENABLED", False),
+            "payments disabled, private, or explicit test mode",
+        ),
         GuardCheck("no_secret_leakage", supplied.get("no_secret_leakage", True) is True, "redaction contract"),
         GuardCheck("tests", supplied.get("tests_passed", True) is True, "focused contract suite"),
     ]

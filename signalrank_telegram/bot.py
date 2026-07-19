@@ -757,11 +757,22 @@ from .extended_commands import (
     paper_balance_command,
     paper_positions_command,
     paper_performance_command,
+    paper_history_command,
+    paper_reset_command,
+    paper_settings_command,
     receipt_command,
     receipts_command,
     report_issue_command,
     performance_truth_command,
     provider_health_command,
+    payment_help_command,
+    refund_request_command,
+    contact_admin_command,
+    tester_feedback_command,
+    automaton_pause_command,
+    automaton_resume_command,
+    automaton_reset_paper_command,
+    codexops_command,
 )
 
 # Import tier-based notification manager
@@ -5363,9 +5374,19 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("paper_balance", _audit_handler("paper_balance", paper_balance_command)))
     application.add_handler(CommandHandler("paper_positions", _audit_handler("paper_positions", paper_positions_command)))
     application.add_handler(CommandHandler("paper_performance", _audit_handler("paper_performance", paper_performance_command)))
+    application.add_handler(CommandHandler("paper_history", _audit_handler("paper_history", paper_history_command)))
+    application.add_handler(CommandHandler("paper_reset", _audit_handler("paper_reset", paper_reset_command)))
+    application.add_handler(CommandHandler("paper_settings", _audit_handler("paper_settings", paper_settings_command)))
     application.add_handler(CommandHandler("receipt", _audit_handler("receipt", receipt_command)))
     application.add_handler(CommandHandler("receipts", _audit_handler("receipts", receipts_command)))
     application.add_handler(CommandHandler("report_issue", _audit_handler("report_issue", report_issue_command)))
+    application.add_handler(CommandHandler("payment_help", _audit_handler("payment_help", payment_help_command)))
+    application.add_handler(CommandHandler("refund_request", _audit_handler("refund_request", refund_request_command)))
+    application.add_handler(CommandHandler("contact_admin", _audit_handler("contact_admin", contact_admin_command)))
+    application.add_handler(CommandHandler("tester_feedback", _audit_handler("tester_feedback", tester_feedback_command)))
+    application.add_handler(CommandHandler("automaton_pause", _audit_handler("automaton_pause", automaton_pause_command)))
+    application.add_handler(CommandHandler("automaton_resume", _audit_handler("automaton_resume", automaton_resume_command)))
+    application.add_handler(CommandHandler("automaton_reset_paper", _audit_handler("automaton_reset_paper", automaton_reset_paper_command)))
     application.add_handler(CommandHandler("performance_truth", _audit_handler("performance_truth", performance_truth_command)))
     application.add_handler(CommandHandler("provider_health", _audit_handler("provider_health", provider_health_command)))
     application.add_handler(CommandHandler("performance", _audit_handler("performance", performance_command)))
@@ -5385,6 +5406,14 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("gemini_audit", _audit_handler("gemini_audit", gemini_audit_command)))
     application.add_handler(CommandHandler("gemini_predict", _audit_handler("gemini_predict", gemini_predict_command)))
     application.add_handler(CommandHandler("codex_audit", _audit_handler("codex_audit", codex_audit_command)))
+    application.add_handler(CommandHandler("codex_log_review", _audit_handler("codex_log_review", codexops_command)))
+    application.add_handler(CommandHandler("codex_fix_plan", _audit_handler("codex_fix_plan", codexops_command)))
+    application.add_handler(CommandHandler("codex_security_scan", _audit_handler("codex_security_scan", codexops_command)))
+    application.add_handler(CommandHandler("codex_release_check", _audit_handler("codex_release_check", codexops_command)))
+    application.add_handler(CommandHandler("codex_test_plan", _audit_handler("codex_test_plan", codexops_command)))
+    application.add_handler(CommandHandler("codex_refactor_plan", _audit_handler("codex_refactor_plan", codexops_command)))
+    application.add_handler(CommandHandler("codex_pr_summary", _audit_handler("codex_pr_summary", codexops_command)))
+    application.add_handler(CommandHandler("codex_generate_issue", _audit_handler("codex_generate_issue", codexops_command)))
     application.add_handler(CommandHandler("pricing", _audit_handler("pricing", pricing_command)))
     application.add_handler(CommandHandler("upgrade", _audit_handler("upgrade", upgrade_command)))
     application.add_handler(CommandHandler("signals", _audit_handler("signals", signals_command)))
@@ -5450,6 +5479,10 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("admin_top_assets", _audit_handler("admin_top_assets", admin_top_assets_command)))
     application.add_handler(CommandHandler("admin_top_strategies", _audit_handler("admin_top_strategies", admin_top_strategies_command)))
     application.add_handler(CommandHandler("admin_user_engagement", _audit_handler("admin_user_engagement", admin_user_engagement_command)))
+    application.add_handler(CommandHandler("admin_user", _audit_handler("admin_user", admin_command)))
+    application.add_handler(CommandHandler("admin_subscription_fix", _audit_handler("admin_subscription_fix", admin_command)))
+    application.add_handler(CommandHandler("admin_signal_lookup", _audit_handler("admin_signal_lookup", admin_command)))
+    application.add_handler(CommandHandler("admin_feedback", _audit_handler("admin_feedback", admin_command)))
     application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
     # Backward compatible alias
 
