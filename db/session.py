@@ -147,8 +147,19 @@ def _effective_pool_settings() -> tuple[int, int]:
         # DB_POOL_SIZE=200 or DB_POOL_SIZE_RAILWAY=20 must not reserve a large
         # pool. Operators can still use the explicit two-flag override above
         # after confirming the database connection budget.
-        railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
-        railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
+        # The conservative defaults remain 2/0, but an explicit absolute cap
+        # is an operator-reviewed deployment contract and may be higher (the
+        # staging/soak tests use 8/2).  It is still a hard upper bound.
+        absolute_pool_raw = os.getenv("DB_POOL_RAILWAY_ABSOLUTE_CAP")
+        absolute_overflow_raw = os.getenv("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP")
+        if absolute_pool_raw is not None:
+            railway_pool_cap = _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1)
+        else:
+            railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
+        if absolute_overflow_raw is not None:
+            railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0)
+        else:
+            railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
         original_pool_size = pool_size
         original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)

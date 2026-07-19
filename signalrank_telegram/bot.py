@@ -39,7 +39,7 @@ def resend_unsent_signals_job():
     try:
         from db.session import _get_global_engine
         if _get_global_engine() is None:
-            logger.warning("[resend] DB engine not initialised — skipping job")
+            logger.warning("[resend] DB engine not initialised \u2014 skipping job")
             return
     except Exception as _pre_err:
         logger.warning("[resend] DB engine pre-flight failed: %s", _pre_err)
@@ -93,7 +93,7 @@ def resend_unsent_signals_job():
 
 
 async def _resend_unsent_signals_async():
-    """Async core of the resend job — all deliveries share one event loop / Bot instance."""
+    """Async core of the resend job \u2014 all deliveries share one event loop / Bot instance."""
     try:
         from db.session import get_session
         from db.pg_features import (
@@ -114,7 +114,7 @@ async def _resend_unsent_signals_async():
 
         delivery_mgr = TierDeliveryManager()
 
-        # Fetch user IDs with a direct async call — avoids calling
+        # Fetch user IDs with a direct async call \u2014 avoids calling
         # get_all_user_ids_compat() (which uses run_sync() internally and would
         # spawn a nested thread+event-loop inside the already-running loop).
         from db.pg_features import list_all_user_telegram_ids
@@ -261,7 +261,7 @@ async def _resend_unsent_signals_async():
         skipped_profile_count = 0
         user_prefs_cache = {}
 
-        # Single Bot instance, properly initialised — avoids shared-httpx-client races
+        # Single Bot instance, properly initialised \u2014 avoids shared-httpx-client races
         bot = Bot(token=_require_telegram_token())
         async with bot:
             for sig in signals:
@@ -323,7 +323,7 @@ async def _resend_unsent_signals_async():
                                     await _exp_s.commit()
                             except Exception:
                                 pass
-                            logger.info(f"[resend] Signal {signal_id} is {_age_min:.0f}m old — expired, skipped.")
+                            logger.info(f"[resend] Signal {signal_id} is {_age_min:.0f}m old \u2014 expired, skipped.")
                             continue
                 except Exception as _age_err:
                     logger.debug(f"[resend] age-check failed for {signal_id}: {_age_err}")
@@ -609,7 +609,7 @@ TELEGRAM_READ_TIMEOUT = int(getattr(config, "TELEGRAM_READ_TIMEOUT", 30))  # sec
 TELEGRAM_WRITE_TIMEOUT = int(getattr(config, "TELEGRAM_WRITE_TIMEOUT", 30))  # seconds, configurable
 
 # Build the Telegram Application only when a token is provided and not in DRY_RUN.
-# DRY_RUN defaults to "0" (disabled) — signals are sent for real unless you
+# DRY_RUN defaults to "0" (disabled) \u2014 signals are sent for real unless you
 # explicitly set DRY_RUN=1 in your Railway variables.
 _token = getattr(config, 'TELEGRAM_BOT_TOKEN', None)
 _dry_run_env = str(os.getenv('DRY_RUN', '0') or '0').strip().lower() in {'1', 'true', 'yes'}
@@ -1277,11 +1277,11 @@ def _build_update_reason(old_signal: dict | None, new_signal: dict | None) -> st
 
     reasons: list[str] = []
     if (new_roi - old_roi) >= min_roi_delta:
-        reasons.append(f"ROI improved {old_roi:.2f}→{new_roi:.2f}")
+        reasons.append(f"ROI improved {old_roi:.2f}\u2192{new_roi:.2f}")
     if (new_rr - old_rr) >= min_rr_delta:
-        reasons.append(f"R:R improved {old_rr:.2f}→{new_rr:.2f}")
+        reasons.append(f"R:R improved {old_rr:.2f}\u2192{new_rr:.2f}")
     if (new_ml - old_ml) >= min_ml_delta:
-        reasons.append(f"ML confidence improved {old_ml * 100:.0f}%→{new_ml * 100:.0f}%")
+        reasons.append(f"ML confidence improved {old_ml * 100:.0f}%\u2192{new_ml * 100:.0f}%")
     if (new_news - old_news) >= min_news_delta and new_news >= old_news:
         reasons.append("news backdrop is more favorable")
 
@@ -1538,11 +1538,11 @@ def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: d
     callback_signal_id = _compact_signal_callback_id(signal_id)
     rows = [[
         InlineKeyboardButton(
-            f"🔥 Taking It ({taking_it})",
+            f"\U0001F525 Taking It ({taking_it})",
             callback_data=_signal_callback_data("signal_reaction_", callback_signal_id, "|taking_it"),
         ),
         InlineKeyboardButton(
-            f"👀 Watching ({watching})",
+            f"\U0001F440 Watching ({watching})",
             callback_data=_signal_callback_data("signal_reaction_", callback_signal_id, "|watching"),
         ),
     ]]
@@ -1551,12 +1551,12 @@ def _build_signal_keyboard(signal_id: str, signal: dict | None = None, counts: d
     # even when detailed numeric payload would exceed Telegram's 64-byte limit.
     if callback_signal_id:
         rows.append([
-            InlineKeyboardButton("⚡ Take Trade", callback_data=_signal_callback_data("mt5_trade_", callback_signal_id))
+            InlineKeyboardButton("\u26A1 Take Trade", callback_data=_signal_callback_data("mt5_trade_", callback_signal_id))
         ])
 
     rows.append([
-        InlineKeyboardButton("📈 Monitor", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
-        InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
+        InlineKeyboardButton("\U0001F4C8 Monitor", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+        InlineKeyboardButton("\U0001F50D Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -1566,8 +1566,8 @@ def _build_monitor_keyboard(signal_id: str):
     callback_signal_id = _compact_signal_callback_id(signal_id)
 
     return InlineKeyboardMarkup([[ 
-        InlineKeyboardButton("🔄 Refresh", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
-        InlineKeyboardButton("🔍 Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
+        InlineKeyboardButton("\U0001F504 Refresh", callback_data=_signal_callback_data("monitor_signal_", callback_signal_id)),
+        InlineKeyboardButton("\U0001F50D Check Outcome", callback_data=_signal_callback_data("check_outcome_", callback_signal_id)),
     ]])
 
 
@@ -1993,7 +1993,7 @@ async def _deliver_or_update_signal_async(
                     _telegram_send_message_guarded(
                         bot,
                         chat_id=int(telegram_user_id),
-                        text=f"♻️ <b>Signal updated</b> — {update_reason}.",
+                        text=f"\u267B\uFE0F <b>Signal updated</b> \u2014 {update_reason}.",
                         parse_mode="HTML",
                         reply_markup=jump_keyboard,
                     ),
@@ -2456,7 +2456,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                         if balance <= 0:
                             # Fall back to equity; use 100.0 as last-resort minimum so
                             # calculate_lot_size_vip always returns MIN_LOT rather than
-                            # erroring — the slippage guard will catch oversized orders.
+                            # erroring \u2014 the slippage guard will catch oversized orders.
                             balance = float((acct_info or {}).get("equity") or 100.0)
                         lot = calculate_lot_size_vip(
                             user,
@@ -2466,7 +2466,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                             symbol=symbol,
                         )
                     except Exception as _lot_err:
-                        logger.warning("[autoexec] VIP lot calc failed: %s — using fixed lot", _lot_err)
+                        logger.warning("[autoexec] VIP lot calc failed: %s \u2014 using fixed lot", _lot_err)
                         lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
                 else:
                     lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
@@ -2477,7 +2477,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                         Bot(token=_require_telegram_token()),
                         chat_id=int(telegram_user_id),
                         text=(
-                            "📩 <b>Signal Received</b>\n\n"
+                            "\U0001F4E9 <b>Signal Received</b>\n\n"
                             f"Asset: <b>{symbol}</b>\n"
                             f"Direction: <b>{('LONG' if direction in {'long', 'buy'} else 'SHORT')}</b>\n"
                             f"Lot size: <b>{lot:.3f}</b>\n"
@@ -2547,7 +2547,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                 bot,
                 chat_id=int(telegram_user_id),
                 text=(
-                    "🧾 <b>Execution Receipt (AUTO)</b>\n\n"
+                    "\U0001F9FE <b>Execution Receipt (AUTO)</b>\n\n"
                     f"Asset: <b>{asset}</b>\n"
                     f"Order: <code>{detail}</code>\n"
                     f"Signal ID: <code>{sig_id}</code>"
@@ -2570,7 +2570,7 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                     bot,
                     chat_id=int(telegram_user_id),
                     text=(
-                        "⚠️ <b>AUTO execution needs setup</b>\n\n"
+                        "\u26A0\uFE0F <b>AUTO execution needs setup</b>\n\n"
                         f"Asset: <b>{asset}</b>\n"
                         f"Reason: {detail}\n\n"
                         "Complete your setup and AUTO execution will resume."
@@ -2587,7 +2587,7 @@ async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | N
 
     payload = await _load_signal_payload(signal_id)
     if not payload:
-        return "❌ <b>Monitor unavailable</b>\nSignal not found.", False, None
+        return "\u274C <b>Monitor unavailable</b>\nSignal not found.", False, None
 
     outcome_row = None
     try:
@@ -2636,13 +2636,13 @@ async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | N
 
     if outcome_row is not None:
         status = str(getattr(outcome_row, "status", "unknown")).upper()
-        status_line = f"✅ <b>Outcome:</b> {status}" if status.startswith("TP") else f"🛑 <b>Outcome:</b> {status}"
+        status_line = f"\u2705 <b>Outcome:</b> {status}" if status.startswith("TP") else f"\U0001F6D1 <b>Outcome:</b> {status}"
         is_active = False
     elif payload.get("expired"):
-        status_line = "⏰ <b>Status:</b> Expired"
+        status_line = "\u23F0 <b>Status:</b> Expired"
         is_active = False
     else:
-        status_line = "🟢 <b>Status:</b> Active"
+        status_line = "\U0001F7E2 <b>Status:</b> Active"
         is_active = True
 
     created_at = payload.get("created_at")
@@ -2656,16 +2656,16 @@ async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | N
             pass
 
     lines = [
-        f"📈 <b>Trade Monitor — {asset}</b>",
+        f"\U0001F4C8 <b>Trade Monitor \u2014 {asset}</b>",
         status_line,
-        f"• Direction: <b>{direction.upper()}</b>",
-        f"• Entry: <b>{entry:.5f}</b>" if entry > 0 else "• Entry: <b>N/A</b>",
-        f"• Current: <b>{float(current_price):.5f}</b>" if current_price else "• Current: <b>Unavailable</b>",
-        f"• Live P/L: <b>{pnl_pct:+.2f}%</b>" if pnl_pct is not None else "• Live P/L: <b>N/A</b>",
-        f"• Stop Loss: <b>{stop_loss:.5f}</b>" if stop_loss > 0 else "• Stop Loss: <b>N/A</b>",
-        f"• Next Target: <b>{float(tp1):.5f}</b>" if tp1 else "• Next Target: <b>N/A</b>",
-        f"• Age: <b>{age_text}</b>",
-        f"• Updated: <b>{datetime.utcnow().strftime('%H:%M UTC')}</b>",
+        f"\u2022 Direction: <b>{direction.upper()}</b>",
+        f"\u2022 Entry: <b>{entry:.5f}</b>" if entry > 0 else "\u2022 Entry: <b>N/A</b>",
+        f"\u2022 Current: <b>{float(current_price):.5f}</b>" if current_price else "\u2022 Current: <b>Unavailable</b>",
+        f"\u2022 Live P/L: <b>{pnl_pct:+.2f}%</b>" if pnl_pct is not None else "\u2022 Live P/L: <b>N/A</b>",
+        f"\u2022 Stop Loss: <b>{stop_loss:.5f}</b>" if stop_loss > 0 else "\u2022 Stop Loss: <b>N/A</b>",
+        f"\u2022 Next Target: <b>{float(tp1):.5f}</b>" if tp1 else "\u2022 Next Target: <b>N/A</b>",
+        f"\u2022 Age: <b>{age_text}</b>",
+        f"\u2022 Updated: <b>{datetime.utcnow().strftime('%H:%M UTC')}</b>",
     ]
     return "\n".join(lines), is_active, payload.get("expires_at")
 
@@ -2944,7 +2944,7 @@ async def _send_signal_with_engagement_async(
     telegram_user_id: int,
     signal: dict | None = None,
 ) -> object:
-    """Send a signal message with engagement buttons (+ ⚡ MT5 button for PREMIUM+)
+    """Send a signal message with engagement buttons (+ \u26A1 MT5 button for PREMIUM+)
     and save message_id to ActiveSignalMessage for live-edit support."""
     counts = await _load_signal_engagement_counts(str(signal_id))
     keyboard = _build_signal_keyboard(str(signal_id), signal=signal, counts=counts)
@@ -3360,7 +3360,7 @@ def notify_trade_outcome(user_id, strategy, result, ret):
                     perf = await get_user_performance_30d(session, int(user_id))
                     # Send tailored follow-up/advisory
                     summary = (
-                        f"\n\n📈 30D Performance:\n"
+                        f"\n\n\U0001F4C8 30D Performance:\n"
                         f"Signals: {perf['total']} | Win Rate: {perf['win_rate']*100:.1f}% | NetR: {perf['net_r'] or 0:.2f}R\n"
                         f"Profit/Loss: {perf['profit_loss_pct']:.2f}%"
                     ) if perf['total'] else ""
@@ -3436,17 +3436,17 @@ def notify_trade_outcome(user_id, strategy, result, ret):
         # Free limited notification
         if result == 'free_limited' and user_tier == 'free':
             msg = (
-                "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n"
-                "📊 SIGNAL UPDATE\n\n"
+                "\U0001F512 FREE USER (LIMITED OUTCOME MESSAGE)\n"
+                "\U0001F4CA SIGNAL UPDATE\n\n"
                 "A recent trade reached its target.\n\n"
                 "Upgrade to Premium to see:\n"
-                "• Exact entries & exits\n"
-                "• Full performance stats\n"
-                "• Real-time alerts"
+                "\u2022 Exact entries & exits\n"
+                "\u2022 Full performance stats\n"
+                "\u2022 Real-time alerts"
             )
             _send_message_sync(bot, chat_id=user_id, text=msg)
         elif result == 'free_limited':
-            msg = "📊 Trade update."
+            msg = "\U0001F4CA Trade update."
             _send_message_sync(bot, chat_id=user_id, text=msg)
 
         if not tp_hit and result not in ('sl', 'invalid', 'free_limited'):
@@ -3460,23 +3460,23 @@ def notify_trade_outcome(user_id, strategy, result, ret):
             return f"{val:.{d}f}" if isinstance(val, float) else str(val)
         if result == 'tp':
             msg = (
-                "✅ TAKE PROFIT HIT — FULL CLOSE\n"
+                "\u2705 TAKE PROFIT HIT \u2014 FULL CLOSE\n"
                 f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
                 f"\nEntry: {fmt(strategy.get('entry'))}\nExit: {fmt(strategy.get('exit'))}\n"
                 f"\nResult: {fmt(strategy.get('r_multiple'))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\nConfidence Score: {fmt(strategy.get('confidence',0))}%\n"
-                "\nWell-managed trade ✔️"
+                "\nWell-managed trade \u2714\uFE0F"
             )
             _send_message_sync(bot, chat_id=user_id, text=msg)
         elif result == 'partial_tp':
             msg = (
-                "🟢 PARTIAL TAKE PROFIT (TP1)\n"
+                "\U0001F7E2 PARTIAL TAKE PROFIT (TP1)\n"
                 f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
                 f"\nEntry: {fmt(strategy.get('entry'))}\nTP1: {fmt(strategy.get('tp1'))}\n"
                 f"\nPartial Result: {fmt(strategy.get('r_multiple',0))}R\nRemaining Position: Active"
             )
         elif result == 'sl':
             msg = (
-                "❌ STOP LOSS HIT\n"
+                "\u274C STOP LOSS HIT\n"
                 f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\nDirection: {strategy.get('direction','').upper()}\n"
                 f"\nEntry: {fmt(strategy.get('entry'))}\nStop Loss: {fmt(strategy.get('stop'))}\n"
                 f"\nResult: {fmt(strategy.get('r_multiple',-1))}R ({fmt(strategy.get('percent',0))}%)\nDuration: {strategy.get('duration','')}\n"
@@ -3484,13 +3484,13 @@ def notify_trade_outcome(user_id, strategy, result, ret):
             )
         elif result == 'invalid':
             msg = (
-                "⚠️ SIGNAL INVALIDATED (ADMIN / MARKET EVENT)\n"
+                "\u26A0\uFE0F SIGNAL INVALIDATED (ADMIN / MARKET EVENT)\n"
                 f"\nAsset: {strategy.get('asset','')}\nTimeframe: {strategy.get('timeframe','')}\n"
                 f"\nReason: {strategy.get('reason','Unknown')}\nStatus: Closed at market\n\nResult: Flat (0R)"
             )
         elif result == 'free_limited':
             msg = (
-                "🔒 FREE USER (LIMITED OUTCOME MESSAGE)\n📊 SIGNAL UPDATE\n\nA recent trade reached its target.\n\nUpgrade to Premium to see:\n• Exact entries & exits\n• Full performance stats\n• Real-time alerts"
+                "\U0001F512 FREE USER (LIMITED OUTCOME MESSAGE)\n\U0001F4CA SIGNAL UPDATE\n\nA recent trade reached its target.\n\nUpgrade to Premium to see:\n\u2022 Exact entries & exits\n\u2022 Full performance stats\n\u2022 Real-time alerts"
             )
         else:
             msg = "[Outcome] Trade update."
@@ -3520,7 +3520,7 @@ def send_performance_summary(user_id):
     win_rate = (wins/total*100) if total else 0
     net_r = sum(s['avg_return']*s['trades'] for s in stats.values())
     msg = (
-        "📊 DAILY PERFORMANCE SUMMARY (AUTO)\n\n"
+        "\U0001F4CA DAILY PERFORMANCE SUMMARY (AUTO)\n\n"
         f"Total Signals: {total}\nWins: {wins}\nLosses: {losses}\nWin Rate: {win_rate:.1f}%\nNet Result: {net_r:.2f}R\n\nConsistency over frequency."
     )
     _send_message_sync(bot, chat_id=user_id, text=msg)
@@ -3528,15 +3528,15 @@ def send_performance_summary(user_id):
 def _format_free_preview(signal):
     # Limited info to drive upgrades (no exact levels)
     return (
-        "🔒 FREE USER (LIMITED SIGNAL)\n\n"
+        "\U0001F512 FREE USER (LIMITED SIGNAL)\n\n"
         f"Reference: {signal.get('signal_id') or signal.get('id')}\n"
         f"Asset: {signal.get('asset')}\n"
         f"Timeframe: {signal.get('timeframe')}\n"
         f"Direction: {signal.get('direction')}\n\n"
         "Upgrade to Premium to see:\n"
-        "• Exact entry, stop, target\n"
-        "• Real-time alerts\n"
-        "• Full performance tracking"
+        "\u2022 Exact entry, stop, target\n"
+        "\u2022 Real-time alerts\n"
+        "\u2022 Full performance tracking"
     )
 
 def _format_free_delayed_digest(items: list) -> str:
@@ -3545,10 +3545,10 @@ def _format_free_delayed_digest(items: list) -> str:
     Each item is a dict with keys: id, signal_id, asset, timeframe, direction, score.
     """
     if not items:
-        return "📊 No signals available right now."
+        return "\U0001F4CA No signals available right now."
 
     lines = [
-        f"📊 *SignalRankAI — Daily Signal Digest*",
+        f"\U0001F4CA *SignalRankAI \u2014 Daily Signal Digest*",
         f"_{len(items)} signal(s) selected for you today_\n",
     ]
     for i, item in enumerate(items, 1):
@@ -3557,15 +3557,15 @@ def _format_free_delayed_digest(items: list) -> str:
         direction = str(item.get("direction") or "").upper()
         score     = int(item.get("score") or 0)
         sig_ref   = str(item.get("signal_id") or "")[:8]
-        arrow     = "📈" if direction == "LONG" else "📉"
+        arrow     = "\U0001F4C8" if direction == "LONG" else "\U0001F4C9"
         lines.append(
-            f"{i}. {arrow} *{asset}* · `{tf}`\n"
+            f"{i}. {arrow} *{asset}* \u00B7 `{tf}`\n"
             f"   Direction: {direction}\n"
-            f"   Ref: `{sig_ref}` · Score: {score}/100"
+            f"   Ref: `{sig_ref}` \u00B7 Score: {score}/100"
         )
 
     lines.append(
-        "\n🔒 _Upgrade to Premium for exact entry, stop-loss & take-profit levels._\n"
+        "\n\U0001F512 _Upgrade to Premium for exact entry, stop-loss & take-profit levels._\n"
         "Use /upgrade to subscribe."
     )
     return "\n\n".join(lines)
@@ -3685,9 +3685,9 @@ def _format_free_fomo_unlock_message(signal: dict) -> str:
     timeframe = str(signal.get("timeframe") or "").lower() or "signal"
     direction = str(signal.get("direction") or "").upper() or "TRADE"
     return (
-        "🔥 <b>VIP just hit TP1</b>\n\n"
-        f"📣 Momentum alert on <b>{asset}</b> ({timeframe}, {direction}).\n"
-        "🎁 We unlocked this setup for FREE users right now.\n\n"
+        "\U0001F525 <b>VIP just hit TP1</b>\n\n"
+        f"\U0001F4E3 Momentum alert on <b>{asset}</b> ({timeframe}, {direction}).\n"
+        "\U0001F381 We unlocked this setup for FREE users right now.\n\n"
         "Tap below to monitor it live."
     )
 
@@ -4036,12 +4036,12 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
     except Exception as e:
         logger.debug(f"[dispatch] signal collapse failed for user {user_id}: {e}")
 
-    # Entry validation: check that current price is within entry zone (±3%)
+    # Entry validation: check that current price is within entry zone (\u00B13%)
     # Add entry_status flag to track if entry has been hit or is pending
     def _check_entry_status(signal: dict) -> tuple[bool, str]:
         """
         Check if entry is valid and return (allow: bool, status: str).
-        Status: "AT_ENTRY" (within ±3%), "PENDING_ENTRY" (outside ±3%), "UNKNOWN"
+        Status: "AT_ENTRY" (within \u00B13%), "PENDING_ENTRY" (outside \u00B13%), "UNKNOWN"
 
         Uses signal["current_price"] when already enriched by a prior
         enrich_signal_with_live_price() / stale-validator step to avoid a
@@ -4731,7 +4731,7 @@ def dispatch_signals(strategy_signals, user_id, regime=None):
 
 def downgrade_expired_subscriptions_job():
     """Daily job: downgrade expired subscriptions to FREE tier."""
-    logger.info("🔄 Checking for expired subscriptions...")
+    logger.info("\U0001F504 Checking for expired subscriptions...")
     try:
         from db.session import get_session
         from db.pg_features import downgrade_expired_subscriptions
@@ -4740,19 +4740,19 @@ def downgrade_expired_subscriptions_job():
             async with get_session() as session:
                 count = await downgrade_expired_subscriptions(session)
                 if count > 0:
-                    logger.info(f"📉 Downgraded {count} user(s) to FREE tier")
+                    logger.info(f"\U0001F4C9 Downgraded {count} user(s) to FREE tier")
                     await session.commit()
                 else:
-                    logger.info("✅ No expired subscriptions to downgrade")
+                    logger.info("\u2705 No expired subscriptions to downgrade")
 
         run_sync(_do_downgrade())
     except Exception as e:
-        logger.error(f"❌ Error downgrading subscriptions: {e}")
+        logger.error(f"\u274C Error downgrading subscriptions: {e}")
 
 
 def auto_delete_old_signals_job():
     """Weekly job: hard delete signals older than 7 days."""
-    logger.info("🗑️ Deleting old signals (>7 days)...")
+    logger.info("\U0001F5D1\uFE0F Deleting old signals (>7 days)...")
     try:
         from db.session import get_session
         from db.pg_features import delete_old_signals
@@ -4761,14 +4761,14 @@ def auto_delete_old_signals_job():
             async with get_session() as session:
                 count = await delete_old_signals(session, older_than_days=7)
                 if count > 0:
-                    logger.info(f"🗑️ Deleted {count} old signal(s)")
+                    logger.info(f"\U0001F5D1\uFE0F Deleted {count} old signal(s)")
                     await session.commit()
                 else:
-                    logger.info("✅ No old signals to delete")
+                    logger.info("\u2705 No old signals to delete")
 
         run_sync(_do_delete())
     except Exception as e:
-        logger.error(f"❌ Error deleting old signals: {e}")
+        logger.error(f"\u274C Error deleting old signals: {e}")
 
 
 def distribute_random_signals_to_free_users_job():
@@ -4795,7 +4795,7 @@ def distribute_random_signals_to_free_users_job():
     except Exception:
         pass
 
-    logger.info("🎲 Distributing random signals to FREE users...")
+    logger.info("\U0001F3B2 Distributing random signals to FREE users...")
     try:
         from db.session import get_session
         from db.pg_features import queue_random_free_signals_for_all_users
@@ -4804,14 +4804,14 @@ def distribute_random_signals_to_free_users_job():
             async with get_session(noncritical=True) as session:
                 count = await queue_random_free_signals_for_all_users(session)
                 if count > 0:
-                    logger.info(f"📬 Queued signals for {count} FREE user(s)")
+                    logger.info(f"\U0001F4EC Queued signals for {count} FREE user(s)")
                     await session.commit()
                 else:
-                    logger.info("✅ All FREE users have reached daily limit or no new signals")
+                    logger.info("\u2705 All FREE users have reached daily limit or no new signals")
 
         run_sync(_do_distribute())
     except Exception as e:
-        logger.error(f"❌ Error distributing signals to FREE users: {e}")
+        logger.error(f"\u274C Error distributing signals to FREE users: {e}")
 
 
 def refresh_active_signal_keyboards_once() -> None:
@@ -4884,7 +4884,7 @@ _bot_init_lock = threading.Lock()
 _bot_init_started = False
 _bot_init_started_at = 0.0
 
-# ── Webhook mode module-level state ──────────────────────────────────────────
+# \u2500\u2500 Webhook mode module-level state \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 # When TELEGRAM_USE_WEBHOOK=1, run_bot() stores the fully-configured Application
 # here instead of blocking in run_polling().  railway_main.py reads this variable
 # after run_bot() returns to obtain the application for process_update() calls.
@@ -4962,7 +4962,7 @@ async def profile_debug_command(update, context):
                 redis_diag = {"error": str(redis_err)}
             fallback_text = (
                 "<b>Profile Debug</b>\n"
-                "⚠️ DB preference lookup is busy, but the bot is responsive.\n"
+                "\u26A0\uFE0F DB preference lookup is busy, but the bot is responsive.\n"
                 f"Error: <code>{html.escape(type(exc).__name__)}: {html.escape(str(exc))}</code>\n\n"
                 "<b>Redis/state</b>\n"
                 f"<pre>{html.escape(str(redis_diag))}</pre>\n"
@@ -4985,7 +4985,7 @@ def run_bot() -> None:
     # always injected by Railway).  This prevents the bot from falling back to
     # long-polling on Railway where polling is unreliable and fights with the
     # FastAPI webhook route.  Local development is unaffected (no
-    # RAILWAY_SERVICE_NAME → polling as before, unless TELEGRAM_USE_WEBHOOK=1
+    # RAILWAY_SERVICE_NAME \u2192 polling as before, unless TELEGRAM_USE_WEBHOOK=1
     # is set explicitly).
     if not os.getenv("TELEGRAM_USE_WEBHOOK") and os.getenv("RAILWAY_SERVICE_NAME"):
         os.environ["TELEGRAM_USE_WEBHOOK"] = "1"
@@ -5029,7 +5029,7 @@ def run_bot() -> None:
     except Exception:
         pass
 
-    # ── Bulletproof DATABASE_URL validation ─────────────────────────────────
+    # \u2500\u2500 Bulletproof DATABASE_URL validation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Validate DATABASE_URL BEFORE any scheduler job or async session is
     # created.  If it is missing, raise immediately so Railway shows a clear
     # crash message rather than hundreds of "password authentication failed
@@ -5054,7 +5054,7 @@ def run_bot() -> None:
             _get_global_engine()  # triggers engine creation with correct URL
     except Exception as _eng_err:
         print(f"[boot] DB engine init: {_eng_err}", flush=True)
-    # ───────────────────────────────────────────────────────────────────────
+    # \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
     # Avoid leaking bot token in logs: httpx logs full request URLs at INFO.
     # We keep errors, but silence INFO/DEBUG.
@@ -5132,7 +5132,7 @@ def run_bot() -> None:
         try:
             import traceback
             tb = "".join(traceback.format_exception(type(err), err, err.__traceback__)) if err else "(no traceback)"
-            alert = f"🚨 *Bot Error*\n`{type(err).__name__}: {err}`\n\n```\n{tb[:800]}\n```"
+            alert = f"\U0001F6A8 *Bot Error*\n`{type(err).__name__}: {err}`\n\n```\n{tb[:800]}\n```"
             from config import OWNER_IDS
             for _oid in (OWNER_IDS or []):
                 try:
@@ -5204,7 +5204,7 @@ def run_bot() -> None:
                 """Set per-user BotCommand scopes respecting the tier hierarchy.
 
                 Runs in a background task so it never blocks _post_init /
-                app.initialize() — on large user bases this loop can take
+                app.initialize() \u2014 on large user bases this loop can take
                 tens of seconds and would time out the Railway startup
                 healthcheck otherwise.
                 """
@@ -5230,7 +5230,7 @@ def run_bot() -> None:
                 except Exception as _e:
                     logger.warning("[bot] per-user command scope update failed: %s", _e)
 
-            # Schedule as a fire-and-forget background task — does NOT block _post_init
+            # Schedule as a fire-and-forget background task \u2014 does NOT block _post_init
             asyncio.create_task(_set_per_user_commands())
         except Exception as e:
             logger.warning(f"[bot] BotCommandScopeChat update skipped: {e}")
@@ -5251,7 +5251,7 @@ def run_bot() -> None:
         # Outcome tracker is worker-owned in monolith runtime.
         logger.info("[bot] RealtimeOutcomeTracker startup skipped (worker-owned)")
 
-        # ── Post-deploy terms blast ───────────────────────────────────────────
+        # \u2500\u2500 Post-deploy terms blast \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         # Set env var TERMS_BLAST_ON_DEPLOY=1 on Railway to automatically send
         # the financial disclaimer to every existing user on this deployment.
         # After the blast runs once, remove the env var to prevent re-blasting.
@@ -5273,18 +5273,18 @@ def run_bot() -> None:
 
                     logger.info(f"[blast_terms] Auto-blast: {len(_pending_ab)} users to notify")
                     _disclaimer_ab = (
-                        "⚠️ <b>SignalRankAI - Financial Disclaimer</b>\n\n"
+                        "\u26A0\uFE0F <b>SignalRankAI - Financial Disclaimer</b>\n\n"
                         "We've updated our terms. Please confirm to continue using the bot:\n\n"
-                        "• All signals are for <b>educational purposes only</b>\n"
-                        "• Nothing here constitutes financial advice\n"
-                        "• Trading involves significant risk; losses can exceed your deposit\n"
-                        "• Past performance does not guarantee future results\n"
-                        "• You are solely responsible for your trading decisions\n\n"
-                        "Tap <b>✅ I Agree</b> to continue."
+                        "\u2022 All signals are for <b>educational purposes only</b>\n"
+                        "\u2022 Nothing here constitutes financial advice\n"
+                        "\u2022 Trading involves significant risk; losses can exceed your deposit\n"
+                        "\u2022 Past performance does not guarantee future results\n"
+                        "\u2022 You are solely responsible for your trading decisions\n\n"
+                        "Tap <b>\u2705 I Agree</b> to continue."
                     )
                     _kbd_ab = _IKM_ab([[
-                        _IKB_ab("✅ I Agree", callback_data="agree_terms"),
-                        _IKB_ab("❌ Decline", callback_data="decline_terms"),
+                        _IKB_ab("\u2705 I Agree", callback_data="agree_terms"),
+                        _IKB_ab("\u274C Decline", callback_data="decline_terms"),
                     ]])
                     _sent_ab = 0
                     for _uid_ab in _pending_ab:
@@ -5305,7 +5305,7 @@ def run_bot() -> None:
             _aio.ensure_future(_auto_blast())
             logger.info("[blast_terms] Auto-blast scheduled (30s delay)")
 
-        # ── Post-deploy active-message refresh ───────────────────────────────
+        # \u2500\u2500 Post-deploy active-message refresh \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         # Re-render old active signal messages with latest template + buttons.
         try:
             import asyncio as _aio_refresh
@@ -5373,6 +5373,12 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("profile_debug", _audit_handler("profile_debug", profile_debug_command)))
     application.add_handler(CommandHandler("mission", _audit_handler("mission", mission_command)))
     application.add_handler(CommandHandler("quality", _audit_handler("quality", quality_command)))
+    application.add_handler(CommandHandler("signal_quality", _audit_handler("signal_quality", quality_command)))
+    application.add_handler(CommandHandler("winrate", _audit_handler("winrate", performance_command)))
+    application.add_handler(CommandHandler("shadow_report", _audit_handler("shadow_report", performance_truth_command)))
+    application.add_handler(CommandHandler("strategy_leaderboard", _audit_handler("strategy_leaderboard", admin_top_strategies_command)))
+    application.add_handler(CommandHandler("admin_payment_lookup", _audit_handler("admin_payment_lookup", admin_command)))
+    application.add_handler(CommandHandler("admin_receipt_lookup", _audit_handler("admin_receipt_lookup", admin_command)))
     application.add_handler(CommandHandler("gemini", _audit_handler("gemini", gemini_command)))
     application.add_handler(CommandHandler("gemini_review", _audit_handler("gemini_review", gemini_review_command)))
     application.add_handler(CommandHandler("gemini_analyze", _audit_handler("gemini_analyze", gemini_analyze_command)))
@@ -5485,13 +5491,13 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("referral", _audit_handler("referral", referral_command)))
     application.add_handler(CommandHandler("cancel", _audit_handler("cancel", cancel_command)))
 
-    # ── New commands ──────────────────────────────────────────────────────────
+    # \u2500\u2500 New commands \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import leaderboard_command
     application.add_handler(CommandHandler("leaderboard", _audit_handler("leaderboard", leaderboard_command)))
 
     application.add_handler(build_connect_broker_conversation())
 
-    # ── Immediate callback ACK guard ─────────────────────────────────────────
+    # \u2500\u2500 Immediate callback ACK guard \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Telegram requires callback queries to be answered quickly. Heavy DB or
     # delivery work can delay downstream handlers and make buttons look dead.
     # This group runs before every concrete callback handler and only ACKs/logs.
@@ -5519,28 +5525,28 @@ def run_bot() -> None:
     application.add_handler(_CQH_cancel(cancel_confirm_callback, pattern="^cancel_confirm$"))
     application.add_handler(_CQH_cancel(cancel_nevermind_callback, pattern="^cancel_nevermind$"))
 
-    # ── Terms gate callbacks (/start disclaimer) ─────────────────────────────
+    # \u2500\u2500 Terms gate callbacks (/start disclaimer) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import agree_terms_callback, decline_terms_callback
     from telegram.ext import CallbackQueryHandler as _CQH_terms
     application.add_handler(_CQH_terms(agree_terms_callback, pattern="^agree_terms$"))
     application.add_handler(_CQH_terms(decline_terms_callback, pattern="^decline_terms$"))
 
-    # ── VIP waitlist join callback (/upgrade when full) ──────────────────────
+    # \u2500\u2500 VIP waitlist join callback (/upgrade when full) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import vip_waitlist_join_callback
     from telegram.ext import CallbackQueryHandler as _CQH_vip
     application.add_handler(_CQH_vip(vip_waitlist_join_callback, pattern="^vip_waitlist_join$"))
 
-    # ── Help pagination callbacks (/help) ────────────────────────────────────
+    # \u2500\u2500 Help pagination callbacks (/help) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import help_page_callback
     from telegram.ext import CallbackQueryHandler as _CQH_help
     application.add_handler(_CQH_help(help_page_callback, pattern=r"^help_page_[1-4]$"))
 
-    # ── Help/Navigation buttons ─────────────────────────────────────────────
+    # \u2500\u2500 Help/Navigation buttons \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import button_click_handler
     from telegram.ext import CallbackQueryHandler as _CQH_nav
     application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|timezone_.*|trade_now.*|mt5_link_guide|mt5_settings|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
 
-    # ── Admin commands (OWNER/ADMIN only, silent for others) ─────────────────
+    # \u2500\u2500 Admin commands (OWNER/ADMIN only, silent for others) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard, force_market_scan_command
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
     application.add_handler(CommandHandler("admin_dashboard", _audit_handler("admin_dashboard", admin_dashboard)))
@@ -5584,7 +5590,7 @@ def run_bot() -> None:
     except Exception as _cmd_audit_err:
         logger.debug("[bot] command registry audit skipped: %s", _cmd_audit_err)
 
-    # 📊 Signal engagement reactions (🔥 Taking It / 👀 Watching)
+    # \U0001F4CA Signal engagement reactions (\U0001F525 Taking It / \U0001F440 Watching)
     from telegram.ext import CallbackQueryHandler as _CQH
     async def _signal_reaction_callback(update, context):
         query = update.callback_query
@@ -5636,7 +5642,7 @@ def run_bot() -> None:
                 await _refresh_signal_keyboards_for_all_recipients(signal_id, context.bot)
             except Exception as refresh_exc:
                 logger.debug(f"[engagement] global keyboard refresh failed: {refresh_exc}")
-            emoji = "🔥" if reaction == "taking_it" else "👀"
+            emoji = "\U0001F525" if reaction == "taking_it" else "\U0001F440"
             await query.answer(f"{emoji} Noted!", show_alert=False)
         except Exception as exc:
             logger.debug(f"[engagement] reaction save failed: {exc}")
@@ -5675,7 +5681,7 @@ def run_bot() -> None:
         if not signal_id:
             await query.answer("No signal selected.", show_alert=True)
             return
-        await query.answer("Refreshing monitor…", show_alert=False)
+        await query.answer("Refreshing monitor\u2026", show_alert=False)
         try:
             text, is_active, expires_at = await _build_monitor_snapshot(signal_id)
             from db.session import get_session as _gs_mon
@@ -5759,7 +5765,7 @@ def run_bot() -> None:
                 await query.answer("Monitor captured final status.", show_alert=False)
         except Exception as exc:
             logger.debug(f"[monitor] callback failed: {exc}")
-            await query.answer("⚠️ Could not open monitor right now.", show_alert=True)
+            await query.answer("\u26A0\uFE0F Could not open monitor right now.", show_alert=True)
 
     application.add_handler(_CQH(_signal_monitor_callback, pattern=r"^monitor_signal_"))
 
@@ -5772,7 +5778,7 @@ def run_bot() -> None:
             await query.answer()
             return
 
-        # ── Tier gate: FREE users see an upsell paywall ───────────────────────
+        # \u2500\u2500 Tier gate: FREE users see an upsell paywall \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         _ut = "FREE"
         try:
             from core.tier_policy import evaluate_button_access
@@ -5787,7 +5793,7 @@ def run_bot() -> None:
                     )
                 except Exception:
                     pass
-                await query.answer("🔒 VIP execution preflight required", show_alert=False)
+                await query.answer("\U0001F512 VIP execution preflight required", show_alert=False)
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id,
                     text=_decision.reason,
@@ -5816,7 +5822,7 @@ def run_bot() -> None:
                 signal_id = raw
                 payload = await _load_signal_payload(signal_id)
                 if not payload:
-                    await query.edit_message_text("❌ Signal data unavailable for this trade.")
+                    await query.edit_message_text("\u274C Signal data unavailable for this trade.")
                     return
                 asset = str(payload.get("asset") or "").upper().strip()
                 direction = str(payload.get("direction") or "").lower().strip()
@@ -5825,13 +5831,13 @@ def run_bot() -> None:
                 tp = float(_first_take_profit(payload) or 0)
 
         except Exception:
-            await query.edit_message_text("❌ Invalid trade button data.")
+            await query.edit_message_text("\u274C Invalid trade button data.")
             return
 
         # Validate that we actually have sl/tp (FREE signals have 0)
         if not sl or not tp:
             await query.edit_message_text(
-                "⚠️ Trade data incomplete — stop-loss or take-profit is missing on this signal."
+                "\u26A0\uFE0F Trade data incomplete \u2014 stop-loss or take-profit is missing on this signal."
             )
             return
 
@@ -5851,13 +5857,13 @@ def run_bot() -> None:
                     _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
                 )).scalar_one_or_none()
             if _user_row is None:
-                await query.edit_message_text("❌ User profile not found. Please send /start and try again.")
+                await query.edit_message_text("\u274C User profile not found. Please send /start and try again.")
                 return
 
             _exec_mode = str(getattr(_user_row, "execution_mode", "manual") or "manual").lower()
             if _exec_mode == "none":
                 await query.edit_message_text(
-                    "⛔ Broker execution is disabled for your account (mode: NONE).\n"
+                    "\u26D4 Broker execution is disabled for your account (mode: NONE).\n"
                     "Use /execution manual to re-enable one-click trading."
                 )
                 return
@@ -5868,7 +5874,7 @@ def run_bot() -> None:
                         _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
                     )).scalar_one_or_none()
                     if _user_row is None:
-                        await query.edit_message_text("❌ User profile not found. Please send /start and try again.")
+                        await query.edit_message_text("\u274C User profile not found. Please send /start and try again.")
                         return
 
                     _now = datetime.now(timezone.utc)
@@ -5881,7 +5887,7 @@ def run_bot() -> None:
                     _premium_count_today = int(getattr(_user_row, "daily_executions_today", 0) or 0)
                     if _premium_count_today >= _premium_daily_limit:
                         await query.edit_message_text(
-                            f"⚠️ PREMIUM daily auto-trade limit reached ({_premium_daily_limit}/{_premium_daily_limit}).\n"
+                            f"\u26A0\uFE0F PREMIUM daily auto-trade limit reached ({_premium_daily_limit}/{_premium_daily_limit}).\n"
                             "It resets at 00:00 UTC, or upgrade to VIP for unlimited executions."
                         )
                         return
@@ -5908,7 +5914,7 @@ def run_bot() -> None:
                         _cap = float(getattr(_u_dd, "max_daily_drawdown_pct", 8.0) or 8.0)
                         if _cap > 0 and _pnl_today <= -abs(_cap):
                             await query.edit_message_text(
-                                "⛔ Daily drawdown guard is active.\n"
+                                "\u26D4 Daily drawdown guard is active.\n"
                                 f"Today: {_pnl_today:.2f}% (limit: -{abs(_cap):.2f}%).\n"
                                 "Execution paused for today."
                             )
@@ -5927,7 +5933,7 @@ def run_bot() -> None:
             within_tol, slip, live_px = await validate_slippage(account_id, asset, entry)
             if not within_tol:
                 await query.edit_message_text(
-                    f"⚠️ *Slippage Warning*\n\nSignal entry: `{entry}`\nLive price: `{live_px:.5f}`\nSlippage: `{slip:.1f}` pts\n\nToo far from entry — trade not executed.",
+                    f"\u26A0\uFE0F *Slippage Warning*\n\nSignal entry: `{entry}`\nLive price: `{live_px:.5f}`\nSlippage: `{slip:.1f}` pts\n\nToo far from entry \u2014 trade not executed.",
                     parse_mode="MarkdownV2"
                 )
                 return
@@ -5984,13 +5990,13 @@ def run_bot() -> None:
                                 _u2.daily_executions_reset_at = _now
                                 await _sinc.commit()
                                 _remaining = max(0, _premium_daily_limit - int(_u2.daily_executions_today or 0))
-                                _remaining_text = f"\n📊 Remaining today: {_remaining}/{_premium_daily_limit}"
+                                _remaining_text = f"\n\U0001F4CA Remaining today: {_remaining}/{_premium_daily_limit}"
                     except Exception:
                         pass
                 oid = result.get("order_id", "")
                 lp = result.get("live_price") or entry
                 await query.edit_message_text(
-                    f"✅ *Trade Executed*\n\n🏦 {asset} {direction.upper()}\n📍 Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n🆔 Order: `{oid}`{_remaining_text}",
+                    f"\u2705 *Trade Executed*\n\n\U0001F3E6 {asset} {direction.upper()}\n\U0001F4CD Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n\U0001F194 Order: `{oid}`{_remaining_text}",
                     parse_mode="MarkdownV2"
                 )
                 try:
@@ -5998,7 +6004,7 @@ def run_bot() -> None:
                         context.bot,
                         chat_id=int(user_id),
                         text=(
-                            "🧾 <b>Execution Receipt (MANUAL)</b>\n\n"
+                            "\U0001F9FE <b>Execution Receipt (MANUAL)</b>\n\n"
                             f"Asset: <b>{asset}</b>\n"
                             f"Order: <code>{oid}</code>\n"
                             f"Signal ID: <code>{signal_id}</code>"
@@ -6008,13 +6014,13 @@ def run_bot() -> None:
                 except Exception:
                     pass
             else:
-                await query.edit_message_text(f"❌ Trade failed: `{result.get('error', 'unknown')}`", parse_mode="MarkdownV2")
+                await query.edit_message_text(f"\u274C Trade failed: `{result.get('error', 'unknown')}`", parse_mode="MarkdownV2")
         except Exception as exc:
-            await query.edit_message_text(f"❌ MT5 error: `{exc}`", parse_mode="MarkdownV2")
+            await query.edit_message_text(f"\u274C MT5 error: `{exc}`", parse_mode="MarkdownV2")
 
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 
-    # 🔗 Open latest active signal message for this signal
+    # \U0001F517 Open latest active signal message for this signal
     async def _open_signal_callback(update, context):
         query = update.callback_query
         raw = (query.data or "").replace("open_signal_", "", 1).strip()
@@ -6033,7 +6039,7 @@ def run_bot() -> None:
                 await query.answer("Unable to resolve your account.", show_alert=True)
                 return
 
-            await query.answer("Opening signal…")
+            await query.answer("Opening signal\u2026")
 
             async with _gs_os(interactive=True) as _s:
                 _u = await _gocu_os(_s, telegram_user_id=uid)
@@ -6069,7 +6075,7 @@ def run_bot() -> None:
 
     application.add_handler(_CQH(_open_signal_callback, pattern=r"^open_signal_"))
 
-    # 🔍 Check Outcome — resolve signal status and send a real response message.
+    # \U0001F50D Check Outcome \u2014 resolve signal status and send a real response message.
     # The global fast-ACK guard already answers the callback instantly, so this
     # handler must not rely on a second popup answer. It replies/edits visibly.
     async def _check_outcome_callback(update, context):
@@ -6078,7 +6084,7 @@ def run_bot() -> None:
         uid = int(getattr(getattr(update, "effective_user", None), "id", 0) or 0)
         if not raw:
             try:
-                await query.message.reply_text("⚠️ No signal reference was found for that button.")
+                await query.message.reply_text("\u26A0\uFE0F No signal reference was found for that button.")
             except Exception:
                 pass
             return
@@ -6137,7 +6143,7 @@ def run_bot() -> None:
             sig_row, out_row, life_row = await _asyncio.wait_for(_load_outcome(), timeout=timeout_s)
 
             if sig_row is None:
-                msg = f"❌ Signal <code>{raw}</code> was not found. It may be too old or only a compact reference."
+                msg = f"\u274C Signal <code>{raw}</code> was not found. It may be too old or only a compact reference."
             else:
                 asset = getattr(sig_row, 'asset', '?')
                 direction = str(getattr(sig_row, 'direction', '?')).upper()
@@ -6150,30 +6156,30 @@ def run_bot() -> None:
                         from datetime import datetime, timezone
                         _c = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
                         _mins = int((datetime.now(timezone.utc) - _c).total_seconds() / 60)
-                        age_str = f"\n⏳ Age: {_mins}m"
+                        age_str = f"\n\u23F3 Age: {_mins}m"
                     except Exception:
                         pass
                 if out_row:
                     outcome = str(getattr(out_row, 'status', 'unknown')).upper()
-                    emoji = "✅" if outcome.startswith("TP") else ("🛑" if outcome == "SL" else "ℹ️")
+                    emoji = "\u2705" if outcome.startswith("TP") else ("\U0001F6D1" if outcome == "SL" else "\u2139\uFE0F")
                     pnl = getattr(out_row, "pnl_pct", None)
-                    pnl_txt = f"\n📈 PnL: {float(pnl):+.2f}%" if pnl is not None else ""
+                    pnl_txt = f"\n\U0001F4C8 PnL: {float(pnl):+.2f}%" if pnl is not None else ""
                     msg = f"{emoji} <b>Outcome</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nStatus: <b>{outcome}</b>\nScore: {score:.1f}%{pnl_txt}{age_str}"
                 elif life_row is not None:
                     state_txt = str(getattr(life_row, "state", "ACTIVE") or "ACTIVE").replace("_", " ").title()
                     last_price = getattr(life_row, "last_price", None)
                     lp_txt = f"\nLast price: <code>{float(last_price):.6g}</code>" if last_price is not None else ""
-                    msg = f"🟢 <b>Signal Status</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nState: <b>{state_txt}</b>\nScore: {score:.1f}%{lp_txt}{age_str}"
+                    msg = f"\U0001F7E2 <b>Signal Status</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nState: <b>{state_txt}</b>\nScore: {score:.1f}%{lp_txt}{age_str}"
                 elif expired:
-                    msg = f"⏰ <b>Signal Expired</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>{age_str}"
+                    msg = f"\u23F0 <b>Signal Expired</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>{age_str}"
                 else:
-                    msg = f"🟢 <b>Signal Active</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nOutcome: not reached yet\nScore: {score:.1f}%{age_str}"
+                    msg = f"\U0001F7E2 <b>Signal Active</b>\nAsset: <b>{asset}</b>\nDirection: <b>{direction}</b>\nOutcome: not reached yet\nScore: {score:.1f}%{age_str}"
             logger.info("[check_outcome] user=%s ref=%s ok=%s", uid, raw[:16], sig_row is not None)
             await query.message.reply_text(msg, parse_mode="HTML")
         except Exception as _oc_err:
             logger.warning("[check_outcome] failed user=%s ref=%s err=%s", uid, raw[:16], _oc_err)
             try:
-                await query.message.reply_text("⚠️ Outcome check is busy right now. Signal delivery/outcome tracking is still running; try again shortly.")
+                await query.message.reply_text("\u26A0\uFE0F Outcome check is busy right now. Signal delivery/outcome tracking is still running; try again shortly.")
             except Exception:
                 pass
 
@@ -6227,10 +6233,10 @@ def run_bot() -> None:
                     best_strategy = ", ".join(list(stats.get("top_strategies") or [])[:1]) or "N/A"
                     recap_msg = (
                         "\U0001F4CA SignalRankAI Weekly Recap\n\n"
-                        "Here’s a quick overview of your past week:\n\n"
-                        f"• Total signals delivered: {total}\n"
-                        f"• Markets most active: {most_active}\n"
-                        f"• Best-performing strategy: {best_strategy}\n\n"
+                        "Here\u2019s a quick overview of your past week:\n\n"
+                        f"\u2022 Total signals delivered: {total}\n"
+                        f"\u2022 Markets most active: {most_active}\n"
+                        f"\u2022 Best-performing strategy: {best_strategy}\n\n"
                         "Market conditions can be mixed, so signal frequency is intentionally limited.\n\n"
                         "Thank you for trading responsibly."
                     )
@@ -6500,7 +6506,7 @@ def run_bot() -> None:
                         if actual_pct > 0 and risk_pct > 0 and actual_pct > (risk_pct + 0.25):
                             extra = f"Market move at close: <b>-{actual_pct:.2f}%</b>\n"
                         return (
-                            "âŒ <b>Trade Closed</b>\n"
+                            "\u00E2\u009D\u0152 <b>Trade Closed</b>\n"
                             f"<b>{asset}</b> hit Stop Loss.\n"
                             f"Planned risk: <b>-{risk_pct:.2f}%</b>\n"
                             f"{extra}"
@@ -6519,7 +6525,7 @@ def run_bot() -> None:
                             if _risk_pct <= 0 and _entry_v and _sl_v:
                                 _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
                             msg = (
-                                "❌ <b>Trade Closed</b>\n"
+                                "\u274C <b>Trade Closed</b>\n"
                                 f"<b>{asset}</b> hit Stop Loss.\n"
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
@@ -6537,7 +6543,7 @@ def run_bot() -> None:
                             if _risk_pct <= 0 and _entry_v and _sl_v:
                                 _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
                             msg = (
-                                "❌ <b>Trade Closed</b>\n"
+                                "\u274C <b>Trade Closed</b>\n"
                                 f"<b>{asset}</b> hit Stop Loss.\n"
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
@@ -6555,7 +6561,7 @@ def run_bot() -> None:
                             if _risk_pct <= 0 and _entry_v and _sl_v:
                                 _risk_pct = abs(((_entry_v - _sl_v) / _entry_v) * 100.0)
                             msg = (
-                                "❌ <b>Trade Closed</b>\n"
+                                "\u274C <b>Trade Closed</b>\n"
                                 f"<b>{asset}</b> hit Stop Loss.\n"
                                 f"Risk: <b>-{_risk_pct:.2f}%</b>\n"
                                 "Status: Awaiting next high-probability setup."
@@ -6757,7 +6763,7 @@ def run_bot() -> None:
                             if cur_loss_pct < min_loss_pct:
                                 continue
                             if cur_loss_pct >= hard_sl_pct * max_sl_share:
-                                # Too close to hard SL — let broker stop handle it.
+                                # Too close to hard SL \u2014 let broker stop handle it.
                                 continue
 
                             candles = await async_get_candles(symbol, "1h")
@@ -6795,7 +6801,7 @@ def run_bot() -> None:
                                 await application.bot.send_message(
                                     chat_id=int(user.telegram_user_id),
                                     text=(
-                                        "⚠️ <b>Smart Exit</b>\n"
+                                        "\u26A0\uFE0F <b>Smart Exit</b>\n"
                                         f"Structural shift detected on <b>{symbol}</b>.\n"
                                         f"Closed early at <b>-{float(cur_loss_pct):.2f}%</b> "
                                         f"(vs hard SL ~-{float(hard_sl_pct):.2f}%)."
@@ -6862,7 +6868,7 @@ def run_bot() -> None:
                             await application.bot.send_message(
                                 chat_id=uid,
                                 text=(
-                                    "🛑 <b>Capital Protection Activated</b>\n"
+                                    "\U0001F6D1 <b>Capital Protection Activated</b>\n"
                                     f"Daily drawdown limit ({abs(cap):.2f}%) reached: <b>{pnl_24h:.2f}%</b>.\n"
                                     "Auto-trading is paused for now. You will still receive manual signals.\n"
                                     "Use /execution auto when you are ready to resume."
@@ -6938,7 +6944,7 @@ def run_bot() -> None:
                                     await application.bot.send_message(
                                         chat_id=int(telegram_user_id),
                                         text=(
-                                            "🛑 <b>Emergency Capital Protection</b>\n"
+                                            "\U0001F6D1 <b>Emergency Capital Protection</b>\n"
                                             "Kill-switch is ON. Open broker positions were force-closed."
                                         ),
                                         parse_mode="HTML",
@@ -7207,7 +7213,7 @@ def run_bot() -> None:
             from db.session import _get_global_engine, get_engine_for_event_loop, get_session
             engine = _get_global_engine()  # ensure engine is initialised in this thread
             if engine is None:
-                logger.warning("[outcome] DB engine not initialised — skipping job")
+                logger.warning("[outcome] DB engine not initialised \u2014 skipping job")
                 return
             from db.pg_features import list_signals_missing_outcomes, upsert_outcome
             from datetime import datetime
@@ -7457,7 +7463,7 @@ def run_bot() -> None:
             logger.debug(f"[free_summary] Failed to check killswitch: {e}")
             pass
 
-        logger.info("🔄 send_free_delayed_summaries job triggered")
+        logger.info("\U0001F504 send_free_delayed_summaries job triggered")
 
         # Prefer Postgres-backed delayed queue
         try:
@@ -7491,13 +7497,13 @@ def run_bot() -> None:
 
                 try:
                     due = run_sync(_fetch_due())
-                    logger.info(f"📬 Free queue check: {len(due)} user(s) with due signals")
+                    logger.info(f"\U0001F4EC Free queue check: {len(due)} user(s) with due signals")
                 except Exception as e:
                     logger.error(f"Error fetching due signals: {e}", exc_info=True)
                     due = {}
 
                 if not due:
-                    logger.info("✅ No free signals due for delivery")
+                    logger.info("\u2705 No free signals due for delivery")
                     return
 
                 async def _deliver_due(_due: dict[int, dict]) -> int:
@@ -7513,10 +7519,10 @@ def run_bot() -> None:
                             items = list(data.get("items") or [])
                             prefs = dict(data.get("prefs") or {})
 
-                            logger.info(f"📨 User {uid}: {len(items)} queued signal(s)")
+                            logger.info(f"\U0001F4E8 User {uid}: {len(items)} queued signal(s)")
 
                             if not prefs.get("tp_sl_enabled", True):
-                                logger.info(f"⏸️ User {uid} has alerts disabled, marking as suppressed")
+                                logger.info(f"\u23F8\uFE0F User {uid} has alerts disabled, marking as suppressed")
                                 actions.append(
                                     (int(uid), [it["id"] for it in items], [it["signal_id"] for it in items], 'suppressed')
                                 )
@@ -7527,7 +7533,7 @@ def run_bot() -> None:
                             if qs is not None and qe is not None:
                                 try:
                                     if _in_quiet_hours(now_hour, int(qs), int(qe)):
-                                        logger.info(f"🔇 User {uid} in quiet hours ({qs}-{qe}), skipping")
+                                        logger.info(f"\U0001F507 User {uid} in quiet hours ({qs}-{qe}), skipping")
                                         continue
                                 except Exception as e:
                                     logger.debug(f"[free_summary] Failed to check quiet hours for user {uid}: {e}")
@@ -7547,9 +7553,9 @@ def run_bot() -> None:
                                         "message_id": int(getattr(sent_msg, "message_id")),
                                     }
                                     await asyncio.sleep(0.5)
-                                    logger.info(f"✅ Delivered {len(items_to_send)} signal(s) to user {uid}")
+                                    logger.info(f"\u2705 Delivered {len(items_to_send)} signal(s) to user {uid}")
                                 except Exception as e:
-                                    logger.error(f"❌ Failed to send to user {uid}: {e}")
+                                    logger.error(f"\u274C Failed to send to user {uid}: {e}")
                                     status = 'failed'
 
                                 actions.append(
@@ -7563,7 +7569,7 @@ def run_bot() -> None:
                                 )
 
                             if items_to_skip:
-                                logger.info(f"⏱️ User {uid}: {len(items_to_skip)} signal(s) overflow, marking as expired")
+                                logger.info(f"\u23F1\uFE0F User {uid}: {len(items_to_skip)} signal(s) overflow, marking as expired")
                                 actions.append(
                                     (
                                         int(uid),
@@ -7575,7 +7581,7 @@ def run_bot() -> None:
                                 )
 
                     if not actions:
-                        logger.info("✅ No actions to apply")
+                        logger.info("\u2705 No actions to apply")
                         return 0
 
                     async with get_session() as session:
@@ -7606,7 +7612,7 @@ def run_bot() -> None:
 
                 try:
                     action_count = int(run_sync(_deliver_due(due)) or 0)
-                    logger.info(f"💾 Applied {action_count} queue action(s)")
+                    logger.info(f"\U0001F4BE Applied {action_count} queue action(s)")
                 except Exception as e:
                     logger.error(f"Error delivering/applying free summary actions: {e}", exc_info=True)
                 return
@@ -7626,7 +7632,7 @@ def run_bot() -> None:
             logger.debug(f"[ml_retrain] Failed to check killswitch: {e}")
             pass
 
-        logger.info("🤖 ML auto-retrain job triggered")
+        logger.info("\U0001F916 ML auto-retrain job triggered")
 
         try:
             from ml.train_model import main as train_main
@@ -7635,11 +7641,11 @@ def run_bot() -> None:
                 try:
                     success = await train_main()
                     if success:
-                        logger.info("✅ ML model retrained successfully")
+                        logger.info("\u2705 ML model retrained successfully")
                     else:
-                        logger.warning("⚠️ ML retrain skipped (insufficient data)")
+                        logger.warning("\u26A0\uFE0F ML retrain skipped (insufficient data)")
                 except Exception as e:
-                    logger.error(f"❌ ML retrain failed: {e}", exc_info=True)
+                    logger.error(f"\u274C ML retrain failed: {e}", exc_info=True)
 
             run_sync(_retrain())
         except Exception as e:
@@ -7672,12 +7678,12 @@ def run_bot() -> None:
             from db.pg_compat import get_all_user_ids_compat
             from signalrank_telegram.access import resolve_user_tier
             msg = (
-                f"🔥 *VIP Seats Available — {available} of {vip_limit} open!*\n\n"
+                f"\U0001F525 *VIP Seats Available \u2014 {available} of {vip_limit} open!*\n\n"
                 "VIP members get:\n"
-                "• Real-time signals (30/day)\n"
-                "• TP1/TP2/TP3 notifications\n"
-                "• One-click MT5 execution\n"
-                "• Trailing SL to break-even on TP1\n\n"
+                "\u2022 Real-time signals (30/day)\n"
+                "\u2022 TP1/TP2/TP3 notifications\n"
+                "\u2022 One-click MT5 execution\n"
+                "\u2022 Trailing SL to break-even on TP1\n\n"
                 "Seats fill fast. Use /upgrade to claim yours."
             )
             for _uid in (get_all_user_ids_compat() or []):
@@ -7695,7 +7701,7 @@ def run_bot() -> None:
         except Exception as e:
             logger.debug(f"[vip_scarcity] job failed: {e}")
 
-    # ── FOMO engine ─────────────────────────────────────────────────────────
+    # \u2500\u2500 FOMO engine \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def fomo_engine_job():
         """Broadcast today's VIP highlights to FREE users at 5PM UTC."""
         try:
@@ -7733,11 +7739,11 @@ def run_bot() -> None:
 
             sign = "+" if total_pnl >= 0 else ""
             msg = (
-                f"⚡ <b>Today's VIP Execution Recap</b>\n\n"
-                f"📊 VIP members executed <b>{trades}</b> trade(s) today\n"
-                f"💰 Combined P&amp;L: <b>{sign}${total_pnl:.2f}</b>\n\n"
-                f"🎯 Upgrade to VIP for unlimited automated executions.\n"
-                f"👉 /tiers to compare plans • /upgrade to subscribe"
+                f"\u26A1 <b>Today's VIP Execution Recap</b>\n\n"
+                f"\U0001F4CA VIP members executed <b>{trades}</b> trade(s) today\n"
+                f"\U0001F4B0 Combined P&amp;L: <b>{sign}${total_pnl:.2f}</b>\n\n"
+                f"\U0001F3AF Upgrade to VIP for unlimited automated executions.\n"
+                f"\U0001F449 /tiers to compare plans \u2022 /upgrade to subscribe"
             )
             from db.pg_compat import get_all_user_ids_compat
             from signalrank_telegram.access import resolve_user_tier
@@ -7756,14 +7762,14 @@ def run_bot() -> None:
         except Exception as exc:
             logger.debug(f"[fomo] job failed: {exc}")
 
-    # ── Friday leaderboard ──────────────────────────────────────────────────
+    # \u2500\u2500 Friday leaderboard \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def friday_leaderboard_job():
-        """Every Friday at 5PM UTC — 3-block leaderboard broadcast.
+        """Every Friday at 5PM UTC \u2014 3-block leaderboard broadcast.
 
         Blocks:
         1) Top 3 Signals
         2) Top 3 VIP MT5 Traders (actual realised PnL)
-        3) Top 3 Fantasy Scorers (🔥 votes mapped to outcome pips/points)
+        3) Top 3 Fantasy Scorers (\U0001F525 votes mapped to outcome pips/points)
         """
         try:
             if state.get_killswitch_sync().enabled:
@@ -7911,7 +7917,7 @@ def run_bot() -> None:
                     )
                     top_vip = vip_rows.all()
 
-                    # Block 3: Top 3 fantasy scorers (🔥 votes weighted by realised pips)
+                    # Block 3: Top 3 fantasy scorers (\U0001F525 votes weighted by realised pips)
                     fantasy_rows = await session.execute(
                         select(User.telegram_user_id, User.username, Signal, Outcome)
                         .join(SignalEngagement, SignalEngagement.user_id == User.id)
@@ -7953,8 +7959,8 @@ def run_bot() -> None:
             if not top_signals and not top_traders and not top_fantasy:
                 return
 
-            lines = ["🏆 <b>Friday Leaderboard</b>", ""]
-            medals = ["🥇", "🥈", "🥉"]
+            lines = ["\U0001F3C6 <b>Friday Leaderboard</b>", ""]
+            medals = ["\U0001F947", "\U0001F948", "\U0001F949"]
 
             # Block 1: Top 3 Signals
             lines.append("<b>Top 3 Signals</b>")
@@ -7969,7 +7975,7 @@ def run_bot() -> None:
                         f"{medals[i]} <b>{asset}</b> {direction} ({tf})  {status}  {sign}{pct_val:.2f}%"
                     )
             else:
-                lines.append("• No closed signal outcomes this week")
+                lines.append("\u2022 No closed signal outcomes this week")
 
             lines.append("")
             lines.append("<b>Top 3 VIP MT5 Traders</b>")
@@ -7986,7 +7992,7 @@ def run_bot() -> None:
                     f"{sign}${pnl:.2f}  ({trades} trades)"
                 )
             if not top_traders:
-                lines.append("• No VIP MT5 realised trades this week")
+                lines.append("\u2022 No VIP MT5 realised trades this week")
 
             lines.append("")
             lines.append("<b>Top 3 Fantasy Scorers</b>")
@@ -8001,11 +8007,11 @@ def run_bot() -> None:
                         f"{medals[i]} <b>{label}</b>  {sign}{score:.1f} pips  ({picks} voted signals)"
                     )
             else:
-                lines.append("• No fantasy score data this week")
+                lines.append("\u2022 No fantasy score data this week")
 
             lines.append(
-                "\n💡 Join VIP for automated execution and leaderboard inclusion.\n"
-                "👉 /upgrade"
+                "\n\U0001F4A1 Join VIP for automated execution and leaderboard inclusion.\n"
+                "\U0001F449 /upgrade"
             )
             msg = "\n".join(lines)
             from db.pg_compat import get_all_user_ids_compat
@@ -8022,7 +8028,7 @@ def run_bot() -> None:
         except Exception as exc:
             logger.debug(f"[leaderboard] job failed: {exc}")
 
-    # ── Signal auto-expiry ──────────────────────────────────────────────────
+    # \u2500\u2500 Signal auto-expiry \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def expire_old_signals_job():
         """Mark signals where expires_at < now as expired=True, excluding unresolved tracked states."""
         try:
@@ -8106,7 +8112,7 @@ def run_bot() -> None:
         except Exception as exc:
             logger.debug(f"[monitor] refresh job failed: {exc}")
 
-    # ── ML market analysis scan ────────────────────────────────────────────
+    # \u2500\u2500 ML market analysis scan \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     def ml_market_analysis_job():
         """Every 15 min: run the ML filter over recent unscored signals.
 
@@ -8120,19 +8126,19 @@ def run_bot() -> None:
         except Exception:
             pass
 
-        logger.info("🤖 [ML] Market analysis scan starting …")
+        logger.info("\U0001F916 [ML] Market analysis scan starting \u2026")
 
         try:
             from ml.inference import MLFilter
             from ml.features import extract_features
         except ImportError:
-            logger.warning("[ML] ml.inference not available — analysis scan skipped")
+            logger.warning("[ML] ml.inference not available \u2014 analysis scan skipped")
             return
 
         try:
             ml_filter = MLFilter()
             if not getattr(ml_filter, "active", False):
-                logger.info("[ML] Model not loaded — scan skipped (train first)")
+                logger.info("[ML] Model not loaded \u2014 scan skipped (train first)")
                 return
 
             threshold_raw = str(os.getenv("ML_PROB_THRESHOLD") or "").strip()
@@ -8177,7 +8183,7 @@ def run_bot() -> None:
             total, approved, rejected, errors = run_sync(_scan())
             threshold_label = f"{threshold:.2f}" if threshold is not None else "auto"
             logger.info(
-                "🤖 [ML] Scan done — signals=%d  approved=%d  rejected=%d  "
+                "\U0001F916 [ML] Scan done \u2014 signals=%d  approved=%d  rejected=%d  "
                 "errors=%d  threshold=%s",
                 total, approved, rejected, errors, threshold_label,
             )
@@ -8213,10 +8219,10 @@ def run_bot() -> None:
                         _total = int(_rx.get("outcomes_total") or 0)
                         _wr = f"{_wins/max(1,_wins+_losses)*100:.1f}%" if (_wins + _losses) > 0 else "n/a"
                         _review_snippet = str(result.get("review") or "")
-                        _snippet = (_review_snippet[:500] + "…") if len(_review_snippet) > 500 else _review_snippet
+                        _snippet = (_review_snippet[:500] + "\u2026") if len(_review_snippet) > 500 else _review_snippet
                         _training_ok = bool((result.get("training") or {}).get("succeeded", False))
                         _msg = (
-                            "✅ <b>Weekly Gemini Review Complete</b>\n\n"
+                            "\u2705 <b>Weekly Gemini Review Complete</b>\n\n"
                             f"Win rate: <b>{_wr}</b> ({_wins}W / {_losses}L of {_total} outcomes)\n"
                             f"Model retrained: <b>{'yes' if _training_ok else 'no'}</b>\n\n"
                             + (_snippet or "<i>No review text returned.</i>")
@@ -8263,10 +8269,10 @@ def run_bot() -> None:
         except Exception as exc:
             logger.warning("[gemini] daily ML review failed: %s", exc)
 
-    # ── APScheduler setup ───────────────────────────────────────────────────
+    # \u2500\u2500 APScheduler setup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # APScheduler 3.x's SQLAlchemyJobStore uses *synchronous* SQLAlchemy.
     # Passing an asyncpg:// URL causes the driver to be rejected and the store
-    # to silently fall back to  postgresql://postgres@localhost  — which Railway
+    # to silently fall back to  postgresql://postgres@localhost  \u2014 which Railway
     # always rejects with "password authentication failed for user postgres".
     # Strip the async driver prefix before creating the job store.
     _sched_raw = (resolve_database_url(async_driver=False) or "").strip()
@@ -8283,7 +8289,7 @@ def run_bot() -> None:
 
     # Register a 'persistent' jobstore for module-level (picklable) callables.
     # Closure functions defined inside run_bot() cannot be pickled for
-    # SQLAlchemy — they are added to the implicit default MemoryJobStore.
+    # SQLAlchemy \u2014 they are added to the implicit default MemoryJobStore.
     _jobstores: dict = {}
     _running_on_railway_sched = any(
         bool((os.getenv(name) or "").strip())
@@ -8317,14 +8323,14 @@ def run_bot() -> None:
                 engine_options=_jobstore_engine_options,
             )
             logger.info(
-                "[sched] SQLAlchemyJobStore ready → %s (pool_size=%s max_overflow=%s)",
+                "[sched] SQLAlchemyJobStore ready \u2192 %s (pool_size=%s max_overflow=%s)",
                 _mask_db_url_host(_sched_sync_url),
                 _jobstore_engine_options["pool_size"],
                 _jobstore_engine_options["max_overflow"],
             )
         except Exception as _sa_err:
             logger.warning(
-                "[sched] SQLAlchemyJobStore unavailable (%s) — using MemoryJobStore",
+                "[sched] SQLAlchemyJobStore unavailable (%s) \u2014 using MemoryJobStore",
                 _sa_err,
             )
 
@@ -8387,7 +8393,7 @@ def run_bot() -> None:
         except Exception as _clr_err:
             logger.warning("[sched] failed to clear jobstore=%s: %s", _sa, _clr_err)
 
-    # ── Closure jobs (defined inside run_bot — cannot be pickled for SQLAlchemy)
+    # \u2500\u2500 Closure jobs (defined inside run_bot \u2014 cannot be pickled for SQLAlchemy)
     # These always land in the default MemoryJobStore.
     if scheduler is not None:
         _minimal_scheduler_mode = str(
@@ -8596,7 +8602,7 @@ def run_bot() -> None:
                 replace_existing=True,
                 max_instances=1,
             )
-            # Daily Gemini review — runs every day at 04:00 UTC for fast feedback
+            # Daily Gemini review \u2014 runs every day at 04:00 UTC for fast feedback
             scheduler.add_job(
                 daily_gemini_ml_review_job,
                 'cron',
@@ -8607,7 +8613,7 @@ def run_bot() -> None:
                 max_instances=1,
             )
 
-    # ── Module-level jobs (picklable) → SQLAlchemy persistent store when available
+    # \u2500\u2500 Module-level jobs (picklable) \u2192 SQLAlchemy persistent store when available
     if scheduler is not None:
         try:
             from worker.proxy_worker import proxy_validation_job as _proxy_validation_job
@@ -8702,7 +8708,7 @@ def run_bot() -> None:
     except Exception as _kbd_backfill_err:
         logger.debug(f"[backfill] startup keyboard refresh failed: {_kbd_backfill_err}")
 
-    # ── Webhook mode ──────────────────────────────────────────────────────────
+    # \u2500\u2500 Webhook mode \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # When TELEGRAM_USE_WEBHOOK is set, railway_main.py owns the event loop and
     # calls application.process_update() via the POST /telegram/webhook FastAPI
     # route.  Store the configured application and scheduler so they survive
@@ -8717,7 +8723,7 @@ def run_bot() -> None:
             print("[bot] webhook mode: application ready, scheduler running, not polling", flush=True)
         return
 
-    # ── Polling mode ──────────────────────────────────────────────────────────
+    # \u2500\u2500 Polling mode \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # Run polling with an explicit event loop (Python 3.12 safe)
     try:
         import asyncio as _asyncio

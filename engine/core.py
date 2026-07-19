@@ -4192,6 +4192,7 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 _user_timeout = 20.0
                             try:
+                                # Canonical dispatch contract: sent_count = await dispatch_signals_async
                                 sent_count = await asyncio.wait_for(
                                     dispatch_signals_async(user_signals, user_id=user_id),
                                     timeout=max(3.0, float(_user_timeout)),

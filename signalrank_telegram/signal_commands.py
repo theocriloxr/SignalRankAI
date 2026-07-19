@@ -65,6 +65,19 @@ async def _fetch_user_delivered_signals_fast(telegram_user_id: int, *, lookback_
         return list(rows or [])
 
 
+async def _fetch_user_unresolved_signals_fast(telegram_user_id: int, *, lookback_days: int, limit: int):
+    """Delivery-first unresolved lookup shared by Free proof cards."""
+    from db.pg_features import list_unresolved_signals_for_user
+    async with get_session() as session:
+        rows = await list_unresolved_signals_for_user(
+            session,
+            telegram_user_id=int(telegram_user_id),
+            lookback_days=int(lookback_days),
+        )
+        await session.commit()
+        return list(rows or [])[: int(limit)]
+
+
 def _is_signal_active(signal_row) -> bool:
     """Return whether a signal row should be treated as active/unresolved."""
     try:
@@ -181,14 +194,15 @@ async def signals_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         except Exception:
             return signals_in
     
-    # FREE tier: show last 5 delivered signals from today
+    # FREE tier: show unresolved received proof cards (delivery-first).
     if tier_rank(tier) < tier_rank("PREMIUM"):
         try:
+            # Canonical source helper: list_unresolved_signals_for_user
             db_timeout = _signals_env_float("SIGNALS_COMMAND_DB_TIMEOUT_SECONDS", 8.0, 2.0, 30.0)
             rows = await asyncio.wait_for(
-                _fetch_user_delivered_signals_fast(
+                _fetch_user_unresolved_signals_fast(
                     int(user_id),
-                    lookback_days=_signals_env_int("SIGNALS_COMMAND_LOOKBACK_DAYS", 7, 1, 30),
+                    lookback_days=30,
                     limit=_signals_env_int("SIGNALS_COMMAND_LIMIT", 5, 1, 20),
                     status_filter="active",
                 ),

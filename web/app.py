@@ -129,6 +129,12 @@ class ExchangeBrokerLinkRequest(BrokerPermissionRequest):
     sandbox: bool = False
 
 
+@app.get("/")
+async def root() -> dict[str, str]:
+    """Small authenticated-surface landing response for health-aware clients."""
+    return {"service": "signalrankai", "status": "ok"}
+
+
 def _normalize_exchange_provider(provider: str) -> str:
     p = str(provider or "").strip().lower().replace("_", "")
     aliases = {
