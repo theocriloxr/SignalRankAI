@@ -309,7 +309,9 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
 
 def hash_api_token(raw_token: str) -> str:
     token = str(raw_token or "").strip()
-    pepper = str(os.getenv("API_TOKEN_PEPPER") or "signalrankai-api-token-pepper")
+    from core.security import api_token_pepper
+
+    pepper = api_token_pepper()
     dk = hashlib.pbkdf2_hmac(
         "sha256",
         token.encode("utf-8"),

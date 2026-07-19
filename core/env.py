@@ -1,0 +1,115 @@
+"""Typed environment parsing and safe feature defaults."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Iterable
+
+
+TRUE_VALUES = frozenset({"1", "true", "yes", "y", "on"})
+FALSE_VALUES = frozenset({"0", "false", "no", "n", "off", ""})
+
+
+class Environment(StrEnum):
+    DEV = "dev"
+    TEST = "test"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    normalized = raw.strip().lower()
+    if normalized in TRUE_VALUES:
+        return True
+    if normalized in FALSE_VALUES:
+        return False
+    return bool(default)
+
+
+def env_int(name: str, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        value = int(str(os.getenv(name, default)).strip())
+    except (TypeError, ValueError):
+        value = int(default)
+    if minimum is not None:
+        value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return value
+
+
+def environment() -> Environment:
+    raw = str(os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "dev").strip().lower()
+    try:
+        return Environment(raw)
+    except ValueError:
+        return Environment.DEV
+
+
+def secret_present(*names: str) -> bool:
+    return any(bool(str(os.getenv(name) or "").strip()) for name in names)
+
+
+def redact_value(value: object, *, keep: int = 4) -> str:
+    raw = str(value or "")
+    if not raw:
+        return "<unset>"
+    if len(raw) <= keep:
+        return "<redacted>"
+    return f"<redacted>...{raw[-keep:]}"
+
+
+@dataclass(frozen=True, slots=True)
+class SafetyFlags:
+    auto_trade_enabled: bool
+    copy_trade_enabled: bool
+    payments_enabled: bool
+    telegram_rich_messages_enabled: bool
+    vip_webhook_dispatch_enabled: bool
+    chat_mt5_credentials_enabled: bool
+
+    @classmethod
+    def from_env(cls) -> "SafetyFlags":
+        return cls(
+            auto_trade_enabled=env_bool("AUTO_TRADE_ENABLED", False),
+            copy_trade_enabled=env_bool("COPY_TRADE_ENABLED", False),
+            payments_enabled=env_bool("PAYMENTS_ENABLED", False),
+            telegram_rich_messages_enabled=env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False),
+            vip_webhook_dispatch_enabled=env_bool("VIP_WEBHOOK_DISPATCH_ENABLED", False),
+            chat_mt5_credentials_enabled=env_bool("CHAT_MT5_CREDENTIALS_ENABLED", False),
+        )
+
+    def enabled_names(self) -> tuple[str, ...]:
+        return tuple(
+            name
+            for name, enabled in (
+                ("AUTO_TRADE_ENABLED", self.auto_trade_enabled),
+                ("COPY_TRADE_ENABLED", self.copy_trade_enabled),
+                ("PAYMENTS_ENABLED", self.payments_enabled),
+                ("TELEGRAM_RICH_MESSAGES_ENABLED", self.telegram_rich_messages_enabled),
+                ("VIP_WEBHOOK_DISPATCH_ENABLED", self.vip_webhook_dispatch_enabled),
+                ("CHAT_MT5_CREDENTIALS_ENABLED", self.chat_mt5_credentials_enabled),
+            )
+            if enabled
+        )
+
+
+def validate_required_secrets(names: Iterable[str]) -> tuple[str, ...]:
+    return tuple(name for name in names if not secret_present(name))
+
+
+__all__ = [
+    "Environment",
+    "SafetyFlags",
+    "env_bool",
+    "env_int",
+    "environment",
+    "redact_value",
+    "secret_present",
+    "validate_required_secrets",
+]

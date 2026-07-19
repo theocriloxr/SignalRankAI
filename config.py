@@ -51,7 +51,12 @@ class Config:
 			self.ADMIN_IDS.add(_single_admin)
 
 		# Payments and API keys
-		self.PAYMENTS_ENABLED = os.getenv("PAYMENTS_ENABLED", "true").lower() == "true"
+		self.PAYMENTS_ENABLED = self._env_bool("PAYMENTS_ENABLED", False)
+		self.AUTO_TRADE_ENABLED = self._env_bool("AUTO_TRADE_ENABLED", False)
+		self.COPY_TRADE_ENABLED = self._env_bool("COPY_TRADE_ENABLED", False)
+		self.TELEGRAM_RICH_MESSAGES_ENABLED = self._env_bool("TELEGRAM_RICH_MESSAGES_ENABLED", False)
+		self.VIP_WEBHOOK_DISPATCH_ENABLED = self._env_bool("VIP_WEBHOOK_DISPATCH_ENABLED", False)
+		self.CHAT_MT5_CREDENTIALS_ENABLED = self._env_bool("CHAT_MT5_CREDENTIALS_ENABLED", False)
 		self.PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "")
 		self.PAYSTACK_WEBHOOK_SECRET = os.getenv("PAYSTACK_WEBHOOK_SECRET", "")
 		self.ALPHAVANTAGE_API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
