@@ -776,6 +776,7 @@ async def _acquire_semaphore_cancellation_safe(
 async def get_session(
     *,
     priority: DBPriority | str | None = None,
+    label: str = "unlabelled",
     noncritical: bool = False,
     critical: bool = False,
     interactive: bool = False,
@@ -785,7 +786,12 @@ async def get_session(
     ``priority`` is the canonical API. The three boolean arguments remain for
     compatibility, but conflicting combinations now fail instead of silently
     changing the caller's requested durability class.
+
+    ``label`` identifies the caller's operation for metrics, diagnostic logs
+    and deferred-decision tracing. It defaults to ``"unlabelled"`` and callers
+    are encouraged to provide a descriptive, stable identifier.
     """
+    _safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(label or "").strip())[:64] or "unlabelled"
     resolved = resolve_db_priority(
         priority,
         noncritical=noncritical,
@@ -830,9 +836,9 @@ async def get_session(
             with _session_metrics_lock:
                 _session_metrics["errors"] += 1
                 _session_metrics["noncritical_dropped"] += 1
-            raise NoncriticalWriteDropped(
-                "noncritical DB work deferred: critical/interactive DB work active"
-            )
+                raise NoncriticalWriteDropped(
+                    f"noncritical DB work deferred ({_safe_label}): critical/interactive DB work active"
+                )
 
         priority_acquired = await _acquire_priority_cancellation_safe(
             resolved,
@@ -848,14 +854,14 @@ async def get_session(
             if is_background:
                 _priority_admission.record_dropped(resolved)
                 raise NoncriticalWriteDropped(
-                    "background DB work deferred: foreground lane reserved"
+                    f"background DB work deferred ({_safe_label}): foreground lane reserved"
                 )
             if is_analytics:
                 raise AnalyticsWorkDeferred(
                     "analytics DB work deferred: foreground or operational work is active"
                 )
             raise TimeoutError(
-                f"Timed out waiting for {resolved.value} DB admission after {timeout_s:.2f}s"
+                f"Timed out waiting for {resolved.value} DB admission after {timeout_s:.2f}s label={_safe_label}"
             )
         priority_started = time.monotonic()
 
@@ -881,7 +887,7 @@ async def get_session(
                     _session_metrics["background_dropped"] += 1
                     _session_metrics["noncritical_dropped"] += 1
                 raise NoncriticalWriteDropped(
-                    "background DB work deferred: background DB gate busy"
+                    f"background DB work deferred ({_safe_label}): background DB gate busy"
                 )
             with _session_metrics_lock:
                 _session_metrics["background_active"] += 1
@@ -910,7 +916,7 @@ async def get_session(
                 _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)
                 raise NoncriticalWriteDropped(
-                    "background DB work deferred: session gate busy"
+                    f"background DB work deferred ({_safe_label}): session gate busy"
                 )
             if is_analytics:
                 _priority_admission.record_deferred(resolved)
@@ -919,7 +925,7 @@ async def get_session(
                 )
             _priority_admission.record_timeout(resolved)
             raise TimeoutError(
-                f"Timed out waiting for {resolved.value} DB session after {timeout_s:.2f}s"
+                f"Timed out waiting for {resolved.value} DB session after {timeout_s:.2f}s label={_safe_label}"
             )
 
         session_local = _get_sessionmaker_for_loop(_loop_identity())
