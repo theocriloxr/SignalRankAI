@@ -10,7 +10,7 @@ import os
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
-from core.env import SafetyFlags, env_bool
+from core.env import SafetyFlags, env_bool, env_int
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +38,95 @@ def _flag(name: str, default: bool = False) -> bool:
     return env_bool(name, default)
 
 
+def _check_db_pool_safe() -> GuardCheck:
+    """Verify the DB pool configuration is safe for Railway monolith."""
+    try:
+        from db.session import _effective_pool_settings, _is_railway_runtime, get_pool_diagnostics
+        
+        # Check for unsafe override env vars
+        disable_cap = _flag("DB_POOL_DISABLE_RAILWAY_CAP", False)
+        allow_uncapped = _flag("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
+        public_testing = _flag("PUBLIC_TESTING_MODE", False)
+        
+        if disable_cap or allow_uncapped:
+            if public_testing:
+                return GuardCheck(
+                    "safe_db_pool",
+                    True,
+                    "unsafe override blocked by PUBLIC_TESTING_MODE",
+                    blocking=False,
+                )
+            return GuardCheck(
+                "safe_db_pool",
+                False,
+                "DB_POOL_DISABLE_RAILWAY_CAP or DB_POOL_ALLOW_UNCAPPED_RAILWAY override detected",
+            )
+        
+        pool_size, max_overflow = _effective_pool_settings()
+        railway = _is_railway_runtime()
+        
+        public_testing = _flag("PUBLIC_TESTING_MODE", False)
+        
+        if railway:
+            if public_testing:
+                # In public-testing mode, enforce the strictest limits
+                if pool_size > 2 or max_overflow > 0:
+                    return GuardCheck(
+                        "safe_db_pool",
+                        False,
+                        f"PUBLIC_TESTING_MODE: Railway pool exceeds safe limit: pool_size={pool_size}, max_overflow={max_overflow}",
+                    )
+            else:
+                # In non-testing Railway mode, allow operator-configured caps
+                # but flag pools above approved threshold as a warning (non-blocking)
+                if pool_size > 8 or max_overflow > 2:
+                    return GuardCheck(
+                        "safe_db_pool",
+                        False,
+                        f"Railway pool exceeds approved threshold: pool_size={pool_size}, max_overflow={max_overflow}",
+                    )
+        
+        return GuardCheck(
+            "safe_db_pool",
+            True,
+            f"pool_size={pool_size}, max_overflow={max_overflow}",
+            blocking=False,
+        )
+    except Exception as exc:
+        return GuardCheck(
+            "safe_db_pool",
+            False,
+            f"DB pool check failed: {type(exc).__name__}: {exc}",
+        )
+
+
+def _check_multiple_engines() -> GuardCheck:
+    """Verify no accidental pool multiplication across event loops."""
+    try:
+        from db.session import _engines_by_loop
+        
+        engine_count = len(_engines_by_loop)
+        if engine_count > 2:
+            return GuardCheck(
+                "engine_capacity_budget",
+                False,
+                f"active pooled engines={engine_count} exceeds total connection budget",
+            )
+        return GuardCheck(
+            "engine_capacity_budget",
+            True,
+            f"active_pooled_engines={engine_count}",
+            blocking=False,
+        )
+    except Exception as exc:
+        return GuardCheck(
+            "engine_capacity_budget",
+            True,
+            f"engine inventory unavailable: {type(exc).__name__}: {exc}",
+            blocking=False,
+        )
+
+
 def evaluate_release(
     *,
     evidence: Mapping[str, Any] | None = None,
@@ -62,6 +151,9 @@ def evaluate_release(
         ),
         GuardCheck("no_secret_leakage", supplied.get("no_secret_leakage", True) is True, "redaction contract"),
         GuardCheck("tests", supplied.get("tests_passed", True) is True, "focused contract suite"),
+        # DB pool safety checks
+        _check_db_pool_safe(),
+        _check_multiple_engines(),
     ]
     blocking = [check for check in checks if check.blocking and not check.ok]
     if blocking:

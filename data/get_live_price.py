@@ -109,9 +109,15 @@ def _get_providers_for_asset(asset: str) -> List[str]:
     """Get provider priority list for live-price checks.
 
     The final-send gate must not reuse candle-cache prices. It needs a fresh
-    quote from a provider whose symbol mapping matches the asset class. Crypto
-    tries multiple spot/price sources; stocks, FX, and commodities prefer Yahoo
-    with the canonical mapper and optionally Polygon.
+    quote from a provider whose symbol mapping matches the asset class.
+
+    Railway-compatible priority for crypto:
+    1. Coinbase - REST API works from Railway (EU/US regions)
+    2. OKX - REST API works from Railway (all regions)
+    3. Binance - may fail with HTTP 451 in restricted regions
+    4. Bybit - may fail with HTTP 403 in some regions
+    
+    Stocks, FX, and commodities prefer Yahoo with the canonical mapper.
     """
     try:
         from services.asset_mapper import classify_asset
@@ -119,7 +125,9 @@ def _get_providers_for_asset(asset: str) -> List[str]:
     except Exception:
         cls = "crypto" if _is_crypto(asset) else "stock"
     if cls == "crypto":
-        return ["binance", "bybit", "cryptocompare", "yahoo"]
+        # Coinbase and OKX are the most Railway-compatible crypto providers.
+        # Binance/Bybit/CryptoCompare are fallbacks that may be region-blocked.
+        return ["coinbase", "okx", "binance", "bybit", "cryptocompare", "yahoo"]
     return ["yahoo", "polygon"]
 
 
@@ -649,6 +657,149 @@ async def _fetch_yahoo_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
         return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
 
 
+async def _fetch_coinbase_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch live quote from Coinbase public ticker endpoint.
+
+    Coinbase is the most Railway-compatible crypto provider because its REST API
+    is accessible from most cloud regions without geo-restrictions.
+    Uses the /products/<product_id>/ticker endpoint which provides bid/ask/last.
+    """
+    import requests
+
+    provider = "coinbase"
+    breaker = _get_breaker(provider)
+    if not breaker.allow():
+        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
+    started = time.perf_counter()
+    try:
+        # Normalize symbol: BTCUSDT -> BTC-USD, ETHUSDT -> ETH-USD
+        canonical, provider_symbol, _ = _provider_identity(symbol, provider)
+        compact = canonical.replace("/", "").replace("-", "")
+        base, quote = compact, "USD"
+        for suffix in ("USDT", "USDC", "BUSD", "USD"):
+            if compact.endswith(suffix):
+                base, quote = compact[:-len(suffix)], "USD"
+                break
+        product_id = f"{base}-{quote}"
+        response = await asyncio.to_thread(
+            requests.get,
+            f"https://api.exchange.coinbase.com/products/{product_id}/ticker",
+            timeout=5,
+        )
+        received_at = time.time()
+        if not response.ok:
+            reason = f"http_status:{response.status_code}"
+            if response.status_code == 429:
+                reason = "rate_limit:coinbase"
+            elif response.status_code in (401, 403):
+                reason = "auth_or_permission_denied"
+            breaker.record_failure()
+            return _typed_failure(symbol, provider, reason)
+        payload = response.json() or {}
+        price = payload.get("price") or payload.get("last")
+        bid = payload.get("bid")
+        ask = payload.get("ask")
+        source_time = payload.get("time")
+        quote = _typed_quote(
+            symbol=symbol,
+            provider=provider,
+            price=price,
+            bid=bid,
+            ask=ask,
+            source_timestamp=source_time,
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.BID_ASK.value if bid and ask else QuoteKind.TICKER.value,
+            market_status="open",
+        )
+        if isinstance(quote, LivePriceQuote):
+            breaker.record_success()
+            logger.info(
+                "[price] coinbase_live_quote symbol=%s price=%s bid=%s ask=%s product=%s latency_ms=%s",
+                symbol, price, bid, ask, product_id, quote.latency_ms,
+            )
+        else:
+            breaker.record_failure()
+        return quote
+    except Exception as exc:
+        breaker.record_failure()
+        logger.debug("[price] Coinbase quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+
+
+async def _fetch_okx_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
+    """Fetch live quote from OKX public ticker endpoint.
+
+    OKX is a reliable Railway-compatible fallback for crypto quotes.
+    Uses the /api/v5/market/ticker endpoint.
+    """
+    import requests
+
+    provider = "okx"
+    breaker = _get_breaker(provider)
+    if not breaker.allow():
+        return _typed_failure(symbol, provider, "circuit_open", breaker_state=BreakerState.OPEN.value)
+    started = time.perf_counter()
+    try:
+        canonical, provider_symbol, _ = _provider_identity(symbol, provider)
+        compact = canonical.replace("/", "").replace("-", "")
+        # OKX uses - separator: BTC-USDT
+        base, quote = compact, "USDT"
+        for suffix in ("USDT", "USDC", "USD"):
+            if compact.endswith(suffix):
+                base, quote = compact[:-len(suffix)], suffix
+                break
+        inst_id = f"{base}-{quote}"
+        response = await asyncio.to_thread(
+            requests.get,
+            "https://www.okx.com/api/v5/market/ticker",
+            params={"instId": inst_id},
+            timeout=5,
+        )
+        received_at = time.time()
+        payload = response.json() if response.ok else {}
+        if not response.ok or str(payload.get("code") or "1") != "0":
+            reason = f"invalid_response:{getattr(response, 'status_code', 'unknown')}"
+            if not response.ok and response.status_code == 429:
+                reason = "rate_limit:okx"
+            breaker.record_failure()
+            return _typed_failure(symbol, provider, reason)
+        data_list = payload.get("data") or []
+        if not data_list:
+            breaker.record_failure()
+            return _typed_failure(symbol, provider, "no_ticker_data")
+        row = data_list[0] or {}
+        price = row.get("last")
+        bid = row.get("bidPx")
+        ask = row.get("askPx")
+        source_time = row.get("ts")
+        quote = _typed_quote(
+            symbol=symbol,
+            provider=provider,
+            price=price,
+            bid=bid,
+            ask=ask,
+            source_timestamp=source_time,
+            started=started,
+            received_at=received_at,
+            quote_kind=QuoteKind.BID_ASK.value if bid and ask else QuoteKind.TICKER.value,
+            market_status="open",
+        )
+        if isinstance(quote, LivePriceQuote):
+            breaker.record_success()
+            logger.info(
+                "[price] okx_live_quote symbol=%s price=%s bid=%s ask=%s instId=%s latency_ms=%s",
+                symbol, price, bid, ask, inst_id, quote.latency_ms,
+            )
+        else:
+            breaker.record_failure()
+        return quote
+    except Exception as exc:
+        breaker.record_failure()
+        logger.debug("[price] OKX quote error for %s: %s", symbol, exc)
+        return _typed_failure(symbol, provider, f"provider_error:{type(exc).__name__}")
+
+
 async def _fetch_polygon_quote(symbol: str) -> LivePriceQuote | LivePriceFailure:
     import requests
 
@@ -702,6 +853,8 @@ async def _fetch_structured_quote(
     timeout: float,
 ) -> LivePriceQuote | LivePriceFailure:
     adapter = {
+        "coinbase": _fetch_coinbase_quote,
+        "okx": _fetch_okx_quote,
         "binance": _fetch_binance_quote,
         "bybit": _fetch_bybit_quote,
         "cryptocompare": _fetch_cryptocompare_quote,

@@ -18,6 +18,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# Circuit breaker for websocket restart loop prevention
+_ws_circuit_breaker: dict[str, tuple[int, float]] = {}  # provider -> (restart_count, circuit_open_until)
+_ws_circuit_lock = asyncio.Lock()
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -30,6 +35,13 @@ def _env_int(name: str, default: int) -> int:
         return int((os.getenv(name) or str(default)).strip())
     except Exception:
         return int(default)
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float((os.getenv(name) or str(default)).strip())
+    except Exception:
+        return float(default)
 
 
 def _crypto_timeframes() -> list[str]:
@@ -175,18 +187,96 @@ def _choose_ws_provider() -> str:
     return "binance"
 
 
+async def _check_ws_circuit_breaker(provider: str) -> bool:
+    """Check if websocket provider is circuit-broken.
+
+    Returns True if the provider is allowed to connect.
+    Returns False if the circuit is open.
+    """
+    max_restarts = _env_int("WS_MAX_RESTARTS", 5)
+    circuit_seconds = _env_float("WS_CIRCUIT_BREAKER_SECONDS", 900.0)  # 15 min default
+
+    async with _ws_circuit_lock:
+        if provider not in _ws_circuit_breaker:
+            _ws_circuit_breaker[provider] = (0, 0.0)
+            return True
+
+        restart_count, circuit_open_until = _ws_circuit_breaker[provider]
+        now = time.time()
+
+        if circuit_open_until > now:
+            # Circuit is open
+            remaining = int(circuit_open_until - now)
+            logger.warning(
+                "[ws_circuit] %s circuit OPEN for %ss (restarts=%s max=%s)",
+                provider, remaining, restart_count, max_restarts,
+            )
+            return False
+
+        # Circuit has cooled down
+        if circuit_open_until > 0:
+            logger.info("[ws_circuit] %s circuit HALF_OPEN after cooldown", provider)
+
+        return True
+
+
+async def _record_ws_restart(provider: str) -> None:
+    """Record a websocket restart and open circuit if threshold exceeded."""
+    max_restarts = _env_int("WS_MAX_RESTARTS", 5)
+    circuit_seconds = _env_float("WS_CIRCUIT_BREAKER_SECONDS", 900.0)
+
+    async with _ws_circuit_lock:
+        restart_count, circuit_open_until = _ws_circuit_breaker.get(provider, (0, 0.0))
+        restart_count += 1
+
+        if restart_count >= max_restarts:
+            circuit_open_until = time.time() + circuit_seconds
+            logger.warning(
+                "[ws_circuit] %s circuit OPEN after %s restarts; cooling for %ss",
+                provider, restart_count, circuit_seconds,
+            )
+        else:
+            logger.info("[ws_circuit] %s restart %s/%s", provider, restart_count, max_restarts)
+
+        _ws_circuit_breaker[provider] = (restart_count, circuit_open_until)
+
+
+async def _reset_ws_circuit(provider: str) -> None:
+    """Reset the circuit breaker on successful connection."""
+    async with _ws_circuit_lock:
+        _ws_circuit_breaker[provider] = (0, 0.0)
+
+
 async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
     """Consume WS (Binance or CryptoCompare) and persist market data into Postgres.
 
-    Auto-fallback:
+    Auto-fallback with bounded restarts and circuit breaker:
     - If Binance WS is unreachable/geo-blocked, we can fall back to CryptoCompare WS.
     - If CryptoCompare WS is rate-limited/unavailable, we can fall back to Binance WS.
+    - Circuit breaker prevents infinite restart loops.
+    - In PUBLIC_TESTING_MODE, defaults to disabled unless independently proven healthy.
 
     Non-fatal by design:
     - If DATABASE_URL is missing or both providers fail, this should not crash the process.
     """
 
-    if not _env_bool("CRYPTO_WS_ENABLED", False):
+    # In public-testing mode, default websocket to disabled unless explicitly enabled
+    _ws_ingest_raw = os.getenv("WS_INGEST_ENABLED")
+    if _ws_ingest_raw is not None:
+        ws_enabled = _env_bool("WS_INGEST_ENABLED", False)
+    else:
+        # WS_INGEST_ENABLED not explicitly set; fall back to CRYPTO_WS_ENABLED
+        ws_enabled = _env_bool("CRYPTO_WS_ENABLED", False)
+        public_testing = _env_bool("PUBLIC_TESTING_MODE", False)
+        if public_testing:
+            ws_enabled = False
+            logger.info(
+                "[ws_ingest] PUBLIC_TESTING_MODE active: websocket disabled by default. "
+                "Set WS_INGEST_ENABLED=1 to override."
+            )
+
+    if not ws_enabled:
+        logger.info("[ws_ingest] disabled")
         return
 
     if not is_db_configured():
@@ -202,9 +292,6 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
 
     flush_every = _env_int("WS_DB_FLUSH_EVERY", 25)
     stale_seconds = float(_env_int("WS_STALE_SECONDS", 45))
-
-    # CryptoCompare does not provide klines; we build candles from trades/ticks.
-    cc_builder = _CryptoCompareCandleBuilder(intervals=intervals)
 
     async def _consume_provider(provider: str) -> bool:
         """Return True if running, False if stalled (no events)."""
@@ -341,22 +428,75 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
             with contextlib.suppress(Exception):
                 await feeder_task
 
-    # Main loop: try preferred provider, then fallback, and keep retrying.
+    # Circuit breaker controlled main loop with exponential backoff
     preferred = _choose_ws_provider()
     providers = [preferred, "cryptocompare" if preferred == "binance" else "binance"]
 
+    backoff_s = 1.0
+    max_backoff_s = _env_float("WS_MAX_BACKOFF_SECONDS", 60.0)
+
     while stop_event is None or not stop_event.is_set():
+        provider_connected = False
         for p in providers:
             if stop_event is not None and stop_event.is_set():
                 return
+
+            # Check circuit breaker before attempting connection
+            if not await _check_ws_circuit_breaker(p):
+                logger.info("[ws_ingest] provider=%s circuit-broken; skipping", p)
+                continue
+
             try:
                 logger.info(f"[ws_ingest] provider_try={p}")
                 ok = await _consume_provider(p)
             except Exception:
                 ok = False
+
             if ok:
-                # Normal shutdown requested.
+                # Normal shutdown or healthy connection established
+                await _reset_ws_circuit(p)
+                backoff_s = 1.0
+                provider_connected = True
+                logger.info(f"[ws_ingest] provider={p} completed normally")
                 return
-            # If stalled, try the other provider.
+
+            # Connection failed or stalled
+            await _record_ws_restart(p)
             logger.info(f"[ws_ingest] provider_switch_from={p}")
-        await asyncio.sleep(2.0)
+
+        if not provider_connected:
+            # All providers failed; exponential backoff before retry
+            logger.warning(
+                "[ws_ingest] all providers failed; backing off for %.1fs (max=%.1fs)",
+                backoff_s, max_backoff_s,
+            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.sleep(backoff_s),
+                    timeout=max_backoff_s + 1.0,
+                )
+            except asyncio.TimeoutError:
+                pass
+            backoff_s = min(max_backoff_s, backoff_s * 2)
+        else:
+            backoff_s = 1.0
+
+        # Check if all providers are circuit-broken (cool-down period)
+        all_broken = True
+        for p in providers:
+            if await _check_ws_circuit_breaker(p):
+                all_broken = False
+                break
+        if all_broken:
+            cool_down = _env_float("WS_CIRCUIT_BREAKER_SECONDS", 900.0)
+            logger.warning(
+                "[ws_ingest] all providers circuit-broken; cooling down for %.0fs before retry",
+                cool_down,
+            )
+            try:
+                await asyncio.wait_for(
+                    asyncio.sleep(min(cool_down, max_backoff_s)),
+                    timeout=max_backoff_s + 1.0,
+                )
+            except asyncio.TimeoutError:
+                pass

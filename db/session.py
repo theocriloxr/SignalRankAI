@@ -132,34 +132,57 @@ def _effective_pool_settings() -> tuple[int, int]:
         return 0, 0
 
     if _is_railway_runtime():
+        # PUBLIC_TESTING_MODE blocks any attempt to disable the Railway pool cap.
+        # The override env vars are completely ignored in public-testing mode.
+        _public_testing = _pool_bool("PUBLIC_TESTING_MODE", False)
+        
+        # Check for unsafe overrides and log them as errors (not warnings) so
+        # operators know the override was ignored.
         disable_requested = _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False)
         allow_uncapped = _pool_bool("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
-        if disable_requested and not allow_uncapped:
-            logger.warning(
-                "[db] DB_POOL_DISABLE_RAILWAY_CAP ignored on Railway; set "
-                "DB_POOL_ALLOW_UNCAPPED_RAILWAY=1 only when Postgres max_connections is proven sufficient"
-            )
-        if disable_requested and allow_uncapped:
-            logger.warning("[db] Railway DB pool cap disabled by explicit operator override")
-            return pool_size, max_overflow
+        
+        if disable_requested or allow_uncapped:
+            if _public_testing:
+                logger.warning(
+                    "[db_pool_safe] Railway pool override BLOCKED by PUBLIC_TESTING_MODE; "
+                    "DB_POOL_DISABLE_RAILWAY_CAP and DB_POOL_ALLOW_UNCAPPED_RAILWAY are ignored"
+                )
+            else:
+                logger.warning(
+                    "[db] Railway DB pool cap overrides detected but not applied; "
+                    "set PUBLIC_TESTING_MODE=0 and both flags only if Postgres max_connections is proven sufficient"
+                )
 
         # Fail-safe monolith limits. A stale Railway variable such as
         # DB_POOL_SIZE=200 or DB_POOL_SIZE_RAILWAY=20 must not reserve a large
-        # pool. Operators can still use the explicit two-flag override above
-        # after confirming the database connection budget.
-        # The conservative defaults remain 2/0, but an explicit absolute cap
-        # is an operator-reviewed deployment contract and may be higher (the
-        # staging/soak tests use 8/2).  It is still a hard upper bound.
+        # pool. The conservative defaults remain 2/0.
+        # An explicit DB_POOL_RAILWAY_ABSOLUTE_CAP is an operator-reviewed
+        # deployment contract and may be higher (staging/soak tests use 4/2).
+        # It is still a hard upper bound, never exceeding the approved max.
         absolute_pool_raw = os.getenv("DB_POOL_RAILWAY_ABSOLUTE_CAP")
         absolute_overflow_raw = os.getenv("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP")
-        if absolute_pool_raw is not None:
+        
+        # In public-testing mode, enforce strictest defaults regardless of overrides.
+        if _public_testing:
+            railway_pool_cap = 2
+            railway_overflow_cap = 0
+            logger.info(
+                "[db_pool_safe] PUBLIC_TESTING_MODE enabled: forced pool_size=%s max_overflow=%s",
+                railway_pool_cap,
+                railway_overflow_cap,
+            )
+        elif absolute_pool_raw is not None:
             railway_pool_cap = _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1)
         else:
             railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
-        if absolute_overflow_raw is not None:
+        
+        if _public_testing:
+            railway_overflow_cap = 0
+        elif absolute_overflow_raw is not None:
             railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0)
         else:
             railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
+        
         original_pool_size = pool_size
         original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)
@@ -450,6 +473,61 @@ def is_db_configured() -> bool:
     return get_database_url_or_none() is not None
 
 
+def get_engine_inventory() -> list[dict[str, Any]]:
+    """Produce an engine inventory for the release guard and /db_health.
+
+    Returns:
+        A list of dicts, each with:
+        - loop_id
+        - pool_type ("NullPool" or "QueuePool" or "AsyncAdaptedQueuePool")
+        - pool_size
+        - max_overflow
+        - checked_out / checked_in (if accessible)
+        - owning_runtime ("main" or "auxiliary")
+    """
+    inventory: list[dict[str, Any]] = []
+    main_loop_id = _loop_identity()
+    for loop_id, engine in list(_engines_by_loop.items()):
+        pool_type = "unknown"
+        pool_size = 0
+        max_overflow = 0
+        checked_out = None
+        checked_in = None
+        try:
+            pool = engine.sync_engine.pool
+            pool_type = type(pool).__name__
+            try:
+                pool_size = int(getattr(pool, "size", lambda: 0)() if callable(getattr(pool, "size", None)) else getattr(pool, "size", 0) or 0)
+            except Exception:
+                pass
+            try:
+                max_overflow = int(getattr(pool, "overflow", lambda: 0)() if callable(getattr(pool, "overflow", None)) else getattr(pool, "overflow", 0) or 0)
+            except Exception:
+                pass
+            try:
+                checked_out = int(getattr(pool, "checkedout", lambda: 0)() if callable(getattr(pool, "checkedout", None)) else getattr(pool, "checkedout", None))
+            except Exception:
+                pass
+            try:
+                checked_in = int(getattr(pool, "checkedin", lambda: 0)() if callable(getattr(pool, "checkedin", None)) else getattr(pool, "checkedin", None))
+            except Exception:
+                pass
+        except Exception:
+            pass
+        owning = "main" if loop_id == main_loop_id else "auxiliary"
+        inventory.append({
+            "loop_id": loop_id,
+            "pool_type": pool_type,
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
+            "checked_out": checked_out,
+            "checked_in": checked_in,
+            "owning_runtime": owning,
+            "nullpool": pool_type == "NullPool" and pool_size == 0 and max_overflow == 0,
+        })
+    return inventory
+
+
 def get_pool_diagnostics() -> dict[str, Any]:
     """Return local SQLAlchemy pool diagnostics for admin health commands."""
     loop_id = _loop_identity()
@@ -461,10 +539,12 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "configured": is_db_configured(),
         "loop_id": loop_id,
         "engine_count": len(_engines_by_loop),
+        "engine_inventory": get_engine_inventory(),
         "sessionmaker_count": len(_sessionmakers_by_loop),
         "effective_pool_size": pool_size,
         "effective_max_overflow": max_overflow,
         "railway_runtime": _is_railway_runtime(),
+        "public_testing_mode": _pool_bool("PUBLIC_TESTING_MODE", False),
         "database_role": _database_role(),
         "application_name": _database_application_name(),
         "nullpool": bool(pool_size == 0 and max_overflow == 0),
