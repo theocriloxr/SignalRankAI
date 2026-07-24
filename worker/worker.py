@@ -195,7 +195,7 @@ class Worker:
             except Exception:
                 logger.exception("[worker] Failed to start WS ingestor")
 
-        # ML daily retrain loop (optional)
+        # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
         if config.ML_TRAIN_ENABLED:
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
@@ -225,9 +225,22 @@ class Worker:
                     if restart and not self._stop.is_set():
                         try:
                             exc: BaseException | None = None
-                            if not task.cancelled():
+                            task_cancelled = task.cancelled()
+                            if not task_cancelled:
                                 with contextlib.suppress(Exception):
                                     exc = task.exception()
+
+                            # Normal completion without exception: task finished cleanly.
+                            # Do NOT restart tasks that completed without errors.
+                            # Only restart tasks that crashed with an exception.
+                            if exc is None and not task_cancelled:
+                                logger.info(
+                                    "[worker] task %s completed normally; no restart scheduled",
+                                    name,
+                                )
+                                spec["restart"] = False
+                                continue
+
                             if not bool(spec.get("restart_pending", False)):
                                 restart_count = int(spec.get("restart_count", 0) or 0) + 1
                                 spec["restart_count"] = restart_count
@@ -238,7 +251,7 @@ class Worker:
                                 spec["next_restart_at"] = now_mono + delay_s
                                 spec["restart_pending"] = True
                                 logger.warning(
-                                    "[worker] task %s ended; restart scheduled in %.1fs (attempt=%s db_error=%s)",
+                                    "[worker] task %s ended with error; restart scheduled in %.1fs (attempt=%s db_error=%s)",
                                     name,
                                     delay_s,
                                     restart_count,
@@ -284,9 +297,10 @@ class Worker:
             try:
                 if is_db_configured():
                     async def _do_expire() -> None:
+                        from db.priority import DBPriority
                         from db.session import NoncriticalWriteDropped
                         try:
-                            async with get_session(noncritical=True) as session:
+                            async with get_session(priority=DBPriority.BACKGROUND, label="subscription_expiry") as session:
                                 _ = await expire_subscriptions(session)
                                 await session.commit()
                         except NoncriticalWriteDropped:

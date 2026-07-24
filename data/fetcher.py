@@ -41,6 +41,10 @@ _CANDLE_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
 _CANDLE_CACHE_LOCK = threading.Lock()
 _CANDLE_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 
+# Per-provider concurrency is handled by _SYNC_PROVIDER_LOCKS (threading.Lock per provider).
+# The short-lived candle cache provides request coalescing at the symbol/timeframe level.
+
+
 # Outage tracking for automated alerts
 _PROVIDER_OUTAGE_ALERTED: dict[str, bool] = {}
 _PROVIDER_OUTAGE_LAST_ALERT: dict[str, float] = {}
@@ -799,33 +803,34 @@ def get_candles(asset, timeframe):
 
         # Coalesce concurrent callers for the same key.
         _key_lock = _get_candle_key_lock(_cache_key)
+
+        # Step 1: Check cache under lock (fast path).
+        # Only hold the lock for cache read/write, NOT for network I/O.
         with _key_lock:
-            # Re-check after acquiring key lock.
             _cached = _read_cached_candles(_cache_key, _cache_ttl)
             if _cached is not None:
                 return _cached
+        # Lock released before network I/O.
 
-            asset_type = get_asset_type(asset)
+        asset_type = get_asset_type(asset)
 
-            # Enable multi-provider via env var
-            use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
+        # Enable multi-provider via env var
+        use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
 
-            if not use_multi_provider:
-                # Legacy single-provider mode
-                if asset_type == "crypto":
-                    candles = get_crypto_candles(asset, timeframe)
-                elif asset_type == "fx":
-                    candles = get_fx_candles(asset, timeframe)
-                elif asset_type == "index":
-                    candles = get_index_candles(asset, timeframe)
-                elif asset_type == "commodity":
-                    candles = get_stock_candles(asset, timeframe)
-                else:
-                    candles = get_stock_candles(asset, timeframe)
-                _write_cached_candles(_cache_key, candles or [])
-                return candles or []
-
-            # Multi-provider mode with fallbacks
+        if not use_multi_provider:
+            # Legacy single-provider mode
+            if asset_type == "crypto":
+                candles = get_crypto_candles(asset, timeframe)
+            elif asset_type == "fx":
+                candles = get_fx_candles(asset, timeframe)
+            elif asset_type == "index":
+                candles = get_index_candles(asset, timeframe)
+            elif asset_type == "commodity":
+                candles = get_stock_candles(asset, timeframe)
+            else:
+                candles = get_stock_candles(asset, timeframe)
+        else:
+            # Multi-provider mode with fallbacks (network I/O, no lock held)
             if asset_type == "crypto":
                 candles = _fetch_crypto_multi_provider(asset, timeframe)
             elif asset_type == "fx":
@@ -836,6 +841,13 @@ def get_candles(asset, timeframe):
                 candles = _fetch_commodity_multi_provider(asset, timeframe)
             else:  # stock
                 candles = _fetch_stock_multi_provider(asset, timeframe)
+
+        # Step 2: Write results to cache under lock.
+        with _key_lock:
+            # Double-check: another thread may have cached this key while we were fetching.
+            _cached = _read_cached_candles(_cache_key, _cache_ttl)
+            if _cached is not None:
+                return _cached
 
             if (not candles) or len(candles) < 20:
                 ff_ttl = _get_forward_fill_ttl_seconds()
@@ -858,63 +870,75 @@ def get_candles(asset, timeframe):
 
 
 def _fetch_crypto_multi_provider(asset, timeframe):
-    """Try multiple crypto providers in order.
-    
+    """Try multiple crypto providers in order with concurrency limits.
+
+    Uses a threading-based semaphore to limit concurrent requests per provider.
+    Requires timeframes are fetched in priority order (required TFs first).
+
     NOTE: For Nigeria (Binance blocked):
-    - Binance/Bybit → Yahoo Finance (free, works worldwide) → CryptoCompare
-    - Yahoo requires symbol conversion: BTCUSDT → BTC-USD
+    - Coinbase/OKX work from Railway without regional restrictions
     """
     # Build provider list from connector registry (prefer connectors)
     from data.connector_registry import get_providers_for_asset
 
     provs = get_providers_for_asset("crypto")
     providers = []
-    # Wrap provider callables to accept timeout kw param used by retry_with_backoff
     for name, fn in provs:
         providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
 
-    # Allow explicit preferred provider via env var (e.g., CRYPTO_PREFERRED_PROVIDER=binance)
+    # Allow explicit preferred provider via env var (e.g., CRYPTO_PREFERRED_PROVIDER=coinbase)
     preferred = (os.getenv("CRYPTO_PREFERRED_PROVIDER") or "").strip().lower()
     providers = _prioritize_provider_list(providers, preferred)
 
     healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
     unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
+
+    # Use a threading-based semaphore for provider concurrency control
+    # (asyncio.Semaphore only works inside async functions, but this is synchronous)
+    # _SYNC_PROVIDER_LOCKS is module-level; don't shadow with local declaration.
+
     for provider_name, fetch_func in healthy_providers + unhealthy_providers:
-        _provider_started = time.monotonic()
-        logger.info(
-            "[data] provider_attempt asset=%s class=crypto tf=%s provider=%s health=%s",
-            asset,
-            timeframe,
-            provider_name,
-            "healthy" if provider_is_healthy(provider_name) else "degraded",
-        )
-        try:
-            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
-                _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] crypto_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
-                return candles
-            else:
+        # Per-provider lock gives us sequential requests (concurrency=1) per provider
+        lock = _SYNC_PROVIDER_LOCKS.setdefault(provider_name, threading.Lock())
+        with lock:
+            _provider_started = time.monotonic()
+            logger.info(
+                "[ohlc_request] provider=%s asset=%s tf=%s health=%s",
+                provider_name,
+                asset,
+                timeframe,
+                "healthy" if provider_is_healthy(provider_name) else "degraded",
+            )
+            try:
+                candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
+                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
+                if candles and len(candles) >= 20:
+                    mark_provider_result(provider_name, True, latency_ms=_latency_ms)
+                    _set_last_provider_used(asset, timeframe, provider_name)
+                    logger.info(
+                        "[ohlc_request] provider=%s asset=%s tf=%s candles=%s latency_ms=%s",
+                        provider_name, asset, timeframe, len(candles), _latency_ms,
+                    )
+                    return candles
+                else:
+                    mark_provider_result(provider_name, False, latency_ms=_latency_ms)
+                    reason = _provider_failure_reason(
+                        provider_name,
+                        "insufficient_candles",
+                        candles_count=len(candles or []),
+                        latency_ms=_latency_ms,
+                    )
+                    _track_provider_error(asset, timeframe, reason)
+                    logger.info("[ohlc_request] failed provider=%s asset=%s tf=%s %s", provider_name, asset, timeframe, reason)
+            except Exception as e:
+                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
                 mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-                reason = _provider_failure_reason(
-                    provider_name,
-                    "insufficient_candles",
-                    candles_count=len(candles or []),
-                    latency_ms=_latency_ms,
-                )
+                reason = _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms)
                 _track_provider_error(asset, timeframe, reason)
-                logger.info("[data] provider_attempt_failed asset=%s tf=%s %s", asset, timeframe, reason)
-        except Exception as e:
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            reason = _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms)
-            _track_provider_error(asset, timeframe, reason)
-            logger.warning(f"[data] crypto_provider={provider_name} symbol={asset} failed: {e}")
+                logger.warning("[ohlc_request] error provider=%s asset=%s tf=%s err=%s", provider_name, asset, timeframe, e)
             continue
     _track_provider_error(asset, timeframe, "all_crypto_providers_failed")
-    logger.warning(f"[data] crypto_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
+    logger.warning("[ohlc_request] all_providers_failed asset=%s tf=%s", asset, timeframe)
     return []
 
 
@@ -1195,10 +1219,40 @@ def is_fx(asset):
     return False
 
 
+def is_macro_yield(asset):
+    """Check if asset is a macro/yield instrument (DXY, US10Y, US02Y, etc.)
+    
+    These are NOT normal equities — they are index/rate instruments that require
+    separate provider routing, session handling, and risk treatment.
+    They are analysis-only by default and should not be classified as stocks.
+    """
+    a = (asset or "").upper().strip()
+    macro_tickers = {"DXY", "US10Y", "US02Y", "US30Y", "US5Y", "US3M", "USB10Y", "USB02Y"}
+    clean = a.replace("/", "").replace("_", "").replace("-", "")
+    return clean in macro_tickers or clean.startswith("US") and clean.endswith("Y") and clean[2:-1].isdigit()
+
+
 def is_stock(asset):
-    """Check if asset is a stock ticker."""
-    # If not crypto, FX, commodity, or index, assume stock
-    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset) and not is_index(asset)
+    """Check if asset is a stock ticker.
+    
+    DXY, treasury yields (US10Y, US02Y) and other macro instruments are NOT stocks.
+    Crypto-fiat pairs (DOGEIDR, USDTIDR) are NOT stocks.
+    """
+    # Exclude macro/yield instruments, crypto-fiat pairs, and known non-stocks first
+    if is_macro_yield(asset):
+        return False
+    a = (asset or "").upper().strip()
+    clean = a.replace("/", "").replace("_", "").replace("-", "")
+    # Exclude crypto-fiat pairs (e.g., DOGEIDR, USDTIDR, ADAIDR)
+    crypto_fiat_bases = {"DOGE", "USDT", "ADA", "BTC", "ETH", "XRP", "SOL", "AVAX", "DOT", "LINK", "LTC", "BNB", "OP", "MATIC", "POL", "XAUT"}
+    crypto_fiat_quotes = {"IDR", "ARS", "BRL", "TRY", "NGN", "ZAR", "INR", "VND", "THB", "SGD"}
+    if len(clean) >= 6:
+        base_match = any(clean.startswith(b) for b in crypto_fiat_bases)
+        quote_match = any(clean.endswith(q) for q in crypto_fiat_quotes)
+        if base_match and quote_match:
+            return False
+    # If not crypto, FX, commodity, index, or macro/yield, assume stock
+    return not is_crypto(asset) and not is_fx(asset) and not is_commodity(asset) and not is_index(asset) and not is_macro_yield(asset)
 
 
 def is_commodity(asset):
@@ -1299,6 +1353,8 @@ def get_asset_type(asset):
         return "commodity"
     elif is_index(asset):
         return "index"
+    elif is_macro_yield(asset):
+        return "macro"
     else:
         return "stock"
 

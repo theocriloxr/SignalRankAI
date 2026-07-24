@@ -1189,7 +1189,8 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
         min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
         since = datetime.utcnow() - _timedelta(days=days)
-        async with get_session(noncritical=True) as session:
+        from db.priority import DBPriority
+        async with get_session(priority=DBPriority.BACKGROUND, label="segment_quarantine") as session:
             row = (
                 await session.execute(
                     text(
