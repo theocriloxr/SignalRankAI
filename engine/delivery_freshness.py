@@ -68,6 +68,14 @@ def _direction(signal: dict[str, Any]) -> str:
     return "long"
 
 
+def _public_testing() -> bool:
+    """Check if PUBLIC_TESTING_MODE is enabled."""
+    raw = os.getenv("PUBLIC_TESTING_MODE")
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -476,7 +484,14 @@ async def validate_delivery_freshness(
     ``final_send=True`` is deliberately stricter: it ignores cached/naked
     prices, obtains a typed provider observation, checks source age and market
     state, and fails closed independently of compatibility feature flags.
+
+    PUBLIC_TESTING_MODE: When enabled, all fail-open delivery paths are
+    overridden to fail-closed. A quote timeout, provider error, missing quote,
+    or stale quote always blocks delivery. The env vars
+    DELIVERY_FRESHNESS_TIMEOUT_FAIL_OPEN, DELIVERY_FRESHNESS_ERROR_FAIL_OPEN,
+    and DELIVERY_MISSING_PRICE_FAIL_OPEN are ignored.
     """
+    _pt = _public_testing()
     if not _env_bool("DELIVERY_FRESHNESS_GATE_ENABLED", True) and not final_send:
         return DeliveryFreshnessResult(True, "disabled")
 
@@ -581,6 +596,21 @@ async def validate_delivery_freshness(
                     live_price = None
 
     if require_price and live_price is None:
+        # In public-testing mode, always block with a distinct state name
+        # so logs clearly identify the enforcement.
+        _blocked_state = "BLOCKED_PROVIDER_UNTRUSTED"
+        if _pt:
+            _blocked_state = "BLOCKED_PROVIDER_UNTRUSTED_PUBLIC_TEST"
+        elif final_send:
+            _blocked_state = "BLOCKED_PROVIDER_UNTRUSTED"
+        logger.warning(
+            "[delivery_blocked] signal=%(signal_id)s asset=%(asset)s reason=%(reason)s fail_open=false",
+            {
+                "signal_id": str(sig.get("signal_id") or "unknown")[:12],
+                "asset": symbol,
+                "reason": "live_price_unavailable",
+            },
+        )
         return DeliveryFreshnessResult(
             False,
             "live_price_unavailable:final_live_price_unavailable",
@@ -588,7 +618,7 @@ async def validate_delivery_freshness(
             age_result.max_age_minutes,
             age_result.opportunity_remaining_pct,
             None,
-            state="BLOCKED_PROVIDER_UNTRUSTED" if final_send else "LIVE_PRICE_UNAVAILABLE",
+            state=_blocked_state,
             queue_age_seconds=queue_result.queue_age_seconds,
             max_queue_age_seconds=queue_result.max_queue_age_seconds,
             rule_results=tuple(rule_results) + ("live_price_missing",),
