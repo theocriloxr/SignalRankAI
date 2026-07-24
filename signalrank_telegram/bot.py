@@ -719,6 +719,8 @@ from .commands import (
     gemini_predict_command,
     admin_command,
     admin_broadcast_command,
+    admin_dashboard,
+    force_market_scan_command,
     agree_terms_callback,
     decline_terms_callback,
     vip_waitlist_join_callback,
@@ -5580,7 +5582,7 @@ def run_bot() -> None:
     application.add_handler(_CQH_nav(button_click_handler, pattern=r"^(nav_.*|timezone_.*|trade_now.*|mt5_link_guide|mt5_settings|advanced_portfolio|locked_.*|admin_.*|vip_sold_out)$"))
 
     # \u2500\u2500 Admin commands (OWNER/ADMIN only, silent for others) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-    from .commands import admin_command, admin_broadcast_command, blast_terms_command, admin_dashboard, force_market_scan_command
+    # NOTE: All admin commands imported at module level; see imports near top of file.
     application.add_handler(CommandHandler("admin", _audit_handler("admin", admin_command)))
     application.add_handler(CommandHandler("admin_dashboard", _audit_handler("admin_dashboard", admin_dashboard)))
     application.add_handler(CommandHandler("admin_broadcast", _audit_handler("admin_broadcast", admin_broadcast_command)))

@@ -168,8 +168,12 @@ class MarketMonitor:
             from telegram import Bot
             
             # Get user IDs asynchronously (we're already in an async context)
-            async with get_session(noncritical=True) as session:
-                user_ids = await list_all_user_telegram_ids(session)
+            try:
+                async with get_session(noncritical=True) as session:
+                    user_ids = await list_all_user_telegram_ids(session)
+            except NoncriticalWriteDropped:
+                logger.info("[db_background_deferred] task=market_monitor reason=foreground_reserved")
+                return
             
             if not user_ids:
                 return

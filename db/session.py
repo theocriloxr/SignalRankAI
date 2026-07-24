@@ -372,11 +372,22 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
                 or _pool_bool("DB_AUXILIARY_NULLPOOL", True)
             )
         )
-        if _is_railway_runtime() and pool_size > 5:
-            logger.warning(
-                "[db] unsafe Railway monolith pool configuration pool_size=%s; recommended DB_POOL_SIZE=2",
-                pool_size,
-            )
+        if _is_railway_runtime():
+            if pool_size > 2:
+                logger.warning(
+                    "[db_pool_effective_config] unsafe Railway monolith pool configuration "
+                    "pool_size=%s max_overflow=%s effective=%s+%s; recommended DB_POOL_SIZE=2 DB_MAX_OVERFLOW=0",
+                    pool_size,
+                    max_overflow,
+                    pool_size,
+                    max_overflow,
+                )
+            else:
+                logger.info(
+                    "[db_pool_effective_config] Railway safe pool: pool_size=%s max_overflow=%s",
+                    pool_size,
+                    max_overflow,
+                )
         if (pool_size == 0 and max_overflow == 0) or auxiliary_nullpool:
             engine = create_async_engine(
                 url,

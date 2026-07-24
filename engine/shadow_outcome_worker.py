@@ -44,7 +44,7 @@ class ShadowOutcomeWorker:
     async def _run_loop(self) -> None:
         try:
             # Local imports to prevent circular dependency issues in some engine architectures
-            from db.session import get_session
+            from db.session import get_session, NoncriticalWriteDropped
             from db.models import MLRejectedSignal, MLShadowPrediction
             from sqlalchemy import select
             from engine.realtime_outcome_tracker import _get_live_price, _parse_tp_levels, _check_hit
@@ -54,18 +54,23 @@ class ShadowOutcomeWorker:
                 try:
                     cutoff = datetime.utcnow() - timedelta(minutes=self._min_age_minutes)
                     
-                    async with get_session(noncritical=True) as session:
-                        # 1. Fetch a batch of untracked signals
-                        stmt = (
-                            select(MLRejectedSignal)
-                            .where(MLRejectedSignal.outcome_tracked_at.is_(None))
-                            .where(MLRejectedSignal.created_at <= cutoff)
-                            .order_by(MLRejectedSignal.created_at.asc())
-                            .with_for_update(skip_locked=True)
-                            .limit(100) # Slightly smaller batch for better transaction stability
-                        )
-                        res = await session.execute(stmt)
-                        rows = res.scalars().all()
+                    try:
+                        async with get_session(noncritical=True) as session:
+                            # 1. Fetch a batch of untracked signals
+                            stmt = (
+                                select(MLRejectedSignal)
+                                .where(MLRejectedSignal.outcome_tracked_at.is_(None))
+                                .where(MLRejectedSignal.created_at <= cutoff)
+                                .order_by(MLRejectedSignal.created_at.asc())
+                                .with_for_update(skip_locked=True)
+                                .limit(100)
+                            )
+                            res = await session.execute(stmt)
+                            rows = res.scalars().all()
+                    except NoncriticalWriteDropped:
+                        # Expected backpressure for background work; defer until next cycle
+                        await asyncio.sleep(5)
+                        continue
 
                         if not rows:
                             # No work to do, release session and wait

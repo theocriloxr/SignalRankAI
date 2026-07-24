@@ -284,9 +284,13 @@ class Worker:
             try:
                 if is_db_configured():
                     async def _do_expire() -> None:
-                        async with get_session(noncritical=True) as session:
-                            _ = await expire_subscriptions(session)
-                            await session.commit()
+                        from db.session import NoncriticalWriteDropped
+                        try:
+                            async with get_session(noncritical=True) as session:
+                                _ = await expire_subscriptions(session)
+                                await session.commit()
+                        except NoncriticalWriteDropped:
+                            logger.info("[db_background_deferred] task=subscription_expiry reason=foreground_reserved retry_in_s=3600")
                     await run_with_db_retry(_do_expire)
             except Exception:
                 logger.exception("[worker] subscription expiry loop iteration failed")
