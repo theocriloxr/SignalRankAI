@@ -1,3 +1,4 @@
+import asyncio
 import threading
 import time
 from cachetools import TTLCache
@@ -60,6 +61,8 @@ _CANDLE_INFLIGHT_LOCK = threading.Lock()
 # connector call. Limits are intentionally conservative for free/sandbox APIs.
 _SYNC_PROVIDER_SEMAPHORES: dict[str, threading.BoundedSemaphore] = {}
 _SYNC_PROVIDER_LIMITS: dict[str, int] = {}
+_ASYNC_PROVIDER_SEMAPHORES: dict[tuple[int, str, int], asyncio.Semaphore] = {}
+_ASYNC_PROVIDER_INFLIGHT: dict[tuple[int, str], int] = {}
 _PROVIDER_CONCURRENCY_LOCK = threading.Lock()
 _PROVIDER_INFLIGHT: dict[str, int] = {}
 
@@ -2495,6 +2498,26 @@ def discover_tradingview_symbols(exchange: str = "BINANCE") -> list[str]:
         return symbols
 
 
+def _provider_timeframe_eligible(provider_name: str, timeframe: str) -> bool:
+    alias = _provider_alias(provider_name)
+    tf = str(timeframe or "").strip().lower()
+    if alias == "ecb" and tf not in {"1d", "d", "day", "daily"}:
+        return False
+    return True
+
+
+def _get_async_provider_semaphore(provider_name: str) -> tuple[asyncio.Semaphore, int, tuple[int, str]]:
+    loop = asyncio.get_running_loop()
+    alias = _provider_alias(provider_name) or _provider_key(provider_name) or "unknown"
+    limit = _provider_concurrency_limit(provider_name)
+    key = (id(loop), alias, limit)
+    semaphore = _ASYNC_PROVIDER_SEMAPHORES.get(key)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(limit)
+        _ASYNC_PROVIDER_SEMAPHORES[key] = semaphore
+    return semaphore, limit, (id(loop), alias)
+
+
 async def async_get_candles(asset, timeframe):
     """Async variant of `get_candles` that prefers async connector callables.
 
@@ -2534,6 +2557,10 @@ async def async_get_candles(asset, timeframe):
             healthy_provs = [p for p in provs if provider_is_healthy(p[0])]
             unhealthy_provs = [p for p in provs if not provider_is_healthy(p[0])]
             ordered_provs = healthy_provs + unhealthy_provs
+        # Apply endpoint/timeframe capability before the attempt budget so an
+        # analysis-only daily provider never consumes an intraday attempt.
+        ordered_provs = [p for p in ordered_provs if _provider_timeframe_eligible(p[0], timeframe)]
+        ordered_provs = ordered_provs[:_max_provider_attempts()]
 
         if str(asset_type or "").lower().strip() == "crypto":
             order_names = [str(name).replace("_connector", "") for name, _ in ordered_provs]
@@ -2565,11 +2592,23 @@ async def async_get_candles(asset, timeframe):
                 "healthy" if provider_is_healthy(provider_name) else "degraded",
             )
             try:
-                # Strict per-provider timeout so slow upstreams fail fast and the chain can fallback.
-                candles = await asyncio.wait_for(
-                    fetch_fn(symbol_for_providers, timeframe, timeout=provider_timeout_s),
-                    timeout=provider_timeout_s,
+                # Strict provider concurrency and timeout.  The semaphore
+                # encloses the actual network call, not just response parsing.
+                _sem, _limit, _inflight_key = _get_async_provider_semaphore(provider_name)
+                await asyncio.wait_for(_sem.acquire(), timeout=_provider_queue_timeout_seconds())
+                _ASYNC_PROVIDER_INFLIGHT[_inflight_key] = int(_ASYNC_PROVIDER_INFLIGHT.get(_inflight_key, 0)) + 1
+                logger.info(
+                    "[ohlc_provider_concurrency] provider=%s inflight=%s limit=%s",
+                    _inflight_key[1], _ASYNC_PROVIDER_INFLIGHT[_inflight_key], _limit,
                 )
+                try:
+                    candles = await asyncio.wait_for(
+                        fetch_fn(symbol_for_providers, timeframe, timeout=provider_timeout_s),
+                        timeout=provider_timeout_s,
+                    )
+                finally:
+                    _ASYNC_PROVIDER_INFLIGHT[_inflight_key] = max(0, int(_ASYNC_PROVIDER_INFLIGHT.get(_inflight_key, 1)) - 1)
+                    _sem.release()
                 _latency_ms = int((time.monotonic() - _provider_started) * 1000)
                 if candles and len(candles) >= 20:
                     mark_provider_result(provider_name, True, latency_ms=_latency_ms)

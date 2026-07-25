@@ -56,6 +56,22 @@ def _env_enabled(name: str, default: bool = True) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+
+_PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
+    "twelvedata_connector": ("TWELVEDATA_API_KEY", "TWELVE_DATA_API_KEY"),
+    "polygon_connector": ("POLYGON_API_KEY",),
+    "tiingo_connector": ("TIINGO_API_KEY",),
+    "fmp_connector": ("FMP_API_KEY",),
+    "alphavantage_connector": ("ALPHAVANTAGE_API_KEY", "ALPHA_VANTAGE_API_KEY"),
+    "oanda_connector": ("OANDA_API_KEY", "OANDA_TOKEN"),
+}
+
+def _provider_configured(name: str) -> bool:
+    required = _PROVIDER_KEYS.get(str(name or "").lower())
+    if not required:
+        return True
+    return any(str(os.getenv(key) or "").strip() for key in required)
+
 def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
     """Return production provider hierarchy by asset class.
 
@@ -78,6 +94,7 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
             )
             or getattr(c, "cryptocompare_get_candles", None),
         ),
+        ("kucoin_connector", getattr(c, "kucoin_get_candles", None)),
     ]
     if binance_enabled:
         crypto.append(("binance_connector", getattr(c, "binance_get_candles", None)))
@@ -99,39 +116,38 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
         return crypto
     if kind in ("fx", "forex"):
         return [
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
-            ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
+            ("oanda_connector", getattr(c, "oanda_get_candles", None)),
+            ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
             ("polygon_connector", getattr(c, "polygon_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
+            ("ecb_connector", getattr(c, "ecb_get_candles", None)),
         ]
     if kind == "commodity":
         return [
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
             ("oanda_connector", getattr(c, "oanda_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
         ]
     if kind == "index":
         return [
-            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
-            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
             ("polygon_connector", getattr(c, "polygon_get_candles", None)),
-            ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+            ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+            ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
         ]
     return [
         ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
         ("fmp_connector", getattr(c, "fmp_get_candles", None)),
-        ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
-        ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
         ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
         ("polygon_connector", getattr(c, "polygon_get_candles", None)),
-        ("tradingview_connector", getattr(c, "tradingview_get_candles", None)),
+        ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
+        ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
     ]
 
 
@@ -161,7 +177,7 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
     ordered = _provider_order(kind, c, async_mode=False)
 
     for name, fn in ordered:
-        if fn is not None:
+        if fn is not None and _provider_configured(name):
             providers.append((name, _wrap_callable(fn)))
 
     # Final legacy safety net in same priority shape.
@@ -174,15 +190,22 @@ def get_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]:
                 ]
             )
         else:
-            providers.extend(
-                [
-                    ("polygon_legacy", _wrap_callable(legacy.fetch_polygon_candles)),
-                    ("twelvedata_legacy", _wrap_callable(legacy.fetch_twelvedata_candles)),
-                    ("alphavantage_legacy", _wrap_callable(legacy.fetch_alphavantage_candles)),
-                    ("yahoo_legacy", _wrap_callable(legacy.fetch_yahoo_candles)),
-                    ("tradingview_legacy", _wrap_callable(legacy.fetch_tradingview_candles)),
-                ]
-            )
+            existing = {name.replace("_connector", "").replace("_legacy", "") for name, _ in providers}
+            legacy_candidates = [
+                ("polygon_legacy", "polygon_connector", legacy.fetch_polygon_candles),
+                ("twelvedata_legacy", "twelvedata_connector", legacy.fetch_twelvedata_candles),
+                ("alphavantage_legacy", "alphavantage_connector", legacy.fetch_alphavantage_candles),
+                ("oanda_legacy", "oanda_connector", legacy.fetch_oanda_candles),
+                ("yahoo_legacy", "yfinance_connector", legacy.fetch_yahoo_candles),
+                ("tradingview_legacy", "", legacy.fetch_tradingview_candles),
+            ]
+            for legacy_name, config_name, fn in legacy_candidates:
+                alias = legacy_name.replace("_legacy", "")
+                if alias in existing:
+                    continue
+                if config_name and not _provider_configured(config_name):
+                    continue
+                providers.append((legacy_name, _wrap_callable(fn)))
     except Exception:
         pass
 
@@ -206,7 +229,7 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
     ordered = _provider_order(kind, c, async_mode=True)
 
     for name, fn in ordered:
-        if fn is not None:
+        if fn is not None and _provider_configured(name):
             providers.append((name, _wrap_to_async(fn)))
 
     # Add legacy fallbacks for async callers.
@@ -219,15 +242,22 @@ def get_async_providers_for_asset(asset_type: str) -> List[Tuple[str, Callable]]
                 ]
             )
         else:
-            providers.extend(
-                [
-                    ("polygon_legacy", _wrap_to_async(legacy.fetch_polygon_candles)),
-                    ("twelvedata_legacy", _wrap_to_async(legacy.fetch_twelvedata_candles)),
-                    ("alphavantage_legacy", _wrap_to_async(legacy.fetch_alphavantage_candles)),
-                    ("yahoo_legacy", _wrap_to_async(legacy.fetch_yahoo_candles)),
-                    ("tradingview_legacy", _wrap_to_async(legacy.fetch_tradingview_candles)),
-                ]
-            )
+            existing = {name.replace("_connector", "").replace("_legacy", "") for name, _ in providers}
+            legacy_candidates = [
+                ("polygon_legacy", "polygon_connector", legacy.fetch_polygon_candles),
+                ("twelvedata_legacy", "twelvedata_connector", legacy.fetch_twelvedata_candles),
+                ("alphavantage_legacy", "alphavantage_connector", legacy.fetch_alphavantage_candles),
+                ("oanda_legacy", "oanda_connector", legacy.fetch_oanda_candles),
+                ("yahoo_legacy", "yfinance_connector", legacy.fetch_yahoo_candles),
+                ("tradingview_legacy", "", legacy.fetch_tradingview_candles),
+            ]
+            for legacy_name, config_name, fn in legacy_candidates:
+                alias = legacy_name.replace("_legacy", "")
+                if alias in existing:
+                    continue
+                if config_name and not _provider_configured(config_name):
+                    continue
+                providers.append((legacy_name, _wrap_to_async(fn)))
     except Exception:
         pass
 

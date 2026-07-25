@@ -1586,10 +1586,18 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
         optional_timeout,
     )
 
-    async def _fetch_phase(asset: str, timeframes: List[str], timeout_s: float) -> Dict[str, Dict]:
+    async def _fetch_phase(
+        asset: str,
+        timeframes: List[str],
+        timeout_s: float,
+        *,
+        diagnostic_scope: str,
+    ) -> Dict[str, Dict]:
         if not timeframes:
             return {}
-        task = asyncio.create_task(fetch_market_data_cached(asset, timeframes))
+        task = asyncio.create_task(
+            fetch_market_data_cached(asset, timeframes, diagnostic_scope=diagnostic_scope)
+        )
         try:
             return await asyncio.wait_for(task, timeout=max(1.0, timeout_s))
         except asyncio.TimeoutError:
@@ -1629,7 +1637,9 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
                 policy.reason,
             )
             try:
-                data = await _fetch_phase(asset, required, per_asset_timeout)
+                data = await _fetch_phase(
+                    asset, required, per_asset_timeout, diagnostic_scope="required"
+                )
                 usable_required = all(
                     isinstance((data or {}).get(tf), dict)
                     and bool(((data or {}).get(tf) or {}).get("candles"))
@@ -1650,7 +1660,9 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
 
                 if optional:
                     try:
-                        optional_data = await _fetch_phase(asset, optional, optional_timeout)
+                        optional_data = await _fetch_phase(
+                            asset, optional, optional_timeout, diagnostic_scope="optional"
+                        )
                         data = {**(data or {}), **(optional_data or {})}
                     except asyncio.TimeoutError:
                         logger.warning(
@@ -3505,10 +3517,23 @@ def main_loop(DRY_RUN: bool = False):
                                 logger.info(f"[engine] cooldown(db-asset): active signal exists for {_asset_name}, skipping")
                                 continue
 
-                            _segment_ok, _segment_reason = run_sync(
-                                _segment_quarantine_gate(sig),
-                                timeout=10.0,
-                            )
+                            # Segment history is advisory background analytics.  A busy
+                            # two-connection staging pool must not be misreported as a
+                            # signal-storage failure or starve otherwise valid candidates.
+                            try:
+                                _segment_ok, _segment_reason = run_sync(
+                                    _segment_quarantine_gate(sig),
+                                    timeout=max(1.0, _env_float("SEGMENT_QUARANTINE_TIMEOUT_SECONDS", 4.0)),
+                                )
+                            except TimeoutError:
+                                _segment_ok, _segment_reason = True, "segment_quarantine_deferred:timeout"
+                                logger.info("[segment_quarantine] deferred asset=%s reason=timeout", _asset_name)
+                            except Exception as _segment_exc:
+                                if _env_bool("SEGMENT_QUARANTINE_FAIL_CLOSED", False):
+                                    _segment_ok, _segment_reason = False, f"segment_quarantine_error:{type(_segment_exc).__name__}"
+                                else:
+                                    _segment_ok, _segment_reason = True, f"segment_quarantine_deferred:{type(_segment_exc).__name__}"
+                                    logger.info("[segment_quarantine] deferred asset=%s reason=%s", _asset_name, type(_segment_exc).__name__)
                             if not _segment_ok:
                                 pipeline_stats["skipped_segment_quarantine"] += 1
                                 logger.info(f"[engine] {_segment_reason}; skipping {_asset_name}")
@@ -3664,17 +3689,28 @@ def main_loop(DRY_RUN: bool = False):
                             else:
                                 _maybe_log_heatmap(asset, cycle_no, len(final_signals))
 
-                    # Track new signals as open trades
-                    from core.trade_tracker import add_trade, update_trade_outcomes
-                    for sig in stored_signals:
+                    # Legacy in-memory trade tracking used to mark a signal as
+                    # "open" immediately after storage.  That polluted portfolio
+                    # exposure and outcomes before Telegram delivery proof or entry
+                    # touch.  The proof-backed worker owns live lifecycle tracking.
+                    closed_trades = []
+                    if _env_bool("LEGACY_TRADE_TRACKER_ENABLED", False):
+                        from core.trade_tracker import add_trade, update_trade_outcomes
+                        for sig in stored_signals:
+                            try:
+                                add_trade(sig)
+                            except Exception:
+                                logger.exception("Failed to add trade for legacy tracking")
                         try:
-                            add_trade(sig)
+                            closed_trades = update_trade_outcomes()
                         except Exception:
-                            logger.exception("Failed to add trade for tracking")
+                            logger.exception("Legacy trade outcome update failed")
+                    else:
+                        logger.debug("[lifecycle] legacy trade tracker disabled; awaiting delivery proof and entry touch")
 
-                    # Update existing trade outcomes
+                    # Legacy outcome notifications remain available only when the
+                    # tracker is explicitly enabled.
                     try:
-                        closed_trades = update_trade_outcomes()
                         if closed_trades:
                             logger.info(f"[engine] {len(closed_trades)} trades closed: {[(t.symbol, t.outcome) for t in closed_trades]}")
                             
@@ -3964,36 +4000,39 @@ def main_loop(DRY_RUN: bool = False):
                 # P7: Batch-fetch live prices for all unique assets in one concurrent
                 # gather instead of one blocking HTTP call per signal.
                 _live_price_cache: dict[str, float | None] = {}
+                _live_quote_cache: dict[str, Any] = {}
                 try:
-                    from engine.stale_signal_validator import _get_live_price_async
+                    from engine.delivery_freshness import fetch_trusted_live_quote
                     _unique_assets = list({
-                        str(_s.get("asset") or "")
+                        str(_s.get("asset") or "").upper()
                         for _s in scored_signals_all
                         if _s.get("asset")
                     })
                     if _unique_assets:
                         _price_tasks = [
-                            asyncio.wait_for(_get_live_price_async(_a), timeout=5.0)
+                            asyncio.wait_for(
+                                fetch_trusted_live_quote(_a),
+                                timeout=max(1.0, _env_float("FINAL_SEND_LIVE_PRICE_TIMEOUT_SECONDS", 4.0) + 1.0),
+                            )
                             for _a in _unique_assets
                         ]
                         _price_results = await asyncio.gather(*_price_tasks, return_exceptions=True)
-                        for _a, _pr in zip(_unique_assets, _price_results):
-                            if isinstance(_pr, (int, float)) and float(_pr) > 0:
-                                _live_price_cache[_a] = float(_pr)
+                        for _a, _quote in zip(_unique_assets, _price_results):
+                            _mid = getattr(_quote, "mid", None)
+                            if _mid is not None and float(_mid) > 0:
+                                _live_price_cache[_a] = float(_mid)
+                                _live_quote_cache[_a] = _quote
                             else:
                                 _live_price_cache[_a] = None
-                                if _pr is not None and not isinstance(_pr, float):
-                                    logger.debug(
-                                        "[engine] batch price prefetch failed for %s: %s",
-                                        _a, _pr,
-                                    )
+                                if isinstance(_quote, Exception):
+                                    logger.debug("[engine] trusted quote prefetch failed for %s: %s", _a, _quote)
                         logger.info(
-                            "[engine] batch price prefetch: assets=%d cached=%d",
+                            "[engine] batch trusted-quote prefetch: assets=%d cached=%d",
                             len(_unique_assets),
                             sum(1 for v in _live_price_cache.values() if v is not None),
                         )
                 except Exception as _pf_err:
-                    logger.debug(f"[engine] batch price prefetch failed, continuing without cache: {_pf_err}")
+                    logger.debug("[engine] trusted quote prefetch failed, continuing fail-closed: %s", _pf_err)
 
                 _fresh_scored_signals: list = []
                 try:
@@ -4012,37 +4051,37 @@ def main_loop(DRY_RUN: bool = False):
                                     _sig["current_price"] = _price
                                 elif _cached_px and _cached_px > 0:
                                     _sig["current_price"] = _cached_px
+                                _quote = _live_quote_cache.get(str(_sig.get("asset") or "").upper())
+                                if _quote is not None:
+                                    _sig["pre_delivery_quote_provider"] = getattr(_quote, "provider", None)
+                                    _sig["pre_delivery_quote_request_id"] = getattr(_quote, "request_id", None)
+                                    _sig["pre_delivery_quote_source_age_ms"] = getattr(_quote, "source_age_ms", None)
                                 _fresh_scored_signals.append(_sig)
                             else:
                                 logger.info(
                                     f"[engine] Stale signal dropped — {_sig.get('asset')} "
                                     f"{_sig.get('timeframe')}: {_reason}"
                                 )
-                                # --- Rebuild with live price, keeping direction + strategy vote ---
-                                _rebuilt = None
-                                if _price and _price > 0:
-                                    _rebuilt = _rebuild_stale_signal(_sig, _price)
-                                if _rebuilt is not None:
-                                    try:
-                                        if get_session is not None:
-                                            from db.pg_features import get_or_create_signal
-                                            async with get_session() as _rs:
-                                                _new_sig_row = await get_or_create_signal(_rs, _rebuilt)
-                                                await _rs.commit()
-                                                _rebuilt['signal_id'] = str(_new_sig_row.signal_id)
-                                        _fresh_scored_signals.append(_rebuilt)
-                                        logger.info(
-                                            f"[engine] Stale signal REFRESHED — {_rebuilt.get('asset')} "
-                                            f"{_rebuilt.get('timeframe')} "
-                                            f"new_entry={_rebuilt['entry']:.5f}"
-                                        )
-                                    except Exception as _store_err:
-                                        logger.debug(f"[engine] Failed to store refreshed signal: {_store_err}")
-                                else:
-                                    logger.debug(
-                                        f"[engine] Could not rebuild stale signal for "
-                                        f"{_sig.get('asset')} — no live price or bad SL/TP"
+                                # Never rebase only entry/SL/TP while preserving an old
+                                # score and strategy decision.  Record the blocked
+                                # opportunity for shadow learning, then expire it.
+                                try:
+                                    from engine.rejection_learning import schedule_rejected_signal_learning
+                                    _asset_key = str(_sig.get("asset") or "").upper()
+                                    schedule_rejected_signal_learning(
+                                        _sig,
+                                        reason=str(_reason),
+                                        rejection_type="stale_pre_delivery",
+                                        live_price=float(_price or 0.0) or None,
+                                        quote=_live_quote_cache.get(_asset_key),
+                                        extra_features={"delivery_stage": "engine_prefilter"},
                                     )
+                                except Exception as _learn_err:
+                                    logger.debug("[rejection_learning] schedule failed: %s", _learn_err)
+                                logger.info(
+                                    "[engine] stale candidate retained for shadow learning only asset=%s tf=%s",
+                                    _sig.get("asset"), _sig.get("timeframe"),
+                                )
                                 # Mark original as expired in DB so resend job skips it.
                                 try:
                                     _sig_id = _sig.get('signal_id') or _sig.get('id')

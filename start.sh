@@ -49,7 +49,7 @@ fi
 
 if [ -n "${RUN_MODE:-}" ] && { [ "${_on_railway}" != "true" ] || [ "${_honor_run_mode_on_railway}" = "true" ]; }; then
 	case "${RUN_MODE}" in
-		web|worker|engine|bot)
+		web|worker|engine|bot|delivery|outcome|analytics|scheduler)
 			python main.py
 			exit $?
 			;;

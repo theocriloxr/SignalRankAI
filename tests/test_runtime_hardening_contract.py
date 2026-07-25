@@ -19,8 +19,8 @@ def test_core_uses_canonical_safe_asset_concurrency():
 
 def test_core_fetches_required_before_optional():
     source = text("engine/core.py")
-    required_call = source.index("data = await _fetch_phase(asset, required")
-    optional_call = source.index("optional_data = await _fetch_phase(asset, optional")
+    required_call = source.index('diagnostic_scope="required"')
+    optional_call = source.index('diagnostic_scope="optional"')
     assert required_call < optional_call
     assert "usable_required" in source
 

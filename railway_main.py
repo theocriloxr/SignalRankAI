@@ -509,15 +509,23 @@ def _build_scheduler() -> AsyncIOScheduler:
     duplicate execution.  This scheduler only registers jobs that are
     unique to the web layer (VIP waitlist TTL management).
     """
-    from web.app import (
-        _check_waitlist_capacity_job,
-        _monitor_expired_invites_job,
-    )
+    # Web jobs are optional in decomposed deployments.  Missing legacy
+    # symbols must not disable the whole process scheduler.
+    try:
+        from web import app as _web_module
+        _check_waitlist_capacity_job = getattr(_web_module, "_check_waitlist_capacity_job", None)
+        _monitor_expired_invites_job = getattr(_web_module, "_monitor_expired_invites_job", None)
+    except Exception as exc:
+        logger.warning("[sched] web jobs unavailable: %s", exc)
+        _check_waitlist_capacity_job = None
+        _monitor_expired_invites_job = None
 
     scheduler = AsyncIOScheduler(timezone="UTC")
 
     # VIP waitlist TTL — web layer only, not present in run_bot()
     try:
+        if _check_waitlist_capacity_job is None:
+            raise LookupError("waitlist capacity job unavailable")
         scheduler.add_job(
             _check_waitlist_capacity_job,
             "interval",
@@ -529,6 +537,8 @@ def _build_scheduler() -> AsyncIOScheduler:
     except Exception as exc:
         logger.warning(f"[sched] could not add wl_capacity job: {exc}")
     try:
+        if _monitor_expired_invites_job is None:
+            raise LookupError("waitlist monitor job unavailable")
         scheduler.add_job(
             _monitor_expired_invites_job,
             "interval",

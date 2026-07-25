@@ -846,7 +846,12 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
         return False, 0.0
 
 
-async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
+async def fetch_market_data_cached(
+    asset: str,
+    timeframes: Iterable[str],
+    *,
+    diagnostic_scope: str = "full",
+) -> dict:
     """Fetch market data from yfinance first, then Postgres cache, then fallback to REST.
 
     Priority order:
@@ -1232,18 +1237,40 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     except Exception:
         pass
 
-    diagnostics = market_data_diagnostics(asset, tfs, out)
-    logger.info(
-        "[market_data][asset_result] asset=%s asset_class=%s required=%s optional=%s "
-        "provider_by_timeframe=%s usable=%s final_reason=%s rejected=%s minimum=%s",
-        asset,
-        diagnostics["asset_class"],
-        diagnostics["required_timeframes"],
-        diagnostics["optional_timeframes"],
-        diagnostics["provider_by_timeframe"],
-        diagnostics["usable"],
-        diagnostics["final_reason"],
-        diagnostics["rejected_timeframes"],
-        diagnostics["minimum_candles"],
-    )
+    scope = str(diagnostic_scope or "full").strip().lower()
+    if scope in {"full", "required"}:
+        diagnostics = market_data_diagnostics(asset, tfs, out)
+        logger.info(
+            "[market_data][asset_result] phase=%s asset=%s asset_class=%s required=%s optional=%s "
+            "provider_by_timeframe=%s usable=%s final_reason=%s rejected=%s minimum=%s",
+            scope,
+            asset,
+            diagnostics["asset_class"],
+            diagnostics["required_timeframes"],
+            diagnostics["optional_timeframes"],
+            diagnostics["provider_by_timeframe"],
+            diagnostics["usable"],
+            diagnostics["final_reason"],
+            diagnostics["rejected_timeframes"],
+            diagnostics["minimum_candles"],
+        )
+    else:
+        # Optional enrichment and analytics collection are not standalone
+        # actionable-asset evaluations. Logging them through the canonical
+        # required-timeframe gate produced false ``missing_required_timeframe``
+        # messages even when the engine had already retained the required data.
+        provider_by_timeframe = {
+            tf: str((payload or {}).get("source") or "unknown")
+            for tf, payload in out.items()
+            if isinstance(payload, dict) and payload.get("candles")
+        }
+        logger.info(
+            "[market_data][phase_result] phase=%s asset=%s requested=%s available=%s "
+            "provider_by_timeframe=%s",
+            scope,
+            asset,
+            tfs,
+            sorted(provider_by_timeframe),
+            provider_by_timeframe,
+        )
     return out

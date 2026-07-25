@@ -294,9 +294,20 @@ async def _fetch_final_live_quote(symbol: str) -> LivePriceQuote | None:
         return None
 
 
+async def fetch_trusted_live_quote(symbol: str) -> LivePriceQuote | None:
+    """Return the canonical typed quote used by the final delivery boundary.
+
+    Engine pre-delivery checks must use this function instead of legacy or
+    analysis-only price helpers.  Keeping one trust path prevents a signal
+    from being rebased using one provider and rejected moments later by the
+    final delivery validator using another.
+    """
+    return await _fetch_final_live_quote(symbol)
+
+
 async def _fetch_final_live_price(symbol: str) -> float | None:
     """Legacy private wrapper retained for callers that still expect a float."""
-    quote = await _fetch_final_live_quote(symbol)
+    quote = await fetch_trusted_live_quote(symbol)
     return float(quote.mid) if quote is not None else None
 
 

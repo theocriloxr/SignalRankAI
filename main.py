@@ -10,31 +10,9 @@ except Exception:
 
 
 def _infer_run_mode() -> str:
-    """Derive a sensible default RUN_MODE from Railway service naming.
-
-    If RUN_MODE is explicitly set, it wins. Otherwise we look at
-    RAILWAY_SERVICE_NAME/RAILWAY_SERVICE and pick a mode so you can deploy
-    four Railway services without manual env tweaks.
-    """
-
-    explicit = os.getenv("RUN_MODE")
-    if explicit:
-        return explicit.strip().lower()
-
-    service = (os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("RAILWAY_SERVICE") or "").lower()
-    for needle, mode in (
-        ("all", "all"),
-        ("web", "web"),
-        ("bot", "bot"),
-        ("telegram", "bot"),
-        ("worker", "worker"),
-        ("engine", "engine"),
-        ("core", "engine"),
-    ):
-        if needle in service:
-            return mode
-
-    return "engine"
+    """Resolve the canonical role from RUN_MODE or Railway service naming."""
+    from runtime.roles import infer_run_mode
+    return infer_run_mode().value
 
 
 def _check_database_configured() -> bool:

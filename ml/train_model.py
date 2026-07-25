@@ -249,7 +249,7 @@ async def load_training_data(lookback_days: int = 90):
             if not symbol or not timeframe or not created_at:
                 return []
             cutoff_ms = int(created_at.timestamp() * 1000)
-            async with get_session() as candle_session:
+            async with get_session(priority="background", label="ml_training_candle_read") as candle_session:
                 q = (
                     select(MarketCandle)
                     .where(
@@ -297,7 +297,7 @@ async def load_training_data(lookback_days: int = 90):
                 return -1.0
             return 0.0
 
-        async with get_session() as session:
+        async with get_session(priority="background", label="ml_training_live_outcomes_read") as session:
             # Get signals delivered in the requested lookback window with outcomes
             cutoff_days = max(1, int(lookback_days or 90))
             cutoff = datetime.utcnow() - timedelta(days=cutoff_days)
@@ -464,7 +464,7 @@ async def load_training_data(lookback_days: int = 90):
             from db.models import MLPastTrainingData
             from sqlalchemy import text
 
-            async with get_session() as session:
+            async with get_session(priority="background", label="ml_training_archive_read") as session:
                 # Defensive bootstrap for environments where bot schema ensure
                 # has not run yet (e.g. webhook startup race).
                 await session.execute(text(
@@ -611,7 +611,7 @@ async def load_training_data(lookback_days: int = 90):
         try:
             from sqlalchemy import and_
 
-            async with get_session() as session:
+            async with get_session(priority="background", label="ml_training_rejections_read") as session:
                 rejected_rows = (
                     await session.execute(
                         select(MLRejectedSignal).where(
