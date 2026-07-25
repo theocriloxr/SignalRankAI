@@ -34,6 +34,39 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
+def _is_production_runtime() -> bool:
+    """Return True where synthetic ML artefacts are unsafe."""
+    app_env = str(
+        os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    if app_env in {"production", "prod", "staging", "stage"}:
+        return True
+    return any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_DEPLOYMENT_ID",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_NAME",
+        )
+    )
+
+
+def _offline_bootstrap_allowed() -> bool:
+    """Synthetic rows are opt-in and can never replace a Railway model."""
+    explicit = os.getenv("ML_OFFLINE_BOOTSTRAP_ENABLED")
+    if explicit is not None:
+        requested = _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", False)
+    else:
+        app_env = str(os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
+        requested = app_env in {"local", "development", "dev", "test", "testing"}
+    return bool(requested and not _is_production_runtime())
+
+
 def _safe_float(val):
     """Coerce numbers that may be stored as strings or single-item lists."""
     if val is None:
@@ -216,8 +249,8 @@ async def load_training_data(lookback_days: int = 90):
     try:
         from db.session import get_session
 
-        from db.models import Signal, Outcome, MarketCandle, MLRejectedSignal
-        from sqlalchemy import select, desc
+        from db.models import Signal, Outcome, SignalDelivery, MarketCandle, MLRejectedSignal
+        from sqlalchemy import select, desc, exists
 
         def _parse_tp(raw_tp):
             if raw_tp is None:
@@ -302,27 +335,44 @@ async def load_training_data(lookback_days: int = 90):
             cutoff_days = max(1, int(lookback_days or 90))
             cutoff = datetime.utcnow() - timedelta(days=cutoff_days)
 
+            delivered_proof = exists().where(
+                SignalDelivery.signal_id == Signal.signal_id,
+                SignalDelivery.sent_ok.is_(True),
+                SignalDelivery.delivery_state.in_((
+                    "sent", "delivered", "confirmed", "reconciled",
+                    "SENT", "DELIVERED", "CONFIRMED", "RECONCILED",
+                )),
+                SignalDelivery.telegram_chat_id.is_not(None),
+                SignalDelivery.telegram_message_id.is_not(None),
+            )
             stmt = (
                 select(Signal, Outcome)
                 .join(Outcome, Outcome.signal_id == Signal.signal_id)
-                .where(Signal.created_at >= cutoff)
+                .where(Signal.created_at >= cutoff, delivered_proof)
             )
             try:
                 res = await session.execute(stmt)
                 rows = list(res.all())
-                await session.commit()
             except Exception as exc:
-                logger.warning("Failed to load training data from DB; using offline bootstrap data: %s", exc)
-                if _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True):
-                    return _generate_offline_bootstrap_data(int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200))
+                logger.warning(
+                    "Live ML data unavailable; preserving the current model without retraining: %s",
+                    exc,
+                )
+                if _offline_bootstrap_allowed():
+                    return _generate_offline_bootstrap_data(
+                        int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)
+                    )
                 return None
 
         if not rows:
-            logger.warning("No signals with outcomes found in last 90 days")
-            if _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True):
-                return _generate_offline_bootstrap_data(int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200))
+            logger.warning("No delivery-proof-backed signals with outcomes found in the requested lookback")
+            if _offline_bootstrap_allowed():
+                return _generate_offline_bootstrap_data(
+                    int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)
+                )
             return None
 
+        live_proof_rows = len(rows)
         data = []
         for sig, outcome in rows:
             status = str(getattr(outcome, 'status', '') or '').lower()
@@ -709,12 +759,16 @@ async def load_training_data(lookback_days: int = 90):
             logger.warning(f"Failed to load rejected-signal training rows: {rejected_err}")
 
         df = pd.DataFrame(data)
+        df.attrs["live_proof_rows"] = int(live_proof_rows)
         logger.info(f"Loaded {len(df)} signals with outcomes")
         logger.info(f"Class distribution: {df['target'].value_counts().to_dict()}")
         return df
 
     except Exception as e:
-        logger.error(f"Failed to load training data: {e}", exc_info=True)
+        if type(e).__name__ in {"DatabaseWorkDeferred", "NoncriticalWriteDropped", "AnalyticsWorkDeferred"}:
+            logger.warning("ML training data read deferred; current model preserved: %s", e)
+        else:
+            logger.error(f"Failed to load training data: {e}", exc_info=True)
         return None
 
 
@@ -941,11 +995,25 @@ async def main(lookback_days: int | None = None):
 
     # Load data
     df = await load_training_data(int(lookback_days or 90))
-    min_rows = int(os.getenv("ML_MIN_TRAIN_ROWS", "10") or 10)
-    bootstrap_enabled = _env_bool("ML_OFFLINE_BOOTSTRAP_ENABLED", True)
+    default_min_rows = "100" if _is_production_runtime() else "10"
+    min_rows = int(os.getenv("ML_MIN_TRAIN_ROWS", default_min_rows) or default_min_rows)
+    bootstrap_enabled = _offline_bootstrap_allowed()
     bootstrap_rows = int(os.getenv("ML_OFFLINE_BOOTSTRAP_ROWS", "1200") or 1200)
     used_bootstrap = False
     source_rows = int(len(df)) if df is not None else 0
+    live_proof_rows = int(df.attrs.get("live_proof_rows", 0)) if df is not None else 0
+    min_live_proof_rows = int(
+        os.getenv("ML_MIN_LIVE_PROOF_ROWS", "100" if _is_production_runtime() else "1")
+        or ("100" if _is_production_runtime() else "1")
+    )
+
+    if _is_production_runtime() and live_proof_rows < min_live_proof_rows:
+        logger.warning(
+            "ML retrain skipped: only %s delivery-proof-backed live outcomes; need >= %s; current model preserved",
+            live_proof_rows,
+            min_live_proof_rows,
+        )
+        return False
 
     if (df is None or len(df) < min_rows) and bootstrap_enabled:
         boot = _generate_offline_bootstrap_data(max(bootstrap_rows, min_rows))
@@ -957,7 +1025,15 @@ async def main(lookback_days: int | None = None):
         logger.warning("Bootstrap augmentation applied: source_rows=%s total_rows=%s", source_rows, len(df))
 
     if df is None or len(df) < min_rows:
-        logger.error("Insufficient training data (need >= %s rows)", min_rows)
+        logger.warning(
+            "ML retrain skipped: insufficient delivery-proof-backed live data "
+            "(need >= %s rows); current model preserved",
+            min_rows,
+        )
+        return False
+
+    if used_bootstrap and _is_production_runtime():
+        logger.error("Refusing to save a bootstrap-trained model in production")
         return False
 
     # Engineer features

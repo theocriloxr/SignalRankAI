@@ -61,6 +61,13 @@ def _is_railway_runtime() -> bool:
     return any(bool((os.getenv(name) or "").strip()) for name in markers)
 
 
+def _analytics_work_allowed_in_worker() -> bool:
+    """Prevent accidental analytics ownership in the monolith/worker role."""
+    run_mode = str(os.getenv("RUN_MODE") or "all").strip().lower()
+    if run_mode == "analytics":
+        return True
+    return _env_bool_any(("ALLOW_ANALYTICS_IN_WORKER", "ALLOW_ML_TRAIN_IN_MONOLITH"), False)
+
 
 
 class Worker:
@@ -159,7 +166,10 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
         # Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), True)
+        _enable_shadow = (
+            _analytics_work_allowed_in_worker()
+            and _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), False)
+        )
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
@@ -196,14 +206,17 @@ class Worker:
                 logger.exception("[worker] Failed to start WS ingestor")
 
         # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
-        if config.ML_TRAIN_ENABLED:
+        if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
-        # Data drift monitor loop (enabled by default).
-        if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+        # Data drift monitor belongs to the analytics role and is opt-in here.
+        if (
+            _analytics_work_allowed_in_worker()
+            and str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        ):
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:

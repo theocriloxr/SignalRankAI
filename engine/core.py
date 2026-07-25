@@ -509,6 +509,7 @@ async def _gemini_review_signal(signal: Dict[str, Any], candles: list[dict[str, 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
     def _do_request() -> tuple[bool, float | None, str]:
+        global _GEMINI_RATE_LIMIT_UNTIL_MONO
         req = urllib.request.Request(url, data=body, method="POST")
         req.add_header("Content-Type", "application/json")
         try:
@@ -1184,7 +1185,7 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         timeframe = str(signal.get("timeframe") or "").strip().lower() or "unknown"
         strategy = str(signal.get("strategy_name") or "unknown").strip()[:64] or "unknown"
         days = max(1, _env_int("SEGMENT_QUARANTINE_LOOKBACK_DAYS", 30))
-        min_trades = max(1, _env_int("SEGMENT_QUARANTINE_MIN_TRADES", 10))
+        min_trades = max(1, _env_int("SEGMENT_QUARANTINE_MIN_TRADES", 30))
         min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
         min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
         since = datetime.utcnow() - _timedelta(days=days)
@@ -1197,7 +1198,7 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
                         SELECT COUNT(o.id) AS outcomes,
                                SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win') THEN 1 ELSE 0 END) AS wins,
                                SUM(CASE WHEN lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('sl','loss','stop_loss') THEN 1 ELSE 0 END) AS losses,
-                               AVG(COALESCE(o.r_multiple, 0)) AS avg_r
+                               AVG(o.r_multiple) AS avg_r
                         FROM outcomes o
                         JOIN signals s ON s.signal_id = o.signal_id
                         WHERE o.closed_at >= :since
@@ -1205,6 +1206,18 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
                           AND lower(COALESCE(s.timeframe, 'unknown')) = :timeframe
                           AND lower(COALESCE(s.strategy_name, 'unknown')) = :strategy
                           AND lower(COALESCE(o.canonical_outcome, o.status, '')) IN ('tp','tp1','tp2','tp3','partial_tp','win','sl','loss','stop_loss')
+                          AND (
+                              :require_delivered = FALSE
+                              OR EXISTS (
+                                  SELECT 1
+                                  FROM signal_deliveries sd
+                                  WHERE sd.signal_id = s.signal_id
+                                    AND sd.sent_ok IS TRUE
+                                    AND lower(COALESCE(sd.delivery_state, '')) IN ('sent','delivered','confirmed','reconciled')
+                                    AND sd.telegram_chat_id IS NOT NULL
+                                    AND sd.telegram_message_id IS NOT NULL
+                              )
+                          )
                         """
                     ),
                     {
@@ -1212,6 +1225,7 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
                         "asset_class": asset_class,
                         "timeframe": timeframe,
                         "strategy": strategy.lower(),
+                        "require_delivered": _env_bool("SEGMENT_QUARANTINE_REQUIRE_DELIVERED", True),
                     },
                 )
             ).mappings().first()
@@ -2401,12 +2415,32 @@ def main_loop(DRY_RUN: bool = False):
                 from sqlalchemy import select as _sel_open, func as _func_open
 
                 async def _load_open_signal_counts() -> list[tuple[str, int]]:
-                    async with _get_s_open() as _os:
+                    from db.models import SignalDelivery as _OpenDelivery
+                    from db.priority import DBPriority as _OpenPriority
+                    from sqlalchemy import exists as _exists_open, or_ as _or_open
+
+                    now_open = datetime.utcnow()
+                    delivered_open = _exists_open().where(
+                        _OpenDelivery.signal_id == _OpenSig.signal_id,
+                        _OpenDelivery.sent_ok.is_(True),
+                        _OpenDelivery.delivery_state.in_((
+                            "sent", "delivered", "confirmed", "reconciled",
+                            "SENT", "DELIVERED", "CONFIRMED", "RECONCILED",
+                        )),
+                        _OpenDelivery.telegram_chat_id.is_not(None),
+                        _OpenDelivery.telegram_message_id.is_not(None),
+                    )
+                    async with _get_s_open(
+                        priority=_OpenPriority.CRITICAL,
+                        label="engine_open_signal_counts",
+                    ) as _os:
                         rows = (await _os.execute(
                             _sel_open(_OpenSig.asset, _func_open.count(_OpenSig.signal_id))
                             .where(
                                 _OpenSig.expired.is_(False),
                                 _OpenSig.archived.is_(False),
+                                _or_open(_OpenSig.expires_at.is_(None), _OpenSig.expires_at >= now_open),
+                                delivered_open,
                             )
                             .group_by(_OpenSig.asset)
                         )).fetchall()
@@ -2433,30 +2467,12 @@ def main_loop(DRY_RUN: bool = False):
                             len(open_counts_by_class),
                         )
                     elif open_counts_by_asset or open_counts_by_class:
-                        async def _expire_open_signals() -> int:
-                            from db.session import get_session as _get_s_expire
-                            from db.models import Signal as _SignalExpire
-                            from sqlalchemy import update as _update_expire
-
-                            async with _get_s_expire() as _session:
-                                result = await _session.execute(
-                                    _update_expire(_SignalExpire)
-                                    .where(
-                                        _SignalExpire.expired.is_(False),
-                                        _SignalExpire.archived.is_(False),
-                                    )
-                                    .values(expired=True)
-                                )
-                                await _session.commit()
-                                return int(getattr(result, "rowcount", 0) or 0)
-
-                        expired_rows = run_sync(_expire_open_signals(), timeout=20.0)
+                        # Redis is a cache, not the source of truth. Retain proof-backed
+                        # database rows after Redis restarts and let lifecycle expiry close them.
                         logger.warning(
-                            "[engine] redis active trades empty; expired %s stale DB open signals before open-limit gate",
-                            expired_rows,
+                            "[engine] redis active trades empty; retaining %s proof-backed DB open signals",
+                            sum(open_counts_by_asset.values()),
                         )
-                        open_counts_by_asset.clear()
-                        open_counts_by_class.clear()
             except Exception as _redis_reconcile_err:
                 logger.debug(f"[engine] redis/db open-signal reconciliation failed: {_redis_reconcile_err}")
 
@@ -3438,7 +3454,11 @@ def main_loop(DRY_RUN: bool = False):
                                 )
                                 base_filters.append(delivered_exists)
 
-                            async with _get_s_cd() as _cs:
+                            from db.priority import DBPriority as _CooldownPriority
+                            async with _get_s_cd(
+                                priority=_CooldownPriority.CRITICAL,
+                                label="engine_delivery_cooldown_read",
+                            ) as _cs:
                                 rows = (await _cs.execute(
                                     _sel_cd(_SigModel.asset, _SigModel.timeframe).where(
                                         _SigModel.created_at >= _cd_cutoff,
@@ -3642,7 +3662,11 @@ def main_loop(DRY_RUN: bool = False):
                                             from db.session import get_session
                                             from services.trading_ledger import record_signal_generated_event
 
-                                            async with get_session() as _ledger_session:
+                                            from db.priority import DBPriority
+                                            async with get_session(
+                                                priority=DBPriority.CRITICAL,
+                                                label="signal_generated_ledger_write",
+                                            ) as _ledger_session:
                                                 await record_signal_generated_event(
                                                     _ledger_session,
                                                     sig,

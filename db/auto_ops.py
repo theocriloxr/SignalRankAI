@@ -349,11 +349,21 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
+                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_signal_id ON decision_log(signal_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_asset ON decision_log(asset)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_timeframe ON decision_log(timeframe)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_decision ON decision_log(decision)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_created_at ON decision_log(created_at)")
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_signal_deliveries_live_proof "
+                    "ON signal_deliveries(signal_id, sent_ok, delivery_state) WHERE sent_ok IS TRUE"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_signals_open_expiry "
+                    "ON signals(expired, archived, expires_at, asset, direction)"
+                )
 
                 cur.execute(
                     """

@@ -339,6 +339,28 @@ def _is_db_ready() -> bool:
     return _db_ready_cache
 
 
+def _validate_production_runtime_contract() -> None:
+    """Fail fast when a production Railway service carries test-only controls."""
+    environment = str(
+        os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or ""
+    ).strip().lower()
+    public_testing = str(os.getenv("PUBLIC_TESTING_MODE") or "0").strip().lower() in {
+        "1", "true", "yes", "on", "y"
+    }
+    allow_override = str(
+        os.getenv("ALLOW_PUBLIC_TESTING_IN_PRODUCTION") or "0"
+    ).strip().lower() in {"1", "true", "yes", "on", "y"}
+    if environment in {"production", "prod"} and public_testing and not allow_override:
+        raise RuntimeError(
+            "PUBLIC_TESTING_MODE=1 is forbidden in production; set it to 0 or explicitly "
+            "set ALLOW_PUBLIC_TESTING_IN_PRODUCTION=1 for an isolated non-customer test"
+        )
+
+
 def _log_railway_env_readiness() -> None:
     """Log deployment-critical env readiness for Railway."""
     running_on_railway = _is_running_on_railway()
@@ -902,6 +924,7 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _lifespan_heartbeat_task
+    _validate_production_runtime_contract()
     _log_railway_env_readiness()
     try:
         from db.session import get_session_api_contract

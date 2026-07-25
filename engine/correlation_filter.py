@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
@@ -140,8 +141,12 @@ class PortfolioExposureManager:
             # If no session provided, create one internally
             if session is None:
                 try:
+                    from db.priority import DBPriority
                     from db.session import get_session
-                    async with get_session() as _internal_session:
+                    async with get_session(
+                        priority=DBPriority.CRITICAL,
+                        label="portfolio_exposure_read",
+                    ) as _internal_session:
                         return await self._check_exposure(_internal_session, asset_class, direction)
                 except Exception as e:
                     logger.debug(f"[exposure] could not create internal session: {e}")
@@ -158,16 +163,36 @@ class PortfolioExposureManager:
         """Internal method to check exposure limits."""
         try:
             # Import here to avoid circular imports
-            from db.models import Signal
-            from sqlalchemy import select, func
+            from db.models import Signal, SignalDelivery
+            from sqlalchemy import select, func, exists, or_
 
-            # Query open trades (not expired, not archived)
+            now = datetime.now(timezone.utc)
+            active_filters = [
+                Signal.expired.is_(False),
+                Signal.archived.is_(False),
+                or_(Signal.expires_at.is_(None), Signal.expires_at >= now),
+            ]
+            # Generated rows are not positions. Only Telegram-acknowledged signals
+            # may consume portfolio capacity.
+            if str(os.getenv("PORTFOLIO_EXPOSURE_REQUIRE_DELIVERED", "1")).strip().lower() in {
+                "1", "true", "yes", "on"
+            }:
+                active_filters.append(
+                    exists().where(
+                        SignalDelivery.signal_id == Signal.signal_id,
+                        SignalDelivery.sent_ok.is_(True),
+                        SignalDelivery.delivery_state.in_((
+                            "sent", "delivered", "confirmed", "reconciled",
+                            "SENT", "DELIVERED", "CONFIRMED", "RECONCILED",
+                        )),
+                        SignalDelivery.telegram_chat_id.is_not(None),
+                        SignalDelivery.telegram_message_id.is_not(None),
+                    )
+                )
+
             query = (
                 select(Signal.asset, Signal.direction, func.count(Signal.signal_id).label("count"))
-                .where(
-                    Signal.expired.is_(False),
-                    Signal.archived.is_(False),
-                )
+                .where(*active_filters)
                 .group_by(Signal.asset, Signal.direction)
             )
             result = await session.execute(query)

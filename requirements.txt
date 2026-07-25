@@ -4,7 +4,6 @@ pandas
 numpy
 pydantic-settings
 requests
-flask
 alpha_vantage
 fastapi>=0.110
 uvicorn[standard]>=0.24

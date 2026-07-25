@@ -76,7 +76,7 @@ def resend_unsent_signals_job():
     try:
         try:
             from db.session import critical_db_work_active
-            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", True):
+            if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", False):
                 logger.info("[resend] skipped: critical DB work active")
                 return
         except Exception:
@@ -4809,7 +4809,7 @@ def distribute_random_signals_to_free_users_job():
 
     try:
         from db.session import critical_db_work_active
-        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+        if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", False):
             logger.info("[free_distribution] skipped: critical DB work active")
             return
     except Exception:
@@ -6308,7 +6308,7 @@ def run_bot() -> None:
             return
         try:
             from db.session import critical_db_work_active
-            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", True):
+            if critical_db_work_active() and _env_bool("DB_BACKGROUND_JOBS_SKIP_WHEN_CRITICAL_ACTIVE", False):
                 logger.info("[outcome_notify] skipped: critical DB work active")
                 return
         except Exception:
