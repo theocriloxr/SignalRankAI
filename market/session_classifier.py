@@ -78,35 +78,21 @@ def _env_float(name: str, default: float) -> float:
 
 
 def get_current_session() -> Tuple[str, str]:
-    """Get current market session and overlap if applicable.
-    
-    Returns:
-        (session_name, overlap_name)
-    """
+    """Return the current global FX session and any active overlap."""
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
-    minute = now_utc.minute
     day = now_utc.weekday()
-    
-    # Weekend check
-    if day >= 5:  # Saturday=5, Sunday=6
+    if day >= 5:
         return MarketSession.WEEKEND, ""
-    
-    # FX Session detection
-    if hour >= FX_SESSIONS["SYDNEY"][0]:
-        return "SYDNEY", ""
-    if hour >= FX_SESSIONS["TOKYO"][0]:
-        return "TOKYO", ""
-    if hour >= FX_SESSIONS["LONDON"][0] and hour < FX_SESSIONS["NEW_YORK"][0]:
-        return "LONDON", ""
-    if hour >= FX_SESSIONS["NEW_YORK"][0]:
-        return "NEW_YORK", ""
-    
-    # Check for London/NY overlap (most profitable)
-    if 13 <= hour < 17:  # 13:00-17:00 UTC
+    if 13 <= hour < 17:
         return "LONDON", "LONDON_NY_OVERLAP"
-    
-    return MarketSession.REGULAR_SESSION, ""
+    if 8 <= hour < 13:
+        return "LONDON", ""
+    if 17 <= hour < 22:
+        return "NEW_YORK", ""
+    if hour >= 22:
+        return "SYDNEY", ""
+    return "TOKYO", ""
 
 
 def get_session_bonus(session_name: str, overlap: str = "") -> float:
@@ -146,47 +132,39 @@ def get_asset_class_threshold(base_threshold: float, asset_class: str) -> float:
 
 
 def get_session_state(asset: str = "") -> Dict[str, Any]:
-    """Get comprehensive session state for an asset.
-    
-    Args:
-        asset: Optional asset symbol for asset-class specific logic
-        
-    Returns:
-        SessionState dict with:
-        - is_open: bool
-        - session: str
-        - overlap: str  
-        - liquidity: str (HIGH, MEDIUM, LOW)
-        - risk_level: str (NORMAL, ELEVATED, HIGH)
-    """
+    """Return registry-backed session state for an instrument."""
+    if asset:
+        from data.market_hours import get_market_session_status
+
+        status = get_market_session_status(asset)
+        reason = status.reason.lower()
+        if status.is_open:
+            liquidity = "HIGH" if status.session in {"cash", "continuous"} else "MEDIUM"
+            risk_level = "NORMAL"
+        elif status.session == "maintenance":
+            liquidity = "LOW"
+            risk_level = "ELEVATED"
+        else:
+            liquidity = "LOW"
+            risk_level = "HIGH"
+        return {
+            "is_open": status.is_open,
+            "session": status.session.upper(),
+            "overlap": "",
+            "liquidity": liquidity,
+            "risk_level": risk_level,
+            "session_bonus": 0.0,
+            "reason": status.reason,
+            "calendar": status.calendar,
+            "asset_class": status.asset_class,
+        }
+
     session, overlap = get_current_session()
     bonus = get_session_bonus(session, overlap)
-    
-    # Determine liquidity level
-    if overlap or session == "LONDON":
-        liquidity = "HIGH"
-    elif session == "NEW_YORK":
-        liquidity = "MEDIUM"
-    else:
-        liquidity = "LOW"
-    
-    # Determine risk level
-    high_risk_sessions = [MarketSession.WEEKEND, MarketSession.HIGH_IMPACT_NEWS_WINDOW]
-    elevated_risk_sessions = ["LUNCH_LIQUIDITY_DROP", "AFTER_HOURS"]
-    closed_sessions = [MarketSession.WEEKEND, MarketSession.HOLIDAY]
-    
-    if session in high_risk_sessions:
-        risk_level = "HIGH"
-    elif session in elevated_risk_sessions:
-        risk_level = "ELEVATED"
-    else:
-        risk_level = "NORMAL"
-    
-    # Determine if market is open
-    is_open = session not in closed_sessions
-    
+    liquidity = "HIGH" if overlap or session == "LONDON" else ("MEDIUM" if session == "NEW_YORK" else "LOW")
+    risk_level = "HIGH" if session in {MarketSession.WEEKEND, MarketSession.HIGH_IMPACT_NEWS_WINDOW} else "NORMAL"
     return {
-        "is_open": is_open,
+        "is_open": session not in {MarketSession.WEEKEND, MarketSession.HOLIDAY},
         "session": session,
         "overlap": overlap,
         "liquidity": liquidity,

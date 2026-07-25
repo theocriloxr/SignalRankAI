@@ -544,7 +544,7 @@ class MLRejectionTracker:
                     features.setdefault("rejection_type", rejection_type)
                 if signal_id:
                     features.setdefault("signal_id", signal_id)
-                async with get_session(noncritical=True) as session:
+                async with get_session(priority="background", label="engine_signal_deduplicator") as session:
                     rejection = MLRejectedSignal(
                         signal_id=signal_id,
                         asset=str(asset or "").upper(),

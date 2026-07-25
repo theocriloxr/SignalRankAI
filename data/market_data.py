@@ -7,7 +7,19 @@ import time as _time
 import time
 from typing import Iterable
 
-import yfinance as yf
+try:
+    import yfinance as yf
+except Exception:  # Optional provider; other market-data routes remain usable.
+    class _UnavailableYFinance:
+        @staticmethod
+        def Ticker(*_args, **_kwargs):
+            raise RuntimeError("yfinance_unavailable")
+
+        @staticmethod
+        def download(*_args, **_kwargs):
+            return None
+
+    yf = _UnavailableYFinance()
 
 from data.fetcher import async_get_candles, get_asset_type, _get_last_provider_used
 from db.market_cache import get_recent_candles
@@ -56,7 +68,14 @@ def market_data_usability(asset: str, requested: Iterable[str], market_data: dic
     requested_tfs = [str(tf).strip().lower() for tf in (requested or []) if str(tf).strip()]
     usable = usable_timeframe_payloads(market_data)
     asset_class = str(get_asset_type(asset) or "unknown").lower().strip()
-    required_tfs = list(CRYPTO_REQUIRED_TIMEFRAMES) if asset_class == "crypto" else []
+    from engine.timeframe_policy import resolve_required_timeframes
+
+    policy = resolve_required_timeframes(
+        asset_class=asset_class,
+        trading_style=str(os.getenv("DEFAULT_TRADING_STYLE", "day") or "day").strip().lower(),
+        runtime_context={"source": "market_data_usability"},
+    )
+    required_tfs = [tf for tf in policy.required if tf in requested_tfs] or list(policy.required)
     optional_tfs = [tf for tf in requested_tfs if tf not in required_tfs]
     required_status = {tf: tf in usable for tf in required_tfs}
     optional_status = {tf: tf in usable for tf in optional_tfs}
@@ -145,7 +164,7 @@ def _yf_cooldown_seconds() -> float:
 
 
 def _yf_available() -> bool:
-    return time.time() >= float(_YF_COOLDOWN_UNTIL or 0.0)
+    return yf is not None and time.time() >= float(_YF_COOLDOWN_UNTIL or 0.0)
 
 
 def _should_log_yf_no_candles(symbol: str, timeframe: str) -> bool:

@@ -403,6 +403,10 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "qa_report": Tier.ADMIN, "selfcheck": Tier.ADMIN,
         "ops_health": Tier.ADMIN, "system": Tier.ADMIN,
         "db_health": Tier.ADMIN, "engine_debug": Tier.ADMIN,
+        "why_no_signal": Tier.ADMIN, "ohlc_health": Tier.ADMIN,
+        "asset_capability": Tier.ADMIN, "asset_class_test": Tier.ADMIN,
+        "all_asset_test_status": Tier.ADMIN,
+        "delivery_eligibility": Tier.FREE,
         "blast_terms": Tier.ADMIN, "assets": Tier.ADMIN,
         "release_guard": Tier.ADMIN, "automaton_report": Tier.ADMIN,
         "admin_receipt_lookup": Tier.ADMIN, "admin_payment_lookup": Tier.ADMIN,
@@ -414,6 +418,7 @@ COMMAND_MINIMUM_TIER: Mapping[str, Tier] = MappingProxyType(
         "owner_users": Tier.OWNER, "owner_revenue": Tier.OWNER,
         "version": Tier.OWNER, "correct_signal": Tier.OWNER,
         "provider_status": Tier.OWNER, "broadcast": Tier.OWNER,
+        "owner_test_delivery": Tier.OWNER,
     }
 )
 

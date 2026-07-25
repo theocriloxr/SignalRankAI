@@ -65,7 +65,11 @@ except Exception:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 
 
-logger.info("[startup] Redis URL detected; webhook redis queue will be used (production mode)")
+_startup_redis_url = _resolve_redis_url()
+if _startup_redis_url:
+    logger.info("[startup] Redis URL detected; durable webhook queue is available")
+else:
+    logger.warning("[startup] Redis URL not configured; webhook dispatcher will use the bounded in-process queue")
 
 # Module-level reference to the fully-configured PTB Application in webhook mode.
 # Set by _start_telegram_bot(); used by the POST /telegram/webhook route.
@@ -149,9 +153,18 @@ def _extract_chat_id(payload: dict | None) -> int:
 
 
 
-# Always use Redis for webhook queue in production
 def _redis_queue_requested() -> bool:
-    return True
+    """Use Redis only when configured and not explicitly disabled.
+
+    Earlier builds returned ``True`` unconditionally, causing no-Redis/local
+    deployments to claim a durable backend and repeatedly attempt unavailable
+    Redis operations.
+    """
+    configured = bool(_resolve_redis_url())
+    requested = str(os.getenv("WEBHOOK_REDIS_QUEUE_ENABLED", "1")).strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    return bool(configured and requested)
 
 
 def _log_task_failure(task: asyncio.Task, task_name: str) -> None:
@@ -880,6 +893,21 @@ def _start_worker_loop_in_background() -> asyncio.Task:
 async def lifespan(_: FastAPI):
     global _lifespan_heartbeat_task
     _log_railway_env_readiness()
+    try:
+        from db.session import get_session_api_contract
+
+        contract = get_session_api_contract()
+        logger.info(
+            "[db_session_api] signature_version=%s supports_priority=%s supports_label=%s "
+            "supports_timeout=%s legacy_adapter=%s",
+            contract["signature_version"],
+            str(contract["supports_priority"]).lower(),
+            str(contract["supports_label"]).lower(),
+            str(contract["supports_timeout"]).lower(),
+            str(contract["legacy_adapter"]).lower(),
+        )
+    except Exception as exc:
+        logger.error("[db_session_api] self-check failed: %s", exc)
     _db_ready = _is_db_ready()
 
     if not _db_ready:
@@ -1220,7 +1248,7 @@ async def lifespan(_: FastAPI):
 
                 redis_ok = bool(await state.has_redis())
                 if redis_ok and (not _use_redis_webhook_queue):
-                    _use_redis_webhook_queue = True
+                    _use_redis_webhook_queue = _redis_queue_requested()
                     logger.info("[webhook] Redis became available; switched queue_backend=redis")
                 elif (not redis_ok) and _use_redis_webhook_queue:
                     _use_redis_webhook_queue = False

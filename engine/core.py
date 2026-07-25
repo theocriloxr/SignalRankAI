@@ -85,7 +85,6 @@ from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from db.repository import persist_decision_log, persist_signal
 from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
-from signalrank_telegram.bot import dispatch_signals_async
 from core.redis_state import state
 from config import OWNER_IDS, ADMIN_IDS
 
@@ -1543,74 +1542,163 @@ def _rotate_slice(items: List[str], start: int, size: int) -> List[str]:
 
 
 async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]]) -> Dict[str, Dict]:
-    concurrency = max(1, _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 8))
-    # Keep the per-asset deadline short enough that a few slow provider
-    # waterfalls cannot exceed the whole batch timeout and erase partial data.
-    per_asset_timeout_default = 30.0 if is_binance_blocked() else 20.0
-    per_asset_timeout = float(_env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default))
-    sem = asyncio.Semaphore(concurrency)
+    """Fetch candles with bounded asset concurrency and required-first planning.
 
-    async def _one(asset: str, tfs: List[str]):
+    The previous implementation used ``MARKET_CACHE_FETCH_CONCURRENCY`` with a
+    default as high as 8/16 and immediately requested every timeframe for every
+    asset.  On free provider endpoints this created a request storm and caused
+    entire batches to time out even though individual provider calls completed
+    moments later.  This coordinator deliberately keeps the outer asset budget
+    small, fetches the canonical required timeframes first, and only requests
+    optional enrichment after the asset is usable.
+    """
+    configured_concurrency = max(
+        1,
+        _env_int(
+            "MARKET_FETCH_ASSET_CONCURRENCY",
+            _env_int("MARKET_CACHE_FETCH_CONCURRENCY", 2),
+        ),
+    )
+    public_testing = _env_bool("PUBLIC_TESTING_MODE", False)
+    concurrency = min(configured_concurrency, 4) if public_testing else configured_concurrency
+    if public_testing and configured_concurrency != concurrency:
+        logger.warning(
+            "[ohlc_runtime_config] public testing capped asset concurrency configured=%s effective=%s",
+            configured_concurrency,
+            concurrency,
+        )
+
+    per_asset_timeout_default = 30.0 if is_binance_blocked() else 20.0
+    per_asset_timeout = float(
+        _env_float(
+            "OHLC_REQUIRED_ASSET_TIMEOUT_SECONDS",
+            _env_float("MARKET_FETCH_TIMEOUT_SECONDS", per_asset_timeout_default),
+        )
+    )
+    optional_timeout = float(_env_float("OHLC_OPTIONAL_ASSET_TIMEOUT_SECONDS", 12.0))
+    sem = asyncio.Semaphore(concurrency)
+    logger.info(
+        "[ohlc_runtime_config] configured_asset_concurrency=%s effective_asset_concurrency=%s "
+        "required_asset_timeout_s=%.2f optional_asset_timeout_s=%.2f",
+        configured_concurrency,
+        concurrency,
+        per_asset_timeout,
+        optional_timeout,
+    )
+
+    async def _fetch_phase(asset: str, timeframes: List[str], timeout_s: float) -> Dict[str, Dict]:
+        if not timeframes:
+            return {}
+        task = asyncio.create_task(fetch_market_data_cached(asset, timeframes))
+        try:
+            return await asyncio.wait_for(task, timeout=max(1.0, timeout_s))
+        except asyncio.TimeoutError:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+        except asyncio.CancelledError:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            raise
+
+    async def _one(asset: str, requested_tfs: List[str]):
         async with sem:
+            from engine.timeframe_policy import resolve_required_timeframes
+
             started = time.time()
+            asset_class = _asset_class_key(asset)
+            trading_style = str(os.getenv("DEFAULT_TRADING_STYLE", "day") or "day").strip().lower()
+            policy = resolve_required_timeframes(
+                asset_class=asset_class,
+                trading_style=trading_style,
+                runtime_context={"source": "engine_fetch"},
+            )
+            requested = [str(tf).strip().lower() for tf in (requested_tfs or []) if str(tf).strip()]
+            required = [tf for tf in policy.required if tf in requested]
+            if not required:
+                required = [tf for tf in policy.required]
+            optional = [tf for tf in requested if tf not in required]
+            logger.info(
+                "[ohlc_fetch_plan] asset=%s required=%s optional=%s policy_version=%s reason=%s",
+                asset,
+                required,
+                optional,
+                policy.policy_version,
+                policy.reason,
+            )
             try:
-                data = await asyncio.wait_for(
-                    fetch_market_data_cached(asset, tfs),
-                    timeout=max(1.0, float(per_asset_timeout)),
+                data = await _fetch_phase(asset, required, per_asset_timeout)
+                usable_required = all(
+                    isinstance((data or {}).get(tf), dict)
+                    and bool(((data or {}).get(tf) or {}).get("candles"))
+                    for tf in required
                 )
-                elapsed = time.time() - started
-                if elapsed > max(5.0, per_asset_timeout):
+                if not usable_required:
+                    elapsed = time.time() - started
                     logger.warning(
-                        "[engine] candle_fetch asset=%s status=slow elapsed=%.2fs",
+                        "[ohlc_asset_result] asset=%s usable=false phase=required elapsed=%.2fs "
+                        "required=%s available=%s",
                         asset,
                         elapsed,
+                        required,
+                        sorted((data or {}).keys()),
                     )
-                else:
-                    logger.info(
-                        "[engine] candle_fetch asset=%s status=done elapsed=%.2fs tfs=%s",
-                        asset,
-                        elapsed,
-                        len(tfs or []),
-                    )
-                if not data or not any(data.values()):
-                    logger.warning("[WARN] All providers failed for %s, skipping...", asset)
-                    return asset, {}
-                # Ensure indicators are present per timeframe
+                    logger.warning("All providers failed for %s, skipping...", asset)
+                    return asset, (data or {})
+
+                if optional:
+                    try:
+                        optional_data = await _fetch_phase(asset, optional, optional_timeout)
+                        data = {**(data or {}), **(optional_data or {})}
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "[ohlc_asset_timeout] asset=%s phase=optional children_cancelled=true timeout=%.2fs",
+                            asset,
+                            optional_timeout,
+                        )
+
+                elapsed = time.time() - started
                 for tf, tf_data in (data or {}).items():
                     try:
-                        if not tf_data.get('indicators'):
-                            tf_candles = tf_data.get('candles', [])
-                            tf_data['indicators'] = calculate_indicators(tf_candles)
-                        if isinstance(tf_data.get('indicators'), dict):
-                            tf_data['indicators'] = normalize_indicator_schema(tf_data.get('indicators'))
+                        if not tf_data.get("indicators"):
+                            tf_data["indicators"] = calculate_indicators(tf_data.get("candles", []))
+                        if isinstance(tf_data.get("indicators"), dict):
+                            tf_data["indicators"] = normalize_indicator_schema(tf_data.get("indicators"))
                     except Exception:
                         logger.exception("indicator calc failed")
+                logger.info(
+                    "[ohlc_asset_result] asset=%s usable=true elapsed=%.2fs required=%s available=%s",
+                    asset,
+                    elapsed,
+                    required,
+                    sorted((data or {}).keys()),
+                )
                 return asset, (data or {})
             except asyncio.TimeoutError:
                 elapsed = time.time() - started
                 logger.warning(
-                    "[engine] candle_fetch asset=%s status=timeout elapsed=%.2fs timeout=%.2fs",
+                    "[ohlc_asset_timeout] asset=%s phase=required children_cancelled=true elapsed=%.2fs timeout=%.2fs",
                     asset,
                     elapsed,
                     per_asset_timeout,
                 )
                 return asset, {}
             except Exception:
-                logger.exception(f"[engine] candle_fetch failed for {asset}")
+                logger.exception("[engine] candle_fetch failed for %s", asset)
                 return asset, {}
 
-    tasks = [_one(a, tfs) for a, tfs in (asset_to_timeframes or {}).items()]
+    tasks = [asyncio.create_task(_one(a, tfs)) for a, tfs in (asset_to_timeframes or {}).items()]
     results = await asyncio.gather(*tasks, return_exceptions=True)
     out: Dict[str, Dict] = {}
     for item in results:
         if isinstance(item, Exception):
             logger.warning("[engine] candle_fetch task failed: %s", _short_err(item))
             continue
-        try:
-            asset, data = item
-            out[str(asset)] = data if isinstance(data, dict) else {}
-        except Exception as exc:
-            logger.warning("[engine] candle_fetch malformed result: %s", _short_err(exc))
+        asset, data = item
+        out[str(asset)] = data if isinstance(data, dict) else {}
+
     success_count = sum(1 for value in out.values() if isinstance(value, dict) and any(value.values()))
     logger.info(
         "[engine] candle_fetch summary assets=%s success=%s failed=%s concurrency=%s timeout=%.2fs",
@@ -1619,6 +1707,12 @@ async def _fetch_market_data_for_assets(asset_to_timeframes: Dict[str, List[str]
         max(0, len(asset_to_timeframes or {}) - success_count),
         concurrency,
         per_asset_timeout,
+    )
+    logger.info(
+        "[ohlc_task_leak_check] created=%s completed=%s cancelled=%s orphaned=0",
+        len(tasks),
+        sum(1 for task in tasks if task.done() and not task.cancelled()),
+        sum(1 for task in tasks if task.cancelled()),
     )
     return out
 
@@ -3729,6 +3823,16 @@ def main_loop(DRY_RUN: bool = False):
             # DELIVERY PHASE
             delivery_mgr = TierDeliveryManager()
 
+            if not scored_signals_all:
+                logger.info("[delivery_skipped] reason=no_candidates candidate_count=0")
+                _cycle_queue.mark_done(assets, signals_generated=0)
+                if _env_bool("ENGINE_CYCLE_LOG", True):
+                    logger.info(
+                        f"[engine] batch_complete {_cycle_queue.round_progress} "
+                        "signals_this_batch=0 dispatched=0"
+                    )
+                continue
+
             try:
                 user_ids = list(get_all_user_ids_compat() or [])
             except Exception:
@@ -4193,6 +4297,10 @@ def main_loop(DRY_RUN: bool = False):
                             except Exception:
                                 _user_timeout = 20.0
                             try:
+                                # Import lazily so the market engine remains usable in
+                                # diagnostics/tests even when Telegram scheduler extras are absent.
+                                from signalrank_telegram.bot import dispatch_signals_async
+
                                 # Canonical dispatch contract: sent_count = await dispatch_signals_async
                                 sent_count = await asyncio.wait_for(
                                     dispatch_signals_async(user_signals, user_id=user_id),

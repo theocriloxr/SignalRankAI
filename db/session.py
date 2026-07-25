@@ -473,6 +473,20 @@ def is_db_configured() -> bool:
     return get_database_url_or_none() is not None
 
 
+def get_session_api_contract() -> dict[str, Any]:
+    """Describe the canonical DB session API for startup/release diagnostics."""
+    import inspect
+
+    parameters = inspect.signature(get_session).parameters
+    return {
+        "signature_version": 3,
+        "supports_priority": "priority" in parameters,
+        "supports_label": "label" in parameters,
+        "supports_timeout": "timeout_seconds" in parameters,
+        "legacy_adapter": all(name in parameters for name in ("noncritical", "critical", "interactive")),
+    }
+
+
 def get_engine_inventory() -> list[dict[str, Any]]:
     """Produce an engine inventory for the release guard and /db_health.
 
@@ -586,7 +600,7 @@ async def collect_database_health() -> dict[str, Any]:
     try:
         from sqlalchemy import text
 
-        async with get_session(interactive=True) as session:
+        async with get_session(priority="interactive", label="db_session") as session:
             activity = await session.execute(
                 text(
                     """
@@ -777,6 +791,7 @@ async def get_session(
     *,
     priority: DBPriority | str | None = None,
     label: str = "unlabelled",
+    timeout_seconds: float | None = None,
     noncritical: bool = False,
     critical: bool = False,
     interactive: bool = False,
@@ -790,6 +805,10 @@ async def get_session(
     ``label`` identifies the caller's operation for metrics, diagnostic logs
     and deferred-decision tracing. It defaults to ``"unlabelled"`` and callers
     are encouraged to provide a descriptive, stable identifier.
+
+    ``timeout_seconds`` optionally narrows or extends the admission timeout for
+    one operation. The value is clamped to a safe non-negative duration and does
+    not alter the global priority policy.
     """
     _safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(label or "").strip())[:64] or "unlabelled"
     resolved = resolve_db_priority(
@@ -798,7 +817,11 @@ async def get_session(
         critical=critical,
         interactive=interactive,
     )
-    timeout_s = priority_timeout_seconds(resolved)
+    default_timeout_s = priority_timeout_seconds(resolved)
+    try:
+        timeout_s = default_timeout_s if timeout_seconds is None else max(0.0, float(timeout_seconds))
+    except (TypeError, ValueError):
+        raise ValueError("timeout_seconds must be a non-negative number or None") from None
     deadline = time.monotonic() + timeout_s
     is_background = resolved is DBPriority.BACKGROUND
     is_analytics = resolved is DBPriority.ANALYTICS

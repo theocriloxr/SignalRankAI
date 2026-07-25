@@ -122,7 +122,7 @@ async def _resend_unsent_signals_async():
         from db.models import SignalDelivery
         formatter_failed_signal_ids: set[str] = set()
         try:
-            async with get_session(noncritical=True) as _bootstrap_session:
+            async with get_session(priority="background", label="signalrank_telegram_bot") as _bootstrap_session:
                 user_ids = await list_all_user_telegram_ids(_bootstrap_session)
                 raw_signals = await list_active_signals(_bootstrap_session, max_age_days=1, limit=100)
                 failed_rows = await _bootstrap_session.execute(
@@ -704,6 +704,13 @@ from .commands import (
     signal_debug_command,
     format_debug_command,
     engine_debug_command,
+    why_no_signal_command,
+    delivery_eligibility_command,
+    ohlc_health_command,
+    asset_capability_command,
+    asset_class_test_command,
+    all_asset_test_status_command,
+    owner_test_delivery_command,
     profile_command,
     mission_command,
     myid_command,
@@ -1830,7 +1837,7 @@ async def _deliver_or_update_signal_async(
         from sqlalchemy import select
         from datetime import datetime, timezone
 
-        async with get_session(noncritical=True) as _tz_session:
+        async with get_session(priority="background", label="signalrank_telegram_bot") as _tz_session:
             _tz_user = (await _tz_session.execute(
                 select(User).where(User.telegram_user_id == int(telegram_user_id))
             )).scalar_one_or_none()
@@ -3932,7 +3939,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         from db.session import get_session as _profile_get_session
 
         async def _load_delivery_prefs():
-            async with _profile_get_session(noncritical=True) as _profile_session:
+            async with _profile_get_session(priority="background", label="signalrank_telegram_bot") as _profile_session:
                 return await get_user_trading_preferences(_profile_session, int(user_id))
 
         _prefs = await asyncio.wait_for(
@@ -4141,7 +4148,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     from core.tier_constants import TIER_DAILY_LIMITS
 
                     to_send: list[dict] = []
-                    async with get_session(critical=True) as session:
+                    async with get_session(priority="critical", label="signalrank_telegram_bot") as session:
                         daily_limit = TIER_DAILY_LIMITS.get(
                             str(effective_tier),
                             TIER_DAILY_LIMITS.get("free", 3),
@@ -4229,7 +4236,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     async def _reserve_one(_signal: dict) -> dict | None:
                         from db.pg_features import get_or_create_signal, record_signal_delivery
 
-                        async with get_session(critical=True) as session:
+                        async with get_session(priority="critical", label="signalrank_telegram_bot") as session:
                             s = await get_or_create_signal(session, _signal)
                             ok = await record_signal_delivery(
                                 session,
@@ -4814,7 +4821,7 @@ def distribute_random_signals_to_free_users_job():
         from db.pg_features import queue_random_free_signals_for_all_users
 
         async def _do_distribute():
-            async with get_session(noncritical=True) as session:
+            async with get_session(priority="background", label="signalrank_telegram_bot") as session:
                 count = await queue_random_free_signals_for_all_users(session)
                 if count > 0:
                     logger.info(f"\U0001F4EC Queued signals for {count} FREE user(s)")
@@ -4925,7 +4932,7 @@ async def profile_debug_command(update, context):
             # User-triggered diagnostics must be able to run while background
             # delivery/outcome work is active. Treat this as an interactive
             # read path, not as disposable telemetry.
-            async with get_session(interactive=True) as session:
+            async with get_session(priority="interactive", label="signalrank_telegram_bot") as session:
                 prefs_obj = await get_user_trading_preferences(session, telegram_user_id)
                 await session.commit()
                 return prefs_obj
@@ -5453,6 +5460,13 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("signal_debug", _audit_handler("signal_debug", signal_debug_command)))
     application.add_handler(CommandHandler("format_debug", _audit_handler("format_debug", format_debug_command)))
     application.add_handler(CommandHandler("engine_debug", _audit_handler("engine_debug", engine_debug_command)))
+    application.add_handler(CommandHandler("why_no_signal", _audit_handler("why_no_signal", why_no_signal_command)))
+    application.add_handler(CommandHandler("delivery_eligibility", _audit_handler("delivery_eligibility", delivery_eligibility_command)))
+    application.add_handler(CommandHandler("ohlc_health", _audit_handler("ohlc_health", ohlc_health_command)))
+    application.add_handler(CommandHandler("asset_capability", _audit_handler("asset_capability", asset_capability_command)))
+    application.add_handler(CommandHandler("asset_class_test", _audit_handler("asset_class_test", asset_class_test_command)))
+    application.add_handler(CommandHandler("all_asset_test_status", _audit_handler("all_asset_test_status", all_asset_test_status_command)))
+    application.add_handler(CommandHandler("owner_test_delivery", _audit_handler("owner_test_delivery", owner_test_delivery_command)))
     application.add_handler(CommandHandler("myid", _audit_handler("myid", myid_command)))
     application.add_handler(CommandHandler("account", _audit_handler("account", account_command)))
     application.add_handler(CommandHandler("dashboard", _audit_handler("dashboard", dashboard_command)))
@@ -6318,7 +6332,7 @@ def run_bot() -> None:
             from datetime import datetime
 
             async def _fetch() -> list[tuple[object, object, list[tuple[int, str, dict]]]]:
-                async with get_session(noncritical=True) as session:
+                async with get_session(priority="background", label="signalrank_telegram_bot") as session:
                     rows = await list_unnotified_outcomes(session, limit=50)
                     out = []
                     for oc, sig in rows:
@@ -8442,17 +8456,23 @@ def run_bot() -> None:
             int(os.getenv("OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS", os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "90")) or 90),
         )
         _outcome_first_run = datetime.utcnow() + timedelta(seconds=_outcome_start_delay_seconds)
+        _worker_outcome_owner = _env_bool("WORKER_OUTCOME_TRACKER_ENABLED", True)
+        logger.info(
+            "[background_job_ownership] job=realtime_outcomes owner=%s duplicate=false",
+            "worker" if _worker_outcome_owner else "telegram_scheduler",
+        )
 
         if _minimal_scheduler_mode:
             logger.info("[sched] minimal mode enabled: scheduling only core closure jobs")
-            scheduler.add_job(
-                compute_outcomes_best_effort,
-                'interval',
-                minutes=5,
-                id='compute_outcomes_best_effort',
-                replace_existing=True,
-                max_instances=1,
-            )
+            if not _worker_outcome_owner:
+                scheduler.add_job(
+                    compute_outcomes_best_effort,
+                    'interval',
+                    minutes=5,
+                    id='compute_outcomes_best_effort',
+                    replace_existing=True,
+                    max_instances=1,
+                )
             scheduler.add_job(
                 send_outcome_notifications,
                 'interval',
@@ -8497,14 +8517,15 @@ def run_bot() -> None:
                 replace_existing=True,
                 max_instances=1,
             )
-            scheduler.add_job(
-                compute_outcomes_best_effort,
-                'interval',
-                minutes=3,
-                id='compute_outcomes_best_effort',
-                replace_existing=True,
-                max_instances=1,
-            )
+            if not _worker_outcome_owner:
+                scheduler.add_job(
+                    compute_outcomes_best_effort,
+                    'interval',
+                    minutes=3,
+                    id='compute_outcomes_best_effort',
+                    replace_existing=True,
+                    max_instances=1,
+                )
             scheduler.add_job(
                 refresh_monitor_snapshots_job,
                 'interval',

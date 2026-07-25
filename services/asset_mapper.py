@@ -19,6 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from core.asset_registry import canonicalize_asset, resolve_asset_spec
+
 # ---------------------------------------------------------------------------
 # Canonical symbol overrides per provider
 # ---------------------------------------------------------------------------
@@ -222,6 +224,23 @@ _INDEX_MAP: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Additional registry-backed instruments that previously drifted into the US
+# equity default or had no deterministic provider mapping.
+_INDEX_MAP.update({
+    "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "NIKKEI", "mt5": "JP225"},
+    "FRA40": {"yfinance": "^FCHI", "polygon": None, "twelvedata": "CAC", "mt5": "FRA40"},
+    "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
+    "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},
+    "HK50": {"yfinance": "^HSI", "polygon": None, "twelvedata": "HSI", "mt5": "HK50"},
+})
+_COMMODITY_MAP.update({
+    "WTI": {"yfinance": "CL=F", "polygon": None, "twelvedata": "WTI/USD", "mt5": "USOIL"},
+    "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "BRENT/USD", "mt5": "UKOIL"},
+})
+_CRYPTO_MAP.update({
+    "XAUTUSDT": {"binance": "XAUTUSDT", "coingecko": "tether-gold", "yfinance": "XAUT-USD", "polygon": None, "twelvedata": "XAUT/USD", "mt5": "XAUTUSD"},
+})
+
 # Combined lookup: canonical -> providers
 _ALL_MAPS: Dict[str, Dict[str, str]] = {}
 _ALL_MAPS.update(_CRYPTO_MAP)
@@ -270,47 +289,13 @@ class InstrumentSpec:
 
 
 def canonicalize_symbol(symbol: str) -> str:
-    """Normalize namespaced/common aliases without guessing arbitrary tickers."""
-    raw = str(symbol or "").upper().strip()
-    if ":" in raw and raw.split(":", 1)[0] in {
-        "CRYPTO", "FX", "FOREX", "FORX", "COMMODITY", "EQUITY", "STOCK", "INDEX"
-    }:
-        raw = raw.split(":", 1)[1]
-    compact = raw.replace("/", "").replace("_", "").replace("-", "")
-    if compact.startswith("^"):
-        reverse = {"^GSPC": "US500", "^NDX": "NAS100", "^DJI": "US30", "^GDAXI": "GER40", "^FTSE": "UK100"}
-        return reverse.get(compact, compact)
-    if compact in _ALIASES:
-        return _ALIASES[compact]
-    if compact in _ALL_MAPS:
-        return compact
-    # Preserve punctuation in legitimate stock tickers such as BRK-B. Only
-    # collapse separators when the result is recognizably a market pair.
-    currencies = {"USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "XAU", "XAG"}
-    pair_like = (
-        len(compact) == 6
-        and compact[:3] in currencies
-        and compact[3:] in currencies
-    ) or compact.endswith(("USDT", "USDC", "BUSD"))
-    return compact if pair_like else raw
+    """Normalize aliases through the canonical asset registry."""
+    return canonicalize_asset(symbol)
 
 
 def classify_asset(symbol: str) -> str:
-    """Return asset class: 'crypto', 'forex', 'commodity', 'stock', or 'unknown'."""
-    s = canonicalize_symbol(symbol)
-    cls = _ASSET_CLASS.get(s)
-    if cls:
-        return cls
-    # Heuristic fallbacks
-    if s.endswith("USDT") or s.endswith("USDC") or s.endswith("BTC") or s.endswith("ETH"):
-        return "crypto"
-    if s in {"XAUUSD", "XAGUSD", "USOIL", "UKOIL", "WTI", "BRENT", "GOLD", "SILVER", "OIL"}:
-        return "commodity"
-    if s in {"SPX", "GSPC", "NDX", "DJI", "IXIC", "VIX"} or s.startswith(("US500", "NAS100", "US30", "GER40", "UK100", "JPN225")):
-        return "index"
-    if len(s) == 6 and s.isalpha():
-        return "forex"
-    return "stock" if s else "unknown"
+    """Return the registry-backed asset class without unsafe US-stock fallback."""
+    return resolve_asset_spec(symbol).asset_class
 
 
 def map_symbol(symbol: str, provider: str) -> Optional[str]:
@@ -405,31 +390,27 @@ def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
 
 
 def get_instrument_spec(symbol: str) -> InstrumentSpec:
-    """Return the canonical mapping and final-quote capabilities for a symbol."""
-    canonical = canonicalize_symbol(symbol)
-    asset_class = classify_asset(canonical)
+    """Return canonical mapping and final-quote capabilities for a symbol."""
+    spec = resolve_asset_spec(symbol)
     tick_sizes = {
         "crypto": 0.00000001,
         "forex": 0.00001,
         "commodity": 0.01,
         "stock": 0.01,
         "index": 0.1,
+        "macro": 0.01,
+        "volatility": 0.01,
     }
-    calendars = {
-        "crypto": "crypto_24_7",
-        "forex": "fx_24_5",
-        "commodity": "commodity_23_5",
-        "stock": "us_equity",
-        "index": "index_cfd_or_cash",
-    }
+    final_quote_kinds = () if spec.analysis_only or not spec.actionable else ("trade", "bid_ask", "ticker", "db_tick")
     return InstrumentSpec(
-        canonical_symbol=canonical,
-        asset_class=asset_class,
-        tick_size=tick_sizes.get(asset_class, 0.01),
-        session_calendar=calendars.get(asset_class, "unsupported"),
-        final_quote_kinds=("trade", "bid_ask", "ticker", "db_tick"),
-        provider_symbols=get_all_providers_for_asset(canonical),
+        canonical_symbol=spec.canonical_symbol,
+        asset_class=spec.asset_class,
+        tick_size=tick_sizes.get(spec.asset_class, 0.01),
+        session_calendar=spec.session_calendar,
+        final_quote_kinds=final_quote_kinds,
+        provider_symbols=get_all_providers_for_asset(spec.canonical_symbol),
     )
+
 
 
 __all__ = [

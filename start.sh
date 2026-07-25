@@ -24,7 +24,10 @@ fi
 # The app also runs startup DB ops internally.
 if [ "${RUN_DB_MIGRATIONS_AT_BOOT:-false}" = "true" ] && [ -n "${DATABASE_URL}" ]; then
 	echo "[boot] Running database migrations..."
-	python -m alembic upgrade head || echo "[WARN] Migration failed, continuing anyway..."
+	if ! python -m alembic upgrade head; then
+		echo "[FATAL] Migration failed; refusing to start with an unknown schema state." >&2
+		exit 1
+	fi
 fi
 
 # Railway-safe default:

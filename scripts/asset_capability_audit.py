@@ -178,6 +178,28 @@ ASSET_REGISTRY: dict[str, dict[str, Any]] = {
 }
 
 
+def _build_canonical_registry() -> dict[str, dict[str, Any]]:
+    """Build the audit universe from the same registry used by runtime routing."""
+    from core.asset_registry import list_asset_specs
+
+    return {
+        spec.canonical_symbol: {
+            "class": spec.asset_class,
+            "session": spec.session_calendar,
+            "subtype": spec.subtype,
+            "actionable": spec.actionable,
+            "analysis_only": spec.analysis_only,
+            "timezone": spec.timezone,
+        }
+        for spec in list_asset_specs()
+    }
+
+
+# The historical literal above is retained only for backwards-compatible docs;
+# runtime auditing always uses the canonical registry.
+ASSET_REGISTRY = _build_canonical_registry()
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -205,7 +227,7 @@ async def check_asset_ohlc(asset: str, asset_info: dict[str, Any]) -> tuple[bool
     provider = "unknown"
     start = time.perf_counter()
     try:
-        from data.fetch import async_get_candles
+        from data.fetcher import async_get_candles
 
         cls = asset_info.get("class", "")
         timeframes = ["5m", "15m", "1h"]
@@ -219,13 +241,13 @@ async def check_asset_ohlc(asset: str, asset_info: dict[str, Any]) -> tuple[bool
             session = "default"
 
         # Try to fetch the most recent candle
-        candles = await async_get_candles(asset, timeframe="5m", limit=5)
+        candles = await async_get_candles(asset, "5m")
         elapsed = (time.perf_counter() - start) * 1000
 
         if candles and len(candles) > 0:
             last_candle = candles[-1] if isinstance(candles, list) else None
             if last_candle:
-                provider = str(getattr(last_candle, "source", None) or candles.get("source", "unknown"))
+                provider = str(getattr(last_candle, "source", None) or (last_candle.get("source") if isinstance(last_candle, dict) else None) or "unknown")
             return True, provider, elapsed
 
         # Fallback: try sync fetch
@@ -426,6 +448,7 @@ async def main() -> int:
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--concurrency", type=int, default=5, help="Concurrent checks (default: 5)")
     parser.add_argument("--show-failed", action="store_true", help="Show failed assets too")
+    parser.add_argument("--registry-only", action="store_true", help="Validate registry/session mappings without network calls")
     parser.add_argument("--output", type=str, default=None, help="Write report to CSV file")
 
     args = parser.parse_args()
@@ -483,6 +506,19 @@ async def main() -> int:
 
     async def _checked(asset: str, info: dict[str, Any]) -> AssetCapability:
         async with semaphore:
+            if args.registry_only:
+                analysis_only = bool(info.get("analysis_only"))
+                actionable = bool(info.get("actionable", True))
+                state = "ANALYSIS_ONLY" if analysis_only else ("REGISTRY_VALID" if actionable else "DISABLED_UNSUPPORTED")
+                return AssetCapability(
+                    asset=asset,
+                    asset_class=str(info.get("class") or "unknown"),
+                    session=str(info.get("session") or "unsupported"),
+                    capability_state=state,
+                    reason="canonical registry validation; provider evidence not requested",
+                    public_test_eligible=False,
+                    release_ring=0,
+                )
             return await run_capability_check(asset, info, verbose=args.verbose)
 
     results = await asyncio.gather(
@@ -539,9 +575,14 @@ async def main() -> int:
 
     # Final summary
     active_count = sum(1 for c in capabilities if c.capability_state == "ACTIVE")
+    registry_valid_count = sum(1 for c in capabilities if c.capability_state == "REGISTRY_VALID")
+    analysis_only_count = sum(1 for c in capabilities if c.capability_state == "ANALYSIS_ONLY")
+    failed_count = len(capabilities) - active_count - registry_valid_count - analysis_only_count
     logger.info("\n=== CAPABILITY AUDIT COMPLETE ===")
-    logger.info("Assets tested: %d, Active: %d, Failed/Unsupported: %d",
-                len(capabilities), active_count, len(capabilities) - active_count)
+    logger.info(
+        "Assets tested: %d, Active: %d, Registry-valid: %d, Analysis-only: %d, Failed/Unsupported: %d",
+        len(capabilities), active_count, registry_valid_count, analysis_only_count, failed_count,
+    )
 
     return 0
 

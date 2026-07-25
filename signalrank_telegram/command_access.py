@@ -104,6 +104,13 @@ COMMAND_TIERS = {
     "system":              "ADMIN",
     "db_health":           "ADMIN",
     "engine_debug":        "ADMIN",
+    "why_no_signal":       "ADMIN",
+    "ohlc_health":          "ADMIN",
+    "asset_capability":     "ADMIN",
+    "asset_class_test":     "ADMIN",
+    "all_asset_test_status":"ADMIN",
+    "delivery_eligibility": "FREE",
+    "owner_test_delivery":  "OWNER",
     "blast_terms":         "ADMIN",
     "assets":              "ADMIN",
 

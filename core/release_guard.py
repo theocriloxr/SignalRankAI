@@ -138,10 +138,26 @@ def evaluate_release(
         GuardCheck("auto_trading_disabled", not flags.auto_trade_enabled, "AUTO_TRADE_ENABLED is off"),
         GuardCheck("copy_trading_disabled", not flags.copy_trade_enabled, "COPY_TRADE_ENABLED is off"),
         GuardCheck("real_payouts_disabled", not _flag("REAL_PAYOUTS_ENABLED"), "real payouts are disabled"),
-        GuardCheck("stale_blocking_enabled", supplied.get("stale_blocking_enabled", True) is True, "final freshness gate"),
-        GuardCheck("delivery_proof", supplied.get("delivery_proof", True) is True, "delivery proof contract"),
-        GuardCheck("outcome_tracker", supplied.get("outcome_tracker", True) is True, "outcome lifecycle contract"),
-        GuardCheck("performance_truth", supplied.get("performance_truth", True) is True, "provenance-separated metrics"),
+        GuardCheck(
+            "stale_blocking_enabled",
+            supplied.get("stale_blocking_enabled", False) is True,
+            "final freshness gate requires explicit verification evidence",
+        ),
+        GuardCheck(
+            "delivery_proof",
+            supplied.get("delivery_proof", False) is True,
+            "delivery proof requires explicit end-to-end evidence",
+        ),
+        GuardCheck(
+            "outcome_tracker",
+            supplied.get("outcome_tracker", False) is True,
+            "outcome lifecycle requires explicit verification evidence",
+        ),
+        GuardCheck(
+            "performance_truth",
+            supplied.get("performance_truth", False) is True,
+            "provenance-separated metrics require explicit verification evidence",
+        ),
         GuardCheck(
             "payments_limited",
             not flags.payments_enabled
@@ -149,8 +165,26 @@ def evaluate_release(
             or not _flag("PAYMENTS_PUBLIC_ENABLED", False),
             "payments disabled, private, or explicit test mode",
         ),
-        GuardCheck("no_secret_leakage", supplied.get("no_secret_leakage", True) is True, "redaction contract"),
-        GuardCheck("tests", supplied.get("tests_passed", True) is True, "focused contract suite"),
+        GuardCheck(
+            "no_secret_leakage",
+            supplied.get("no_secret_leakage", False) is True,
+            "secret scan/redaction requires explicit evidence",
+        ),
+        GuardCheck(
+            "tests",
+            supplied.get("tests_passed", False) is True,
+            "test result requires explicit evidence",
+        ),
+        GuardCheck(
+            "ohlc_pipeline",
+            supplied.get("ohlc_pipeline", False) is True,
+            "at least one asset must produce usable required OHLC",
+        ),
+        GuardCheck(
+            "telegram_delivery_lifecycle",
+            supplied.get("telegram_delivery_lifecycle", False) is True,
+            "Telegram send, proof, active message, and WATCHING_ENTRY require explicit evidence",
+        ),
         # DB pool safety checks
         _check_db_pool_safe(),
         _check_multiple_engines(),

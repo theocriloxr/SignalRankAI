@@ -257,7 +257,7 @@ async def _get_live_vip_seat_state() -> tuple[int, int, bool]:
 		from db.session import get_engine_for_event_loop, get_session
 		if get_engine_for_event_loop() is not None:
 			from db.repository import count_active_vip_users
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				vip_used = await count_active_vip_users(session, exclude_telegram_user_ids=set())
 	except Exception:
 		pass
@@ -872,7 +872,7 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 		from sqlalchemy import select
 		from datetime import datetime, timedelta
 		cutoff = datetime.utcnow() - timedelta(hours=4)
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			rows = await session.execute(
 				select(Signal)
 				.where(
@@ -949,7 +949,7 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 		from db.models import Subscription
 		from sqlalchemy import select, desc
 		from datetime import datetime as _dt
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			user = await get_or_create_user(session, telegram_user_id=user_id)
 			expiry = getattr(user, 'premium_until', None)
 			if expiry is None:
@@ -1046,7 +1046,7 @@ async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
 	from db.repository import create_api_token
 	token = generate_api_key()
 	expires = datetime.utcnow() + timedelta(days=max(1, min(int(ttl_days), 365)))
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		await create_api_token(
 			session,
 			telegram_user_id=int(user_id),
@@ -1061,7 +1061,7 @@ async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
 async def _get_existing_api_token_meta(user_id: int):
 	from db.session import get_session
 	from db.repository import get_latest_active_api_token_meta
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		meta = await get_latest_active_api_token_meta(session, telegram_user_id=int(user_id))
 		await session.commit()
 	return meta
@@ -1127,7 +1127,7 @@ async def db_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 		schema_status = {}
 		try:
 			from sqlalchemy import text
-			async with get_session(interactive=True) as schema_session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as schema_session:
 				revision = (await schema_session.execute(
 					text("SELECT version_num FROM alembic_version LIMIT 1")
 				)).scalar_one_or_none()
@@ -1200,7 +1200,7 @@ async def delivery_debug_command(update: Update, context: ContextTypes.DEFAULT_T
 		)
 		from db.session import get_session
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			query = (
 				select(SignalDelivery, User, Signal, Outcome)
 				.join(User, User.id == SignalDelivery.user_id)
@@ -1289,7 +1289,7 @@ async def _load_signal_debug_payload(ref: str) -> dict | None:
 	from db.models import Signal
 	from db.session import get_session
 
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		row = (
 			await session.execute(
 				select(Signal)
@@ -1452,6 +1452,369 @@ async def engine_debug_command(update: Update, context: ContextTypes.DEFAULT_TYP
 	except Exception as exc:
 		await update.message.reply_text(f"Engine debug unavailable. Reference logged: {type(exc).__name__}")
 
+def _load_last_engine_cycle() -> dict:
+    """Return the latest engine heartbeat without exposing Redis details."""
+    import json as _json
+
+    raw = state.get_sync("engine:last_cycle")
+    if not raw:
+        return {}
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if isinstance(raw, str):
+        try:
+            parsed = _json.loads(raw)
+            return dict(parsed or {}) if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+    return dict(raw or {}) if isinstance(raw, dict) else {}
+
+
+def _infer_no_signal_reason(cycle: dict) -> str:
+    pipeline = dict(cycle.get("pipeline_stats") or {})
+    market_data_assets = int(cycle.get("market_data_assets", pipeline.get("market_data_assets", 0)) or 0)
+    strategies = int(pipeline.get("strategy_signals", 0) or 0)
+    final_signals = int(pipeline.get("final_signals", 0) or 0)
+    stored = int(pipeline.get("stored", 0) or 0)
+    if cycle.get("market_fetch_error") or pipeline.get("market_fetch_error"):
+        return "market_data_error"
+    if market_data_assets <= 0:
+        return str(cycle.get("max_score_absent_reason") or "no_usable_market_data")
+    if strategies <= 0:
+        return "no_strategy_setup"
+    if int(pipeline.get("score_rejected", 0) or 0) > 0 and final_signals <= 0:
+        return "score_threshold"
+    if int(pipeline.get("risk_failed", 0) or 0) > 0 and final_signals <= 0:
+        return "risk_gate"
+    if int(pipeline.get("quality_rejected", 0) or 0) > 0 and final_signals <= 0:
+        return "quality_gate"
+    if final_signals > 0 and stored <= 0:
+        return "storage_or_deduplication"
+    if stored > 0:
+        reasons = dict(pipeline.get("delivery_skip_reasons") or {})
+        if reasons:
+            return max(reasons, key=lambda key: int(reasons.get(key) or 0))
+        return "delivery_or_user_eligibility"
+    return str(cycle.get("max_score_absent_reason") or "no_candidate")
+
+
+async def why_no_signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Explain the most recent no-signal cycle using recorded pipeline evidence."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not _is_admin(update.effective_user.id):
+        await update.message.reply_text("Admin only.")
+        return
+    cycle = _load_last_engine_cycle()
+    if not cycle:
+        await update.message.reply_text(
+            "Why No Signal\n\nNo completed engine heartbeat is available yet. "
+            "Start the engine and wait for one cycle."
+        )
+        return
+    pipeline = dict(cycle.get("pipeline_stats") or {})
+    primary = _infer_no_signal_reason(cycle)
+    delivery_reasons = dict(pipeline.get("delivery_skip_reasons") or {})
+    lines = [
+        "Why No Signal",
+        "",
+        f"Cycle: {cycle.get('cycle', 'n/a')}",
+        f"Completed: {cycle.get('completed_at', cycle.get('updated_at', 'n/a'))}",
+        f"Assets considered: {cycle.get('assets_attempted', pipeline.get('assets_attempted', 0))}",
+        f"Usable market data: {cycle.get('market_data_assets', pipeline.get('market_data_assets', 0))}",
+        f"Strategy candidates: {pipeline.get('strategy_signals', 0)}",
+        f"Score rejected: {pipeline.get('score_rejected', 0)}",
+        f"Risk rejected: {pipeline.get('risk_failed', 0)}",
+        f"Quality rejected: {pipeline.get('quality_rejected', 0)}",
+        f"Final signals: {pipeline.get('final_signals', 0)}",
+        f"Stored: {pipeline.get('stored', 0)}",
+        "",
+        f"Primary reason: {primary}",
+        f"Market fetch error: {cycle.get('market_fetch_error') or pipeline.get('market_fetch_error') or 'none'}",
+        f"Effective asset concurrency: {os.getenv('MARKET_FETCH_ASSET_CONCURRENCY', '2')}",
+    ]
+    if delivery_reasons:
+        lines.extend(["", "Top delivery blocks:"])
+        for reason, count in sorted(delivery_reasons.items(), key=lambda item: int(item[1] or 0), reverse=True)[:8]:
+            lines.append(f"- {reason}: {count}")
+    await update.message.reply_text("\n".join(lines)[:3900])
+
+
+async def ohlc_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show effective OHLC concurrency, provider state and recent engine results."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not _is_admin(update.effective_user.id):
+        await update.message.reply_text("Admin only.")
+        return
+    try:
+        from data.fetcher import get_provider_concurrency_snapshot, get_provider_health_snapshot
+
+        concurrency = get_provider_concurrency_snapshot()
+        health = get_provider_health_snapshot()
+    except Exception as exc:
+        concurrency = {}
+        health = {"error": type(exc).__name__}
+    cycle = _load_last_engine_cycle()
+    pipeline = dict(cycle.get("pipeline_stats") or {})
+    lines = [
+        "OHLC Health",
+        "",
+        f"Asset concurrency: {os.getenv('MARKET_FETCH_ASSET_CONCURRENCY', '2')}",
+        f"Provider attempt limit: {os.getenv('OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME', '2')}",
+        f"Provider timeout: {os.getenv('OHLC_PROVIDER_REQUEST_TIMEOUT_SECONDS', '7')}s",
+        f"Last usable assets: {cycle.get('market_data_assets', pipeline.get('market_data_assets', 0))}",
+        f"Last no-candle count: {pipeline.get('no_candles', 0)}",
+        f"Last fetch error: {cycle.get('market_fetch_error') or pipeline.get('market_fetch_error') or 'none'}",
+        "",
+        "Provider concurrency:",
+    ]
+    if concurrency:
+        for provider, values in sorted(concurrency.items()):
+            if isinstance(values, dict):
+                lines.append(
+                    f"- {provider}: inflight={values.get('inflight', 0)} limit={values.get('limit', 'n/a')}"
+                )
+    else:
+        lines.append("- no requests observed in this process")
+    if isinstance(health, dict) and health:
+        lines.extend(["", "Provider health:"])
+        for provider, values in sorted(health.items())[:12]:
+            if isinstance(values, dict):
+                lines.append(
+                    f"- {provider}: success={values.get('success_count', 0)} failures={values.get('failure_count', 0)}"
+                )
+    await update.message.reply_text("\n".join(lines)[:3900])
+
+
+async def asset_capability_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Inspect canonical classification, session and release capability for an asset."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not _is_admin(update.effective_user.id):
+        await update.message.reply_text("Admin only.")
+        return
+    symbol = str((context.args or [""])[0]).upper().strip()
+    if not symbol:
+        await update.message.reply_text("Usage: /asset_capability BTCUSDT")
+        return
+    from core.asset_registry import resolve_asset_spec
+    from data.market_hours import get_market_session_status
+
+    spec = resolve_asset_spec(symbol)
+    try:
+        session_status = get_market_session_status(spec.symbol)
+        status = getattr(session_status, "reason", None) or ("open" if session_status.is_open else "closed")
+    except Exception as exc:
+        status = f"error:{type(exc).__name__}"
+    lines = [
+        "Asset Capability",
+        "",
+        f"Requested: {symbol}",
+        f"Canonical: {spec.symbol}",
+        f"Class: {spec.asset_class}",
+        f"Subtype: {spec.subtype}",
+        f"Timezone: {spec.timezone}",
+        f"Calendar: {spec.calendar}",
+        f"24/7: {spec.continuous}",
+        f"Actionable: {spec.actionable}",
+        f"Analysis only: {spec.analysis_only}",
+        f"Session status: {status}",
+    ]
+    if spec.asset_class == "unknown":
+        lines.append("Capability state: DISABLED_BAD_CLASSIFICATION")
+    elif spec.analysis_only:
+        lines.append("Capability state: ANALYSIS_ONLY")
+    else:
+        lines.append("Capability state: registry_valid_provider_audit_required")
+    await update.message.reply_text("\n".join(lines))
+
+
+async def asset_class_test_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List canonical assets for one class without launching provider requests."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not _is_admin(update.effective_user.id):
+        await update.message.reply_text("Admin only.")
+        return
+    requested = str((context.args or [""])[0]).lower().strip()
+    if not requested:
+        await update.message.reply_text("Usage: /asset_class_test crypto|forex|stock|index|commodity|macro")
+        return
+    aliases = {"fx": "forex", "indices": "index", "stocks": "stock", "commodities": "commodity"}
+    requested = aliases.get(requested, requested)
+    from core.asset_registry import list_asset_specs
+
+    specs = [spec for spec in list_asset_specs() if spec.asset_class == requested]
+    if not specs:
+        await update.message.reply_text(f"No canonical assets are registered for class {requested}.")
+        return
+    actionable = [spec.symbol for spec in specs if spec.actionable]
+    analysis_only = [spec.symbol for spec in specs if spec.analysis_only]
+    await update.message.reply_text(
+        "Asset Class Test\n\n"
+        f"Class: {requested}\n"
+        f"Registered: {len(specs)}\n"
+        f"Actionable: {', '.join(actionable) or 'none'}\n"
+        f"Analysis only: {', '.join(analysis_only) or 'none'}"
+    )
+
+
+async def all_asset_test_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Summarise the canonical registry and explain how to run the full audit."""
+    if update.effective_user is None or update.message is None:
+        return
+    if not _is_admin(update.effective_user.id):
+        await update.message.reply_text("Admin only.")
+        return
+    from collections import Counter
+    from core.asset_registry import list_asset_specs
+
+    specs = list_asset_specs()
+    counts = Counter(spec.asset_class for spec in specs)
+    lines = [
+        "All Asset Test Status",
+        "",
+        f"Registered canonical assets: {len(specs)}",
+        f"Actionable: {sum(1 for spec in specs if spec.actionable)}",
+        f"Analysis only: {sum(1 for spec in specs if spec.analysis_only)}",
+        "",
+        "Classes:",
+    ]
+    lines.extend(f"- {name}: {count}" for name, count in sorted(counts.items()))
+    lines.extend([
+        "",
+        "Full network audit: python scripts/asset_capability_audit.py --all",
+        "This command reports registry state only and does not fabricate provider success.",
+    ])
+    await update.message.reply_text("\n".join(lines))
+
+
+async def delivery_eligibility_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Explain whether the current user is eligible to receive future signals."""
+    if update.effective_user is None or update.message is None:
+        return
+    user_id = int(update.effective_user.id)
+    try:
+        from sqlalchemy import select
+        from db.models import SignalDelivery, Subscription, User
+        from services.user_intelligence import get_user_trading_preferences
+
+        async with get_session(
+            priority="interactive",
+            label="telegram_delivery_eligibility",
+            timeout_seconds=3.0,
+        ) as session:
+            user = (
+                await session.execute(select(User).where(User.telegram_user_id == user_id).limit(1))
+            ).scalar_one_or_none()
+            if user is None:
+                await update.message.reply_text(
+                    "Delivery Eligibility\n\nRegistered: no\nUse /start to create your account."
+                )
+                return
+            subscription = (
+                await session.execute(
+                    select(Subscription)
+                    .where(Subscription.user_id == user.id)
+                    .order_by(Subscription.started_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            latest_delivery = (
+                await session.execute(
+                    select(SignalDelivery)
+                    .where(SignalDelivery.user_id == user.id)
+                    .order_by(SignalDelivery.id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            prefs = await get_user_trading_preferences(session, user_id)
+        subscription_status = str(getattr(subscription, "status", "none") or "none")
+        active_subscription = subscription_status.lower() == "active" or str(user.tier).lower() in {"admin", "owner"}
+        lines = [
+            "Delivery Eligibility",
+            "",
+            "Registered: yes",
+            f"Tier: {str(user.tier or 'free').upper()}",
+            f"Subscription active: {'yes' if active_subscription else 'no'}",
+            f"Terms accepted: {'yes' if bool(user.accepted_terms) else 'no'}",
+            f"Trade profile: {prefs.trade_profile}",
+            f"Risk profile: {prefs.risk_profile}",
+            f"Asset classes: {', '.join(prefs.asset_classes)}",
+            f"Sessions: {', '.join(prefs.sessions)}",
+            f"Notifications: {prefs.notification_style}",
+            f"Execution mode: {prefs.execution_mode}",
+            f"Latest delivery state: {getattr(latest_delivery, 'delivery_state', 'none')}",
+            f"Latest delivery sent: {'yes' if bool(getattr(latest_delivery, 'sent_ok', False)) else 'no'}",
+        ]
+        if not user.accepted_terms:
+            lines.extend(["", "Primary block: terms_not_accepted"])
+        elif not active_subscription and str(user.tier).lower() not in {"free"}:
+            lines.extend(["", "Primary block: inactive_subscription"])
+        else:
+            lines.extend(["", "Account gate: eligible; each signal still passes profile, cooldown and risk checks."])
+        await update.message.reply_text("\n".join(lines)[:3900])
+    except Exception as exc:
+        logger.exception("[delivery_eligibility] failed: %s", exc)
+        await update.message.reply_text(
+            f"Delivery eligibility is temporarily unavailable ({type(exc).__name__})."
+        )
+
+
+async def owner_test_delivery_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Send a safe owner-only Telegram infrastructure test with no trade mutation."""
+    if update.effective_user is None or update.message is None:
+        return
+    user_id = int(update.effective_user.id)
+    if user_id not in set(OWNER_IDS or set()):
+        await update.message.reply_text("Owner only.")
+        return
+    asset = str((context.args or ["BTCUSDT"])[0]).upper().strip() or "BTCUSDT"
+    from core.asset_registry import resolve_asset_spec
+
+    spec = resolve_asset_spec(asset)
+    if spec.asset_class == "unknown":
+        await update.message.reply_text("Unknown asset. The test was blocked before Telegram delivery.")
+        return
+    logger.info("[test_delivery_reserved] user=%s asset=%s", user_id, spec.symbol)
+    message = (
+        "TEST — NOT A TRADING SIGNAL\n\n"
+        f"Asset: {spec.symbol}\n"
+        "Purpose: Telegram infrastructure and acknowledgement test only.\n"
+        "No trade, signal, subscription, performance or broker record is created."
+    )
+    try:
+        sent = await context.bot.send_message(chat_id=user_id, text=message)
+        message_id = int(getattr(sent, "message_id", 0) or 0)
+        logger.info(
+            "[telegram_send_ok] kind=infrastructure_test user=%s asset=%s message_id=%s",
+            user_id,
+            spec.symbol,
+            message_id,
+        )
+        try:
+            import json as _json
+            state.set_sync(
+                f"delivery_test:{user_id}:{message_id}",
+                _json.dumps({
+                    "kind": "infrastructure_test",
+                    "asset": spec.symbol,
+                    "telegram_user_id": user_id,
+                    "telegram_message_id": message_id,
+                    "sent_ok": True,
+                    "affects_performance": False,
+                }),
+                ex=86400,
+            )
+            logger.info("[delivery_proof_write] kind=infrastructure_test message_id=%s", message_id)
+        except Exception as store_exc:
+            logger.warning("[test_delivery_receipt_store_failed] error=%s", type(store_exc).__name__)
+        logger.info("[test_delivery_completed] user=%s asset=%s", user_id, spec.symbol)
+    except Exception as exc:
+        logger.exception("[test_delivery_failed] user=%s asset=%s", user_id, spec.symbol)
+        await update.message.reply_text(f"Infrastructure test failed: {type(exc).__name__}")
+
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 	"""Set or show the user's personalized AI trading profile."""
@@ -1474,7 +1837,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		await _send_timezone_panel(update.message, user_id)
 		return
 	try:
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			current = await get_user_trading_preferences(session, user_id)
 			if not args:
 				from db.models import User
@@ -1558,7 +1921,7 @@ async def mission_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		from services.mission_control import build_mission_snapshot, format_mission
 		from services.trading_intelligence import enrich_signal_intelligence
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			rows = await list_unresolved_signals_for_user(session, telegram_user_id=user_id, lookback_days=30)
 		if not rows:
 			await update.message.reply_text("No active delivered signal mission is available right now.")
@@ -1707,7 +2070,7 @@ def _timezone_inline_keyboard(*, travel_enabled: bool = False):
 async def _get_timezone_user(telegram_user_id: int):
 	from db.models import User
 	from sqlalchemy import select
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		return (await session.execute(
 			select(User).where(User.telegram_user_id == int(telegram_user_id))
 		)).scalar_one_or_none()
@@ -1726,7 +2089,7 @@ async def _save_user_timezone(
 	from signalrank_telegram.timezones import should_store_location_coordinates
 
 	now = datetime.now(datetime_timezone.utc).replace(tzinfo=None)
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		user = (await session.execute(
 			select(User).where(User.telegram_user_id == int(telegram_user_id))
 		)).scalar_one_or_none()
@@ -1816,7 +2179,7 @@ async def travelmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		await update.message.reply_text(f"Travel mode is {status}. Use /travelmode on or /travelmode off.")
 		return
 	enabled = args[0] == "on"
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		user = (await session.execute(
 			select(User).where(User.telegram_user_id == int(update.effective_user.id))
 		)).scalar_one_or_none()
@@ -1965,7 +2328,7 @@ async def referral_leaderboard_command(update, context) -> None:
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		from sqlalchemy import select, func, desc
 
 		res = await session.execute(
@@ -2015,7 +2378,7 @@ async def referral_rewards_command(update, context) -> None:
 	if get_engine_for_event_loop() is None:
 		await update.message.reply_text("Database unavailable.")
 		return
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 		from sqlalchemy import select, func
 		from db.pg_features import get_referral_progress
@@ -2162,7 +2525,7 @@ async def assets_command(update, context) -> None:
 				lines.append(f"- {asset_type}: {preview}")
 
 		if subcmd == "inactive":
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				rows = await list_all_managed_assets(session)
 			inactive = [r for r in rows if not getattr(r, "is_active", False)]
 			lines = ["Inactive Managed Assets"]
@@ -2199,7 +2562,7 @@ async def assets_command(update, context) -> None:
 		return
 
 	if subcmd == "list":
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			rows = await list_all_managed_assets(session)
 		if not rows:
 			await update.message.reply_text("No managed assets yet.\nUse /assets add <SYMBOL> to pin one.")
@@ -2220,7 +2583,7 @@ async def assets_command(update, context) -> None:
 			return
 		symbol = args[1].upper().strip()
 		atype = get_asset_type(symbol)
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			await add_managed_asset(
 				session, symbol=symbol, asset_type=atype,
 				added_by=update.effective_user.id,
@@ -2234,7 +2597,7 @@ async def assets_command(update, context) -> None:
 			await update.message.reply_text("Usage: /assets remove <SYMBOL>")
 			return
 		symbol = args[1].upper().strip()
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			found = await remove_managed_asset(session, symbol=symbol)
 			await session.commit()
 		if found:
@@ -2285,7 +2648,7 @@ async def admin_top_strategies_command(update, context) -> None:
 		return
 
 	cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-	async with get_session(interactive=True) as session:
+	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		res = await session.execute(
 			select(Signal.strategy_name, func.count(Signal.signal_id))
 			.where(Signal.created_at >= cutoff)
@@ -2369,7 +2732,7 @@ async def selfcheck_command(update, context) -> None:
 		from db.session import get_session
 		from sqlalchemy import select, desc
 		from db.models import Signal
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			res = await session.execute(select(Signal).order_by(desc(Signal.created_at)).limit(1))
 			last = res.scalar_one_or_none()
 			if last:
@@ -2424,7 +2787,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		now = datetime.utcnow()
 		window_start = now - timedelta(days=window_days)
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			# 1) Delivered signals without any outcome row.
 			untracked_q = (
 				select(func.count(func.distinct(SignalDelivery.signal_id)))
@@ -2557,7 +2920,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		from db.session import get_session, get_engine_for_event_loop
 		if get_engine_for_event_loop() is not None:
 			from db.pg_features import get_signal_id_by_short_ref
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				signal_id = await get_signal_id_by_short_ref(session, signal_ref)
 	except Exception:
 		pass
@@ -2934,7 +3297,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			)
 			return
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == user_id)
 			)).scalar_one_or_none()
@@ -3338,7 +3701,7 @@ async def proof_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 		losses = 0
 		engine = get_engine_for_event_loop()
 		if engine is not None:
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				try:
 					recent_rows = (
 						await session.execute(
@@ -3598,7 +3961,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		# SignalDelivery.sent_ok.is_(True) before exposing a signal to the user.
 
 		if arg.lower() == "all":
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				rows: list[Signal] = await list_unresolved_signals_for_user(session, telegram_user_id=int(user_id))
 				await session.commit()
 			if not rows:
@@ -3613,7 +3976,7 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 		display_timezone = None
 		delivered_at = None
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			sig: Signal | None = await get_delivered_signal_by_ref(session, telegram_user_id=int(user_id), ref=str(arg))
 			oc = None
 			if sig is not None:
@@ -3862,7 +4225,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 				raise RuntimeError("Postgres not configured")
 			cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
 			recorded_at_expr = func.coalesce(Outcome.closed_at, Outcome.opened_at, Signal.created_at)
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				user_row = (
 					await session.execute(
 						select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
@@ -3942,7 +4305,7 @@ async def outcome_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		import json
 		import os
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			# Ensure user exists
 			user: User = await get_or_create_user(session, telegram_user_id=int(user_id))
 
@@ -4138,7 +4501,7 @@ async def invite_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 				engine = None
 		if engine is not None:
 			from db.pg_features import get_or_create_referral_code, get_referral_progress
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				code: str = await get_or_create_referral_code(session, referrer_telegram_user_id=int(user_id))
 				progress = await get_referral_progress(session, referrer_telegram_user_id=int(user_id))
 				await session.commit()
@@ -4760,7 +5123,7 @@ async def recap_command(update, context):
 		engine = get_engine_for_event_loop()
 		if engine is not None:
 			from db.pg_features import get_weekly_recap_stats
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				stats = await get_weekly_recap_stats(session, int(user_id))
 				await session.commit()
 			total = int((stats or {}).get("total") or 0)
@@ -4872,7 +5235,7 @@ async def start_command(update, context):
 			max_attempts = 2
 			for attempt in range(1, max_attempts + 1):
 				try:
-					async with get_session(interactive=True) as session:
+					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 						logger.info("[/start] user_id=%s — DB session open, querying user row (attempt=%s)", user_id, attempt)
 						res: Result[Tuple[User]] = await asyncio.wait_for(
 							session.execute(select(User).where(User.telegram_user_id == int(user_id))),
@@ -5233,12 +5596,12 @@ async def performance_command(update, context):
 			# Fetch performance stats
 			stats = {}
 			try:
-				async with get_session(interactive=True) as session:
+				async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 					stats = await get_user_performance_30d(session, int(user_id))
 			except Exception as e:
 				_audit_logger.error(f"/performance db fetch failed for user={user_id}: {e}")
 				try:
-					async with get_session(interactive=True) as session:
+					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 						stats = await _fallback_performance_stats(session, int(user_id))
 				except Exception as e2:
 					_audit_logger.error(f"/performance fallback query failed for user={user_id}: {e2}")
@@ -5271,7 +5634,7 @@ async def performance_command(update, context):
 					from db.models import SignalDelivery, User
 					cutoff: datetime = datetime.utcnow() - timedelta(days=30)
 					
-					async with get_session(interactive=True) as session:
+					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
 						u = res_u.scalar_one_or_none()
 						if u is None:
@@ -5360,7 +5723,7 @@ async def quality_command(update, context) -> None:
 
 		cutoff = datetime.utcnow() - timedelta(hours=24)
 		rows = []
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			res = await session.execute(
 				text(
 					"""
@@ -5598,7 +5961,7 @@ async def gemini_audit_command(update, context) -> None:
 	from services.gemini_ml import audit_recent
 
 	try:
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			res = await audit_recent(session, limit=limit)
 		if not bool(res.get("ok", True)):
 			await update.message.reply_text(f"Audit failed: {res.get('error')}")
@@ -5716,7 +6079,7 @@ async def stats_command(update, context) -> None:
 			from db.pg_features import get_weekly_recap_stats, list_signals_sent_today
 			from sqlalchemy import select as _sel_s, func as _func_s
 			from db.models import Outcome as _Out, Signal as _Sig_s, SignalDelivery as _Deliv, User as _U_s
-			async with get_session(interactive=True) as session:
+			async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 				week = await get_weekly_recap_stats(session, int(user_id))
 				today_rows: list = await list_signals_sent_today(session, int(user_id))
 				# Fetch outcomes for signals delivered to this user (via SignalDelivery join)
@@ -5803,7 +6166,7 @@ async def history_command(update, context):
 			return
 
 		from db.pg_features import list_recent_signals_delivered
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			rows: list[Signal] = await list_recent_signals_delivered(
 				session,
 				telegram_user_id=int(user_id),
@@ -5916,7 +6279,7 @@ async def simulate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 		from engine.risk_analytics import monte_carlo_monthly_projection
 
 		r_values: list[float] = []
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			user_row = (
 				await session.execute(select(User).where(User.telegram_user_id == uid).limit(1))
 			).scalar_one_or_none()
@@ -6059,7 +6422,7 @@ async def alerts_command(update, context) -> None:
 			engine = get_engine_for_event_loop()
 			if engine is not None:
 				from db.pg_features import get_alert_prefs
-				async with get_session(interactive=True) as session:
+				async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 					prefs = await get_alert_prefs(session, int(user_id))
 					await session.commit()
 					return dict(prefs or {})
@@ -6072,7 +6435,7 @@ async def alerts_command(update, context) -> None:
 			from db.session import ENGINE, get_session
 			if ENGINE is not None:
 				from db.pg_features import set_alert_prefs
-				async with get_session(interactive=True) as session:
+				async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 					prefs = await set_alert_prefs(
 						session,
 						int(user_id),
@@ -6154,7 +6517,7 @@ async def mode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 		from db.models import User
 		from sqlalchemy import update as sa_update
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			await session.execute(
 				sa_update(User)
 				.where(User.telegram_user_id == user_id)
@@ -6183,7 +6546,7 @@ async def elite_command(update, context) -> None:
 			await update.message.reply_text("No elite signals available right now.")
 			return
 		cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			res = await session.execute(
 				select(Signal)
 				.where(Signal.created_at >= cutoff)
@@ -6247,7 +6610,7 @@ async def report_command(update, context) -> None:
 			await update.message.reply_text("No report data available right now.")
 			return
 		user_id = int(update.effective_user.id) if update.effective_user else 0
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			stats = await get_user_performance_30d(session, int(user_id))
 			await session.commit()
 		total = int(stats.get("total", 0) or 0)
@@ -6355,7 +6718,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			await update.message.reply_text("⚠️ Database not configured.")
 			return
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			# Resolve the DB user record to get the FK id used in signal_deliveries
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == user_id)
@@ -6667,7 +7030,7 @@ async def mt5_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 		from db.session import get_session
 		from db.models import MT5Credentials, User
 		from sqlalchemy import select
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			user_row = (await session.execute(
 				select(User).where(User.telegram_user_id == int(user_id))
 			)).scalar_one_or_none()
@@ -7397,7 +7760,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 			LIMIT 15
 		""")
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			rows = (await session.execute(
 				query,
 				{
@@ -7655,7 +8018,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		from sqlalchemy import select
 		from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			row = await session.execute(
 				select(User).where(User.telegram_user_id == int(user_id))
 			)
@@ -7723,7 +8086,7 @@ async def _cancel_and_disable_paystack(user_id: int) -> dict:
 		from db.models import User
 		from sqlalchemy import select, update as sa_update
 
-		async with get_session(interactive=True) as session:
+		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			row = await session.execute(
 				select(User).where(User.telegram_user_id == int(user_id))
 			)

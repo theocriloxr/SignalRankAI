@@ -415,9 +415,9 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
     """Return all unresolved signals from DB created within lookback window."""
     try:
         from db.session import get_session
-        from db.models import Signal, Outcome, SignalLifecycle
+        from db.models import Signal, SignalDelivery, Outcome, SignalLifecycle
         from db.priority import DBPriority
-        from sqlalchemy import select, or_
+        from sqlalchemy import select, or_, exists, and_
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with _session_scope(get_session, priority=DBPriority.CRITICAL) as session:
@@ -427,6 +427,20 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                 .outerjoin(SignalLifecycle, SignalLifecycle.signal_id == Signal.signal_id)
                 .where(Signal.archived.is_(False))
                 .where(Signal.created_at >= cutoff)
+                .where(
+                    exists(
+                        select(SignalDelivery.id).where(
+                            and_(
+                                SignalDelivery.signal_id == Signal.signal_id,
+                                SignalDelivery.sent_ok.is_(True),
+                                SignalDelivery.telegram_chat_id.is_not(None),
+                                SignalDelivery.telegram_message_id.is_not(None),
+                                SignalDelivery.delivery_confirmed_at.is_not(None),
+                                SignalDelivery.delivery_state.in_(["confirmed", "delivered", "reconciled"]),
+                            )
+                        )
+                    )
+                )
                 .where(
                     or_(
                         Outcome.id.is_(None),
@@ -456,6 +470,8 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                     "highest_tp_hit": _database_tp_progress(lifecycle, o),
                     "lifecycle_last_price": getattr(lifecycle, "last_price", None),
                     "entry_touched_at": getattr(lifecycle, "entry_touched_at", None),
+                    "outcome_category": "LIVE_DELIVERED",
+                    "outcome_eligibility_reason": "verified_delivery_query",
                 }
                 for s, o, lifecycle in rows
             ]
@@ -481,13 +497,17 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
             return []
         cutoff = _utc_now_naive() - timedelta(hours=max(24, lookback_hours))
 
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
             stmt = (
                 select(Signal)
                 .join(SignalDelivery, SignalDelivery.signal_id == Signal.signal_id)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
                 .where(Outcome.id.is_(None))
                 .where(SignalDelivery.sent_ok.is_(True))
+                .where(SignalDelivery.telegram_chat_id.is_not(None))
+                .where(SignalDelivery.telegram_message_id.is_not(None))
+                .where(SignalDelivery.delivery_confirmed_at.is_not(None))
+                .where(SignalDelivery.delivery_state.in_(["confirmed", "delivered", "reconciled"]))
                 .where(Signal.created_at >= cutoff)
                 .order_by(Signal.created_at.asc())
                 .limit(max(1, int(limit)))
@@ -522,6 +542,8 @@ async def _fetch_delivered_untracked_signals(limit: int = 100) -> List[Dict[str,
                     "highest_tp_hit": 0,
                     "lifecycle_last_price": None,
                     "entry_touched_at": None,
+                    "outcome_category": "LIVE_DELIVERED",
+                    "outcome_eligibility_reason": "verified_delivery_backfill_query",
                 }
             )
         return out
@@ -975,7 +997,7 @@ async def _notify_retrace_warning(signal: Dict[str, Any], price: float, best_tp_
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -1166,7 +1188,7 @@ async def _notify_outcome(signal: Dict[str, Any], status: str, price: float) -> 
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
             stale_claim_seconds = max(
                 60,
                 int(os.getenv("OUTCOME_NOTIFICATION_CLAIM_STALE_SECONDS", "300") or 300),
@@ -1313,7 +1335,7 @@ async def _notify_risk_free_update(signal: Dict[str, Any], price: float) -> None
             return
         bot = Bot(token=bot_token)
 
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
             rows = (
                 await session.execute(
                     select(SignalDelivery, User)
@@ -1355,7 +1377,7 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.session import get_session
         from db.models import Trade
         from sqlalchemy import update as sa_update
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
             await session.execute(
                 sa_update(Trade)
                 .where(Trade.signal_id == signal_id)
@@ -1373,7 +1395,7 @@ async def _apply_trailing_sl_to_breakeven(signal: Dict[str, Any], tp1_price: flo
         from db.models import Trade, User
         from sqlalchemy import select, join
         from services.mt5_client import update_stop_loss, get_user_mt5_account_id
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="engine_realtime_outcome_tracker") as session:
             stmt = (
                 select(Trade, User)
                 .join(User, Trade.symbol == User.telegram_user_id.cast(str))

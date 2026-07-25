@@ -35,14 +35,33 @@ def _set_cached_macro_value(symbol: str, value: float, source: str = "cached") -
     with _macro_cache_lock:
         _macro_data_cache[symbol.upper()] = (time.time(), value, source)
 
-# Short-lived candle memoization to prevent N+1 duplicate provider calls when
-# multiple strategies ask for the same symbol/timeframe in the same second.
+# Short-lived candle memoization and true in-flight request coalescing.
+# Multiple engine/monitor callers asking for the same symbol/timeframe await one
+# owner fetch instead of launching duplicate provider waterfalls.
 _CANDLE_CACHE: dict[tuple[str, str], tuple[float, list]] = {}
 _CANDLE_CACHE_LOCK = threading.Lock()
-_CANDLE_KEY_LOCKS: dict[tuple[str, str], threading.Lock] = {}
 
-# Per-provider concurrency is handled by _SYNC_PROVIDER_LOCKS (threading.Lock per provider).
-# The short-lived candle cache provides request coalescing at the symbol/timeframe level.
+
+class _CandleInFlight:
+    __slots__ = ("event", "result", "error", "started_at", "waiters")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.result: list = []
+        self.error: BaseException | None = None
+        self.started_at = time.monotonic()
+        self.waiters = 0
+
+
+_CANDLE_INFLIGHT: dict[tuple[str, str], _CandleInFlight] = {}
+_CANDLE_INFLIGHT_LOCK = threading.Lock()
+
+# Provider concurrency is endpoint-specific and wraps the actual blocking
+# connector call. Limits are intentionally conservative for free/sandbox APIs.
+_SYNC_PROVIDER_SEMAPHORES: dict[str, threading.BoundedSemaphore] = {}
+_SYNC_PROVIDER_LIMITS: dict[str, int] = {}
+_PROVIDER_CONCURRENCY_LOCK = threading.Lock()
+_PROVIDER_INFLIGHT: dict[str, int] = {}
 
 
 # Outage tracking for automated alerts
@@ -144,13 +163,193 @@ def _prioritize_provider_list(providers: list[tuple[str, object]], preferred: st
     return preferred_items + remaining
 
 
-def _get_candle_key_lock(key: tuple[str, str]) -> threading.Lock:
-    with _CANDLE_CACHE_LOCK:
-        lock = _CANDLE_KEY_LOCKS.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            _CANDLE_KEY_LOCKS[key] = lock
-        return lock
+def _env_positive_int(name: str, default: int, *, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int((os.getenv(name) or str(default)).strip()))
+    except Exception:
+        return max(minimum, int(default))
+
+
+def _provider_concurrency_limit(provider_name: str) -> int:
+    alias = _provider_alias(provider_name)
+    env_by_alias = {
+        "coinbase": "COINBASE_OHLC_MAX_CONCURRENCY",
+        "okx": "OKX_OHLC_MAX_CONCURRENCY",
+        "bybit": "BYBIT_OHLC_MAX_CONCURRENCY",
+        "binance": "BINANCE_OHLC_MAX_CONCURRENCY",
+        "yahoo": "YFINANCE_OHLC_MAX_CONCURRENCY",
+        "twelvedata": "TWELVEDATA_OHLC_MAX_CONCURRENCY",
+        "polygon": "POLYGON_OHLC_MAX_CONCURRENCY",
+        "fmp": "FMP_OHLC_MAX_CONCURRENCY",
+        "oanda": "OANDA_OHLC_MAX_CONCURRENCY",
+        "tradingview": "TRADINGVIEW_OHLC_MAX_CONCURRENCY",
+        "tiingo": "TIINGO_OHLC_MAX_CONCURRENCY",
+        "alphavantage": "ALPHAVANTAGE_OHLC_MAX_CONCURRENCY",
+    }
+    env_name = env_by_alias.get(alias, "OHLC_DEFAULT_PROVIDER_MAX_CONCURRENCY")
+    default = 2 if alias in {"coinbase", "okx"} else 1
+    return _env_positive_int(env_name, default)
+
+
+def _get_provider_semaphore(provider_name: str) -> tuple[threading.BoundedSemaphore, int, str]:
+    key = _provider_alias(provider_name) or _provider_key(provider_name) or "unknown"
+    limit = _provider_concurrency_limit(provider_name)
+    with _PROVIDER_CONCURRENCY_LOCK:
+        existing = _SYNC_PROVIDER_SEMAPHORES.get(key)
+        if existing is None or _SYNC_PROVIDER_LIMITS.get(key) != limit:
+            existing = threading.BoundedSemaphore(limit)
+            _SYNC_PROVIDER_SEMAPHORES[key] = existing
+            _SYNC_PROVIDER_LIMITS[key] = limit
+            _PROVIDER_INFLIGHT.setdefault(key, 0)
+    return existing, limit, key
+
+
+def _provider_request_timeout_seconds() -> float:
+    try:
+        return max(1.0, float((os.getenv("OHLC_PROVIDER_REQUEST_TIMEOUT_SECONDS") or "7").strip()))
+    except Exception:
+        return 7.0
+
+
+def _provider_queue_timeout_seconds() -> float:
+    try:
+        return max(0.1, float((os.getenv("OHLC_PROVIDER_QUEUE_TIMEOUT_SECONDS") or "10").strip()))
+    except Exception:
+        return 10.0
+
+
+def _max_provider_attempts() -> int:
+    return _env_positive_int("OHLC_MAX_PROVIDER_ATTEMPTS_PER_TIMEFRAME", 2)
+
+
+def _ordered_provider_candidates(providers: list[tuple[str, object]]) -> list[tuple[str, object]]:
+    healthy = [item for item in providers if provider_is_healthy(item[0])]
+    degraded = [item for item in providers if not provider_is_healthy(item[0])]
+    ordered: list[tuple[str, object]] = []
+    seen: set[str] = set()
+    for item in healthy + degraded:
+        alias = _provider_alias(item[0]) or _provider_key(item[0])
+        if alias in seen:
+            continue
+        seen.add(alias)
+        ordered.append(item)
+        if len(ordered) >= _max_provider_attempts():
+            break
+    return ordered
+
+
+def _run_provider_request(provider_name: str, fetch_func, *, asset: str, timeframe: str) -> tuple[list, int]:
+    semaphore, limit, key = _get_provider_semaphore(provider_name)
+    acquired = semaphore.acquire(timeout=_provider_queue_timeout_seconds())
+    if not acquired:
+        raise TimeoutError(f"provider_concurrency_queue_timeout:{key}")
+    started = time.monotonic()
+    with _PROVIDER_CONCURRENCY_LOCK:
+        _PROVIDER_INFLIGHT[key] = int(_PROVIDER_INFLIGHT.get(key, 0)) + 1
+        inflight = _PROVIDER_INFLIGHT[key]
+    logger.info(
+        "[ohlc_request_started] provider=%s asset=%s timeframe=%s inflight=%s limit=%s",
+        key,
+        asset,
+        timeframe,
+        inflight,
+        limit,
+    )
+    try:
+        # Connector functions receive the canonical request timeout. Retry is
+        # deliberately one attempt per provider; fallback providers provide the
+        # resilience without multiplying latency and quota usage.
+        candles = fetch_func(timeout=_provider_request_timeout_seconds())
+        return list(candles or []), int((time.monotonic() - started) * 1000)
+    finally:
+        with _PROVIDER_CONCURRENCY_LOCK:
+            _PROVIDER_INFLIGHT[key] = max(0, int(_PROVIDER_INFLIGHT.get(key, 1)) - 1)
+        semaphore.release()
+
+
+def _try_provider_chain(
+    providers: list[tuple[str, object]],
+    *,
+    asset: str,
+    timeframe: str,
+    asset_kind: str,
+) -> list:
+    attempted: list[str] = []
+    for provider_name, fetch_func in _ordered_provider_candidates(providers):
+        attempted.append(str(provider_name))
+        try:
+            candles, latency_ms = _run_provider_request(
+                provider_name,
+                fetch_func,
+                asset=asset,
+                timeframe=timeframe,
+            )
+            if len(candles) >= 20:
+                mark_provider_result(provider_name, True, latency_ms=latency_ms)
+                _set_last_provider_used(asset, timeframe, provider_name)
+                logger.info(
+                    "[ohlc_request_completed] provider=%s asset=%s timeframe=%s candles=%s latency_ms=%s",
+                    provider_name,
+                    asset,
+                    timeframe,
+                    len(candles),
+                    latency_ms,
+                )
+                return candles
+            mark_provider_result(provider_name, False, latency_ms=latency_ms)
+            reason = _provider_failure_reason(
+                provider_name,
+                "insufficient_candles",
+                candles_count=len(candles),
+                latency_ms=latency_ms,
+            )
+            _track_provider_error(asset, timeframe, reason)
+            logger.info(
+                "[ohlc_request_failed] provider=%s asset=%s timeframe=%s reason=%s",
+                provider_name,
+                asset,
+                timeframe,
+                reason,
+            )
+        except Exception as exc:
+            latency_ms = 0
+            mark_provider_result(provider_name, False, latency_ms=latency_ms)
+            reason = _provider_failure_reason(provider_name, f"{type(exc).__name__}:{exc}")
+            _track_provider_error(asset, timeframe, reason)
+            logger.warning(
+                "[ohlc_request_failed] provider=%s asset=%s timeframe=%s reason=%s",
+                provider_name,
+                asset,
+                timeframe,
+                reason,
+            )
+    _track_provider_error(asset, timeframe, f"all_{asset_kind}_providers_failed")
+    logger.warning(
+        "[provider_capability_result] asset=%s endpoint=ohlc attempted=%s max_attempts=%s state=DISABLED_NO_PROVIDER",
+        asset,
+        attempted,
+        _max_provider_attempts(),
+    )
+    return []
+
+
+def get_provider_concurrency_snapshot() -> dict[str, dict[str, int]]:
+    with _PROVIDER_CONCURRENCY_LOCK:
+        keys = set(_SYNC_PROVIDER_LIMITS) | set(_PROVIDER_INFLIGHT)
+        return {
+            key: {
+                "limit": int(_SYNC_PROVIDER_LIMITS.get(key, 0)),
+                "inflight": int(_PROVIDER_INFLIGHT.get(key, 0)),
+            }
+            for key in sorted(keys)
+        }
+
+
+def _inflight_wait_timeout_seconds() -> float:
+    try:
+        return max(1.0, float((os.getenv("OHLC_INFLIGHT_WAIT_TIMEOUT_SECONDS") or "25").strip()))
+    except Exception:
+        return 25.0
 
 
 def _read_cached_candles(key: tuple[str, str], ttl_seconds: float, *, allow_stale: bool = False) -> list | None:
@@ -782,91 +981,98 @@ def _timeframe_to_seconds(timeframe: str) -> int:
     return defaults.get(tf, 300)
 
 def get_candles(asset, timeframe):
-    """
-    Unified candle fetcher with multi-provider fallback.
-    
-    Provider Priority:
-    - Crypto: Binance → Bybit → **CryptoCompare** (works in Nigeria when Binance blocked)
-    - FX: AlphaVantage → Yahoo → Polygon → Twelve Data (OANDA disabled for Nigeria)
-    - Stocks: Yahoo → Polygon → Twelve Data
-    """
+    """Unified candle fetcher with bounded provider fallback and coalescing."""
+    _asset_norm = str(asset or "").upper().strip()
+    _tf_norm = str(timeframe or "").lower().strip()
+    _cache_key = (_asset_norm, _tf_norm)
     try:
-        _asset_norm = str(asset or "").upper().strip()
-        _tf_norm = str(timeframe or "").lower().strip()
-        _cache_key = (_asset_norm, _tf_norm)
         _cache_ttl = float((os.getenv("CANDLE_REQUEST_CACHE_TTL_SECONDS") or "1.5").strip())
+    except Exception:
+        _cache_ttl = 1.5
 
-        # Fast path: short-lived cache hit.
-        _cached = _read_cached_candles(_cache_key, _cache_ttl)
-        if _cached is not None:
-            return _cached
+    cached = _read_cached_candles(_cache_key, _cache_ttl)
+    if cached is not None:
+        return cached
 
-        # Coalesce concurrent callers for the same key.
-        _key_lock = _get_candle_key_lock(_cache_key)
+    owner = False
+    with _CANDLE_INFLIGHT_LOCK:
+        inflight = _CANDLE_INFLIGHT.get(_cache_key)
+        if inflight is None:
+            inflight = _CandleInFlight()
+            _CANDLE_INFLIGHT[_cache_key] = inflight
+            owner = True
+        else:
+            inflight.waiters += 1
+            logger.info(
+                "[ohlc_request_coalesced] asset=%s timeframe=%s waiters=%s",
+                _asset_norm,
+                _tf_norm,
+                inflight.waiters,
+            )
 
-        # Step 1: Check cache under lock (fast path).
-        # Only hold the lock for cache read/write, NOT for network I/O.
-        with _key_lock:
-            _cached = _read_cached_candles(_cache_key, _cache_ttl)
-            if _cached is not None:
-                return _cached
-        # Lock released before network I/O.
+    if not owner:
+        completed = inflight.event.wait(timeout=_inflight_wait_timeout_seconds())
+        if not completed:
+            logger.warning(
+                "[ohlc_request_coalesced_timeout] asset=%s timeframe=%s",
+                _asset_norm,
+                _tf_norm,
+            )
+            return []
+        cached = _read_cached_candles(_cache_key, _cache_ttl, allow_stale=True)
+        if cached is not None:
+            return cached
+        return [dict(c) if isinstance(c, dict) else c for c in (inflight.result or [])]
 
+    candles: list = []
+    try:
         asset_type = get_asset_type(asset)
-
-        # Enable multi-provider via env var
         use_multi_provider = os.getenv("USE_MULTI_PROVIDER_DATA", "true").lower() == "true"
-
         if not use_multi_provider:
-            # Legacy single-provider mode
             if asset_type == "crypto":
                 candles = get_crypto_candles(asset, timeframe)
             elif asset_type == "fx":
                 candles = get_fx_candles(asset, timeframe)
             elif asset_type == "index":
                 candles = get_index_candles(asset, timeframe)
-            elif asset_type == "commodity":
-                candles = get_stock_candles(asset, timeframe)
             else:
                 candles = get_stock_candles(asset, timeframe)
+        elif asset_type == "crypto":
+            candles = _fetch_crypto_multi_provider(asset, timeframe)
+        elif asset_type == "fx":
+            candles = _fetch_fx_multi_provider(asset, timeframe)
+        elif asset_type == "index":
+            candles = _fetch_index_multi_provider(asset, timeframe)
+        elif asset_type == "commodity":
+            candles = _fetch_commodity_multi_provider(asset, timeframe)
         else:
-            # Multi-provider mode with fallbacks (network I/O, no lock held)
-            if asset_type == "crypto":
-                candles = _fetch_crypto_multi_provider(asset, timeframe)
-            elif asset_type == "fx":
-                candles = _fetch_fx_multi_provider(asset, timeframe)
-            elif asset_type == "index":
-                candles = _fetch_index_multi_provider(asset, timeframe)
-            elif asset_type == "commodity":
-                candles = _fetch_commodity_multi_provider(asset, timeframe)
-            else:  # stock
-                candles = _fetch_stock_multi_provider(asset, timeframe)
+            candles = _fetch_stock_multi_provider(asset, timeframe)
 
-        # Step 2: Write results to cache under lock.
-        with _key_lock:
-            # Double-check: another thread may have cached this key while we were fetching.
-            _cached = _read_cached_candles(_cache_key, _cache_ttl)
-            if _cached is not None:
-                return _cached
+        if (not candles) or len(candles) < 20:
+            ff_ttl = _get_forward_fill_ttl_seconds()
+            stale_cached = _read_stale_cached_candles(_cache_key, ff_ttl)
+            if stale_cached is not None and len(stale_cached) >= 20:
+                logger.warning(
+                    "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss",
+                    asset,
+                    timeframe,
+                    ff_ttl,
+                )
+                _set_last_provider_used(asset, timeframe, "cache_forward_fill")
+                candles = stale_cached
 
-            if (not candles) or len(candles) < 20:
-                ff_ttl = _get_forward_fill_ttl_seconds()
-                stale_cached = _read_stale_cached_candles(_cache_key, ff_ttl)
-                if stale_cached is not None and len(stale_cached) >= 20:
-                    logger.warning(
-                        "[data] forward-filled cached candles symbol=%s tf=%s age<=%ss",
-                        asset,
-                        timeframe,
-                        ff_ttl,
-                    )
-                    _set_last_provider_used(asset, timeframe, "cache_forward_fill")
-                    return stale_cached
-
-            _write_cached_candles(_cache_key, candles or [])
-            return candles or []
-    except Exception:
+        _write_cached_candles(_cache_key, candles or [])
+        inflight.result = list(candles or [])
+        return list(candles or [])
+    except Exception as exc:
+        inflight.error = exc
         logger.exception("get_candles failed for %s %s", asset, timeframe)
         return []
+    finally:
+        inflight.event.set()
+        with _CANDLE_INFLIGHT_LOCK:
+            if _CANDLE_INFLIGHT.get(_cache_key) is inflight:
+                _CANDLE_INFLIGHT.pop(_cache_key, None)
 
 
 def _fetch_crypto_multi_provider(asset, timeframe):
@@ -890,57 +1096,12 @@ def _fetch_crypto_multi_provider(asset, timeframe):
     preferred = (os.getenv("CRYPTO_PREFERRED_PROVIDER") or "").strip().lower()
     providers = _prioritize_provider_list(providers, preferred)
 
-    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
-    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-
-    # Use a threading-based semaphore for provider concurrency control
-    # (asyncio.Semaphore only works inside async functions, but this is synchronous)
-    # _SYNC_PROVIDER_LOCKS is module-level; don't shadow with local declaration.
-
-    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
-        # Per-provider lock gives us sequential requests (concurrency=1) per provider
-        lock = _SYNC_PROVIDER_LOCKS.setdefault(provider_name, threading.Lock())
-        with lock:
-            _provider_started = time.monotonic()
-            logger.info(
-                "[ohlc_request] provider=%s asset=%s tf=%s health=%s",
-                provider_name,
-                asset,
-                timeframe,
-                "healthy" if provider_is_healthy(provider_name) else "degraded",
-            )
-            try:
-                candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-                if candles and len(candles) >= 20:
-                    mark_provider_result(provider_name, True, latency_ms=_latency_ms)
-                    _set_last_provider_used(asset, timeframe, provider_name)
-                    logger.info(
-                        "[ohlc_request] provider=%s asset=%s tf=%s candles=%s latency_ms=%s",
-                        provider_name, asset, timeframe, len(candles), _latency_ms,
-                    )
-                    return candles
-                else:
-                    mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-                    reason = _provider_failure_reason(
-                        provider_name,
-                        "insufficient_candles",
-                        candles_count=len(candles or []),
-                        latency_ms=_latency_ms,
-                    )
-                    _track_provider_error(asset, timeframe, reason)
-                    logger.info("[ohlc_request] failed provider=%s asset=%s tf=%s %s", provider_name, asset, timeframe, reason)
-            except Exception as e:
-                _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-                reason = _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms)
-                _track_provider_error(asset, timeframe, reason)
-                logger.warning("[ohlc_request] error provider=%s asset=%s tf=%s err=%s", provider_name, asset, timeframe, e)
-            continue
-    _track_provider_error(asset, timeframe, "all_crypto_providers_failed")
-    logger.warning("[ohlc_request] all_providers_failed asset=%s tf=%s", asset, timeframe)
-    return []
-
+    return _try_provider_chain(
+        providers,
+        asset=asset,
+        timeframe=timeframe,
+        asset_kind="crypto",
+    )
 
 def _fetch_fx_multi_provider(asset, timeframe):
     """Try multiple FX providers in order."""
@@ -969,44 +1130,12 @@ def _fetch_fx_multi_provider(asset, timeframe):
     fx_pref = (os.getenv("FX_PREFERRED_PROVIDER") or "").strip().lower()
     providers = _prioritize_provider_list(providers, fx_pref)
 
-    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
-    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
-        _provider_started = time.monotonic()
-        try:
-            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
-                _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] fx_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
-                return candles
-            else:
-                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-                _track_provider_error(
-                    asset,
-                    timeframe,
-                    _provider_failure_reason(
-                        provider_name,
-                        "insufficient_candles",
-                        candles_count=len(candles or []),
-                        latency_ms=_latency_ms,
-                    ),
-                )
-        except Exception as e:
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
-            )
-            logger.warning(f"[data] fx_provider={provider_name} symbol={asset} failed: {e}")
-            continue
-    _track_provider_error(asset, timeframe, "all_fx_providers_failed")
-    logger.warning(f"[data] fx_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
-    return []
-
+    return _try_provider_chain(
+        providers,
+        asset=asset,
+        timeframe=timeframe,
+        asset_kind="fx",
+    )
 
 def _fetch_stock_multi_provider(asset, timeframe):
     """Try multiple stock providers in order."""
@@ -1020,44 +1149,12 @@ def _fetch_stock_multi_provider(asset, timeframe):
         providers.append((name, lambda timeout=10, _fn=fn: _fn(asset, timeframe, timeout=timeout)))
     providers.append(("tradingview", lambda timeout=10: fetch_tradingview_candles(asset, timeframe, exchange="NYSE")))
     providers = _prioritize_provider_list(providers, os.getenv("STOCK_PREFERRED_PROVIDER") or "")
-    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
-    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
-        _provider_started = time.monotonic()
-        try:
-            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
-                _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] stock_provider={provider_name} symbol={asset} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
-                return candles
-            else:
-                mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-                _track_provider_error(
-                    asset,
-                    timeframe,
-                    _provider_failure_reason(
-                        provider_name,
-                        "insufficient_candles",
-                        candles_count=len(candles or []),
-                        latency_ms=_latency_ms,
-                    ),
-                )
-        except Exception as e:
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
-            )
-            logger.warning(f"[data] stock_provider={provider_name} symbol={asset} failed: {e}")
-            continue
-    _track_provider_error(asset, timeframe, "all_stock_providers_failed")
-    logger.warning(f"[data] stock_fetched=none symbol={asset} tf={timeframe} (all providers failed)")
-    return []
-
+    return _try_provider_chain(
+        providers,
+        asset=asset,
+        timeframe=timeframe,
+        asset_kind="stock",
+    )
 
 def _fetch_commodity_multi_provider(asset, timeframe):
     """Try commodity-capable providers in order without routing metals/oil as stocks or crypto."""
@@ -1074,50 +1171,12 @@ def _fetch_commodity_multi_provider(asset, timeframe):
     ]
     providers = _prioritize_provider_list(providers, os.getenv("COMMODITY_PREFERRED_PROVIDER") or "")
 
-    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
-    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
-        _provider_started = time.monotonic()
-        try:
-            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
-                _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(
-                    "[data] commodity_provider=%s symbol=%s tf=%s candles=%s latency_ms=%s",
-                    provider_name,
-                    asset,
-                    timeframe,
-                    len(candles),
-                    _latency_ms,
-                )
-                return candles
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(
-                    provider_name,
-                    "insufficient_candles",
-                    candles_count=len(candles or []),
-                    latency_ms=_latency_ms,
-                ),
-            )
-        except Exception as e:
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
-            )
-            logger.warning("[data] commodity_provider=%s symbol=%s failed: %s", provider_name, asset, e)
-            continue
-    _track_provider_error(asset, timeframe, "all_commodity_providers_failed")
-    logger.warning("[data] commodity_fetched=none symbol=%s tf=%s (all providers failed)", asset, timeframe)
-    return []
-
+    return _try_provider_chain(
+        providers,
+        asset=asset,
+        timeframe=timeframe,
+        asset_kind="commodity",
+    )
 
 def _fetch_index_multi_provider(asset, timeframe):
     """Try index-capable providers in order without routing index CFDs as stocks."""
@@ -1136,43 +1195,12 @@ def _fetch_index_multi_provider(asset, timeframe):
         ("tradingview", lambda timeout=10: fetch_tradingview_candles(tv_symbol, timeframe, exchange=tv_exchange)),
     ]
     providers = _prioritize_provider_list(providers, os.getenv("INDEX_PREFERRED_PROVIDER") or "")
-    healthy_providers = [p for p in providers if provider_is_healthy(p[0])]
-    unhealthy_providers = [p for p in providers if not provider_is_healthy(p[0])]
-    for provider_name, fetch_func in healthy_providers + unhealthy_providers:
-        _provider_started = time.monotonic()
-        try:
-            candles = retry_with_backoff(fetch_func, max_retries=3, base_timeout=10, max_timeout=60)
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            if candles and len(candles) >= 20:
-                mark_provider_result(provider_name, True, latency_ms=_latency_ms)
-                _set_last_provider_used(asset, timeframe, provider_name)
-                logger.info(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} tf={timeframe} candles={len(candles)} latency_ms={_latency_ms}")
-                return candles
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(
-                    provider_name,
-                    "insufficient_candles",
-                    candles_count=len(candles or []),
-                    latency_ms=_latency_ms,
-                ),
-            )
-        except Exception as e:
-            _latency_ms = int((time.monotonic() - _provider_started) * 1000)
-            mark_provider_result(provider_name, False, latency_ms=_latency_ms)
-            _track_provider_error(
-                asset,
-                timeframe,
-                _provider_failure_reason(provider_name, f"{type(e).__name__}:{e}", latency_ms=_latency_ms),
-            )
-            logger.warning(f"[data] index_provider={provider_name} symbol={asset} mapped={yahoo_symbol} failed: {e}")
-            continue
-    _track_provider_error(asset, timeframe, "all_index_providers_failed")
-    logger.warning(f"[data] index_fetched=none symbol={asset} mapped={yahoo_symbol} tf={timeframe} (all providers failed)")
-    return []
-
+    return _try_provider_chain(
+        providers,
+        asset=asset,
+        timeframe=timeframe,
+        asset_kind="index",
+    )
 
 def get_stock_candles(asset, timeframe):
     """Legacy single-provider stock fetcher - uses Yahoo as default."""

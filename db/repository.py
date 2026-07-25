@@ -222,7 +222,7 @@ async def persist_decision_log(
     }:
         return 0
     try:
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="db_repository") as session:
             dl = DecisionLog(
                 signal_id=signal_id,
                 asset=asset,

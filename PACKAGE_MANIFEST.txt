@@ -1,0 +1,8 @@
+SignalRankAI1 verified package
+Date: 2026-07-25
+Local branch: agent/signalrank-core-runtime-hardening
+Commits: 0782d48, 889d103
+Tests: 562 passed, 1 skipped, 0 failed
+Railway simulation: health PASS, webhook PASS, real integrations disabled
+Safety: auto/copy trading, public payments and real payouts disabled by default
+Live release status: blocked pending real Railway/provider/Telegram lifecycle proof and soak
