@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_core_never_refreshes_a_stale_signal_with_legacy_partial_rebuild():
-    source = (ROOT / "engine" / "core.py").read_text()
+    source = (ROOT / "engine" / "core.py").read_text(encoding="utf-8")
     delivery_block = source[source.index("async def deliver_all"):]
     assert "Stale signal REFRESHED" not in delivery_block
     assert "schedule_rejected_signal_learning" in delivery_block
@@ -146,7 +146,7 @@ def test_async_fetcher_enforces_default_two_provider_attempt_budget():
 
 
 def test_shadow_worker_source_closes_scan_session_before_network_prices():
-    source = (ROOT / "engine" / "shadow_outcome_worker.py").read_text()
+    source = (ROOT / "engine" / "shadow_outcome_worker.py").read_text(encoding="utf-8")
     assert "async def _load_rows" in source
     assert "async def _evaluate_rows" in source
     load = source[source.index("async def _load_rows"):source.index("async def _evaluate_rows")]
@@ -154,7 +154,7 @@ def test_shadow_worker_source_closes_scan_session_before_network_prices():
 
 
 def test_no_secrets_soak_profile_contains_only_non_secret_configuration():
-    text = (ROOT / "RAILWAY_24H_SOAK_NO_SECRETS.env").read_text()
+    text = (ROOT / "RAILWAY_24H_SOAK_NO_SECRETS.env").read_text(encoding="utf-8")
     for forbidden in (
         "DATABASE_URL=",
         "REDIS_URL=",
