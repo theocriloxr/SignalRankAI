@@ -111,7 +111,8 @@ def main() -> None:
     # Kept below for compatibility with the historical branch layout. The
     # canonical dispatcher is used for every role in the new entrypoint.
     from runtime.dispatcher import dispatch
-    dispatch(mode, legacy_worker=(mode.strip().lower() == "worker"))
+    requested_mode = str(os.getenv("RUN_MODE") or mode).strip().lower()
+    dispatch(requested_mode, legacy_worker=(requested_mode == "worker"))
 
 
 if __name__ == "__main__":

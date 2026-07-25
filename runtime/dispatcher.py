@@ -25,7 +25,12 @@ def dispatch(mode: str | RunMode | None, *, legacy_worker: bool = False) -> Any:
     elif parsed is RunMode.ENGINE:
         from runtime.engine import run
     elif parsed is RunMode.DELIVERY:
-        if legacy_worker and raw == "worker":
+        # ``worker`` historically named the all-purpose maintenance worker.
+        # The canonical role table maps it to DELIVERY for metadata
+        # compatibility, but dispatch must preserve the legacy executable
+        # behavior.  ``legacy_worker`` also lets callers pass the already
+        # canonicalized ``delivery`` value without losing the original request.
+        if raw == "worker" or legacy_worker:
             from worker.worker import main as run
         else:
             from runtime.delivery import run

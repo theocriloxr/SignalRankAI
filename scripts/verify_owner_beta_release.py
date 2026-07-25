@@ -16,6 +16,34 @@ from pathlib import Path
 from typing import Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
+COMPILE_TARGETS = (
+    "admin",
+    "alembic",
+    "core",
+    "data",
+    "db",
+    "delivery",
+    "engine",
+    "execution",
+    "legacy_telegram",
+    "market",
+    "ml",
+    "payments",
+    "paystack",
+    "runtime",
+    "scripts",
+    "services",
+    "signalrank_discord",
+    "signalrank_telegram",
+    "storage",
+    "strategies",
+    "utils",
+    "web",
+    "worker",
+    "config.py",
+    "main.py",
+    "railway_main.py",
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +61,10 @@ def build_checks(*, include_tests: bool = True) -> list[Check]:
         "RAILWAY_24H_SOAK_NO_SECRETS.env",
         "configs/env/production.env.example",
         "configs/env/railway-staging.env.example",
+        "configs/env/railway-hobby-full-advisory.env.example",
+        "configs/env/railway-hobby-owner-beta.env.example",
+        "configs/env/railway-hobby-paper-demo.env.example",
+        "configs/env/railway-hobby-real-execution-gated.env.example",
         "deploy/railway_roles/gateway.env",
         "deploy/railway_roles/engine.env",
         "deploy/railway_roles/worker.env",
@@ -42,7 +74,10 @@ def build_checks(*, include_tests: bool = True) -> list[Check]:
         "deploy/railway_roles/monolith_safe.env",
     ]
     checks = [
-        Check("compile", _python("-m", "compileall", "-q", ".")),
+        # Compile deployable source only. Traversing "." also compiles local
+        # virtual environments and inaccessible pytest temp roots, producing
+        # false release failures unrelated to the repository.
+        Check("compile", _python("-m", "compileall", "-q", *COMPILE_TARGETS)),
         Check("schema", _python("scripts/schema_audit.py")),
         Check("db-session-api", _python("scripts/audit_db_session_calls.py")),
         Check("architecture", _python("scripts/architecture_smoke.py")),

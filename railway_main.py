@@ -3,7 +3,7 @@
 Runs FastAPI + APScheduler + python-telegram-bot polling in a single asyncio event loop using FastAPI lifespan.
 
 Start with:
-  uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8000}
+  uvicorn railway_main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1
 
 This keeps existing main.py intact.
 """
@@ -29,22 +29,31 @@ except Exception:
 
 import os
 import asyncio
+import hmac
 import logging
 import threading
 from collections import deque
 from contextlib import asynccontextmanager
+from pathlib import Path
 import time
 from typing import Iterable
 
 from fastapi import FastAPI, Request, Response, HTTPException, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
 
 from core.redis_state import state
+from core.redis_streams import (
+    StreamMessage,
+    stream_consumer_name,
+    telegram_update_stream,
+)
 
 
 logger = logging.getLogger(__name__)
+_PROCESS_STARTED_MONO = time.monotonic()
 
 
 def _resolve_redis_url() -> str:
@@ -88,6 +97,17 @@ _use_redis_webhook_queue: bool = False
 _last_redis_backend_log_at: float = 0.0
 _db_ready_cache: bool | None = None
 _db_ready_lock = threading.Lock()
+_webhook_stream = telegram_update_stream()
+
+
+def _append_pending_webhook_update(payload: dict) -> bool:
+    """Append without allowing ``deque(maxlen=...)`` to evict valid work."""
+    max_items = int(_pending_webhook_updates.maxlen or 0)
+    if max_items and len(_pending_webhook_updates) >= max_items:
+        webhook_queue_full_total.inc()
+        return False
+    _pending_webhook_updates.append(payload)
+    return True
 
 webhook_queue_full_total = Counter(
     "signalrankai_webhook_queue_full_total",
@@ -160,7 +180,10 @@ def _redis_queue_requested() -> bool:
     deployments to claim a durable backend and repeatedly attempt unavailable
     Redis operations.
     """
-    configured = bool(_resolve_redis_url())
+    configured = bool(
+        str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+        or _resolve_redis_url()
+    )
     requested = str(os.getenv("WEBHOOK_REDIS_QUEUE_ENABLED", "1")).strip().lower() in {
         "1", "true", "yes", "on"
     }
@@ -789,7 +812,13 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
         webhook_endpoint = f"{webhook_url}/telegram/webhook"
         try:
             await app_obj.bot.delete_webhook(drop_pending_updates=True)
-            await app_obj.bot.set_webhook(webhook_endpoint)
+            webhook_secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+            webhook_kwargs = (
+                {"secret_token": webhook_secret}
+                if webhook_secret
+                else {}
+            )
+            await app_obj.bot.set_webhook(webhook_endpoint, **webhook_kwargs)
             print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
             logger.info("[bot] webhook registered: %s", webhook_endpoint)
             try:
@@ -1287,7 +1316,9 @@ async def lifespan(_: FastAPI):
                         _base = _get_webhook_url()
                         if _base:
                             _endpoint = f"{_base}/telegram/webhook"
-                            await _bot_application.bot.set_webhook(_endpoint)
+                            _secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+                            _kwargs = {"secret_token": _secret} if _secret else {}
+                            await _bot_application.bot.set_webhook(_endpoint, **_kwargs)
                             logger.warning("[webhook] periodic self-heal: webhook was unset, re-registered=%s", _endpoint)
                             print(f"[webhook] periodic self-heal: re-registered={_endpoint}", flush=True)
                     except Exception as _heal_exc:
@@ -1308,7 +1339,12 @@ async def lifespan(_: FastAPI):
                         logger.warning("[webhook] Redis queue disabled by config; using in-process queue")
                     continue
 
-                redis_ok = bool(await state.has_redis())
+                if _webhook_stream.configured:
+                    redis_ok = bool(await _webhook_stream.ping())
+                else:
+                    # Compatibility path for local/test deployments that have
+                    # not yet provisioned the dedicated delivery Redis.
+                    redis_ok = bool(await state.has_redis())
                 if redis_ok and (not _use_redis_webhook_queue):
                     _use_redis_webhook_queue = _redis_queue_requested()
                     logger.info("[webhook] Redis became available; switched queue_backend=redis")
@@ -1325,10 +1361,12 @@ async def lifespan(_: FastAPI):
 
     async def _webhook_worker(worker_id: int) -> None:
         """Background worker: process Telegram updates from queue."""
+        stream_consumer = stream_consumer_name(f"telegram-{worker_id}")
         while True:
             payload = None
             payload_source = "redis" if _use_redis_webhook_queue else "in_process"
             consumed_in_process = False
+            stream_message: StreamMessage | None = None
 
             # Important: even in Redis mode, consume local fallback items first.
             # This prevents ingress/worker disconnect when Redis enqueue times out.
@@ -1341,8 +1379,19 @@ async def lifespan(_: FastAPI):
                     payload = None
 
             if payload is None and _use_redis_webhook_queue:
-                payload = await state.dequeue_webhook_update(timeout_seconds=1)
-                payload_source = "redis"
+                if _webhook_stream.configured:
+                    stream_messages = await _webhook_stream.read(
+                        consumer=stream_consumer,
+                        count=1,
+                        block_ms=1_000,
+                    )
+                    if stream_messages:
+                        stream_message = stream_messages[0]
+                        payload = stream_message.payload
+                    payload_source = "redis_stream"
+                else:
+                    payload = await state.dequeue_webhook_update(timeout_seconds=1)
+                    payload_source = "redis_legacy"
                 if not payload:
                     continue
 
@@ -1364,7 +1413,15 @@ async def lifespan(_: FastAPI):
                     payload_source,
                 )
                 if (not _bot_ready) or (_bot_application is None):
-                    _pending_webhook_updates.append(payload)
+                    if stream_message is not None:
+                        # Leave the entry pending; another consumer can claim it
+                        # after the lease once the bot application is ready.
+                        await asyncio.sleep(0.1)
+                    elif not _append_pending_webhook_update(payload):
+                        logger.error(
+                            "[webhook] pending queue full while bot unavailable update_id=%s",
+                            payload_update_id,
+                        )
                     continue
                 from telegram import Update
                 update_type = next((k for k in (payload or {}) if k not in ("update_id",)), "unknown")
@@ -1392,9 +1449,29 @@ async def lifespan(_: FastAPI):
                     except asyncio.TimeoutError:
                         process_task.cancel()
                         logger.warning("[webhook] update_id=%s processing exceeded hard limit and was cancelled", payload_update_id)
+                        raise
                 _record_dispatch_latency(str(payload_update_id), started_at)
+                if stream_message is not None:
+                    acknowledged = await _webhook_stream.ack(stream_message.message_id)
+                    if not acknowledged:
+                        raise RuntimeError(
+                            f"stream acknowledgement failed for {stream_message.message_id}"
+                        )
                 logger.info("[webhook] worker=%s finished update_id=%s", worker_id, payload_update_id)
             except Exception as exc:
+                if stream_message is not None:
+                    try:
+                        attempts = await _webhook_stream.fail(stream_message, exc)
+                        logger.warning(
+                            "[webhook] stream processing failed id=%s attempts=%s",
+                            stream_message.message_id,
+                            attempts,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "[webhook] failed to persist stream retry state id=%s",
+                            stream_message.message_id,
+                        )
                 logger.error(
                     "[webhook] worker=%s failed processing update: %s",
                     worker_id,
@@ -1415,17 +1492,17 @@ async def lifespan(_: FastAPI):
     _monitor_tasks.append(asyncio.create_task(_monitor_redis_webhook_backend()))
     _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-redis-backend"))
 
-    # Bounded queue + worker pool for high concurrent webhook traffic (production values)
+    # Bounded queue + worker pool sized for a single Railway Hobby process.
     global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
-    _default_queue_size = "5000"
-    _default_worker_count = "64"
-    _use_redis_webhook_queue = True
+    _default_queue_size = "1000"
+    _default_worker_count = "4"
+    _use_redis_webhook_queue = _redis_queue_requested()
     _queue_size = int(os.getenv("WEBHOOK_UPDATE_QUEUE_SIZE", _default_queue_size) or _default_queue_size)
     _worker_count = int(os.getenv("WEBHOOK_UPDATE_WORKERS", _default_worker_count) or _default_worker_count)
-    _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, _queue_size))
+    _webhook_dispatch_queue = asyncio.Queue(maxsize=max(100, min(10_000, _queue_size)))
     _webhook_dispatch_workers = [
         asyncio.create_task(_webhook_worker(i + 1))
-        for i in range(max(4, _worker_count))
+        for i in range(max(1, min(16, _worker_count)))
     ]
     for idx, _wt in enumerate(_webhook_dispatch_workers, start=1):
         _wt.add_done_callback(lambda t, _idx=idx: _log_task_failure(t, f"webhook-worker-{_idx}"))
@@ -1661,6 +1738,10 @@ async def lifespan(_: FastAPI):
                     _task.cancel()
                 except Exception:
                     pass
+        try:
+            await _webhook_stream.close()
+        except Exception as exc:
+            logger.debug("[shutdown] webhook stream close failed: %s", exc)
 
 
 import logging
@@ -1677,39 +1758,193 @@ app = FastAPI(lifespan=lifespan)
 # ─────────────────────────────────────────────────────────────────────────────────────
 
 class _HealthResponse(BaseModel):
-    status: str = "healthy"
+    status: str = "ok"
     uptime: float
     signals_active: int = 0
     cache_hit_rate: float = 0.0
+    resource_state: str = "OPTIMAL"
 
 
 @app.get("/health", response_model=_HealthResponse)
 @app.get("/healthz", response_model=_HealthResponse)
+@app.get("/livez", response_model=_HealthResponse)
 async def _healthz_endpoint():
-    """Railway healthcheck - fast liveness probe.
-    
-    Returns 200 quickly even if DB is unavailable (status=degraded).
-    Mounted web app also serves this, but having it here ensures reliability.
+    """Cheap process liveness check.
+
+    This endpoint deliberately performs no network or database I/O. Dependency
+    admission belongs to ``/readyz`` so provider or database jitter cannot
+    trigger a Railway restart loop.
     """
-    import time
-    uptime = time.time() - float(os.getenv("START_TS", "0"))
-    # Try to get cache stats, gracefully handle unavailability
-    cache_hit_rate = 0.0
+    resource_state = "OPTIMAL"
     try:
-        from core.redis_cache import cache_stats
-        cache = await cache_stats()
-        cache_hit_rate = float(cache.get("hit_rate", 0))
+        from core.resource_governor import get_resource_governor
+
+        resource_state = str(get_resource_governor().snapshot().state.value)
     except Exception:
         pass
     return _HealthResponse(
-        status="healthy",
-        uptime=uptime,
+        status="ok",
+        uptime=max(0.0, time.monotonic() - _PROCESS_STARTED_MONO),
         signals_active=0,
-        cache_hit_rate=cache_hit_rate,
+        cache_hit_rate=0.0,
+        resource_state=resource_state,
     )
 
 
-@app.post("/telegram/webhook")
+async def _database_readiness_check() -> dict[str, object]:
+    """Verify connectivity and that the deployed schema is at the sole head."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import text
+
+        from db.priority import DBPriority
+        from db.session import get_session, is_db_configured
+
+        if not is_db_configured():
+            return {"ok": False, "detail": "not_configured"}
+
+        alembic_cfg = Config(str(Path(__file__).with_name("alembic.ini")))
+        expected_heads = tuple(ScriptDirectory.from_config(alembic_cfg).get_heads())
+        if len(expected_heads) != 1:
+            return {"ok": False, "detail": "repository_migration_heads_invalid"}
+
+        async with get_session(
+            priority=DBPriority.INTERACTIVE,
+            label="readiness",
+            timeout_seconds=1.5,
+        ) as session:
+            await asyncio.wait_for(session.execute(text("SELECT 1")), timeout=1.5)
+            version_result = await asyncio.wait_for(
+                session.execute(text("SELECT version_num FROM alembic_version")),
+                timeout=1.5,
+            )
+            deployed = str(version_result.scalar_one_or_none() or "")
+            await session.rollback()
+        if deployed != expected_heads[0]:
+            return {
+                "ok": False,
+                "detail": "migration_not_at_head",
+                "deployed_revision": deployed or None,
+                "expected_revision": expected_heads[0],
+            }
+        return {"ok": True, "detail": "reachable", "revision": deployed}
+    except asyncio.TimeoutError:
+        return {"ok": False, "detail": "timeout"}
+    except Exception as exc:
+        return {"ok": False, "detail": type(exc).__name__}
+
+
+async def _redis_url_readiness_check(url: str, *, label: str) -> dict[str, object]:
+    if not str(url or "").strip():
+        return {"ok": False, "detail": "not_configured", "role": label}
+    client = None
+    try:
+        from redis.asyncio import Redis
+
+        client = Redis.from_url(
+            str(url).strip(),
+            decode_responses=True,
+            socket_connect_timeout=0.75,
+            socket_timeout=0.75,
+            max_connections=max(
+                1,
+                min(64, int(os.getenv("REDIS_MAX_CONNECTIONS", "24") or 24)),
+            ),
+        )
+        pong = await asyncio.wait_for(client.ping(), timeout=1.0)
+        return {"ok": bool(pong), "detail": "reachable" if pong else "ping_failed", "role": label}
+    except asyncio.TimeoutError:
+        return {"ok": False, "detail": "timeout", "role": label}
+    except Exception as exc:
+        return {"ok": False, "detail": type(exc).__name__, "role": label}
+    finally:
+        if client is not None:
+            try:
+                close = getattr(client, "aclose", None) or getattr(client, "close", None)
+                if close is not None:
+                    result = close()
+                    if asyncio.iscoroutine(result):
+                        await result
+            except Exception:
+                logger.debug("[readyz] redis client close failed", exc_info=True)
+
+
+def _production_readiness_required() -> bool:
+    environment = str(
+        os.getenv("APP_ENV")
+        or os.getenv("ENVIRONMENT")
+        or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+        or ""
+    ).strip().lower()
+    return _is_running_on_railway() or environment in {"production", "prod"}
+
+
+@app.get("/ready")
+@app.get("/readyz")
+async def _readyz_endpoint(response: Response) -> dict[str, object]:
+    """Dependency admission check for Railway traffic routing."""
+    state_url = str(
+        os.getenv("STATE_REDIS_URL")
+        or os.getenv("SIGNALRANK_STATE_REDIS_URL")
+        or os.getenv("REDIS_URL")
+        or ""
+    ).strip()
+    delivery_url = str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    production = _production_readiness_required()
+
+    database, state_redis, delivery_redis = await asyncio.gather(
+        _database_readiness_check(),
+        _redis_url_readiness_check(state_url, label="state"),
+        _redis_url_readiness_check(delivery_url, label="delivery"),
+    )
+    checks: dict[str, object] = {
+        "database": database,
+        "state_redis": state_redis,
+        "delivery_redis": delivery_redis,
+    }
+
+    distinct_redis = bool(state_url and delivery_url and state_url != delivery_url)
+    allow_shared_dev = (
+        not production
+        and _env_bool("ALLOW_SHARED_REDIS_FOR_DEV", False)
+    )
+    checks["redis_separation"] = {
+        "ok": distinct_redis or allow_shared_dev,
+        "detail": "distinct" if distinct_redis else ("shared_dev_override" if allow_shared_dev else "must_be_distinct"),
+    }
+
+    if str(os.getenv("TELEGRAM_BOT_TOKEN") or "").strip():
+        checks["telegram"] = {
+            "ok": bool(_bot_ready and _bot_application is not None),
+            "detail": "ready" if _bot_ready else "initializing",
+        }
+
+    try:
+        from core.resource_governor import ResourceState, get_resource_governor
+
+        snapshot = get_resource_governor().snapshot()
+        checks["resource_guard"] = {
+            "ok": snapshot.state is not ResourceState.CRITICAL,
+            "detail": snapshot.state.value,
+        }
+    except Exception:
+        checks["resource_guard"] = {"ok": True, "detail": "not_loaded"}
+
+    ready = all(
+        bool(value.get("ok"))
+        for value in checks.values()
+        if isinstance(value, dict)
+    )
+    if not ready:
+        response.status_code = 503
+    return {
+        "status": "ready" if ready else "degraded",
+        "ready": ready,
+        "checks": checks,
+    }
+
+
 async def _telegram_webhook_route(req: Request) -> dict:
     """Receive Telegram updates and dispatch them to the bot application.
 
@@ -1729,7 +1964,15 @@ async def _telegram_webhook_route(req: Request) -> dict:
                 "[webhook] ingress queued while bot_not_ready update_id=%s",
                 (payload or {}).get("update_id", "?"),
             )
-            _pending_webhook_updates.append(payload)
+            if not _append_pending_webhook_update(payload):
+                logger.warning("[webhook] bot_not_ready pending queue is full")
+                return {
+                    "ok": False,
+                    "error": "queue_full",
+                    "bot_ready": False,
+                    "status": "queue_full",
+                    "queue_backend": "pending",
+                }
             logger.warning(
                 "[webhook] bot_not_ready — update queued size=%d",
                 len(_pending_webhook_updates),
@@ -1755,7 +1998,14 @@ async def _telegram_webhook_route(req: Request) -> dict:
         logger.info("[webhook] ingress received update_id=%s type=%s", update_id, update_type)
         logger.debug("[webhook] dispatching update_id=%s type=%s", update_id, update_type)
         if _webhook_dispatch_queue is None:
-            _pending_webhook_updates.append(data)
+            if not _append_pending_webhook_update(data):
+                return {
+                    "ok": False,
+                    "error": "queue_full",
+                    "bot_ready": True,
+                    "status": "queue_full",
+                    "queue_backend": "pending",
+                }
             logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
             return {
                 "ok": True,
@@ -1769,34 +2019,42 @@ async def _telegram_webhook_route(req: Request) -> dict:
         redis_fallback = False
         if _use_redis_webhook_queue:
             enqueued = False
+            duplicate = False
+            redis_backend = "redis_legacy"
             try:
-                enqueued = await asyncio.wait_for(
-                    state.enqueue_webhook_update(
-                        data,
-                        max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
-                    ),
-                    timeout=2.5,
-                )
+                if _webhook_stream.configured:
+                    enqueue_result = await asyncio.wait_for(
+                        _webhook_stream.enqueue(
+                            data,
+                            idempotency_key=f"telegram-update:{update_id}",
+                        ),
+                        timeout=0.35,
+                    )
+                    enqueued = bool(enqueue_result.accepted)
+                    duplicate = bool(enqueue_result.duplicate)
+                    redis_backend = "redis_stream"
+                else:
+                    enqueued = await asyncio.wait_for(
+                        state.enqueue_webhook_update(
+                            data,
+                            max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
+                        ),
+                        timeout=0.35,
+                    )
+                    redis_backend = "redis"
             except asyncio.TimeoutError:
                 logger.warning("[webhook] redis enqueue timeout update_id=%s", update_id)
             except Exception as exc:
                 logger.warning("[webhook] redis enqueue failed update_id=%s err=%s", update_id, exc)
             if enqueued:
                 _webhook_enqueue_started_at[str(update_id)] = time.monotonic()
-                queue_size = 0
-                try:
-                    queue_size = int(
-                        await asyncio.wait_for(state.webhook_queue_depth(), timeout=2.0)
-                    )
-                except Exception:
-                    queue_size = 0
                 return {
                     "ok": True,
                     "queued": True,
                     "bot_ready": True,
                     "status": "queued",
-                    "queue_backend": "redis",
-                    "queue_size": queue_size,
+                    "queue_backend": redis_backend,
+                    "duplicate": duplicate,
                 }
             logger.warning("[webhook] redis enqueue failed — falling back to in-process queue")
             redis_fallback = True
@@ -1824,11 +2082,72 @@ async def _telegram_webhook_route(req: Request) -> dict:
         return {"ok": False, "error": "invalid_payload", "status": "invalid_payload"}
 
 
+@app.post("/telegram/webhook")
+async def _telegram_webhook_http_route(req: Request) -> JSONResponse:
+    """Authenticated, bounded Telegram ingress with retryable overload errors."""
+    expected_secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+    supplied_secret = str(
+        req.headers.get("x-telegram-bot-api-secret-token") or ""
+    ).strip()
+    if _production_readiness_required() and not expected_secret:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "error": "webhook_secret_not_configured"},
+        )
+    if expected_secret and not hmac.compare_digest(supplied_secret, expected_secret):
+        return JSONResponse(
+            status_code=401,
+            content={"ok": False, "error": "invalid_webhook_secret"},
+        )
+
+    max_body_bytes = max(
+        1024,
+        min(
+            2 * 1024 * 1024,
+            int(os.getenv("WEBHOOK_MAX_BODY_BYTES", str(1024 * 1024)) or 1024 * 1024),
+        ),
+    )
+    content_length = req.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_body_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={"ok": False, "error": "payload_too_large"},
+                )
+        except ValueError:
+            return JSONResponse(
+                status_code=400,
+                content={"ok": False, "error": "invalid_content_length"},
+            )
+    body = await req.body()
+    if not body:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "empty_payload"},
+        )
+    if len(body) > max_body_bytes:
+        return JSONResponse(
+            status_code=413,
+            content={"ok": False, "error": "payload_too_large"},
+        )
+
+    result = await _telegram_webhook_route(req)
+    error = str(result.get("error") or "")
+    status_code = 200
+    if error == "queue_full":
+        status_code = 503
+    elif error:
+        status_code = 400
+    return JSONResponse(status_code=status_code, content=result)
+
+
 async def _enqueue_webhook_update_async(data: dict) -> None:
     update_id = (data or {}).get("update_id", "?")
     queue_ref = _webhook_dispatch_queue
     if queue_ref is None:
-        _pending_webhook_updates.append(data)
+        if not _append_pending_webhook_update(data):
+            logger.error("[webhook] dispatcher_not_ready and pending queue full")
         logger.warning("[webhook] dispatcher_not_ready — queued in pending buffer")
         return
 
@@ -1838,7 +2157,7 @@ async def _enqueue_webhook_update_async(data: dict) -> None:
                 data,
                 max_depth=int(os.getenv("REDIS_WEBHOOK_QUEUE_MAX_DEPTH", "2000") or 2000),
             ),
-            timeout=2.5,
+            timeout=0.35,
         )
     except asyncio.TimeoutError:
         enqueued = False
@@ -1853,7 +2172,11 @@ async def _enqueue_webhook_update_async(data: dict) -> None:
     try:
         queue_ref = _webhook_dispatch_queue
         if queue_ref is None:
-            _pending_webhook_updates.append(data)
+            if not _append_pending_webhook_update(data):
+                logger.error(
+                    "[webhook] dispatcher_not_ready during fallback and pending queue full update_id=%s",
+                    update_id,
+                )
             logger.warning("[webhook] dispatcher_not_ready during fallback enqueue update_id=%s", update_id)
             return
         queue_ref.put_nowait(data)
@@ -1897,9 +2220,6 @@ async def _telegram_webhook_status() -> dict:
 
 # Mount the existing web app AFTER the webhook route — FastAPI checks routes
 # in registration order, so /telegram/webhook is matched before the catch-all.
-app.mount("/", _web_app)
-
-
 # ============================================================================
 # TradingView Webhook Endpoint
 # ============================================================================
@@ -2027,3 +2347,9 @@ async def tradingview_webhook_status():
         "ok": True,
         "webhook_configured": secret_set,
     }
+
+
+# Compatibility web/API surface. This catch-all mount must remain the final
+# route so it cannot intercept Telegram, TradingView, Paystack, health, or
+# readiness endpoints owned by the canonical Railway application.
+app.mount("/", _web_app)
