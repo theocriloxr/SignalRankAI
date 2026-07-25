@@ -279,6 +279,20 @@ _OANDA_OVERRIDES: dict[str, str] = {
 }
 
 _YFINANCE_OVERRIDES: dict[str, str] = {
+    # Macro/rates aliases used by the market monitor.
+    "DXY": "DX-Y.NYB",
+    "VIX": "^VIX",
+    "US10Y": "^TNX",
+    "USB10Y": "^TNX",
+    "US05Y": "^FVX",
+    "US5Y": "^FVX",
+    "US30Y": "^TYX",
+    "US03M": "^IRX",
+    "US3M": "^IRX",
+    # Yahoo exposes a two-year yield future rather than a stable spot-yield
+    # index; keep it analysis-only and never route it to execution.
+    "US02Y": "2YY=F",
+    "USB02Y": "2YY=F",
     "XAUUSD": "GC=F",
     "XAGUSD": "SI=F",
     "WTIUSD": "CL=F",
@@ -782,7 +796,7 @@ def _sanitize_ohlcv(candles: list) -> list:
     return out
 
 
-def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
+def _check_staleness(candles: list, timeframe: str, *, log_stale: bool = False) -> tuple[bool, float]:
     """Check if cached candles are stale.
     
     Returns (is_fresh, data_age_seconds).
@@ -816,7 +830,8 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
     ts = latest_candle.get("timestamp")
     
     if ts is None:
-        logger.warning(f"Staleness check failed for {timeframe}: no timestamp in latest candle")
+        if log_stale:
+            logger.warning(f"Staleness check failed for {timeframe}: no timestamp in latest candle")
         return False, 0.0
     
     # Convert timestamp to seconds
@@ -834,7 +849,7 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
         
         is_fresh = data_age <= threshold
         
-        if not is_fresh:
+        if not is_fresh and log_stale:
             logger.warning(
                 f"Staleness check failed for {timeframe}: "
                 f"data age={data_age:.0f}s exceeds threshold={threshold}s (2×{tf_seconds}s)"
@@ -842,7 +857,8 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
         
         return is_fresh, data_age
     except (ValueError, TypeError) as e:
-        logger.warning(f"Staleness check failed for {timeframe}: {e}")
+        if log_stale:
+            logger.warning(f"Staleness check failed for {timeframe}: {e}")
         return False, 0.0
 
 
@@ -941,7 +957,7 @@ async def fetch_market_data_cached(
                             continue
                         
                         # Check staleness
-                        is_fresh, data_age = _check_staleness(candles, tf)
+                        is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
                         if not is_fresh:
                             logger.warning(f"Cached candles for {asset} {tf} are stale (age={data_age:.0f}s), skipping cache")
                             continue
@@ -1188,7 +1204,7 @@ async def fetch_market_data_cached(
                     candles = _sanitize_ohlcv(candles)
                     if not _validate_ohlcv(candles):
                         continue
-                    is_fresh, data_age = _check_staleness(candles, tf)
+                    is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
                     if not is_fresh:
                         logger.warning(
                             "Cached candles for %s %s are stale (age=%.0fs), skipping cache",

@@ -418,16 +418,32 @@ async def _run_startup_ops() -> None:
     logger.info("[startup] DB startup ops end")
 
 
+def _ml_archive_backfill_enabled() -> bool:
+    """Run ML archive maintenance only on the analytics role or by explicit opt-in."""
+    explicit = os.getenv("ML_ARCHIVE_BACKFILL_ENABLED")
+    if explicit is not None:
+        return _env_bool("ML_ARCHIVE_BACKFILL_ENABLED", False)
+    run_mode = (os.getenv("RUN_MODE") or os.getenv("SERVICE_ROLE") or "all").strip().lower()
+    return run_mode in {"analytics", "ml", "learning"}
+
+
 async def _archive_ml_history_job() -> None:
     """Backfill ml_past_training_data from finalized outcomes (idempotent)."""
+    if not _ml_archive_backfill_enabled():
+        return
     try:
         from ml.schema_version import MODEL_FORMAT_VERSION, get_current_schema_version
-        from db.session import get_session, is_db_configured
+        from db.priority import DBPriority
+        from db.session import DatabaseWorkDeferred, get_session, is_db_configured
         from sqlalchemy import text
         if not is_db_configured():
             return
 
-        async with get_session() as session:
+        async with get_session(
+            priority=DBPriority.ANALYTICS,
+            label="ml_archive_backfill",
+            timeout_seconds=float(os.getenv("ML_ARCHIVE_DB_TIMEOUT_SECONDS", "0") or 0),
+        ) as session:
             # Ensure table exists even if migration order had race conditions.
             await session.execute(text(
                 """
@@ -512,6 +528,8 @@ async def _archive_ml_history_job() -> None:
                 inserted = 0
             if inserted > 0:
                 logger.info("[ml_archive] backfilled rows=%d", inserted)
+    except DatabaseWorkDeferred:
+        logger.debug("[ml_archive] deferred while foreground database work is active")
     except Exception as exc:
         logger.warning(f"[ml_archive] backfill failed: {exc}")
 
@@ -534,7 +552,12 @@ def _build_scheduler() -> AsyncIOScheduler:
     # Web jobs are optional in decomposed deployments.  Missing legacy
     # symbols must not disable the whole process scheduler.
     try:
-        from web import app as _web_module
+        # Import the module explicitly. ``from web import app`` can resolve to
+        # the FastAPI application object after package initialisation, making
+        # the scheduler believe the two module-level jobs are missing.
+        import importlib
+
+        _web_module = importlib.import_module("web.app")
         _check_waitlist_capacity_job = getattr(_web_module, "_check_waitlist_capacity_job", None)
         _monitor_expired_invites_job = getattr(_web_module, "_monitor_expired_invites_job", None)
     except Exception as exc:
@@ -572,18 +595,21 @@ def _build_scheduler() -> AsyncIOScheduler:
     except Exception as exc:
         logger.warning(f"[sched] could not add wl_monitor job: {exc}")
 
-    # ML archive backfill (idempotent): keep historical training table populated.
-    try:
-        scheduler.add_job(
-            _archive_ml_history_job,
-            "interval",
-            minutes=10,
-            id="ml_archive_backfill",
-            replace_existing=True,
-            max_instances=1,
-        )
-    except Exception as exc:
-        logger.warning(f"[sched] could not add ml_archive_backfill job: {exc}")
+    # ML history belongs to the analytics role. Keep it off the production monolith.
+    if _ml_archive_backfill_enabled():
+        try:
+            scheduler.add_job(
+                _archive_ml_history_job,
+                "interval",
+                minutes=max(5, int(os.getenv("ML_ARCHIVE_INTERVAL_MINUTES", "10") or 10)),
+                id="ml_archive_backfill",
+                replace_existing=True,
+                max_instances=1,
+            )
+        except Exception as exc:
+            logger.warning(f"[sched] could not add ml_archive_backfill job: {exc}")
+    else:
+        logger.info("[sched] ML archive backfill disabled for this service role")
 
     return scheduler
 
@@ -1024,12 +1050,15 @@ async def lifespan(_: FastAPI):
         except Exception as exc:
             logger.warning(f"[startup] fresh reset step failed: {exc}")
 
-        # Always run archive pass afterwards to keep ml_past_training_data filled.
-        try:
-            await _archive_ml_history_job()
-            logger.info("[startup] post-maintenance: ml archive backfill step complete")
-        except Exception as exc:
-            logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+        # ML archive maintenance is isolated to the analytics role.
+        if _ml_archive_backfill_enabled():
+            try:
+                await _archive_ml_history_job()
+                logger.info("[startup] post-maintenance: ml archive backfill step complete")
+            except Exception as exc:
+                logger.warning(f"[startup] ml archive initial backfill failed: {exc}")
+        else:
+            logger.info("[startup] post-maintenance: ml archive backfill disabled")
 
         logger.info("[startup] post-maintenance end")
 

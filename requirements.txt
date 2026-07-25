@@ -1,4 +1,4 @@
-flask
+flask>=3.0.0,<4
 python-telegram-bot>=21.0,<22
 pandas
 numpy

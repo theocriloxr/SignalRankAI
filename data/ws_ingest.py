@@ -10,7 +10,8 @@ from typing import Optional
 from data.binance_ws import iter_events as binance_iter_events
 from data.cryptocompare_ws import iter_events as cryptocompare_iter_events
 from db.market_cache import prune_old_candles, upsert_market_candle, upsert_market_tick
-from db.session import get_session, is_db_configured
+from db.priority import DBPriority
+from db.session import DatabaseWorkDeferred, get_session, is_db_configured
 from data.pair_discovery import get_all_trending_pairs
 from data.fetcher import is_crypto
 from core.redis_state import state
@@ -313,9 +314,13 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                         if stop.is_set():
                             return
                         await q.put(ev)
-            except Exception:
-                # allow caller to switch provider
-                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Wake the consumer immediately so it can fail over rather than
+                # waiting for the stale timeout with a dead feeder.
+                with contextlib.suppress(asyncio.QueueFull):
+                    q.put_nowait({"type": "__feeder_error__", "error": repr(exc)})
 
         feeder_task = asyncio.create_task(_feeder())
         buffered = 0
@@ -329,7 +334,11 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
             if not tick_buf and not candle_buf:
                 return
             try:
-                async with get_session() as session:
+                async with get_session(
+                    priority=DBPriority.BACKGROUND,
+                    label="ws_ingest_flush",
+                    timeout_seconds=_env_float("WS_DB_SESSION_TIMEOUT_SECONDS", 0.5),
+                ) as session:
                     for t in tick_buf.values():
                         await upsert_market_tick(
                             session,
@@ -352,9 +361,13 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                             is_final=bool(c.get("is_final")),
                         )
                     await session.commit()
-            except Exception:
-                # Best-effort: drop this batch
-                pass
+            except DatabaseWorkDeferred as exc:
+                # Cache writes are best-effort; REST providers remain the source
+                # of truth. Keep this at debug level to avoid false production
+                # alarms during brief foreground DB bursts.
+                logger.debug("[ws_ingest] DB flush deferred: %s", exc)
+            except Exception as exc:
+                logger.warning("[ws_ingest] DB flush failed: %s", exc)
             tick_buf = {}
             candle_buf = []
 
@@ -377,35 +390,56 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                     await _flush()
                     return False
 
-                # Normalize and buffer
+                # Normalize and buffer. CryptoCompare ticks and trades both
+                # feed the candle builder; the previous mutually-exclusive
+                # branch meant ticker updates never produced candles.
+                event_type = str(ev.get("type") or "").strip().lower()
+                if event_type == "__feeder_error__":
+                    logger.warning(
+                        "[ws_ingest] provider_error=%s error=%s",
+                        provider,
+                        ev.get("error"),
+                    )
+                    stop.set()
+                    feeder_task.cancel()
+                    await _flush()
+                    return False
+
                 et_ms = ev.get("event_time_ms")
-                if ev.get("type") == "tick":
+                if event_type in {"tick", "trade"}:
                     sym = str(ev.get("symbol") or "").upper().strip()
+                    price = float(ev.get("price") or 0.0)
+                    if not sym or price <= 0:
+                        continue
+                    now_ms = int(time.time() * 1000)
+                    ts_ms = int(et_ms or now_ms)
                     tick = {
-                        "symbol": str(ev.get("symbol") or "").upper().strip(),
-                        "price": float(ev.get("price") or 0.0),
-                        "event_time_ms": et_ms,
+                        "symbol": sym,
+                        "price": price,
+                        "event_time_ms": ts_ms,
                     }
                     tick_buf[sym] = tick
                     try:
-                        state.set_latest_tick_sync(sym, float(tick["price"]), event_time_ms=et_ms, source=provider)
+                        state.set_latest_tick_sync(
+                            sym,
+                            price,
+                            event_time_ms=ts_ms,
+                            source=provider,
+                        )
                     except Exception:
                         pass
-                elif ev.get("type") == "kline":
+                    if provider == "cryptocompare":
+                        volume = float(ev.get("volume") or 0.0) if event_type == "trade" else 0.0
+                        candle_buf.extend(
+                            cc_builder.update(
+                                symbol=sym,
+                                price=price,
+                                volume=volume,
+                                event_time_ms=ts_ms,
+                            )
+                        )
+                elif event_type == "kline":
                     candle_buf.append(ev)
-                elif provider == "cryptocompare" and ev.get("type") in {"trade", "tick"}:
-                    # Build candles from trades/ticks.
-                    sym = str(ev.get("symbol") or "").upper().strip()
-                    price = float(ev.get("price") or 0.0)
-                    vol = float(ev.get("volume") or 0.0) if ev.get("type") == "trade" else 0.0
-                    now_ms = int(time.time() * 1000)
-                    ts_ms = int(et_ms or now_ms)
-                    try:
-                        state.set_latest_tick_sync(sym, price, event_time_ms=ts_ms, source=provider)
-                    except Exception:
-                        pass
-                    for c in cc_builder.update(symbol=sym, price=price, volume=vol, event_time_ms=ts_ms):
-                        candle_buf.append(c)
 
                 buffered += 1
                 if buffered >= flush_every:
@@ -415,17 +449,26 @@ async def run_ws_ingestor(stop_event: Optional[asyncio.Event] = None) -> None:
                     # Periodic prune (lightweight)
                     if prune_every > 0:
                         try:
-                            async with get_session() as session:
+                            async with get_session(
+                                priority=DBPriority.BACKGROUND,
+                                label="ws_ingest_prune",
+                                timeout_seconds=_env_float("WS_DB_SESSION_TIMEOUT_SECONDS", 0.5),
+                            ) as session:
                                 for sym in symbols:
                                     for tf in intervals:
                                         await prune_old_candles(session, symbol=sym, timeframe=tf, keep_last=keep_last)
                                 await session.commit()
-                        except Exception:
-                            pass
+                        except DatabaseWorkDeferred as exc:
+                            logger.debug("[ws_ingest] prune deferred: %s", exc)
+                        except Exception as exc:
+                            logger.warning("[ws_ingest] prune failed: %s", exc)
         finally:
             stop.set()
             feeder_task.cancel()
-            with contextlib.suppress(Exception):
+            # asyncio.CancelledError is a BaseException on modern Python, so
+            # suppressing Exception alone leaked cancellation into the worker
+            # supervisor and caused exponential restart thrashing.
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await feeder_task
 
     # Circuit breaker controlled main loop with exponential backoff

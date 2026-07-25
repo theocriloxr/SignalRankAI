@@ -12,6 +12,8 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
+from utils.timeutils import now_utc_naive
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,12 +223,12 @@ class SignalContext:
         
         # Rate limit: only send once per 4 hours
         if last_alert_time:
-            now = datetime.utcnow()
+            now = now_utc_naive()
             try:
                 if getattr(last_alert_time, "tzinfo", None) is not None:
                     now = datetime.now(last_alert_time.tzinfo)
             except Exception:
-                now = datetime.utcnow()
+                now = now_utc_naive()
             time_since_last = now - last_alert_time
             if time_since_last < timedelta(hours=4):
                 return False, "Too soon since last NO TRADE alert"

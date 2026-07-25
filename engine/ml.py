@@ -85,9 +85,9 @@ def _load_model() -> None:
         if err:
             _MODEL_CACHE["error"] = err
             return
-        # Memory-optimised config for Railway 500 MB tier
-            booster_any: Any = booster
-            booster_any.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
+        # Memory-optimised config for Railway: cap native XGBoost threads.
+        booster_any: Any = booster
+        booster_any.set_param("nthread", str(max(1, int(os.getenv("XGB_NTHREAD", "2") or 2))))
         gc.collect()  # free any cyclic garbage from model initialisation
 
         _MODEL_CACHE["feature_cols"] = feature_cols

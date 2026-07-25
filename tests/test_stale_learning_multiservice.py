@@ -167,7 +167,9 @@ def test_no_secrets_soak_profile_contains_only_non_secret_configuration():
         assert forbidden not in text
     assert "AUTO_TRADE_ENABLED=0" in text
     assert "LEGACY_TRADE_TRACKER_ENABLED=0" in text
-    assert "ASSET_LEARNING_ENABLED=1" in text
+    assert "ASSET_LEARNING_ENABLED=0" in text
+    analytics = (ROOT / "deploy" / "railway_roles" / "analytics.env").read_text()
+    assert "ASSET_LEARNING_ENABLED=1" in analytics
 
 
 def test_start_script_supports_all_decomposed_roles():

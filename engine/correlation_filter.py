@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
+
+from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,13 @@ def _env_int(name: str, default: int) -> int:
         return int(raw)
     except Exception:
         return int(default)
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return raw.strip().lower() in {"1", "true", "yes", "on", "y"}
 
 
 def _env_float(name: str, default: float) -> float:
@@ -149,15 +157,79 @@ class PortfolioExposureManager:
                     ) as _internal_session:
                         return await self._check_exposure(_internal_session, asset_class, direction)
                 except Exception as e:
-                    logger.debug(f"[exposure] could not create internal session: {e}")
-                    return True  # Fail open - allow trade if we can't check
+                    return self._fallback_exposure_allowed(asset_class, direction, e)
             else:
                 return await self._check_exposure(session, asset_class, direction)
 
         except Exception as e:
-            logger.error(f"Failed to check portfolio exposure: {e}")
-            # Fail closed to protect capital
-            return False
+            return self._fallback_exposure_allowed(asset_class, direction, e)
+
+    def _fallback_exposure_allowed(
+        self,
+        asset_class: str,
+        direction: str,
+        error: BaseException,
+    ) -> bool:
+        """Use Redis truth when the SQL read fails, then apply a safe fail mode.
+
+        Advisory/manual-signal deployments default to fail-open so a transient
+        telemetry query cannot starve every user. Auto-execution deployments
+        default to fail-closed unless the operator explicitly overrides the
+        fail mode.
+        """
+        logger.error("[exposure] SQL exposure read failed: %s", error)
+        try:
+            from core.redis_state import state
+
+            active = state.get_active_trades_sync() or {}
+            if active:
+                global_count = 0
+                sector_direction_count = 0
+                for payload in active.values():
+                    if not isinstance(payload, dict):
+                        continue
+                    status = str(payload.get("status") or payload.get("state") or "active").lower()
+                    if status in {"closed", "stopped", "expired", "cancelled", "archived"}:
+                        continue
+                    trade_asset = str(payload.get("symbol") or payload.get("asset") or "").upper().strip()
+                    trade_direction = str(payload.get("direction") or payload.get("side") or "").lower().strip()
+                    if trade_direction == "buy":
+                        trade_direction = "long"
+                    elif trade_direction == "sell":
+                        trade_direction = "short"
+                    global_count += 1
+                    if self._get_asset_class(trade_asset) == asset_class and trade_direction == direction:
+                        sector_direction_count += 1
+                allowed = (
+                    global_count < self.max_global_trades
+                    and sector_direction_count < self.max_sector_direction
+                )
+                logger.warning(
+                    "[exposure] using Redis fallback global=%s/%s sector_direction=%s/%s allowed=%s",
+                    global_count,
+                    self.max_global_trades,
+                    sector_direction_count,
+                    self.max_sector_direction,
+                    allowed,
+                )
+                return allowed
+        except Exception as cache_error:
+            logger.warning("[exposure] Redis fallback unavailable: %s", cache_error)
+
+        explicit = (os.getenv("PORTFOLIO_EXPOSURE_FAIL_OPEN") or "").strip()
+        if explicit:
+            fail_open = explicit.lower() in {"1", "true", "yes", "on", "y"}
+        else:
+            fail_open = not (
+                _env_bool("AUTO_TRADE_ENABLED", False)
+                or _env_bool("COPY_TRADE_ENABLED", False)
+                or _env_bool("REAL_EXECUTION_ENABLED", False)
+            )
+        logger.error(
+            "[exposure] no DB/Redis exposure truth; applying fail_%s mode",
+            "open" if fail_open else "closed",
+        )
+        return bool(fail_open)
 
     async def _check_exposure(self, session, asset_class: str, direction: str) -> bool:
         """Internal method to check exposure limits."""
@@ -166,7 +238,10 @@ class PortfolioExposureManager:
             from db.models import Signal, SignalDelivery
             from sqlalchemy import select, func, exists, or_
 
-            now = datetime.now(timezone.utc)
+            # Signal.expires_at is stored as PostgreSQL TIMESTAMP WITHOUT TIME ZONE.
+            # Bind a naïve UTC value so asyncpg never mixes offset-aware and
+            # offset-naïve datetimes (which previously blocked every candidate).
+            now = now_utc_naive()
             active_filters = [
                 Signal.expired.is_(False),
                 Signal.archived.is_(False),
@@ -240,9 +315,7 @@ class PortfolioExposureManager:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to check portfolio exposure: {e}")
-            # Fail closed to protect capital
-            return False
+            return self._fallback_exposure_allowed(asset_class, direction, e)
 
     def _get_asset_class(self, asset: str) -> str:
         """Determine asset class from symbol."""

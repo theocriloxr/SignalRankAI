@@ -857,7 +857,6 @@ async def get_session(
             _priority_admission.record_deferred(resolved)
             _priority_admission.record_dropped(resolved)
             with _session_metrics_lock:
-                _session_metrics["errors"] += 1
                 _session_metrics["noncritical_dropped"] += 1
                 raise NoncriticalWriteDropped(
                     f"noncritical DB work deferred ({_safe_label}): critical/interactive DB work active"
@@ -870,10 +869,11 @@ async def get_session(
         )
         if not priority_acquired:
             with _session_metrics_lock:
-                _session_metrics["errors"] += 1
                 if is_background:
                     _session_metrics["background_dropped"] += 1
                     _session_metrics["noncritical_dropped"] += 1
+                elif not is_analytics:
+                    _session_metrics["errors"] += 1
             if is_background:
                 _priority_admission.record_dropped(resolved)
                 raise NoncriticalWriteDropped(
@@ -906,7 +906,6 @@ async def get_session(
                 _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)
                 with _session_metrics_lock:
-                    _session_metrics["errors"] += 1
                     _session_metrics["background_dropped"] += 1
                     _session_metrics["noncritical_dropped"] += 1
                 raise NoncriticalWriteDropped(
@@ -932,9 +931,10 @@ async def get_session(
 
         if not acquired:
             with _session_metrics_lock:
-                _session_metrics["errors"] += 1
                 if is_background:
                     _session_metrics["noncritical_dropped"] += 1
+                elif not is_analytics:
+                    _session_metrics["errors"] += 1
             if is_background:
                 _priority_admission.record_deferred(resolved)
                 _priority_admission.record_dropped(resolved)

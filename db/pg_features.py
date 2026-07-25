@@ -5,6 +5,7 @@ import logging
 import os
 import random
 from datetime import datetime, timedelta, timezone
+from utils.timeutils import now_utc_naive
 def to_naive_utc(dt: datetime) -> datetime:
     """Convert any datetime to naive UTC (no tzinfo)."""
     if dt.tzinfo is not None:
@@ -101,7 +102,7 @@ def _env_int(name: str, default: int) -> int:
 
 def _utcnow() -> datetime:
     # Return a naive UTC datetime to match DB columns (TIMESTAMP WITHOUT TIME ZONE)
-    return datetime.utcnow()
+    return now_utc_naive()
 
 
 class SignalDedupBlocked(RuntimeError):

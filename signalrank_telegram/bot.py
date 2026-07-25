@@ -4831,7 +4831,21 @@ def distribute_random_signals_to_free_users_job():
 
         run_sync(_do_distribute())
     except Exception as e:
-        logger.error(f"\u274C Error distributing signals to FREE users: {e}")
+        # Foreground DB traffic intentionally outranks this best-effort job.
+        # Deferral is normal backpressure, not a production error.
+        try:
+            from db.session import DatabaseWorkDeferred
+            is_deferred = isinstance(e, DatabaseWorkDeferred)
+        except Exception:
+            is_deferred = type(e).__name__ in {
+                "DatabaseWorkDeferred",
+                "NoncriticalWriteDropped",
+                "AnalyticsWorkDeferred",
+            }
+        if is_deferred:
+            logger.info("[free_distribution] deferred by DB admission controller: %s", e)
+        else:
+            logger.error("\u274C Error distributing signals to FREE users: %s", e)
 
 
 def refresh_active_signal_keyboards_once() -> None:

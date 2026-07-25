@@ -87,6 +87,7 @@ from engine.signal_deduplicator import MLRejectionTracker
 from engine.ranking import rank_signals
 from core.redis_state import state
 from config import OWNER_IDS, ADMIN_IDS
+from utils.timeutils import now_utc_naive
 
 # Optional advanced features (graceful fallback if missing)
 try:
@@ -272,7 +273,7 @@ class _FallbackThresholdOptimizer:
             'ml_prob_threshold': self.get_threshold(),
             'min_score_threshold': 48.0,
             'confluence_min': 0.0,
-            'last_updated': datetime.utcnow(),
+            'last_updated': now_utc_naive(),
             'source': 'env',
         })()
 
@@ -349,7 +350,7 @@ def _maybe_log_heatmap(asset: str, cycle_no: int, signals_generated: int) -> Non
         diag_dir.mkdir(parents=True, exist_ok=True)
         out_file = diag_dir / 'heatmap_log.jsonl'
         record = {
-            'ts': datetime.utcnow().isoformat(),
+            'ts': now_utc_naive().isoformat(),
             'asset': asset_key,
             'cycle': cycle_no,
             'empty_cycles': empty_cycles,
@@ -1188,7 +1189,7 @@ async def _segment_quarantine_gate(signal: Dict[str, Any]) -> tuple[bool, str]:
         min_trades = max(1, _env_int("SEGMENT_QUARANTINE_MIN_TRADES", 30))
         min_win_rate = _env_float("SEGMENT_QUARANTINE_MIN_WIN_RATE", 45.0)
         min_avg_r = _env_float("SEGMENT_QUARANTINE_MIN_AVG_R", 0.0)
-        since = datetime.utcnow() - _timedelta(days=days)
+        since = now_utc_naive() - _timedelta(days=days)
         from db.priority import DBPriority
         async with get_session(priority=DBPriority.BACKGROUND, label="segment_quarantine") as session:
             row = (
@@ -1414,7 +1415,7 @@ def _rebuild_stale_signal(sig: Dict[str, Any], live_price: float) -> Dict[str, A
         if new_sl <= 0 or new_tp <= 0:
             return None
 
-        now = datetime.utcnow()
+        now = now_utc_naive()
         refreshed = dict(sig)               # shallow copy — keeps score, votes, etc.
         refreshed.pop('signal_id', None)    # DB assigns a fresh UUID
         refreshed['entry']                  = live_price
@@ -1770,7 +1771,7 @@ _runtime_confluence_min = _env_float("CONFLUENCE_GATE_MIN", 0.0)
 def _refresh_runtime_thresholds(force: bool = False) -> None:
     """Refresh runtime thresholds from adaptive optimizer with env fallback."""
     global _last_threshold_refresh, _runtime_min_score_threshold, _runtime_confluence_min
-    now_dt = datetime.utcnow()
+    now_dt = now_utc_naive()
     if not force and _last_threshold_refresh is not None:
         elapsed_h = (now_dt - _last_threshold_refresh).total_seconds() / 3600.0
         if elapsed_h < float(_threshold_refresh_interval_hours):
@@ -1902,7 +1903,7 @@ def main_loop(DRY_RUN: bool = False):
     async def _fetch_macro_snapshot() -> Dict[str, float]:
         """Fetch macro context once per cycle for all assets."""
         global _last_macro_snapshot_at, _macro_snapshot_cache
-        now_dt = datetime.utcnow()
+        now_dt = now_utc_naive()
         if _macro_snapshot_cache is not None and _last_macro_snapshot_at is not None:
             elapsed = (now_dt - _last_macro_snapshot_at).total_seconds()
             if elapsed < float(_macro_snapshot_refresh_seconds):
@@ -2134,9 +2135,16 @@ def main_loop(DRY_RUN: bool = False):
                     bool(indices_enabled),
                 )
                 if stocks_enabled and not stock_assets:
-                    logger.warning(
-                        "[engine] stock universe empty while STOCKS_ENABLED=1; check market hours, STOCK_TICKERS, and stock OHLC provider keys"
-                    )
+                    closed_stock_count = sum(1 for asset, _ in closed_notes if is_stock(asset))
+                    if closed_stock_count:
+                        logger.info(
+                            "[engine] stock universe empty because %s configured stock(s) are outside market hours",
+                            closed_stock_count,
+                        )
+                    else:
+                        logger.warning(
+                            "[engine] stock universe empty while STOCKS_ENABLED=1; check STOCK_TICKERS and stock OHLC provider keys"
+                        )
 
             # ── Round-robin queue: cover every open asset once per round ──────────
             # Interleave asset classes so each batch has natural diversity
@@ -2419,7 +2427,7 @@ def main_loop(DRY_RUN: bool = False):
                     from db.priority import DBPriority as _OpenPriority
                     from sqlalchemy import exists as _exists_open, or_ as _or_open
 
-                    now_open = datetime.utcnow()
+                    now_open = now_utc_naive()
                     delivered_open = _exists_open().where(
                         _OpenDelivery.signal_id == _OpenSig.signal_id,
                         _OpenDelivery.sent_ok.is_(True),
@@ -3346,7 +3354,7 @@ def main_loop(DRY_RUN: bool = False):
                                         '4h': 2880,
                                         '1d': 4320,
                                     }.get(_sig_tf, 720)
-                                    sig['expires_at'] = datetime.utcnow() + _timedelta(minutes=_fallback_minutes)
+                                    sig['expires_at'] = now_utc_naive() + _timedelta(minutes=_fallback_minutes)
 
                             try:
                                 gemini_ok, gemini_score, gemini_reason = run_sync(
@@ -3419,9 +3427,9 @@ def main_loop(DRY_RUN: bool = False):
                     # one query per signal inside the loop.  Builds a set of "cooled-down"
                     # keys so the loop only does an O(1) set-lookup per signal.
                     _cd_mins = max(1, _env_int("SIGNAL_COOLDOWN_MINUTES", 30))
-                    _cd_cutoff = datetime.utcnow() - _timedelta(minutes=_cd_mins)
+                    _cd_cutoff = now_utc_naive() - _timedelta(minutes=_cd_mins)
                     _asset_cd_hours = max(1, _env_int("ASSET_REPEAT_LOCK_HOURS", 12))
-                    _asset_cd_cutoff = datetime.utcnow() - _timedelta(hours=_asset_cd_hours)
+                    _asset_cd_cutoff = now_utc_naive() - _timedelta(hours=_asset_cd_hours)
                     _cooled_down_pairs: set[str] = set()
                     _cooled_down_assets: set[str] = set()
                     try:
@@ -3430,7 +3438,7 @@ def main_loop(DRY_RUN: bool = False):
                         from sqlalchemy import select as _sel_cd, or_ as _or_cd, exists as _exists_cd
 
                         async def _batch_cooldown_check() -> tuple[set[str], set[str]]:
-                            now_cd = datetime.utcnow()
+                            now_cd = now_utc_naive()
                             base_filters = [
                                 _SigModel.expired.is_(False),
                                 _SigModel.archived.is_(False),
@@ -3648,7 +3656,7 @@ def main_loop(DRY_RUN: bool = False):
                             # Stamp created_at
                             # store_signal_compat sets it on the DB row but doesn't write it back
                             # to the dict; without this every is_signal_fresh() call returns False.
-                            sig.setdefault('created_at', datetime.utcnow())
+                            sig.setdefault('created_at', now_utc_naive())
                             _resolved_score = _signal_display_score(sig)
                             if _resolved_score > 0:
                                 sig["score"] = _resolved_score
