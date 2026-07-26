@@ -79,7 +79,8 @@ try:
 except Exception:
     class _DummyExposureManager:
         async def is_trade_allowed(self, session, asset_class, direction):
-            return True
+            # Missing portfolio controls must never silently allow new exposure.
+            return False
     exposure_manager = _DummyExposureManager()
 from db.pg_compat import get_all_user_ids_compat, store_signal_compat
 from db.repository import persist_decision_log, persist_signal
@@ -112,9 +113,10 @@ try:
 except Exception:
     class MarketCircuitBreaker:
         async def check_market_health(self) -> bool:
-            return True
+            # A missing circuit breaker is an unknown market-health state.
+            return False
     async def check_market_health() -> bool:
-        return True
+        return False
 
 # Golden Loop: Gemini Chief Risk Officer (CRO) with technical context
 try:
@@ -140,7 +142,7 @@ except Exception:
         def get_htf_bias(self, *a, **k):
             return {}
         def validate_against_htf(self, *a, **k):
-            return True, ''
+            return False, 'mtf_validator_unavailable'
         def get_mtf_confluence(self, *a, **k):
             return 0
 
@@ -149,7 +151,7 @@ try:
 except Exception:
     class SignalContext:
         def wait_for_candle_close(self, candles, tf):
-            return True
+            return False
         def calculate_entry_zone(self, entry, atr, dir):
             return {'low': entry, 'high': entry}
         def calculate_signal_expiration(self, tf):
@@ -158,12 +160,12 @@ except Exception:
             return '24x7'
     class SignalCooldownManager:
         def can_send_signal(self, *a, **k):
-            return True, ''
+            return False, 'cooldown_manager_unavailable'
         def record_signal(self, *a, **k):
             pass
     class OneBiasPerTimeframe:
         def can_add_signal(self, *a, **k):
-            return True, ''
+            return False, 'bias_manager_unavailable'
         def set_bias(self, *a, **k):
             pass
 
@@ -172,7 +174,7 @@ try:
 except Exception:
     class SmartFilterSuite:
         def run_all_filters(self, signal, market_filter_data, session):
-            return True, []
+            return False, ['advanced_filter_unavailable']
 
 try:
     from engine.tier_notifications import TierNotificationManager
@@ -186,9 +188,9 @@ try:
 except Exception:
     class _UltraStub:
         def apply_ultra_filter(self, s):
-            return True, None, 100
+            return False, 'ultra_quality_unavailable', 0
         def calculate_dynamic_position_size(self, *a, **k):
-            return 1.0, {'method': 'stub'}
+            return 0.0, {'method': 'unavailable'}
     ultra_quality = _UltraStub()
 
 try:
@@ -217,8 +219,8 @@ def _check_signal_lock(asset: str, direction: str, timeframe: str) -> bool:
 
         return not bool(run_sync(acquire_signal_lock(asset, direction, timeframe)))
     except Exception as exc:
-        logger.debug("[signal_lock] compatibility wrapper failed: %s", exc)
-        return False
+        logger.warning("[signal_lock] compatibility wrapper failed closed: %s", exc)
+        return True
 
 
 def _release_signal_lock(asset: str, direction: str, timeframe: str) -> None:
@@ -251,8 +253,8 @@ def _check_delivery_cooldown(user_id: int, asset: str, direction: str, timeframe
 
         return bool(check_delivery_cooldown(int(user_id), asset, direction))
     except Exception as exc:
-        logger.debug("[delivery_cooldown] compatibility wrapper failed: %s", exc)
-        return False
+        logger.warning("[delivery_cooldown] compatibility wrapper failed closed: %s", exc)
+        return True
 
 # Threshold optimizer for auto-adjusting ML confidence thresholds
 _threshold_optimizer = None
@@ -2018,7 +2020,10 @@ def main_loop(DRY_RUN: bool = False):
                     time.sleep(max(5, cycle_sleep_seconds))
                     continue
             except Exception as cb_err:
-                logger.debug(f"[engine] Circuit breaker check failed (allow continue): {cb_err}")
+                logger.warning("[engine] circuit breaker check failed: %s", cb_err)
+                if _env_bool("MARKET_CIRCUIT_BREAKER_FAIL_CLOSED", True):
+                    time.sleep(max(5, cycle_sleep_seconds))
+                    continue
 
             # Pull dynamic thresholds from adaptive ML/Gemini optimizer on schedule.
             _refresh_runtime_thresholds(force=(cycle_no == 1))
@@ -3419,8 +3424,16 @@ def main_loop(DRY_RUN: bool = False):
                             logger.warning("CRITICAL: Global Kill-Switch is ACTIVE. Blocking signal delivery for asset=%s cycle=%s", asset, cycle_no)
                             pipeline_stats["skipped_kill_switch"] = int(pipeline_stats.get("skipped_kill_switch", 0) or 0) + len(final_signals)
                             continue
-                    except Exception:
-                        logger.debug("[engine] kill-switch final gate check failed", exc_info=True)
+                    except Exception as kill_switch_error:
+                        logger.error(
+                            "[engine] kill-switch final gate unavailable; blocking candidate batch: %s",
+                            kill_switch_error,
+                            exc_info=True,
+                        )
+                        pipeline_stats["skipped_kill_switch_error"] = int(
+                            pipeline_stats.get("skipped_kill_switch_error", 0) or 0
+                        ) + len(final_signals)
+                        continue
 
                     # ── Batch DB cooldown check (P11) ────────────────────────────────────────
                     # One query for all (asset, timeframe) pairs in this batch instead of
@@ -3428,7 +3441,7 @@ def main_loop(DRY_RUN: bool = False):
                     # keys so the loop only does an O(1) set-lookup per signal.
                     _cd_mins = max(1, _env_int("SIGNAL_COOLDOWN_MINUTES", 30))
                     _cd_cutoff = now_utc_naive() - _timedelta(minutes=_cd_mins)
-                    _asset_cd_hours = max(1, _env_int("ASSET_REPEAT_LOCK_HOURS", 12))
+                    _asset_cd_hours = max(1, _env_int("ASSET_REPEAT_LOCK_HOURS", 4))
                     _asset_cd_cutoff = now_utc_naive() - _timedelta(hours=_asset_cd_hours)
                     _cooled_down_pairs: set[str] = set()
                     _cooled_down_assets: set[str] = set()
@@ -3496,9 +3509,18 @@ def main_loop(DRY_RUN: bool = False):
                             _asset_cd_hours,
                         )
                     except Exception as _bcd_err:
-                        logger.debug(f"[engine] batch cooldown pre-check failed, failing open: {_bcd_err}")
-                        if _env_bool("COOLDOWN_PREFLIGHT_FAIL_OPEN", True):
+                        logger.warning("[engine] batch cooldown pre-check failed: %s", _bcd_err)
+                        if _env_bool("COOLDOWN_PREFLIGHT_FAIL_OPEN", False):
+                            logger.error(
+                                "[engine] unsafe COOLDOWN_PREFLIGHT_FAIL_OPEN override is enabled; "
+                                "continuing without durable cooldown evidence"
+                            )
                             _cooled_down_pairs, _cooled_down_assets = set(), set()
+                        else:
+                            pipeline_stats["skipped_cooldown_preflight_error"] = int(
+                                pipeline_stats.get("skipped_cooldown_preflight_error", 0) or 0
+                            ) + len(final_signals)
+                            continue
 
                     stored_signals: list[dict] = []
                     for sig in final_signals:
@@ -3621,7 +3643,17 @@ def main_loop(DRY_RUN: bool = False):
                                         )
                                         continue
                             except Exception as _dup_err:
-                                logger.debug(f"[engine] duplicate trade check failed: {_dup_err}")
+                                logger.warning("[engine] duplicate trade check failed; blocking candidate: %s", _dup_err)
+                                pipeline_stats["skipped_duplicate_trade_error"] = int(
+                                    pipeline_stats.get("skipped_duplicate_trade_error", 0) or 0
+                                ) + 1
+                                _log_decision(
+                                    "skipped",
+                                    sig,
+                                    reason="active_trade_state_unavailable",
+                                    meta={"error_type": type(_dup_err).__name__},
+                                )
+                                continue
 
                             # ── Portfolio Exposure Manager Check ─────────────────────────────
                             # NEW: Check portfolio exposure limits before storing.
@@ -3651,7 +3683,18 @@ def main_loop(DRY_RUN: bool = False):
                                         )
                                         continue
                             except Exception as _pex:
-                                logger.debug(f"[engine] portfolio exposure check failed: {_pex}")
+                                logger.warning("[engine] portfolio exposure check failed: %s", _pex)
+                                if _env_bool("PORTFOLIO_EXPOSURE_FAIL_CLOSED", True):
+                                    pipeline_stats["skipped_portfolio_exposure_error"] = int(
+                                        pipeline_stats.get("skipped_portfolio_exposure_error", 0) or 0
+                                    ) + 1
+                                    _log_decision(
+                                        "skipped",
+                                        sig,
+                                        reason="portfolio_exposure_unavailable",
+                                        meta={"error_type": type(_pex).__name__},
+                                    )
+                                    continue
 
                             # Stamp created_at
                             # store_signal_compat sets it on the DB row but doesn't write it back
@@ -4008,8 +4051,14 @@ def main_loop(DRY_RUN: bool = False):
                             ]
                     except Exception as redis_err:
                         logger.debug("[engine] Redis fallback dedupe failed for user %s: %s", user_id, redis_err)
-                    # Return all signals if filtering fails (better to send duplicates than fail)
-                    return signals
+                    # Delivery idempotency is safety-critical. If both durable and
+                    # cache checks are unavailable, block this user's batch and let
+                    # the next cycle/reconciliation retry it.
+                    logger.error(
+                        "[engine] duplicate evidence unavailable for user %s; blocking delivery batch",
+                        user_id,
+                    )
+                    return []
 
             async def deliver_all():
                 dispatched_count = 0

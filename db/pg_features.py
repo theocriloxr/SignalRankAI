@@ -405,12 +405,9 @@ async def release_signal_lock(
         pass
 
 
-# Delivery cooldown TTL by tier (in seconds)
-DELIVERY_COOLDOWN_TTL = {
-    "vip": 4 * 3600,      # 4 hours
-    "premium": 6 * 3600,   # 6 hours  
-    "free": 12 * 3600,     # 12 hours
-}
+# Delivery cooldown TTL is derived from the canonical proof-backed policy.
+# All tiers default to four hours unless an explicit business-policy override
+# is supplied through environment configuration.
 
 
 def check_delivery_cooldown(
@@ -430,24 +427,14 @@ def check_delivery_cooldown(
     asset = str(asset).upper().strip()
     direction = str(direction).lower().strip()
     
-    # Get user tier for TTL lookup
-    tier_name: str = "free"
-    try:
-        from signalrank_telegram.access import resolve_user_tier
-        tier_name = resolve_user_tier(uid).lower()
-    except Exception:
-        tier_name = "free"
-    
-    ttl = DELIVERY_COOLDOWN_TTL.get(tier_name, DELIVERY_COOLDOWN_TTL["free"])
-    redis_key = f"delivery:{uid}:{asset}:{direction}"
-    
+    from services.asset_repeat_policy import canonical_delivery_cooldown_key, legacy_delivery_cooldown_keys
+
+    keys = (canonical_delivery_cooldown_key(uid, asset), *legacy_delivery_cooldown_keys(uid, asset, direction))
     try:
         if state.has_redis_sync():
-            if state.get_str_sync(redis_key):
-                return True  # Cooldown active
+            return any(bool(state.get_str_sync(key)) for key in keys)
     except Exception:
         pass
-    
     return False
 
 
@@ -463,17 +450,17 @@ def set_delivery_cooldown(
     asset = str(asset).upper().strip()
     direction = str(direction).lower().strip()
     
-    # Get user tier for TTL lookup
     tier_name: str = "free"
     try:
         from signalrank_telegram.access import resolve_user_tier
         tier_name = resolve_user_tier(uid).lower()
     except Exception:
         tier_name = "free"
-    
-    ttl = DELIVERY_COOLDOWN_TTL.get(tier_name, DELIVERY_COOLDOWN_TTL["free"])
-    redis_key = f"delivery:{uid}:{asset}:{direction}"
-    
+
+    from services.asset_repeat_policy import canonical_delivery_cooldown_key, get_asset_repeat_lock_hours
+
+    ttl = max(1, int(get_asset_repeat_lock_hours(tier_name) * 3600))
+    redis_key = canonical_delivery_cooldown_key(uid, asset)
     try:
         if state.has_redis_sync():
             state.set_str_sync(redis_key, "1", ex=ttl)
@@ -1062,22 +1049,9 @@ async def record_signal_delivery(
             res_sig: Result[Tuple[Signal]] = await session.execute(select(Signal).where(Signal.signal_id == str(signal_id)))
             sig: Signal | None = res_sig.scalar_one_or_none()
             if sig:
-                _tier_cooldown_defaults = {
-                    "vip": 12.0,
-                    "admin": 12.0,
-                    "owner": 12.0,
-                    "premium": 12.0,
-                    "free": 12.0,
-                }
-                try:
-                    _cooldown_raw = os.getenv("DELIVERY_SAME_ASSET_COOLDOWN_HOURS")
-                    asset_cooldown_hours = float(
-                        (_cooldown_raw.strip() if _cooldown_raw else "")
-                        or _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
-                    )
-                except Exception:
-                    asset_cooldown_hours = _tier_cooldown_defaults.get(str(tier_s).split("_", 1)[0], 12.0)
-                asset_cooldown_hours = max(12.0, float(asset_cooldown_hours))
+                from services.asset_repeat_policy import get_asset_repeat_lock_hours
+
+                asset_cooldown_hours = get_asset_repeat_lock_hours(str(tier_s).split("_", 1)[0])
                 try:
                     unresolved_block_hours = float(
                         (os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS") or "168").strip()
@@ -1112,7 +1086,7 @@ async def record_signal_delivery(
                     return False
 
                 # Same-asset exposure gate:
-                # Block any new signal for the same user+asset for at least 12h,
+                # Block any new signal for the same user+asset for the configured proof-backed lock,
                 # and keep blocking while the previous asset exposure is unresolved.
                 latest_asset_row = (
                     await session.execute(
@@ -1128,13 +1102,7 @@ async def record_signal_delivery(
                         .outerjoin(Outcome, Outcome.signal_id == SignalDelivery.signal_id)
                         .where(
                             SignalDelivery.user_id == user.id,
-                            or_(
-                                SignalDelivery.sent_ok.is_(True),
-                                and_(
-                                    SignalDelivery.sent_ok.is_(False),
-                                    SignalDelivery.last_error.is_(None),
-                                ),
-                            ),
+                            SignalDelivery.sent_ok.is_(True),
                             Signal.asset == sig.asset,
                             SignalDelivery.signal_id != str(signal_id),
                         )
@@ -3049,9 +3017,9 @@ async def get_random_available_signals_for_free_user(
     already_received: set[Any] = set(row[0] for row in res_delivered.all())
 
     try:
-        asset_lock_hours = max(12, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+        asset_lock_hours = max(0, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "4") or 4))
     except Exception:
-        asset_lock_hours = 12
+        asset_lock_hours = 4
     asset_lock_cutoff = now - timedelta(hours=asset_lock_hours)
     res_locked_assets: Result[Tuple[str]] = await session.execute(
         select(Signal.asset)
@@ -3060,13 +3028,7 @@ async def get_random_available_signals_for_free_user(
         .where(
             SignalDelivery.user_id == user.id,
             SignalDelivery.delivered_at >= asset_lock_cutoff,
-            or_(
-                SignalDelivery.sent_ok.is_(True),
-                and_(
-                    SignalDelivery.sent_ok.is_(False),
-                    SignalDelivery.last_error.is_(None),
-                ),
-            ),
+            SignalDelivery.sent_ok.is_(True),
         )
         .distinct()
     )
@@ -3127,9 +3089,9 @@ async def get_highest_scoring_available_signal_for_user(
     already_received: set[Any] = set(row[0] for row in res_delivered.all())
 
     try:
-        asset_lock_hours = max(12, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
+        asset_lock_hours = max(0, int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "4") or 4))
     except Exception:
-        asset_lock_hours = 12
+        asset_lock_hours = 4
     asset_lock_cutoff = now - timedelta(hours=asset_lock_hours)
     res_locked_assets: Result[Tuple[str]] = await session.execute(
         select(Signal.asset)
@@ -3138,13 +3100,7 @@ async def get_highest_scoring_available_signal_for_user(
         .where(
             SignalDelivery.user_id == user.id,
             SignalDelivery.delivered_at >= asset_lock_cutoff,
-            or_(
-                SignalDelivery.sent_ok.is_(True),
-                and_(
-                    SignalDelivery.sent_ok.is_(False),
-                    SignalDelivery.last_error.is_(None),
-                ),
-            ),
+            SignalDelivery.sent_ok.is_(True),
         )
         .distinct()
     )
@@ -3493,7 +3449,7 @@ async def add_managed_asset(
         existing.asset_type = asset_type
         existing.added_by = added_by
         existing.note = note
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = now_utc_naive()
         return existing
     asset = ManagedAsset(
         symbol=symbol,
@@ -3517,7 +3473,7 @@ async def remove_managed_asset(session: AsyncSession, symbol: str) -> bool:
     if not existing:
         return False
     existing.is_active = False
-    existing.updated_at = datetime.utcnow()
+    existing.updated_at = now_utc_naive()
     return True
 
 
@@ -3545,7 +3501,7 @@ async def update_managed_asset_last_analyzed(
     await session.execute(
         update(ManagedAsset)
         .where(ManagedAsset.symbol.in_(normalized))
-        .values(last_analyzed_at=datetime.utcnow())
+        .values(last_analyzed_at=now_utc_naive())
     )
 
 

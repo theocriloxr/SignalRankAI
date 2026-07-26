@@ -13,6 +13,7 @@ Usage:
     # To send proposal to admin:
     await agent.send_improvement_proposal(bot, proposal)
 """
+from utils.timeutils import now_utc_naive
 import json
 import logging
 import os
@@ -72,7 +73,7 @@ class EvolutionAgent:
             from sqlalchemy import select, func, and_
             from datetime import datetime
             
-            cutoff = datetime.utcnow() - timedelta(days=days)
+            cutoff = now_utc_naive() - timedelta(days=days)
             
             async with get_session() as session:
                 # Count rejected signals

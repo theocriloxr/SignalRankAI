@@ -25,13 +25,15 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_DOWN
 import asyncio
 import json
+import contextlib
 
 logger = logging.getLogger("MT5SignalRouter")
 
 # Execution modes
 class ExecutionMode:
-    MANUAL = "manual"   # User executes manually
-    AUTO = "auto"       # Auto-execute via MT5
+    MANUAL = "manual"   # User receives instructions and executes outside the bot
+    MANUAL_CONFIRMED = "manual_confirmed"  # Authenticated one-click request
+    AUTO = "auto"       # Auto-execute via MT5 after persisted opt-in
     COPY_TRADE = "copy_trade"
     NONE = "none"       # No execution, just signals
 
@@ -77,8 +79,15 @@ class MT5SignalRouter:
     def __init__(self, *, execution_gate: Any | None = None):
         from execution.service import ExecutionGate
 
-        self._execution_queue: asyncio.Queue = asyncio.Queue()
+        try:
+            queue_size = max(1, int(os.getenv("MT5_EXECUTION_QUEUE_SIZE", "100") or 100))
+        except (TypeError, ValueError):
+            queue_size = 100
+        self._execution_queue: asyncio.Queue[tuple[ExecutionRequest, asyncio.Future[ExecutionResult]] | None] = (
+            asyncio.Queue(maxsize=queue_size)
+        )
         self._processing = False
+        self._worker_task: asyncio.Task[None] | None = None
         self._execution_gate = execution_gate or ExecutionGate()
 
     @staticmethod
@@ -292,14 +301,18 @@ class MT5SignalRouter:
         self,
         user_id: int,
         account_id: str,
+        requested_execution_mode: str,
     ) -> Dict[str, Any]:
-        """Load current user consent/mode and validate encrypted credentials."""
+        """Load user mode, current terms, explicit opt-in and encrypted credentials."""
         policy: Dict[str, Any] = {
             "found": False,
+            "accepted_terms": False,
             "consent": False,
             "user_enabled": False,
             "credentials_encrypted": False,
+            "mode": "",
         }
+        requested = str(requested_execution_mode or "").strip().lower()
         try:
             from db.models import MT5Credentials, RuntimeState, User
             from db.session import get_session
@@ -320,8 +333,7 @@ class MT5SignalRouter:
                 )
                 row = result.fetchone()
                 optin_result = await session.execute(
-                    select(RuntimeState.key, RuntimeState.value)
-                    .where(
+                    select(RuntimeState.key, RuntimeState.value).where(
                         RuntimeState.key.in_(
                             (
                                 f"autoexec_user_optin:{int(user_id)}",
@@ -337,18 +349,11 @@ class MT5SignalRouter:
                 }
             if not row:
                 return policy
+
+            accepted_terms = bool(row[0])
+            stored_mode = str(row[1] or "").strip().lower()
             encrypted = str(row[2] or "").strip()
             stored_account = str(row[3] or "").strip()
-            mode = str(row[1] or "").strip().lower()
-            consent_key = (
-                f"copyexec_user_optin:{int(user_id)}"
-                if mode == ExecutionMode.COPY_TRADE
-                else f"autoexec_user_optin:{int(user_id)}"
-            )
-            optin_value = optins.get(consent_key)
-            execution_optin = bool(
-                isinstance(optin_value, dict) and optin_value.get("enabled") is True
-            )
             credentials_valid = bool(
                 encrypted
                 and stored_account
@@ -356,25 +361,42 @@ class MT5SignalRouter:
                 and is_encryption_available()
                 and decrypt_secret(encrypted)
             )
+
+            if requested == ExecutionMode.COPY_TRADE:
+                optin = optins.get(f"copyexec_user_optin:{int(user_id)}")
+                explicitly_enabled = bool(
+                    isinstance(optin, dict) and optin.get("enabled") is True
+                )
+                user_enabled = stored_mode == ExecutionMode.COPY_TRADE
+                consent = bool(accepted_terms and user_enabled and explicitly_enabled)
+            elif requested in {ExecutionMode.AUTO, "live"}:
+                optin = optins.get(f"autoexec_user_optin:{int(user_id)}")
+                explicitly_enabled = bool(
+                    isinstance(optin, dict) and optin.get("enabled") is True
+                )
+                user_enabled = stored_mode in {ExecutionMode.AUTO, "live"}
+                consent = bool(accepted_terms and user_enabled and explicitly_enabled)
+            elif requested == ExecutionMode.MANUAL_CONFIRMED:
+                # The authenticated callback is the per-action consent. The
+                # durable profile must still permit manual/semi-auto execution.
+                user_enabled = stored_mode in {
+                    ExecutionMode.MANUAL,
+                    ExecutionMode.MANUAL_CONFIRMED,
+                    "semi_auto",
+                }
+                consent = bool(accepted_terms and user_enabled)
+            else:
+                user_enabled = False
+                consent = False
+
             policy.update(
                 {
                     "found": True,
-                    # Terms acceptance alone is not execution consent. AUTO
-                    # additionally requires the current explicit opt-in record;
-                    # COPY remains disabled until it has its own consent flow.
-                    "consent": bool(
-                        row[0]
-                        and mode
-                        in {ExecutionMode.AUTO, ExecutionMode.COPY_TRADE}
-                        and execution_optin
-                    ),
-                    "user_enabled": mode in {
-                        ExecutionMode.AUTO,
-                        ExecutionMode.COPY_TRADE,
-                        "live",
-                    },
+                    "accepted_terms": accepted_terms,
+                    "consent": consent,
+                    "user_enabled": user_enabled,
                     "credentials_encrypted": credentials_valid,
-                    "mode": mode,
+                    "mode": stored_mode,
                 }
             )
         except Exception:
@@ -383,6 +405,216 @@ class MT5SignalRouter:
                 exc_info=True,
             )
         return policy
+
+    async def _reserve_user_execution_quota(
+        self,
+        user_id: int,
+        *,
+        tier: str,
+        execution_mode: str,
+    ) -> tuple[bool, str, int | None]:
+        """Atomically reserve one user execution slot before broker I/O."""
+        try:
+            from db.models import MT5Execution, User
+            from db.session import get_session
+            from sqlalchemy import func, select
+
+            now = self._utc_now_naive()
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            async with get_session() as session:
+                user = (
+                    await session.execute(
+                        select(User)
+                        .where(User.telegram_user_id == int(user_id))
+                        .with_for_update()
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is None:
+                    await session.rollback()
+                    return False, "user_profile_missing", None
+
+                reset_at = getattr(user, "daily_executions_reset_at", None)
+                if reset_at is None or reset_at.date() < now.date():
+                    user.daily_executions_today = 0
+                    user.daily_executions_reset_at = now
+
+                realized = await session.execute(
+                    select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0))
+                    .where(
+                        MT5Execution.user_id == int(user.id),
+                        MT5Execution.executed_at >= day_start,
+                    )
+                )
+                pnl_today = float(realized.scalar_one_or_none() or 0.0)
+                drawdown_cap = float(
+                    getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0
+                )
+                if drawdown_cap > 0 and pnl_today <= -abs(drawdown_cap):
+                    await session.rollback()
+                    return False, "daily_drawdown_guard", int(user.id)
+
+                current = int(getattr(user, "daily_executions_today", 0) or 0)
+                tier_upper = str(tier or "FREE").upper()
+                if tier_upper == "PREMIUM":
+                    limit = max(
+                        0, int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3)
+                    )
+                    if limit == 0 or current >= limit:
+                        await session.rollback()
+                        return False, "premium_daily_execution_limit", int(user.id)
+
+                if str(execution_mode).lower() in {ExecutionMode.AUTO, "live"}:
+                    auto_limit = int(
+                        getattr(user, "auto_signals_daily_limit", 0) or 0
+                    )
+                    if auto_limit == 0:
+                        await session.rollback()
+                        return False, "auto_execution_limit_disabled", int(user.id)
+                    if auto_limit > 0 and current >= auto_limit:
+                        await session.rollback()
+                        return False, "auto_daily_execution_limit", int(user.id)
+
+                user.daily_executions_today = current + 1
+                user.daily_executions_reset_at = now
+                await session.commit()
+                return True, "", int(user.id)
+        except Exception:
+            logger.warning(
+                "[SignalRouter] execution quota reservation unavailable; blocking",
+                exc_info=True,
+            )
+            return False, "execution_quota_unavailable", None
+
+    async def _release_user_execution_quota(self, user_db_id: int | None) -> None:
+        if not user_db_id:
+            return
+        try:
+            from db.models import User
+            from db.session import get_session
+            from sqlalchemy import select
+
+            async with get_session() as session:
+                user = (
+                    await session.execute(
+                        select(User)
+                        .where(User.id == int(user_db_id))
+                        .with_for_update()
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is not None:
+                    user.daily_executions_today = max(
+                        0, int(getattr(user, "daily_executions_today", 0) or 0) - 1
+                    )
+                await session.commit()
+        except Exception:
+            logger.warning(
+                "[SignalRouter] failed to release execution quota; reconciliation required",
+                exc_info=True,
+            )
+
+    async def _record_execution_ledger(
+        self,
+        *,
+        user_id: int,
+        signal: Dict[str, Any],
+        account_id: str,
+        order_id: str,
+        volume: float,
+        tier: str,
+        execution_mode: str,
+        idempotency_key: str,
+        broker_result: Dict[str, Any],
+    ) -> bool:
+        """Persist one canonical MT5Execution row after broker acknowledgement."""
+        try:
+            from db.models import MT5Execution, User
+            from db.session import get_session
+            from sqlalchemy import select
+
+            order = str(order_id or "").strip()
+            if not order:
+                return False
+            signal_id = str(
+                signal.get("signal_id") or signal.get("id") or ""
+            ).strip() or None
+            symbol = str(
+                signal.get("asset") or signal.get("symbol") or ""
+            ).upper().strip()
+            raw_direction = str(
+                signal.get("direction") or signal.get("side") or ""
+            ).lower().strip()
+            direction = "long" if raw_direction in {"long", "buy"} else "short"
+            take_profit = self._parse_take_profit(
+                signal.get("take_profit") or signal.get("targets")
+            )
+            entry = float(
+                broker_result.get("live_price")
+                or broker_result.get("price")
+                or signal.get("entry")
+                or 0
+            )
+            stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
+            meta = {
+                "source": "canonical_mt5_signal_router",
+                "execution_mode": str(execution_mode),
+                "telegram_user_id": int(user_id),
+                "idempotency_key": str(idempotency_key),
+                "hard_stop_attached": bool(
+                    broker_result.get("hard_stop_attached", True)
+                ),
+                "broker_response_status": str(
+                    broker_result.get("status") or "submitted"
+                ),
+            }
+            async with get_session() as session:
+                user = (
+                    await session.execute(
+                        select(User)
+                        .where(User.telegram_user_id == int(user_id))
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if user is None:
+                    return False
+                existing = (
+                    await session.execute(
+                        select(MT5Execution)
+                        .where(
+                            MT5Execution.metaapi_account_id == str(account_id),
+                            MT5Execution.order_id == order,
+                        )
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return True
+                session.add(
+                    MT5Execution(
+                        user_id=int(user.id),
+                        signal_id=signal_id,
+                        metaapi_account_id=str(account_id),
+                        order_id=order,
+                        symbol=symbol,
+                        direction=direction,
+                        lot_size=float(volume),
+                        entry_price=entry,
+                        stop_loss=stop,
+                        take_profit=json.dumps(take_profit),
+                        status="open",
+                        tier_at_execution=str(tier or "FREE").upper(),
+                        executed_at=self._utc_now_naive(),
+                        meta=meta,
+                    )
+                )
+                await session.commit()
+                return True
+        except Exception:
+            logger.exception(
+                "[SignalRouter] broker acknowledged but execution ledger persistence failed"
+            )
+            return False
 
     async def _has_execution_evidence(self, user_id: int, signal_id: str) -> bool:
         """Require a proven delivery to this user before broker execution."""
@@ -418,13 +650,55 @@ class MT5SignalRouter:
             return False
         
     async def initialize(self) -> bool:
-        """Initialize router and start processing loop."""
-        if self._processing:
+        """Initialize one bounded execution worker."""
+        if self._processing and self._worker_task and not self._worker_task.done():
             return True
         self._processing = True
-        asyncio.create_task(self._process_execution_loop())
-        logger.info("[SignalRouter] Initialized")
+        self._worker_task = asyncio.create_task(
+            self._process_execution_loop(),
+            name="mt5-execution-router",
+        )
+        logger.info("[SignalRouter] Initialized queue_size=%s", self._execution_queue.maxsize)
         return True
+
+    async def enqueue_execution(
+        self,
+        request: ExecutionRequest,
+        *,
+        enqueue_timeout: float = 1.0,
+        result_timeout: float = 60.0,
+    ) -> ExecutionResult:
+        """Queue one request and await its bounded result.
+
+        The queue is deliberately small and single-owned.  This prevents the
+        old implementation from spawning an unbounded task for every request.
+        """
+        if not self._processing:
+            await self.initialize()
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[ExecutionResult] = loop.create_future()
+        try:
+            await asyncio.wait_for(
+                self._execution_queue.put((request, future)),
+                timeout=max(0.05, float(enqueue_timeout)),
+            )
+        except asyncio.TimeoutError:
+            return ExecutionResult(
+                success=False,
+                message="Broker execution queue is full",
+                error="execution_queue_full",
+            )
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(future),
+                timeout=max(0.1, float(result_timeout)),
+            )
+        except asyncio.TimeoutError:
+            return ExecutionResult(
+                success=False,
+                message="Broker execution did not complete before timeout",
+                error="execution_result_timeout",
+            )
     
     async def route_signal(
         self,
@@ -466,6 +740,7 @@ class MT5SignalRouter:
                     ),
                 )
             if execution_mode not in {
+                ExecutionMode.MANUAL_CONFIRMED,
                 ExecutionMode.AUTO,
                 ExecutionMode.COPY_TRADE,
             }:
@@ -502,8 +777,11 @@ class MT5SignalRouter:
                 get_account_info(mt5_account_id),
                 get_symbol_specification(mt5_account_id, asset),
                 get_live_quote(mt5_account_id, asset),
-                self._get_user_execution_policy(user_id, mt5_account_id),
-                self._has_execution_evidence(user_id, signal_id),
+                self._get_user_execution_policy(user_id, mt5_account_id, execution_mode),
+                self._has_execution_evidence(
+                    user_id,
+                    str(signal.get("evidence_signal_id") or signal_id),
+                ),
             )
             reconciliation = await get_reconciliation_snapshot(
                 mt5_account_id,
@@ -527,11 +805,22 @@ class MT5SignalRouter:
                 symbol_spec=symbol_spec,
                 symbol=asset,
             )
+            volume = self._apply_position_weight(
+                volume,
+                signal.get("position_weight", 1.0),
+                symbol_spec,
+            )
 
             market = evaluate_market(asset, signal=signal)
             requested_mode = str(policy.get("mode") or "").strip().lower()
             if execution_mode == ExecutionMode.COPY_TRADE:
                 user_enabled = requested_mode == ExecutionMode.COPY_TRADE
+            elif execution_mode == ExecutionMode.MANUAL_CONFIRMED:
+                user_enabled = requested_mode in {
+                    ExecutionMode.MANUAL,
+                    ExecutionMode.MANUAL_CONFIRMED,
+                    "semi_auto",
+                }
             else:
                 user_enabled = requested_mode in {ExecutionMode.AUTO, "live"}
             account_ready = bool(
@@ -590,6 +879,8 @@ class MT5SignalRouter:
             )
             idempotency_key = gate_request.key()
 
+            broker_result_holder: Dict[str, ExecutionResult] = {}
+
             async def _broker_submit(_request: GateRequest) -> Dict[str, Any]:
                 reserved = await self._reserve_execution_once(
                     idempotency_key,
@@ -602,14 +893,40 @@ class MT5SignalRouter:
                         "status": "DUPLICATE",
                         "error": "duplicate_or_unavailable_execution_reservation",
                     }
+
+                quota_reserved, quota_error, user_db_id = (
+                    await self._reserve_user_execution_quota(
+                        int(user_id),
+                        tier=tier,
+                        execution_mode=execution_mode,
+                    )
+                )
+                if not quota_reserved:
+                    await self._record_execution_reservation(
+                        idempotency_key,
+                        status="rejected",
+                        error=quota_error,
+                    )
+                    return {
+                        "success": False,
+                        "status": "REJECTED",
+                        "error": quota_error,
+                    }
+
                 routed = await self._execute_via_mt5(
                     signal=signal,
                     user_id=user_id,
                     volume=volume,
                     account_id=mt5_account_id,
+                    tier=tier,
+                    execution_mode=execution_mode,
                     execution_authorized=True,
                     idempotency_key=idempotency_key,
                 )
+                broker_result_holder["result"] = routed
+                if not routed.success:
+                    await self._release_user_execution_quota(user_db_id)
+
                 await self._record_execution_reservation(
                     idempotency_key,
                     status="submitted" if routed.success else "rejected",
@@ -625,6 +942,9 @@ class MT5SignalRouter:
 
             gated = await self._execution_gate.execute(gate_request, _broker_submit)
             if gated.accepted and gated.status == "SUBMITTED":
+                routed_result = broker_result_holder.get("result")
+                if routed_result is not None:
+                    return routed_result
                 return ExecutionResult(
                     success=True,
                     message=f"Executed: {asset} {signal.get('direction')}",
@@ -661,6 +981,8 @@ class MT5SignalRouter:
         user_id: int,
         volume: float,
         account_id: str,
+        tier: str,
+        execution_mode: str,
         *,
         execution_authorized: bool = False,
         idempotency_key: Optional[str] = None,
@@ -700,19 +1022,38 @@ class MT5SignalRouter:
             )
             
             if result.get("success"):
-                # Sync to paper ledger
+                order_id = str(result.get("order_id") or "").strip()
+                ledger_ok = await self._record_execution_ledger(
+                    user_id=int(user_id),
+                    signal=signal,
+                    account_id=str(account_id),
+                    order_id=order_id,
+                    volume=float(volume),
+                    tier=str(tier),
+                    execution_mode=str(execution_mode),
+                    idempotency_key=str(idempotency_key),
+                    broker_result=dict(result),
+                )
                 await self._sync_to_paper_ledger(
                     signal=signal,
                     user_id=user_id,
-                    order_id=result.get("order_id"),
+                    order_id=order_id,
                     volume=volume,
                 )
-                
+                message = f"Executed: {asset} {direction}"
+                error = None
+                if not ledger_ok:
+                    message = (
+                        f"Executed: {asset} {direction}; durable execution "
+                        "ledger reconciliation is pending"
+                    )
+                    error = "execution_ledger_pending"
                 return ExecutionResult(
                     success=True,
-                    message=f"Executed: {asset} {direction}",
-                    order_id=result.get("order_id"),
+                    message=message,
+                    order_id=order_id,
                     executed_at=self._utc_now_naive(),
+                    error=error,
                 )
             else:
                 return ExecutionResult(
@@ -729,6 +1070,36 @@ class MT5SignalRouter:
                 error=str(e),
             )
     
+    @staticmethod
+    def _apply_position_weight(
+        volume: float,
+        weight: Any,
+        symbol_spec: Optional[Dict[str, Any]],
+    ) -> float:
+        """Scale an already risk-bounded lot size without rounding upward."""
+        try:
+            base = float(volume)
+            fraction = float(weight)
+            spec = symbol_spec if isinstance(symbol_spec, dict) else {}
+            step = float(spec.get("volume_step"))
+            minimum = float(spec.get("min_volume"))
+            maximum = float(spec.get("max_volume"))
+            values = (base, fraction, step, minimum, maximum)
+            if not all(math.isfinite(value) for value in values):
+                return 0.0
+            if base <= 0 or not 0 < fraction <= 1 or step <= 0 or minimum <= 0 or maximum < minimum:
+                return 0.0
+            step_d = Decimal(str(step))
+            scaled = (
+                (Decimal(str(min(base * fraction, maximum))) / step_d)
+                .to_integral_value(rounding=ROUND_DOWN)
+                * step_d
+            )
+            result = float(scaled)
+            return result if minimum <= result <= maximum else 0.0
+        except (TypeError, ValueError, ArithmeticError):
+            return 0.0
+
     async def _calculate_position_size(
         self,
         user_id: int,
@@ -871,10 +1242,11 @@ class MT5SignalRouter:
             logger.error(f"[SignalRouter] Paper ledger sync error: {e}")
     
     async def _get_user_mt5_account(self, user_id: int) -> Optional[str]:
-        """Get user's MT5 MetaApi account ID."""
+        """Resolve or safely reprovision the user's MetaApi account ID."""
         try:
-            from services.mt5_client import get_user_mt5_account_id
-            return await get_user_mt5_account_id(user_id)
+            from services.mt5_client import ensure_user_mt5_account_id
+
+            return await ensure_user_mt5_account_id(user_id)
         except Exception:
             return None
     
@@ -913,23 +1285,85 @@ class MT5SignalRouter:
             return None
     
     async def _process_execution_loop(self) -> None:
-        """Background loop for processing execution queue."""
-        while self._processing:
+        """Process queued broker requests without unbounded task creation."""
+        while True:
+            item = await self._execution_queue.get()
             try:
-                request = await self._execution_queue.get()
-                # Process in background
-                asyncio.create_task(self._process_request(request))
-            except Exception as e:
-                logger.error(f"[SignalRouter] Loop error: {e}")
-    
-    async def _process_request(self, request: ExecutionRequest) -> None:
-        """Process a single execution request."""
-        # Implementation would handle retry logic, etc.
-        pass
-    
+                if item is None:
+                    return
+                request, future = item
+                result = await self._process_request(request)
+                if not future.done():
+                    future.set_result(result)
+            except asyncio.CancelledError:
+                if item is not None:
+                    _request, future = item
+                    if not future.done():
+                        future.cancel()
+                raise
+            except Exception as exc:
+                logger.exception("[SignalRouter] queued execution failed")
+                if item is not None:
+                    _request, future = item
+                    if not future.done():
+                        future.set_result(
+                            ExecutionResult(
+                                success=False,
+                                message="Queued execution failed",
+                                error=str(exc),
+                            )
+                        )
+            finally:
+                self._execution_queue.task_done()
+
+    async def _process_request(self, request: ExecutionRequest) -> ExecutionResult:
+        """Route one queued request through the canonical execution gate."""
+        signal = {
+            "signal_id": request.signal_id,
+            "asset": request.asset,
+            "direction": request.direction,
+            "entry": request.entry,
+            "stop_loss": request.stop_loss,
+            "take_profit": list(request.take_profit),
+            # The canonical router calculates broker-compliant volume from
+            # account equity and stored risk; queued caller volume is audit
+            # context only and cannot bypass sizing.
+            "requested_volume": request.volume,
+            "queued_at": request.created_at.isoformat(),
+        }
+        return await self.route_signal(
+            signal,
+            int(request.user_id),
+            str(request.execution_mode),
+        )
+
     async def shutdown(self) -> None:
-        """Shutdown router."""
+        """Stop the bounded worker and settle queued waiters."""
         self._processing = False
+        task = self._worker_task
+        if task and not task.done():
+            try:
+                self._execution_queue.put_nowait(None)
+            except asyncio.QueueFull:
+                task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(task, timeout=5.0)
+        self._worker_task = None
+        while not self._execution_queue.empty():
+            item = self._execution_queue.get_nowait()
+            try:
+                if item is not None:
+                    _request, future = item
+                    if not future.done():
+                        future.set_result(
+                            ExecutionResult(
+                                success=False,
+                                message="Execution router shut down",
+                                error="execution_router_shutdown",
+                            )
+                        )
+            finally:
+                self._execution_queue.task_done()
         logger.info("[SignalRouter] Shutdown complete")
 
 

@@ -6,6 +6,7 @@ This module enables continuous ML learning by:
 2. Labeling signals with outcomes when trades close
 3. Triggering automated retraining with recent data
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import os
@@ -83,7 +84,7 @@ class MLFeedbackLoop:
             "adx_trend": market_context.get("adx_trend"),
             "outcome": None,
             "r_multiple": None,
-            "recorded_at": datetime.utcnow().isoformat(),
+            "recorded_at": now_utc_naive().isoformat(),
         }
         
         if self._redis:
@@ -106,7 +107,7 @@ class MLFeedbackLoop:
         import json
         
         if closed_at is None:
-            closed_at = datetime.utcnow()
+            closed_at = now_utc_naive()
         
         outcome_data = {
             "outcome": outcome,
@@ -136,7 +137,7 @@ class MLFeedbackLoop:
         import json
         
         signals = []
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = now_utc_naive() - timedelta(days=days)
         cutoff_str = cutoff.isoformat()
         
         if self._redis:
@@ -160,7 +161,7 @@ class MLFeedbackLoop:
         """Trigger ML model retraining with recent signals."""
         if not force and self._last_retrain:
             hours_since = (
-                datetime.utcnow() - self._last_retrain
+                now_utc_naive() - self._last_retrain
             ).total_seconds() / 3600
             
             if hours_since < RETRAIN_INTERVAL_HOURS:
@@ -188,7 +189,7 @@ class MLFeedbackLoop:
             f"[ml_feedback] Retraining with {len(signals)} signals: {outcomes}"
         )
         
-        self._last_retrain = datetime.utcnow()
+        self._last_retrain = now_utc_naive()
         
         return {
             "success": True,

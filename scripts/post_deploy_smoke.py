@@ -36,9 +36,11 @@ def _http_json(
     url: str,
     payload: dict[str, Any] | None = None,
     timeout_s: int = 15,
+    extra_headers: dict[str, str] | None = None,
 ) -> tuple[int, dict[str, Any] | None, str, int]:
     data = None
     headers = {"Accept": "application/json"}
+    headers.update(extra_headers or {})
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -76,8 +78,13 @@ def _check_health(base: str) -> CheckResult:
 
 
 def _check_ready(base: str) -> CheckResult:
-    status, body, raw, latency = _http_json("GET", f"{base}/ready")
-    ok = status == 200 and isinstance(body, dict) and body.get("status") in {"ok", "degraded"}
+    status, body, raw, latency = _http_json("GET", f"{base}/readyz")
+    ok = (
+        status == 200
+        and isinstance(body, dict)
+        and body.get("status") == "ready"
+        and body.get("ready") is True
+    )
     detail = f"status={status} body_status={(body or {}).get('status')}"
     if not ok:
         detail = f"{detail} raw={raw}"
@@ -102,11 +109,14 @@ def _check_broker_permission_policy(base: str) -> CheckResult:
     return CheckResult("broker_permission_policy", ok, status, detail, latency)
 
 
-def _check_webhook_enqueue(base: str) -> CheckResult:
+def _check_webhook_enqueue(base: str, *, webhook_secret: str = "") -> CheckResult:
     status, body, raw, latency = _http_json(
         "POST",
         f"{base}/telegram/webhook",
         payload={"update_id": int(time.time()), "message": {"text": "smoke"}},
+        extra_headers={
+            "X-Telegram-Bot-Api-Secret-Token": webhook_secret
+        } if webhook_secret else None,
     )
     ok = status == 200 and isinstance(body, dict) and bool(body.get("ok"))
     backend = (body or {}).get("queue_backend")
@@ -120,6 +130,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Post-deploy smoke tests for SignalRankAI")
     parser.add_argument("--base-url", default=None, help="Public base URL, e.g. https://signalrankai.up.railway.app")
     parser.add_argument("--skip-webhook", action="store_true", help="Skip webhook enqueue test")
+    parser.add_argument(
+        "--webhook-secret",
+        default=None,
+        help="Telegram webhook secret; defaults to TELEGRAM_WEBHOOK_SECRET",
+    )
     args = parser.parse_args()
 
     try:
@@ -133,7 +148,8 @@ def main() -> int:
     checks.append(_check_ready(base))
     checks.append(_check_broker_permission_policy(base))
     if not args.skip_webhook:
-        checks.append(_check_webhook_enqueue(base))
+        webhook_secret = str(args.webhook_secret or os.getenv("TELEGRAM_WEBHOOK_SECRET") or "")
+        checks.append(_check_webhook_enqueue(base, webhook_secret=webhook_secret))
 
     print(f"[smoke] base_url={base}")
     failures = 0

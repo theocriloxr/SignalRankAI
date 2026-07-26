@@ -3,6 +3,7 @@ Tier-Based Notification System
 - Premium/VIP: Detailed TP/SL advice, partial exit suggestions, position management
 - Free: Basic TP/SL hit notifications only (for their 3 daily signals)
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import logging
@@ -421,7 +422,7 @@ class TierNotificationManager:
     
     def _format_time_remaining(self, expires_at: datetime) -> str:
         """Format time remaining until expiration."""
-        remaining = expires_at - datetime.utcnow()
+        remaining = expires_at - now_utc_naive()
         
         if remaining.total_seconds() < 0:
             return "EXPIRED"

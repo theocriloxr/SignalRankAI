@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 from dataclasses import dataclass
@@ -63,7 +64,7 @@ class AssetPositionState:
 
 
 def _utcnow() -> datetime:
-    return datetime.utcnow()
+    return now_utc_naive()
 
 
 def _env_float(name: str, default: float) -> float:
@@ -112,7 +113,7 @@ async def get_user_asset_position_state(
     if user is None or not symbol:
         return AssetPositionState(0, int(telegram_user_id), symbol, "NONE", reason="no_user_or_asset")
 
-    cooldown_h = max(0.0, float(cooldown_hours if cooldown_hours is not None else _env_float("ASSET_REPEAT_LOCK_HOURS", 12.0)))
+    cooldown_h = max(0.0, float(cooldown_hours if cooldown_hours is not None else _env_float("ASSET_REPEAT_LOCK_HOURS", 4.0)))
     unresolved_h = max(
         cooldown_h,
         float(unresolved_block_hours if unresolved_block_hours is not None else _env_float("DELIVERY_UNRESOLVED_BLOCK_HOURS", 168.0)),
@@ -138,10 +139,7 @@ async def get_user_asset_position_state(
                 SignalDelivery.delivered_at >= cutoff,
                 Signal.asset == symbol,
                 SignalDelivery.signal_id != str(exclude_signal_id or "__none__"),
-                or_(
-                    SignalDelivery.sent_ok.is_(True),
-                    and_(SignalDelivery.sent_ok.is_(False), SignalDelivery.last_error.is_(None)),
-                ),
+                SignalDelivery.sent_ok.is_(True),
             )
             .order_by(SignalDelivery.delivered_at.desc())
             .limit(1)
@@ -152,7 +150,7 @@ async def get_user_asset_position_state(
 
     signal_id, delivered_at, direction, timeframe, sent_ok, status, canonical = row
     outcome_status = _normalize_status(canonical or status)
-    state = "CANDIDATE" if sent_ok is False else _state_from_status(outcome_status)
+    state = _state_from_status(outcome_status)
     age_hours = None
     if delivered_at is not None:
         try:
@@ -161,10 +159,7 @@ async def get_user_asset_position_state(
             age_hours = None
 
     locked = state not in {"NONE", "STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"}
-    if state == "CANDIDATE":
-        locked = True
-        reason = "candidate_delivery_reserved"
-    elif state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
+    if state in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < cooldown_h):
         locked = True
         reason = "terminal_but_cooldown_active"
     elif state not in {"STOPPED", "TP3", "EXPIRED", "CANCELLED", "SUPERSEDED"} and (age_hours is None or age_hours < unresolved_h):

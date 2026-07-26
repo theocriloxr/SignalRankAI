@@ -1,6 +1,7 @@
 """
 Enhanced signal calculations: profit/loss, risk-reward, position sizing, pips.
 """
+from utils.timeutils import now_utc_naive
 import logging
 from typing import Dict, Optional, Tuple
 
@@ -183,7 +184,7 @@ def calculate_signal_age_minutes(signal: Dict) -> Optional[int]:
             if created_at.tzinfo is not None:
                 created_at = created_at.replace(tzinfo=None)
         
-        age = datetime.utcnow() - created_at
+        age = now_utc_naive() - created_at
         return int(age.total_seconds() / 60)
     
     except Exception as e:

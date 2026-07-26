@@ -17,6 +17,14 @@ from .fmp_adapter import get_candles as fmp_get_candles
 from .ecb_adapter import get_candles as ecb_get_candles
 from .alphavantage_adapter import get_candles as alphavantage_get_candles
 from .oanda_adapter import get_candles as oanda_get_candles
+from .deribit_adapter import get_candles as deribit_get_candles
+from .eodhd_adapter import get_candles as eodhd_get_candles
+from .marketstack_adapter import get_candles as marketstack_get_candles
+from .finnhub_adapter import get_candles as finnhub_get_candles
+from .alpaca_adapter import get_candles as alpaca_get_candles
+from .tradier_adapter import get_candles as tradier_get_candles
+from .stooq_adapter import get_candles as stooq_get_candles
+from .nasdaq_data_link_adapter import get_candles as nasdaq_data_link_get_candles
 
 __all__ = [
 	"Connector",
@@ -36,4 +44,12 @@ __all__ = [
 	"ecb_get_candles",
 	"alphavantage_get_candles",
 	"oanda_get_candles",
+	"deribit_get_candles",
+	"eodhd_get_candles",
+	"marketstack_get_candles",
+	"finnhub_get_candles",
+	"alpaca_get_candles",
+	"tradier_get_candles",
+	"stooq_get_candles",
+	"nasdaq_data_link_get_candles",
 ]

@@ -2,6 +2,7 @@
 Active signal monitoring module.
 Monitors unresolved signals and notifies users when SL/TP targets are hit.
 """
+from utils.timeutils import now_utc_naive
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -94,7 +95,7 @@ class SignalMonitor:
             
             async with get_session(priority="background", label="engine_signal_monitor") as session:
                 # Get signals created in last N hours that are not archived
-                cutoff = datetime.utcnow() - timedelta(hours=ACTIVE_SIGNAL_LOOKBACK_HOURS)
+                cutoff = now_utc_naive() - timedelta(hours=ACTIVE_SIGNAL_LOOKBACK_HOURS)
                 stmt = select(Signal).where(
                     Signal.archived == False,
                     Signal.created_at >= cutoff

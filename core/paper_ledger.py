@@ -19,6 +19,7 @@ Usage:
     # Close with outcome
     await ledger.close_position(user_id, position_id, "TP", exit_price=165.50)
 """
+from utils.timeutils import now_utc_naive
 
 import asyncio
 import logging
@@ -199,7 +200,7 @@ class PaperLedger:
                 else:
                     state = RuntimeState(
                         key=f"paper_balance:{user_id}",
-                        value={"balance": balance, "updated_at": datetime.utcnow().isoformat()}
+                        value={"balance": balance, "updated_at": now_utc_naive().isoformat()}
                     )
                     session.add(state)
                 
@@ -263,7 +264,7 @@ class PaperLedger:
             import json
             
             # Generate position ID
-            position_id = f"paper_{user_id}_{signal.get('asset', 'unknown')}_{int(datetime.utcnow().timestamp())}"
+            position_id = f"paper_{user_id}_{signal.get('asset', 'unknown')}_{int(now_utc_naive().timestamp())}"
             
             position_data = {
                 "position_id": position_id,
@@ -276,7 +277,7 @@ class PaperLedger:
                 "take_profit": signal.get("take_profit"),
                 "size": size,
                 "status": "OPEN",
-                "opened_at": datetime.utcnow().isoformat(),
+                "opened_at": now_utc_naive().isoformat(),
                 "entry_value": entry_value,
             }
             
@@ -339,7 +340,7 @@ class PaperLedger:
             Dict with P&L details if successful
         """
         if exit_time is None:
-            exit_time = datetime.utcnow()
+            exit_time = now_utc_naive()
         
         # Get position data
         position_data = await self._get_position(position_id, user_id=user_id)
@@ -482,14 +483,14 @@ class PaperLedger:
                 balance = await self.get_balance(user_id)
                 
                 state = RuntimeState(
-                    key=f"paper_ledger:{user_id}:{int(datetime.utcnow().timestamp())}",
+                    key=f"paper_ledger:{user_id}:{int(now_utc_naive().timestamp())}",
                     value={
                         "user_id": user_id,
                         "amount": amount,
                         "type": entry_type,
                         "description": description,
                         "balance_after": balance + amount if amount > 0 else balance,
-                        "created_at": datetime.utcnow().isoformat(),
+                        "created_at": now_utc_naive().isoformat(),
                     }
                 )
                 session.add(state)

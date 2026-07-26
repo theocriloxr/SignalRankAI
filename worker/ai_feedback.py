@@ -13,6 +13,7 @@ This creates a "Chief Investment Officer" layer that:
 Run with: python -m worker.ai_feedback
 Schedule: Daily at midnight or via cron
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import sys
@@ -51,7 +52,7 @@ async def gather_performance_stats(days: int = 7) -> PerformanceStats:
         from db.session import get_session
         from sqlalchemy import text
         
-        since = datetime.utcnow() - timedelta(days=days)
+        since = now_utc_naive() - timedelta(days=days)
         
         async with get_session() as session:
             # Get outcome statistics

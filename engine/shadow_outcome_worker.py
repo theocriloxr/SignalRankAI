@@ -6,6 +6,7 @@ transaction.  This prevents provider network latency from occupying scarce DB
 connections.
 """
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import asyncio
 import contextlib
@@ -46,7 +47,7 @@ class ShadowOutcomeWorker:
         from db.session import NoncriticalWriteDropped, get_session
         from sqlalchemy import select
 
-        cutoff = datetime.utcnow() - timedelta(minutes=self._min_age_minutes)
+        cutoff = now_utc_naive() - timedelta(minutes=self._min_age_minutes)
         try:
             async with get_session(priority=DBPriority.BACKGROUND, label="shadow_outcome_scan") as session:
                 rows = list((await session.execute(
@@ -97,7 +98,7 @@ class ShadowOutcomeWorker:
 
         ids = [row["id"] for row, _ in evaluated]
         by_id = {row["id"]: (row, outcome) for row, outcome in evaluated}
-        now = datetime.utcnow()
+        now = now_utc_naive()
         try:
             async with get_session(priority=DBPriority.BACKGROUND, label="shadow_outcome_write") as session:
                 db_rows = list((await session.execute(

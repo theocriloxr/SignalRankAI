@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 import os
 import asyncio
 
@@ -871,7 +872,7 @@ async def force_market_scan_command(update: Update, context: ContextTypes.DEFAUL
 		from db.models import Signal, AdminEvent
 		from sqlalchemy import select
 		from datetime import datetime, timedelta
-		cutoff = datetime.utcnow() - timedelta(hours=4)
+		cutoff = now_utc_naive() - timedelta(hours=4)
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			rows = await session.execute(
 				select(Signal)
@@ -954,7 +955,7 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 			expiry = getattr(user, 'premium_until', None)
 			if expiry is None:
 				# Fall back to active subscription expiry
-				now_dt = _dt.utcnow()
+				now_dt = now_utc_naive()
 				res_sub = await session.execute(
 					select(Subscription)
 					.where(
@@ -976,7 +977,7 @@ async def _compose_status_message(user_id: int) -> tuple[str, object | None]:
 	try:
 		from core.redis_state import state
 		from datetime import datetime
-		date_str = datetime.utcnow().strftime('%Y-%m-%d')
+		date_str = now_utc_naive().strftime('%Y-%m-%d')
 		signals_today = int(state.get_sync(f"signals_sent:{user_id}:{date_str}") or 0)
 	except Exception:
 		pass
@@ -1045,7 +1046,7 @@ async def _rotate_api_token_for_user(user_id: int, ttl_days: int = 30) -> str:
 	from db.session import get_session
 	from db.repository import create_api_token
 	token = generate_api_key()
-	expires = datetime.utcnow() + timedelta(days=max(1, min(int(ttl_days), 365)))
+	expires = now_utc_naive() + timedelta(days=max(1, min(int(ttl_days), 365)))
 	async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 		await create_api_token(
 			session,
@@ -2784,7 +2785,7 @@ async def ops_health_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			redis_status = "⚠️ REDIS_URL not set"
 
 		window_days = 30
-		now = datetime.utcnow()
+		now = now_utc_naive()
 		window_start = now - timedelta(days=window_days)
 
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
@@ -3302,7 +3303,7 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				select(User).where(User.telegram_user_id == user_id)
 			)).scalar_one_or_none()
 
-			cutoff = datetime.utcnow() - timedelta(days=30)
+			cutoff = now_utc_naive() - timedelta(days=30)
 			db_user_id = user_row.id if user_row else None
 
 			# Signals received in last 30d
@@ -4725,7 +4726,7 @@ async def vip_waitlist_join_callback(update: Update, context: ContextTypes.DEFAU
 					)).scalar_one_or_none()
 					if exists is None:
 						from datetime import datetime as _dt
-						session.add(VIPWaitlist(user_id=u.id, joined_at=_dt.utcnow()))
+						session.add(VIPWaitlist(user_id=u.id, joined_at=now_utc_naive()))
 						await session.commit()
 						await query.edit_message_text(
 							"✅ You've been added to the VIP waitlist!\n\n"
@@ -4825,7 +4826,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 			await update.message.reply_text("Database not available.")
 			return
 
-		now = _dt_adm.utcnow()
+		now = now_utc_naive()
 		today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 		async with _gs_adm() as session:
@@ -5632,7 +5633,7 @@ async def performance_command(update, context):
 				try:
 					from sqlalchemy import select, func
 					from db.models import SignalDelivery, User
-					cutoff: datetime = datetime.utcnow() - timedelta(days=30)
+					cutoff: datetime = now_utc_naive() - timedelta(days=30)
 					
 					async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 						res_u = await session.execute(select(User).where(User.telegram_user_id == int(user_id)))
@@ -5721,7 +5722,7 @@ async def quality_command(update, context) -> None:
 		from sqlalchemy import text
 		from db.session import get_session
 
-		cutoff = datetime.utcnow() - timedelta(hours=24)
+		cutoff = now_utc_naive() - timedelta(hours=24)
 		rows = []
 		async with get_session(priority="interactive", label="signalrank_telegram_commands") as session:
 			res = await session.execute(
@@ -6684,7 +6685,7 @@ async def liveprice_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 			price_str = f"${current_price:,.2f}"
 			asset_type = "Stock / Other"
 
-		timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+		timestamp = now_utc_naive().strftime("%Y-%m-%d %H:%M:%S UTC")
 		msg = (
 			f"💰 <b>Live Price</b>\n\n"
 			f"Asset: <b>{asset}</b>\n"
@@ -6728,7 +6729,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 				return
 
 			# Get signals delivered to this user (active = not archived, last 72 h)
-			cutoff = datetime.utcnow() - timedelta(hours=72)
+			cutoff = now_utc_naive() - timedelta(hours=72)
 			stmt = (
 				select(Signal, Outcome)
 				.join(SignalDelivery, Signal.signal_id == SignalDelivery.signal_id)
@@ -6872,7 +6873,7 @@ async def market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 		price_map: dict[str, float | None] = dict(price_results)
 
 		from datetime import datetime
-		timestamp = datetime.utcnow().strftime("%H:%M UTC")
+		timestamp = now_utc_naive().strftime("%H:%M UTC")
 
 		lines = [f"🌐 <b>Market Overview</b> — {timestamp}\n"]
 		for symbol, name, icon in major_assets:
@@ -7235,7 +7236,7 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 			if disable:
 				if row is not None:
 					row.is_active = False
-					row.updated_at = datetime.utcnow()
+					row.updated_at = now_utc_naive()
 					await session.commit()
 				await update.message.reply_text("✅ VIP execution webhook disabled.")
 				return
@@ -7245,13 +7246,13 @@ async def setwebhook_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 						user_id=int(user.id),
 						webhook_url=raw,
 						is_active=True,
-						updated_at=datetime.utcnow(),
+						updated_at=now_utc_naive(),
 					)
 				)
 			else:
 				row.webhook_url = raw
 				row.is_active = True
-				row.updated_at = datetime.utcnow()
+				row.updated_at = now_utc_naive()
 			await session.commit()
 		await update.message.reply_text("✅ VIP execution webhook saved.")
 	except Exception as exc:

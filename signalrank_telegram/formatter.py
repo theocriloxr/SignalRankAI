@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 from engine.tier_notifications import TierNotificationManager
 from datetime import datetime, timezone
 import os
@@ -117,7 +118,7 @@ def _format_expiration(expires_at) -> str:
 		# Handle datetime objects directly (most common case from engine)
 		if isinstance(expires_at, datetime):
 			if expires_at.tzinfo is None:
-				now = datetime.utcnow()
+				now = now_utc_naive()
 			else:
 				now = datetime.now(timezone.utc)
 			diff = (expires_at - now).total_seconds()

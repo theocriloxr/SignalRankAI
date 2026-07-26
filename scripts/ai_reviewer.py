@@ -11,6 +11,7 @@ from sqlalchemy import text
 from db.session import get_session, is_db_configured
 from services.codex_governance import run_codex_governance_review
 from services.gemini_ml import run_gemini_review_pipeline
+from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ async def _fetch_completed_trades(limit: int = 200) -> List[Dict[str, Any]]:
                     LIMIT :lim
                     """
                 ),
-                {"since": datetime.utcnow() - timedelta(days=14), "lim": int(limit)},
+                {"since": now_utc_naive() - timedelta(days=14), "lim": int(limit)},
             )
         ).mappings().all()
         await session.commit()
@@ -68,7 +69,7 @@ async def run_ai_review_audit() -> Dict[str, Any]:
     base = await run_gemini_review_pipeline(trigger="ai_reviewer", scope="weekly")
     codex = await run_codex_governance_review(trigger="ai_reviewer", scope="weekly")
     result = {
-        "ran_at": datetime.utcnow().isoformat(),
+        "ran_at": now_utc_naive().isoformat(),
         "trades_sampled": len(trades),
         "log_events_sampled": len(logs),
         "gemini_ok": bool(base.get("ok")),

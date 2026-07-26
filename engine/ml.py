@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import gc
 import os
@@ -528,10 +529,10 @@ async def update_strategy_weight(strategy_name: str, perf: Optional[Dict[str, An
     cache_key = name.lower()
     _STRATEGY_WEIGHT_CACHE.setdefault("weights", {})[cache_key] = {
         "weight": float(weight),
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": now_utc_naive().isoformat(),
         "name": name,
     }
-    _STRATEGY_WEIGHT_CACHE["updated_at"] = datetime.utcnow().isoformat()
+    _STRATEGY_WEIGHT_CACHE["updated_at"] = now_utc_naive().isoformat()
 
     try:
         from core.redis_state import state
@@ -539,7 +540,7 @@ async def update_strategy_weight(strategy_name: str, perf: Optional[Dict[str, An
             "strategy_name": name,
             "weight": float(weight),
             "perf": dict(perf or {}),
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": now_utc_naive().isoformat(),
         }
         state.set_sync(_strategy_weight_key(name), json.dumps(payload), ex=7 * 24 * 3600)
     except Exception:

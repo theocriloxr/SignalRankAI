@@ -9,6 +9,7 @@ Waterfall order:
 
 Supports: Polygon.io, Twelve Data, Yahoo Finance, OANDA, TradingView.
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import asyncio
@@ -473,7 +474,7 @@ def fetch_polygon_candles(symbol: str, timeframe: str, asset_type: str = "stocks
             symbol = f"X:BTC{symbol.replace('USDT', 'USD')}"  # X:BTCUSD format
     
     # Date range: last 200 periods
-    end_date = datetime.utcnow()
+    end_date = now_utc_naive()
     start_date = end_date - timedelta(days=200 if timespan == "day" else 30)
     
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_date.strftime('%Y-%m-%d')}/{end_date.strftime('%Y-%m-%d')}"

@@ -64,12 +64,28 @@ _PROVIDER_KEYS: dict[str, tuple[str, ...]] = {
     "fmp_connector": ("FMP_API_KEY",),
     "alphavantage_connector": ("ALPHAVANTAGE_API_KEY", "ALPHA_VANTAGE_API_KEY"),
     "oanda_connector": ("OANDA_API_KEY", "OANDA_TOKEN"),
+    "eodhd_connector": ("EODHD_API_KEY", "EODHD_API_TOKEN"),
+    "marketstack_connector": ("MARKETSTACK_API_KEY",),
+    "finnhub_connector": ("FINNHUB_API_KEY",),
+    "alpaca_connector": ("ALPACA_API_KEY", "APCA_API_KEY_ID"),
+    "tradier_connector": ("TRADIER_TOKEN",),
+    "nasdaq_data_link_connector": ("NASDAQ_DATA_LINK_API_KEY",),
 }
 
 def _provider_configured(name: str) -> bool:
-    required = _PROVIDER_KEYS.get(str(name or "").lower())
+    canonical = str(name or "").lower()
+    required = _PROVIDER_KEYS.get(canonical)
     if not required:
         return True
+    if canonical == "alpaca_connector":
+        has_key = any(str(os.getenv(key) or "").strip() for key in ("ALPACA_API_KEY", "APCA_API_KEY_ID"))
+        has_secret = any(str(os.getenv(key) or "").strip() for key in ("ALPACA_API_SECRET", "APCA_API_SECRET_KEY"))
+        return has_key and has_secret
+    if canonical == "nasdaq_data_link_connector":
+        return bool(
+            str(os.getenv("NASDAQ_DATA_LINK_API_KEY") or "").strip()
+            and str(os.getenv("NASDAQ_DATA_LINK_DATASETS_JSON") or "").strip()
+        )
     return any(str(os.getenv(key) or "").strip() for key in required)
 
 def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str, Callable]]:
@@ -99,6 +115,16 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
     if binance_enabled:
         crypto.append(("binance_connector", getattr(c, "binance_get_candles", None)))
 
+    if kind in {"crypto_perpetual", "crypto_futures", "crypto_options", "derivative", "future", "option"}:
+        derivative_providers: List[Tuple[str, Callable]] = [
+            ("deribit_connector", getattr(c, "deribit_get_candles", None)),
+            ("bybit_connector", getattr(c, "bybit_get_candles", None)),
+            ("okx_connector", getattr(c, "okx_get_candles", None)),
+        ]
+        if binance_enabled and kind != "crypto_options":
+            derivative_providers.append(("binance_connector", getattr(c, "binance_get_candles", None)))
+        return derivative_providers
+
     if kind == "crypto":
         configured = [
             item.strip().lower().replace("_connector", "")
@@ -117,6 +143,7 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
     if kind in ("fx", "forex"):
         return [
             ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+            ("finnhub_connector", getattr(c, "finnhub_get_candles", None)),
             ("oanda_connector", getattr(c, "oanda_get_candles", None)),
             ("fmp_connector", getattr(c, "fmp_get_candles", None)),
             ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
@@ -143,9 +170,12 @@ def _provider_order(kind: str, c, *, async_mode: bool = False) -> List[Tuple[str
         ]
     return [
         ("twelvedata_connector", getattr(c, "twelvedata_get_candles", None)),
+        ("polygon_connector", getattr(c, "polygon_get_candles", None)),
+        ("alpaca_connector", getattr(c, "alpaca_get_candles", None)),
+        ("finnhub_connector", getattr(c, "finnhub_get_candles", None)),
+        ("tradier_connector", getattr(c, "tradier_get_candles", None)),
         ("fmp_connector", getattr(c, "fmp_get_candles", None)),
         ("tiingo_connector", getattr(c, "tiingo_get_candles", None)),
-        ("polygon_connector", getattr(c, "polygon_get_candles", None)),
         ("alphavantage_connector", getattr(c, "alphavantage_get_candles", None)),
         ("yfinance_connector", getattr(c, "yfinance_get_candles", None)),
     ]

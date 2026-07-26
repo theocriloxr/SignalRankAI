@@ -20,6 +20,7 @@ Usage:
     # Acquire lock (blocking with timeout)
     acquired = await lock.acquire("SOLUSDT", "BUY", "4h")
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import os
@@ -249,7 +250,7 @@ async def active_signal_exists_for_asset(asset: str, direction: str, timeframe: 
         from db.session import get_session
         from db.models import Signal
         
-        cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+        cutoff = now_utc_naive() - timedelta(hours=lookback_hours)
         
         import os
         from sqlalchemy import or_, exists as sa_exists
@@ -262,7 +263,7 @@ async def active_signal_exists_for_asset(asset: str, direction: str, timeframe: 
             Signal.created_at >= cutoff,
         ]
         if str(os.getenv("ACTIVE_SIGNAL_COOLDOWN_IGNORE_EXPIRED_BY_TIME", "1")).strip().lower() in {"1", "true", "yes", "on"}:
-            filters.append(or_(Signal.expires_at.is_(None), Signal.expires_at >= datetime.utcnow()))
+            filters.append(or_(Signal.expires_at.is_(None), Signal.expires_at >= now_utc_naive()))
         if str(os.getenv("ASSET_REPEAT_LOCK_REQUIRE_DELIVERED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
             from db.models import SignalDelivery
             filters.append(sa_exists().where(

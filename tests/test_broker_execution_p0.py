@@ -275,6 +275,16 @@ async def _prime_guarded_router(monkeypatch, router) -> AsyncMock:
         "_calculate_position_size",
         AsyncMock(return_value=0.2),
     )
+    monkeypatch.setattr(
+        router,
+        "_reserve_user_execution_quota",
+        AsyncMock(return_value=(True, "", 77)),
+    )
+    monkeypatch.setattr(
+        router,
+        "_release_user_execution_quota",
+        AsyncMock(return_value=None),
+    )
     monkeypatch.setattr(router, "_resource_pressure_clear", lambda: True)
     monkeypatch.setattr(
         client,

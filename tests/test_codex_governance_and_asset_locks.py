@@ -30,7 +30,7 @@ def test_local_codex_recommendations_flag_duplicate_and_weak_win_rate():
     assert "scored exactly 100" in findings
     assert "Outcome table has" in findings
     assert "No partial TP progress rows" in findings
-    assert "ASSET_REPEAT_LOCK_HOURS=12" in env_tweaks
+    assert "ASSET_REPEAT_LOCK_HOURS=4" in env_tweaks
     assert "SCORE_DISPLAY_MAX=99.5" in env_tweaks
     assert "segment-level quarantine" in code_changes
 
@@ -63,7 +63,7 @@ async def test_codex_audit_command_uses_local_governance_review():
         "review": {
             "assessment": "Local assessment.",
             "highest_risk_findings": ["duplicate issue"],
-            "recommended_env_tweaks": ["ASSET_REPEAT_LOCK_HOURS=12"],
+            "recommended_env_tweaks": ["ASSET_REPEAT_LOCK_HOURS=4"],
             "recommended_code_changes": ["keep central delivery guard"],
         },
     }
@@ -87,10 +87,10 @@ def test_asset_lock_and_quarantine_wiring_present():
 
     assert "get_user_asset_position_state" in pg_features
     assert "get_user_asset_position_state" in bot
-    assert "SignalDelivery.sent_ok.is_(False)" in pg_features
-    assert "SignalDelivery.last_error.is_(None)" in pg_features
+    assert "SignalDelivery.sent_ok.is_(True)" in pg_features
+    assert "SignalDelivery.sent_ok.is_(False)" not in pg_features.split("async def record_signal_delivery", 1)[1].split("async def", 1)[0]
     assert "safety query failed; blocking delivery" in pg_features
-    assert "SignalDelivery.sent_ok.is_(False)" in bot
+    assert "filters.append(SignalDelivery.sent_ok.is_(True))" in bot
     assert "_cycle_asset_cooldown" in engine
     assert "skipped_db_asset_cooldown" in engine
     assert "SEGMENT_QUARANTINE_ENABLED" in engine

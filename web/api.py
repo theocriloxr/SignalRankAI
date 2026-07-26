@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
@@ -24,6 +24,7 @@ from db.repository import (
     revoke_api_token,
 )
 from db.session import get_session, is_db_configured
+from utils.timeutils import now_utc_naive
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -143,7 +144,7 @@ async def rotate_api_token(
     owner_id: int = Depends(get_user_by_apikey),
 ):
     raw = generate_api_key()
-    expires = datetime.utcnow() + timedelta(days=payload.ttl_days)
+    expires = now_utc_naive() + timedelta(days=payload.ttl_days)
     try:
         async with get_session() as session:
             # Revoke all access represented by the current credential only when

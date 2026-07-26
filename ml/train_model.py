@@ -3,6 +3,7 @@
 Train XGBoost model from existing signal history.
 Loads signals + outcomes from Postgres, builds feature matrix, trains model.
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import hashlib
@@ -102,7 +103,7 @@ def _generate_offline_bootstrap_data(num_samples: int = 1200) -> pd.DataFrame:
     """
     seed = int(os.getenv("ML_OFFLINE_BOOTSTRAP_SEED", "42") or 42)
     rng = np.random.default_rng(seed)
-    now = datetime.utcnow()
+    now = now_utc_naive()
 
     assets = ["BTCUSDT", "ETHUSDT", "EURUSD", "GBPUSD", "XAUUSD", "AAPL", "SPY", "US30"]
     timeframes = ["15m", "1h", "4h", "1d"]
@@ -333,7 +334,7 @@ async def load_training_data(lookback_days: int = 90):
         async with get_session(priority="background", label="ml_training_live_outcomes_read") as session:
             # Get signals delivered in the requested lookback window with outcomes
             cutoff_days = max(1, int(lookback_days or 90))
-            cutoff = datetime.utcnow() - timedelta(days=cutoff_days)
+            cutoff = now_utc_naive() - timedelta(days=cutoff_days)
 
             delivered_proof = exists().where(
                 SignalDelivery.signal_id == Signal.signal_id,
@@ -381,7 +382,7 @@ async def load_training_data(lookback_days: int = 90):
                 meta = {}
             macro = dict(meta.get('macro') or {})
 
-            created_at = getattr(sig, 'created_at', None) or datetime.utcnow()
+            created_at = getattr(sig, 'created_at', None) or now_utc_naive()
             candles = await _load_candles(
                 str(getattr(sig, 'asset', '') or ''),
                 str(getattr(sig, 'timeframe', '') or ''),
@@ -650,7 +651,7 @@ async def load_training_data(lookback_days: int = 90):
                     'false_breakout': int(false_breakout),
                     'barrier_type': barrier,
                     'sample_weight': float(sample_weight),
-                    'created_at': getattr(a, 'signal_created_at', None) or datetime.utcnow(),
+                    'created_at': getattr(a, 'signal_created_at', None) or now_utc_naive(),
                     'target': target,
                 })
         except Exception as _archive_err:
@@ -751,7 +752,7 @@ async def load_training_data(lookback_days: int = 90):
                         "false_breakout": int(false_breakout),
                         "barrier_type": barrier,
                         "sample_weight": float(sample_weight),
-                        "created_at": getattr(rj, "created_at", None) or datetime.utcnow(),
+                        "created_at": getattr(rj, "created_at", None) or now_utc_naive(),
                         "target": target,
                     }
                 )
@@ -864,7 +865,7 @@ def train_model(X_train, y_train, feature_cols, sample_weights=None, timestamps=
     idx = np.arange(n)
     if timestamps is not None:
         ts = pd.to_datetime(timestamps, errors='coerce')
-        ts_filled = ts.fillna(pd.Timestamp(datetime.utcnow()))
+        ts_filled = ts.fillna(pd.Timestamp(now_utc_naive()))
         idx = np.argsort(ts_filled.values)
 
     split = max(1, int(n * 0.8))
@@ -968,7 +969,7 @@ def save_model(model, feature_cols, calibration_x=None, calibration_y=None, trai
         "version": os.getenv("ML_MODEL_VERSION", "1.0.0"),
         "feature_cols": feature_cols,
         "model_bytes_b64": base64.b64encode(model_bytes).decode('utf-8'),
-        "trained_at": datetime.utcnow().isoformat(),
+        "trained_at": now_utc_naive().isoformat(),
         "xgboost_version": getattr(xgb, "__version__", ""),
         "artifact_hash_sha256": artifact_hash_sha256,
         "calibration_kind": "isotonic" if calibration_x and calibration_y else "none",

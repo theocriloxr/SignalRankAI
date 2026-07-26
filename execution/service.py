@@ -104,10 +104,12 @@ class ExecutionGate:
     def preflight(self, request: ExecutionRequest) -> GateDecision:
         reasons: list[str] = []
         mode = str(request.mode or "signals_only").strip().lower()
-        if mode not in {"auto", "copy_trade", "live"}:
+        if mode not in {"manual_confirmed", "auto", "copy_trade", "live"}:
             reasons.append("execution_mode_not_live")
-        # ``live`` is an explicit compatibility alias for auto execution; it
-        # must never bypass the same global default-off switch.
+        # ``manual_confirmed`` represents one authenticated button press and
+        # therefore does not depend on AUTO_TRADE_ENABLED. Demo execution still
+        # depends on DEMO_EXECUTION_ENABLED and a real account still requires
+        # REAL_EXECUTION_ENABLED. ``live`` is a compatibility alias for auto.
         if mode in {"auto", "live"} and not self.safety_flags.auto_trade_enabled:
             reasons.append("AUTO_TRADE_DISABLED")
         if mode == "copy_trade" and not self.safety_flags.copy_trade_enabled:

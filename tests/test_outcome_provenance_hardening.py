@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from engine.outcome_eligibility import (
@@ -52,7 +53,7 @@ def test_non_live_categories_never_enter_live_metrics():
 
 
 def test_tracker_queries_proof_backed_deliveries_only():
-    source = open("engine/realtime_outcome_tracker.py", encoding="utf-8").read()
+    source = Path("engine/realtime_outcome_tracker.py").read_text(encoding="utf-8")
     assert "SignalDelivery.telegram_message_id.is_not(None)" in source
     assert "SignalDelivery.delivery_confirmed_at.is_not(None)" in source
     assert '"LIVE_DELIVERED"' in source

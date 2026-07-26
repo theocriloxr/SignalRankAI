@@ -85,8 +85,10 @@ def check_user_asset_cooldown(user_id: int, asset: str, direction: str) -> bool:
     try:
         from core.redis_state import state
 
-        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
-        return bool(state.get_sync(key))
+        from services.asset_repeat_policy import canonical_delivery_cooldown_key, legacy_delivery_cooldown_keys
+
+        keys = (canonical_delivery_cooldown_key(user_id, asset), *legacy_delivery_cooldown_keys(user_id, asset, direction))
+        return any(bool(state.get_sync(key)) for key in keys)
     except Exception:
         return False
 
@@ -96,15 +98,13 @@ def set_user_asset_cooldown(user_id: int, asset: str, direction: str, tier: str)
     try:
         from core.redis_state import state
 
-        tier_l = str(tier or "free").lower()
-        if tier_l in {"vip", "owner", "admin"}:
-            hours = int(os.getenv("VIP_ASSET_COOLDOWN_HOURS", "4") or 4)
-        elif tier_l == "premium":
-            hours = int(os.getenv("PREMIUM_ASSET_COOLDOWN_HOURS", "8") or 8)
-        else:
-            hours = int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12)
-        key = f"delivery_cool:{int(user_id)}:{asset.upper()}:{direction.upper()}"
-        state.set_sync(key, "1", ex=hours * 3600)
+        from services.asset_repeat_policy import canonical_delivery_cooldown_key, get_asset_repeat_lock_hours
+
+        hours = get_asset_repeat_lock_hours(tier)
+        if hours <= 0:
+            return
+        key = canonical_delivery_cooldown_key(user_id, asset)
+        state.set_sync(key, "1", ex=max(1, int(hours * 3600)))
     except Exception as exc:
         logger.debug("[dedup] set_user_asset_cooldown failed: %s", exc)
 

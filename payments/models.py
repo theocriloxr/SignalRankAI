@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 from datetime import datetime
 
 class Subscription:
@@ -7,7 +8,7 @@ class Subscription:
         self.expires_at = expires_at
 
     def is_active(self):
-        return datetime.utcnow() < self.expires_at
+        return now_utc_naive() < self.expires_at
 
 # --- Region-Optimized Weekly Plan ---
 WEEKLY_PLAN = {

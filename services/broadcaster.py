@@ -10,6 +10,7 @@ Features:
 - Dead Letter Queue for persistent failures
 - VIP priority queue for instant delivery
 """
+from utils.timeutils import now_utc_naive
 
 import asyncio
 import os
@@ -352,7 +353,7 @@ class BroadcasterService:
                         "signal": signal,
                         "user_id": user_id,
                         "error": error,
-                        "failed_at": datetime.utcnow().isoformat(),
+                        "failed_at": now_utc_naive().isoformat(),
                     }
                 )
                 session.add(state)

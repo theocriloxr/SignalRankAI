@@ -542,7 +542,7 @@ def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
         import uuid as _uuid
         command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
-        err_ref = f"ERR-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
+        err_ref = f"ERR-{now_utc_naive().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
         command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
         # IMPORTANT: Skip pre-audit for /start.
         # The audit writer creates the user row (via record_bot_event -> get_or_create_user).
@@ -651,6 +651,7 @@ from telegram.ext import Application, CommandHandler
 from datetime import datetime, timedelta
 
 from core.performance import performance_tracker
+from utils.timeutils import now_utc_naive
 from db.pg_compat import get_all_user_ids_compat
 from signalrank_telegram.access import resolve_user_tier
 from .formatter import format_signal
@@ -1364,18 +1365,18 @@ async def _is_asset_delivery_locked(
             except Exception:
                 pass
 
-        hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "12") or 12))
-        # Let Railway env shorten the lock during verification. 12h remains the
-        # recommended production value, but do not force it here.
+        hours = int(lock_hours if lock_hours is not None else int(os.getenv("ASSET_REPEAT_LOCK_HOURS", "4") or 4))
+        # Let Railway env shorten the lock during verification. 4h is the canonical proof-backed
+        # product default, but do not force it here.
         hours = max(0, hours)
         if hours <= 0:
             return False
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = now_utc_naive() - timedelta(hours=hours)
 
         require_sent_ok = _env_true("DELIVERY_ASSET_LOCK_REQUIRE_SENT_OK", "1")
         ignore_unsent = _env_true("DELIVERY_ASSET_LOCK_IGNORE_UNSENT", "1")
         stale_minutes = int(os.getenv("DELIVERY_ASSET_LOCK_IGNORE_STALE_MINUTES", "180") or 180)
-        stale_cutoff = datetime.utcnow() - timedelta(minutes=max(1, stale_minutes))
+        stale_cutoff = now_utc_naive() - timedelta(minutes=max(1, stale_minutes))
         current_signal_id = str(current_signal_id or "").strip() or None
 
         async with get_session() as session:
@@ -1415,29 +1416,10 @@ async def _is_asset_delivery_locked(
             ]
             if current_signal_id:
                 filters.append(Signal.signal_id != current_signal_id)
-            if require_sent_ok:
-                filters.append(SignalDelivery.sent_ok.is_(True))
-            elif ignore_unsent:
-                filters.append(
-                    or_(
-                        SignalDelivery.sent_ok.is_(True),
-                        and_(
-                            SignalDelivery.sent_ok.is_(False),
-                            SignalDelivery.last_error.isnot(None),
-                        ),
-                    )
-                )
-            else:
-                filters.append(
-                    or_(
-                        SignalDelivery.sent_ok.is_(True),
-                        and_(
-                            SignalDelivery.sent_ok.is_(False),
-                            SignalDelivery.last_error.is_(None),
-                            SignalDelivery.delivered_at >= stale_cutoff,
-                        ),
-                    )
-                )
+            # The product repeat lock is proof-backed.  Reserved, uncertain and
+            # failed rows are reconciled by the in-flight delivery state machine
+            # and must not consume the user's same-asset cooldown.
+            filters.append(SignalDelivery.sent_ok.is_(True))
 
             locked_count = (
                 await session.execute(
@@ -2263,326 +2245,68 @@ async def _mark_delivery_with_telegram_proof(
         return False
 
 
-def _record_mt5_execution_sync(
+
+def _auto_execute_signal_if_enabled(
     telegram_user_id: int,
     signal: dict,
-    *,
-    account_id: str,
-    order_id: str | None,
-    lot_size: float,
-    entry_price: float,
-    stop_loss: float,
-    take_profit: float,
-    tier_at_execution: str,
-    status: str = "open",
-    extra_meta: dict | None = None,
+    routing_tier: str,
 ) -> None:
-    """Best-effort persistence for broker executions used by risk controls/jobs."""
+    """Route AUTO users through the canonical fail-closed execution service."""
     try:
-        from db.session import get_session
-        from db.models import MT5Execution, User
-        from sqlalchemy import select
-        import json
-        from datetime import datetime, timezone
-
-        sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip() or None
-        symbol = str(signal.get("asset") or signal.get("symbol") or "").upper().strip()
-        direction = str(signal.get("direction") or "long").lower().strip()
-        if direction in {"buy"}:
-            direction = "long"
-        elif direction in {"sell"}:
-            direction = "short"
-
-        meta = {
-            "hard_stop_attached": True,
-            "source": "telegram_bot",
-            "telegram_user_id": int(telegram_user_id),
-        }
-        if isinstance(extra_meta, dict):
-            meta.update(extra_meta)
-
-        async def _write() -> None:
-            async with get_session() as session:
-                user = (
-                    await session.execute(
-                        select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-                    )
-                ).scalar_one_or_none()
-                if user is None:
-                    return
-
-                row = MT5Execution(
-                    user_id=int(user.id),
-                    signal_id=sig_id,
-                    metaapi_account_id=str(account_id),
-                    order_id=(str(order_id) if order_id else None),
-                    symbol=symbol,
-                    direction=("long" if direction == "long" else "short"),
-                    lot_size=float(lot_size),
-                    entry_price=float(entry_price),
-                    stop_loss=float(stop_loss),
-                    take_profit=json.dumps([float(take_profit)]),
-                    status=str(status or "open")[:16],
-                    tier_at_execution=str(tier_at_execution or "premium").upper(),
-                    executed_at=datetime.now(timezone.utc),
-                    meta=meta,
-                )
-                session.add(row)
-                await session.commit()
-
-        run_sync(_write())
-    except Exception as exc:
-        logger.debug(f"[mt5_exec] persist failed user={telegram_user_id}: {exc}")
-
-
-def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing_tier: str) -> None:
-    """Best-effort AUTO execution path for users in execution_mode=auto.
-
-    - no-op for mode!=auto
-    - dedupes per user/signal
-    - respects PREMIUM daily limit
-    - sends success/failure DM
-    """
-    try:
-        def _drawdown_guard_block_reason(user, realized_pnl_pct_today: float) -> str | None:
-            try:
-                cap = float(getattr(user, "max_daily_drawdown_pct", 8.0) or 8.0)
-                if cap <= 0:
-                    return None
-                if float(realized_pnl_pct_today) <= -abs(cap):
-                    return (
-                        f"Daily drawdown guard hit ({realized_pnl_pct_today:.2f}% <= -{abs(cap):.2f}%). "
-                        "Auto-trading paused for today."
-                    )
-            except Exception:
-                return None
-            return None
-
         sig_id = str(signal.get("signal_id") or signal.get("id") or "").strip()
-        if not sig_id:
+        tier = str(routing_tier or "").lower()
+        if not sig_id or tier not in {"premium", "vip"}:
             return
-
-        # AUTO mode is paid-only and intended for premium/vip routing.
-        rt = str(routing_tier or "").lower()
-        if rt not in {"premium", "vip"}:
-            return
-
-        auto_key = f"autoexec:{int(telegram_user_id)}:{sig_id}"
-        try:
-            if state.get_sync(auto_key):
-                return
-        except Exception:
-            pass
-
-        from db.session import get_session
-        from db.models import User, MT5Execution
-        from sqlalchemy import select, func, text
-        from services.mt5_client import get_user_mt5_account_id, validate_slippage, execute_trade
 
         async def _run_auto():
-            async with get_session() as session:
-                user = (
-                    await session.execute(
-                        select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
-                    )
-                ).scalar_one_or_none()
-                if user is None:
-                    return (False, "User profile missing")
+            from services.mt5_signal_router import route_signal_to_mt5
 
-                mode = str(getattr(user, "execution_mode", "manual") or "manual").lower()
-                if mode != "auto":
-                    return (False, "Execution mode is not AUTO", "not_auto")
+            return await route_signal_to_mt5(
+                dict(signal or {}),
+                int(telegram_user_id),
+                execution_mode="auto",
+            )
 
-                # Explicit user opt-in guard: AUTO must be intentionally selected
-                # via /execution auto on current deployments.
-                optin_key = f"autoexec_user_optin:{int(telegram_user_id)}"
-                optin = await session.execute(
-                    text("SELECT value FROM runtime_state WHERE key = :k LIMIT 1"),
-                    {"k": optin_key},
-                )
-                if optin.scalar_one_or_none() is None:
-                    return (
-                        False,
-                        "AUTO not armed. Use /execution auto [count|all] to enable.",
-                        "setup_missing",
-                    )
-
-                # Daily drawdown guard based on realized PnL%.
-                from datetime import datetime, timezone
-                now = datetime.now(timezone.utc)
-                day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-                pnl_row = await session.execute(
-                    select(func.coalesce(func.sum(MT5Execution.realized_pnl_pct), 0.0)).where(
-                        MT5Execution.user_id.in_([int(getattr(user, "id", 0) or 0), int(telegram_user_id)]),
-                        MT5Execution.executed_at >= day_start,
-                    )
-                )
-                pnl_today = float(pnl_row.scalar_one_or_none() or 0.0)
-                blocked_reason = _drawdown_guard_block_reason(user, pnl_today)
-                if blocked_reason:
-                    await session.commit()
-                    return (False, blocked_reason, "risk_guard")
-
-                entry = float(signal.get("entry") or 0)
-                sl = float(signal.get("stop_loss") or 0)
-                tp = float(_first_take_profit(signal) or 0)
-                symbol = str(signal.get("asset") or "").upper().strip()
-                direction = str(signal.get("direction") or "").lower().strip()
-
-                if not symbol or direction not in {"long", "short", "buy", "sell"}:
-                    return (False, "Invalid symbol/direction", "invalid_signal")
-                if not entry or not sl or not tp:
-                    return (False, "Signal missing entry/SL/TP", "invalid_signal")
-
-                acct_id = await get_user_mt5_account_id(int(telegram_user_id))
-                if not acct_id:
-                    return (False, "No linked MT5 account", "setup_missing")
-
-                # PREMIUM daily cap for AUTO mode.
-                tier_up = str(getattr(user, "tier", "FREE") or "FREE").upper()
-                if tier_up == "PREMIUM":
-                    limit = int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3") or 3)
-                    now = datetime.now(timezone.utc)
-                    reset_at = getattr(user, "daily_executions_reset_at", None)
-                    if reset_at is None or reset_at.date() < now.date():
-                        user.daily_executions_today = 0
-                        user.daily_executions_reset_at = now
-                    if int(getattr(user, "daily_executions_today", 0) or 0) >= int(limit):
-                        await session.commit()
-                        return (False, f"PREMIUM daily limit reached ({limit})", "limit")
-
-                # Optional per-user AUTO cap.
-                auto_cap = int(getattr(user, "auto_signals_daily_limit", -1) or 0)
-                if auto_cap == 0:
-                    await session.commit()
-                    return (False, "AUTO cap is 0", "setup_missing")
-
-                ok, slip, live_px = await validate_slippage(acct_id, symbol, entry)
-                if not ok:
-                    await session.commit()
-                    return (False, f"Slippage too high ({float(slip):.1f} pts)", "slippage")
-
-                # Determine lot size by tier:
-                # - VIP: risk-based sizing using account balance
-                # - PREMIUM: fixed lot size from user profile
-                if tier_up == "VIP":
-                    try:
-                        from engine.tiered_executor import calculate_lot_size_vip
-                        from services.mt5_client import _http_get, _client_base, _deploy_account
-                        # Fetch account balance from MetaApi
-                        await _deploy_account(acct_id)
-                        acct_info = await _http_get(f"{_client_base(acct_id)}/account-information")
-                        balance = float((acct_info or {}).get("balance") or 0)
-                        if balance <= 0:
-                            # Fall back to equity; use 100.0 as last-resort minimum so
-                            # calculate_lot_size_vip always returns MIN_LOT rather than
-                            # erroring \u2014 the slippage guard will catch oversized orders.
-                            balance = float((acct_info or {}).get("equity") or 100.0)
-                        lot = calculate_lot_size_vip(
-                            user,
-                            account_balance=balance,
-                            entry_price=entry,
-                            stop_loss=sl,
-                            symbol=symbol,
-                        )
-                    except Exception as _lot_err:
-                        logger.warning("[autoexec] VIP lot calc failed: %s \u2014 using fixed lot", _lot_err)
-                        lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
-                else:
-                    lot = float(getattr(user, "fixed_lot_size", 0.01) or 0.01)
-
-                # Send the signal notice before attempting AUTO execution.
-                try:
-                    await _send_message_with_retry(
-                        Bot(token=_require_telegram_token()),
-                        chat_id=int(telegram_user_id),
-                        text=(
-                            "\U0001F4E9 <b>Signal Received</b>\n\n"
-                            f"Asset: <b>{symbol}</b>\n"
-                            f"Direction: <b>{('LONG' if direction in {'long', 'buy'} else 'SHORT')}</b>\n"
-                            f"Lot size: <b>{lot:.3f}</b>\n"
-                            "Attempting AUTO execution now..."
-                        ),
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    pass
-
-                result = await execute_trade(
-                    account_id=acct_id,
-                    symbol=symbol,
-                    direction=("long" if direction in {"long", "buy"} else "short"),
-                    volume=lot,
-                    stop_loss=sl,
-                    take_profit=tp,
-                    signal_entry=entry,
-                )
-
-                if bool(result.get("success")) and tier_up == "PREMIUM":
-                    now = datetime.now(timezone.utc)
-                    user.daily_executions_today = int(getattr(user, "daily_executions_today", 0) or 0) + 1
-                    user.daily_executions_reset_at = now
-
-                if bool(result.get("success")):
-                    try:
-                        _record_mt5_execution_sync(
-                            int(telegram_user_id),
-                            dict(signal or {}),
-                            account_id=str(acct_id),
-                            order_id=str(result.get("order_id") or ""),
-                            lot_size=float(lot),
-                            entry_price=float(live_px or entry),
-                            stop_loss=float(sl),
-                            take_profit=float(tp),
-                            tier_at_execution=str(tier_up),
-                            status="open",
-                            extra_meta={
-                                "auto_execution": True,
-                                "hard_stop_attached": bool(result.get("hard_stop_attached", True)),
-                                "lot_method": "risk_based" if tier_up == "VIP" else "fixed",
-                            },
-                        )
-                    except Exception:
-                        pass
-
-                await session.commit()
-                return (
-                    bool(result.get("success")),
-                    str(result.get("order_id") or result.get("error") or "unknown"),
-                    ("success" if bool(result.get("success")) else "execute_failed"),
-                )
-
-            ok, detail, reason_code = run_sync(_run_auto())
-
-        try:
-            state.set_sync(auto_key, "1", ex=86400)
-        except Exception:
-            pass
-
+        routed = run_sync(_run_auto())
+        ok = bool(getattr(routed, "success", False))
+        detail = str(
+            getattr(routed, "order_id", None)
+            or getattr(routed, "error", None)
+            or getattr(routed, "message", None)
+            or "unknown"
+        )
         bot = Bot(token=_require_telegram_token())
         asset = str(signal.get("asset") or "")
         if ok:
-            # Send a clean execution receipt after successful AUTO placement.
             _send_message_with_retry_sync(
                 bot,
                 chat_id=int(telegram_user_id),
                 text=(
-                    "\U0001F9FE <b>Execution Receipt (AUTO)</b>\n\n"
+                    "🧾 <b>Execution Receipt (AUTO)</b>\n\n"
                     f"Asset: <b>{asset}</b>\n"
                     f"Order: <code>{detail}</code>\n"
                     f"Signal ID: <code>{sig_id}</code>"
                 ),
                 parse_mode="HTML",
             )
-        elif reason_code == "setup_missing":
-            # Only notify skips when user selected AUTO but setup is incomplete.
+            return
+
+        setup_tokens = {
+            "broker_account_not_ready",
+            "user_execution_not_enabled",
+            "user_consent_required",
+            "encrypted_credentials_required",
+            "auto_execution_limit_disabled",
+            "auto_trade_disabled",
+        }
+        if any(token in detail.lower() for token in setup_tokens):
             setup_key = f"autoexec:setup_missing:{int(telegram_user_id)}"
             should_warn = True
             try:
                 if state.get_sync(setup_key):
                     should_warn = False
                 else:
-                    state.set_sync(setup_key, "1", ex=21600)  # 6h cooldown
+                    state.set_sync(setup_key, "1", ex=21600)
             except Exception:
                 pass
             if should_warn:
@@ -2590,10 +2314,10 @@ def _auto_execute_signal_if_enabled(telegram_user_id: int, signal: dict, routing
                     bot,
                     chat_id=int(telegram_user_id),
                     text=(
-                        "\u26A0\uFE0F <b>AUTO execution needs setup</b>\n\n"
+                        "⚠️ <b>AUTO execution needs setup</b>\n\n"
                         f"Asset: <b>{asset}</b>\n"
                         f"Reason: {detail}\n\n"
-                        "Complete your setup and AUTO execution will resume."
+                        "Complete the missing setup and AUTO execution will resume."
                     ),
                     parse_mode="HTML",
                 )
@@ -2685,7 +2409,7 @@ async def _build_monitor_snapshot(signal_id: str) -> tuple[str, bool, object | N
         f"\u2022 Stop Loss: <b>{stop_loss:.5f}</b>" if stop_loss > 0 else "\u2022 Stop Loss: <b>N/A</b>",
         f"\u2022 Next Target: <b>{float(tp1):.5f}</b>" if tp1 else "\u2022 Next Target: <b>N/A</b>",
         f"\u2022 Age: <b>{age_text}</b>",
-        f"\u2022 Updated: <b>{datetime.utcnow().strftime('%H:%M UTC')}</b>",
+        f"\u2022 Updated: <b>{now_utc_naive().strftime('%H:%M UTC')}</b>",
     ]
     return "\n".join(lines), is_active, payload.get("expires_at")
 
@@ -3192,7 +2916,7 @@ def _audit_handler(command_name: str, handler):
     async def _inner(update, context):
         import uuid as _uuid
         command_timeout_s = float(os.getenv("COMMAND_HANDLER_TIMEOUT_SECONDS", "60") or 60)
-        err_ref = f"ERR-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
+        err_ref = f"ERR-{now_utc_naive().strftime('%Y%m%d-%H%M%S')}-{str(_uuid.uuid4())[:6]}"
         try:
             from signalrank_telegram.command_resilience import acknowledge_command
 
@@ -5821,7 +5545,7 @@ def run_bot() -> None:
                     "signal_id": str(signal_id),
                 }
                 state_row.expires_at = expires_at
-                state_row.updated_at = datetime.utcnow()
+                state_row.updated_at = now_utc_naive()
                 await session.commit()
 
             if not is_active:
@@ -5905,169 +5629,39 @@ def run_bot() -> None:
             return
 
         try:
-            from services.mt5_client import ensure_user_mt5_account_id, validate_slippage, execute_trade
-            from db.session import get_session as _gs_mt5
-            from db.models import User as _UserMT5
-            from sqlalchemy import select as _sel_mt5
-            from datetime import datetime, timezone
+            from services.mt5_signal_router import route_signal_to_mt5
 
-            # PREMIUM daily execution cap (default 3/day, configurable)
-            _premium_daily_limit = int(os.getenv("PREMIUM_DAILY_EXECUTIONS", "3"))
-            _user_row = None
-            _premium_count_today = 0
-            async with _gs_mt5() as _ucheck:
-                _user_row = (await _ucheck.execute(
-                    _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
-                )).scalar_one_or_none()
-            if _user_row is None:
-                await query.edit_message_text("\u274C User profile not found. Please send /start and try again.")
-                return
-
-            _exec_mode = str(getattr(_user_row, "execution_mode", "manual") or "manual").lower()
-            if _exec_mode == "none":
-                await query.edit_message_text(
-                    "\u26D4 Broker execution is disabled for your account (mode: NONE).\n"
-                    "Use /execution manual to re-enable one-click trading."
-                )
-                return
-
-            if _ut == "PREMIUM":
-                async with _gs_mt5() as _slim:
-                    _user_row = (await _slim.execute(
-                        _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
-                    )).scalar_one_or_none()
-                    if _user_row is None:
-                        await query.edit_message_text("\u274C User profile not found. Please send /start and try again.")
-                        return
-
-                    _now = datetime.now(timezone.utc)
-                    _reset_at = getattr(_user_row, "daily_executions_reset_at", None)
-                    if _reset_at is None or (_reset_at.date() < _now.date()):
-                        _user_row.daily_executions_today = 0
-                        _user_row.daily_executions_reset_at = _now
-                        await _slim.commit()
-
-                    _premium_count_today = int(getattr(_user_row, "daily_executions_today", 0) or 0)
-                    if _premium_count_today >= _premium_daily_limit:
-                        await query.edit_message_text(
-                            f"\u26A0\uFE0F PREMIUM daily auto-trade limit reached ({_premium_daily_limit}/{_premium_daily_limit}).\n"
-                            "It resets at 00:00 UTC, or upgrade to VIP for unlimited executions."
-                        )
-                        return
-
-            # Daily drawdown guard for paid execution.
-            try:
-                from db.models import MT5Execution as _MT5Exec
-                from sqlalchemy import func as _func
-                from datetime import datetime, timezone
-                async with _gs_mt5() as _sdd:
-                    _u_dd = (await _sdd.execute(
-                        _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
-                    )).scalar_one_or_none()
-                    if _u_dd is not None:
-                        _now_dd = datetime.now(timezone.utc)
-                        _day_start = _now_dd.replace(hour=0, minute=0, second=0, microsecond=0)
-                        _sum_row = await _sdd.execute(
-                            _sel_mt5(_func.coalesce(_func.sum(_MT5Exec.realized_pnl_pct), 0.0)).where(
-                                _MT5Exec.user_id.in_([int(getattr(_u_dd, "id", 0) or 0), int(user_id)]),
-                                _MT5Exec.executed_at >= _day_start,
-                            )
-                        )
-                        _pnl_today = float(_sum_row.scalar_one_or_none() or 0.0)
-                        _cap = float(getattr(_u_dd, "max_daily_drawdown_pct", 8.0) or 8.0)
-                        if _cap > 0 and _pnl_today <= -abs(_cap):
-                            await query.edit_message_text(
-                                "\u26D4 Daily drawdown guard is active.\n"
-                                f"Today: {_pnl_today:.2f}% (limit: -{abs(_cap):.2f}%).\n"
-                                "Execution paused for today."
-                            )
-                            return
-            except Exception:
-                pass
-
-            account_id = await ensure_user_mt5_account_id(user_id)
-            if not account_id:
-                await query.edit_message_text(
-                    "No executable MT5 bridge is ready.\n"
-                    "Credentials may be saved, but MetaApi has not returned an executable account ID yet.\n"
-                    "Run /mt5_status, then /mt5_link again if the bridge still shows NOT READY."
-                )
-                return
-            within_tol, slip, live_px = await validate_slippage(account_id, asset, entry)
-            if not within_tol:
-                await query.edit_message_text(
-                    f"\u26A0\uFE0F *Slippage Warning*\n\nSignal entry: `{entry}`\nLive price: `{live_px:.5f}`\nSlippage: `{slip:.1f}` pts\n\nToo far from entry \u2014 trade not executed.",
-                    parse_mode="MarkdownV2"
-                )
-                return
-            # Use user's configured lot size (/setlot) or default 0.01
-            _exec_vol = 0.01
-            try:
-                if _user_row is None:
-                    async with _gs_mt5() as _sm5:
-                        _user_row = (await _sm5.execute(
-                            _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
-                        )).scalar_one_or_none()
-                if _user_row and getattr(_user_row, 'fixed_lot_size', None):
-                    _exec_vol = float(_user_row.fixed_lot_size)
-            except Exception:
-                pass
-            result = await execute_trade(
-                account_id=account_id, symbol=asset, direction=direction,
-                volume=_exec_vol, stop_loss=sl, take_profit=tp, signal_entry=entry
+            routed = await route_signal_to_mt5(
+                {
+                    "signal_id": str(signal_id),
+                    "asset": str(asset),
+                    "direction": str(direction),
+                    "entry": float(entry),
+                    "stop_loss": float(sl),
+                    "take_profit": [float(tp)],
+                    "source": "telegram_manual_confirmed",
+                },
+                int(user_id),
+                execution_mode="manual_confirmed",
             )
-            if result.get("success"):
-                try:
-                    _record_mt5_execution_sync(
-                        int(user_id),
-                        {
-                            "signal_id": str(signal_id),
-                            "asset": str(asset),
-                            "direction": str(direction),
-                        },
-                        account_id=str(account_id),
-                        order_id=str(result.get("order_id") or ""),
-                        lot_size=float(_exec_vol),
-                        entry_price=float(result.get("live_price") or entry),
-                        stop_loss=float(sl),
-                        take_profit=float(tp),
-                        tier_at_execution=str(_ut),
-                        status="open",
-                        extra_meta={
-                            "auto_execution": False,
-                            "hard_stop_attached": bool(result.get("hard_stop_attached", True)),
-                        },
-                    )
-                except Exception:
-                    pass
-                _remaining_text = ""
-                if _ut == "PREMIUM":
-                    try:
-                        async with _gs_mt5() as _sinc:
-                            _u2 = (await _sinc.execute(
-                                _sel_mt5(_UserMT5).where(_UserMT5.telegram_user_id == user_id)
-                            )).scalar_one_or_none()
-                            if _u2 is not None:
-                                _now = datetime.now(timezone.utc)
-                                _u2.daily_executions_today = int(getattr(_u2, "daily_executions_today", 0) or 0) + 1
-                                _u2.daily_executions_reset_at = _now
-                                await _sinc.commit()
-                                _remaining = max(0, _premium_daily_limit - int(_u2.daily_executions_today or 0))
-                                _remaining_text = f"\n\U0001F4CA Remaining today: {_remaining}/{_premium_daily_limit}"
-                    except Exception:
-                        pass
-                oid = result.get("order_id", "")
-                lp = result.get("live_price") or entry
+            if routed.success:
+                oid = str(routed.order_id or "")
                 await query.edit_message_text(
-                    f"\u2705 *Trade Executed*\n\n\U0001F3E6 {asset} {direction.upper()}\n\U0001F4CD Entry: `{lp:.5f}`\nSL: `{sl}` | TP: `{tp}`\n\U0001F194 Order: `{oid}`{_remaining_text}",
-                    parse_mode="MarkdownV2"
+                    (
+                        "✅ <b>Trade Executed</b>\n\n"
+                        f"🏦 {asset} {direction.upper()}\n"
+                        f"📍 Requested entry: <code>{entry:.5f}</code>\n"
+                        f"SL: <code>{sl}</code> | TP: <code>{tp}</code>\n"
+                        f"🆔 Order: <code>{oid}</code>"
+                    ),
+                    parse_mode="HTML",
                 )
                 try:
                     await _send_message_with_retry(
                         context.bot,
                         chat_id=int(user_id),
                         text=(
-                            "\U0001F9FE <b>Execution Receipt (MANUAL)</b>\n\n"
+                            "🧾 <b>Execution Receipt (MANUAL)</b>\n\n"
                             f"Asset: <b>{asset}</b>\n"
                             f"Order: <code>{oid}</code>\n"
                             f"Signal ID: <code>{signal_id}</code>"
@@ -6077,9 +5671,18 @@ def run_bot() -> None:
                 except Exception:
                     pass
             else:
-                await query.edit_message_text(f"\u274C Trade failed: `{result.get('error', 'unknown')}`", parse_mode="MarkdownV2")
+                reason = str(routed.error or routed.message or "unknown")
+                await query.edit_message_text(
+                    f"❌ <b>Trade not executed</b>\n\n<code>{reason}</code>",
+                    parse_mode="HTML",
+                )
         except Exception as exc:
-            await query.edit_message_text(f"\u274C MT5 error: `{exc}`", parse_mode="MarkdownV2")
+            logger.exception("[mt5] manual confirmed execution failed")
+            await query.edit_message_text(
+                "❌ <b>MT5 execution error</b>\n\n"
+                f"<code>{type(exc).__name__}</code>",
+                parse_mode="HTML",
+            )
 
     application.add_handler(_CQH(_mt5_trade_callback, pattern=r"^mt5_trade_"))
 
@@ -7314,7 +6917,7 @@ def run_bot() -> None:
             if not candidates:
                 return
 
-            now = datetime.utcnow()
+            now = now_utc_naive()
 
             def _ms(dt):
                 try:
@@ -7779,7 +7382,7 @@ def run_bot() -> None:
             from datetime import datetime, timedelta
 
             async def _fetch_vip_pnl():
-                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                today_start = now_utc_naive().replace(hour=0, minute=0, second=0, microsecond=0)
                 async with _gs() as session:
                     rows = await session.execute(
                         select(
@@ -7846,7 +7449,7 @@ def run_bot() -> None:
             from datetime import datetime, timedelta
             import json
 
-            week_start = datetime.utcnow() - timedelta(days=7)
+            week_start = now_utc_naive() - timedelta(days=7)
 
             def _parse_tp_list(raw_tp) -> list[float]:
                 if raw_tp is None:
@@ -8101,7 +7704,7 @@ def run_bot() -> None:
             from datetime import datetime
 
             async def _expire():
-                now = datetime.utcnow()
+                now = now_utc_naive()
                 async with _gs() as session:
                     unresolved_tracked = (
                         select(Outcome.id)
@@ -8165,7 +7768,7 @@ def run_bot() -> None:
                             except Exception as exc:
                                 if "message is not modified" not in str(exc).lower():
                                     logger.debug(f"[monitor] refresh edit failed for {signal_id}: {exc}")
-                            row.updated_at = datetime.utcnow()
+                            row.updated_at = now_utc_naive()
                             row.expires_at = expires_at
                             if not is_active:
                                 await session.delete(row)
@@ -8213,7 +7816,7 @@ def run_bot() -> None:
                 from sqlalchemy import select
                 from datetime import datetime, timedelta
 
-                cutoff = datetime.utcnow() - timedelta(hours=4)
+                cutoff = now_utc_naive() - timedelta(hours=4)
                 async with get_session() as session:
                     rows = await session.execute(
                         select(Signal).where(
@@ -8469,7 +8072,7 @@ def run_bot() -> None:
             30,
             int(os.getenv("OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS", os.getenv("OUTCOME_NOTIFICATION_START_DELAY_SECONDS", "90")) or 90),
         )
-        _outcome_first_run = datetime.utcnow() + timedelta(seconds=_outcome_start_delay_seconds)
+        _outcome_first_run = now_utc_naive() + timedelta(seconds=_outcome_start_delay_seconds)
         _worker_outcome_owner = _env_bool("WORKER_OUTCOME_TRACKER_ENABLED", True)
         logger.info(
             "[background_job_ownership] job=realtime_outcomes owner=%s duplicate=false",
@@ -8605,7 +8208,7 @@ def run_bot() -> None:
                 id='data_integrity_backfill_job',
                 replace_existing=True,
                 max_instances=1,
-                next_run_time=datetime.utcnow(),
+                next_run_time=now_utc_naive(),
             )
             scheduler.add_job(
                 vip_scarcity_broadcast_job,
@@ -8718,7 +8321,7 @@ def run_bot() -> None:
             coalesce=True,
             misfire_grace_time=min(120, resend_interval_seconds),
             jobstore=_sa,
-            next_run_time=datetime.utcnow() + timedelta(seconds=resend_start_delay_seconds),
+            next_run_time=now_utc_naive() + timedelta(seconds=resend_start_delay_seconds),
         )
         if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
             free_start_delay_seconds = max(
@@ -8735,7 +8338,7 @@ def run_bot() -> None:
                 coalesce=True,
                 misfire_grace_time=120,
                 jobstore=_sa,
-                next_run_time=datetime.utcnow() + timedelta(seconds=free_start_delay_seconds),
+                next_run_time=now_utc_naive() + timedelta(seconds=free_start_delay_seconds),
             )
         else:
             logger.info("[sched] distribute_random_signals_to_free_users_job disabled by env")

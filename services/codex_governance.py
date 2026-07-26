@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import json
 import logging
@@ -161,7 +162,7 @@ async def collect_codex_governance_context(days: int = 30, limit: int = 12) -> d
     """Collect production evidence without sending data to any external service."""
     if not is_db_configured():
         return {"ok": False, "error": "database not configured"}
-    since = datetime.utcnow() - timedelta(days=max(1, int(days)))
+    since = now_utc_naive() - timedelta(days=max(1, int(days)))
     outcome_bucket = _win_bucket_expr()
     async with get_session() as session:
         summary = (
@@ -325,7 +326,7 @@ def build_local_codex_recommendations(context: dict[str, Any]) -> dict[str, Any]
 
     if same_asset_12h > 0:
         findings.append(f"{same_asset_12h} same-user/same-asset deliveries occurred inside 12h.")
-        env_tweaks.append("Set ASSET_REPEAT_LOCK_HOURS=12 and DELIVERY_SAME_ASSET_COOLDOWN_HOURS=12 or higher.")
+        env_tweaks.append("Set ASSET_REPEAT_LOCK_HOURS=4 and DELIVERY_SAME_ASSET_COOLDOWN_HOURS=4 unless the approved tier policy explicitly overrides it.")
         code_changes.append("Keep all delivery paths routed through record_signal_delivery and the same-asset unresolved exposure gate.")
     if reserved and reserved_not_confirmed / max(1, reserved) > 0.05:
         findings.append(f"{reserved_not_confirmed}/{reserved} delivery reservations were not confirmed sent_ok.")
@@ -395,7 +396,7 @@ async def run_codex_governance_review(trigger: str, scope: str = "weekly") -> di
         "ok": bool(context.get("ok")),
         "trigger": trigger,
         "scope": scope,
-        "finished_at": datetime.utcnow().isoformat(),
+        "finished_at": now_utc_naive().isoformat(),
         "context": context,
         "review": local_review,
         "external_codex_review": external_review,

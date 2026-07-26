@@ -21,3 +21,29 @@ def test_migration_failure_is_fail_closed_when_boot_migration_enabled():
 def test_procfile_web_matches_railway_monolith():
     source = Path("Procfile").read_text(encoding="utf-8")
     assert "web: uvicorn railway_main:app" in source
+
+
+def test_start_script_is_fail_fast_and_single_worker():
+    source = Path("start.sh").read_text(encoding="utf-8")
+    assert "set -euo pipefail" in source
+    assert "--workers 1" in source
+    assert "exec uvicorn railway_main:app" in source
+
+
+def test_railway_healthcheck_timeout_allows_cold_start():
+    import json
+
+    config = json.loads(Path("railway.json").read_text(encoding="utf-8"))
+    assert config["deploy"]["healthcheckPath"] == "/healthz"
+    assert config["deploy"]["healthcheckTimeout"] >= 300
+
+
+def test_railway_simulation_accepts_canonical_liveness_status():
+    source = Path("scripts/simulate_railway.py").read_text(encoding="utf-8")
+    assert '{"ok", "healthy", "degraded"}' in source
+
+
+def test_railway_simulation_authenticates_webhook_request():
+    source = Path("scripts/simulate_railway.py").read_text(encoding="utf-8")
+    assert "X-Telegram-Bot-Api-Secret-Token" in source
+    assert 'env.get("TELEGRAM_WEBHOOK_SECRET")' in source

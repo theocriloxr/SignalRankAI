@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 from telegram import Update
 from telegram.ext import ContextTypes
 from db.session import get_session, get_engine_for_event_loop
@@ -248,7 +249,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # ── Grant 7-day Premium ─────────────────────────────────────────────────
     from datetime import datetime, timedelta
-    premium_until = datetime.utcnow() + timedelta(days=7)
+    premium_until = now_utc_naive() + timedelta(days=7)
 
     try:
         from db.session import get_engine_for_event_loop, get_session
@@ -273,7 +274,7 @@ async def unlock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     user_id=db_user.id,
                     tier="premium",
                     status="active",
-                    started_at=datetime.utcnow(),
+                    started_at=now_utc_naive(),
                     expires_at=premium_until,
                     meta={"source": "unlock_key"},
                     paystack_reference=f"unlock_{user_id}_{_uuid.uuid4().hex[:8]}",
@@ -537,7 +538,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         rr_ratio = None
 
     signal_id = str(uuid4())
-    expires_at = datetime.utcnow() + timedelta(hours=12)
+    expires_at = now_utc_naive() + timedelta(hours=12)
     
     score_for_storage = float(best_signal.score or 0)
     
@@ -558,7 +559,7 @@ async def dev_force_signal(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "strategy_group": best_signal.strategy_group,
         "strength": best_signal.confidence,
         "confidence": best_signal.confidence,
-        "created_at": datetime.utcnow(),
+        "created_at": now_utc_naive(),
         "expires_at": expires_at,
     }
 
@@ -1039,7 +1040,7 @@ async def provider_status_command(update: Update, context: ContextTypes.DEFAULT_
         message += f"alphavantage={_env_value('ALPHAVANTAGE_RATE_LIMIT_COOLDOWN_SECONDS', '60')}s\n"
         
         # Add timestamp
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+        timestamp = now_utc_naive().strftime("%Y-%m-%d %H:%M:%S UTC")
         message += f"\n📅 Checked: {timestamp}"
         
         await update.message.reply_text(message)
@@ -1077,7 +1078,7 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     from db.models import SignalDelivery, Signal, Outcome
     from data.fetcher import get_asset_type
 
-    cutoff = datetime.utcnow() - timedelta(days=int(days))
+    cutoff = now_utc_naive() - timedelta(days=int(days))
 
     win_statuses = {"tp", "tp1", "tp2", "tp3", "partial_tp"}
     loss_statuses = {"sl"}
@@ -1091,7 +1092,7 @@ async def qa_report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     async with get_session() as session:
         try:
-            stale_cutoff = datetime.utcnow() - timedelta(minutes=15)
+            stale_cutoff = now_utc_naive() - timedelta(minutes=15)
             reserved_res = await session.execute(
                 select(func.count(SignalDelivery.id))
                 .where(SignalDelivery.delivered_at >= cutoff, SignalDelivery.sent_ok.is_(False))

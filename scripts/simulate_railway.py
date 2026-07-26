@@ -32,9 +32,17 @@ def _load_env(path: Path) -> dict[str, str]:
     return values
 
 
-def _json_request(url: str, *, method: str = "GET", payload: dict | None = None) -> tuple[int, dict]:
+def _json_request(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, dict]:
     data = None if payload is None else json.dumps(payload).encode("utf-8")
-    req = Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
+    request_headers = {"Content-Type": "application/json"}
+    request_headers.update(headers or {})
+    req = Request(url, data=data, method=method, headers=request_headers)
     with urlopen(req, timeout=3) as response:  # nosec - localhost simulation only
         raw = response.read().decode("utf-8")
         return int(response.status), json.loads(raw or "{}")
@@ -57,7 +65,7 @@ def main() -> int:
             "PYTHONPATH": os.pathsep.join(
                 part
                 for part in (
-                    os.getenv("SIGNALRANK_TEST_PYDEPS", "/mnt/data/signalrank_pydeps"),
+                    os.getenv("SIGNALRANK_TEST_PYDEPS", "").strip(),
                     str(ROOT),
                     env.get("PYTHONPATH", ""),
                 )
@@ -118,13 +126,16 @@ def main() -> int:
             raise RuntimeError("Railway simulation did not become healthy before timeout")
 
         status, health = _json_request(base + "/healthz")
-        if status != 200 or health.get("status") not in {"healthy", "degraded"}:
+        if status != 200 or health.get("status") not in {"ok", "healthy", "degraded"}:
             raise RuntimeError(f"unexpected health response: {status} {health}")
 
         status, webhook = _json_request(
             base + "/telegram/webhook",
             method="POST",
             payload={"update_id": 999001, "message": {"message_id": 1, "chat": {"id": 100001}, "text": "/start"}},
+            headers={
+                "X-Telegram-Bot-Api-Secret-Token": str(env.get("TELEGRAM_WEBHOOK_SECRET") or "")
+            },
         )
         if status != 200 or webhook.get("ok") is not True or webhook.get("queued") is not True:
             raise RuntimeError(f"webhook ingress contract failed: {status} {webhook}")

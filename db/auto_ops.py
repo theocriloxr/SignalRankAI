@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 
 import os
@@ -477,7 +478,7 @@ def _fresh_start_if_needed(conn: "psycopg2.extensions.connection") -> None:
         cur.execute("TRUNCATE " + ",".join(tables) + " RESTART IDENTITY CASCADE")
 
         # Re-create the fresh-start flag in runtime_state
-        now = datetime.utcnow().isoformat() + "Z"
+        now = now_utc_naive().isoformat() + "Z"
         cur.execute(
             "INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (%s, %s::jsonb, NULL, NOW())",
             ("signalrankai:fresh_start_done", '{"done": true, "at": "%s"}' % now),

@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 import hmac
 import hashlib
 import os
@@ -179,7 +180,7 @@ async def process_event(event):
         bot = application.bot
         from datetime import datetime, timedelta
         import re
-        expiry = datetime.utcnow() + timedelta(days=int(duration_days))
+        expiry = now_utc_naive() + timedelta(days=int(duration_days))
         def escape_md(text):
             # Escape all MarkdownV2 special chars
             return re.sub(r'([_\*\[\]()~`>#+\-=|{}.!])', r'\\\1', str(text))

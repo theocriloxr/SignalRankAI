@@ -145,9 +145,11 @@ def test_engine_default_timeframes_cover_1m_to_24h():
 
 def test_mt5_trade_callback_attempts_reprovision_before_failing():
     bot_source = (Path(__file__).resolve().parents[1] / "signalrank_telegram" / "bot.py").read_text(encoding="utf-8")
+    router_source = (Path(__file__).resolve().parents[1] / "services" / "mt5_signal_router.py").read_text(encoding="utf-8")
     client_source = (Path(__file__).resolve().parents[1] / "services" / "mt5_client.py").read_text(encoding="utf-8")
 
-    assert "ensure_user_mt5_account_id" in bot_source
+    assert 'execution_mode="manual_confirmed"' in bot_source
+    assert "ensure_user_mt5_account_id" in router_source
     assert "async def ensure_user_mt5_account_id" in client_source
     assert "decrypt_secret" in client_source
     assert "link_mt5_account(" in client_source
