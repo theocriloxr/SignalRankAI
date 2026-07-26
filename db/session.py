@@ -1169,6 +1169,21 @@ def get_sync_session():
     Session = sync_sessionmaker(bind=_sync_thread_local.sync_engine, expire_on_commit=False)
     return Session()
 
+import inspect
+
+def resolve_session_label(label: str | None) -> str:
+    if label and label.strip():
+        return label.strip()
+
+    frame = inspect.currentframe()
+    caller = frame.f_back.f_back if frame and frame.f_back else None
+
+    if caller:
+        module = caller.f_globals.get("__name__", "unknown_module")
+        function = caller.f_code.co_name
+        return f"{module}.{function}"
+
+    return "unknown_session_caller"
 
 async def init_db() -> None:
     """Create database tables from ORM metadata when an engine is configured."""
