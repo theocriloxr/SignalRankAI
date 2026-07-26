@@ -47,12 +47,33 @@ The provider-blackout explanation was incomplete. Coinbase REST returned usable 
 20. Advanced scanner inventory and opt-in execution were added for Ruff, Mypy, Pyright, Bandit, pip-audit, Semgrep, Vulture, ShellCheck, Hadolint, Coverage and mutation testing.
 21. A separate `requirements-audit.txt` supports an isolated Railway certification service without bloating the live bot image.
 
+
+## Migration-blocker recovery added after live Railway proof
+
+The next Railway pre-deploy attempt exposed a real legacy-data migration blocker: revision `0015_active_signal_guard` could not create `ix_signals_active_thesis` because more than one row was still marked `active` for the same `(asset, direction, timeframe)`. The concrete duplicate shown by Railway was `BNBUSDT / short / 1h`.
+
+The final migration recovery now:
+
+- acquires a PostgreSQL advisory transaction lock to prevent concurrent repair jobs;
+- ranks duplicate active rows deterministically, preferring an unresolved outcome, delivery history, newest creation time, then signal ID;
+- preserves every signal, delivery, lifecycle and outcome row;
+- changes only non-canonical duplicate statuses to `superseded`;
+- writes an `admin_events` audit record for every reconciled row;
+- creates the partial unique index with `IF NOT EXISTS`;
+- moves the `sent_ok` delivery index to a revision after the proof columns actually exist;
+- adds the historically missing `sent_ok`, `attempt_count`, `last_attempt_at` and `last_error` columns to canonical revision `0017_signal_delivery_proof`;
+- adds forward hardening revision `0022_active_guard_reconcile` for databases that were previously stamped or manually repaired;
+- adds a dry-run-first fallback command: `python scripts/repair_active_signal_duplicates.py`;
+- extends deployment diagnostics to fail when active duplicate groups remain or the unique partial index is missing.
+
+No migration repair deletes a signal row or its evidence.
+
 ## Automated verification
 
-- Pytest: **733 passed, 1 skipped, 0 failed**.
+- Pytest: **737 passed, 1 skipped, 0 failed**.
 - Complete system orchestrator: **True**.
 - Orchestrator evidence scope: `HERMETIC_LOCAL_ONLY`.
-- Alembic revisions: 21; sole head `0021_runtime_truth_hardening`.
+- Alembic revisions: 22; sole head `0022_active_guard_reconcile`.
 - Environment profiles: validated.
 - Architecture audit: passed.
 - DB-session legacy call audit: passed with zero call sites.
@@ -60,7 +81,7 @@ The provider-blackout explanation was incomplete. Coinbase REST returned usable 
 - Governance validation: passed.
 - 100,000-user fan-out planner: passed in the orchestrator.
 - Provider adapter/static certification: passed in the orchestrator.
-- Repository files inventoried: 884; Python syntax errors: 0.
+- Repository files inventoried: 887; Python syntax errors: 0.
 
 ## Coverage evidence
 

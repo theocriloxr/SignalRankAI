@@ -518,6 +518,36 @@ async def database_check(report: Report) -> None:
                     )
                 )
             ).scalar_one()
+            active_duplicate_groups = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM (
+                            SELECT asset, direction, timeframe
+                            FROM signals
+                            WHERE status = 'active'
+                            GROUP BY asset, direction, timeframe
+                            HAVING COUNT(*) > 1
+                        ) duplicate_groups
+                        """
+                    )
+                )
+            ).scalar_one()
+            active_guard_index = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM pg_indexes
+                        WHERE schemaname = current_schema()
+                          AND indexname = 'ix_signals_active_thesis'
+                          AND indexdef ILIKE 'CREATE UNIQUE INDEX%'
+                          AND indexdef ILIKE '%WHERE (status = ''active''::text)%'
+                        """
+                    )
+                )
+            ).scalar_one()
             queued_free = (
                 await session.execute(
                     text("SELECT COUNT(*) FROM free_signal_queue WHERE status='queued'")
@@ -541,6 +571,8 @@ async def database_check(report: Report) -> None:
             one == 1
             and bool(revision)
             and int(column or 0) == 1
+            and int(active_duplicate_groups or 0) == 0
+            and int(active_guard_index or 0) == 1
             and (not expected or str(revision) == expected)
         )
         report.add(
@@ -551,14 +583,25 @@ async def database_check(report: Report) -> None:
                 severity="critical",
                 detail=(
                     f"select1={one} revision={revision} expected={expected} "
-                    f"decision_log.created_at={column}"
+                    f"decision_log.created_at={column} "
+                    f"active_duplicate_groups={active_duplicate_groups} "
+                    f"active_guard_unique_index={active_guard_index}"
                 ),
                 duration_ms=int((time.monotonic() - started) * 1000),
-                evidence={"pool": get_pool_diagnostics()},
+                evidence={
+                    "pool": get_pool_diagnostics(),
+                    "active_duplicate_groups": int(active_duplicate_groups or 0),
+                    "active_guard_unique_index": bool(active_guard_index),
+                },
                 remediation=(
                     None
                     if schema_ok
-                    else "Run the sole Alembic head, confirm decision_log.created_at, and inspect DB admission holders."
+                    else (
+                        "Run the sole Alembic head, confirm decision_log.created_at, "
+                        "reconcile duplicate active theses, verify ix_signals_active_thesis, "
+                        "and inspect DB admission holders. The fallback command is: "
+                        "python scripts/repair_active_signal_duplicates.py --apply"
+                    )
                 ),
             )
         )

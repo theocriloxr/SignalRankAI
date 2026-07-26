@@ -140,3 +140,47 @@ def test_deployment_audit_inventory_covers_advanced_scanners() -> None:
         assert scanner in source
     assert "--extended-scans" in source
     assert (ROOT / "requirements-audit.txt").exists()
+
+
+def test_active_signal_guard_migration_reconciles_legacy_duplicates() -> None:
+    migration = (ROOT / "db" / "migrations" / "versions" / "0015_active_signal_guard.py").read_text(encoding="utf-8")
+    assert "ROW_NUMBER() OVER" in migration
+    assert "delivery_count DESC" in migration
+    assert "has_open_outcome DESC" in migration
+    assert "SET status = 'superseded'" in migration
+    assert "rows_deleted', 0" in migration
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ix_signals_active_thesis" in migration
+    assert "pg_advisory_xact_lock" in migration
+    assert "DELETE FROM signals" not in migration.upper()
+
+
+def test_forward_active_guard_hardening_migration_and_ops_fallback_exist() -> None:
+    migration = ROOT / "db" / "migrations" / "versions" / "0022_active_guard_reconcile.py"
+    repair = ROOT / "scripts" / "repair_active_signal_duplicates.py"
+    assert migration.exists()
+    assert repair.exists()
+    migration_source = migration.read_text(encoding="utf-8")
+    repair_source = repair.read_text(encoding="utf-8")
+    assert 'down_revision = "0021_runtime_truth_hardening"' in migration_source
+    assert "has_delivery_proof DESC" in migration_source
+    assert "--apply" in repair_source
+    assert '"mode": "apply" if args.apply else "dry_run"' in repair_source
+    assert '"rows_deleted": 0' in repair_source
+
+
+def test_deployment_diagnostics_verifies_active_guard_database_truth() -> None:
+    source = (ROOT / "scripts" / "deployment_diagnostics.py").read_text(encoding="utf-8")
+    assert "active_duplicate_groups" in source
+    assert "active_guard_unique_index" in source
+    assert "ix_signals_active_thesis" in source
+    assert "repair_active_signal_duplicates.py --apply" in source
+
+
+def test_delivery_proof_columns_exist_before_later_proof_indexes() -> None:
+    migration_0015 = (ROOT / "db" / "migrations" / "versions" / "0015_active_signal_guard.py").read_text(encoding="utf-8")
+    migration_0017 = (ROOT / "db" / "migrations" / "versions" / "0017_signal_delivery_proof.py").read_text(encoding="utf-8")
+    migration_0021 = (ROOT / "db" / "migrations" / "versions" / "0021_runtime_truth_hardening.py").read_text(encoding="utf-8")
+    assert "ix_signal_deliveries_user_sent_ok_delivered_at" not in migration_0015
+    assert "ADD COLUMN IF NOT EXISTS sent_ok" in migration_0017
+    assert "ADD COLUMN IF NOT EXISTS attempt_count" in migration_0017
+    assert "signal_deliveries(signal_id, sent_ok, delivery_state)" in migration_0021

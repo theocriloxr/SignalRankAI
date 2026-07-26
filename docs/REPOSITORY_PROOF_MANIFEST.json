@@ -1,14 +1,14 @@
 {
   "categories": {
     "deployment_configuration": 28,
-    "documentation": 76,
+    "documentation": 77,
     "migration": 24,
-    "production_runtime": 456,
+    "production_runtime": 457,
     "project_asset": 125,
-    "script": 34,
+    "script": 35,
     "test": 141
   },
-  "file_count": 884,
+  "file_count": 887,
   "files": [
     {
       "category": "project_asset",
@@ -2744,6 +2744,7 @@
         "tests/test_phase4_pass4_outcome_tracker_redesign.py",
         "tests/test_phase4_pass5_tier_policy_and_upgrade_ux.py",
         "tests/test_phase4_pass6_security_api_payments.py",
+        "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_staged_release_contracts.py",
         "tests/test_timezone_and_performance_v2.py",
         "tests/test_yfinance_integration.py"
@@ -3874,6 +3875,7 @@
         "tests/test_monolith_hardening_defaults.py",
         "tests/test_phase4_pass3_delivery_reliability.py",
         "tests/test_phase4_pass4_outcome_tracker_redesign.py",
+        "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_runtime_p0_cache_worker_scheduler.py",
         "tests/test_trader_profiles_and_platform_reliability.py"
       ]
@@ -4250,16 +4252,18 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 51,
+      "line_count": 195,
       "parse_status": "ok",
       "path": "db/migrations/versions/0015_active_signal_guard.py",
       "public_symbols": [
         "downgrade",
         "upgrade"
       ],
-      "sha256": "9abe9d87146131a201beb1c71bf66e939172459aca4d0137eeadec8cb86f1789",
-      "size_bytes": 1443,
-      "test_references": []
+      "sha256": "7bc0e38e1c1e0b9a774c6466f32cd2612ff52be1f74fa6a3334b675266a1a298",
+      "size_bytes": 6000,
+      "test_references": [
+        "tests/test_railway_runtime_incident_fixes.py"
+      ]
     },
     {
       "category": "production_runtime",
@@ -4278,16 +4282,18 @@
     {
       "category": "production_runtime",
       "env_variables": [],
-      "line_count": 38,
+      "line_count": 47,
       "parse_status": "ok",
       "path": "db/migrations/versions/0017_signal_delivery_proof.py",
       "public_symbols": [
         "downgrade",
         "upgrade"
       ],
-      "sha256": "91162ddfe5889a1ddbbea8ff551b09aec83342f2a6b9961f8d9c62fa06177d0c",
-      "size_bytes": 2127,
-      "test_references": []
+      "sha256": "499cb91d24a2fdffe377a3aafda9412308f268c19607c3ffbee7f2135b278f0c",
+      "size_bytes": 2911,
+      "test_references": [
+        "tests/test_railway_runtime_incident_fixes.py"
+      ]
     },
     {
       "category": "production_runtime",
@@ -4348,7 +4354,24 @@
       "sha256": "86f32d640af1943e354b9f75bda512c8e5cab2d8a44f667aefc73c748e5b847c",
       "size_bytes": 1236,
       "test_references": [
-        "tests/test_production_endgame_20260725.py"
+        "tests/test_railway_runtime_incident_fixes.py"
+      ]
+    },
+    {
+      "category": "production_runtime",
+      "env_variables": [],
+      "line_count": 175,
+      "parse_status": "ok",
+      "path": "db/migrations/versions/0022_active_guard_reconcile.py",
+      "public_symbols": [
+        "downgrade",
+        "upgrade"
+      ],
+      "sha256": "e9d260e1c7ba15b1cab58d3ff9571ea24031d3146c3ab54296c875c7c9f0bae4",
+      "size_bytes": 5365,
+      "test_references": [
+        "tests/test_production_endgame_20260725.py",
+        "tests/test_railway_runtime_incident_fixes.py"
       ]
     },
     {
@@ -5364,6 +5387,17 @@
     {
       "category": "documentation",
       "env_variables": [],
+      "line_count": 114,
+      "parse_status": "not_applicable",
+      "path": "docs/FINAL_RUNTIME_FIX_AND_DIAGNOSTICS_REPORT_2026-07-26.md",
+      "public_symbols": [],
+      "sha256": "393c653680a6099c8715d38220947e4cbff95769dd6c042a9060766aba8cc934",
+      "size_bytes": 6583,
+      "test_references": []
+    },
+    {
+      "category": "documentation",
+      "env_variables": [],
       "line_count": 194,
       "parse_status": "not_applicable",
       "path": "docs/FINAL_STORAGE_AND_PRODUCTION_WRAPUP_FIX_2026-07-09.md",
@@ -6017,23 +6051,23 @@
     {
       "category": "documentation",
       "env_variables": [],
-      "line_count": 71,
+      "line_count": 80,
       "parse_status": "not_applicable",
       "path": "docs/WORK_COMPLETION_CHECKPOINT.json",
       "public_symbols": [],
-      "sha256": "32d4715e92bde1b44f3f2a77c9c14ffd321ee246f7c9578351ae7d2a825a5d5f",
-      "size_bytes": 3113,
+      "sha256": "6b2335370483cbeb9d462017dae98fc89204fe0ced013586cc52be6317038ea8",
+      "size_bytes": 2599,
       "test_references": []
     },
     {
       "category": "documentation",
       "env_variables": [],
-      "line_count": 47,
+      "line_count": 42,
       "parse_status": "not_applicable",
       "path": "docs/WORK_COMPLETION_CHECKPOINT.md",
       "public_symbols": [],
-      "sha256": "bb6b44ee116aeadc5008b20687ff6d67efb2f15804b3e421aa72dca84d9d9369",
-      "size_bytes": 2003,
+      "sha256": "733733d954880cb98073f77c473effcc3e7ae7e92932e9e992531ce5d5298881",
+      "size_bytes": 1908,
       "test_references": []
     },
     {
@@ -10285,7 +10319,7 @@
         "DEPLOYMENT_SCANNER_TIMEOUT_SECONDS",
         "DEPLOYMENT_SIGNAL_DISPATCH_MAX_DEPTH"
       ],
-      "line_count": 1103,
+      "line_count": 1146,
       "parse_status": "ok",
       "path": "scripts/deployment_diagnostics.py",
       "public_symbols": [
@@ -10307,8 +10341,8 @@
         "static_checks",
         "telegram_check"
       ],
-      "sha256": "82ea783797a82c122c88aef4e1b3e272a2435771bce0696467f2f38189790f4b",
-      "size_bytes": 46234,
+      "sha256": "82a464b74aa05199389acee14f35e6dc8a99634aececbe885983d925f03277ee",
+      "size_bytes": 48154,
       "test_references": [
         "tests/test_railway_runtime_incident_fixes.py"
       ]
@@ -10572,6 +10606,23 @@
       "test_references": [
         "tests/test_runtime_hardening_contract.py",
         "tests/test_staged_release_contracts.py"
+      ]
+    },
+    {
+      "category": "script",
+      "env_variables": [
+        "DATABASE_URL"
+      ],
+      "line_count": 158,
+      "parse_status": "ok",
+      "path": "scripts/repair_active_signal_duplicates.py",
+      "public_symbols": [
+        "main"
+      ],
+      "sha256": "bb94dc8c85e30d6d218c7fb169f2414ca922e88139a6f0c3d7f473c50f978e60",
+      "size_bytes": 5789,
+      "test_references": [
+        "tests/test_railway_runtime_incident_fixes.py"
       ]
     },
     {
@@ -12659,6 +12710,7 @@
         "tests/test_phase4_pass3_delivery_reliability.py",
         "tests/test_phase4_pass4_outcome_tracker_redesign.py",
         "tests/test_production_operations_package.py",
+        "tests/test_railway_runtime_incident_fixes.py",
         "tests/test_realtime_outcome_tracker_user_perf_ids.py",
         "tests/test_resource_governor.py",
         "tests/test_runtime_config_snapshot.py",
@@ -15058,7 +15110,7 @@
       "parse_status": "ok",
       "path": "tests/test_production_endgame_20260725.py",
       "public_symbols": [
-        "test_canonical_migration_head_is_runtime_truth_hardening",
+        "test_canonical_migration_head_is_active_guard_reconcile",
         "test_gemini_429_opens_process_circuit",
         "test_offline_bootstrap_is_never_allowed_on_railway",
         "test_portfolio_exposure_query_requires_delivery_proof",
@@ -15067,8 +15119,8 @@
         "test_segment_quarantine_uses_delivery_proof",
         "test_worker_does_not_own_analytics_in_monolith"
       ],
-      "sha256": "e16bdbabf339965c36fd556766b4a417ac23b96845cc211ff9b9f9a0030c19ca",
-      "size_bytes": 6405,
+      "sha256": "1b8359cfa6ea6a211ef20a263da618bda1ab596b06fa4a999e2b30937b1dacac",
+      "size_bytes": 6403,
       "test_references": []
     },
     {
@@ -15261,16 +15313,20 @@
     {
       "category": "test",
       "env_variables": [],
-      "line_count": 142,
+      "line_count": 186,
       "parse_status": "ok",
       "path": "tests/test_railway_runtime_incident_fixes.py",
       "public_symbols": [
+        "test_active_signal_guard_migration_reconciles_legacy_duplicates",
         "test_async_runner_ignores_test_only_disable_flag_on_railway",
+        "test_delivery_proof_columns_exist_before_later_proof_indexes",
         "test_deployment_audit_inventory_covers_advanced_scanners",
         "test_deployment_diagnostics_and_protected_endpoint_present",
         "test_deployment_diagnostics_inspects_delivery_stream_backlog",
+        "test_deployment_diagnostics_verifies_active_guard_database_truth",
         "test_diagnostics_reports_missing_credentials_as_blocked_or_failed",
         "test_engine_circuit_breaker_uses_shared_async_bridge",
+        "test_forward_active_guard_hardening_migration_and_ops_fallback_exist",
         "test_free_distribution_is_explicit_opt_in",
         "test_free_queue_quarantine_is_non_destructive_and_dry_run_by_default",
         "test_market_circuit_breaker_has_regional_rest_fallbacks",
@@ -15282,8 +15338,8 @@
         "test_webhook_503_has_structured_reason_and_readiness_secret_check",
         "test_websocket_ingestion_is_fail_safe_and_requires_master_flag"
       ],
-      "sha256": "2da6a96af8a680967affee22b1fb7ba198601b4e94db169680da76d9a6149422",
-      "size_bytes": 6346,
+      "sha256": "7181cbc7c35be38a600b83913d111db74b278019cbb332ffe61ad90400f31dd2",
+      "size_bytes": 8822,
       "test_references": []
     },
     {
@@ -16744,6 +16800,6 @@
       ]
     }
   ],
-  "generated_at": "2026-07-26T17:05:27.397781+00:00",
-  "root": "/mnt/data/sra_work_current/SignalRankAI-final"
+  "generated_at": "2026-07-26T18:06:57.296319+00:00",
+  "root": "/mnt/data/sra_migration_fix"
 }
