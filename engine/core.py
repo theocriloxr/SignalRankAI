@@ -2012,15 +2012,33 @@ def main_loop(DRY_RUN: bool = False):
             # === PHASE 3 FIX: Circuit Breaker Health Check ===
             # Check market health before starting the cycle - if flash crash detected, skip this cycle
             try:
-                import asyncio
-                is_healthy = asyncio.get_event_loop().run_until_complete(circuit_breaker.check_market_health())
-                logger.info(f"[engine] Market Health Check: is_healthy={is_healthy}")
+                # ``run_engine_loop`` is intentionally executed in a worker
+                # thread by Railway's coordinated monolith. Calling
+                # ``asyncio.get_event_loop().run_until_complete`` from that
+                # thread raises "There is no current event loop" and used to
+                # block every engine cycle. Route the coroutine through the
+                # repository's one long-lived async bridge instead.
+                from utils.async_runner import run_sync as _run_async_check
+
+                cb_timeout = max(1.0, float(os.getenv("MARKET_CIRCUIT_BREAKER_TIMEOUT_SECONDS", "12") or 12))
+                is_healthy = bool(
+                    _run_async_check(
+                        circuit_breaker.check_market_health(),
+                        timeout=cb_timeout,
+                    )
+                )
+                logger.info("[engine] Market Health Check: is_healthy=%s", is_healthy)
                 if not is_healthy:
                     logger.warning("[engine] Circuit breaker activated - skipping cycle due to market flash crash")
                     time.sleep(max(5, cycle_sleep_seconds))
                     continue
             except Exception as cb_err:
-                logger.warning("[engine] circuit breaker check failed: %s", cb_err)
+                logger.warning(
+                    "[engine] circuit breaker check failed err_type=%s err=%s",
+                    type(cb_err).__name__,
+                    cb_err,
+                    exc_info=True,
+                )
                 if _env_bool("MARKET_CIRCUIT_BREAKER_FAIL_CLOSED", True):
                     time.sleep(max(5, cycle_sleep_seconds))
                     continue

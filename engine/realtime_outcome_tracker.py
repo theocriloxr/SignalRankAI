@@ -420,7 +420,12 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         from sqlalchemy import select, or_, exists, and_
         cutoff = _utc_now_naive() - timedelta(hours=_lookback_hours())
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
-        async with _session_scope(get_session, priority=DBPriority.CRITICAL) as session:
+        async with _session_scope(
+            get_session,
+            priority=DBPriority.CRITICAL,
+            label="outcome_tracker.fetch_active_signals",
+            timeout_seconds=float(os.getenv("OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "15") or 15),
+        ) as session:
             stmt = (
                 select(Signal, Outcome, SignalLifecycle)
                 .outerjoin(Outcome, Outcome.signal_id == Signal.signal_id)
@@ -476,7 +481,19 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                 for s, o, lifecycle in rows
             ]
     except Exception as exc:
-        logger.error("[outcome_tracker] fetch_active_signals error: %s", exc)
+        diagnostics = None
+        try:
+            from db.session import get_pool_diagnostics
+            diagnostics = get_pool_diagnostics()
+        except Exception:
+            diagnostics = None
+        logger.error(
+            "[outcome_tracker] fetch_active_signals error err_type=%s err=%s db_diagnostics=%s",
+            type(exc).__name__,
+            exc,
+            diagnostics,
+            exc_info=True,
+        )
         return []
 
 

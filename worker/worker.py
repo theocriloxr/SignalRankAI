@@ -202,8 +202,19 @@ class Worker:
             try:
                 from data.ws_ingest import run_ws_ingestor
                 _register_task("ws_ingestor", lambda: run_ws_ingestor(self._stop), restart_on_failure=True)
+                logger.info(
+                    "[worker] WebSocket ingestor enabled master=%s crypto=%s",
+                    getattr(config, "WS_INGEST_ENABLED", False),
+                    config.CRYPTO_WS_ENABLED,
+                )
             except Exception:
                 logger.exception("[worker] Failed to start WS ingestor")
+        else:
+            logger.info(
+                "[worker] WebSocket ingestor disabled master=%s crypto=%s; REST remains authoritative",
+                getattr(config, "WS_INGEST_ENABLED", False),
+                config.CRYPTO_WS_ENABLED,
+            )
 
         # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
         if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():

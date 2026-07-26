@@ -238,15 +238,23 @@ def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
         ),
     ]
     if args.full:
-        # Run every test file, but isolate teardown into deterministic batches.
-        # This avoids a platform-specific post-suite hang from optional
-        # background resources while retaining complete test-file coverage.
-        batches = _partition_pytest_files(getattr(args, "pytest_batches", 20))
-        for index, files in enumerate(batches, start=1):
+        requested_batches = int(getattr(args, "pytest_batches", 20) or 0)
+        if requested_batches == 1:
+            # Pytest discovery has cleaner teardown than passing the entire
+            # repository as one extremely long explicit argv on some Railway
+            # and container runtimes. It still covers every test_*.py file.
             steps.append((
-                f"full_pytest_batch_{index:02d}",
-                [python, "-m", "pytest", "-q", *files],
+                "full_pytest_batch_01",
+                [python, "-m", "pytest", "-q"],
             ))
+        else:
+            # Run every test file, but isolate teardown into deterministic batches.
+            batches = _partition_pytest_files(requested_batches)
+            for index, files in enumerate(batches, start=1):
+                steps.append((
+                    f"full_pytest_batch_{index:02d}",
+                    [python, "-m", "pytest", "-q", *files],
+                ))
     else:
         steps.append((
             "hermetic_system_suite",

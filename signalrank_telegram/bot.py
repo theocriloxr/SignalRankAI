@@ -4527,7 +4527,7 @@ def distribute_random_signals_to_free_users_job():
     # The FOMO mode is for unlocking signals on VIP TP1 events, not for disabling
     # the regular queue distribution.
 
-    if not _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
+    if not _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), False):
         logger.info("[free_distribution] disabled by env")
         return
 
@@ -7117,6 +7117,12 @@ def run_bot() -> None:
             return current_hour >= start_hour or current_hour < end_hour
 
     def send_free_delayed_summaries():
+        if not _env_bool_any(
+            ("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"),
+            False,
+        ):
+            logger.info("[free_summary] disabled by env; queued rows will not be delivered")
+            return
         if _is_free_fomo_dispatch_only_enabled():
             logger.debug("[free_summary] skipped (FREE_FOMO_DISPATCH_ONLY=1)")
             return
@@ -8289,20 +8295,26 @@ def run_bot() -> None:
     # \u2500\u2500 Module-level jobs (picklable) \u2192 SQLAlchemy persistent store when available
     if scheduler is not None:
         try:
-            from worker.proxy_worker import proxy_validation_job as _proxy_validation_job
-            scheduler.add_job(
-                _proxy_validation_job,
-                'interval',
-                minutes=30,
-                id='proxy_validation_job',
-                replace_existing=True,
-                max_instances=1,
-                coalesce=True,
-                misfire_grace_time=120,
-                jobstore=_sa,
+            from worker.proxy_worker import (
+                proxy_validation_enabled as _proxy_validation_enabled,
+                proxy_validation_job as _proxy_validation_job,
             )
+            if _proxy_validation_enabled():
+                scheduler.add_job(
+                    _proxy_validation_job,
+                    'interval',
+                    minutes=30,
+                    id='proxy_validation_job',
+                    replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
+                    misfire_grace_time=120,
+                    jobstore=_sa,
+                )
+            else:
+                logger.info("[sched] proxy_validation_job disabled or provider URL not configured")
         except Exception as _proxy_job_err:
-            logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err)
+            logger.warning("[sched] failed to schedule proxy_validation_job: %s", _proxy_job_err, exc_info=True)
         resend_interval_seconds = max(
             60,
             int(os.getenv("RESEND_UNSENT_INTERVAL_SECONDS", "180") or 180),
@@ -8323,7 +8335,7 @@ def run_bot() -> None:
             jobstore=_sa,
             next_run_time=now_utc_naive() + timedelta(seconds=resend_start_delay_seconds),
         )
-        if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), True):
+        if _env_bool_any(("FREE_RANDOM_DISTRIBUTION_ENABLED", "FREE_SIGNAL_DISTRIBUTION_ENABLED"), False):
             free_start_delay_seconds = max(
                 resend_start_delay_seconds + 60,
                 int(os.getenv("FREE_DISTRIBUTION_STARTUP_DELAY_SECONDS", "150") or 150),

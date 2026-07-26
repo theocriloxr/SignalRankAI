@@ -1,71 +1,80 @@
 {
-  "baseline_commit": "b2d36b677b9dead9d9cc061ce7c26e3919643c0d",
-  "code_release_commit": "11356c6fdcbd961b05e21263c865eb69527c7bcd",
-  "complete_system_orchestrator": {
-    "failed": 0,
-    "passed": 717,
-    "pytest_batches": 20,
-    "report": "artifacts/complete-system-test-final/complete_system_test_report.json",
-    "skipped": 1,
-    "status": "PASS"
-  },
-  "completed_work": [
-    "canonical one-service FastAPI Railway startup and resource-safe defaults",
-    "proof-backed signal delivery, cooldown, lifecycle and outcome hardening",
-    "canonical fail-closed broker routing, sizing, reconciliation and demo/live gates",
-    "native MT5 and MetaApi boundary hardening",
-    "Smart DCA hardening and bounded execution queues",
-    "provider catalog, adapters, routing contracts and certification tooling",
-    "ML/rejection telemetry and production-truth controls",
-    "environment profiles, runtime configuration snapshot and deployment validation",
-    "Telegram callback, token rotation and command regression coverage",
-    "resumable complete-system orchestration and repository proof manifest"
-  ],
+  "baseline_commit": "59ce18e1f74814f1ac1574f9be010ac1026a2e6e",
   "coverage": {
-    "branches_percent": 24,
-    "combined_percent": 39,
-    "report": "artifacts/coverage-final/coverage-all.txt",
-    "statements_percent": 43,
-    "status": "TARGET_NOT_MET"
+    "covered_branches": 3762,
+    "covered_lines": 18923,
+    "excluded_lines": 85,
+    "missing_branches": 14308,
+    "missing_lines": 41071,
+    "num_branches": 18070,
+    "num_partial_branches": 1972,
+    "num_statements": 59994,
+    "percent_branches_covered": 20.819037078029883,
+    "percent_branches_covered_display": "21",
+    "percent_covered": 29.059489649518344,
+    "percent_covered_display": "29",
+    "percent_statements_covered": 31.541487482081543,
+    "percent_statements_covered_display": "32"
   },
-  "current_head_at_checkpoint": "11356c6fdcbd961b05e21263c865eb69527c7bcd",
-  "external_blockers_document": "docs/PERMISSION_AND_EXTERNAL_BLOCKER_REGISTER.md",
-  "last_complete_test_result": {
-    "duration_seconds": 20.7,
-    "failed": 0,
-    "passed": 717,
-    "skip_reason": "optional pyarrow dependency unavailable in the execution environment",
-    "skipped": 1
-  },
-  "release_checks": [
-    "compileall PASS",
-    "environment contracts PASS",
-    "schema audit PASS: 21 revisions, one head",
-    "architecture smoke PASS",
-    "legacy DB session API audit PASS: 0 call sites",
-    "governance PASS: 24 documents",
-    "secret scan PASS: 0 findings",
-    "production readiness PASS",
-    "owner-beta offline verifier PASS",
-    "local Railway health/webhook simulation PASS",
-    "100000-user fanout planner PASS",
-    "provider adapter/fixture certification PASS"
+  "generated_at": "2026-07-26T17:08:26.466313+00:00",
+  "live_blockers": [
+    {
+      "env_vars": "GEMINI_API_KEY",
+      "name": "gemini",
+      "purpose": "AI review live call"
+    },
+    {
+      "env_vars": "PAYSTACK_SECRET_KEY,PAYSTACK_PUBLIC_KEY",
+      "name": "paystack_test",
+      "purpose": "test payment and webhook reconciliation"
+    },
+    {
+      "env_vars": "TV_WEBHOOK_SECRET",
+      "name": "tradingview",
+      "purpose": "signed alert ingress"
+    },
+    {
+      "env_vars": "META_API_TOKEN",
+      "name": "metaapi_demo",
+      "purpose": "demo account quote/order/reconciliation"
+    },
+    {
+      "env_vars": "TWELVEDATA_API_KEY",
+      "name": "provider_twelvedata",
+      "purpose": "forex/equity provider certification"
+    },
+    {
+      "env_vars": "POLYGON_API_KEY",
+      "name": "provider_polygon",
+      "purpose": "equity/index provider certification"
+    },
+    {
+      "env_vars": "FMP_API_KEY",
+      "name": "provider_fmp",
+      "purpose": "equity provider certification"
+    },
+    {
+      "env_vars": "OANDA_API_KEY,OANDA_ACCOUNT_ID",
+      "name": "provider_oanda",
+      "purpose": "forex practice certification"
+    },
+    {
+      "env_vars": "TELEGRAM_BOT_TOKEN",
+      "name": "Telegram staging bot",
+      "purpose": "getMe/getWebhookInfo and callback delivery proof"
+    }
   ],
-  "release_status": "CODE_COMPLETE_BUT_LIVE_PROOF_PENDING",
-  "remaining_external_proof": [
-    "Railway staging deployment and 24-72 hour soak",
-    "Telegram test-bot network delivery and callback proof",
-    "PostgreSQL/PgBouncer and two live Redis services",
-    "live/public/keyed provider certification",
-    "TradingView signed staging alert",
-    "Paystack test transaction and reconciliation",
-    "MetaApi demo order and reconciliation",
-    "natural same-signal lifecycle proof"
-  ],
+  "next_task": "Deploy the packaged commit to isolated Railway staging and retrieve /diagnostics/deployment after readiness.",
+  "orchestrator_ok": true,
   "resume_commands": [
-    "PYTHONPATH=/mnt/data/sra_test_stubs:. SIGNALRANK_TEST_PYDEPS=/mnt/data/sra_test_stubs SIGNALRANK_DISABLE_BACKGROUND_THREADS=1 pytest -q",
-    "PYTHONPATH=. python scripts/run_complete_system_test.py --full --pytest-batches 20 --resume --output-dir artifacts/complete-system-test-final",
-    "python scripts/verify_owner_beta_release.py"
+    "python -m alembic upgrade head",
+    "python scripts/deployment_diagnostics.py --phase runtime --base-url https://YOUR_DOMAIN --output /tmp/signalrank_deployment_diagnostics.json --live-providers",
+    "python scripts/run_complete_system_test.py --full --pytest-batches 1 --output-dir artifacts/complete-system-live --live-providers"
   ],
-  "timestamp_utc": "2026-07-26T14:49:22.391969+00:00"
+  "status": "CODE_FIXED_AND_HERMETICALLY_VERIFIED__LIVE_RAILWAY_PROOF_PENDING",
+  "tests": {
+    "failed": 0,
+    "passed": 733,
+    "skipped": 1
+  }
 }

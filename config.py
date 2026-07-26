@@ -89,9 +89,15 @@ class Config:
 		self.RAILWAY_DEPLOYMENT_ID = os.getenv("RAILWAY_DEPLOYMENT_ID", "")
 		self.GIT_COMMIT_SHA = os.getenv("RAILWAY_GIT_COMMIT_SHA", "")
 
-		# Feature toggles (add more as needed)
-		self.MARKET_MONITOR_ENABLED = True
-		self.CRYPTO_WS_ENABLED = True
+		# Feature toggles. WebSocket ingestion is an optimisation, not a
+		# correctness dependency. Keep it fail-safe/off unless the master flag and
+		# crypto-specific flag are both explicitly enabled.
+		self.MARKET_MONITOR_ENABLED = self._env_bool("MARKET_MONITOR_ENABLED", True)
+		self.WS_INGEST_ENABLED = self._env_bool("WS_INGEST_ENABLED", False)
+		self.CRYPTO_WS_ENABLED = (
+			self.WS_INGEST_ENABLED
+			and self._env_bool("CRYPTO_WS_ENABLED", self.WS_INGEST_ENABLED)
+		)
 # Disable ML training on Railway Hobby tier to avoid DB connection exhaustion
 		is_railway = any(
 			bool((os.getenv(name) or "").strip())

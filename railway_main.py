@@ -30,6 +30,8 @@ except Exception:
 import os
 import asyncio
 import hmac
+import json
+import sys
 import logging
 import threading
 from collections import deque
@@ -572,19 +574,16 @@ def _build_scheduler() -> AsyncIOScheduler:
     duplicate execution.  This scheduler only registers jobs that are
     unique to the web layer (VIP waitlist TTL management).
     """
-    # Web jobs are optional in decomposed deployments.  Missing legacy
-    # symbols must not disable the whole process scheduler.
+    # Import waitlist jobs from their lightweight canonical module.  This
+    # avoids importing the entire web surface merely to register scheduler
+    # callbacks and gives us a full traceback if registration ever regresses.
     try:
-        # Import the module explicitly. ``from web import app`` can resolve to
-        # the FastAPI application object after package initialisation, making
-        # the scheduler believe the two module-level jobs are missing.
-        import importlib
-
-        _web_module = importlib.import_module("web.app")
-        _check_waitlist_capacity_job = getattr(_web_module, "_check_waitlist_capacity_job", None)
-        _monitor_expired_invites_job = getattr(_web_module, "_monitor_expired_invites_job", None)
+        from services.waitlist_jobs import (
+            check_waitlist_capacity_job as _check_waitlist_capacity_job,
+            monitor_expired_invites_job as _monitor_expired_invites_job,
+        )
     except Exception as exc:
-        logger.warning("[sched] web jobs unavailable: %s", exc)
+        logger.exception("[sched] waitlist jobs unavailable: %s", exc)
         _check_waitlist_capacity_job = None
         _monitor_expired_invites_job = None
 
@@ -603,7 +602,7 @@ def _build_scheduler() -> AsyncIOScheduler:
             max_instances=1,
         )
     except Exception as exc:
-        logger.warning(f"[sched] could not add wl_capacity job: {exc}")
+        logger.warning("[sched] could not add wl_capacity job: %s", exc, exc_info=True)
     try:
         if _monitor_expired_invites_job is None:
             raise LookupError("waitlist monitor job unavailable")
@@ -616,7 +615,7 @@ def _build_scheduler() -> AsyncIOScheduler:
             max_instances=1,
         )
     except Exception as exc:
-        logger.warning(f"[sched] could not add wl_monitor job: {exc}")
+        logger.warning("[sched] could not add wl_monitor job: %s", exc, exc_info=True)
 
     # ML history belongs to the analytics role. Keep it off the production monolith.
     if _ml_archive_backfill_enabled():
@@ -947,6 +946,79 @@ def _start_engine_loop_in_background() -> asyncio.Task:
     task = asyncio.create_task(_runner())
     task.add_done_callback(lambda t: _log_task_failure(t, "engine-loop"))
     return task
+
+
+async def _run_deployment_diagnostics_once() -> None:
+    """Run the read-only deployment audit after the HTTP service is ready.
+
+    Full pytest/provider certification is opt-in because it can consume the
+    entire Railway Hobby allocation. The generated report is secret-safe and
+    can be fetched through the protected diagnostics endpoint.
+    """
+    if not _env_bool(
+        "DEPLOYMENT_DIAGNOSTICS_ENABLED",
+        _is_running_on_railway(),
+    ):
+        logger.info("[deployment_diagnostics] disabled")
+        return
+    delay = max(1.0, float(os.getenv("DEPLOYMENT_DIAGNOSTICS_START_DELAY_SECONDS", "25") or 25))
+    await asyncio.sleep(delay)
+    report_path = str(
+        os.getenv("DEPLOYMENT_DIAGNOSTICS_REPORT_PATH")
+        or "/tmp/signalrank_deployment_diagnostics.json"
+    )
+    command = [
+        sys.executable,
+        "scripts/deployment_diagnostics.py",
+        "--phase",
+        "runtime",
+        "--output",
+        report_path,
+        "--continue-on-failure",
+    ]
+    base_url = str(
+        os.getenv("APP_BASE_URL")
+        or os.getenv("WEBHOOK_DOMAIN")
+        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or ""
+    ).strip()
+    if base_url:
+        if not base_url.startswith(("http://", "https://")):
+            base_url = f"https://{base_url}"
+        command.extend(["--base-url", base_url])
+    if _env_bool("DEPLOYMENT_DIAGNOSTICS_LIVE_PROVIDERS", False):
+        command.append("--live-providers")
+    if _env_bool("DEPLOYMENT_EXTENDED_SCANS_ENABLED", False):
+        command.append("--extended-scans")
+    if _env_bool("DEPLOYMENT_FULL_TESTS_ENABLED", False):
+        command.append("--run-full-suite")
+
+    logger.info("[deployment_diagnostics] starting command=%s", command)
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=str(Path(__file__).resolve().parent),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        timeout = max(60.0, float(os.getenv("DEPLOYMENT_DIAGNOSTICS_TIMEOUT_SECONDS", "1800") or 1800))
+        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        text = (stdout or b"").decode("utf-8", errors="replace")
+        for line in text.splitlines()[-200:]:
+            logger.info("[deployment_diagnostics_output] %s", line)
+        logger.info(
+            "[deployment_diagnostics] completed exit_code=%s report=%s",
+            process.returncode,
+            report_path,
+        )
+    except asyncio.TimeoutError:
+        logger.error("[deployment_diagnostics] timed out")
+        try:
+            process.kill()
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.exception("[deployment_diagnostics] failed: %s", exc)
 
 
 def _start_worker_loop_in_background() -> asyncio.Task:
@@ -1491,6 +1563,8 @@ async def lifespan(_: FastAPI):
     _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-webhook-health"))
     _monitor_tasks.append(asyncio.create_task(_monitor_redis_webhook_backend()))
     _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "monitor-redis-backend"))
+    _monitor_tasks.append(asyncio.create_task(_run_deployment_diagnostics_once()))
+    _monitor_tasks[-1].add_done_callback(lambda t: _log_task_failure(t, "deployment-diagnostics"))
 
     # Bounded queue + worker pool sized for a single Railway Hobby process.
     global _webhook_dispatch_queue, _webhook_dispatch_workers, _use_redis_webhook_queue
@@ -1752,6 +1826,36 @@ from web.app import app as _web_app
 app = FastAPI(lifespan=lifespan)
 
 
+@app.get("/diagnostics/deployment")
+async def _deployment_diagnostics_endpoint(
+    x_diagnostics_key: str | None = Header(default=None, alias="X-Diagnostics-Key"),
+) -> JSONResponse:
+    """Return the latest secret-safe deployment audit when explicitly enabled."""
+    if not _env_bool("DEPLOYMENT_DIAGNOSTICS_ENDPOINT_ENABLED", False):
+        return JSONResponse(status_code=404, content={"ok": False, "error": "not_enabled"})
+    expected = str(os.getenv("DEPLOYMENT_DIAGNOSTICS_KEY") or "").strip()
+    if _production_readiness_required() and not expected:
+        return JSONResponse(status_code=503, content={"ok": False, "error": "diagnostics_key_not_configured"})
+    supplied = str(x_diagnostics_key or "").strip()
+    if expected and not hmac.compare_digest(supplied, expected):
+        return JSONResponse(status_code=401, content={"ok": False, "error": "invalid_diagnostics_key"})
+    report_path = Path(
+        os.getenv("DEPLOYMENT_DIAGNOSTICS_REPORT_PATH")
+        or "/tmp/signalrank_deployment_diagnostics.json"
+    )
+    if not report_path.exists():
+        return JSONResponse(
+            status_code=202,
+            content={"ok": False, "status": "pending", "report_path": str(report_path)},
+        )
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.exception("[deployment_diagnostics] report read failed: %s", exc)
+        return JSONResponse(status_code=500, content={"ok": False, "error": "report_unreadable"})
+    return JSONResponse(status_code=200, content={"ok": True, "report": payload})
+
+
 # ─────────────────────────────────────────────────────────────────────────────────────
 # Railway healthcheck - add directly to main app for reliability
 # This ensures /healthz responds even if the mount fails or during edge cases
@@ -1820,6 +1924,22 @@ async def _database_readiness_check() -> dict[str, object]:
                 timeout=1.5,
             )
             deployed = str(version_result.scalar_one_or_none() or "")
+            critical_schema_result = await asyncio.wait_for(
+                session.execute(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM information_schema.columns
+                            WHERE table_name = 'decision_log'
+                              AND column_name = 'created_at'
+                        )
+                        """
+                    )
+                ),
+                timeout=1.5,
+            )
+            decision_log_created_at = bool(critical_schema_result.scalar_one_or_none())
             await session.rollback()
         if deployed != expected_heads[0]:
             return {
@@ -1828,7 +1948,20 @@ async def _database_readiness_check() -> dict[str, object]:
                 "deployed_revision": deployed or None,
                 "expected_revision": expected_heads[0],
             }
-        return {"ok": True, "detail": "reachable", "revision": deployed}
+        if not decision_log_created_at:
+            return {
+                "ok": False,
+                "detail": "critical_schema_column_missing",
+                "table": "decision_log",
+                "column": "created_at",
+                "revision": deployed,
+            }
+        return {
+            "ok": True,
+            "detail": "reachable",
+            "revision": deployed,
+            "critical_schema": {"decision_log.created_at": True},
+        }
     except asyncio.TimeoutError:
         return {"ok": False, "detail": "timeout"}
     except Exception as exc:
@@ -1918,6 +2051,11 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
         checks["telegram"] = {
             "ok": bool(_bot_ready and _bot_application is not None),
             "detail": "ready" if _bot_ready else "initializing",
+        }
+        webhook_secret_configured = bool(str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip())
+        checks["telegram_webhook_secret"] = {
+            "ok": webhook_secret_configured or not production,
+            "detail": "configured" if webhook_secret_configured else "missing",
         }
 
     try:
@@ -2082,6 +2220,51 @@ async def _telegram_webhook_route(req: Request) -> dict:
         return {"ok": False, "error": "invalid_payload", "status": "invalid_payload"}
 
 
+def _webhook_queue_diagnostics() -> dict[str, object]:
+    in_process_size = None
+    in_process_capacity = None
+    try:
+        if _webhook_dispatch_queue is not None:
+            in_process_size = int(_webhook_dispatch_queue.qsize())
+            in_process_capacity = int(_webhook_dispatch_queue.maxsize)
+    except Exception:
+        pass
+    return {
+        "bot_ready": bool(_bot_ready and _bot_application is not None),
+        "dispatcher_ready": _webhook_dispatch_queue is not None,
+        "redis_queue_enabled": bool(_use_redis_webhook_queue),
+        "redis_stream_configured": bool(getattr(_webhook_stream, "configured", False)),
+        "in_process_size": in_process_size,
+        "in_process_capacity": in_process_capacity,
+        "pending_buffer_size": len(_pending_webhook_updates),
+        "inflight_updates": len(_inflight_update_tasks),
+    }
+
+
+def _webhook_rejection(
+    req: Request,
+    *,
+    status_code: int,
+    reason: str,
+    extra: dict[str, object] | None = None,
+) -> JSONResponse:
+    diagnostics = _webhook_queue_diagnostics()
+    if extra:
+        diagnostics.update(extra)
+    client_host = getattr(getattr(req, "client", None), "host", None)
+    logger.warning(
+        "[webhook_rejected] reason=%s status=%s client=%s diagnostics=%s",
+        reason,
+        status_code,
+        client_host,
+        diagnostics,
+    )
+    return JSONResponse(
+        status_code=status_code,
+        content={"ok": False, "error": reason, "diagnostics": diagnostics},
+    )
+
+
 @app.post("/telegram/webhook")
 async def _telegram_webhook_http_route(req: Request) -> JSONResponse:
     """Authenticated, bounded Telegram ingress with retryable overload errors."""
@@ -2090,14 +2273,17 @@ async def _telegram_webhook_http_route(req: Request) -> JSONResponse:
         req.headers.get("x-telegram-bot-api-secret-token") or ""
     ).strip()
     if _production_readiness_required() and not expected_secret:
-        return JSONResponse(
+        return _webhook_rejection(
+            req,
             status_code=503,
-            content={"ok": False, "error": "webhook_secret_not_configured"},
+            reason="webhook_secret_not_configured",
         )
     if expected_secret and not hmac.compare_digest(supplied_secret, expected_secret):
-        return JSONResponse(
+        return _webhook_rejection(
+            req,
             status_code=401,
-            content={"ok": False, "error": "invalid_webhook_secret"},
+            reason="invalid_webhook_secret",
+            extra={"secret_header_present": bool(supplied_secret)},
         )
 
     max_body_bytes = max(
@@ -2139,7 +2325,20 @@ async def _telegram_webhook_http_route(req: Request) -> JSONResponse:
         status_code = 503
     elif error:
         status_code = 400
-    return JSONResponse(status_code=status_code, content=result)
+    if status_code != 200:
+        return _webhook_rejection(
+            req,
+            status_code=status_code,
+            reason=error or "webhook_ingress_failed",
+            extra={
+                "queue_backend": str(result.get("queue_backend") or "unknown"),
+                "route_result": {
+                    key: value for key, value in result.items()
+                    if key not in {"diagnostics"}
+                },
+            },
+        )
+    return JSONResponse(status_code=200, content=result)
 
 
 async def _enqueue_webhook_update_async(data: dict) -> None:

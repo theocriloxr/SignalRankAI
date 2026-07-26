@@ -185,9 +185,10 @@ def test_pair_discovery_has_no_default_import_time_network_thread():
     assert "def start_asset_universe_refresh_thread" in source
 
 
-def test_waitlist_scheduler_loads_module_not_fastapi_object():
+def test_waitlist_scheduler_uses_lightweight_canonical_module():
     source = Path("railway_main.py").read_text(encoding="utf-8")
-    assert 'importlib.import_module("web.app")' in source
+    assert "from services.waitlist_jobs import" in source
+    assert 'importlib.import_module("web.app")' not in source
 
 
 def test_free_distribution_deferral_is_not_logged_as_error():

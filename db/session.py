@@ -315,6 +315,34 @@ _critical_db_lock = threading.Lock()
 _critical_db_inflight = 0
 _legacy_priority_warning_lock = threading.Lock()
 _legacy_priority_warnings: set[str] = set()
+_active_holder_lock = threading.Lock()
+_active_session_holders: dict[str, dict[str, Any]] = {}
+
+
+def _active_holder_snapshot() -> list[dict[str, Any]]:
+    now = time.monotonic()
+    with _active_holder_lock:
+        rows = []
+        for token, item in _active_session_holders.items():
+            row = dict(item)
+            row["token"] = token
+            row["held_seconds"] = round(max(0.0, now - float(item.get("started_mono", now))), 3)
+            row.pop("started_mono", None)
+            rows.append(row)
+        return sorted(rows, key=lambda row: float(row.get("held_seconds", 0.0)), reverse=True)
+
+
+def _log_admission_failure(*, label: str, priority: DBPriority, stage: str, timeout_s: float) -> None:
+    logger.error(
+        "[db_admission_timeout] label=%s priority=%s stage=%s timeout_s=%.2f admission=%s holders=%s session_metrics=%s",
+        label,
+        priority.value,
+        stage,
+        timeout_s,
+        _priority_admission.snapshot(),
+        _active_holder_snapshot(),
+        dict(_session_metrics),
+    )
 
 
 def _truthy_env(name: str, default: bool = False) -> bool:
@@ -566,6 +594,7 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "background_session_limit": int(_background_gate_limit),
         "session_metrics": session_metrics,
         "priority_admission": _priority_admission.snapshot(),
+        "active_session_holders": _active_holder_snapshot(),
     }
     if engine is None:
         info["engine_ready"] = False
@@ -838,6 +867,7 @@ async def get_session(
     bg_acquired = False
     priority_acquired = False
     priority_started = 0.0
+    holder_token: str | None = None
     foreground_waiting_recorded = False
     foreground_scope = bool(
         is_critical
@@ -883,6 +913,12 @@ async def get_session(
                 raise AnalyticsWorkDeferred(
                     "analytics DB work deferred: foreground or operational work is active"
                 )
+            _log_admission_failure(
+                label=_safe_label,
+                priority=resolved,
+                stage="priority_admission",
+                timeout_s=timeout_s,
+            )
             raise TimeoutError(
                 f"Timed out waiting for {resolved.value} DB admission after {timeout_s:.2f}s label={_safe_label}"
             )
@@ -947,6 +983,12 @@ async def get_session(
                     "analytics DB work deferred: session gate busy"
                 )
             _priority_admission.record_timeout(resolved)
+            _log_admission_failure(
+                label=_safe_label,
+                priority=resolved,
+                stage="session_gate",
+                timeout_s=timeout_s,
+            )
             raise TimeoutError(
                 f"Timed out waiting for {resolved.value} DB session after {timeout_s:.2f}s label={_safe_label}"
             )
@@ -969,6 +1011,15 @@ async def get_session(
                 )
                 _session_metrics["interactive_active"] += 1
                 foreground_waiting_recorded = False
+        holder_token = f"{threading.get_ident()}:{_loop_identity()}:{time.time_ns()}"
+        with _active_holder_lock:
+            _active_session_holders[holder_token] = {
+                "label": _safe_label,
+                "priority": resolved.value,
+                "thread_id": int(threading.get_ident()),
+                "loop_id": int(_loop_identity()),
+                "started_mono": time.monotonic(),
+            }
         try:
             async with session_local() as session:
                 try:
@@ -992,6 +1043,19 @@ async def get_session(
                         0, _session_metrics["interactive_active"] - 1
                     )
     finally:
+        if holder_token is not None:
+            with _active_holder_lock:
+                holder = _active_session_holders.pop(holder_token, None)
+            if holder is not None:
+                held_seconds = max(0.0, time.monotonic() - float(holder.get("started_mono", time.monotonic())))
+                warn_after = max(0.0, float(os.getenv("DB_SESSION_HOLD_WARN_SECONDS", "10") or 10))
+                if warn_after and held_seconds >= warn_after:
+                    logger.warning(
+                        "[db_session_long_hold] label=%s priority=%s held_seconds=%.3f",
+                        holder.get("label"),
+                        holder.get("priority"),
+                        held_seconds,
+                    )
         if acquired:
             _session_gate.release()
         if bg_acquired:
