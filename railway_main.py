@@ -58,6 +58,8 @@ from core.redis_streams import (
 
 logger = logging.getLogger(__name__)
 _PROCESS_STARTED_MONO = time.monotonic()
+_LAST_READINESS_FAILURE_SIGNATURE = ""
+_LAST_READINESS_FAILURE_LOG_MONO = 0.0
 
 
 def _resolve_redis_url() -> str:
@@ -1981,18 +1983,47 @@ async def _database_readiness_check() -> dict[str, object]:
                 session.execute(
                     text(
                         """
+                        SELECT table_name, column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND (
+                              (table_name = 'decision_log' AND column_name = 'created_at')
+                              OR
+                              (table_name = 'signals' AND column_name IN
+                                  ('mfe_pct', 'mae_pct', 'performance_version'))
+                          )
+                        """
+                    )
+                ),
+                timeout=1.5,
+            )
+            critical_columns = {
+                f"{str(row[0])}.{str(row[1])}"
+                for row in critical_schema_result.all()
+            }
+            active_guard_result = await asyncio.wait_for(
+                session.execute(
+                    text(
+                        """
                         SELECT EXISTS (
                             SELECT 1
-                            FROM information_schema.columns
-                            WHERE table_name = 'decision_log'
-                              AND column_name = 'created_at'
+                            FROM pg_index AS i
+                            JOIN pg_class AS idx ON idx.oid = i.indexrelid
+                            JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+                            JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                            WHERE ns.nspname = current_schema()
+                              AND tbl.relname = 'signals'
+                              AND idx.relname = 'ix_signals_active_thesis'
+                              AND i.indisunique IS TRUE
+                              AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%status%'
+                              AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%active%'
                         )
                         """
                     )
                 ),
                 timeout=1.5,
             )
-            decision_log_created_at = bool(critical_schema_result.scalar_one_or_none())
+            active_guard_present = bool(active_guard_result.scalar_one_or_none())
             await session.rollback()
         if deployed != expected_heads[0]:
             return {
@@ -2001,19 +2032,33 @@ async def _database_readiness_check() -> dict[str, object]:
                 "deployed_revision": deployed or None,
                 "expected_revision": expected_heads[0],
             }
-        if not decision_log_created_at:
+        required_columns = {
+            "decision_log.created_at",
+            "signals.mfe_pct",
+            "signals.mae_pct",
+            "signals.performance_version",
+        }
+        missing_columns = sorted(required_columns - critical_columns)
+        if missing_columns:
             return {
                 "ok": False,
-                "detail": "critical_schema_column_missing",
-                "table": "decision_log",
-                "column": "created_at",
+                "detail": "critical_schema_columns_missing",
+                "missing": missing_columns,
+                "revision": deployed,
+            }
+        if not active_guard_present:
+            return {
+                "ok": False,
+                "detail": "active_signal_guard_missing",
+                "index": "ix_signals_active_thesis",
                 "revision": deployed,
             }
         return {
             "ok": True,
             "detail": "reachable",
             "revision": deployed,
-            "critical_schema": {"decision_log.created_at": True},
+            "critical_schema": {name: True for name in sorted(required_columns)},
+            "active_signal_guard": True,
         }
     except asyncio.TimeoutError:
         return {"ok": False, "detail": "timeout"}
@@ -2129,6 +2174,16 @@ async def _readyz_endpoint(response: Response) -> dict[str, object]:
     )
     if not ready:
         response.status_code = 503
+        global _LAST_READINESS_FAILURE_SIGNATURE, _LAST_READINESS_FAILURE_LOG_MONO
+        signature = json.dumps(checks, sort_keys=True, default=str)
+        now = time.monotonic()
+        if (
+            signature != _LAST_READINESS_FAILURE_SIGNATURE
+            or now - _LAST_READINESS_FAILURE_LOG_MONO >= 30.0
+        ):
+            logger.warning("[readyz] degraded checks=%s", signature)
+            _LAST_READINESS_FAILURE_SIGNATURE = signature
+            _LAST_READINESS_FAILURE_LOG_MONO = now
     return {
         "status": "ready" if ready else "degraded",
         "ready": ready,

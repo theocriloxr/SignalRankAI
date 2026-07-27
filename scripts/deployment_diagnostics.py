@@ -543,16 +543,34 @@ async def database_check(report: Report) -> None:
                     )
                 )
             ).scalar_one()
+            signal_runtime_columns = (
+                await session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)
+                        FROM information_schema.columns
+                        WHERE table_schema = current_schema()
+                          AND table_name = 'signals'
+                          AND column_name IN ('mfe_pct', 'mae_pct', 'performance_version')
+                        """
+                    )
+                )
+            ).scalar_one()
             active_guard_index = (
                 await session.execute(
                     text(
                         """
                         SELECT COUNT(*)
-                        FROM pg_indexes
-                        WHERE schemaname = current_schema()
-                          AND indexname = 'ix_signals_active_thesis'
-                          AND indexdef ILIKE 'CREATE UNIQUE INDEX%'
-                          AND indexdef ILIKE '%WHERE (status = ''active''::text)%'
+                        FROM pg_index AS i
+                        JOIN pg_class AS idx ON idx.oid = i.indexrelid
+                        JOIN pg_class AS tbl ON tbl.oid = i.indrelid
+                        JOIN pg_namespace AS ns ON ns.oid = tbl.relnamespace
+                        WHERE ns.nspname = current_schema()
+                          AND tbl.relname = 'signals'
+                          AND idx.relname = 'ix_signals_active_thesis'
+                          AND i.indisunique IS TRUE
+                          AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%status%'
+                          AND pg_get_expr(i.indpred, i.indrelid) ILIKE '%active%'
                         """
                     )
                 )
@@ -581,6 +599,7 @@ async def database_check(report: Report) -> None:
             and bool(revision)
             and int(column or 0) == 1
             and int(active_duplicate_groups or 0) == 0
+            and int(signal_runtime_columns or 0) == 3
             and int(active_guard_index or 0) == 1
             and (not expected or str(revision) == expected)
         )
@@ -594,20 +613,23 @@ async def database_check(report: Report) -> None:
                     f"select1={one} revision={revision} expected={expected} "
                     f"decision_log.created_at={column} "
                     f"active_duplicate_groups={active_duplicate_groups} "
+                    f"signal_runtime_columns={signal_runtime_columns}/3 "
                     f"active_guard_unique_index={active_guard_index}"
                 ),
                 duration_ms=int((time.monotonic() - started) * 1000),
                 evidence={
                     "pool": get_pool_diagnostics(),
                     "active_duplicate_groups": int(active_duplicate_groups or 0),
+                    "signal_runtime_columns": int(signal_runtime_columns or 0),
                     "active_guard_unique_index": bool(active_guard_index),
                 },
                 remediation=(
                     None
                     if schema_ok
                     else (
-                        "Run the sole Alembic head, confirm decision_log.created_at, "
-                        "reconcile duplicate active theses, verify ix_signals_active_thesis, "
+                        "Run the sole Alembic head, confirm decision_log.created_at and "
+                        "signals performance columns, reconcile duplicate active theses, "
+                        "verify ix_signals_active_thesis, "
                         "and inspect DB admission holders. The fallback command is: "
                         "python scripts/repair_active_signal_duplicates.py --apply"
                     )
