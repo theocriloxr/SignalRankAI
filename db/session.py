@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import inspect
 import os
 import random
 import re
@@ -819,7 +820,7 @@ async def _acquire_semaphore_cancellation_safe(
 async def get_session(
     *,
     priority: DBPriority | str | None = None,
-    label: str = "unlabelled",
+    label: str | None = None,
     timeout_seconds: float | None = None,
     noncritical: bool = False,
     critical: bool = False,
@@ -832,14 +833,19 @@ async def get_session(
     changing the caller's requested durability class.
 
     ``label`` identifies the caller's operation for metrics, diagnostic logs
-    and deferred-decision tracing. It defaults to ``"unlabelled"`` and callers
-    are encouraged to provide a descriptive, stable identifier.
+    and deferred-decision tracing. Callers should provide a descriptive stable
+    label. When omitted, a bounded caller-derived label is generated; the
+    holder registry never records an ``unlabelled`` session.
 
     ``timeout_seconds`` optionally narrows or extends the admission timeout for
     one operation. The value is clamped to a safe non-negative duration and does
     not alter the global priority policy.
     """
-    _safe_label = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(label or "").strip())[:64] or "unlabelled"
+    _safe_label = re.sub(
+        r"[^a-zA-Z0-9_.-]+",
+        "_",
+        resolve_session_label(label),
+    )[:64] or "unknown_session_caller"
     resolved = resolve_db_priority(
         priority,
         noncritical=noncritical,
@@ -1169,19 +1175,32 @@ def get_sync_session():
     Session = sync_sessionmaker(bind=_sync_thread_local.sync_engine, expire_on_commit=False)
     return Session()
 
-import inspect
-
 def resolve_session_label(label: str | None) -> str:
-    if label and label.strip():
-        return label.strip()
+    """Return an explicit label or derive a stable caller label.
+
+    ``asynccontextmanager`` adds contextlib frames between a call site and the
+    generator body, so walk a small bounded stack and skip session/contextlib
+    internals instead of relying on a fragile fixed frame offset.
+    """
+    if label and str(label).strip():
+        return str(label).strip()
 
     frame = inspect.currentframe()
-    caller = frame.f_back.f_back if frame and frame.f_back else None
-
-    if caller:
-        module = caller.f_globals.get("__name__", "unknown_module")
-        function = caller.f_code.co_name
-        return f"{module}.{function}"
+    try:
+        cursor = frame.f_back if frame is not None else None
+        for _ in range(12):
+            if cursor is None:
+                break
+            module = str(cursor.f_globals.get("__name__", "unknown_module"))
+            function = str(cursor.f_code.co_name)
+            if module != __name__ and module != "contextlib" and function not in {
+                "__aenter__",
+                "__anext__",
+            }:
+                return f"{module}.{function}:{int(cursor.f_lineno)}"
+            cursor = cursor.f_back
+    finally:
+        del frame
 
     return "unknown_session_caller"
 

@@ -5214,13 +5214,17 @@ def run_bot() -> None:
     try:
         application.add_handler(CommandHandler("filter", _audit_handler("filter", filter_command)))
     except NameError:
-        async def _filter_placeholder(update, context):
-            try:
-                if getattr(update, "message", None) is not None:
-                    await update.message.reply_text("This command is currently unavailable.")
-            except Exception:
-                pass
-        application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_placeholder)))
+        logger.error("[commands] /filter implementation is unavailable; registering fail-closed degraded response")
+
+        async def _filter_unavailable(update, context):
+            message = getattr(update, "message", None)
+            if message is not None:
+                await message.reply_text(
+                    "⚠️ /filter is disabled because its implementation did not load. "
+                    "No preferences were changed. Reference: FILTER_HANDLER_UNAVAILABLE"
+                )
+
+        application.add_handler(CommandHandler("filter", _audit_handler("filter", _filter_unavailable)))
 
     application.add_handler(CommandHandler("apikey", _audit_handler("apikey", apikey_command)))
     application.add_handler(CommandHandler("language", _audit_handler("language", language_command)))

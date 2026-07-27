@@ -1,0 +1,52 @@
+{
+  "decisions": [
+    {
+      "authority": "V7 modular/API contract and existing security tests",
+      "commit": "1c2ad0d",
+      "decision": "web.app FastAPI is the canonical Railway-mounted web surface; the legacy Flask dashboard is not a substitute.",
+      "id": "SRA-DEC-001",
+      "rollback": "revert only with an approved replacement that passes the same route/security tests",
+      "status": "APPLIED"
+    },
+    {
+      "authority": "V7 evidence accuracy and repository orchestrator design",
+      "commit": "deeefed",
+      "decision": "Complete local pytest evidence uses deterministic isolated file batches because the monolithic process can hang during teardown after tests execute.",
+      "id": "SRA-DEC-002",
+      "rollback": "return to monolithic only after teardown root cause is proven fixed",
+      "status": "APPLIED"
+    },
+    {
+      "authority": "V7 callback ownership/IDOR contract",
+      "commit": "a842802",
+      "decision": "Signal chart and Gemini callbacks require proof-backed user delivery before signal data is loaded.",
+      "id": "SRA-DEC-003",
+      "rollback": "remove button emission; never weaken ownership checks",
+      "status": "APPLIED"
+    },
+    {
+      "authority": "V7 PgBouncer/session diagnostics contract",
+      "commit": "ee07957",
+      "decision": "Missing DB session labels are derived from bounded caller inspection rather than stored as unlabelled.",
+      "id": "SRA-DEC-004",
+      "rollback": "require explicit labels at every caller before removing derivation",
+      "status": "APPLIED"
+    },
+    {
+      "authority": "V7 release gates",
+      "decision": "Public payments, real payouts, auto trading, copy trading, real execution, live MT5 accounts, and WebSockets remain disabled by default.",
+      "id": "SRA-DEC-005",
+      "rollback": "not applicable; activation requires a new approved decision and evidence",
+      "status": "BINDING"
+    }
+  ],
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "decisions",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

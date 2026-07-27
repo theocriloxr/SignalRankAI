@@ -1,0 +1,85 @@
+{
+  "blockers": [
+    {
+      "blocking_gates": [
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "id": "SRA-BLK-001",
+      "needed": "Railway staging project with independent Postgres, PgBouncer/direct migration URL, RedisState, RedisDelivery, and test Telegram bot",
+      "owner_action": "provision/connect staging resources and credentials",
+      "safe_default": "engine and public distribution remain off",
+      "status": "BLOCKED_EXTERNAL",
+      "type": "external_environment"
+    },
+    {
+      "blocking_gates": [
+        "D",
+        "F"
+      ],
+      "id": "SRA-BLK-002",
+      "needed": "exact provider credentials/plans and regional Railway access for live certification",
+      "owner_action": "supply approved keys in staging secrets",
+      "safe_default": "provider remains uncertified/disabled or best-effort",
+      "status": "BLOCKED_EXTERNAL",
+      "type": "credential_entitlement"
+    },
+    {
+      "blocking_gates": [
+        "G",
+        "H",
+        "I"
+      ],
+      "id": "SRA-BLK-003",
+      "needed": "approved prices, tier entitlements, terms/privacy, jurisdictional and financial/legal review",
+      "owner_action": "approve versioned business/legal decisions",
+      "safe_default": "public payments and real execution remain off",
+      "status": "REQUIRES_OWNER_APPROVAL",
+      "type": "business_legal"
+    },
+    {
+      "blocking_gates": [
+        "H"
+      ],
+      "id": "SRA-BLK-004",
+      "needed": "Paystack test keys and webhook endpoint",
+      "owner_action": "configure staging test credentials and permit controlled E2E",
+      "safe_default": "PAYMENTS_PUBLIC_ENABLED=0",
+      "status": "BLOCKED_EXTERNAL",
+      "type": "payment_sandbox"
+    },
+    {
+      "blocking_gates": [
+        "I"
+      ],
+      "id": "SRA-BLK-005",
+      "needed": "dedicated MetaApi demo account and approved test window",
+      "owner_action": "provide demo account only; no live account",
+      "safe_default": "REAL_EXECUTION_ENABLED=0 and MT5_ALLOW_LIVE_ACCOUNTS=0",
+      "status": "BLOCKED_EXTERNAL",
+      "type": "broker_demo"
+    },
+    {
+      "blocking_gates": [
+        "E"
+      ],
+      "id": "SRA-BLK-006",
+      "needed": "24–72 hour Railway owner soak plus restart/Redis recovery evidence",
+      "owner_action": "run after Gates A–D pass in staging",
+      "safe_default": "do not claim production readiness",
+      "status": "BLOCKED_EXTERNAL",
+      "type": "time_based_evidence"
+    }
+  ],
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "blockers",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

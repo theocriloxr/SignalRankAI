@@ -164,10 +164,16 @@ async def _handle_mt5_trade(update: Update, context: ContextTypes.DEFAULT_TYPE, 
             )
             return
         
-        # Direct to MT5 execution flow
+        # The canonical MT5 callback is registered before this global catch-all.
+        # Reaching this fallback means the execution preflight route was not
+        # available, so fail closed instead of implying an order flow started.
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text="⚡ Opening MT5 trade execution...",
+            text=(
+                "⚠️ MT5 execution preflight is unavailable in this route. "
+                "No order was submitted. Use /mt5_status and retry from the "
+                "latest signal message."
+            ),
         )
         
     except Exception as e:
@@ -447,14 +453,139 @@ async def _safe_answer(query, text: str = "", show_alert: bool = False) -> None:
         pass
 
 
+async def _load_authorized_signal_payload(
+    signal_id: str,
+    telegram_user_id: int,
+) -> dict[str, Any] | None:
+    """Return a signal only when this Telegram user has delivery proof for it.
+
+    Callback data is untrusted and may be forged or forwarded.  The ownership
+    check is completed in a short database transaction; chart rendering,
+    market-data access and Gemini calls happen only after the session closes.
+    """
+    try:
+        from sqlalchemy import select
+
+        from db.models import SignalDelivery, User
+        from db.session import get_session
+
+        async with get_session(priority="interactive", label="callback.signal_authorization") as session:
+            delivery_id = (
+                await session.execute(
+                    select(SignalDelivery.id)
+                    .join(User, User.id == SignalDelivery.user_id)
+                    .where(
+                        User.telegram_user_id == int(telegram_user_id),
+                        SignalDelivery.signal_id == str(signal_id),
+                        SignalDelivery.sent_ok.is_(True),
+                    )
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            await session.commit()
+        if delivery_id is None:
+            return None
+
+        from signalrank_telegram.bot import _load_signal_payload
+
+        return await _load_signal_payload(str(signal_id))
+    except Exception as exc:
+        logger.warning("[callback] signal ownership lookup failed: %s", exc)
+        return None
+
+
+def _callback_user_id(update: Update) -> int:
+    user = getattr(update, "effective_user", None)
+    if user is None:
+        query = getattr(update, "callback_query", None)
+        user = getattr(query, "from_user", None)
+    try:
+        return int(getattr(user, "id", 0) or 0)
+    except Exception:
+        return 0
+
+
 async def _handle_signal_chart(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
     query = update.callback_query
-    await _safe_answer(query, "Chart view is not available yet.", show_alert=False)
+    await _safe_answer(query, "Building chart…", show_alert=False)
+
+    user_id = _callback_user_id(update)
+    signal = await _load_authorized_signal_payload(signal_id, user_id)
+    if signal is None:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="🔒 This signal is unavailable or was not delivered to your account.",
+        )
+        return
+
+    try:
+        from signalrank_telegram.signal_charts import build_signal_chart
+
+        chart = await build_signal_chart(signal)
+        if chart is None:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="⚠️ Chart data is temporarily unavailable for this signal.",
+            )
+            return
+        caption = (
+            f"📊 {str(signal.get('asset') or 'Signal')} "
+            f"{str(signal.get('timeframe') or '').upper()} · "
+            f"{str(signal.get('direction') or '').upper()}"
+        ).strip()
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=chart,
+            caption=caption[:1024],
+        )
+    except Exception as exc:
+        logger.warning("[callback] signal chart failed: %s", exc)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="⚠️ The chart could not be generated right now. Please retry later.",
+        )
 
 
 async def _handle_ask_gemini(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:
     query = update.callback_query
-    await _safe_answer(query, "Gemini analysis is being prepared.", show_alert=False)
+    await _safe_answer(query, "Reviewing signal…", show_alert=False)
+
+    user_id = _callback_user_id(update)
+    signal = await _load_authorized_signal_payload(signal_id, user_id)
+    if signal is None:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="🔒 This signal is unavailable or was not delivered to your account.",
+        )
+        return
+
+    try:
+        from services.gemini_ml import ask_gemini_signal_explanation
+
+        explanation = await ask_gemini_signal_explanation(dict(signal))
+        if not explanation:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=(
+                    "ℹ️ Gemini review is currently unavailable. The deterministic "
+                    "signal and its risk controls remain unchanged."
+                ),
+            )
+            return
+        text = "🤖 Gemini advisory review\n\n" + str(explanation).strip()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=text[:4000],
+        )
+    except Exception as exc:
+        logger.warning("[callback] Gemini explanation failed: %s", exc)
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=(
+                "ℹ️ Gemini review could not be completed. The deterministic "
+                "signal remains available and no execution decision was made."
+            ),
+        )
 
 
 async def _handle_open_signal(update: Update, context: ContextTypes.DEFAULT_TYPE, signal_id: str) -> None:

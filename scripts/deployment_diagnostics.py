@@ -33,6 +33,8 @@ from typing import Any, Awaitable, Callable
 from urllib import error, request
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -318,7 +320,7 @@ def static_checks(report: Report) -> None:
     python = sys.executable
     env_profiles = sorted(str(path.relative_to(ROOT)) for path in (ROOT / "configs" / "env").glob("*.env.example"))
     commands = [
-        ("compileall", [python, "-m", "compileall", "-q", "."], "critical"),
+        ("compile_tracked_python", [python, "scripts/compile_tracked_python.py"], "critical"),
         ("pip_dependency_check", [python, "-m", "pip", "check"], "high"),
         ("schema_audit", [python, "scripts/schema_audit.py"], "critical"),
         ("architecture_smoke", [python, "scripts/architecture_smoke.py"], "critical"),
@@ -704,7 +706,20 @@ async def redis_delivery_queue_diagnostics(report: Report, *, url: str) -> None:
         )
         return
 
-    import redis.asyncio as redis
+    try:
+        import redis.asyncio as redis
+    except Exception as exc:
+        report.add(
+            Check(
+                "delivery_queue_backlog",
+                "delivery_queues",
+                FAIL,
+                "critical",
+                f"{type(exc).__name__}: {exc}",
+                remediation="Install the locked Redis client dependency before deployment.",
+            )
+        )
+        return
 
     stream_name = _value("TELEGRAM_UPDATES_STREAM") or "signalrank:telegram_updates:v1"
     group_name = _value("TELEGRAM_UPDATES_CONSUMER_GROUP") or "signalrank:telegram"
@@ -890,7 +905,20 @@ async def redis_state_queue_diagnostics(report: Report, *, url: str) -> None:
     if not url:
         report.add(Check("signal_dispatch_queue", "delivery_queues", BLOCKED, "high", "STATE_REDIS_URL missing"))
         return
-    import redis.asyncio as redis
+    try:
+        import redis.asyncio as redis
+    except Exception as exc:
+        report.add(
+            Check(
+                "signal_dispatch_queue",
+                "delivery_queues",
+                FAIL,
+                "high",
+                f"{type(exc).__name__}: {exc}",
+                remediation="Install the locked Redis client dependency before deployment.",
+            )
+        )
+        return
 
     key = _value("SIGNAL_DISPATCH_QUEUE_KEY") or "signalrankai:signal_dispatch:queue"
     max_depth = max(1, int(os.getenv("DEPLOYMENT_SIGNAL_DISPATCH_MAX_DEPTH", "1000") or 1000))

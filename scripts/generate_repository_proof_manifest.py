@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-SKIP_PARTS = {".git", ".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache", "artifacts", ".pytest-tmp"}
+SKIP_PARTS = {".git", ".venv", "venv", ".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache", ".freebuff", ".diagnostics", "artifacts", "logs", "evidence", ".pytest-tmp", "node_modules", ".tox"}
 SKIP_FILES = {
     "docs/REPOSITORY_PROOF_MANIFEST.json",
     "docs/REPOSITORY_PROOF_MANIFEST.md",

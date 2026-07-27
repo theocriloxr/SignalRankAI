@@ -174,9 +174,19 @@ def _partition_pytest_files(batch_count: int) -> list[list[str]]:
         return []
     requested = int(batch_count or 0)
     count = len(files) if requested <= 0 else max(1, min(requested, len(files)))
-    # Contiguous chunks preserve the repository's canonical lexical test order.
-    chunk_size = (len(files) + count - 1) // count
-    return [files[index:index + chunk_size] for index in range(0, len(files), chunk_size)]
+    # Produce exactly ``count`` non-empty contiguous batches when the inventory
+    # contains at least that many files.  A ceiling-sized chunk can accidentally
+    # yield fewer batches (for example 143 files requested as 20 batches becomes
+    # 18 chunks of size 8), which makes CI topology drift as the suite grows.
+    base_size, remainder = divmod(len(files), count)
+    batches: list[list[str]] = []
+    start = 0
+    for index in range(count):
+        size = base_size + (1 if index < remainder else 0)
+        end = start + size
+        batches.append(files[start:end])
+        start = end
+    return batches
 
 
 def build_steps(args: argparse.Namespace) -> list[tuple[str, list[str]]]:
