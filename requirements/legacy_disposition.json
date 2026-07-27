@@ -1,5 +1,5 @@
 {
-  "file_count": 933,
+  "file_count": 936,
   "files": [
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -32,14 +32,6 @@
       "reason": "production/build source",
       "sha256": "8c26871a4516413836e23c317be9b28a1e5cb3fcb6bc0fec5a792843dcbea222",
       "size_bytes": 490
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": ".pytest-tmp/railway-simulation.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "a831ca939d9aa6ebd7a7bf1bbfa399cf150fd882586231bbb4c0dd3007bf3bbf",
-      "size_bytes": 3481
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1494,7 +1486,7 @@
       "line_count": 32,
       "path": "core/version.py",
       "reason": "production/build source",
-      "sha256": "2cc5ec4f6bb8e779cc53fafe661d6c902231241f04102e8d606e177f43e443cc",
+      "sha256": "1651e78d41176a9e89344b15e591f169a6ed30a662dcb4dc253d74209f83fd6d",
       "size_bytes": 918
     },
     {
@@ -2059,11 +2051,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 195,
+      "line_count": 244,
       "path": "db/migrations/versions/0015_active_signal_guard.py",
       "reason": "database migration history",
-      "sha256": "7bc0e38e1c1e0b9a774c6466f32cd2612ff52be1f74fa6a3334b675266a1a298",
-      "size_bytes": 6000
+      "sha256": "59aced565b2b172dc0967f3c125638a95dacecb3a3323061cbc213f247fdf5a1",
+      "size_bytes": 7718
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2872,6 +2864,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "3b2aa77b754f20e42d4ff7e5db0f234b37d6c784e4ebccf0c2219db6ac6290af",
       "size_bytes": 2179
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 36,
+      "path": "docs/RAILWAY_CLEAN_DATABASE_MIGRATION_HOTFIX_2026-07-27.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "bd2b71c47236bfe2d467d7b6d379d8388c6b342196e0b30ce127529e3c301e7a",
+      "size_bytes": 1308
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -4667,19 +4667,19 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 629,
+      "line_count": 631,
       "path": "scripts/build_v7_governance.py",
       "reason": "production/build source",
-      "sha256": "a99e056ecd1127275b4d0e97703904b2a49901ed5cfeba1ae88dcd0856718849",
-      "size_bytes": 44439
+      "sha256": "a854a96e541b877d107bce88d4e3b4975a404697a73ca95ba57187993644bc25",
+      "size_bytes": 44478
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 250,
+      "line_count": 254,
       "path": "scripts/certify_providers.py",
       "reason": "production/build source",
-      "sha256": "330bfdd0eed747171be1ca9b56cd827d8dc12a9428cc8c2e91cd533413a791f9",
-      "size_bytes": 9388
+      "sha256": "ebd2fcf5f3c213adc370f548098bdb4891670e7a80dd49e2422d4556fbc1a3fa",
+      "size_bytes": 9496
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -6379,6 +6379,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 9,
+      "path": "tests/test_governance_runtime_exclusions.py",
+      "reason": "automated test evidence",
+      "sha256": "5ceda78414e545181f2d2502b0dbdd741b89ab10958916f83993bba6a0846118",
+      "size_bytes": 304
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 24,
       "path": "tests/test_help_menu_cache.py",
       "reason": "automated test evidence",
@@ -6440,6 +6448,14 @@
       "reason": "automated test evidence",
       "sha256": "2a3b647b388c440701e7d009737acca931d477958aa4fa4cbdb6ba0df7d344a4",
       "size_bytes": 1998
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 26,
+      "path": "tests/test_migration_0015_clean_schema.py",
+      "reason": "automated test evidence",
+      "sha256": "e3c1d5154440c7faf622407fc05e0ec14714cd329b833dd6fce5669239cad7e3",
+      "size_bytes": 957
     },
     {
       "disposition": "TEST_ONLY",
@@ -6752,6 +6768,14 @@
       "reason": "automated test evidence",
       "sha256": "eb5defb0d0223b1dac40524d587c391b9e581f164201132d41a6e7022881d948",
       "size_bytes": 2469
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 33,
+      "path": "tests/test_provider_certification_entrypoint.py",
+      "reason": "automated test evidence",
+      "sha256": "a3292845683fed2e30756e4a9ca951fab2b1981cfba5cc4408980809f210d004",
+      "size_bytes": 827
     },
     {
       "disposition": "TEST_ONLY",
@@ -7477,9 +7501,8 @@
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
   "summary": {
-    "DELETE_GENERATED_ONLY": 1,
-    "DOCUMENTATION_ONLY": 186,
+    "DOCUMENTATION_ONLY": 187,
     "PRESERVE_BEHAVIOUR": 592,
-    "TEST_ONLY": 154
+    "TEST_ONLY": 157
   }
 }

@@ -34,6 +34,8 @@ EXCLUDED_PARTS = {
     "venv",
     "__pycache__",
     ".pytest_cache",
+    ".pytest-tmp",
+    ".diagnostics",
     ".mypy_cache",
     ".ruff_cache",
     "node_modules",

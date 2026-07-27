@@ -127,6 +127,54 @@ WHERE signal_id IN (SELECT signal_id FROM ranked WHERE row_num > 1)
 """
 
 
+
+def _ensure_signal_status_column() -> None:
+    """Create the canonical signal lifecycle column on clean/legacy schemas.
+
+    Early migration revisions created ``signals`` without ``status`` while
+    legacy production databases often already had the column.  Revision 0015
+    is the first revision that requires it, so the column must be established
+    here before reconciliation or index creation.
+    """
+    bind = op.get_bind()
+    dialect = str(bind.dialect.name or "").lower()
+    if dialect == "postgresql":
+        # PostgreSQL supports additive idempotent DDL directly.  Avoid runtime
+        # reflection here so ``alembic upgrade --sql`` remains usable.
+        bind.execute(
+            sa.text(
+                "ALTER TABLE signals "
+                "ADD COLUMN IF NOT EXISTS status VARCHAR(16) "
+                "NOT NULL DEFAULT 'issued'"
+            )
+        )
+        bind.execute(
+            sa.text("UPDATE signals SET status = 'issued' WHERE status IS NULL")
+        )
+        return
+
+    columns = {
+        str(column.get("name") or "").lower()
+        for column in sa.inspect(bind).get_columns("signals")
+    }
+    if "status" not in columns:
+        op.add_column(
+            "signals",
+            sa.Column(
+                "status",
+                sa.String(length=16),
+                nullable=False,
+                server_default=sa.text("'issued'"),
+            ),
+        )
+    else:
+        # Preserve existing lifecycle values.  Only repair unexpected NULLs so
+        # the partial unique index has deterministic semantics.
+        bind.execute(
+            sa.text("UPDATE signals SET status = 'issued' WHERE status IS NULL")
+        )
+
+
 def _reconcile_active_duplicates() -> int:
     """Return the number of legacy active rows changed to ``superseded``."""
     bind = op.get_bind()
@@ -185,6 +233,7 @@ def _create_indexes() -> None:
 
 
 def upgrade() -> None:
+    _ensure_signal_status_column()
     _reconcile_active_duplicates()
     _create_indexes()
 
