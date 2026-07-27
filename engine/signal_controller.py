@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -186,7 +187,7 @@ class SignalController:
                 self._gemini_daily_limit = max(1, int(os.getenv("GEMINI_DAILY_LIMIT", "10") or 10))
             except Exception:
                 self._gemini_daily_limit = 10
-            today = datetime.utcnow().strftime("%Y-%m-%d")
+            today = now_utc_naive().strftime("%Y-%m-%d")
             with self._gemini_counter_lock:
                 if self._gemini_call_day != today:
                     self._gemini_call_day = today

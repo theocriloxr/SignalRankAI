@@ -1,0 +1,67 @@
+{
+  "conflicts": [
+    {
+      "authority": "SRA-DEC-001",
+      "compatibility_plan": "legacy Flask surface is not mounted",
+      "data_migration_impact": "none",
+      "decision": "restore FastAPI",
+      "id": "SRA-CON-001",
+      "new_interpretation": "the production FastAPI security surface is canonical",
+      "old_interpretation": "a minimal Flask dashboard can replace the web module",
+      "security_financial_impact": "high",
+      "sources": [
+        "web/app.py at input HEAD 8871315",
+        "web security tests and Railway mount"
+      ],
+      "tests": [
+        "tests/test_web_app_regression_guard.py"
+      ],
+      "user_impact": "broker security/API routes disappeared"
+    },
+    {
+      "authority": "SRA-DEC-002",
+      "compatibility_plan": "deterministic contiguous batches",
+      "data_migration_impact": "none",
+      "decision": "balanced divmod partition",
+      "id": "SRA-CON-002",
+      "new_interpretation": "requested batch count is exact",
+      "old_interpretation": "ceiling chunk size approximates requested batches",
+      "security_financial_impact": "medium",
+      "sources": [
+        "scripts/run_complete_system_test.py before deeefed",
+        "requested 20-batch CI topology"
+      ],
+      "tests": [
+        "tests/test_complete_system_orchestrator_contract.py"
+      ],
+      "user_impact": "CI coverage topology drifted silently"
+    },
+    {
+      "authority": "V7 Gate H",
+      "compatibility_plan": "controlled paid beta after approval",
+      "data_migration_impact": "receipt ledger must be preserved",
+      "decision": "PAYMENTS_PUBLIC_ENABLED=0",
+      "id": "SRA-CON-003",
+      "new_interpretation": "payments remain disabled until test-mode E2E and business approval",
+      "old_interpretation": "payment routes imply payment readiness",
+      "security_financial_impact": "critical",
+      "sources": [
+        "V7 public-payment product line",
+        "unresolved owner pricing/legal approvals"
+      ],
+      "tests": [
+        "tests/test_phase4_pass6_security_api_payments.py"
+      ],
+      "user_impact": "prevents incorrect charging/entitlement"
+    }
+  ],
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "conflicts",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

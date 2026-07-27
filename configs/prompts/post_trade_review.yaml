@@ -1,0 +1,3 @@
+version: post-trade-review-v1
+purpose: explain a recorded outcome using provenance-separated data
+deterministic_veto: true

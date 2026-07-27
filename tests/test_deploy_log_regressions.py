@@ -319,9 +319,10 @@ def test_market_data_batch_is_timeout_isolated_per_asset():
     core_source = Path("engine/core.py").read_text(encoding="utf-8")
 
     assert "asyncio.wait_for(" in core_source
-    assert "fetch_market_data_cached(asset, tfs)" in core_source
+    assert "fetch_market_data_cached(asset, timeframes, diagnostic_scope=diagnostic_scope)" in core_source
+    assert "children_cancelled=true" in core_source
     assert "return_exceptions=True" in core_source
-    assert "status=timeout" in core_source
+    assert "[ohlc_asset_timeout]" in core_source
 
 
 def test_indicator_schema_aliases_support_strategy_keys():

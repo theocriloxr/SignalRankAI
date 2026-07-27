@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import logging
 from datetime import datetime
@@ -63,7 +64,7 @@ async def record_trading_event(
             "asset": str(asset or "").upper().strip() or None,
             "previous_state": normalize_position_state(previous_state) if previous_state else None,
             "next_state": normalize_position_state(next_state) if next_state else None,
-            "recorded_at": datetime.utcnow().isoformat(),
+            "recorded_at": now_utc_naive().isoformat(),
         }
     )
     session.add(

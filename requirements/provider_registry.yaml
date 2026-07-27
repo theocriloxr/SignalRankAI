@@ -1,0 +1,1014 @@
+{
+  "count": 23,
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "provider_registry",
+  "providers": [
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.coinbase_adapter",
+      "default_enabled": true,
+      "display_name": "Coinbase Exchange",
+      "docs_url": "https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "coinbase",
+      "market_types": [
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "primary_realtime",
+        "public"
+      ],
+      "sample_symbol": "BTCUSD",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot",
+        "crypto_perpetual",
+        "crypto_futures",
+        "crypto_options"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.okx_adapter",
+      "default_enabled": true,
+      "display_name": "OKX",
+      "docs_url": "https://www.okx.com/docs-v5/en/#rest-api-market-data-get-candlesticks",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "okx",
+      "market_types": [
+        "spot",
+        "swap",
+        "futures",
+        "options"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "primary_realtime",
+        "public"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.kraken_adapter",
+      "default_enabled": true,
+      "display_name": "Kraken",
+      "docs_url": "https://docs.kraken.com/api/docs/rest-api/get-ohlc-data/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "kraken",
+      "market_types": [
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "secondary_realtime",
+        "public"
+      ],
+      "sample_symbol": "BTCUSD",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.kucoin_adapter",
+      "default_enabled": true,
+      "display_name": "KuCoin",
+      "docs_url": "https://www.kucoin.com/docs/rest/spot-trading/market-data/get-klines",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "kucoin",
+      "market_types": [
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "fallback_realtime",
+        "public"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot",
+        "crypto_perpetual",
+        "crypto_futures",
+        "crypto_options"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.bybit_adapter",
+      "default_enabled": true,
+      "display_name": "Bybit V5",
+      "docs_url": "https://bybit-exchange.github.io/docs/v5/market/kline",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "bybit",
+      "market_types": [
+        "spot",
+        "linear",
+        "inverse",
+        "options"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "fallback_realtime",
+        "public"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot",
+        "crypto_perpetual",
+        "crypto_futures"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.binance_adapter",
+      "default_enabled": false,
+      "display_name": "Binance",
+      "docs_url": "https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints",
+      "enabled_env": "BINANCE_MARKET_DATA_ENABLED",
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "binance",
+      "market_types": [
+        "spot",
+        "linear",
+        "inverse"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": "May be inaccessible from some Railway regions.",
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "regional_fallback",
+        "public"
+      ],
+      "sample_symbol": "BTCUSDT",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "cryptocompare_get_candles_sync",
+      "connector_module": "data.connectors.cryptocompare_adapter",
+      "default_enabled": true,
+      "display_name": "CryptoCompare",
+      "docs_url": "https://min-api.cryptocompare.com/documentation",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "cryptocompare",
+      "market_types": [
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "CRYPTOCOMPARE_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "guarded_fallback"
+      ],
+      "sample_symbol": "BTCUSD",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index",
+        "commodity_spot",
+        "commodity_future",
+        "forex",
+        "macro",
+        "volatility",
+        "yield"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.yfinance_adapter",
+      "default_enabled": true,
+      "display_name": "Yahoo Finance / yfinance",
+      "docs_url": "https://pypi.org/project/yfinance/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "yfinance",
+      "market_types": [
+        "cash",
+        "future",
+        "index",
+        "fx",
+        "analysis"
+      ],
+      "notes": "Unofficial/best-effort data source; never sole execution truth.",
+      "public_endpoint": true,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "best_effort_fallback",
+        "historical"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index",
+        "forex",
+        "commodity_spot",
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.twelvedata_adapter",
+      "default_enabled": true,
+      "display_name": "Twelve Data",
+      "docs_url": "https://twelvedata.com/docs",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "twelvedata",
+      "market_types": [
+        "cash",
+        "index",
+        "fx",
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "TWELVEDATA_API_KEY",
+        "TWELVE_DATA_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_primary"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index",
+        "forex",
+        "crypto_spot",
+        "equity_option"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.polygon_adapter",
+      "default_enabled": true,
+      "display_name": "Polygon",
+      "docs_url": "https://polygon.io/docs/rest",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "polygon",
+      "market_types": [
+        "cash",
+        "index",
+        "fx",
+        "spot",
+        "options"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "POLYGON_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_primary"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "forex",
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.tiingo_adapter",
+      "default_enabled": true,
+      "display_name": "Tiingo",
+      "docs_url": "https://api.tiingo.com/documentation/general/overview",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "tiingo",
+      "market_types": [
+        "cash",
+        "fx",
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "TIINGO_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_fallback",
+        "historical"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index",
+        "forex",
+        "commodity_spot",
+        "macro"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.fmp_adapter",
+      "default_enabled": true,
+      "display_name": "Financial Modeling Prep",
+      "docs_url": "https://site.financialmodelingprep.com/developer/docs",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "fmp",
+      "market_types": [
+        "cash",
+        "index",
+        "fx",
+        "analysis"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "FMP_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_primary"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "forex",
+        "commodity_spot",
+        "crypto_spot",
+        "macro"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.alphavantage_adapter",
+      "default_enabled": true,
+      "display_name": "Alpha Vantage",
+      "docs_url": "https://www.alphavantage.co/documentation/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "alphavantage",
+      "market_types": [
+        "cash",
+        "fx",
+        "spot",
+        "analysis"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "ALPHAVANTAGE_API_KEY",
+        "ALPHA_VANTAGE_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_fallback"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "forex",
+        "commodity_spot",
+        "index"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.oanda_adapter",
+      "default_enabled": true,
+      "display_name": "OANDA v20",
+      "docs_url": "https://developer.oanda.com/rest-live-v20/instrument-ep/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "oanda",
+      "market_types": [
+        "fx",
+        "cfd"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "OANDA_API_KEY",
+        "OANDA_TOKEN"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "practice_broker",
+        "broker_validation"
+      ],
+      "sample_symbol": "EURUSD",
+      "sample_timeframe": "1h",
+      "sandbox": true,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "forex",
+        "macro"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.ecb_adapter",
+      "default_enabled": true,
+      "display_name": "European Central Bank",
+      "docs_url": "https://data-api.ecb.europa.eu/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "ecb",
+      "market_types": [
+        "reference_rate",
+        "analysis"
+      ],
+      "notes": "Daily reference-rate context; not execution or intraday truth.",
+      "public_endpoint": true,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "analysis_only"
+      ],
+      "sample_symbol": "EURUSD",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "crypto_perpetual",
+        "crypto_futures",
+        "crypto_options"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.deribit_adapter",
+      "default_enabled": false,
+      "display_name": "Deribit",
+      "docs_url": "https://docs.deribit.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "deribit",
+      "market_types": [
+        "perpetual",
+        "future",
+        "options"
+      ],
+      "notes": "Public derivatives connector; enable only after regional/live certification.",
+      "public_endpoint": true,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "public_derivatives"
+      ],
+      "sample_symbol": "BTC-PERPETUAL",
+      "sample_timeframe": "5m",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "4h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index",
+        "forex",
+        "commodity_future",
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.eodhd_adapter",
+      "default_enabled": false,
+      "display_name": "EODHD",
+      "docs_url": "https://eodhd.com/financial-apis/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "eodhd",
+      "market_types": [
+        "cash",
+        "index",
+        "fx",
+        "future"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "EODHD_API_KEY",
+        "EODHD_API_TOKEN"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "historical",
+        "delayed_intraday"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.marketstack_adapter",
+      "default_enabled": false,
+      "display_name": "Marketstack",
+      "docs_url": "https://marketstack.com/documentation",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "marketstack",
+      "market_types": [
+        "cash",
+        "index"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "MARKETSTACK_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "historical",
+        "delayed_intraday"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "forex",
+        "crypto_spot"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.finnhub_adapter",
+      "default_enabled": false,
+      "display_name": "Finnhub",
+      "docs_url": "https://finnhub.io/docs/api",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "finnhub",
+      "market_types": [
+        "cash",
+        "fx",
+        "spot"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "FINNHUB_API_KEY"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_fallback"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1h",
+      "sandbox": false,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "crypto_spot",
+        "equity_option"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.alpaca_adapter",
+      "default_enabled": false,
+      "display_name": "Alpaca",
+      "docs_url": "https://docs.alpaca.markets/docs/market-data",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "alpaca",
+      "market_types": [
+        "cash",
+        "spot",
+        "options"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [
+        [
+          "ALPACA_API_KEY",
+          "APCA_API_KEY_ID"
+        ],
+        [
+          "ALPACA_API_SECRET",
+          "APCA_API_SECRET_KEY"
+        ]
+      ],
+      "roles": [
+        "keyed_primary",
+        "sandbox"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1h",
+      "sandbox": true,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m",
+        "1h",
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "equity_option"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.tradier_adapter",
+      "default_enabled": false,
+      "display_name": "Tradier",
+      "docs_url": "https://documentation.tradier.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "tradier",
+      "market_types": [
+        "cash",
+        "options"
+      ],
+      "notes": "",
+      "public_endpoint": false,
+      "realtime_capable": true,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [
+        "TRADIER_TOKEN"
+      ],
+      "required_env_all": [],
+      "roles": [
+        "keyed_fallback",
+        "sandbox"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "5m",
+      "sandbox": true,
+      "timeframes": [
+        "1m",
+        "5m",
+        "15m"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "commodity_future",
+        "macro"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.nasdaq_data_link_adapter",
+      "default_enabled": false,
+      "display_name": "Nasdaq Data Link",
+      "docs_url": "https://docs.data.nasdaq.com/",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "nasdaq_data_link",
+      "market_types": [
+        "historical",
+        "analysis"
+      ],
+      "notes": "Requires NASDAQ_DATA_LINK_DATASETS_JSON symbol-to-dataset mapping.",
+      "public_endpoint": false,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [
+        [
+          "NASDAQ_DATA_LINK_API_KEY"
+        ],
+        [
+          "NASDAQ_DATA_LINK_DATASETS_JSON"
+        ]
+      ],
+      "roles": [
+        "configured_historical"
+      ],
+      "sample_symbol": "GC",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    },
+    {
+      "asset_classes": [
+        "equity",
+        "index",
+        "forex",
+        "commodity_future"
+      ],
+      "certification_status": "IMPLEMENTED_NOT_LIVE_VERIFIED",
+      "connector_attr": "get_candles",
+      "connector_module": "data.connectors.stooq_adapter",
+      "default_enabled": false,
+      "display_name": "Stooq",
+      "docs_url": "https://stooq.com/q/d/?s=aapl.us&i=d",
+      "enabled_env": null,
+      "evidence_required": "scripts/certify_providers.py output from the exact deployment environment",
+      "key": "stooq",
+      "market_types": [
+        "historical"
+      ],
+      "notes": "",
+      "public_endpoint": true,
+      "realtime_capable": false,
+      "regional_caveat": null,
+      "release_policy": "disabled or best-effort until exact environment/plan certification passes",
+      "required_env": [],
+      "required_env_all": [],
+      "roles": [
+        "public_historical"
+      ],
+      "sample_symbol": "AAPL",
+      "sample_timeframe": "1d",
+      "sandbox": false,
+      "timeframes": [
+        "1d"
+      ]
+    }
+  ],
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  },
+  "truth_policy": "Importability is implementation evidence, not live certification."
+}

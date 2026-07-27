@@ -12,6 +12,8 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta
 
+from utils.timeutils import now_utc_naive
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,7 +94,7 @@ class SignalContext:
         
         # Fallback: check time
         close_time_ms = latest_candle.get('close_time_ms', 0)
-        current_time_ms = int(datetime.utcnow().timestamp() * 1000)
+        current_time_ms = int(now_utc_naive().timestamp() * 1000)
         
         # If close time has passed, candle is closed
         return current_time_ms >= close_time_ms
@@ -115,7 +117,7 @@ class SignalContext:
         minutes = tf_minutes.get(timeframe, 60)
         validity_minutes = minutes * candles_validity
         
-        return datetime.utcnow() + timedelta(minutes=validity_minutes)
+        return now_utc_naive() + timedelta(minutes=validity_minutes)
     
     def check_signal_invalidation(
         self,
@@ -143,7 +145,7 @@ class SignalContext:
         # Rule 2: Expiration
         expires_at = signal.get('expires_at')
         if expires_at:
-            if datetime.utcnow() > expires_at:
+            if now_utc_naive() > expires_at:
                 return True, "Signal expired"
         
         # Rule 3: HTF bias flip
@@ -160,7 +162,7 @@ class SignalContext:
         
         Returns: ASIA, LONDON, NY, or OVERLAP
         """
-        utc_hour = datetime.utcnow().hour
+        utc_hour = now_utc_naive().hour
         
         # Session times (UTC)
         # Asia: 00:00-09:00
@@ -221,12 +223,12 @@ class SignalContext:
         
         # Rate limit: only send once per 4 hours
         if last_alert_time:
-            now = datetime.utcnow()
+            now = now_utc_naive()
             try:
                 if getattr(last_alert_time, "tzinfo", None) is not None:
                     now = datetime.now(last_alert_time.tzinfo)
             except Exception:
-                now = datetime.utcnow()
+                now = now_utc_naive()
             time_since_last = now - last_alert_time
             if time_since_last < timedelta(hours=4):
                 return False, "Too soon since last NO TRADE alert"
@@ -285,7 +287,7 @@ class SignalCooldownManager:
         if not last_time:
             return True, "No previous signal"
         
-        time_since = datetime.utcnow() - last_time
+        time_since = now_utc_naive() - last_time
         cooldown = timedelta(minutes=cooldown_minutes)
         
         if time_since < cooldown:
@@ -297,7 +299,7 @@ class SignalCooldownManager:
     def record_signal(self, symbol: str, timeframe: str):
         """Record that a signal was sent."""
         key = f"{symbol}_{timeframe}"
-        self.last_signal_times[key] = datetime.utcnow()
+        self.last_signal_times[key] = now_utc_naive()
 
 
 class OneBiasPerTimeframe:

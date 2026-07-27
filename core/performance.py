@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 def avg_reward_risk(trades):
     # Calculate average RR from trades
     return 1.8
@@ -68,7 +69,7 @@ class PerformanceTracker:
             s['losses'] += 1
         s['total_return'] += ret
         s['returns'].append(ret)
-        s['last_update'] = datetime.datetime.utcnow()
+        s['last_update'] = datetime.now_utc_naive()
         # Do not broadcast outcomes to users by default. Outcome messages should be
         # based on actual delivered signals (see send_outcome_notifications).
         try:

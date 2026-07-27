@@ -157,7 +157,7 @@ class SignalCalibrator:
             avg_loss_r = abs(current.avg_r) if current.losses > 0 else 1.0
             
             current.expectancy = (win_pct * avg_win_r) - ((1 - win_pct) * avg_loss_r)
-            current.last_updated = datetime.utcnow()
+            current.last_updated = now_utc_naive()
             
             # Save to cache
             self._performance_cache[asset_class] = current
@@ -352,7 +352,7 @@ async def record_signal_outcome(
     """Record signal outcome."""
     calibrator = SignalCalibrator()
     return await calibrator.record_outcome(
-        signal_id, asset, outcome_status, r_multiple, datetime.utcnow()
+        signal_id, asset, outcome_status, r_multiple, now_utc_naive()
     )
 
 

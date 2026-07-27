@@ -14,6 +14,7 @@ Usage:
     runner = AutoOptimizerRunner()
     result = await runner.run_optimization()
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import os
@@ -102,7 +103,7 @@ class AutoOptimizerRunner:
             
             async with get_session() as session:
                 # Get last 30 days of closed trades
-                cutoff = datetime.utcnow() - timedelta(days=30)
+                cutoff = now_utc_naive() - timedelta(days=30)
                 result = await session.execute(
                     select(Trade).where(
                         Trade.status == "closed",

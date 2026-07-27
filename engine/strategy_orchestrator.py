@@ -5,6 +5,7 @@ Phase 3.1 - Dynamic Strategy Selection
 Inputs: Asset, Timeframe, Volatility, Regime, Session, Spread
 Output: Strategy Weighting + Selection
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import os
@@ -293,7 +294,7 @@ def get_current_session() -> str:
     """Determine current trading session."""
     from datetime import datetime
     
-    utc_hour = datetime.utcnow().hour
+    utc_hour = now_utc_naive().hour
     
     # Asian session: 0-8 UTC
     if 0 <= utc_hour < 8:

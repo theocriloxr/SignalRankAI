@@ -1,0 +1,64 @@
+{
+  "evidence": [
+    {
+      "command": "pytest focused web security/regression tests",
+      "expected_artifact": "evidence/web_app_regression_tests.txt",
+      "id": "EVD-WEB-001",
+      "live": false,
+      "scope": "local integration/contract"
+    },
+    {
+      "command": "pytest callback completion and signal hardening tests",
+      "expected_artifact": "evidence/callback_completion_extended_tests.txt",
+      "id": "EVD-TG-001",
+      "live": false,
+      "scope": "local mocked/contract"
+    },
+    {
+      "command": "pytest DB label/priority/Railway incident tests",
+      "expected_artifact": "evidence/db_session_label_tests.txt",
+      "id": "EVD-DB-001",
+      "live": false,
+      "scope": "local contract"
+    },
+    {
+      "command": "20 isolated pytest file batches",
+      "expected_artifact": "evidence/pytest_batches/summary.json",
+      "id": "EVD-CI-001",
+      "live": false,
+      "scope": "complete local test inventory"
+    },
+    {
+      "command": "compile/env/schema/architecture/session/governance/secret/readiness diagnostics",
+      "expected_artifact": "evidence/diagnostics/summary.json",
+      "id": "EVD-STATIC-001",
+      "live": false,
+      "scope": "local static and configuration"
+    },
+    {
+      "command": "deployment_diagnostics staging-live",
+      "expected_artifact": null,
+      "id": "EVD-RAIL-001",
+      "live": true,
+      "scope": "Railway staging",
+      "status": "BLOCKED_EXTERNAL"
+    },
+    {
+      "command": "owner soak 24-72h",
+      "expected_artifact": null,
+      "id": "EVD-SOAK-001",
+      "live": true,
+      "scope": "Railway staging/owner beta",
+      "status": "BLOCKED_EXTERNAL"
+    }
+  ],
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "evidence_catalogue",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

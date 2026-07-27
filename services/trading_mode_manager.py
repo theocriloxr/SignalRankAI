@@ -206,18 +206,19 @@ class TradingModeManager:
         """Execute on live MT5 account."""
         try:
             from services.mt5_signal_router import route_signal_to_mt5
-            from services.subscription_manager import SubscriptionManager
-            
-            # Check if user has active subscription
-            sub_status = await SubscriptionManager.get_status(user_id)
-            tier = str(sub_status.get("tier", "free") or "free").strip().lower()
-            
-            # Only premium+ users can use live trading
-            if tier not in ("premium", "vip", "owner", "admin"):
+            from core.tier_policy import evaluate_feature_access
+            from signalrank_telegram.access import resolve_user_tier
+
+            # Execution eligibility comes from the canonical tier policy. It
+            # does not replace consent, risk, quote, or kill-switch checks in
+            # the router's ExecutionGate.
+            tier = str(resolve_user_tier(user_id) or "free").strip().lower()
+            access = evaluate_feature_access(tier, "execution_preflight")
+            if not access.allowed:
                 return {
                     "success": False,
                     "destination": "mt5",
-                    "error": "Live trading requires premium subscription",
+                    "error": "Broker execution requires an eligible tier",
                 }
             
             # Get user's MT5 account
@@ -241,8 +242,16 @@ class TradingModeManager:
                     ),
                 }
             
-            # Execute via MT5 router
-            router_mode = "auto" if execution_mode in {EXEC_MODE_AUTO, EXEC_MODE_COPY_TRADE} else "manual"
+            if execution_mode not in {EXEC_MODE_AUTO, EXEC_MODE_COPY_TRADE}:
+                return {
+                    "success": False,
+                    "destination": "mt5",
+                    "error": "Explicit AUTO or COPY execution mode is required",
+                }
+
+            # Preserve COPY mode so its separate global feature flag and
+            # per-user consent mode are evaluated by ExecutionGate.
+            router_mode = execution_mode
             routed = await route_signal_to_mt5(signal, user_id, router_mode)
             if hasattr(routed, "__dict__"):
                 return {

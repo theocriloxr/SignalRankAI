@@ -28,7 +28,9 @@ class TestRailwayRedisQueue:
             body = resp.json()
             assert body.get("ok") is True
             assert body.get("queue_backend") == "redis"
-            assert int(body.get("queue_size", 0)) == 3
+            assert "queue_size" not in body, (
+                "the acknowledgement path must not add a second Redis round trip"
+            )
 
     def test_telegram_webhook_route_uses_redis_backend(self):
         asyncio.run(self._run())

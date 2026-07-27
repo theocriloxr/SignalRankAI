@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 
-from core.tier_constants import get_daily_limit, normalize_tier
+from core.tier_policy import get_entitlements
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,80 +19,33 @@ class TierCapabilities:
     portfolio_analytics: bool
     ai_coaching: bool
     detail_level: str
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(float(os.getenv(name, str(default)) or default))
-    except Exception:
-        return int(default)
+    execution_eligible: bool = False
 
 
 TIER_ALLOWED_ASSETS = {
-    "free": ("crypto", "fx"),
-    "premium": ("crypto", "fx", "commodity", "index", "stock"),
-    "vip": ("crypto", "fx", "commodity", "index", "stock"),
-    "admin": ("crypto", "fx", "commodity", "index", "stock"),
-    "owner": ("crypto", "fx", "commodity", "index", "stock"),
+    tier: get_entitlements(tier).allowed_asset_classes
+    for tier in ("free", "premium", "vip", "admin", "owner")
 }
 
 
 def get_tier_capabilities(tier: str | None) -> TierCapabilities:
-    normalized = normalize_tier(tier)
-    if normalized == "free":
-        return TierCapabilities(
-            tier="free",
-            daily_limit=int(get_daily_limit("free")),
-            delivery_delay_minutes=_env_int("FREE_SIGNAL_DELAY_MINUTES", 10),
-            max_tp_levels=1,
-            allowed_asset_classes=TIER_ALLOWED_ASSETS["free"],
-            signal_updates=False,
-            auto_trading=False,
-            trade_management=False,
-            portfolio_analytics=False,
-            ai_coaching=False,
-            detail_level="basic",
-        )
-    if normalized == "premium":
-        return TierCapabilities(
-            tier="premium",
-            daily_limit=int(get_daily_limit("premium")),
-            delivery_delay_minutes=_env_int("PREMIUM_SIGNAL_DELAY_MINUTES", 0),
-            max_tp_levels=2,
-            allowed_asset_classes=TIER_ALLOWED_ASSETS["premium"],
-            signal_updates=True,
-            auto_trading=False,
-            trade_management=True,
-            portfolio_analytics=True,
-            ai_coaching=False,
-            detail_level="detailed",
-        )
-    if normalized == "vip":
-        return TierCapabilities(
-            tier="vip",
-            daily_limit=int(get_daily_limit("vip")),
-            delivery_delay_minutes=_env_int("VIP_SIGNAL_DELAY_MINUTES", 0),
-            max_tp_levels=3,
-            allowed_asset_classes=TIER_ALLOWED_ASSETS["vip"],
-            signal_updates=True,
-            auto_trading=True,
-            trade_management=True,
-            portfolio_analytics=True,
-            ai_coaching=True,
-            detail_level="professional",
-        )
+    policy = get_entitlements(tier)
+    normalized = policy.tier.value.lower()
     return TierCapabilities(
         tier=normalized,
-        daily_limit=int(get_daily_limit(normalized)),
-        delivery_delay_minutes=0,
-        max_tp_levels=3,
-        allowed_asset_classes=TIER_ALLOWED_ASSETS["owner"],
-        signal_updates=True,
-        auto_trading=True,
-        trade_management=True,
-        portfolio_analytics=True,
-        ai_coaching=True,
-        detail_level="owner",
+        daily_limit=policy.daily_signal_limit,
+        delivery_delay_minutes=policy.delivery_delay_minutes,
+        max_tp_levels=policy.max_tp_levels,
+        allowed_asset_classes=policy.allowed_asset_classes,
+        signal_updates=policy.has("lifecycle_updates"),
+        # Entitlement never activates unsafe execution. Pass 6 owns the
+        # independent global/consent/risk/kill-switch execution gate.
+        auto_trading=False,
+        trade_management=policy.has("trade_management"),
+        portfolio_analytics=policy.has("portfolio_analytics"),
+        ai_coaching=policy.has("ai_coaching"),
+        detail_level=policy.analytics_level,
+        execution_eligible=policy.has("execution_preflight"),
     )
 
 

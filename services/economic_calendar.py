@@ -106,7 +106,7 @@ async def _load_events_from_db() -> list[dict]:
         from db.session import get_session, run_with_db_retry
 
         async def _fetch() -> list[dict]:
-            async with get_session() as session:
+            async with get_session(priority="background", label="economic_calendar_cache_read") as session:
                 events = await get_economic_events(session, hours_ahead=168)
                 out = []
                 for event in events:

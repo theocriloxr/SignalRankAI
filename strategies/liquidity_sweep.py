@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 from dataclasses import dataclass
@@ -48,7 +49,7 @@ def _session_allowed_for_fx() -> bool:
         return True
     allowed_raw = str(os.getenv("LS_FX_ALLOWED_SESSIONS") or "london,newyork,overlap").strip().lower()
     allowed = {x.strip() for x in allowed_raw.split(",") if x.strip()}
-    utc_hour = int(datetime.utcnow().hour)
+    utc_hour = int(now_utc_naive().hour)
     checks = {
         "london": 7 <= utc_hour < 16,
         "newyork": 13 <= utc_hour < 22,
@@ -268,7 +269,7 @@ def liquidity_sweep_strategies(asset: str, market_data: dict[str, Any]) -> list[
                 "volatility": float(atr_val / max(1e-9, float(closes[-1]))),
                 "market_open_confirmed": True,
                 "rr_ratio": _SweepConfig.rr_ratio,
-                "created_at": datetime.utcnow(),
+                "created_at": now_utc_naive(),
                 "source": "liquidity_sweep",
             })
             out.append(sig)

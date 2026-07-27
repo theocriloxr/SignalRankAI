@@ -7,16 +7,14 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from core.redis_state import state
 from core.tier_constants import TIER_SCORE_THRESHOLDS
 from core.command_limits import PUBLIC_COMMAND_RATE_LIMIT, REQUIRE_TIER_RATE_LIMIT
+from core.tier_policy import evaluate_command_access, tier_rank as canonical_tier_rank
 from config import ADMIN_IDS, OWNER_IDS, config
 
 logger = logging.getLogger(__name__)
 
 TIER_RANKS: Dict[str, int] = {
-    "FREE": 0,
-    "PREMIUM": 1,
-    "VIP": 2,
-    "ADMIN": 3,
-    "OWNER": 3,
+    tier: canonical_tier_rank(tier)
+    for tier in ("FREE", "PREMIUM", "VIP", "ADMIN", "OWNER")
 }
 
 FREE_PROOF_FEED_LIMIT = 5
@@ -71,8 +69,7 @@ def _effective_tier(user_id: int) -> str:
 
 def tier_rank(tier: str) -> int:
     """Get numeric rank for tier comparison."""
-    normalized = str(tier or "").upper().strip()
-    return TIER_RANKS.get(normalized, 0)
+    return canonical_tier_rank(tier)
 
 def require_tier(min_tier: str):
     """Decorator: require minimum tier for command access."""
@@ -87,12 +84,16 @@ def require_tier(min_tier: str):
             user_tier = _effective_tier(user_id)
             
             if tier_rank(user_tier) < rank_required:
-                tier_display = user_tier.upper()
-                await update.message.reply_text(
-                    f"🔒 {tier_display} tier detected.\n"
-                    f"Upgrade required for this command.\n\n"
-                    f"Send /upgrade"
-                )
+                command_name = func.__name__.replace("_command", "").strip().lower()
+                decision = evaluate_command_access(command_name, user_tier)
+                try:
+                    from services.upgrade_intents import schedule_upgrade_intent
+                    schedule_upgrade_intent(
+                        int(user_id), decision, action=command_name, source="telegram_command"
+                    )
+                except Exception:
+                    pass
+                await update.message.reply_text(decision.reason)
                 return
             
             return await func(update, context)

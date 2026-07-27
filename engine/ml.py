@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import gc
 import os
@@ -85,9 +86,9 @@ def _load_model() -> None:
         if err:
             _MODEL_CACHE["error"] = err
             return
-        # Memory-optimised config for Railway 500 MB tier
-            booster_any: Any = booster
-            booster_any.set_param("nthread", str(int(os.getenv("XGB_NTHREAD", "2"))))
+        # Memory-optimised config for Railway: cap native XGBoost threads.
+        booster_any: Any = booster
+        booster_any.set_param("nthread", str(max(1, int(os.getenv("XGB_NTHREAD", "2") or 2))))
         gc.collect()  # free any cyclic garbage from model initialisation
 
         _MODEL_CACHE["feature_cols"] = feature_cols
@@ -528,10 +529,10 @@ async def update_strategy_weight(strategy_name: str, perf: Optional[Dict[str, An
     cache_key = name.lower()
     _STRATEGY_WEIGHT_CACHE.setdefault("weights", {})[cache_key] = {
         "weight": float(weight),
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": now_utc_naive().isoformat(),
         "name": name,
     }
-    _STRATEGY_WEIGHT_CACHE["updated_at"] = datetime.utcnow().isoformat()
+    _STRATEGY_WEIGHT_CACHE["updated_at"] = now_utc_naive().isoformat()
 
     try:
         from core.redis_state import state
@@ -539,7 +540,7 @@ async def update_strategy_weight(strategy_name: str, perf: Optional[Dict[str, An
             "strategy_name": name,
             "weight": float(weight),
             "perf": dict(perf or {}),
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": now_utc_naive().isoformat(),
         }
         state.set_sync(_strategy_weight_key(name), json.dumps(payload), ex=7 * 24 * 3600)
     except Exception:

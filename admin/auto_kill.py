@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Auto-kill switch for daily loss and monthly drawdown limits."""
+from utils.timeutils import now_utc_naive
 
 import logging
 import os
@@ -26,7 +27,7 @@ SYSTEM_ACTIVE = True
 def daily_loss(session: Session) -> float:
     """Sum pnl_pct for signals closed today in UTC."""
     try:
-        cutoff = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        cutoff = now_utc_naive().replace(hour=0, minute=0, second=0, microsecond=0)
         total = (
             session.query(func.sum(SignalOutcome.pnl_pct))
             .filter(SignalOutcome.closed_at >= cutoff)
@@ -42,7 +43,7 @@ def daily_loss(session: Session) -> float:
 def monthly_drawdown(session: Session) -> float:
     """Estimate rolling monthly drawdown from recent realized outcome pnl_pct."""
     try:
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = now_utc_naive() - timedelta(days=30)
         outcomes = (
             session.query(SignalOutcome)
             .filter(SignalOutcome.closed_at >= cutoff)
@@ -68,7 +69,7 @@ def monthly_drawdown(session: Session) -> float:
 
 
 async def _daily_loss_async(session) -> float:
-    cutoff = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff = now_utc_naive().replace(hour=0, minute=0, second=0, microsecond=0)
     result = await session.scalar(
         select(func.sum(SignalOutcome.pnl_pct)).where(SignalOutcome.closed_at >= cutoff)
     )
@@ -76,7 +77,7 @@ async def _daily_loss_async(session) -> float:
 
 
 async def _monthly_drawdown_async(session) -> float:
-    cutoff = datetime.utcnow() - timedelta(days=30)
+    cutoff = now_utc_naive() - timedelta(days=30)
     result = await session.execute(
         select(SignalOutcome.pnl_pct)
         .where(SignalOutcome.closed_at >= cutoff)

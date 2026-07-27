@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "incidents": [
+    {
+      "containment": "restored last known FastAPI implementation",
+      "detected_by": "source diff plus web contract tests",
+      "fix_commit": "1c2ad0d",
+      "id": "SRA-INC-001",
+      "regression_tests": [
+        "tests/test_web_app_regression_guard.py"
+      ],
+      "root_cause": "latest archive commit overwrote web/app.py with an incompatible legacy surface",
+      "severity": "P0",
+      "status": "RESOLVED_LOCAL",
+      "title": "Production web API replaced by legacy Flask dashboard"
+    },
+    {
+      "containment": "balanced exact partition",
+      "detected_by": "orchestrator contract test",
+      "fix_commit": "deeefed",
+      "id": "SRA-INC-002",
+      "regression_tests": [
+        "tests/test_complete_system_orchestrator_contract.py"
+      ],
+      "root_cause": "ceiling-sized slicing produced 18 chunks for a requested 20",
+      "severity": "P1",
+      "status": "RESOLVED_LOCAL",
+      "title": "Complete-suite orchestrator produced fewer batches than requested"
+    },
+    {
+      "containment": "implemented user-scoped chart and Gemini handlers; fail-closed MT5 fallback",
+      "detected_by": "callback source audit",
+      "fix_commit": "a842802",
+      "id": "SRA-INC-003",
+      "regression_tests": [
+        "tests/test_callback_feature_completion.py"
+      ],
+      "root_cause": "global catch-all advertised route names without completing work",
+      "severity": "P1",
+      "status": "RESOLVED_LOCAL",
+      "title": "Visible chart/Gemini callback routes were placeholder acknowledgements"
+    },
+    {
+      "containment": "wired bounded caller-derived labels",
+      "detected_by": "session API forensic review",
+      "fix_commit": "ee07957",
+      "id": "SRA-INC-004",
+      "regression_tests": [
+        "tests/test_db_session_labels.py"
+      ],
+      "root_cause": "get_session still defaulted to unlabelled",
+      "severity": "P1",
+      "status": "RESOLVED_LOCAL",
+      "title": "DB caller label resolver was present but unused"
+    }
+  ],
+  "kind": "incidents",
+  "repository_identity": "resolved_in_release_manifest",
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  }
+}

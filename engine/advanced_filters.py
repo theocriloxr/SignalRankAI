@@ -7,6 +7,7 @@ Advanced Signal Filters
 - Fake breakout detection
 - Liquidity sweep detection
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import logging
@@ -35,7 +36,7 @@ class NewsFilter:
         Returns: (is_news_time, event_name)
         """
         if not current_time:
-            current_time = datetime.utcnow()
+            current_time = now_utc_naive()
         
         # Check for scheduled events
         for event in self.news_events:
@@ -194,7 +195,7 @@ class CorrelationClusterFilter:
         self.active_signals.append({
             'symbol': symbol,
             'direction': direction,
-            'time': datetime.utcnow()
+            'time': now_utc_naive()
         })
     
     def remove_signal(self, symbol: str):

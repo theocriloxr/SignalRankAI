@@ -29,6 +29,8 @@ _ASSET_UNIVERSE_CACHE = None
 _ASSET_UNIVERSE_LAST_REFRESH = 0
 _ASSET_UNIVERSE_REFRESH_INTERVAL = 3600  # seconds (1 hour)
 _ASSET_UNIVERSE_LOCK = threading.Lock()
+_ASSET_UNIVERSE_THREAD: threading.Thread | None = None
+_ASSET_UNIVERSE_THREAD_LOCK = threading.Lock()
 
 def _refresh_asset_universe():
     global _ASSET_UNIVERSE_CACHE, _ASSET_UNIVERSE_LAST_REFRESH
@@ -49,6 +51,26 @@ def _asset_universe_auto_refresh_thread():
         except Exception as e:
             logger.warning("[pair_discovery] Asset universe auto-refresh failed: %s", e)
         time.sleep(_ASSET_UNIVERSE_REFRESH_INTERVAL)
+
+
+def start_asset_universe_refresh_thread() -> bool:
+    """Start the optional discovery refresh thread exactly once.
+
+    Discovery is lazy by default. Importing this module must not perform network
+    I/O or create duplicate provider traffic in every Railway process.
+    """
+    global _ASSET_UNIVERSE_THREAD
+    with _ASSET_UNIVERSE_THREAD_LOCK:
+        if _ASSET_UNIVERSE_THREAD is not None and _ASSET_UNIVERSE_THREAD.is_alive():
+            return False
+        thread = threading.Thread(
+            target=_asset_universe_auto_refresh_thread,
+            name="asset-universe-refresh",
+            daemon=True,
+        )
+        thread.start()
+        _ASSET_UNIVERSE_THREAD = thread
+        return True
 
 import requests
 from utils import proxy_manager
@@ -662,7 +684,11 @@ def get_asset_discovery_snapshot(force_refresh: bool = False) -> dict:
 # pairs = get_all_trending_pairs()
 # print(pairs)
 
-if "pytest" not in sys.modules and str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower() not in {"1", "true", "yes", "y", "on"}:
-    # Start auto-refresh thread at import time (after concrete discovery functions exist).
-    _t = threading.Thread(target=_asset_universe_auto_refresh_thread, daemon=True)
-    _t.start()
+if (
+    "pytest" not in sys.modules
+    and str(os.getenv("SIGNALRANK_DISABLE_BACKGROUND_THREADS", "0") or "0").strip().lower()
+    not in {"1", "true", "yes", "y", "on"}
+    and str(os.getenv("ASSET_UNIVERSE_BACKGROUND_REFRESH_ENABLED", "0") or "0").strip().lower()
+    in {"1", "true", "yes", "y", "on"}
+):
+    start_asset_universe_refresh_thread()

@@ -1,4 +1,8 @@
-"""Shared tier constants and limits for signal delivery.
+"""Compatibility constants for delivery and risk controls.
+
+Tier entitlements, quotas, scores, depths, ranks, and features are projected
+from :mod:`core.tier_policy`. The historical notes below describe legacy
+behavior only; runtime tier decisions must use the canonical policy adapter.
 
 CANONICAL TIER & DELIVERY MODEL (2026-04-12):
 
@@ -44,6 +48,13 @@ NEW PRODUCTION UPGRADES (2024):
 import os as _os
 from typing import Final
 
+from core.tier_policy import (
+    TIER_ORDER as _POLICY_TIER_ORDER,
+    get_entitlements as _get_policy_entitlements,
+    normalize_tier as _normalize_policy_tier,
+    tier_rank as _policy_tier_rank,
+)
+
 
 def _env_int_limit(name: str, default: int) -> int:
     try:
@@ -54,28 +65,22 @@ def _env_int_limit(name: str, default: int) -> int:
 
 # Tier daily signal limits (DELIVERED signals per user)
 TIER_DAILY_LIMITS: Final[dict[str, float]] = {
-    "free": float(_env_int_limit("FREE_SIGNAL_DAILY_LIMIT", 3)),
-    "premium": float(_env_int_limit("PREMIUM_SIGNAL_DAILY_LIMIT", 15)),
-    "vip": float(_env_int_limit("VIP_SIGNAL_DAILY_LIMIT", 30)),
-    "owner": float(_env_int_limit("OWNER_SIGNAL_DAILY_LIMIT", 100)),
-    "admin": float(_env_int_limit("ADMIN_SIGNAL_DAILY_LIMIT", 100)),
+    tier.value.lower(): float(_get_policy_entitlements(tier).daily_signal_limit)
+    for tier in _POLICY_TIER_ORDER
 }
 
 # Tier quality score thresholds (minimum signal score to be eligible)
 TIER_SCORE_THRESHOLDS: Final[dict[str, float]] = {
-  "free": 80.0,      # Must be 80+ for FREE (upgraded from 60)
-  "premium": 80.0,   # Higher quality standard
-  "vip": 80.0,       # Highest quality standard
-    "owner": 0.0,      # No score gate
-    "admin": 0.0,      # Admin receives all signals
+    tier.value.lower(): float(_get_policy_entitlements(tier).minimum_signal_score)
+    for tier in _POLICY_TIER_ORDER
 }
 
 # Signal depth per tier (how many TP levels shown)
 TIER_SIGNAL_DEPTH: Final[dict[str, dict]] = {
     "free": {
-        "max_tp_level": 2,  # Shows TP1, TP2
+        "max_tp_level": 1,
         "show_tp3": False,
-        "show_sl": True,
+        "show_sl": False,
         "detail_level": "basic",  # Limited details, with upgrade prompt
     },
     "premium": {
@@ -149,33 +154,16 @@ FREE_PROOF_FEED_LIMIT: Final[int] = 5  # Max signals shown in FREE proof feed
 
 
 TIER_RANK: Final[dict[str, int]] = {
-    "free": 0,
-    "premium": 1,
-    "vip": 2,
-    "admin": 3,
-    "owner": 4,
+    tier.value.lower(): _policy_tier_rank(tier)
+    for tier in _POLICY_TIER_ORDER
 }
 
 TIER_MIN_SCORES: Final[dict[str, float]] = TIER_SCORE_THRESHOLDS
 
 
 TIER_FEATURES: Final[dict[str, set[str]]] = {
-    "free": {"basic_signals", "proof_feed"},
-    "premium": {"basic_signals", "exact_levels", "live_monitoring", "performance_stats"},
-    "vip": {
-        "basic_signals",
-        "exact_levels",
-        "tp3",
-        "gemini_ai",
-        "mt5_execute",
-        "webhook_api",
-        "live_monitoring",
-        "performance_stats",
-        "signal_chart",
-        "priority_delivery",
-    },
-    "admin": {"*"},
-    "owner": {"*"},
+    tier.value.lower(): set(_get_policy_entitlements(tier).features)
+    for tier in _POLICY_TIER_ORDER
 }
 
 TIER_PRICES_NGN: Final[dict[str, int]] = {
@@ -222,13 +210,12 @@ VIP_MAX_CAPACITY: Final[int] = int(_os.getenv("VIP_MAX_CAPACITY", "30") or 30)
 
 def tier_rank(tier: str) -> int:
     """Return numeric rank for tier comparison; higher means more access."""
-    return TIER_RANK.get(str(tier or "free").strip().lower(), 0)
+    return _policy_tier_rank(tier)
 
 
 def normalize_tier(tier: str | None) -> str:
     """Normalize tier labels to canonical lowercase keys."""
-    t = str(tier or "free").strip().lower()
-    return t if t in TIER_RANK else "free"
+    return _normalize_policy_tier(tier).value.lower()
 
 
 def has_feature(tier: str, feature: str) -> bool:

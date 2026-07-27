@@ -1,87 +1,87 @@
-"""
-MT5 Bridge - MetaTrader 5 Integration Service
+"""Fail-closed native MetaTrader 5 bridge.
 
-This module provides:
-- Connection to MetaTrader 5 terminal via MT5 Python library
-- Signal to order conversion and execution
-- Multiple account support per user
-- Trade sync back to paper ledger
-- Real-time position monitoring
-
-Usage:
-    from services.mt5_bridge import MT5Bridge
-    
-    bridge = MT5Bridge()
-    await bridge.connect(account_id)
-    result = await bridge.execute_signal(signal)
-    positions = await bridge.get_positions()
+The Railway deployment uses MetaApi/remote broker adapters.  This module is a
+local Windows-terminal adapter only and is disabled unless explicitly enabled.
+It intentionally refuses to guess balances, symbol specifications, prices, or
+lot sizes.
 """
 
-import os
-import logging
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
-from datetime import datetime
+from __future__ import annotations
+
 import asyncio
+import hashlib
+import logging
+import math
+import os
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal, ROUND_DOWN
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("MT5Bridge")
 
-# MT5 connection state
 _mt5_connections: Dict[str, Any] = {}
 _mt5_lock = asyncio.Lock()
 
+_TRUE = {"1", "true", "yes", "on"}
 
-@dataclass
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in _TRUE
+
+
+def _running_on_railway() -> bool:
+    return any(
+        bool(os.getenv(name))
+        for name in (
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_ENVIRONMENT_ID",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+        )
+    )
+
+
+@dataclass(slots=True)
 class MT5Config:
-    """MT5 connection configuration."""
-    server: str = ""  # Broker server (e.g., "MetaQuotes-Demo")
-    login: int = 0  # Account login number
-    password: str = ""  # Account password
+    server: str = ""
+    login: int = 0
+    password: str = ""
     platform: str = "MetaTrader 5"
-    timeout: int = 30000  # Connection timeout ms
+    timeout: int = 30_000
     max_retry: int = 3
     retry_delay: float = 2.0
 
 
-@dataclass
+@dataclass(slots=True)
 class MT5Order:
-    """MT5 order request."""
     symbol: str
     volume: float
-    order_type: str  # "buy" or "sell"
-    price: Optional[float] = None
-    stop_loss: Optional[float] = None
-    take_profit: Optional[float] = None
+    order_type: str
+    price: float
+    stop_loss: float
+    take_profit: float
     comment: str = ""
-    magic: int = 234000  # Expert Advisor ID
-    
+    magic: int = 234000
+
     def to_mt5_type(self) -> int:
-        """Convert to MT5 order type."""
-        # MT5 constants
-        ORDER_TYPE_BUY = 0
-        ORDER_TYPE_SELL = 1
-        ORDER_TYPE_BUY_LIMIT = 2
-        ORDER_TYPE_SELL_LIMIT = 3
-        ORDER_TYPE_BUY_STOP = 4
-        ORDER_TYPE_SELL_STOP = 5
-        
-        if self.order_type.lower() == "buy":
-            if self.price:
-                return ORDER_TYPE_BUY_STOP if self.stop_loss else ORDER_TYPE_BUY
-            return ORDER_TYPE_BUY
-        else:
-            if self.price:
-                return ORDER_TYPE_SELL_STOP if self.stop_loss else ORDER_TYPE_SELL
-            return ORDER_TYPE_SELL
+        direction = self.order_type.strip().lower()
+        if direction in {"long", "buy"}:
+            return 0
+        if direction in {"short", "sell"}:
+            return 1
+        raise ValueError("direction must be long/buy or short/sell")
 
 
-@dataclass
+@dataclass(slots=True)
 class MT5Position:
-    """MT5 position."""
     ticket: int
     symbol: str
     volume: float
-    type: str  # "buy" or "sell"
+    type: str
     entry_price: float
     current_price: float
     profit: float
@@ -89,9 +89,8 @@ class MT5Position:
     take_profit: float
     comment: str
     open_time: datetime
-    
+
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dict."""
         return {
             "ticket": self.ticket,
             "symbol": self.symbol,
@@ -103,417 +102,457 @@ class MT5Position:
             "stop_loss": self.stop_loss,
             "take_profit": self.take_profit,
             "comment": self.comment,
-            "open_time": str(self.open_time) if self.open_time else None
+            "open_time": self.open_time.isoformat() if self.open_time else None,
         }
 
 
 class MT5Bridge:
-    """
-    MetaTrader 5 Bridge for automated trading.
-    
-    Features:
-    - Connect to multiple MT5 accounts
-    - Execute signals as market/limit orders
-    - Track positions in real-time
-    - Sync with paper ledger
-    """
-    
-    def __init__(self):
+    """Local native-terminal adapter; MetaApi is canonical on Railway."""
+
+    def __init__(self) -> None:
         self._initialized = False
-        self._mt5 = None
+        self._mt5: Any = None
         self._config: Dict[str, MT5Config] = {}
-    
+        self._active_account: Optional[str] = None
+        self._idempotency: set[str] = set()
+        self._idempotency_lock = asyncio.Lock()
+
+    @staticmethod
+    def _native_enabled() -> bool:
+        # Standard MetaTrader5 Python package needs a local Windows terminal.
+        # Never pretend it works in the Railway Linux container.
+        return _env_bool("NATIVE_MT5_BRIDGE_ENABLED", False) and not _running_on_railway()
+
     async def initialize(self) -> bool:
-        """Initialize MT5 library."""
         if self._initialized:
             return True
-        
+        if not self._native_enabled():
+            logger.info("[MT5] Native bridge disabled; use MetaApi/remote bridge")
+            return False
         try:
-            import MetaTrader5 as mt5
+            import MetaTrader5 as mt5  # type: ignore
+
             self._mt5 = mt5
-            initialized = mt5.initialize()
-            
-            if initialized:
-                logger.info("[MT5] Initialized successfully")
-                self._initialized = True
-                return True
-            else:
-                error = mt5.last_error()
-                logger.error(f"[MT5] Initialize failed: {error}")
+            initialized = await asyncio.to_thread(mt5.initialize)
+            if not initialized:
+                logger.error("[MT5] Initialize failed: %s", mt5.last_error())
                 return False
-                
+            self._initialized = True
+            logger.info("[MT5] Native terminal initialized")
+            return True
         except ImportError:
             logger.warning("[MT5] MetaTrader5 library not installed")
             return False
-        except Exception as e:
-            logger.error(f"[MT5] Initialize error: {e}")
+        except Exception:
+            logger.exception("[MT5] Initialize error")
             return False
-    
+
     async def connect(self, account_id: str, config: Optional[MT5Config] = None) -> bool:
-        """
-        Connect to MT5 account.
-        
-        Args:
-            account_id: Unique account identifier
-            config: MT5 configuration (uses env vars if not provided)
-        """
         if not await self.initialize():
             return False
-        
-        # Use provided config or load from environment
         cfg = config or self._load_config(account_id)
-        if not cfg.server or not cfg.login:
-            logger.warning(f"[MT5] No config for account {account_id}")
+        if not cfg.server or cfg.login <= 0 or not cfg.password:
+            logger.warning("[MT5] Incomplete config for account %s", account_id)
             return False
-        
         self._config[account_id] = cfg
-        
-        # Note: MT5 terminal connects on initialize(), not per-account
-        # Account selection is done via login
-        account_info = self._mt5.account_info()
-        if account_info is None:
-            logger.error(f"[MT5] No account info: {self._mt5.last_error()}")
+        try:
+            logged_in = await asyncio.to_thread(
+                self._mt5.login,
+                login=int(cfg.login),
+                password=cfg.password,
+                server=cfg.server,
+                timeout=int(cfg.timeout),
+            )
+            if not logged_in:
+                logger.error("[MT5] Login failed: %s", self._mt5.last_error())
+                return False
+            account_info = await asyncio.to_thread(self._mt5.account_info)
+            if account_info is None or int(getattr(account_info, "login", 0)) != int(cfg.login):
+                logger.error("[MT5] Account identity could not be verified")
+                return False
+            self._active_account = account_id
+            _mt5_connections[account_id] = int(cfg.login)
+            logger.info("[MT5] Connected to configured account %s", cfg.login)
+            return True
+        except Exception:
+            logger.exception("[MT5] Account connection failed")
             return False
-        
-        logger.info(f"[MT5] Connected to account: {account_info.login}")
-        return True
-    
+
     def _load_config(self, account_id: str) -> MT5Config:
-        """Load config from environment."""
+        prefix = f"MT5_{account_id}_"
+        try:
+            login = int(os.getenv(f"{prefix}LOGIN", "0") or 0)
+            timeout = int(os.getenv(f"{prefix}TIMEOUT_MS", "30000") or 30000)
+        except ValueError:
+            login, timeout = 0, 30000
         return MT5Config(
-            server=os.getenv(f"MT5_{account_id}_SERVER", ""),
-            login=int(os.getenv(f"MT5_{account_id}_LOGIN", 0)),
-            password=os.getenv(f"MT5_{account_id}_PASSWORD", ""),
-            platform=os.getenv(f"MT5_{account_id}_PLATFORM", "MetaTrader 5"),
+            server=os.getenv(f"{prefix}SERVER", ""),
+            login=login,
+            password=os.getenv(f"{prefix}PASSWORD", ""),
+            platform=os.getenv(f"{prefix}PLATFORM", "MetaTrader 5"),
+            timeout=max(1_000, timeout),
         )
-    
+
     async def disconnect(self) -> None:
-        """Disconnect from MT5."""
         if self._mt5 and self._initialized:
-            self._mt5.shutdown()
-            self._initialized = False
-            logger.info("[MT5] Disconnected")
-    
+            await asyncio.to_thread(self._mt5.shutdown)
+        self._initialized = False
+        self._active_account = None
+        _mt5_connections.clear()
+        logger.info("[MT5] Disconnected")
+
+    @staticmethod
+    def _parse_first_target(signal: Dict[str, Any]) -> float:
+        value = signal.get("take_profit")
+        if value is None:
+            value = signal.get("targets")
+        if isinstance(value, dict):
+            value = value.get("price") or value.get("tp") or value.get("target")
+        if isinstance(value, (list, tuple)):
+            value = value[0] if value else None
+            if isinstance(value, dict):
+                value = value.get("price") or value.get("tp") or value.get("target")
+        try:
+            result = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return result if math.isfinite(result) and result > 0 else 0.0
+
+    @staticmethod
+    def _validate_geometry(direction: str, entry: float, stop: float, target: float) -> bool:
+        values = (entry, stop, target)
+        if not all(math.isfinite(value) and value > 0 for value in values):
+            return False
+        if direction in {"long", "buy"}:
+            return stop < entry < target
+        if direction in {"short", "sell"}:
+            return target < entry < stop
+        return False
+
+    @staticmethod
+    def _normalise_direction(direction: Any) -> str:
+        raw = str(direction or "").strip().lower()
+        if raw in {"long", "buy"}:
+            return "buy"
+        if raw in {"short", "sell"}:
+            return "sell"
+        return ""
+
+    @staticmethod
+    def _round_volume_down(value: float, step: float) -> float:
+        step_d = Decimal(str(step))
+        return float(
+            (Decimal(str(value)) / step_d).to_integral_value(rounding=ROUND_DOWN) * step_d
+        )
+
+    def _calculate_volume(self, signal: Dict[str, Any], *, symbol_info: Any, account_info: Any) -> float:
+        """Return broker-compliant lot size, or zero when truth is incomplete."""
+        try:
+            min_volume = float(getattr(symbol_info, "volume_min"))
+            max_volume = float(getattr(symbol_info, "volume_max"))
+            step = float(getattr(symbol_info, "volume_step"))
+            if not all(math.isfinite(v) and v > 0 for v in (min_volume, max_volume, step)):
+                return 0.0
+
+            explicit = signal.get("position_size")
+            if explicit is not None:
+                requested = float(explicit)
+                if not math.isfinite(requested) or requested <= 0:
+                    return 0.0
+                rounded = self._round_volume_down(min(requested, max_volume), step)
+                return rounded if min_volume <= rounded <= max_volume else 0.0
+
+            risk_pct = float(signal.get("risk_pct") or 0)
+            equity = float(getattr(account_info, "equity"))
+            entry = float(signal.get("entry") or 0)
+            stop = float(signal.get("stop_loss") or signal.get("stop") or 0)
+            tick_size = float(
+                getattr(symbol_info, "trade_tick_size", 0)
+                or getattr(symbol_info, "point", 0)
+            )
+            tick_value = float(
+                getattr(symbol_info, "trade_tick_value_loss", 0)
+                or getattr(symbol_info, "trade_tick_value", 0)
+            )
+            max_risk = float(os.getenv("MAX_LIVE_RISK_PCT", "5") or 5)
+            values = (risk_pct, equity, entry, stop, tick_size, tick_value, max_risk)
+            if not all(math.isfinite(value) for value in values):
+                return 0.0
+            if risk_pct <= 0 or risk_pct > max_risk or equity <= 0 or tick_size <= 0 or tick_value <= 0:
+                return 0.0
+            stop_distance = abs(entry - stop)
+            if stop_distance <= 0:
+                return 0.0
+            risk_per_lot = (stop_distance / tick_size) * tick_value
+            if risk_per_lot <= 0 or not math.isfinite(risk_per_lot):
+                return 0.0
+            raw = min((equity * risk_pct / 100.0) / risk_per_lot, max_volume)
+            rounded = self._round_volume_down(raw, step)
+            return rounded if min_volume <= rounded <= max_volume else 0.0
+        except (AttributeError, TypeError, ValueError, ArithmeticError):
+            return 0.0
+
+    async def _reserve_once(self, key: str) -> bool:
+        async with self._idempotency_lock:
+            if key in self._idempotency:
+                return False
+            self._idempotency.add(key)
+            return True
+
     async def execute_signal(
         self,
         signal: Dict[str, Any],
-        account_id: str = "default"
+        account_id: str = "default",
+        *,
+        execution_authorized: bool = False,
+        idempotency_key: Optional[str] = None,
     ) -> Tuple[bool, str, Optional[int]]:
-        """
-        Execute signal as MT5 order.
-        
-        Args:
-            signal: Signal dict with asset, direction, entry, stop_loss, take_profit
-            account_id: MT5 account to use
-            
-        Returns:
-            Tuple of (success, message, order_ticket)
-        """
-        if not await self.initialize():
-            return False, "MT5 not initialized", None
-        
+        if not execution_authorized or not str(idempotency_key or "").strip():
+            return False, "ExecutionGate authorization is required", None
+        if self._active_account != account_id and not await self.connect(account_id):
+            return False, "MT5 account not connected", None
+        direction = self._normalise_direction(signal.get("direction") or signal.get("side"))
+        symbol = self._normalize_symbol(str(signal.get("asset") or signal.get("symbol") or ""))
+        if not direction or not symbol:
+            return False, "Invalid symbol or direction", None
         try:
-            # Convert signal to MT5 order
-            symbol = self._normalize_symbol(signal.get("asset", ""))
-            volume = self._calculate_volume(signal)
-            order_type = signal.get("direction", "long").lower()
-            
-            price = float(signal.get("entry") or 0)
-            if price <= 0:
-                # Get current price
-                symbol_info = self._mt5.symbol_info(symbol)
-                if symbol_info is None:
-                    return False, f"Symbol {symbol} not found", None
-                
-                if order_type == "long":
-                    price = symbol_info.ask
-                else:
-                    price = symbol_info.bid
-            
-            stop_loss = float(signal.get("stop_loss") or 0)
-            take_profit = float(signal.get("take_profit") or signal.get("targets", [0])[0] if signal.get("targets") else 0)
-            
-            # Build order request
+            signal_entry = float(signal.get("entry") or 0)
+            stop_loss = float(signal.get("stop_loss") or signal.get("stop") or 0)
+        except (TypeError, ValueError):
+            return False, "Entry and stop must be numeric", None
+        take_profit = self._parse_first_target(signal)
+        if not self._validate_geometry(direction, signal_entry, stop_loss, take_profit):
+            return False, "Invalid entry/stop/target geometry", None
+
+        dedup_key = hashlib.sha256(
+            f"{account_id}:{idempotency_key}".encode("utf-8")
+        ).hexdigest()
+        if not await self._reserve_once(dedup_key):
+            return False, "Duplicate execution request", None
+
+        try:
+            selected = await asyncio.to_thread(self._mt5.symbol_select, symbol, True)
+            if selected is False:
+                return False, f"Symbol {symbol} is not selectable", None
+            symbol_info = await asyncio.to_thread(self._mt5.symbol_info, symbol)
+            tick = await asyncio.to_thread(self._mt5.symbol_info_tick, symbol)
+            account_info = await asyncio.to_thread(self._mt5.account_info)
+            if symbol_info is None or tick is None or account_info is None:
+                return False, "Fresh quote, symbol specification and account information are required", None
+            if getattr(symbol_info, "trade_mode", 0) == getattr(self._mt5, "SYMBOL_TRADE_MODE_DISABLED", -1):
+                return False, f"Trading disabled for {symbol}", None
+
+            market_price = float(tick.ask if direction == "buy" else tick.bid)
+            if not math.isfinite(market_price) or market_price <= 0:
+                return False, "Fresh broker quote is invalid", None
+            max_slippage_bps = float(os.getenv("NATIVE_MT5_MAX_SLIPPAGE_BPS", "25") or 25)
+            slippage_bps = abs(market_price - signal_entry) / signal_entry * 10_000
+            if not math.isfinite(slippage_bps) or slippage_bps > max_slippage_bps:
+                return False, f"Quote drift {slippage_bps:.2f}bps exceeds limit", None
+
+            volume = self._calculate_volume(signal, symbol_info=symbol_info, account_info=account_info)
+            if volume <= 0:
+                return False, "Broker-compliant position size could not be calculated", None
+
             order = MT5Order(
                 symbol=symbol,
                 volume=volume,
-                order_type=order_type,
-                price=price,
-                stop_loss=stop_loss if stop_loss > 0 else None,
-                take_profit=take_profit if take_profit > 0 else None,
-                comment=f"SignalRank:{signal.get('signal_id', '')}"
+                order_type=direction,
+                price=market_price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                comment=f"SignalRank:{signal.get('signal_id', '')}"[:31],
             )
-            
-            # Send order
-            result = self._mt5.order_send(
-                {
-                    "action": self._mt5.TRADE_ACTION_DEAL,
-                    "symbol": order.symbol,
-                    "volume": order.volume,
-                    "type": order.to_mt5_type(),
-                    "price": order.price,
-                    "sl": order.stop_loss,
-                    "tp": order.take_profit,
-                    "comment": order.comment,
-                    "magic": order.magic,
-                }
-            )
-            
-            # Check result
+            request = {
+                "action": self._mt5.TRADE_ACTION_DEAL,
+                "symbol": order.symbol,
+                "volume": order.volume,
+                "type": order.to_mt5_type(),
+                "price": order.price,
+                "sl": order.stop_loss,
+                "tp": order.take_profit,
+                "deviation": max(0, int(os.getenv("NATIVE_MT5_DEVIATION_POINTS", "20") or 20)),
+                "comment": order.comment,
+                "magic": order.magic,
+                "type_time": getattr(self._mt5, "ORDER_TIME_GTC", 0),
+                "type_filling": getattr(self._mt5, "ORDER_FILLING_IOC", 1),
+            }
+            result = await asyncio.to_thread(self._mt5.order_send, request)
+            if result is None:
+                return False, f"Order failed: {self._mt5.last_error()}", None
             if result.retcode != self._mt5.TRADE_RETCODE_DONE:
-                error_msg = self._mt5.last_error()
-                logger.error(f"[MT5] Order failed: {result.retcode} - {error_msg}")
                 return False, f"Order rejected: {result.retcode}", None
-            
-            logger.info(f"[MT5] Order placed: ticket={result.order}")
-            return True, "Order executed", result.order
-            
-        except Exception as e:
-            logger.error(f"[MT5] Execute error: {e}")
-            return False, str(e), None
-    
+            return True, "Order executed", int(result.order)
+        except Exception as exc:
+            logger.exception("[MT5] Execute error")
+            return False, str(exc), None
+
     def _normalize_symbol(self, symbol: str) -> str:
-        """Normalize symbol for MT5."""
-        # MT5 uses different symbols for some assets
-        symbol = symbol.upper().replace("/", "")
-        
-        # Handle common conversions
-        conversions = {
+        canonical = symbol.upper().replace("/", "").strip()
+        aliases = {
             "BTCUSDT": "BTCUSDt",
             "ETHUSDT": "ETHUSDt",
             "XAUUSD": "GOLD",
             "XAGUSD": "SILVER",
         }
-        
-        return conversions.get(symbol, symbol)
-    
-    def _calculate_volume(self, signal: Dict[str, Any]) -> float:
-        """Calculate lot size from signal."""
-        # Get from signal or use default
-        default_volume = 0.01  # Micro lots
-        
-        if signal.get("position_size"):
-            try:
-                return float(signal["position_size"])
-            except (ValueError, TypeError):
-                pass
-        
-        if signal.get("risk_pct"):
-            # Calculate based on risk
-            risk_pct = float(signal["risk_pct"])
-            account_balance = 10000  # TODO: Get from account
-            risk_amount = account_balance * (risk_pct / 100)
-            
-            # Get stop loss distance
-            entry = float(signal.get("entry", 0))
-            sl = float(signal.get("stop_loss", 0))
-            
-            if entry > 0 and sl > 0:
-                sl_distance = abs(entry - sl)
-                if sl_distance > 0:
-                    return risk_amount / sl_distance
-        
-        return default_volume
-    
+        configured = os.getenv(f"MT5_SYMBOL_{canonical}")
+        return str(configured or aliases.get(canonical, canonical)).strip()
+
     async def get_positions(self, account_id: str = "default") -> List[MT5Position]:
-        """Get open positions."""
-        if not await self.initialize():
+        if self._active_account != account_id and not await self.connect(account_id):
             return []
-        
         try:
-            positions = self._mt5.positions()
-            result = []
-            
-            for pos in positions:
-                result.append(MT5Position(
-                    ticket=pos.ticket,
-                    symbol=pos.symbol,
-                    volume=pos.volume,
-                    type="buy" if pos.type == 0 else "sell",
-                    entry_price=pos.price_open,
-                    current_price=pos.price_current,
-                    profit=pos.profit,
-                    stop_loss=pos.sl,
-                    take_profit=pos.tp,
-                    comment=pos.comment,
-                    open_time=pos.time
-                ))
-            
+            raw = await asyncio.to_thread(self._mt5.positions_get)
+            result: List[MT5Position] = []
+            for pos in raw or []:
+                opened = datetime.fromtimestamp(float(pos.time), tz=timezone.utc)
+                result.append(
+                    MT5Position(
+                        ticket=int(pos.ticket),
+                        symbol=str(pos.symbol),
+                        volume=float(pos.volume),
+                        type="buy" if int(pos.type) == 0 else "sell",
+                        entry_price=float(pos.price_open),
+                        current_price=float(pos.price_current),
+                        profit=float(pos.profit),
+                        stop_loss=float(pos.sl),
+                        take_profit=float(pos.tp),
+                        comment=str(pos.comment or ""),
+                        open_time=opened,
+                    )
+                )
             return result
-            
-        except Exception as e:
-            logger.error(f"[MT5] Get positions error: {e}")
+        except Exception:
+            logger.exception("[MT5] Get positions error")
             return []
-    
+
     async def close_position(self, ticket: int, volume: Optional[float] = None) -> Tuple[bool, str]:
-        """Close position."""
-        if not await self.initialize():
+        if not self._initialized:
             return False, "MT5 not initialized"
-        
         try:
-            positions = self._mt5.positions(ticket=ticket)
+            positions = await asyncio.to_thread(self._mt5.positions_get, ticket=int(ticket))
             if not positions:
                 return False, "Position not found"
-            
             pos = positions[0]
-            
-            # Determine close volume
-            close_volume = volume if volume else pos.volume
-            
-            # Opposite type to close
-            close_type = 1 if pos.type == 0 else 0  # sell to close buy, buy to close sell
-            
-            result = self._mt5.order_send(
+            close_volume = float(volume if volume is not None else pos.volume)
+            info = await asyncio.to_thread(self._mt5.symbol_info, pos.symbol)
+            tick = await asyncio.to_thread(self._mt5.symbol_info_tick, pos.symbol)
+            if info is None or tick is None:
+                return False, "Fresh symbol quote required"
+            step = float(info.volume_step)
+            rounded = self._round_volume_down(close_volume, step)
+            if rounded < float(info.volume_min) or rounded > float(pos.volume):
+                return False, "Invalid close volume"
+            close_type = 1 if int(pos.type) == 0 else 0
+            price = float(tick.bid if int(pos.type) == 0 else tick.ask)
+            result = await asyncio.to_thread(
+                self._mt5.order_send,
                 {
                     "action": self._mt5.TRADE_ACTION_DEAL,
                     "symbol": pos.symbol,
-                    "volume": close_volume,
+                    "volume": rounded,
                     "type": close_type,
-                    "position": ticket,
-                    "price": pos.price_current,
-                    "comment": f"Close SignalRank:{ticket}",
+                    "position": int(ticket),
+                    "price": price,
+                    "comment": f"Close SignalRank:{ticket}"[:31],
                     "magic": 234000,
-                }
+                },
             )
-            
-            if result.retcode != self._mt5.TRADE_RETCODE_DONE:
-                return False, f"Close failed: {result.retcode}"
-            
+            if result is None or result.retcode != self._mt5.TRADE_RETCODE_DONE:
+                return False, f"Close failed: {getattr(result, 'retcode', self._mt5.last_error())}"
             return True, "Position closed"
-            
-        except Exception as e:
-            logger.error(f"[MT5] Close error: {e}")
-            return False, str(e)
-    
+        except Exception as exc:
+            logger.exception("[MT5] Close error")
+            return False, str(exc)
+
     async def modify_position(
         self,
         ticket: int,
         stop_loss: Optional[float] = None,
-        take_profit: Optional[float] = None
+        take_profit: Optional[float] = None,
     ) -> Tuple[bool, str]:
-        """Modify position SL/TP."""
-        if not await self.initialize():
+        if not self._initialized:
             return False, "MT5 not initialized"
-        
+        if stop_loss is None and take_profit is None:
+            return False, "No modification supplied"
         try:
-            result = self._mt5.order_send(
+            result = await asyncio.to_thread(
+                self._mt5.order_send,
                 {
                     "action": self._mt5.TRADE_ACTION_SLTP,
-                    "position": ticket,
-                    "sl": stop_loss if stop_loss else 0,
-                    "tp": take_profit if take_profit else 0,
+                    "position": int(ticket),
+                    "sl": float(stop_loss or 0),
+                    "tp": float(take_profit or 0),
                     "magic": 234000,
-                }
+                },
             )
-            
-            if result.retcode != self._mt5.TRADE_RETCODE_DONE:
-                return False, f"Modify failed: {result.retcode}"
-            
+            if result is None or result.retcode != self._mt5.TRADE_RETCODE_DONE:
+                return False, f"Modify failed: {getattr(result, 'retcode', self._mt5.last_error())}"
             return True, "Position modified"
-            
-        except Exception as e:
-            logger.error(f"[MT5] Modify error: {e}")
-            return False, str(e)
-    
+        except Exception as exc:
+            logger.exception("[MT5] Modify error")
+            return False, str(exc)
+
     async def get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get account information."""
-        if not await self.initialize():
+        if not self._initialized:
             return None
-        
         try:
-            info = self._mt5.account_info()
+            info = await asyncio.to_thread(self._mt5.account_info)
             if info is None:
                 return None
-            
             return {
-                "login": info.login,
-                "balance": info.balance,
-                "equity": info.equity,
-                "margin": info.margin,
-                "free_margin": info.margin_free,
-                "profit": info.profit,
-                "currency": info.currency,
-                "server": info.server,
+                "login": int(info.login),
+                "balance": float(info.balance),
+                "equity": float(info.equity),
+                "margin": float(info.margin),
+                "free_margin": float(info.margin_free),
+                "profit": float(info.profit),
+                "currency": str(info.currency),
+                "server": str(info.server),
             }
-        except Exception as e:
-            logger.error(f"[MT5] Account info error: {e}")
+        except Exception:
+            logger.exception("[MT5] Account info error")
             return None
 
 
 class MT5AccountManager:
-    """Manage multiple MT5 accounts per user."""
-    
-    def __init__(self):
+    def __init__(self) -> None:
         self._accounts: Dict[str, MT5Bridge] = {}
-    
-    async def add_account(
-        self,
-        user_id: int,
-        account_id: str,
-        config: MT5Config
-    ) -> bool:
-        """Add MT5 account for user."""
-        try:
-            bridge = MT5Bridge()
-            connected = await bridge.connect(account_id, config)
-            
-            if connected:
-                self._accounts[f"{user_id}:{account_id}"] = bridge
-                logger.info(f"[MT5] Account added: user={user_id} account={account_id}")
-                return True
-            
+
+    async def add_account(self, user_id: int, account_id: str, config: MT5Config) -> bool:
+        bridge = MT5Bridge()
+        if not await bridge.connect(account_id, config):
             return False
-        except Exception as e:
-            logger.error(f"[MT5] Add account error: {e}")
-            return False
-    
+        self._accounts[f"{user_id}:{account_id}"] = bridge
+        return True
+
     async def get_bridge(self, user_id: int, account_id: str = "default") -> Optional[MT5Bridge]:
-        """Get MT5 bridge for user."""
-        key = f"{user_id}:{account_id}"
-        return self._accounts.get(key)
-    
+        return self._accounts.get(f"{user_id}:{account_id}")
+
     async def remove_account(self, user_id: int, account_id: str = "default") -> None:
-        """Remove MT5 account."""
-        key = f"{user_id}:{account_id}"
-        bridge = self._accounts.pop(key, None)
+        bridge = self._accounts.pop(f"{user_id}:{account_id}", None)
         if bridge:
             await bridge.disconnect()
 
 
-# Default instances
 mt5_bridge = MT5Bridge()
 account_manager = MT5AccountManager()
 
 
-# Convenience functions
-async def execute_signal(signal: Dict[str, Any], account_id: str = "default") -> Tuple[bool, str, Optional[int]]:
-    """Execute signal via MT5."""
-    return await mt5_bridge.execute_signal(signal, account_id)
+async def execute_signal(
+    signal: Dict[str, Any],
+    account_id: str = "default",
+    *,
+    execution_authorized: bool = False,
+    idempotency_key: Optional[str] = None,
+) -> Tuple[bool, str, Optional[int]]:
+    return await mt5_bridge.execute_signal(
+        signal,
+        account_id,
+        execution_authorized=execution_authorized,
+        idempotency_key=idempotency_key,
+    )
 
 
 async def get_positions(account_id: str = "default") -> List[MT5Position]:
-    """Get open positions."""
     return await mt5_bridge.get_positions(account_id)
-
-
-if __name__ == "__main__":
-    # Test
-    import asyncio
-    
-    async def test():
-        bridge = MT5Bridge()
-        
-        # Test init
-        initialized = await bridge.initialize()
-        print(f"Initialized: {initialized}")
-        
-        if initialized:
-            # Get account info
-            info = await bridge.get_account_info()
-            print(f"Account: {info}")
-            
-            # Get positions
-            positions = await bridge.get_positions()
-            print(f"Positions: {len(positions)}")
-    
-    asyncio.run(test())

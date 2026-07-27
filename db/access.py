@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 from datetime import datetime
@@ -47,7 +48,7 @@ async def resolve_user_tier(telegram_user_id: int) -> str:
     if not is_db_configured():
         return "free"
 
-    now = datetime.utcnow()
+    now = now_utc_naive()
     async with get_session() as session:
         res_user = await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))
         user = res_user.scalar_one_or_none()

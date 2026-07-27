@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import os
 import json
@@ -29,7 +30,7 @@ async def count_active_subscriptions(
     session: AsyncSession,
 ) -> int:
     """Count ALL active subscriptions across all tiers."""
-    now = datetime.utcnow()
+    now = now_utc_naive()
     q = (
         select(func.count(Subscription.id))
         .where(
@@ -48,7 +49,7 @@ async def get_active_subscription(
     tier: str,
 ) -> Optional[Subscription]:
     tier_norm = normalize_tier(tier)
-    now = datetime.utcnow()
+    now = now_utc_naive()
     res = await session.execute(
         select(Subscription)
         .join(User, User.id == Subscription.user_id)
@@ -68,7 +69,7 @@ async def count_active_vip_users(
     session: AsyncSession,
     exclude_telegram_user_ids: set[int] | None = None,
 ) -> int:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     q = (
         select(func.count(func.distinct(Subscription.user_id)))
         .select_from(Subscription)
@@ -154,7 +155,7 @@ async def activate_subscription(
 
     user = await get_or_create_user(session, telegram_user_id)
 
-    now = datetime.utcnow()
+    now = now_utc_naive()
     tier_norm = normalize_tier(tier)
     add_days = max(int(duration_days), 1)
 
@@ -186,7 +187,7 @@ async def activate_subscription(
 
 async def expire_subscriptions(session: AsyncSession) -> int:
     """Mark active subscriptions as expired if past expiry."""
-    now = datetime.utcnow()
+    now = now_utc_naive()
     stmt = (
         update(Subscription)
         .where(
@@ -222,7 +223,7 @@ async def persist_decision_log(
     }:
         return 0
     try:
-        async with get_session(noncritical=True) as session:
+        async with get_session(priority="background", label="db_repository") as session:
             dl = DecisionLog(
                 signal_id=signal_id,
                 asset=asset,
@@ -291,7 +292,7 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
                 strength=signal_data.get('confidence', 0.7),
                 ml_probability=signal_data.get('ml_probability'),
                 fingerprint=f"{signal_data.get('asset')}_{signal_data.get('timeframe')}_{signal_data.get('direction')}_{int(signal_data.get('entry') or 0)}",
-                created_at=datetime.utcnow(),
+                created_at=now_utc_naive(),
             )
             
             session.add(signal)
@@ -309,7 +310,9 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
 
 def hash_api_token(raw_token: str) -> str:
     token = str(raw_token or "").strip()
-    pepper = str(os.getenv("API_TOKEN_PEPPER") or "signalrankai-api-token-pepper")
+    from core.security import api_token_pepper
+
+    pepper = api_token_pepper()
     dk = hashlib.pbkdf2_hmac(
         "sha256",
         token.encode("utf-8"),
@@ -353,7 +356,7 @@ async def get_api_token_owner(
     *,
     required_scope: str = "signals:read",
 ) -> Optional[int]:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     tok_hash = hash_api_token(raw_token)
     row = await session.execute(
         select(ApiToken, User.telegram_user_id)
@@ -383,7 +386,7 @@ async def revoke_api_token(
     session: AsyncSession,
     raw_token: str,
 ) -> int:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     tok_hash = hash_api_token(raw_token)
     stmt = (
         update(ApiToken)
@@ -399,7 +402,7 @@ async def get_latest_active_api_token_meta(
     session: AsyncSession,
     telegram_user_id: int,
 ) -> Optional[dict]:
-    now = datetime.utcnow()
+    now = now_utc_naive()
     row = await session.execute(
         select(ApiToken.token_prefix, ApiToken.expires_at)
         .join(User, User.id == ApiToken.user_id)
@@ -471,7 +474,7 @@ async def get_economic_events(session, hours_ahead: int = 168) -> List["Economic
     """Get upcoming medium/high-impact economic events from DB."""
     from db.models import EconomicEvent
 
-    now = datetime.utcnow()
+    now = now_utc_naive()
     window_end = now + timedelta(hours=max(0, int(hours_ahead or 0)))
     try:
         result = await session.execute(

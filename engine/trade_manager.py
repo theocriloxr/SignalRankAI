@@ -11,7 +11,7 @@ This implements the "Free Ride" automation:
 import os
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from utils.timeutils import now_utc_naive
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +206,10 @@ class TradeManager:
     async def process_active_trades(
         self,
         trades: List[Dict[str, Any]],
-        price_fn=None
+        price_fn=None,
+        *,
+        persist_fn=None,
+        modify_sl_fn=None,
     ) -> List[Dict[str, Any]]:
         """
         Process active trades and update SLs if TP1 hit.
@@ -214,6 +217,10 @@ class TradeManager:
         Args:
             trades: List of active trade dicts.
             price_fn: Async function to get current price (symbol) -> price.
+            persist_fn: Optional async callback that durably persists the updated trade.
+            modify_sl_fn: Optional async callback ``(trade, new_sl)`` used for
+                linked demo/live broker positions. A failed broker modification
+                leaves the trade unchanged.
             
         Returns:
             List of updated trades.
@@ -253,20 +260,35 @@ class TradeManager:
                 new_sl = self.calculate_new_sl(trade, current_price)
                 
                 if new_sl and new_sl > 0:
-                    # Update trade
+                    # Broker state is authoritative for linked positions. Do not
+                    # claim protection when the modification was rejected.
+                    if modify_sl_fn and trade.get("mt5_ticket"):
+                        broker_result = await modify_sl_fn(trade, new_sl)
+                        broker_ok = (
+                            broker_result is True
+                            or (isinstance(broker_result, tuple) and bool(broker_result[0]))
+                            or (isinstance(broker_result, dict) and broker_result.get("success") is True)
+                        )
+                        if not broker_ok:
+                            logger.warning(
+                                "[trade_manager] broker rejected breakeven update symbol=%s",
+                                symbol,
+                            )
+                            updated_trades.append(trade)
+                            continue
+
                     trade['stop_loss'] = new_sl
                     trade['sl_moved_to_be'] = True
-                    trade['sl_moved_at'] = datetime.utcnow().isoformat()
-                    
+                    trade['sl_moved_at'] = now_utc_naive().isoformat()
+                    if persist_fn:
+                        await persist_fn(trade)
+
                     logger.info(
-                        f"[trade_manager] 🛡️ RISK FREE: {symbol} hit TP1. "
-                        f"Stop loss moved to entry ({new_sl:.5f}). "
-                        f"Now a guaranteed scratch trade."
+                        "[trade_manager] TP1 reached; breakeven protection recorded "
+                        "symbol=%s stop=%s (fees/slippage can still produce a loss)",
+                        symbol,
+                        new_sl,
                     )
-                    
-                    # TODO: Update database and call MT5 API
-                    # await db.update_trade(trade)
-                    # await mt5_api.update_stop_loss(trade['mt5_ticket'], new_sl)
                 
                 updated_trades.append(trade)
                 
@@ -283,9 +305,17 @@ default_trade_manager = TradeManager()
 
 async def check_and_move_sl(
     trades: List[Dict[str, Any]],
-    price_fn=None
+    price_fn=None,
+    *,
+    persist_fn=None,
+    modify_sl_fn=None,
 ) -> List[Dict[str, Any]]:
     """
     Convenience function to process trades for auto-breakeven.
     """
-    return await default_trade_manager.process_active_trades(trades, price_fn)
+    return await default_trade_manager.process_active_trades(
+        trades,
+        price_fn,
+        persist_fn=persist_fn,
+        modify_sl_fn=modify_sl_fn,
+    )

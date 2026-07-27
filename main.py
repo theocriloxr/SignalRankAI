@@ -10,31 +10,9 @@ except Exception:
 
 
 def _infer_run_mode() -> str:
-    """Derive a sensible default RUN_MODE from Railway service naming.
-
-    If RUN_MODE is explicitly set, it wins. Otherwise we look at
-    RAILWAY_SERVICE_NAME/RAILWAY_SERVICE and pick a mode so you can deploy
-    four Railway services without manual env tweaks.
-    """
-
-    explicit = os.getenv("RUN_MODE")
-    if explicit:
-        return explicit.strip().lower()
-
-    service = (os.getenv("RAILWAY_SERVICE_NAME") or os.getenv("RAILWAY_SERVICE") or "").lower()
-    for needle, mode in (
-        ("all", "all"),
-        ("web", "web"),
-        ("bot", "bot"),
-        ("telegram", "bot"),
-        ("worker", "worker"),
-        ("engine", "engine"),
-        ("core", "engine"),
-    ):
-        if needle in service:
-            return mode
-
-    return "engine"
+    """Resolve the canonical role from RUN_MODE or Railway service naming."""
+    from runtime.roles import infer_run_mode
+    return infer_run_mode().value
 
 
 def _check_database_configured() -> bool:
@@ -111,29 +89,30 @@ def main() -> None:
         # which has no /telegram/webhook route) couldn't serve, producing 404s for
         # every inbound Telegram update.  railway_main bundles web + engine + worker
         # + bot in a single asyncio event loop with correct route registration.
-        import uvicorn
-        port = int(os.getenv("PORT", "8000"))
-        print("[boot] all mode → delegating to railway_main:app (webhook route included)", flush=True)
-        uvicorn.run("railway_main:app", host="0.0.0.0", port=port, log_level="info")
+        from runtime.all_dev import run as run_all_dev
+        run_all_dev()
         return
+        # Legacy monolith launch code below is retained for source-level
+        # rollback reference but is unreachable after the adapter return.
+        print("[boot] all mode → delegating to railway_main:app (webhook route included)", flush=True)
+        
     elif mode == "web":
-        import uvicorn
-        port = int(os.getenv("PORT", "8000"))
-        uvicorn.run("web.app:app", host="0.0.0.0", port=port, log_level="info")
+        from runtime.web import run as run_web
+        run_web()
         return
     elif mode == "worker":
         from worker.worker import main as worker_main
         worker_main()
         return
     elif mode == "bot":
-        from signalrank_telegram.bot import run_bot as bot_main
-        bot_main()
+        from runtime.bot import run as run_bot
+        run_bot()
         return
-    # engine (default)
-    from engine.core import main_loop
-    from config import config
-    dry_run = config.DRY_RUN
-    main_loop(dry_run)
+    # Kept below for compatibility with the historical branch layout. The
+    # canonical dispatcher is used for every role in the new entrypoint.
+    from runtime.dispatcher import dispatch
+    requested_mode = str(os.getenv("RUN_MODE") or mode).strip().lower()
+    dispatch(requested_mode, legacy_worker=(requested_mode == "worker"))
 
 
 if __name__ == "__main__":

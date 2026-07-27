@@ -2,6 +2,7 @@
 Redis caching layer for high-frequency data.
 Reduces API calls 90%+ while keeping data fresh.
 """
+import asyncio
 import json
 import time
 from typing import Optional, Dict, Any, List, Union
@@ -25,7 +26,11 @@ CACHE_TTL = {
 async def cache_get(key: str) -> Optional[Dict[str, Any]]:
     """Get cached value or None."""
     try:
-        cached = await state.get_sync(key)
+        # RedisState's generic key API is synchronous.  Keep the existing key
+        # namespace intact while moving its Redis/Postgres I/O off the event
+        # loop.  Using ``state.cache_get`` here would add a second ``cache:``
+        # prefix and silently change the public cache contract.
+        cached = await asyncio.to_thread(state.get_sync, key)
         if cached:
             data = json.loads(cached)
             ttl_left = data.get('ttl') - time.time()
@@ -45,7 +50,7 @@ async def cache_set(key: str, value: Any, ttl_category: str = 'default') -> None
             'ttl': expires,
             'set_at': time.time(),
         }
-        await state.set_sync(key, json.dumps(data), ex=ttl)
+        await asyncio.to_thread(state.set_sync, key, json.dumps(data), ex=ttl)
     except Exception:
         pass
 
@@ -108,10 +113,16 @@ async def cache_news_sentiment(symbol: str, score: float) -> None:
 async def cache_stats() -> Dict[str, int]:
     """Get cache statistics."""
     try:
+        hits = await asyncio.to_thread(state.get_sync, 'cache:stats:hits')
+        misses = await asyncio.to_thread(state.get_sync, 'cache:stats:misses')
+        evictions = await asyncio.to_thread(
+            state.get_sync,
+            'cache:stats:evictions',
+        )
         stats = {
-            'hits': int(await state.get_sync('cache:stats:hits') or 0),
-            'misses': int(await state.get_sync('cache:stats:misses') or 0),
-            'evictions': int(await state.get_sync('cache:stats:evictions') or 0),
+            'hits': int(hits or 0),
+            'misses': int(misses or 0),
+            'evictions': int(evictions or 0),
         }
         hit_rate = stats['hits'] / max(1, stats['hits'] + stats['misses']) * 100
         stats['hit_rate'] = round(hit_rate, 1)
@@ -122,13 +133,13 @@ async def cache_stats() -> Dict[str, int]:
 async def record_cache_hit():
     """Record cache hit."""
     try:
-        await state.incr_sync('cache:stats:hits')
+        await asyncio.to_thread(state.incr_sync, 'cache:stats:hits')
     except Exception:
         pass
 
 async def record_cache_miss():
     """Record cache miss."""
     try:
-        await state.incr_sync('cache:stats:misses')
+        await asyncio.to_thread(state.incr_sync, 'cache:stats:misses')
     except Exception:
         pass

@@ -225,13 +225,13 @@ class TestLotSizeVIP:
         lot = calculate_lot_size_vip(user, 10_000_000.0, 1.1, 1.099, "EURUSD")
         assert lot <= MAX_LOT_VIP
 
-    def test_zero_balance_returns_default(self):
-        """Zero balance should not crash â€” return DEFAULT_FIXED_LOT."""
-        from engine.tiered_executor import calculate_lot_size_vip, DEFAULT_FIXED_LOT
+    def test_zero_balance_fails_closed(self):
+        """Missing broker balance must block sizing rather than use a fallback lot."""
+        from engine.tiered_executor import calculate_lot_size_vip
 
         user = self._make_user(1.0)
         lot = calculate_lot_size_vip(user, 0.0, 1.1, 1.09, "EURUSD")
-        assert lot == pytest.approx(DEFAULT_FIXED_LOT)
+        assert lot == 0.0
 
 
 # ===========================================================================

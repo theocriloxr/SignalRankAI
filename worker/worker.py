@@ -61,6 +61,13 @@ def _is_railway_runtime() -> bool:
     return any(bool((os.getenv(name) or "").strip()) for name in markers)
 
 
+def _analytics_work_allowed_in_worker() -> bool:
+    """Prevent accidental analytics ownership in the monolith/worker role."""
+    run_mode = str(os.getenv("RUN_MODE") or "all").strip().lower()
+    if run_mode == "analytics":
+        return True
+    return _env_bool_any(("ALLOW_ANALYTICS_IN_WORKER", "ALLOW_ML_TRAIN_IN_MONOLITH"), False)
+
 
 
 class Worker:
@@ -159,7 +166,10 @@ class Worker:
             except Exception as e:
                 logger.warning("[worker] Failed to start outcome tracker: %s", e)
         # Start shadow outcome tracker for ML-rejected signals
-        _enable_shadow = _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), True)
+        _enable_shadow = (
+            _analytics_work_allowed_in_worker()
+            and _env_bool_any(("SHADOW_OUTCOME_TRACKER_ENABLED", "WORKER_SHADOW_TRACKER_ENABLED"), False)
+        )
         if _enable_shadow:
             try:
                 from engine.shadow_outcome_worker import shadow_outcome_worker
@@ -192,18 +202,32 @@ class Worker:
             try:
                 from data.ws_ingest import run_ws_ingestor
                 _register_task("ws_ingestor", lambda: run_ws_ingestor(self._stop), restart_on_failure=True)
+                logger.info(
+                    "[worker] WebSocket ingestor enabled master=%s crypto=%s",
+                    getattr(config, "WS_INGEST_ENABLED", False),
+                    config.CRYPTO_WS_ENABLED,
+                )
             except Exception:
                 logger.exception("[worker] Failed to start WS ingestor")
+        else:
+            logger.info(
+                "[worker] WebSocket ingestor disabled master=%s crypto=%s; REST remains authoritative",
+                getattr(config, "WS_INGEST_ENABLED", False),
+                config.CRYPTO_WS_ENABLED,
+            )
 
-        # ML daily retrain loop (optional)
-        if config.ML_TRAIN_ENABLED:
+        # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
+        if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():
             try:
                 _register_task("ml_train_loop", lambda: self._ml_train_loop(), restart_on_failure=True)
             except Exception as e:
                 logger.warning("[worker] Failed to start ML train loop: %s", e)
 
-        # Data drift monitor loop (enabled by default).
-        if str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}:
+        # Data drift monitor belongs to the analytics role and is opt-in here.
+        if (
+            _analytics_work_allowed_in_worker()
+            and str(os.getenv("ML_DRIFT_MONITOR_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        ):
             try:
                 _register_task("drift_monitor", lambda: self._drift_monitor_loop(), restart_on_failure=True)
             except Exception as e:
@@ -225,9 +249,22 @@ class Worker:
                     if restart and not self._stop.is_set():
                         try:
                             exc: BaseException | None = None
-                            if not task.cancelled():
+                            task_cancelled = task.cancelled()
+                            if not task_cancelled:
                                 with contextlib.suppress(Exception):
                                     exc = task.exception()
+
+                            # Normal completion without exception: task finished cleanly.
+                            # Do NOT restart tasks that completed without errors.
+                            # Only restart tasks that crashed with an exception.
+                            if exc is None and not task_cancelled:
+                                logger.info(
+                                    "[worker] task %s completed normally; no restart scheduled",
+                                    name,
+                                )
+                                spec["restart"] = False
+                                continue
+
                             if not bool(spec.get("restart_pending", False)):
                                 restart_count = int(spec.get("restart_count", 0) or 0) + 1
                                 spec["restart_count"] = restart_count
@@ -238,7 +275,7 @@ class Worker:
                                 spec["next_restart_at"] = now_mono + delay_s
                                 spec["restart_pending"] = True
                                 logger.warning(
-                                    "[worker] task %s ended; restart scheduled in %.1fs (attempt=%s db_error=%s)",
+                                    "[worker] task %s ended with error; restart scheduled in %.1fs (attempt=%s db_error=%s)",
                                     name,
                                     delay_s,
                                     restart_count,
@@ -284,9 +321,14 @@ class Worker:
             try:
                 if is_db_configured():
                     async def _do_expire() -> None:
-                        async with get_session(noncritical=True) as session:
-                            _ = await expire_subscriptions(session)
-                            await session.commit()
+                        from db.priority import DBPriority
+                        from db.session import NoncriticalWriteDropped
+                        try:
+                            async with get_session(priority=DBPriority.BACKGROUND, label="subscription_expiry") as session:
+                                _ = await expire_subscriptions(session)
+                                await session.commit()
+                        except NoncriticalWriteDropped:
+                            logger.info("[db_background_deferred] task=subscription_expiry reason=foreground_reserved retry_in_s=3600")
                     await run_with_db_retry(_do_expire)
             except Exception:
                 logger.exception("[worker] subscription expiry loop iteration failed")

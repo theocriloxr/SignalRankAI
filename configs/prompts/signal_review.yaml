@@ -1,0 +1,3 @@
+version: signal-review-v1
+purpose: explain a validated signal without overriding deterministic safety gates
+deterministic_veto: true

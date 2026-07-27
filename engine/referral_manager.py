@@ -1,6 +1,7 @@
 """
 Referral reward system: 3 successful referrals = 7-day premium upgrade.
 """
+from utils.timeutils import now_utc_naive
 import logging
 from datetime import datetime, timedelta
 from typing import Tuple
@@ -59,7 +60,7 @@ class ReferralManager:
                     return False, "User not found"
                 
                 # Apply reward: upgrade tier if needed, extend premium
-                now = datetime.utcnow()
+                now = now_utc_naive()
                 
                 if user.tier == 'free':
                     # Free → Premium
@@ -105,7 +106,7 @@ class ReferralManager:
                     referred_user_id=referred_user_id,
                     is_successful=is_successful,
                     reward_applied=False,
-                    created_at=datetime.utcnow()
+                    created_at=now_utc_naive()
                 )
                 
                 session.add(referral)
@@ -130,7 +131,7 @@ class ReferralManager:
                 
                 if referral:
                     referral.is_successful = True
-                    referral.successful_at = datetime.utcnow()
+                    referral.successful_at = now_utc_naive()
                     await session.commit()
                     
                     logger.info(f"Referral marked successful: {referral.referrer_user_id} → {referred_user_id}")

@@ -4,6 +4,7 @@ Risk Management Module - PRODUCTION UPGRADE
 - 0.5% base -> throttle at DD_SOFT=6%, stop at DD_HARD=12%
 - Enhanced ATR stops, correlation, trailing
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import logging
@@ -141,7 +142,7 @@ class RiskManager:
         if active_trades >= MAX_ACTIVE_TRADES:
             return False, f"Max active trades ({MAX_ACTIVE_TRADES}) reached"
         if last_trade_time:
-            time_since_last = datetime.utcnow() - last_trade_time
+            time_since_last = now_utc_naive() - last_trade_time
             if time_since_last < timedelta(minutes=TRADE_COOLDOWN_MINUTES):
                 remaining = TRADE_COOLDOWN_MINUTES - int(time_since_last.total_seconds() / 60)
                 return False, f"Trade cooldown: {remaining}m remaining"

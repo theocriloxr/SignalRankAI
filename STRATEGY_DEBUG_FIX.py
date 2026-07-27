@@ -4,6 +4,7 @@ Signal Generation Debug and Fix - v1.1
 This file adds urgent fixes to ensure the engine generates signals.
 The main issue is strategy_signals=0 across all assets - need to force signal generation.
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import logging
@@ -175,7 +176,7 @@ def force_emergency_signals(asset, market_data, regime=None):
         'reasoning': f"EMERGENCY: {reason}. ATR-based risks. Force signal to prevent starvation.",
         'atr': atr,
         'is_emergency': True,
-        'created_at': datetime.utcnow().isoformat(),
+        'created_at': now_utc_naive().isoformat(),
     }
     
     signals.append(signal)

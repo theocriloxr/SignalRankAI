@@ -74,7 +74,7 @@ SignalRankAI Deployment & Automation Checklist
 - Optional (dangerous): set FRESH_START=true to wipe Postgres data once on next web boot.
 
 - Legacy (backward compatible, opt-in):
-	- ALLOW_LEGACY_TELEGRAM_BOT=true python -m telegram.bot
+	- ALLOW_LEGACY_TELEGRAM_BOT=true python -m legacy_telegram.bot
 
 5. Payment & Monetization
 - Ensure Paystack webhook is set up and points to your server

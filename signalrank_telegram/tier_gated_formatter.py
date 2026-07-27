@@ -21,7 +21,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from core.tier_constants import TIER_SCORE_THRESHOLDS
+from core.tier_policy import (
+    Tier,
+    evaluate_feature_access,
+    get_entitlements,
+    normalize_tier,
+)
 from engine.signal_metrics import (
     resolve_confidence_ratio,
     resolve_confluence_percent,
@@ -97,9 +102,10 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
     Returns:
         tuple: (message_text, reply_markup)
     """
-    tier = str(user_tier).strip().lower()
-    is_free = tier == "free"
-    is_premium = tier in ["premium", "vip", "owner", "admin"]
+    tier = normalize_tier(user_tier)
+    policy = get_entitlements(tier)
+    is_free = tier is Tier.FREE
+    can_show_exact_levels = evaluate_feature_access(tier, "exact_levels").allowed
     
     # Asset emoji
     asset = signal.get("asset", "UNKNOWN")
@@ -119,7 +125,7 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
         score_val = conf_ratio * 100.0 if conf_ratio is not None else 0.0
     
     ml_prob = resolve_ml_probability(signal)
-    entry_price = signal.get("entry", "N/A")
+    entry_price = signal.get("entry", "N/A") if can_show_exact_levels else "🔒 [PREMIUM ONLY]"
     stop_loss_price = signal.get("stop_loss", "N/A")
     
     # Build message
@@ -133,29 +139,24 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
     ]
     
     if is_free:
-        # FREE: Lock TP2, TP3, SL, ML Confidence
+        # FREE is an educational proof preview, not an incomplete trade ticket.
         tp1 = _fmt_price_clean(tp_levels[0], asset) if tp_levels else "N/A"
         lines.extend([
-            f"🎯 **TP1:** `{tp1}`",
-            "🎯 **TP2 & TP3:** 🔒 `[PREMIUM ONLY]`",
+            f"🎯 **Illustrative TP1:** `{tp1}`",
+            "🎯 **Additional targets:** 🔒 `[PAID WORKFLOW]`",
             "🛑 **Stop Loss:** 🔒 `[PREMIUM ONLY]`",
             "🧠 **AI Confidence:** 🔒 `[PREMIUM ONLY]`",
             "————————————————————",
-            "⚠️ *Trade at your own risk without Stop Loss data. Upgrade to unlock full risk metrics.*",
+            "⚠️ *Educational preview only. Do not trade an incomplete setup without a validated stop and fresh quote.*",
         ])
     else:
-        # PREMIUM/VIP: Full details
-        tp1 = _fmt_price_clean(tp_levels[0], asset) if len(tp_levels) > 0 else "N/A"
-        tp2 = _fmt_price_clean(tp_levels[1], asset) if len(tp_levels) > 1 else "N/A"
-        tp3 = _fmt_price_clean(tp_levels[2], asset) if len(tp_levels) > 2 else "N/A"
-        
-        lines.extend([
-            "🎯 **Targets:**",
-            f"   • TP1: `{tp1}`",
-            f"   • TP2: `{tp2}`",
-            f"   • TP3: `{tp3}`",
-            f"🛑 **Stop Loss:** `{stop_loss_price}`",
-        ])
+        visible_targets = tp_levels[: policy.max_tp_levels]
+        lines.append("🎯 **Targets:**")
+        for index, target in enumerate(visible_targets, 1):
+            lines.append(f"   • TP{index}: `{_fmt_price_clean(target, asset)}`")
+        if policy.max_tp_levels < 3:
+            lines.append("   • TP3: 🔒 `[VIP MANAGEMENT LADDER]`")
+        lines.append(f"🛑 **Stop Loss:** `{stop_loss_price}`")
         
         if ml_prob is not None:
             lines.append(f"🧠 **AI Confidence:** `{ml_prob * 100:.1f}%`")
@@ -166,13 +167,13 @@ def format_tiered_signal(signal: Dict[str, Any], user_tier: str) -> Tuple[str, O
     keyboard = []
     signal_id = signal.get("signal_id", "")
     
-    if is_premium:
+    if evaluate_feature_access(tier, "execution_preflight").allowed:
         keyboard.append([
-            InlineKeyboardButton("📱 Auto-Execute on MT5", callback_data=f"exec_mt5_{signal_id}")
+            InlineKeyboardButton("⚙️ Execution Preflight", callback_data=f"mt5_trade_{signal_id}")
         ])
     else:
         keyboard.append([
-            InlineKeyboardButton("⭐ Upgrade to Auto-Execute & Unlock SL", callback_data="upgrade_menu")
+            InlineKeyboardButton("⭐ Compare Plans & Unlock Workflow", callback_data="upgrade_menu")
         ])
     
     tv_url = f"https://www.tradingview.com/symbols/{asset.replace('USDT', '')}"
@@ -204,33 +205,21 @@ def should_user_receive_signal(signal_score: float, user_tier: str) -> bool:
     Returns:
         True if user should receive this signal
     """
-    tier = str(user_tier).strip().lower()
-    
-    # FREE tier: minimum 80 score required
-    if tier == "free":
-        FREE_MIN_SCORE = 80.0
-        return signal_score >= FREE_MIN_SCORE
-    
-    # VIP, PREMIUM, ADMIN, OWNER get everything
-    if tier in ["vip", "premium", "owner", "admin"]:
-        return True
-    
-    # Default: allow for valid tiers, block unknown
-    return False
+    policy = get_entitlements(user_tier)
+    return float(signal_score or 0) >= policy.minimum_signal_score
 
 
 def get_paywall_upsell_message() -> str:
     """Get the paywall upsell message for FREE users who hit daily limit."""
     return (
         "🛑 <b>Daily Limit Reached</b>\n\n"
-        "You've received your 3 free signals for today.\n\n"
+        f"You've received your {get_entitlements(Tier.FREE).daily_signal_limit} free educational previews today.\n\n"
         "<b>Why upgrade to Premium?</b>\n"
-        "✅ Unlimited signals - never miss a setup\n"
-        "✅ Full Stop Loss data - trade safely\n"
-        "✅ TP2 & TP3 targets - maximize profits\n"
-        "✅ MT5 Auto-Execute - instant execution\n"
-        "✅ AI Confidence scores - know the probability\n\n"
-        "<i>Upgrade now: /premium</i>"
+        "✅ A higher transparent daily quota\n"
+        "✅ Complete entry and stop-loss context\n"
+        "✅ Paper-trading, lifecycle updates, and deeper analytics\n"
+        "✅ The same freshness and risk checks on every tier\n\n"
+        "<i>Compare plans with /upgrade. No guaranteed returns.</i>"
     )
 
 
