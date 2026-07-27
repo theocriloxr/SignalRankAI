@@ -123,7 +123,7 @@ def run_startup_ops(run_mode: str) -> None:
 
         # 1b) Failsafe bootstrap for fresh DBs when migrations are skipped or
         # migration graph differs across branches. create_all is idempotent.
-        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", True):
+        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", False):
             try:
                 from sqlalchemy import create_engine
                 from db.models import Base

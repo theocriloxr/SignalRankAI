@@ -43,6 +43,7 @@ from typing import Iterable
 from fastapi import FastAPI, Request, Response, HTTPException, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from core.telegram_webhook_config import telegram_webhook_registration_kwargs
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from prometheus_client import Counter, Gauge, Histogram
 
@@ -810,13 +811,7 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     if webhook_url:
         webhook_endpoint = f"{webhook_url}/telegram/webhook"
         try:
-            await app_obj.bot.delete_webhook(drop_pending_updates=True)
-            webhook_secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
-            webhook_kwargs = (
-                {"secret_token": webhook_secret}
-                if webhook_secret
-                else {}
-            )
+            webhook_kwargs = telegram_webhook_registration_kwargs()
             await app_obj.bot.set_webhook(webhook_endpoint, **webhook_kwargs)
             print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
             logger.info("[bot] webhook registered: %s", webhook_endpoint)
@@ -1388,8 +1383,7 @@ async def lifespan(_: FastAPI):
                         _base = _get_webhook_url()
                         if _base:
                             _endpoint = f"{_base}/telegram/webhook"
-                            _secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
-                            _kwargs = {"secret_token": _secret} if _secret else {}
+                            _kwargs = telegram_webhook_registration_kwargs()
                             await _bot_application.bot.set_webhook(_endpoint, **_kwargs)
                             logger.warning("[webhook] periodic self-heal: webhook was unset, re-registered=%s", _endpoint)
                             print(f"[webhook] periodic self-heal: re-registered={_endpoint}", flush=True)

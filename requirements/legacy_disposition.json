@@ -1,5 +1,5 @@
 {
-  "file_count": 934,
+  "file_count": 929,
   "files": [
     {
       "disposition": "DELETE_GENERATED_ONLY",
@@ -19,51 +19,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
-      "path": ".env",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "0d09b9b6289f80382b2742d73e21cf998350121c695055cc3ec1fb25faa3e3b1",
-      "size_bytes": 15330
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
-      "path": ".env.complete",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "d6a05b1a4fea87001b22c088d1566ae4f401caa74b2edbde820f0a09744e1b04",
-      "size_bytes": 24645
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 173,
       "path": ".env.example",
       "reason": "configuration, data, or product asset retained",
       "sha256": "b268258e7890fa0366a1a5962e973769b84928a9f83555285e383d9952753581",
       "size_bytes": 5048
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
-      "path": ".env.local",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "52f904b3937828f34e70b12ea40f399dfceb0b87cfbbdce2cb3ff3717e2f7071",
-      "size_bytes": 707
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": null,
-      "path": ".env.production.template",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "07a8347940602ac7c14f3286b9d1a7324401ada4436e5d0f24bf470054ba87d6",
-      "size_bytes": 15189
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": ".freebuff/desktop.db",
-      "reason": "local runtime/generated state excluded from clean release package",
-      "sha256": "68cfdc4f65676c5c147f4f4ed25e0ade9ca132b6cb65e4c83d0bfcaa214f2ad7",
-      "size_bytes": 5939200
     },
     {
       "disposition": "DELETE_GENERATED_ONLY",
@@ -104,14 +64,6 @@
       "reason": "production/build source",
       "sha256": "7c31b8cce5796f169ade750a43dfa5f9fb4c326e90aab5c8e83189b0f6011eb8",
       "size_bytes": 7
-    },
-    {
-      "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 3,
-      "path": ".vscode/settings.json",
-      "reason": "configuration, data, or product asset retained",
-      "sha256": "b3f38d5469db454a51c0c705ae9160a4e133df1f23c19f7086cce7169a544aa9",
-      "size_bytes": 68
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1178,30 +1130,6 @@
       "size_bytes": 1475
     },
     {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "audit.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "2e7afc1d1411ccdfe1e47b0baa60cbbf0b086c44b73a861765252d95deec53d5",
-      "size_bytes": 409209
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "bot_stderr.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "bot_stdout.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
-    },
-    {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 11,
       "path": "check_command_access.py",
@@ -1227,11 +1155,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 133,
+      "line_count": 141,
       "path": "configs/env/production.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "fd5d77d2da97e7e326ac95773df482ec53a2254b6790e9d0ac5b35e097ef5e69",
-      "size_bytes": 3998
+      "sha256": "f517fadf70bae4bacc1b40ddee8ffb8c5f6dda52aca20205a2e0c3955a75a43c",
+      "size_bytes": 4294
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1243,11 +1171,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 157,
+      "line_count": 166,
       "path": "configs/env/railway-hobby-owner-beta.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "5ea4d4ad78bdff72dbcecc6a73bab66f1846fb1f69b98f3ae64f67170ca6a6bc",
-      "size_bytes": 4405
+      "sha256": "8106f85aa07f5d03068cd9203ab026be233ac5cbe4b4cf1eabfd312d44f3eb5e",
+      "size_bytes": 4749
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1267,11 +1195,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 168,
+      "line_count": 175,
       "path": "configs/env/railway-staging.env.example",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "ed8b8356bbe038d28819053192012d9a12debe80d747180a40375833bfac3f48",
-      "size_bytes": 4875
+      "sha256": "db53a5cfdb53051745933444228e3889b219634c8318ecd876c6dd5f18eccb94",
+      "size_bytes": 5183
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1536,6 +1464,14 @@
       "reason": "production/build source",
       "sha256": "264a696400a43ace69ebada485660fbb8b7207236826cce1fb75038ccf26a4c8",
       "size_bytes": 6218
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 47,
+      "path": "core/telegram_webhook_config.py",
+      "reason": "production/build source",
+      "sha256": "2c482ed3f2cb62e942c97a924ba06265b03219b841d508358a6d186043900053",
+      "size_bytes": 1623
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -1966,8 +1902,8 @@
       "line_count": 485,
       "path": "db/auto_ops.py",
       "reason": "production/build source",
-      "sha256": "d4b5172e215b153f0df64c8bf8cc1ddeb5ae0baee90eac6eab01af2460bca39e",
-      "size_bytes": 25932
+      "sha256": "d564f5d33e82224c953e89e51ca4288d923e3c6090e25f43a3ef2fe8befcb587",
+      "size_bytes": 25933
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2011,11 +1947,11 @@
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 76,
+      "line_count": 86,
       "path": "db/migrations/env.py",
       "reason": "database migration history",
-      "sha256": "5ea7cdabc23893ab766bd2271942b5df92f6632b5442e448cf10b6de1d375e58",
-      "size_bytes": 1923
+      "sha256": "71e0e19550cb1153894c5aab2b0b0042337ec8e871dce8284fd473ec503a47a6",
+      "size_bytes": 2316
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -2384,6 +2320,30 @@
       "reason": "configuration, data, or product asset retained",
       "sha256": "d8e5dd0e6d631db1ac9f3700f2ef6b61126bff7d71ce5e8190d02fc328999f97",
       "size_bytes": 4269
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 69,
+      "path": "deployment_package/SignalRankAI_Optional_Integrations.env.example",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "cdfba6408010051d76abfd9b3e2535720710f23c9958e16906031d3c31a706d0",
+      "size_bytes": 1491
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 718,
+      "path": "deployment_package/SignalRankAI_Railway_Deployment_and_Telegram_Recovery.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "1481026cb8d3758bdea4f928defa40061fc7914ab47e5031b143703d20555b6b",
+      "size_bytes": 18084
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 245,
+      "path": "deployment_package/SignalRankAI_Railway_Owner_Beta.env",
+      "reason": "configuration, data, or product asset retained",
+      "sha256": "9167abfefe4994108c3057d7e2308c6b643d3733a2d62e9af3e4a0f362b3cca0",
+      "size_bytes": 8080
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -3056,6 +3016,14 @@
       "reason": "documentation/specification/evidence",
       "sha256": "733733d954880cb98073f77c473effcc3e7ae7e92932e9e992531ce5d5298881",
       "size_bytes": 1908
+    },
+    {
+      "disposition": "DOCUMENTATION_ONLY",
+      "line_count": 718,
+      "path": "docs/runbooks/RAILWAY_DEPLOYMENT_AND_TELEGRAM_RECOVERY.md",
+      "reason": "documentation/specification/evidence",
+      "sha256": "1481026cb8d3758bdea4f928defa40061fc7914ab47e5031b143703d20555b6b",
+      "size_bytes": 18084
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -3778,22 +3746,6 @@
       "size_bytes": 23944
     },
     {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "engine_stderr.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "engine_stdout.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "6031fab70a2ba7611842e967f90506f0714fec65d3038a5b6b3f75400e50e977",
-      "size_bytes": 219670
-    },
-    {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": null,
       "path": "engineering",
@@ -4318,16 +4270,16 @@
       "line_count": 14,
       "path": "railway.json",
       "reason": "configuration, data, or product asset retained",
-      "sha256": "cb25a9be93294d293a1e8011c3eb791ba1964beefe9e26f4d675533c8b6f32c4",
-      "size_bytes": 483
+      "sha256": "be2598c45c9061cbdebfca3348d307fdfff7ad0bdb19f029bff9fdd823c3e5c4",
+      "size_bytes": 482
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
-      "line_count": 2554,
+      "line_count": 2548,
       "path": "railway_main.py",
       "reason": "production/build source",
-      "sha256": "c521e480c82445b39665c9fc477d6d5ef2f05af7c4b73b68462225138513561f",
-      "size_bytes": 106629
+      "sha256": "10e6cfaf79a15bab247b8ff00d4073c79cd57da79187b623b9262a68c5875aef",
+      "size_bytes": 106366
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -4475,11 +4427,11 @@
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
-      "line_count": 9644,
+      "line_count": 9728,
       "path": "requirements/environment_registry.yaml",
       "reason": "machine-readable governance",
-      "sha256": "e01a087e46b2998cc4009ae19c9e094846f31052c13c6d1dc2935a90c99e34fb",
-      "size_bytes": 290942
+      "sha256": "7ffa7360c282d6767b30b8f2a756e2f3a248ed74638991508897faed52492925",
+      "size_bytes": 294164
     },
     {
       "disposition": "DOCUMENTATION_ONLY",
@@ -4928,6 +4880,14 @@
       "reason": "production/build source",
       "sha256": "439e12e26391433470520398644c4a16257fd3dbe92bf724f64e1c470291ec2e",
       "size_bytes": 1241
+    },
+    {
+      "disposition": "PRESERVE_BEHAVIOUR",
+      "line_count": 131,
+      "path": "scripts/telegram_webhook_recovery.py",
+      "reason": "production/build source",
+      "sha256": "8299bdb29e5e6c56cf5b4131608f6ae40ad0ebd4a6849d87d6e15a4eec990888",
+      "size_bytes": 4349
     },
     {
       "disposition": "PRESERVE_BEHAVIOUR",
@@ -5562,14 +5522,6 @@
       "size_bytes": 9570
     },
     {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "signals.db",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "907ac3464d9035b09ef2cefb00a3e2b5ef5b0222e8024bee242e60834d93b02b",
-      "size_bytes": 12288
-    },
-    {
       "disposition": "PRESERVE_BEHAVIOUR",
       "line_count": 75,
       "path": "start.sh",
@@ -6072,6 +6024,14 @@
       "reason": "automated test evidence",
       "sha256": "914cb8f9502070456b9b69b83001b51580bbe46450daa22d9a2b5ef66eb369b2",
       "size_bytes": 289
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 8,
+      "path": "tests/test_alembic_migration_url_contract.py",
+      "reason": "automated test evidence",
+      "sha256": "65cdd84e0ddb13c3ce4cf5442051ca3d6035e3c261b252dca2d3033cd40a1e4b",
+      "size_bytes": 327
     },
     {
       "disposition": "TEST_ONLY",
@@ -6803,6 +6763,14 @@
     },
     {
       "disposition": "TEST_ONLY",
+      "line_count": 12,
+      "path": "tests/test_railway_activation_contract.py",
+      "reason": "automated test evidence",
+      "sha256": "85681afbc03d2e8add4333935ad794094e6adde2816f69b3818f45398aeb211e",
+      "size_bytes": 397
+    },
+    {
+      "disposition": "TEST_ONLY",
       "line_count": 188,
       "path": "tests/test_railway_lifecycle.py",
       "reason": "automated test evidence",
@@ -7096,6 +7064,14 @@
       "reason": "automated test evidence",
       "sha256": "3fdd8589bb6d734c89ca150e57024ac0b1af32dbb305582492f8629f00667922",
       "size_bytes": 950
+    },
+    {
+      "disposition": "TEST_ONLY",
+      "line_count": 35,
+      "path": "tests/test_telegram_webhook_registration_contract.py",
+      "reason": "automated test evidence",
+      "sha256": "255fffff58db49b876e3c89f7fb60ffcad6c22b580e82fe2fb3a7311fec3c0b2",
+      "size_bytes": 1382
     },
     {
       "disposition": "TEST_ONLY",
@@ -7456,22 +7432,6 @@
       "reason": "production/build source",
       "sha256": "5f3c984926cc0a470a526c442f65df0fd8ad7af47d02461b91912fca0a2209aa",
       "size_bytes": 25434
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "worker_stderr.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
-    },
-    {
-      "disposition": "DELETE_GENERATED_ONLY",
-      "line_count": null,
-      "path": "worker_stdout.log",
-      "reason": "generated/local artefact excluded from clean release package",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size_bytes": 0
     }
   ],
   "generated_at": "2026-07-27T00:00:00Z",
@@ -7485,9 +7445,9 @@
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
   "summary": {
-    "DELETE_GENERATED_ONLY": 12,
-    "DOCUMENTATION_ONLY": 181,
-    "PRESERVE_BEHAVIOUR": 593,
-    "TEST_ONLY": 148
+    "DELETE_GENERATED_ONLY": 3,
+    "DOCUMENTATION_ONLY": 183,
+    "PRESERVE_BEHAVIOUR": 592,
+    "TEST_ONLY": 151
   }
 }
