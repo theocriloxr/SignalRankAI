@@ -308,10 +308,12 @@ async def _drain_pending_webhook_updates(max_items: int = 200) -> int:
 
 
 def _get_webhook_url() -> str:
-    """Derive the public HTTPS URL for the Telegram webhook.
+    """Derive the public HTTPS URL for the current deployment.
 
-    Uses RAILWAY_PUBLIC_DOMAIN (set automatically by Railway) or the
-    explicit WEBHOOK_DOMAIN / WEBHOOK_URL env var as a fallback.
+    Railway's generated domain is authoritative inside Railway. Explicit
+    overrides are fallbacks for non-Railway hosting and local tunnels. This
+    ordering prevents a staging service copied from production from registering
+    or probing the production domain through a stale APP_BASE_URL.
     """
     domain = (
         os.getenv("RAILWAY_PUBLIC_DOMAIN")
@@ -322,9 +324,44 @@ def _get_webhook_url() -> str:
     ).strip()
     if not domain:
         return ""
-    if not domain.startswith("https://"):
+    if not domain.startswith(("http://", "https://")):
         domain = f"https://{domain}"
     return domain.rstrip("/")
+
+
+def _production_webhook_contract_errors() -> list[str]:
+    """Return production blockers that make webhook acceptance unsafe.
+
+    A Railway deployment that cannot durably accept Telegram updates must not
+    overwrite the bot's webhook while Railway is still routing the public domain
+    to an older deployment. Doing so causes pending updates to hit the old image
+    and appear as repeated 404 responses.
+    """
+    if not _production_readiness_required():
+        return []
+
+    errors: list[str] = []
+    database_url = str(os.getenv("DATABASE_URL") or "").strip()
+    state_url = str(
+        os.getenv("STATE_REDIS_URL")
+        or os.getenv("SIGNALRANK_STATE_REDIS_URL")
+        or os.getenv("REDIS_URL")
+        or ""
+    ).strip()
+    delivery_url = str(os.getenv("DELIVERY_REDIS_URL") or "").strip()
+    secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+
+    if not database_url:
+        errors.append("DATABASE_URL")
+    if not state_url:
+        errors.append("STATE_REDIS_URL|REDIS_URL")
+    if not delivery_url:
+        errors.append("DELIVERY_REDIS_URL")
+    if state_url and delivery_url and state_url == delivery_url:
+        errors.append("DISTINCT_REDIS_SERVICES")
+    if not secret:
+        errors.append("TELEGRAM_WEBHOOK_SECRET")
+    return errors
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -657,6 +694,17 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     if _bot_ready and _bot_application is not None:
         return _bot_application, True
 
+    contract_errors = _production_webhook_contract_errors()
+    if contract_errors:
+        joined = ",".join(contract_errors)
+        print(f"[bot] webhook setup blocked: production contract missing={joined}", flush=True)
+        logger.error(
+            "[bot] webhook setup blocked by production contract missing=%s; "
+            "existing Telegram webhook was not changed",
+            joined,
+        )
+        return None, False
+
     if not _is_db_ready():
         print("[bot] webhook setup skipped: DATABASE_URL missing", flush=True)
         logger.warning("[bot] DATABASE_URL not set; skipping webhook setup")
@@ -972,10 +1020,13 @@ async def _run_deployment_diagnostics_once() -> None:
         report_path,
         "--continue-on-failure",
     ]
+    # Always probe the current Railway deployment first. A duplicated staging
+    # environment may still contain production APP_BASE_URL/WEBHOOK_DOMAIN values.
     base_url = str(
-        os.getenv("APP_BASE_URL")
+        os.getenv("RAILWAY_PUBLIC_DOMAIN")
         or os.getenv("WEBHOOK_DOMAIN")
-        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("WEBHOOK_URL")
+        or os.getenv("APP_BASE_URL")
         or ""
     ).strip()
     if base_url:

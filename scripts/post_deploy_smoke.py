@@ -22,13 +22,13 @@ class CheckResult:
 def _derive_base_url(cli_base: str | None) -> str:
     if cli_base:
         return cli_base.rstrip("/")
-    for key in ("APP_BASE_URL", "WEBHOOK_URL", "RAILWAY_PUBLIC_DOMAIN"):
+    for key in ("RAILWAY_PUBLIC_DOMAIN", "WEBHOOK_DOMAIN", "WEBHOOK_URL", "APP_BASE_URL"):
         raw = (os.getenv(key) or "").strip()
         if raw:
             if raw.startswith("http://") or raw.startswith("https://"):
                 return raw.rstrip("/")
             return f"https://{raw.strip('/')}"
-    raise ValueError("No base URL provided. Pass --base-url or set APP_BASE_URL/WEBHOOK_URL/RAILWAY_PUBLIC_DOMAIN.")
+    raise ValueError("No base URL provided. Pass --base-url or set RAILWAY_PUBLIC_DOMAIN/WEBHOOK_DOMAIN/WEBHOOK_URL/APP_BASE_URL.")
 
 
 def _http_json(

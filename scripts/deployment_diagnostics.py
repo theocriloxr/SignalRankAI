@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import importlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -35,6 +36,12 @@ from urllib import error, request
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+# Telegram's HTTP transport embeds the bot token in the request URL. Keep
+# third-party transport logs below INFO so deployment evidence cannot disclose
+# credentials even when the root logger is verbose.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -972,7 +979,7 @@ async def telegram_check(report: Report) -> None:
                         timeout=20,
                     )
                     send_evidence = {"status": PASS, "chat_id": chat_id, "message_id": int(msg.message_id)}
-            expected_domain = _value("WEBHOOK_DOMAIN", "APP_BASE_URL", "RAILWAY_PUBLIC_DOMAIN")
+            expected_domain = _value("RAILWAY_PUBLIC_DOMAIN", "WEBHOOK_DOMAIN", "WEBHOOK_URL", "APP_BASE_URL")
             if expected_domain and not expected_domain.startswith("http"):
                 expected_domain = f"https://{expected_domain}"
             expected_url = f"{expected_domain.rstrip('/')}/telegram/webhook" if expected_domain else ""
@@ -1125,7 +1132,7 @@ async def main_async(args: argparse.Namespace) -> int:
         await telegram_check(report)
 
     if args.phase in {"runtime", "full"}:
-        base = args.base_url or _value("APP_BASE_URL", "WEBHOOK_DOMAIN", "RAILWAY_PUBLIC_DOMAIN")
+        base = args.base_url or _value("RAILWAY_PUBLIC_DOMAIN", "WEBHOOK_DOMAIN", "WEBHOOK_URL", "APP_BASE_URL")
         if base and not base.startswith("http"):
             base = f"https://{base}"
         http_check(report, base)

@@ -44,6 +44,14 @@ def setup_logging(level: int = logging.INFO, json: bool = False) -> None:
         root.removeHandler(h)
 
     root.addHandler(handler)
+
+    # httpx logs complete request URLs at INFO. Telegram Bot API URLs contain
+    # the bot token in the path, so these libraries must never emit INFO-level
+    # request lines in any environment. Application-level Telegram events are
+    # logged separately without credentials.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     # Optionally initialize Sentry if available via env SENTRY_DSN
     try:
         import os
