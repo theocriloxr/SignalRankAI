@@ -1,6 +1,9 @@
 from pathlib import Path
 
+import pytest
 import pandas as pd
+
+pytest.importorskip("pyarrow", reason="pyarrow is required for the Parquet round-trip contract")
 
 from scripts.wfo_run import convert_orderbook_file, is_orderbook_frame, normalize_orderbook_frame
 

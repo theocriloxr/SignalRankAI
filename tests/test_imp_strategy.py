@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 from strategies.imp import institutional_momentum_pulse_strategies
 
@@ -17,7 +17,7 @@ def _candle(ts: datetime, o: float, h: float, l: float, c: float, v: float = 100
 
 
 def _build_h4_uptrend() -> list[dict]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     out: list[dict] = []
     price = 100.0
     for i in range(240):
@@ -32,7 +32,7 @@ def _build_h4_uptrend() -> list[dict]:
 
 
 def _build_h1_imp_long_setup() -> list[dict]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     out: list[dict] = []
     close = 132.0
     # Structured drift down toward EMA50 area.

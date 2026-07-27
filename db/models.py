@@ -505,6 +505,29 @@ class PaymentEvent(Base):
     meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class PaymentReceipt(Base):
+    """Confirmed-payment receipt; one successful receipt per provider reference."""
+
+    __tablename__ = "payment_receipts"
+    __table_args__ = (UniqueConstraint("provider", "payment_reference", name="uq_payment_receipt_provider_reference"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    receipt_number: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), default="paystack")
+    payment_reference: Mapped[str] = mapped_column(String(128), nullable=False)
+    plan: Mapped[str] = mapped_column(String(64), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), default="NGN")
+    status: Mapped[str] = mapped_column(String(16), default="paid")
+    payment_date: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    subscription_start: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    subscription_end: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    text_body: Mapped[str] = mapped_column(Text, default="")
+    html_body: Mapped[Optional[str]] = mapped_column(Text)
+    meta: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
 class BotEvent(Base):
     __tablename__ = "bot_events"
 

@@ -3,3 +3,10 @@ Alembic migrations live here.
 Run locally:
 - set DATABASE_URL=postgresql+asyncpg://...
 - alembic -c alembic.ini upgrade head
+
+Railway URL compatibility
+-------------------------
+Railway may expose PostgreSQL references with the legacy ``postgres://``
+scheme. ``db/migrations/env.py`` normalises ``postgres://``, ``postgresql://``
+and ``postgresql+asyncpg://`` to ``postgresql+psycopg2://`` before SQLAlchemy
+creates the synchronous Alembic engine.

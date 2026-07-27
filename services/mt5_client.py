@@ -19,13 +19,30 @@ Environment variables:
 """
 from __future__ import annotations
 
+import math
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 import aiohttp
 
+from core.security import redact_secrets
+
 logger = logging.getLogger(__name__)
+
+
+def _safe_error_body(body: str) -> str:
+    """Return bounded, redacted provider diagnostics without secret leakage."""
+    try:
+        import json
+
+        parsed = json.loads(str(body or ""))
+        return str(redact_secrets(parsed))[:200]
+    except Exception:
+        # Plain-text provider responses may echo request credentials.  Status
+        # and URL are sufficient diagnostics; never log arbitrary body text.
+        return "<non-json provider response>"
 
 # ---------------------------------------------------------------------------
 # URL helpers
@@ -61,6 +78,14 @@ def _slippage_tolerance() -> float:
         return 10.0
 
 
+def _quote_max_age_seconds() -> float:
+    try:
+        value = float(os.getenv("BROKER_QUOTE_MAX_AGE_SECONDS", "15"))
+    except Exception:
+        value = 15.0
+    return max(1.0, min(value, 120.0))
+
+
 def _check_token() -> bool:
     if not (os.getenv("META_API_TOKEN") or "").strip():
         logger.error("[mt5_client] META_API_TOKEN is not set")
@@ -72,7 +97,7 @@ def _check_token() -> bool:
 # Low-level HTTP helpers
 # ---------------------------------------------------------------------------
 
-async def _http_get(url: str, params: Dict | None = None) -> Optional[Dict]:
+async def _http_get(url: str, params: Dict | None = None) -> Optional[Any]:
     """Authenticated GET → parsed JSON or None."""
     if not _check_token():
         return None
@@ -87,7 +112,7 @@ async def _http_get(url: str, params: Dict | None = None) -> Optional[Dict]:
                 if resp.status in (200, 201):
                     return await resp.json()
                 body = await resp.text()
-                logger.error("[mt5_client] GET %s → %d  %s", url, resp.status, body[:200])
+                logger.error("[mt5_client] GET %s → %d  %s", url, resp.status, _safe_error_body(body))
                 return None
     except Exception as exc:
         logger.error("[mt5_client] GET %s failed: %s", url, exc)
@@ -112,7 +137,7 @@ async def _http_post(url: str, payload: Dict) -> Optional[Dict]:
                     except Exception:
                         return {"status": resp.status}
                 body = await resp.text()
-                logger.error("[mt5_client] POST %s → %d  %s", url, resp.status, body[:200])
+                logger.error("[mt5_client] POST %s → %d  %s", url, resp.status, _safe_error_body(body))
                 return None
     except Exception as exc:
         logger.error("[mt5_client] POST %s failed: %s", url, exc)
@@ -134,7 +159,7 @@ async def _http_put(url: str, payload: Dict) -> bool:
                 if resp.status in (200, 201, 204):
                     return True
                 body = await resp.text()
-                logger.error("[mt5_client] PUT %s → %d  %s", url, resp.status, body[:200])
+                logger.error("[mt5_client] PUT %s → %d  %s", url, resp.status, _safe_error_body(body))
                 return False
     except Exception as exc:
         logger.error("[mt5_client] PUT %s failed: %s", url, exc)
@@ -150,25 +175,280 @@ async def _deploy_account(account_id: str) -> None:
         logger.debug("[mt5_client] deploy_account %s: %s", account_id, exc)
 
 
+def _parse_provider_timestamp(value: Any) -> Optional[datetime]:
+    if value is None or value == "":
+        return None
+    try:
+        if isinstance(value, (int, float)):
+            raw = float(value)
+            if raw > 10_000_000_000:
+                raw /= 1000.0
+            return datetime.fromtimestamp(raw, tz=timezone.utc)
+        raw = str(value).strip()
+        if not raw:
+            return None
+        if raw.replace(".", "", 1).isdigit():
+            return _parse_provider_timestamp(float(raw))
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            # MetaApi's canonical ``time`` field is UTC. A timezone-less
+            # brokerTime is deliberately not selected by get_live_quote.
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _classify_demo_account(*payloads: Dict[str, Any]) -> Optional[bool]:
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        for key in ("isDemo", "is_demo", "demo"):
+            value = payload.get(key)
+            if isinstance(value, bool):
+                return value
+            if str(value).strip().lower() in {"1", "true", "yes"}:
+                return True
+            if str(value).strip().lower() in {"0", "false", "no"}:
+                return False
+        for key in (
+            "accountType",
+            "account_type",
+            "environment",
+            "mode",
+            "server",
+            "name",
+        ):
+            value = str(payload.get(key) or "").strip().lower()
+            if not value:
+                continue
+            if "demo" in value or "paper" in value or "sandbox" in value:
+                return True
+            if "live" in value or "real" in value:
+                return False
+    return None
+
+
+def _account_connection_ready(*payloads: Dict[str, Any]) -> bool:
+    observed = False
+    positive = False
+    for payload in payloads:
+        if not isinstance(payload, dict):
+            continue
+        for key in ("connectionStatus", "connection_status", "state", "status"):
+            value = str(payload.get(key) or "").strip().lower()
+            if not value:
+                continue
+            observed = True
+            if value in {
+                "connected",
+                "deployed",
+                "synchronized",
+                "ready",
+                "active",
+            }:
+                positive = True
+            if value in {
+                "disconnected",
+                "undeployed",
+                "deploying",
+                "synchronizing",
+                "failed",
+                "error",
+                "deleted",
+                "inactive",
+            }:
+                return False
+    if positive:
+        return True
+    # Account-information is only served by a connected terminal. If no
+    # explicit state was returned, valid account numbers still prove readiness.
+    if not observed:
+        for payload in payloads:
+            if isinstance(payload, dict) and (
+                payload.get("accountNumber")
+                or payload.get("login")
+                or payload.get("currency")
+            ):
+                return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-async def get_live_price(account_id: str, symbol: str) -> Optional[float]:
-    """Return the current mid-price for *symbol* via MetaApi REST."""
+async def get_account_info(account_id: str) -> Optional[Dict[str, Any]]:
+    """Return normalized MetaApi account information used by risk sizing.
+
+    Missing equity, free-margin, connection state, or demo/live
+    classification remains visible to callers and therefore blocks execution.
+    No synthetic balance/equity values are supplied.
+    """
+    account_id = str(account_id or "").strip()
+    if not account_id:
+        return None
+    await _deploy_account(account_id)
+    information = await _http_get(f"{_client_base(account_id)}/account-information")
+    if not isinstance(information, dict):
+        return None
+
+    # Provisioning metadata carries the server/account environment while the
+    # client endpoint carries balance/equity/margin. Failure to fetch metadata
+    # does not fabricate a classification; ``is_demo`` stays None.
+    provisioning = await _http_get(f"{_provisioning_base()}/{account_id}")
+    provisioning = provisioning if isinstance(provisioning, dict) else {}
+
+    normalized: Dict[str, Any] = dict(information)
+    for source, target in (
+        ("freeMargin", "free_margin"),
+        ("marginFree", "free_margin"),
+        ("accountNumber", "account_number"),
+        ("connectionStatus", "connection_status"),
+    ):
+        if source in normalized and target not in normalized:
+            normalized[target] = normalized[source]
+    for key in ("balance", "equity", "margin", "free_margin", "leverage"):
+        if key not in normalized:
+            continue
+        try:
+            value = float(normalized[key])
+            normalized[key] = value if math.isfinite(value) else None
+        except (TypeError, ValueError):
+            normalized[key] = None
+
+    normalized["is_demo"] = _classify_demo_account(information, provisioning)
+    normalized["connected"] = _account_connection_ready(information, provisioning)
+    normalized["server"] = (
+        information.get("server")
+        or provisioning.get("server")
+        or provisioning.get("broker")
+    )
+    normalized["provider"] = "metaapi"
+    return normalized
+
+
+async def get_symbol_specification(
+    account_id: str,
+    symbol: str,
+) -> Optional[Dict[str, Any]]:
+    """Return normalized broker symbol limits required for safe sizing."""
+    account_id = str(account_id or "").strip()
+    symbol = str(symbol or "").strip().upper()
+    if not account_id or not symbol:
+        return None
+    await _deploy_account(account_id)
+    data = await _http_get(
+        f"{_client_base(account_id)}/symbols/{symbol}/specification"
+    )
+    if not isinstance(data, dict):
+        return None
+    normalized: Dict[str, Any] = dict(data)
+    aliases = {
+        "contractSize": "contract_size",
+        "tickSize": "tick_size",
+        "tickValue": "tick_value",
+        "minVolume": "min_volume",
+        "maxVolume": "max_volume",
+        "volumeStep": "volume_step",
+        "tradeAllowed": "trade_allowed",
+    }
+    for source, target in aliases.items():
+        if source in normalized and target not in normalized:
+            normalized[target] = normalized[source]
+    for key in (
+        "contract_size",
+        "tick_size",
+        "tick_value",
+        "min_volume",
+        "max_volume",
+        "volume_step",
+    ):
+        try:
+            value = float(normalized.get(key))
+            normalized[key] = value if math.isfinite(value) else None
+        except (TypeError, ValueError):
+            normalized[key] = None
+    trade_allowed = normalized.get("trade_allowed")
+    if isinstance(trade_allowed, str):
+        normalized["trade_allowed"] = trade_allowed.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "enabled",
+            "full",
+        }
+    elif trade_allowed is not None:
+        normalized["trade_allowed"] = bool(trade_allowed)
+    normalized["symbol"] = str(data.get("symbol") or symbol).upper()
+    normalized["provider"] = "metaapi"
+    return normalized
+
+
+async def get_live_quote(
+    account_id: str,
+    symbol: str,
+) -> Optional[Dict[str, Any]]:
+    """Return a timestamped, broker-native quote with trust/freshness fields."""
+    account_id = str(account_id or "").strip()
+    symbol = str(symbol or "").strip().upper()
+    if not account_id or not symbol:
+        return None
     await _deploy_account(account_id)
     url = f"{_client_base(account_id)}/symbols/{symbol}/current-price"
     data = await _http_get(url)
-    if not data:
+    if not isinstance(data, dict):
         return None
     try:
-        bid = float(data.get("bid") or 0)
-        ask = float(data.get("ask") or 0)
-        mid = (bid + ask) / 2.0 if bid and ask else (bid or ask)
-        return mid or None
-    except Exception as exc:
-        logger.error("[mt5_client] get_live_price parse error symbol=%s: %s", symbol, exc)
+        bid = float(data.get("bid"))
+        ask = float(data.get("ask"))
+    except (TypeError, ValueError):
         return None
+    if (
+        not math.isfinite(bid)
+        or not math.isfinite(ask)
+        or bid <= 0
+        or ask <= 0
+        or ask < bid
+    ):
+        return None
+
+    # Require the provider's UTC timestamp. brokerTime may be in an arbitrary
+    # terminal timezone and cannot prove freshness without its offset.
+    quoted_at = None
+    for key in ("time", "timestamp", "serverTime", "server_time"):
+        quoted_at = _parse_provider_timestamp(data.get(key))
+        if quoted_at is not None:
+            break
+    if quoted_at is None:
+        return None
+    age_seconds = (datetime.now(timezone.utc) - quoted_at).total_seconds()
+    if age_seconds < -5:
+        return None
+    age_seconds = max(0.0, age_seconds)
+    max_age = _quote_max_age_seconds()
+    mid = (bid + ask) / 2.0
+    return {
+        "symbol": symbol,
+        "bid": bid,
+        "ask": ask,
+        "mid": mid,
+        "spread": ask - bid,
+        "quoted_at": quoted_at,
+        "age_seconds": age_seconds,
+        "max_age_seconds": max_age,
+        "trusted": age_seconds <= max_age,
+        "provider": "metaapi",
+        "raw": data,
+    }
+
+
+async def get_live_price(account_id: str, symbol: str) -> Optional[float]:
+    """Return a fresh trusted mid-price for *symbol* via MetaApi REST."""
+    quote = await get_live_quote(account_id, symbol)
+    if not quote or not quote.get("trusted"):
+        return None
+    return float(quote["mid"])
 
 
 async def validate_slippage(
@@ -181,10 +461,14 @@ async def validate_slippage(
     Returns:
         (within_tolerance, slippage_points, live_price)
     """
-    live = await get_live_price(account_id, symbol)
-    if live is None:
-        logger.warning("[mt5_client] validate_slippage: no live price for %s — allowing", symbol)
-        return True, 0.0, None
+    quote = await get_live_quote(account_id, symbol)
+    if not quote or not quote.get("trusted"):
+        logger.warning(
+            "[mt5_client] validate_slippage: missing/stale broker quote for %s - blocking",
+            symbol,
+        )
+        return False, float("inf"), None
+    live = float(quote["mid"])
     slippage = abs(live - signal_price)
     within = slippage <= _slippage_tolerance()
     return within, slippage, live
@@ -199,6 +483,9 @@ async def execute_trade(
     take_profit: float,
     signal_entry: float,
     comment: str = "SignalRankAI",
+    *,
+    execution_authorized: bool = False,
+    idempotency_key: str | None = None,
 ) -> Dict[str, Any]:
     """Place a market order via MetaApi REST.
 
@@ -225,16 +512,57 @@ async def execute_trade(
         "hard_stop_attached": False,
     }
 
+    # Defense in depth: direct adapter calls cannot bypass ExecutionGate.
+    if not execution_authorized:
+        result["error"] = "ExecutionGate authorization is required"
+        return result
+    if not str(idempotency_key or "").strip():
+        result["error"] = "A durable execution idempotency key is required"
+        return result
+    account_id = str(account_id or "").strip()
+    symbol = str(symbol or "").strip().upper()
+    direction_norm = str(direction or "").strip().lower()
+    if not account_id or not symbol:
+        result["error"] = "account_id and symbol are required"
+        return result
+    if direction_norm not in {"long", "buy", "short", "sell"}:
+        result["error"] = "direction must be long/buy or short/sell"
+        return result
+
     # Phase 1 hard-stop protection: never place an order without broker-side SL.
     try:
-        if float(stop_loss or 0) <= 0:
+        volume = float(volume)
+        signal_entry = float(signal_entry)
+        stop_loss = float(stop_loss)
+        take_profit = float(take_profit)
+        if (
+            not all(
+                math.isfinite(value)
+                for value in (volume, signal_entry, stop_loss, take_profit)
+            )
+            or volume <= 0
+            or signal_entry <= 0
+        ):
+            result["error"] = "Invalid execution price or volume"
+            return result
+        if stop_loss <= 0:
             result["error"] = "Hard stop-loss is required for broker-side protection"
             return result
-        if float(take_profit or 0) <= 0:
+        if take_profit <= 0:
             result["error"] = "Take-profit is required for managed execution"
             return result
+        if direction_norm in {"long", "buy"} and not (
+            stop_loss < signal_entry < take_profit
+        ):
+            result["error"] = "Invalid long entry/stop/take-profit geometry"
+            return result
+        if direction_norm in {"short", "sell"} and not (
+            take_profit < signal_entry < stop_loss
+        ):
+            result["error"] = "Invalid short entry/stop/take-profit geometry"
+            return result
     except Exception:
-        result["error"] = "Invalid stop-loss/take-profit values"
+        result["error"] = "Invalid execution values"
         return result
 
     # 1. Slippage guard
@@ -257,7 +585,11 @@ async def execute_trade(
     # 2. Submit market order via REST
     await _deploy_account(account_id)
     url = f"{_client_base(account_id)}/trade"
-    action = "ORDER_TYPE_BUY" if str(direction).lower() == "long" else "ORDER_TYPE_SELL"
+    action = (
+        "ORDER_TYPE_BUY"
+        if direction_norm in {"long", "buy"}
+        else "ORDER_TYPE_SELL"
+    )
     payload = {
         "actionType": action,
         "symbol": symbol,
@@ -272,10 +604,14 @@ async def execute_trade(
         result["error"] = "MetaApi trade request failed (see logs)"
         return result
 
-    result["success"] = True
     result["order_id"] = (
         data.get("orderId") or data.get("order_id") or data.get("positionId")
     )
+    if not result["order_id"]:
+        result["error"] = "MetaApi acknowledged submission without an order identifier"
+        result["status"] = "AMBIGUOUS"
+        return result
+    result["success"] = True
     logger.info(
         "[mt5_client] Order placed: symbol=%s dir=%s vol=%.2f order_id=%s",
         symbol, direction, volume, result["order_id"],
@@ -331,17 +667,15 @@ async def close_position(
     return result
 
 
-async def list_open_positions(account_id: str) -> list[dict[str, Any]]:
-    """Return current open positions for a MetaApi account.
-
-    Tries common REST routes used by MetaApi bridge deployments.
-    """
+async def get_open_positions_snapshot(
+    account_id: str,
+) -> Optional[list[dict[str, Any]]]:
+    """Return positions, preserving ``None`` when reconciliation is unavailable."""
     if not str(account_id or "").strip():
-        return []
+        return None
 
     await _deploy_account(account_id)
 
-    # Variant A: documented client route.
     for _path in ("/positions", "/trading-positions"):
         try:
             data = await _http_get(f"{_client_base(account_id)}{_path}")
@@ -354,7 +688,40 @@ async def list_open_positions(account_id: str) -> list[dict[str, Any]]:
         except Exception as exc:
             logger.debug("[mt5_client] list_open_positions path=%s failed: %s", _path, exc)
 
-    return []
+    return None
+
+
+async def list_open_positions(account_id: str) -> list[dict[str, Any]]:
+    """Return current open positions for a MetaApi account.
+
+    Compatibility callers receive an empty list on provider failure. Execution
+    preflight uses :func:`get_reconciliation_snapshot`, which preserves and
+    blocks on that unavailable state.
+    """
+    positions = await get_open_positions_snapshot(account_id)
+    return positions if positions is not None else []
+
+
+async def get_reconciliation_snapshot(
+    account_id: str,
+    *,
+    account_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Prove account and position reconciliation endpoints are available."""
+    info = account_info if isinstance(account_info, dict) else await get_account_info(account_id)
+    positions = await get_open_positions_snapshot(account_id)
+    ready = bool(
+        isinstance(info, dict)
+        and info.get("connected") is True
+        and positions is not None
+    )
+    return {
+        "ready": ready,
+        "checked_at": datetime.now(timezone.utc),
+        "account_info": info,
+        "positions": positions,
+        "provider": "metaapi",
+    }
 
 
 def _position_id_from_row(row: dict[str, Any]) -> str:

@@ -42,8 +42,11 @@ def _webhook_queue_key() -> str:
 
 
 def _redis_max_connections() -> int:
-    # Always use high production value
-    return 200
+    try:
+        configured = int(os.getenv("REDIS_MAX_CONNECTIONS", "24") or 24)
+    except (TypeError, ValueError):
+        configured = 24
+    return max(2, min(64, configured))
 
 
 def _mask_redis_url(url: str | None) -> str:
@@ -62,11 +65,10 @@ def _mask_redis_url(url: str | None) -> str:
 
 
 def _resolve_redis_url_with_source() -> tuple[Optional[str], str]:
-    # State/delivery traffic can be moved to a second Redis so webhook intake
-    # is not competing with delivery locks, delivered-signal sets, and fanout
-    # coordination. Leave REDIS_URL for the webhook queue; set DELIVERY_REDIS_URL
-    # or STATE_REDIS_URL when adding a second Redis database.
-    for name in ("DELIVERY_REDIS_URL", "STATE_REDIS_URL", "SIGNALRANK_STATE_REDIS_URL", "REDIS_URL"):
+    # This client owns state/cache/market coordination only. Delivery and
+    # webhook-critical streams use ``core.redis_streams`` and the dedicated
+    # DELIVERY_REDIS_URL, so delivery pressure cannot starve state reads.
+    for name in ("STATE_REDIS_URL", "SIGNALRANK_STATE_REDIS_URL", "REDIS_URL"):
         val = (os.getenv(name) or "").strip()
         if val:
             return val, name

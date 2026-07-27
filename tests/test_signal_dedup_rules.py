@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -57,7 +57,7 @@ def test_get_or_create_signal_blocks_when_asset_is_already_open(monkeypatch):
         strategy_name="breakout",
         strategy_group="momentum",
         strength=0.9,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
         fingerprint="fp-open-1",
         expires_at=None,
         ml_probability=None,
@@ -113,7 +113,7 @@ def test_get_or_create_signal_reuses_nearby_entry_within_buffer(monkeypatch):
         strategy_name="breakout",
         strategy_group="momentum",
         strength=0.9,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
         fingerprint="fp-1",
         expires_at=None,
         ml_probability=None,

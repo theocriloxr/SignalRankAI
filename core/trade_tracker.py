@@ -1,6 +1,21 @@
 import logging
 from datetime import datetime, timezone
-import yfinance as yf
+try:
+    import yfinance as yf
+    _YFINANCE_AVAILABLE = True
+except Exception:
+    _YFINANCE_AVAILABLE = False
+
+    class _UnavailableYFinance:
+        @staticmethod
+        def Ticker(*_args, **_kwargs):
+            raise RuntimeError("yfinance_unavailable")
+
+        @staticmethod
+        def download(*_args, **_kwargs):
+            return None
+
+    yf = _UnavailableYFinance()
 import requests
 import os
 
@@ -331,7 +346,7 @@ def _get_current_price(symbol):
         logger.debug("Skipping external price fallback for %s because TRADE_TRACKER_ALLOW_EXTERNAL_FALLBACK is disabled", symbol)
         return None
 
-    # Try yfinance first
+    # Try yfinance first when the optional provider is available.
     try:
         yf_symbol = _convert_symbol_for_yfinance(symbol)
         ticker = yf.Ticker(yf_symbol)

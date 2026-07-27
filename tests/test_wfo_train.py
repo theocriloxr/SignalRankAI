@@ -5,7 +5,7 @@ from engine.backtest import BacktestRunner
 from engine.wfo import WalkForwardOptimizer
 
 
-def make_synthetic_df(start: datetime, periods: int, freq: str = '5T') -> pd.DataFrame:
+def make_synthetic_df(start: datetime, periods: int, freq: str = '5min') -> pd.DataFrame:
     rng = pd.date_range(start=start, periods=periods, freq=freq, tz='UTC')
     close = (100 + (pd.Series(range(periods)) * 0.1)).round(2)
     df = pd.DataFrame({
@@ -21,7 +21,7 @@ def make_synthetic_df(start: datetime, periods: int, freq: str = '5T') -> pd.Dat
 
 def test_wfo_train_and_predict():
     start = datetime(2021, 1, 1)
-    df = make_synthetic_df(start, periods=1000, freq='5T')
+    df = make_synthetic_df(start, periods=1000, freq='5min')
     runner = BacktestRunner()
     runner.register_dataframe('TRAINPAIR', '5m', df)
     wfo = WalkForwardOptimizer(runner)

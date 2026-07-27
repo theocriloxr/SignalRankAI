@@ -15,6 +15,8 @@ import os
 import logging
 import json
 from datetime import datetime, timedelta
+
+from utils.timeutils import now_utc_naive
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 
@@ -47,7 +49,7 @@ class ThresholdConfig:
     ml_prob_threshold: float = DEFAULT_ML_THRESHOLD_DEFAULT
     min_score_threshold: float = 55.0
     confluence_min: float = 0.0
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=now_utc_naive)
     source: str = "default"  # "default", "adaptive", "gemini"
     
     def to_dict(self) -> Dict[str, Any]:
@@ -163,7 +165,7 @@ class AdaptiveThresholdOptimizer:
             from sqlalchemy import text
             
             # Analyze last 7 days of outcomes
-            since = datetime.utcnow() - timedelta(days=7)
+            since = now_utc_naive() - timedelta(days=7)
             
             async with get_session() as session:
                 # Get outcome statistics
@@ -421,7 +423,7 @@ class AdaptiveThresholdOptimizer:
         Returns:
             Current threshold configuration
         """
-        now = datetime.utcnow()
+        now = now_utc_naive()
         
         # Check if we need to analyze
         if not force and self._last_analysis:

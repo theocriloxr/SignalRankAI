@@ -1,0 +1,36 @@
+"""Database URL normalisation helpers.
+
+These helpers are intentionally dependency-light so they can be imported by
+Alembic before the application runtime is initialised.
+"""
+
+from __future__ import annotations
+
+
+def normalize_sync_postgres_url(raw: str) -> str:
+    """Return a SQLAlchemy 2 compatible synchronous PostgreSQL URL.
+
+    Railway commonly exposes ``postgres://`` URLs, while SQLAlchemy 2 expects
+    the canonical ``postgresql`` dialect name.  The application runtime uses
+    asyncpg, but Alembic runs synchronously and the project installs
+    psycopg2-binary, so migration URLs are normalised to the explicit
+    ``postgresql+psycopg2`` driver.
+
+    Non-PostgreSQL URLs are returned unchanged to preserve local/test database
+    support.
+    """
+
+    url = str(raw or "").strip()
+    if len(url) >= 2 and url[0] == url[-1] and url[0] in {"'", '"'}:
+        url = url[1:-1].strip()
+
+    replacements = (
+        ("postgresql+asyncpg://", "postgresql+psycopg2://"),
+        ("postgresql+psycopg://", "postgresql+psycopg2://"),
+        ("postgresql://", "postgresql+psycopg2://"),
+        ("postgres://", "postgresql+psycopg2://"),
+    )
+    for source, target in replacements:
+        if url.startswith(source):
+            return url.replace(source, target, 1)
+    return url

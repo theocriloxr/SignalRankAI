@@ -7,7 +7,7 @@ _400 files indexed · 0 summarized. Summaries, outlines (with line numbers) and 
 - # .dockerignore
 
 ## .env
-- ADMIN_API_TOKEN="Theophilus123/admin"
+- ADMIN_API_TOKEN="<REDACTED_ROTATE_REQUIRED>"
 
 ## .env.complete
 - # ═══════════════════════════════════════════════════════════════════════════════════════════════…

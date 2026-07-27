@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
+from utils.timeutils import now_utc_naive
 
 
 PROFILE_ALIASES = {
@@ -220,7 +221,7 @@ def apply_trade_profile_to_signal(signal: dict[str, Any], preferred_profile: str
     sig["trade_profile_label"] = profile.label
     sig["expected_duration"] = profile.expected_duration
     sig["target_model"] = "atr_profile"
-    sig["expires_at"] = datetime.utcnow() + timedelta(minutes=int(profile.expiry_minutes))
+    sig["expires_at"] = now_utc_naive() + timedelta(minutes=int(profile.expiry_minutes))
     ettt = estimate_time_to_target(sig, profile.name)
     sig["time_to_target"] = ettt
     sig["time_to_target_score"] = float(ettt.get("score") or 0.0)

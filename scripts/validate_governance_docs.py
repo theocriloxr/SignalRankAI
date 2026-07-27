@@ -31,6 +31,13 @@ REQUIRED_DOCS: Dict[str, List[str]] = {
     "docs/KNOWLEDGE_GRAPH.md": ["# Knowledge Graph", "Core Graph", "Test Mapping"],
     "docs/PRODUCTION_READINESS_SCORECARD.md": ["# Production Readiness Scorecard", "Overall Assessment", "Highest-Impact Next Actions"],
     "docs/PRODUCTION_LAUNCH_RUNBOOK.md": ["# Production Launch Runbook", "Pre-Launch Gates", "Rollback"],
+    "docs/UNIVERSAL_REQUIREMENT_REGISTER.md": ["# Universal Requirement Register", "SR-RUN-001", "Unresolved business decisions"],
+    "docs/CROSS_CHAT_DECISION_LEDGER.md": ["# Cross-Chat Decision Ledger", "SCD-001", "Historical incidents"],
+    "docs/PERMISSION_AND_EXTERNAL_BLOCKER_REGISTER.md": ["# Permission And External Blocker Register", "BLK-001", "Owner action"],
+    "docs/COMPLETION_EVIDENCE_STATUS.md": ["# Completion Evidence Status", "Current honest release status", "Railway staging"],
+    "docs/REPOSITORY_PROOF_MANIFEST.md": ["# Repository Proof Manifest", "Categories", "Static traceability observations"],
+    "docs/PROVIDER_ENVIRONMENT_CONTRACT.md": ["# Provider Environment Contract", "Provider", "Variables"],
+    "docs/WORK_COMPLETION_CHECKPOINT.md": ["# Work Completion Checkpoint", "Next executable tasks", "Resume commands"],
 }
 
 

@@ -7,7 +7,19 @@ import time as _time
 import time
 from typing import Iterable
 
-import yfinance as yf
+try:
+    import yfinance as yf
+except Exception:  # Optional provider; other market-data routes remain usable.
+    class _UnavailableYFinance:
+        @staticmethod
+        def Ticker(*_args, **_kwargs):
+            raise RuntimeError("yfinance_unavailable")
+
+        @staticmethod
+        def download(*_args, **_kwargs):
+            return None
+
+    yf = _UnavailableYFinance()
 
 from data.fetcher import async_get_candles, get_asset_type, _get_last_provider_used
 from db.market_cache import get_recent_candles
@@ -56,7 +68,14 @@ def market_data_usability(asset: str, requested: Iterable[str], market_data: dic
     requested_tfs = [str(tf).strip().lower() for tf in (requested or []) if str(tf).strip()]
     usable = usable_timeframe_payloads(market_data)
     asset_class = str(get_asset_type(asset) or "unknown").lower().strip()
-    required_tfs = list(CRYPTO_REQUIRED_TIMEFRAMES) if asset_class == "crypto" else []
+    from engine.timeframe_policy import resolve_required_timeframes
+
+    policy = resolve_required_timeframes(
+        asset_class=asset_class,
+        trading_style=str(os.getenv("DEFAULT_TRADING_STYLE", "day") or "day").strip().lower(),
+        runtime_context={"source": "market_data_usability"},
+    )
+    required_tfs = [tf for tf in policy.required if tf in requested_tfs] or list(policy.required)
     optional_tfs = [tf for tf in requested_tfs if tf not in required_tfs]
     required_status = {tf: tf in usable for tf in required_tfs}
     optional_status = {tf: tf in usable for tf in optional_tfs}
@@ -145,7 +164,7 @@ def _yf_cooldown_seconds() -> float:
 
 
 def _yf_available() -> bool:
-    return time.time() >= float(_YF_COOLDOWN_UNTIL or 0.0)
+    return yf is not None and time.time() >= float(_YF_COOLDOWN_UNTIL or 0.0)
 
 
 def _should_log_yf_no_candles(symbol: str, timeframe: str) -> bool:
@@ -260,6 +279,20 @@ _OANDA_OVERRIDES: dict[str, str] = {
 }
 
 _YFINANCE_OVERRIDES: dict[str, str] = {
+    # Macro/rates aliases used by the market monitor.
+    "DXY": "DX-Y.NYB",
+    "VIX": "^VIX",
+    "US10Y": "^TNX",
+    "USB10Y": "^TNX",
+    "US05Y": "^FVX",
+    "US5Y": "^FVX",
+    "US30Y": "^TYX",
+    "US03M": "^IRX",
+    "US3M": "^IRX",
+    # Yahoo exposes a two-year yield future rather than a stable spot-yield
+    # index; keep it analysis-only and never route it to execution.
+    "US02Y": "2YY=F",
+    "USB02Y": "2YY=F",
     "XAUUSD": "GC=F",
     "XAGUSD": "SI=F",
     "WTIUSD": "CL=F",
@@ -763,7 +796,7 @@ def _sanitize_ohlcv(candles: list) -> list:
     return out
 
 
-def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
+def _check_staleness(candles: list, timeframe: str, *, log_stale: bool = False) -> tuple[bool, float]:
     """Check if cached candles are stale.
     
     Returns (is_fresh, data_age_seconds).
@@ -797,7 +830,8 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
     ts = latest_candle.get("timestamp")
     
     if ts is None:
-        logger.warning(f"Staleness check failed for {timeframe}: no timestamp in latest candle")
+        if log_stale:
+            logger.warning(f"Staleness check failed for {timeframe}: no timestamp in latest candle")
         return False, 0.0
     
     # Convert timestamp to seconds
@@ -815,7 +849,7 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
         
         is_fresh = data_age <= threshold
         
-        if not is_fresh:
+        if not is_fresh and log_stale:
             logger.warning(
                 f"Staleness check failed for {timeframe}: "
                 f"data age={data_age:.0f}s exceeds threshold={threshold}s (2×{tf_seconds}s)"
@@ -823,11 +857,17 @@ def _check_staleness(candles: list, timeframe: str) -> tuple[bool, float]:
         
         return is_fresh, data_age
     except (ValueError, TypeError) as e:
-        logger.warning(f"Staleness check failed for {timeframe}: {e}")
+        if log_stale:
+            logger.warning(f"Staleness check failed for {timeframe}: {e}")
         return False, 0.0
 
 
-async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dict:
+async def fetch_market_data_cached(
+    asset: str,
+    timeframes: Iterable[str],
+    *,
+    diagnostic_scope: str = "full",
+) -> dict:
     """Fetch market data from yfinance first, then Postgres cache, then fallback to REST.
 
     Priority order:
@@ -917,7 +957,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                             continue
                         
                         # Check staleness
-                        is_fresh, data_age = _check_staleness(candles, tf)
+                        is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
                         if not is_fresh:
                             logger.warning(f"Cached candles for {asset} {tf} are stale (age={data_age:.0f}s), skipping cache")
                             continue
@@ -1164,7 +1204,7 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
                     candles = _sanitize_ohlcv(candles)
                     if not _validate_ohlcv(candles):
                         continue
-                    is_fresh, data_age = _check_staleness(candles, tf)
+                    is_fresh, data_age = _check_staleness(candles, tf, log_stale=True)
                     if not is_fresh:
                         logger.warning(
                             "Cached candles for %s %s are stale (age=%.0fs), skipping cache",
@@ -1213,18 +1253,40 @@ async def fetch_market_data_cached(asset: str, timeframes: Iterable[str]) -> dic
     except Exception:
         pass
 
-    diagnostics = market_data_diagnostics(asset, tfs, out)
-    logger.info(
-        "[market_data][asset_result] asset=%s asset_class=%s required=%s optional=%s "
-        "provider_by_timeframe=%s usable=%s final_reason=%s rejected=%s minimum=%s",
-        asset,
-        diagnostics["asset_class"],
-        diagnostics["required_timeframes"],
-        diagnostics["optional_timeframes"],
-        diagnostics["provider_by_timeframe"],
-        diagnostics["usable"],
-        diagnostics["final_reason"],
-        diagnostics["rejected_timeframes"],
-        diagnostics["minimum_candles"],
-    )
+    scope = str(diagnostic_scope or "full").strip().lower()
+    if scope in {"full", "required"}:
+        diagnostics = market_data_diagnostics(asset, tfs, out)
+        logger.info(
+            "[market_data][asset_result] phase=%s asset=%s asset_class=%s required=%s optional=%s "
+            "provider_by_timeframe=%s usable=%s final_reason=%s rejected=%s minimum=%s",
+            scope,
+            asset,
+            diagnostics["asset_class"],
+            diagnostics["required_timeframes"],
+            diagnostics["optional_timeframes"],
+            diagnostics["provider_by_timeframe"],
+            diagnostics["usable"],
+            diagnostics["final_reason"],
+            diagnostics["rejected_timeframes"],
+            diagnostics["minimum_candles"],
+        )
+    else:
+        # Optional enrichment and analytics collection are not standalone
+        # actionable-asset evaluations. Logging them through the canonical
+        # required-timeframe gate produced false ``missing_required_timeframe``
+        # messages even when the engine had already retained the required data.
+        provider_by_timeframe = {
+            tf: str((payload or {}).get("source") or "unknown")
+            for tf, payload in out.items()
+            if isinstance(payload, dict) and payload.get("candles")
+        }
+        logger.info(
+            "[market_data][phase_result] phase=%s asset=%s requested=%s available=%s "
+            "provider_by_timeframe=%s",
+            scope,
+            asset,
+            tfs,
+            sorted(provider_by_timeframe),
+            provider_by_timeframe,
+        )
     return out

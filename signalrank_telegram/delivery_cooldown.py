@@ -1,142 +1,121 @@
+"""Redis acceleration for proof-backed per-user same-asset cooldowns.
+
+PostgreSQL delivery rows with ``sent_ok=True`` remain authoritative.  The
+Redis key is direction agnostic because the product rule is a lock on the same
+asset, regardless of whether a later candidate reverses direction.
 """
-Delivery Cooldown - Per-user, per-asset delivery rate limiting.
 
-Implements Redis-backed cooldown to prevent signal spam:
-- Redis key: delivery:user_id:ASSET:DIRECTION
-- TTL by tier:
-  - VIP = 4 hours
-  - Premium = 6 hours  
-  - Free = 12 hours
-
-Before sending any signal, check if cooldown key exists.
-If exists, skip delivery.
-
-Also includes:
-- Signal Generation Lock (prevents same signal generated within timeframe)
-- Active Signal Check (PostgreSQL check before creating new signal)
-"""
+from __future__ import annotations
 
 import logging
+
+from services.asset_repeat_policy import (
+    canonical_delivery_cooldown_key,
+    get_asset_repeat_lock_hours,
+    legacy_delivery_cooldown_keys,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def _get_cooldown_hours(tier: str) -> int:
-    """Get cooldown hours by tier."""
-    tier_lower = str(tier or "free").lower().strip()
-    if tier_lower in ("owner", "admin", "vip"):
-        return 4  # VIP: 4 hours
-    elif tier_lower == "premium":
-        return 6  # Premium: 6 hours
-    else:
-        return 12  # Free: 12 hours
+    return int(round(get_asset_repeat_lock_hours(tier)))
 
 
-def _make_delivery_key(telegram_user_id: int, asset: str, direction: str) -> str:
-    """Generate Redis key for delivery cooldown.
-    
-    Format: delivery:{user_id}:{asset}:{direction}
-    Example: delivery:123456:SOLUSDT:BUY
+def _make_delivery_key(telegram_user_id: int, asset: str, direction: str | None = None) -> str:
+    del direction
+    return canonical_delivery_cooldown_key(telegram_user_id, asset)
+
+
+def check_delivery_cooldown(telegram_user_id: int, asset: str, direction: str = "") -> bool:
+    """Return whether the Redis accelerator contains an active same-asset lock.
+
+    Redis absence or failure returns ``False`` so the caller can continue to the
+    authoritative PostgreSQL proof check instead of treating cache loss as
+    durable delivery evidence.
     """
-    asset_upper = str(asset or "").upper().strip()
-    direction_upper = str(direction or "BUY").upper().strip()
-    return f"delivery:{int(telegram_user_id)}:{asset_upper}:{direction_upper}"
 
-
-def check_delivery_cooldown(telegram_user_id: int, asset: str, direction: str) -> bool:
-    """
-    Check if delivery is on cooldown for user/asset/direction.
-    
-    Args:
-        telegram_user_id: User's Telegram ID
-        asset: Asset symbol (e.g., "SOLUSDT")
-        direction: "BUY" or "SELL" (or "LONG"/"SHORT")
-    
-    Returns:
-        True if cooldown is ACTIVE (should skip delivery)
-        False if OK to deliver
-    """
     try:
         from core.redis_state import state
+
         if not state.has_redis_sync():
-            return False  # No Redis, allow delivery
-            
-        redis_key = _make_delivery_key(telegram_user_id, asset, direction)
-        exists = state.get_sync(redis_key)
-        
-        if exists:
-            logger.info(
-                f"[delivery_cooldown] SKIP user={telegram_user_id} asset={asset} "
-                f"direction={direction} reason=cooldown_active"
-            )
+            return False
+        keys = (_make_delivery_key(telegram_user_id, asset), *legacy_delivery_cooldown_keys(telegram_user_id, asset, direction))
+        for redis_key in keys:
+            value = state.get_sync(redis_key)
+            if value:
+                logger.info(
+                    "[delivery_cooldown] active user=%s asset=%s key=%s",
+                    telegram_user_id,
+                    str(asset).upper(),
+                    redis_key,
+                )
+                return True
+        return False
+    except Exception as exc:
+        logger.debug("[delivery_cooldown] Redis accelerator check failed: %s", exc)
+        return False
+
+
+def set_delivery_cooldown(
+    telegram_user_id: int,
+    asset: str,
+    direction: str = "",
+    tier: str = "free",
+    *,
+    sent_ok: bool = True,
+) -> bool:
+    """Set the Redis accelerator only after proven Telegram delivery."""
+
+    if not sent_ok:
+        logger.warning(
+            "[delivery_cooldown] refused unproven lock user=%s asset=%s",
+            telegram_user_id,
+            asset,
+        )
+        return False
+    try:
+        from core.redis_state import state
+
+        if not state.has_redis_sync():
+            return False
+        cooldown_hours = get_asset_repeat_lock_hours(tier)
+        if cooldown_hours <= 0:
             return True
-            
-        return False
-        
-    except Exception as e:
-        logger.debug(f"[delivery_cooldown] check failed: {e}")
-        return False  # Fail open - allow delivery
-
-
-def set_delivery_cooldown(telegram_user_id: int, asset: str, direction: str, tier: str) -> bool:
-    """
-    Set delivery cooldown for user/asset/direction.
-    
-    Args:
-        telegram_user_id: User's Telegram ID
-        asset: Asset symbol (e.g., "SOLUSDT")
-        direction: "BUY" or "SELL" (or "LONG"/"SHORT")
-        tier: User's tier ("vip", "premium", "free")
-    
-    Returns:
-        True if cooldown was set successfully
-    """
-    try:
-        from core.redis_state import state
-        if not state.has_redis_sync():
-            return False
-            
-        redis_key = _make_delivery_key(telegram_user_id, asset, direction)
-        cooldown_hours = _get_cooldown_hours(tier)
-        ttl_seconds = cooldown_hours * 3600
-        
+        ttl_seconds = max(1, int(cooldown_hours * 3600))
+        redis_key = _make_delivery_key(telegram_user_id, asset)
         state.set_sync(redis_key, "1", ex=ttl_seconds)
-        
         logger.info(
-            f"[delivery_cooldown] SET user={telegram_user_id} asset={asset} "
-            f"direction={direction} tier={tier} ttl={cooldown_hours}h"
+            "[delivery_cooldown] set user=%s asset=%s tier=%s ttl_hours=%.2f",
+            telegram_user_id,
+            str(asset).upper(),
+            tier,
+            cooldown_hours,
         )
         return True
-        
-    except Exception as e:
-        logger.debug(f"[delivery_cooldown] set failed: {e}")
+    except Exception as exc:
+        logger.debug("[delivery_cooldown] Redis accelerator set failed: %s", exc)
         return False
 
 
-def clear_delivery_cooldown(telegram_user_id: int, asset: str, direction: str) -> bool:
-    """
-    Clear delivery cooldown (e.g., when outcome is recorded).
-    
-    Returns:
-        True if cooldown was cleared
-    """
+def clear_delivery_cooldown(telegram_user_id: int, asset: str, direction: str = "") -> bool:
+    """Clear canonical and legacy Redis accelerator keys."""
+
     try:
         from core.redis_state import state
+
         if not state.has_redis_sync():
             return False
-            
-        redis_key = _make_delivery_key(telegram_user_id, asset, direction)
-        # Use set_sync with immediate expiry to clear
-        state.set_sync(redis_key, "", ex=1)
-        
-        logger.info(
-            f"[delivery_cooldown] CLEAR user={telegram_user_id} asset={asset} "
-            f"direction={direction}"
-        )
+        keys = (_make_delivery_key(telegram_user_id, asset), *legacy_delivery_cooldown_keys(telegram_user_id, asset, direction))
+        delete = getattr(state, "delete_sync", None)
+        for key in keys:
+            if callable(delete):
+                delete(key)
+            else:
+                state.set_sync(key, "", ex=1)
         return True
-        
-    except Exception as e:
-        logger.debug(f"[delivery_cooldown] clear failed: {e}")
+    except Exception as exc:
+        logger.debug("[delivery_cooldown] Redis accelerator clear failed: %s", exc)
         return False
 
 

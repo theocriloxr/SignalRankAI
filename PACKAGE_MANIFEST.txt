@@ -1,0 +1,13 @@
+SignalRankAI final release candidate — Railway pre-deploy hotfix
+Date: 2026-07-27
+Version: 1.0.1
+Base release: SignalRankAI_Final_Release_Candidate_2026-07-27
+Hotfix 1: normalise Railway postgres:// migration URLs to postgresql+psycopg2://
+Hotfix 2: compile diagnostics work with or without .git metadata
+Alembic head: 0022_active_guard_reconcile
+Focused hotfix verification: 15 passed, 0 failed
+Tracked Python compilation: 673 files, 0 failures, with Git and without Git
+Alembic offline full-chain generation with Railway-style URL: PASS
+Repository secret scan: PASS, 0 findings
+Safety: no secrets included; payments and real execution remain feature-gated
+Live status: redeploy required for Railway pre-deploy and runtime evidence

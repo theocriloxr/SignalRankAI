@@ -65,6 +65,7 @@ class MarketCircuitBreaker:
         self._last_check: float = 0.0
         self._btc_price_cache: dict = {}
         self._session: Optional[aiohttp.ClientSession] = None
+        self._last_provider: str | None = None
         
         # Track BTC price history for velocity calculation
         self._price_history: list = []
@@ -83,42 +84,76 @@ class MarketCircuitBreaker:
             await self._session.close()
     
     async def get_btc_price(self) -> Optional[float]:
+        """Get a current BTC reference price from configured public REST feeds.
+
+        Binance may be unavailable in some Railway regions, so the market
+        circuit breaker uses Coinbase and OKX before Binance by default. A
+        provider failure is isolated and the next provider is attempted.
         """
-        Get current BTC/USDT price from spot market.
-        
-        Returns:
-            Current price or None on failure
-        """
-        # Check cache first (30 second TTL for price data)
-        cached = self._btc_price_cache.get('price')
-        cached_time = self._btc_price_cache.get('timestamp', 0)
+        cached = self._btc_price_cache.get("price")
+        cached_time = self._btc_price_cache.get("timestamp", 0)
         if cached and (time.time() - cached_time) < 30:
-            return cached
-        
-        try:
-            url = "https://api.binance.com/api/v3/ticker/price"
-            params = {"symbol": "BTCUSDT"}
-            
-            session = await self._get_session()
-            async with session.get(url, params=params) as response:
-                if response.status != 200:
-                    return None
-                
-                data = await response.json()
-                price = float(data.get('price', 0))
-                
+            return float(cached)
+
+        configured = str(
+            os.getenv("CIRCUIT_BREAKER_PRICE_PROVIDERS", "coinbase,okx,binance")
+            or "coinbase,okx,binance"
+        )
+        providers = [item.strip().lower() for item in configured.split(",") if item.strip()]
+        session = await self._get_session()
+
+        for provider in providers:
+            try:
+                if provider == "coinbase":
+                    async with session.get(
+                        "https://api.exchange.coinbase.com/products/BTC-USD/ticker"
+                    ) as response:
+                        if response.status != 200:
+                            continue
+                        payload = await response.json()
+                        price = float(payload.get("price") or 0)
+                elif provider == "okx":
+                    async with session.get(
+                        "https://www.okx.com/api/v5/market/ticker",
+                        params={"instId": "BTC-USDT"},
+                    ) as response:
+                        if response.status != 200:
+                            continue
+                        payload = await response.json()
+                        rows = payload.get("data") or []
+                        price = float((rows[0] if rows else {}).get("last") or 0)
+                elif provider == "binance":
+                    async with session.get(
+                        "https://api.binance.com/api/v3/ticker/price",
+                        params={"symbol": "BTCUSDT"},
+                    ) as response:
+                        if response.status != 200:
+                            continue
+                        payload = await response.json()
+                        price = float(payload.get("price") or 0)
+                else:
+                    logger.warning("[circuit_breaker] unknown reference provider=%s", provider)
+                    continue
+
                 if price > 0:
+                    self._last_provider = provider
                     self._btc_price_cache = {
-                        'price': price,
-                        'timestamp': time.time()
+                        "price": price,
+                        "timestamp": time.time(),
+                        "provider": provider,
                     }
-                
-                return price if price > 0 else None
-                
-        except Exception as e:
-            logger.debug(f"[circuit_breaker] Failed to get BTC price: {e}")
-            return None
-    
+                    return price
+            except Exception as exc:
+                logger.debug(
+                    "[circuit_breaker] provider=%s failed err_type=%s err=%s",
+                    provider,
+                    type(exc).__name__,
+                    exc,
+                )
+
+        logger.warning("[circuit_breaker] all BTC reference providers unavailable providers=%s", providers)
+        return None
+
     async def get_btc_price_1h_ago(self) -> Optional[float]:
         """
         Get BTC price from approximately 1 hour ago.
@@ -245,6 +280,7 @@ class MarketCircuitBreaker:
             "halt_remaining_seconds": self.get_halt_remaining_seconds(),
             "drop_threshold_pct": self.drop_threshold_pct,
             "last_check": self._last_check,
+            "last_provider": self._last_provider,
         }
     
     def reset(self) -> None:

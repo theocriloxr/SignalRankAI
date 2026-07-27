@@ -16,7 +16,10 @@ Usage:
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, Optional
+
+from core.asset_registry import canonicalize_asset, resolve_asset_spec
 
 # ---------------------------------------------------------------------------
 # Canonical symbol overrides per provider
@@ -180,7 +183,63 @@ _STOCK_MAP: Dict[str, Dict[str, str]] = {
         "twelvedata": "MSFT",
         "mt5": "MSFT",
     },
+    "META": {
+        "yfinance": "META",
+        "polygon": "META",
+        "twelvedata": "META",
+        "mt5": "META",
+    },
 }
+
+_INDEX_MAP: Dict[str, Dict[str, str]] = {
+    "US500": {
+        "yfinance": "^GSPC",
+        "polygon": "I:SPX",
+        "twelvedata": "SPX",
+        "mt5": "US500",
+    },
+    "NAS100": {
+        "yfinance": "^NDX",
+        "polygon": "I:NDX",
+        "twelvedata": "NDX",
+        "mt5": "NAS100",
+    },
+    "US30": {
+        "yfinance": "^DJI",
+        "polygon": "I:DJI",
+        "twelvedata": "DJI",
+        "mt5": "US30",
+    },
+    "GER40": {
+        "yfinance": "^GDAXI",
+        "polygon": None,
+        "twelvedata": "DAX",
+        "mt5": "GER40",
+    },
+    "UK100": {
+        "yfinance": "^FTSE",
+        "polygon": None,
+        "twelvedata": "FTSE",
+        "mt5": "UK100",
+    },
+}
+
+# Additional registry-backed instruments that previously drifted into the US
+# equity default or had no deterministic provider mapping.
+_INDEX_MAP.update({
+    "JP225": {"yfinance": "^N225", "polygon": None, "twelvedata": "NIKKEI", "mt5": "JP225"},
+    "FRA40": {"yfinance": "^FCHI", "polygon": None, "twelvedata": "CAC", "mt5": "FRA40"},
+    "EU50": {"yfinance": "^STOXX50E", "polygon": None, "twelvedata": "STOXX50E", "mt5": "EU50"},
+    "AUS200": {"yfinance": "^AXJO", "polygon": None, "twelvedata": "ASX200", "mt5": "AUS200"},
+    "HK50": {"yfinance": "^HSI", "polygon": None, "twelvedata": "HSI", "mt5": "HK50"},
+})
+_COMMODITY_MAP.update({
+    "WTI": {"yfinance": "CL=F", "polygon": None, "twelvedata": "WTI/USD", "mt5": "USOIL"},
+    "BRENT": {"yfinance": "BZ=F", "polygon": None, "twelvedata": "BRENT/USD", "mt5": "UKOIL"},
+})
+_CRYPTO_MAP.update({
+    "XAUTUSDT": {"binance": "XAUTUSDT", "coingecko": "tether-gold", "yfinance": "XAUT-USD", "polygon": None, "twelvedata": "XAUT/USD", "mt5": "XAUTUSD"},
+})
 
 # Combined lookup: canonical -> providers
 _ALL_MAPS: Dict[str, Dict[str, str]] = {}
@@ -188,6 +247,7 @@ _ALL_MAPS.update(_CRYPTO_MAP)
 _ALL_MAPS.update(_FX_MAP)
 _ALL_MAPS.update(_COMMODITY_MAP)
 _ALL_MAPS.update(_STOCK_MAP)
+_ALL_MAPS.update(_INDEX_MAP)
 
 # Asset class lookup
 _ASSET_CLASS: Dict[str, str] = {}
@@ -199,22 +259,43 @@ for sym in _COMMODITY_MAP:
     _ASSET_CLASS[sym] = "commodity"
 for sym in _STOCK_MAP:
     _ASSET_CLASS[sym] = "stock"
+for sym in _INDEX_MAP:
+    _ASSET_CLASS[sym] = "index"
+
+
+_ALIASES = {
+    "BTCUSD": "BTCUSDT",
+    "ETHUSD": "ETHUSDT",
+    "BNBUSD": "BNBUSDT",
+    "SP500": "US500",
+    "SPX500": "US500",
+    "S&P500": "US500",
+    "US100": "NAS100",
+    "USTEC": "NAS100",
+    "DJ30": "US30",
+    "DE40": "GER40",
+    "DAX40": "GER40",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentSpec:
+    canonical_symbol: str
+    asset_class: str
+    tick_size: float
+    session_calendar: str
+    final_quote_kinds: tuple[str, ...]
+    provider_symbols: Dict[str, Optional[str]]
+
+
+def canonicalize_symbol(symbol: str) -> str:
+    """Normalize aliases through the canonical asset registry."""
+    return canonicalize_asset(symbol)
 
 
 def classify_asset(symbol: str) -> str:
-    """Return asset class: 'crypto', 'forex', 'commodity', 'stock', or 'unknown'."""
-    s = symbol.upper().strip()
-    cls = _ASSET_CLASS.get(s)
-    if cls:
-        return cls
-    # Heuristic fallbacks
-    if s.endswith("USDT") or s.endswith("USDC") or s.endswith("BTC") or s.endswith("ETH"):
-        return "crypto"
-    if len(s) == 6 and s.isalpha():
-        return "forex"
-    if s in {"XAUUSD", "XAGUSD", "USOIL", "UKOIL"}:
-        return "commodity"
-    return "stock"
+    """Return the registry-backed asset class without unsafe US-stock fallback."""
+    return resolve_asset_spec(symbol).asset_class
 
 
 def map_symbol(symbol: str, provider: str) -> Optional[str]:
@@ -223,7 +304,7 @@ def map_symbol(symbol: str, provider: str) -> Optional[str]:
     Returns None if the provider doesn't support this asset.
     Falls back to the original symbol when no explicit mapping is defined.
     """
-    s = symbol.upper().strip()
+    s = canonicalize_symbol(symbol)
     p = provider.lower().strip()
     entry = _ALL_MAPS.get(s)
     if entry is not None:
@@ -269,7 +350,7 @@ def map_symbol(symbol: str, provider: str) -> Optional[str]:
 
 def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
     """Return a dict of {provider: symbol} for all known providers for this asset."""
-    s = symbol.upper().strip()
+    s = canonicalize_symbol(symbol)
     entry = _ALL_MAPS.get(s)
     if entry:
         return dict(entry)
@@ -292,6 +373,13 @@ def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
             "mt5": s,
             "oanda": f"{s[:3]}_{s[3:]}" if len(s) == 6 else s,
         }
+    if cls == "index":
+        return {
+            "yfinance": map_symbol(s, "yfinance"),
+            "polygon": map_symbol(s, "polygon"),
+            "twelvedata": map_symbol(s, "twelvedata"),
+            "mt5": s,
+        }
     # stock / commodity fallback
     return {
         "yfinance": s,
@@ -299,3 +387,37 @@ def get_all_providers_for_asset(symbol: str) -> Dict[str, Optional[str]]:
         "twelvedata": s,
         "mt5": s,
     }
+
+
+def get_instrument_spec(symbol: str) -> InstrumentSpec:
+    """Return canonical mapping and final-quote capabilities for a symbol."""
+    spec = resolve_asset_spec(symbol)
+    tick_sizes = {
+        "crypto": 0.00000001,
+        "forex": 0.00001,
+        "commodity": 0.01,
+        "stock": 0.01,
+        "index": 0.1,
+        "macro": 0.01,
+        "volatility": 0.01,
+    }
+    final_quote_kinds = () if spec.analysis_only or not spec.actionable else ("trade", "bid_ask", "ticker", "db_tick")
+    return InstrumentSpec(
+        canonical_symbol=spec.canonical_symbol,
+        asset_class=spec.asset_class,
+        tick_size=tick_sizes.get(spec.asset_class, 0.01),
+        session_calendar=spec.session_calendar,
+        final_quote_kinds=final_quote_kinds,
+        provider_symbols=get_all_providers_for_asset(spec.canonical_symbol),
+    )
+
+
+
+__all__ = [
+    "InstrumentSpec",
+    "canonicalize_symbol",
+    "classify_asset",
+    "get_all_providers_for_asset",
+    "get_instrument_spec",
+    "map_symbol",
+]

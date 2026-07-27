@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 
 import os
@@ -122,7 +123,7 @@ def run_startup_ops(run_mode: str) -> None:
 
         # 1b) Failsafe bootstrap for fresh DBs when migrations are skipped or
         # migration graph differs across branches. create_all is idempotent.
-        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", True):
+        if _env_bool("STARTUP_SCHEMA_BOOTSTRAP", False):
             try:
                 from sqlalchemy import create_engine
                 from db.models import Base
@@ -349,11 +350,21 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
+                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW()")
+                cur.execute("ALTER TABLE decision_log ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_signal_id ON decision_log(signal_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_asset ON decision_log(asset)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_timeframe ON decision_log(timeframe)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_decision ON decision_log(decision)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_decision_log_created_at ON decision_log(created_at)")
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_signal_deliveries_live_proof "
+                    "ON signal_deliveries(signal_id, sent_ok, delivery_state) WHERE sent_ok IS TRUE"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS ix_signals_open_expiry "
+                    "ON signals(expired, archived, expires_at, asset, direction)"
+                )
 
                 cur.execute(
                     """
@@ -467,7 +478,7 @@ def _fresh_start_if_needed(conn: "psycopg2.extensions.connection") -> None:
         cur.execute("TRUNCATE " + ",".join(tables) + " RESTART IDENTITY CASCADE")
 
         # Re-create the fresh-start flag in runtime_state
-        now = datetime.utcnow().isoformat() + "Z"
+        now = now_utc_naive().isoformat() + "Z"
         cur.execute(
             "INSERT INTO runtime_state(key, value, expires_at, updated_at) VALUES (%s, %s::jsonb, NULL, NOW())",
             ("signalrankai:fresh_start_done", '{"done": true, "at": "%s"}' % now),

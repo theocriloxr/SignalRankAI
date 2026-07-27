@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +20,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from db.models import Base
+from db.database_urls import normalize_sync_postgres_url
 
 # Alembic Config object
 config = context.config
@@ -28,13 +30,22 @@ if config.config_file_name is not None:
 
 
 def get_url() -> str:
-    url = app_config.DATABASE_URL
+    # Migrations should use a direct PostgreSQL connection when runtime traffic
+    # is routed through PgBouncer transaction pooling.  Fall back to the runtime
+    # URL for simple/direct-Postgres deployments.
+    url = (
+        os.getenv("DATABASE_MIGRATION_URL")
+        or os.getenv("DATABASE_DIRECT_URL")
+        or app_config.DATABASE_URL
+    )
     if not url:
-        raise RuntimeError("DATABASE_URL is not set")
-    # Alembic expects sync URL; allow passing asyncpg URL and convert.
-    if url.startswith("postgresql+asyncpg://"):
-        url = url.replace("postgresql+asyncpg://", "postgresql://", 1)
-    return url
+        raise RuntimeError(
+            "DATABASE_MIGRATION_URL/DATABASE_DIRECT_URL/DATABASE_URL is not set"
+        )
+    # Railway commonly emits ``postgres://`` while SQLAlchemy 2 requires the
+    # canonical ``postgresql`` dialect. Alembic is synchronous, so use the
+    # explicitly installed psycopg2 driver for all PostgreSQL URL variants.
+    return normalize_sync_postgres_url(url)
 
 
 target_metadata = Base.metadata

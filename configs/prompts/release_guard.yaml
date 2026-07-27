@@ -1,0 +1,3 @@
+version: release-guard-v1
+purpose: evaluate evidence and safety flags before public testing
+write_access: false

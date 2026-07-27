@@ -376,11 +376,18 @@ async def validate_signal_freshness(
     A signal is considered stale when:
         abs(live_price - entry) / entry > threshold_pct / 100
     where threshold_pct is asset-class-aware, or ATR-based when available.
+
+    SAFETY: In PUBLIC_TESTING_MODE=1 this validator ALWAYS fails closed.
+    A timeout, provider error, or missing quote blocks delivery instead of
+    allowing the signal through with an untrusted price.
     """
     entry = float(signal.get("entry") or 0)
     symbol = str(signal.get("asset") or signal.get("symbol") or "")
     atr_value = float(signal.get("atr") or 0)
     direction = str(signal.get("direction") or "long").lower()
+
+    # Check public-testing mode for fail-closed enforcement.
+    _public_testing = _env_bool("PUBLIC_TESTING_MODE", False)
 
     if not entry or not symbol:
         return True, "no_entry_or_symbol_skip", None
@@ -395,18 +402,39 @@ async def validate_signal_freshness(
                 timeout=_fetch_timeout(),
             )
         except asyncio.TimeoutError:
+            if _public_testing:
+                logger.warning(
+                    "[delivery_blocked] PUBLIC_TESTING_MODE: timeout fetching price for %s — blocking delivery",
+                    symbol,
+                )
+                return False, "price_fetch_timeout_blocked:public_testing_fail_closed", None
             logger.warning("[stale_validator] Timeout fetching price for %s — allowing signal", symbol)
             return True, "price_fetch_timeout_skip", None
         except Exception as exc:
+            if _public_testing:
+                logger.warning(
+                    "[delivery_blocked] PUBLIC_TESTING_MODE: error fetching price for %s: %s — blocking delivery",
+                    symbol, exc,
+                )
+                return False, f"price_fetch_error_blocked:{exc}:public_testing_fail_closed", None
             logger.warning("[stale_validator] Error fetching price for %s: %s — allowing signal", symbol, exc)
             return True, f"price_fetch_error_skip:{exc}", None
 
     if live is None:
+        if _public_testing:
+            logger.warning(
+                "[delivery_blocked] PUBLIC_TESTING_MODE: no price available for %s — blocking delivery",
+                symbol,
+            )
+            return False, "price_unavailable_blocked:public_testing_fail_closed", None
         logger.debug("[stale_validator] No price available for %s — allowing signal", symbol)
         return True, "price_unavailable_skip", None
 
     # Ghost price detection using secondary source
-    use_ghost_check = _env_bool("GHOST_PRICE_CHECK", True)
+    # A final-delivery LivePriceQuote has already passed provider health,
+    # source-time, quote-kind, optional cross-provider-deviation, and market
+    # checks. Do not add a second unbounded network fetch at that boundary.
+    use_ghost_check = _env_bool("GHOST_PRICE_CHECK", True) and not bool(signal.get("_trusted_live_quote"))
     if use_ghost_check:
         secondary_price = await _get_secondary_price(symbol)
         if secondary_price and secondary_price > 0:

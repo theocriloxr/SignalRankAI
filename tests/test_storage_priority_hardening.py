@@ -35,7 +35,7 @@ def test_signal_store_timeout_env_is_used(monkeypatch):
     monkeypatch.setenv("SIGNAL_STORE_TIMEOUT_SECONDS", "45")
     text = Path("db/pg_compat.py").read_text()
     assert "SIGNAL_STORE_TIMEOUT_SECONDS" in text
-    assert "get_session(critical=True)" in text
+    assert 'get_session(priority="critical"' in text
     assert float(os.getenv("SIGNAL_STORE_TIMEOUT_SECONDS")) == 45.0
 
 

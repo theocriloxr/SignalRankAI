@@ -27,6 +27,7 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
 
         rm._bot_ready = True
         rm._bot_application = object()
+        rm._use_redis_webhook_queue = False
         rm._webhook_dispatch_queue = asyncio.Queue(maxsize=1)
         rm._webhook_dispatch_queue.put_nowait({"update_id": 1})
         before = rm.webhook_queue_full_total._value.get()
@@ -46,11 +47,23 @@ class TestRailwayLifecycle(unittest.IsolatedAsyncioTestCase):
     async def test_build_scheduler_registers_expected_jobs(self):
         import railway_main as rm
 
-        scheduler = rm._build_scheduler()
-        job_ids = {job.id for job in scheduler.get_jobs()}
+        with patch.dict(
+            "os.environ",
+            {
+                "RUN_MODE": "all",
+                "ML_ARCHIVE_BACKFILL_ENABLED": "0",
+            },
+            clear=False,
+        ):
+            scheduler = rm._build_scheduler()
+            job_ids = {job.id for job in scheduler.get_jobs()}
         self.assertIn("wl_capacity", job_ids)
         self.assertIn("wl_monitor", job_ids)
-        self.assertIn("ml_archive_backfill", job_ids)
+        self.assertNotIn(
+            "ml_archive_backfill",
+            job_ids,
+            "disabled analytics work must not consume monolith scheduler capacity",
+        )
 
     async def test_stop_telegram_bot_deletes_webhook_when_enabled(self):
         import railway_main as rm

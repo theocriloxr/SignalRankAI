@@ -1,0 +1,649 @@
+{
+  "disclaimer": "This registry covers release-critical V7 slices discovered and dispositioned in this pass; it does not claim all 10,000+ prompt lines are live-proven.",
+  "generated_at": "2026-07-27T00:00:00Z",
+  "generator": "scripts/build_v7_governance.py",
+  "kind": "requirements",
+  "repository_identity": "resolved_in_release_manifest",
+  "requirements": [
+    {
+      "acceptance_criteria": [
+        "all required registry files exist",
+        "all registry files parse as JSON/YAML",
+        "generated registries are deterministic"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "generated registry validation",
+      "id": "SRA-GOV-001",
+      "implementation_modules": [
+        "requirements/",
+        "scripts/build_v7_governance.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "governance",
+      "priority": "P0",
+      "release_phase": "A",
+      "rollback_deactivation": "revert the governance commit",
+      "runtime_diagnostic_ids": [
+        "DIAG-GOV-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:103-158"
+      ],
+      "statement": "Version control requirement, decision, conflict, incident, blocker, flag, environment, command, callback, provider, release-gate, evidence, and legacy-disposition registries.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_v7_governance_contract.py"
+      ],
+      "title": "Machine-readable governance"
+    },
+    {
+      "acceptance_criteria": [
+        "web.app is FastAPI",
+        "security routes exist",
+        "token tests pass"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "focused local tests",
+      "id": "SRA-WEB-001",
+      "implementation_modules": [
+        "web/app.py",
+        "railway_main.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "web",
+      "priority": "P0",
+      "release_phase": "A",
+      "rollback_deactivation": "revert commit 1c2ad0d",
+      "runtime_diagnostic_ids": [
+        "DIAG-WEB-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:188-216"
+      ],
+      "statement": "The Railway-mounted web application must remain the canonical FastAPI API and expose the broker-security contracts used by production routes.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_web_app_regression_guard.py",
+        "tests/test_web_api_tokens.py"
+      ],
+      "title": "Canonical FastAPI security surface"
+    },
+    {
+      "acceptance_criteria": [
+        "20 requested batches produce 20 batches",
+        "every test file appears once",
+        "all isolated batches complete"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "20-batch local run",
+      "id": "SRA-CI-001",
+      "implementation_modules": [
+        "scripts/run_complete_system_test.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "release",
+      "priority": "P0",
+      "release_phase": "A",
+      "rollback_deactivation": "revert commit deeefed",
+      "runtime_diagnostic_ids": [
+        "DIAG-CI-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:850-876"
+      ],
+      "statement": "The complete test-file inventory is split into exactly the requested number of non-empty isolated batches.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_complete_system_orchestrator_contract.py"
+      ],
+      "title": "Deterministic complete test partition"
+    },
+    {
+      "acceptance_criteria": [
+        "session priority lanes are enforced",
+        "runtime engine contract is introspectable",
+        "staging uses transaction-pooling-safe settings"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local contract tests; staging proof pending",
+      "id": "SRA-DB-001",
+      "implementation_modules": [
+        "db/session.py",
+        "db/priority.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "database",
+      "priority": "P0",
+      "release_phase": "B",
+      "rollback_deactivation": "set engine/worker flags off and rollback application",
+      "runtime_diagnostic_ids": [
+        "DIAG-DB-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:308-383"
+      ],
+      "statement": "Runtime database access uses one shared async engine per process, NullPool in transaction-pooling mode, bounded admission, and no session sharing.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_phase4_pass2_db_priority_and_command_speed.py",
+        "tests/test_storage_priority_hardening.py"
+      ],
+      "title": "PgBouncer runtime contract"
+    },
+    {
+      "acceptance_criteria": [
+        "blank and omitted labels become caller labels",
+        "holder label is never unlabelled"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "39 focused local tests",
+      "id": "SRA-DB-002",
+      "implementation_modules": [
+        "db/session.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "database",
+      "priority": "P0",
+      "release_phase": "B",
+      "rollback_deactivation": "revert commit ee07957",
+      "runtime_diagnostic_ids": [
+        "DIAG-DB-002"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:329-349"
+      ],
+      "statement": "Every DB session holder records an explicit or generated non-empty caller label; unlabelled holders are impossible.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_db_session_labels.py",
+        "tests/test_railway_runtime_incident_fixes.py"
+      ],
+      "title": "Every session is labelled"
+    },
+    {
+      "acceptance_criteria": [
+        "chart callback renders a chart",
+        "Gemini callback returns review or honest degradation",
+        "no visible placeholder path remains",
+        "forged signal callbacks are rejected"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "17 focused local tests; live bot probe pending",
+      "id": "SRA-TG-001",
+      "implementation_modules": [
+        "signalrank_telegram/bot.py",
+        "signalrank_telegram/callback_handlers.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "telegram",
+      "priority": "P0",
+      "release_phase": "C",
+      "rollback_deactivation": "disable affected button emission and rollback callback commit",
+      "runtime_diagnostic_ids": [
+        "DIAG-TG-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:387-485"
+      ],
+      "statement": "Core Telegram commands and visible callbacks acknowledge promptly and either complete real work or return an explicit degraded result.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_callback_feature_completion.py",
+        "tests/test_callback_handler.py"
+      ],
+      "title": "Command and callback operability"
+    },
+    {
+      "acceptance_criteria": [
+        "all static command registrations are represented",
+        "duplicates are explicit",
+        "specific callback routes are represented"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "static AST registry",
+      "id": "SRA-TG-002",
+      "implementation_modules": [
+        "scripts/build_v7_governance.py",
+        "requirements/command_registry.yaml",
+        "requirements/callback_registry.yaml"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "telegram",
+      "priority": "P1",
+      "release_phase": "C",
+      "rollback_deactivation": "regenerate from source",
+      "runtime_diagnostic_ids": [
+        "DIAG-TG-002"
+      ],
+      "safety_classification": "controlled",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:414-479"
+      ],
+      "statement": "The source registration surface is inventoried into deterministic command and callback registries with duplicate detection.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_v7_governance_contract.py"
+      ],
+      "title": "Generated command and callback registries"
+    },
+    {
+      "acceptance_criteria": [
+        "sent_ok is required",
+        "Telegram chat/message identifiers are persisted",
+        "uncertain results are not counted as delivered"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local tests; exact live signal proof pending",
+      "id": "SRA-DEL-001",
+      "implementation_modules": [
+        "db/models.py",
+        "signalrank_telegram/bot.py",
+        "services/asset_repeat_policy.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "delivery",
+      "priority": "P0",
+      "release_phase": "D",
+      "rollback_deactivation": "pause distribution and reconcile delivery rows",
+      "runtime_diagnostic_ids": [
+        "DIAG-DEL-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:594-617"
+      ],
+      "statement": "Only Telegram-successful persisted deliveries count as delivered and as the start of repeat protection.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_outcome_delivery_contract.py",
+        "tests/test_delivery_idempotency.py"
+      ],
+      "title": "Proof-backed delivery truth"
+    },
+    {
+      "acceptance_criteria": [
+        "unsent reservations do not start lock",
+        "lock is direction agnostic",
+        "durable DB proof reconstructs after cache loss"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local tests; Railway restart proof pending",
+      "id": "SRA-DEDUP-001",
+      "implementation_modules": [
+        "services/asset_repeat_policy.py",
+        "signalrank_telegram/bot.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "delivery",
+      "priority": "P0",
+      "release_phase": "D",
+      "rollback_deactivation": "set distribution flags off",
+      "runtime_diagnostic_ids": [
+        "DIAG-DEDUP-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:594-617"
+      ],
+      "statement": "A same-user same-asset direction-agnostic repeat lock defaults to four hours and starts only after proof-backed delivery.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_asset_repeat_policy.py",
+        "tests/test_outcome_delivery_contract.py"
+      ],
+      "title": "Four-hour same-user asset lock"
+    },
+    {
+      "acceptance_criteria": [
+        "representative symbols and timeframes pass",
+        "freshness and failure taxonomy are evidenced",
+        "credentials and regional access are proven"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "provider certification report",
+      "id": "SRA-PROV-001",
+      "implementation_modules": [
+        "data/provider_catalog.py",
+        "scripts/certify_providers.py",
+        "requirements/provider_registry.yaml"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "market_data",
+      "priority": "P0",
+      "release_phase": "D/F",
+      "rollback_deactivation": "disable provider flag and route to certified alternatives",
+      "runtime_diagnostic_ids": [
+        "DIAG-PROV-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:526-553"
+      ],
+      "statement": "Provider implementation and live certification are separate; each provider is certified in the exact deployment environment and plan before production support.",
+      "status": "BLOCKED_EXTERNAL",
+      "test_ids": [
+        "tests/test_provider_catalog.py"
+      ],
+      "title": "Provider certification"
+    },
+    {
+      "acceptance_criteria": [
+        "one Alembic head",
+        "no data deletion to satisfy constraints",
+        "legacy upgrade report retained"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local static/fixture evidence; real PostgreSQL legacy rehearsal pending",
+      "id": "SRA-MIG-001",
+      "implementation_modules": [
+        "db/migrations/",
+        "scripts/schema_audit.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "database",
+      "priority": "P0",
+      "release_phase": "B",
+      "rollback_deactivation": "forward-fix migration or application rollback compatible with schema",
+      "runtime_diagnostic_ids": [
+        "DIAG-MIG-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:368-383"
+      ],
+      "statement": "Alembic has one head and clean, sequential, representative legacy, drifted, and rerun scenarios are evidenced on PostgreSQL.",
+      "status": "PROVEN_LOCAL_ONLY",
+      "test_ids": [
+        "tests/test_payment_receipt_migration_idempotency.py",
+        "tests/test_migration_chain.py"
+      ],
+      "title": "Migration graph and legacy upgrade"
+    },
+    {
+      "acceptance_criteria": [
+        "PAYMENTS_PUBLIC_ENABLED=0 by default",
+        "test-mode E2E passes before beta",
+        "wrong amount and replay are rejected"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local contract tests; Paystack test-mode E2E pending",
+      "id": "SRA-PAY-001",
+      "implementation_modules": [
+        "payments/",
+        "configs/env/production.env.example"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "payments",
+      "priority": "P0",
+      "release_phase": "H",
+      "rollback_deactivation": "set PAYMENTS_PUBLIC_ENABLED=0",
+      "runtime_diagnostic_ids": [
+        "DIAG-PAY-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:633-654"
+      ],
+      "statement": "Paystack processing verifies raw-body HMAC, transaction details, amount/currency/reference, idempotency, entitlement, and receipts; public payments remain gated.",
+      "status": "DISABLED_BY_POLICY",
+      "test_ids": [
+        "tests/test_phase4_pass6_security_api_payments.py"
+      ],
+      "title": "Paystack payment integrity"
+    },
+    {
+      "acceptance_criteria": [
+        "REAL_EXECUTION_ENABLED=0",
+        "COPY_TRADE_ENABLED=0",
+        "no fallback lot/equity",
+        "unknown orders reconcile before retry"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local safety tests; MetaApi demo proof pending",
+      "id": "SRA-EXEC-001",
+      "implementation_modules": [
+        "services/mt5_signal_router.py",
+        "configs/env/production.env.example"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "execution",
+      "priority": "P0",
+      "release_phase": "I",
+      "rollback_deactivation": "activate kill switches and revoke broker credentials",
+      "runtime_diagnostic_ids": [
+        "DIAG-EXEC-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:658-681"
+      ],
+      "statement": "Real execution, copy trading, Smart DCA, and live accounts remain disabled until independent demo/live certification and owner approval.",
+      "status": "DISABLED_BY_POLICY",
+      "test_ids": [
+        "tests/test_tiered_execution_canonical_routing.py",
+        "tests/test_broker_permission_validation.py"
+      ],
+      "title": "Execution safety gates"
+    },
+    {
+      "acceptance_criteria": [
+        "Gemini outage returns explicit degradation",
+        "deterministic signal remains available",
+        "no execution decision is delegated"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local mocked/contract tests; live quota proof pending",
+      "id": "SRA-ML-001",
+      "implementation_modules": [
+        "services/gemini_ml.py",
+        "signalrank_telegram/callback_handlers.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "ml",
+      "priority": "P1",
+      "release_phase": "D",
+      "rollback_deactivation": "disable Gemini feature flags",
+      "runtime_diagnostic_ids": [
+        "DIAG-ML-001"
+      ],
+      "safety_classification": "controlled",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:685-706"
+      ],
+      "statement": "Gemini is optional, bounded, semantically validated, never sole execution authority, and degrades without stopping the deterministic core.",
+      "status": "TESTED_LOCAL",
+      "test_ids": [
+        "tests/test_callback_feature_completion.py",
+        "tests/test_phase4_pass8_ml_lifecycle_governance.py"
+      ],
+      "title": "Optional Gemini advisory"
+    },
+    {
+      "acceptance_criteria": [
+        "no committed secrets",
+        "critical/high findings block release",
+        "SBOM and image scan are retained"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local scans; external vulnerability/container evidence pending",
+      "id": "SRA-SEC-001",
+      "implementation_modules": [
+        "scripts/secret_scan.py",
+        "scripts/production_readiness_check.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "security",
+      "priority": "P0",
+      "release_phase": "A-I",
+      "rollback_deactivation": "disable public surfaces and rotate exposed credentials",
+      "runtime_diagnostic_ids": [
+        "DIAG-SEC-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:710-740"
+      ],
+      "statement": "Release runs secret, dependency, vulnerability, SBOM, container, authorization, webhook, and payment security checks.",
+      "status": "PARTIAL_LOCAL",
+      "test_ids": [
+        "tests/test_phase4_pass6_security_api_payments.py"
+      ],
+      "title": "Security and supply-chain assurance"
+    },
+    {
+      "acceptance_criteria": [
+        "critical IDs propagate",
+        "high-cardinality IDs are not metric labels",
+        "alerts include runbook references"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "local diagnostics; production SLO baseline pending",
+      "id": "SRA-OBS-001",
+      "implementation_modules": [
+        "observability/",
+        "db/session.py",
+        "scripts/deployment_diagnostics.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "operations",
+      "priority": "P1",
+      "release_phase": "A-E",
+      "rollback_deactivation": "disable noncritical telemetry exporters",
+      "runtime_diagnostic_ids": [
+        "DIAG-OBS-001"
+      ],
+      "safety_classification": "controlled",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:744-789"
+      ],
+      "statement": "Structured logs, metrics, traces, holder age, queue lag, webhook, command, delivery, provider, lifecycle, payment, and execution diagnostics are correlated.",
+      "status": "PARTIAL_LOCAL",
+      "test_ids": [
+        "tests/test_phase4_pass7_observability_reliability_performance.py"
+      ],
+      "title": "Observability and SLO evidence"
+    },
+    {
+      "acceptance_criteria": [
+        "restore drill succeeds",
+        "RPO/RTO are measured",
+        "active signals survive restart"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "staging restore/chaos report",
+      "id": "SRA-DR-001",
+      "implementation_modules": [
+        "docs/",
+        "scripts/deployment_diagnostics.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "reliability",
+      "priority": "P0",
+      "release_phase": "E",
+      "rollback_deactivation": "enter incident mode and restore last verified backup",
+      "runtime_diagnostic_ids": [
+        "DIAG-DR-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:791-821"
+      ],
+      "statement": "PostgreSQL backup/restore, Redis loss, consumer recovery, rollback, and dependency outage procedures are tested in isolated staging.",
+      "status": "BLOCKED_EXTERNAL",
+      "test_ids": [],
+      "title": "Disaster recovery drill"
+    },
+    {
+      "acceptance_criteria": [
+        "staging dependencies are independent",
+        "safe command matrix passes",
+        "pending Telegram updates return to zero"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "Railway deployment and probe evidence",
+      "id": "SRA-RAIL-001",
+      "implementation_modules": [
+        "railway.toml",
+        "deploy/railway_roles/",
+        "scripts/deployment_diagnostics.py"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "release",
+      "priority": "P0",
+      "release_phase": "A-E",
+      "rollback_deactivation": "rollback deployment and keep engine/payment/execution flags off",
+      "runtime_diagnostic_ids": [
+        "DIAG-RAIL-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:949-1054"
+      ],
+      "statement": "A separate Railway staging environment proves migrations, readiness, webhook, queues, commands, callbacks, providers, restart, and rollback before production activation.",
+      "status": "BLOCKED_EXTERNAL",
+      "test_ids": [],
+      "title": "Railway staging certification"
+    },
+    {
+      "acceptance_criteria": [
+        "no DB leak",
+        "no duplicate/stale delivery",
+        "no unexplained webhook error",
+        "restart recovery passes"
+      ],
+      "enabled_policy": "gated",
+      "evidence_type": "retained soak report",
+      "id": "SRA-SOAK-001",
+      "implementation_modules": [
+        "requirements/release_gates.yaml"
+      ],
+      "migrations_data_impact": "none_or_documented_in_module_migrations",
+      "owner_domain": "release",
+      "priority": "P0",
+      "release_phase": "E",
+      "rollback_deactivation": "disable engine and distribution and roll back",
+      "runtime_diagnostic_ids": [
+        "DIAG-SOAK-001"
+      ],
+      "safety_classification": "critical",
+      "source_references": [
+        "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md:1030-1038"
+      ],
+      "statement": "The owner-beta release soaks for 24–72 hours with stable queues, memory, CPU, connections, outcomes, webhook, and delivery behaviour.",
+      "status": "BLOCKED_EXTERNAL",
+      "test_ids": [],
+      "title": "Owner soak"
+    }
+  ],
+  "schema_version": 1,
+  "source_prompt": {
+    "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
+    "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
+  },
+  "status_vocabulary": [
+    "UNASSESSED",
+    "DESIGNED",
+    "IMPLEMENTED",
+    "TESTED_LOCAL",
+    "PROVEN_LOCAL_ONLY",
+    "PROVEN_STAGING",
+    "PROVEN_LIVE",
+    "PARTIAL_LOCAL",
+    "BLOCKED_EXTERNAL",
+    "DISABLED_BY_POLICY",
+    "RETIRED_APPROVED"
+  ],
+  "summary": {
+    "BLOCKED_EXTERNAL": 4,
+    "DISABLED_BY_POLICY": 2,
+    "PARTIAL_LOCAL": 2,
+    "PROVEN_LOCAL_ONLY": 1,
+    "TESTED_LOCAL": 10
+  }
+}

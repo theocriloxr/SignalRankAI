@@ -13,6 +13,7 @@ Usage:
     # Generate invoice for payment
     invoice = await generate_invoice(user_id, amount, plan)
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import uuid
@@ -86,7 +87,7 @@ class InvoiceService:
             if not user:
                 return {"error": "User not found"}
             
-            now = datetime.utcnow()
+            now = now_utc_naive()
             due_date = now + timedelta(days=7)
             
             invoice = {
@@ -161,7 +162,7 @@ class InvoiceService:
                 return False
             
             invoice["status"] = InvoiceStatus.PAID.value
-            invoice["paid_at"] = datetime.utcnow().isoformat()
+            invoice["paid_at"] = now_utc_naive().isoformat()
             invoice["paystack_reference"] = paystack_reference
             
             await self._save_invoice(invoice)
@@ -181,7 +182,7 @@ class InvoiceService:
                 return False
             
             invoice["status"] = InvoiceStatus.CANCELLED.value
-            invoice["cancelled_at"] = datetime.utcnow().isoformat()
+            invoice["cancelled_at"] = now_utc_naive().isoformat()
             
             await self._save_invoice(invoice)
             

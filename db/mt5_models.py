@@ -14,6 +14,7 @@ Usage:
 """
 
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 import logging
 from datetime import datetime
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 def _utcnow() -> datetime:
     """Get current UTC time."""
-    return datetime.utcnow()
+    return now_utc_naive()
 
 
 class MT5Account:

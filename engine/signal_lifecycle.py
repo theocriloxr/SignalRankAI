@@ -6,19 +6,25 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from core.signal_lifecycle import (
+    ACTIVE_TRADE,
+    BREAKEVEN_STOP,
+    EXPIRED,
+    MISSED_ENTRY,
+    SL_HIT,
+    TERMINAL_SIGNAL_STATES,
+    TP1_HIT,
+    TP2_HIT,
+    TP3_HIT,
+    WATCHING_FOR_ENTRY,
+    event_transition_allowed,
+    lifecycle_state_for_event,
+    normalize_lifecycle_state,
+)
+
 logger = logging.getLogger(__name__)
 
-WATCHING_FOR_ENTRY = "WATCHING_FOR_ENTRY"
-ACTIVE_TRADE = "ACTIVE_TRADE"
-TP1_HIT = "TP1_HIT"
-TP2_HIT = "TP2_HIT"
-TP3_HIT = "TP3_HIT"
-SL_HIT = "SL_HIT"
-BREAKEVEN_STOP = "BREAKEVEN_STOP"
-MISSED_ENTRY = "MISSED_ENTRY"
-EXPIRED = "EXPIRED"
-
-TERMINAL_STATES = {TP3_HIT, SL_HIT, BREAKEVEN_STOP, MISSED_ENTRY, EXPIRED}
+TERMINAL_STATES = set(TERMINAL_SIGNAL_STATES)
 NOTIFIABLE_EVENTS = {
     "entry_touched", "tp1_hit", "tp2_hit", "tp3_hit", "sl_hit",
     "breakeven_stop", "missed_entry", "expired",
@@ -97,19 +103,7 @@ def evaluate_observation(
 
 
 def event_state(event_type: str) -> str:
-    return {
-        "entry_touched": ACTIVE_TRADE,
-        "tp1_hit": TP1_HIT,
-        "tp2_hit": TP2_HIT,
-        "tp3_hit": TP3_HIT,
-        "sl_hit": SL_HIT,
-        "breakeven_stop": BREAKEVEN_STOP,
-        "missed_entry": MISSED_ENTRY,
-        "expired": EXPIRED,
-        "generated": WATCHING_FOR_ENTRY,
-        "halfway_to_tp1": ACTIVE_TRADE,
-        "breakeven_moved": ACTIVE_TRADE,
-    }.get(str(event_type), str(event_type).upper())
+    return lifecycle_state_for_event(event_type)
 
 
 def _r_multiple(direction: str, entry: float, stop_loss: float, price: float) -> float | None:
@@ -151,6 +145,7 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
     if not _enabled("OUTCOME_LIFECYCLE_ENABLED", True):
         return ACTIVE_TRADE
     from db.models import SignalLifecycle, SignalTrackingEvent
+    from db.priority import DBPriority
     from db.session import get_session
     from sqlalchemy import select
 
@@ -164,9 +159,11 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
     pct = (signed_move / entry * 100.0) if entry > 0 else 0.0
     r_value = (signed_move / risk) if risk > 0 else 0.0
 
-    async with get_session() as session:
+    async with get_session(priority=DBPriority.CRITICAL) as session:
         row = (await session.execute(
-            select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id)
+            select(SignalLifecycle)
+            .where(SignalLifecycle.signal_id == signal_id)
+            .with_for_update()
         )).scalar_one_or_none()
         if row is None:
             row = SignalLifecycle(
@@ -183,6 +180,7 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
                 price=None,
                 meta={"state": WATCHING_FOR_ENTRY},
             ))
+        row.state = normalize_lifecycle_state(getattr(row, "state", None))
         row.last_price = float(price)
         row.last_checked_at = now
         row.max_price_seen = max(float(row.max_price_seen or price), float(price))
@@ -193,7 +191,7 @@ async def update_lifecycle_observation(signal: dict, price: float) -> str:
         row.mae_r = min(float(row.mae_r or 0.0), r_value, 0.0)
         row.updated_at = now
         await session.commit()
-        return str(row.state or WATCHING_FOR_ENTRY)
+        return normalize_lifecycle_state(row.state)
 
 
 async def record_lifecycle_event(signal: dict, event_type: str, price: float, meta: dict | None = None) -> bool:
@@ -204,6 +202,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
         SignalDelivery, SignalEventNotification, SignalLifecycle,
         SignalTrackingEvent, User,
     )
+    from db.priority import DBPriority
     from db.session import get_session
     from sqlalchemy import select
 
@@ -212,15 +211,11 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
         return False
     now = _utc_now_naive()
     created_at = signal.get("created_at")
-    async with get_session() as session:
-        existing = (await session.execute(
-            select(SignalTrackingEvent).where(
-                SignalTrackingEvent.signal_id == signal_id,
-                SignalTrackingEvent.event_type == event_type,
-            )
-        )).scalar_one_or_none()
+    async with get_session(priority=DBPriority.CRITICAL) as session:
         lifecycle = (await session.execute(
-            select(SignalLifecycle).where(SignalLifecycle.signal_id == signal_id)
+            select(SignalLifecycle)
+            .where(SignalLifecycle.signal_id == signal_id)
+            .with_for_update()
         )).scalar_one_or_none()
         if lifecycle is None:
             lifecycle = SignalLifecycle(
@@ -232,7 +227,23 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             session.add(lifecycle)
             await session.flush()
 
+        lifecycle.state = normalize_lifecycle_state(getattr(lifecycle, "state", None))
+        existing = (await session.execute(
+            select(SignalTrackingEvent).where(
+                SignalTrackingEvent.signal_id == signal_id,
+                SignalTrackingEvent.event_type == event_type,
+            )
+        )).scalar_one_or_none()
+        was_new = existing is None
+
         if existing is None:
+            if not event_transition_allowed(lifecycle.state, event_type):
+                logger.info(
+                    "[lifecycle_transition_rejected] signal=%s current=%s event=%s target=%s",
+                    signal_id[:8], lifecycle.state, event_type, event_state(event_type),
+                )
+                await session.rollback()
+                return False
             r_value = _r_multiple(
                 str(signal.get("direction") or "long"),
                 float(signal.get("entry") or 0),
@@ -313,7 +324,7 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
             .where(
                 SignalDelivery.signal_id == signal_id,
                 SignalDelivery.sent_ok.is_(True),
-                SignalDelivery.delivery_state == "confirmed",
+                SignalDelivery.delivery_state.in_(("confirmed", "CONFIRMED", "RECONCILED")),
             )
             )).all()
         for delivery, user in deliveries:
@@ -337,10 +348,9 @@ async def record_lifecycle_event(signal: dict, event_type: str, price: float, me
                 ))
         await session.commit()
         event_id = int(existing.id)
-        was_new = existing.event_time == now
 
-    if event_type in NOTIFIABLE_EVENTS:
-        await dispatch_event_notifications(event_id, signal)
+    # Telegram delivery is intentionally owned by the separate notification
+    # dispatcher. The critical lifecycle transaction ends before network I/O.
     logger.info("[lifecycle] signal=%s event=%s price=%.6g new=%s", signal_id[:8], event_type, price, was_new)
     return was_new
 

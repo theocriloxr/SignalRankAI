@@ -1,3 +1,4 @@
+from utils.timeutils import now_utc_naive
 from engine.tier_notifications import TierNotificationManager
 from datetime import datetime, timezone
 import os
@@ -117,7 +118,7 @@ def _format_expiration(expires_at) -> str:
 		# Handle datetime objects directly (most common case from engine)
 		if isinstance(expires_at, datetime):
 			if expires_at.tzinfo is None:
-				now = datetime.utcnow()
+				now = now_utc_naive()
 			else:
 				now = datetime.now(timezone.utc)
 			diff = (expires_at - now).total_seconds()
@@ -861,22 +862,17 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	if score is None:
 		conf_ratio = resolve_confidence_ratio(signal)
 		score = conf_ratio * 100.0 if conf_ratio is not None else 0.0
-	entry = signal.get('entry')
-	stop_loss = signal.get('stop_loss')
 	tp_levels = _parse_tp_list(signal.get('tp_levels') or signal.get('take_profit'))
 	is_order_block = bool(signal.get('is_near_order_block', False))
 
 	asset_disp = _h(_asset_display(asset))
 	direction_text = _h(_direction_display(signal.get('direction', '')))
 
-	# Teaser description
+	# Educational proof description; never imply probability guarantees.
 	if is_order_block:
-		desc = f"The BOT just spotted a massive Order Block bounce with a {score:.1f}% Conviction Score."
+		desc = f"The engine detected an Order Block setup with a {score:.1f}% model score."
 	else:
-		desc = f"The BOT just detected a high-probability setup with a {score:.1f}% Conviction Score."
-
-	premium_price_ngn = int(os.getenv("PREMIUM_PRICE_NGN", "15000"))
-	price_k = f"₦{premium_price_ngn // 1000}k"
+		desc = f"The engine detected a setup with a {score:.1f}% model score."
 
 	lines = [
 		"🔒 <b>TRADE SETUP DETECTED</b> 🔒",
@@ -901,18 +897,10 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 	except Exception:
 		pass
 
-	if entry is not None:
-		lines.append(f"Entry: {_h(_fmt_price_clean(entry, asset))}")
-	else:
-		lines.append("Entry: —")
-
-	if stop_loss is not None:
-		lines.append(f"Stop Loss: {_h(_fmt_price_clean(stop_loss, asset))}")
-	else:
-		lines.append("Stop Loss: —")
+	lines.append("Entry + Stop Loss: [ 🔒 COMPLETE RISK CONTEXT REQUIRED ]")
 
 	if tp_levels:
-		lines.append(f"Take Profit 1: {_h(_fmt_price_clean(tp_levels[0], asset))}")
+		lines.append(f"Illustrative Take Profit 1: {_h(_fmt_price_clean(tp_levels[0], asset))}")
 	else:
 		lines.append("Take Profit 1: —")
 
@@ -920,11 +908,11 @@ def format_signal_free_new(signal: dict, signals_sent_today: int = 0, daily_limi
 		"Take Profit 2: [ 🔒 PREMIUM ]",
 		"Take Profit 3: [ 🔒 VIP ]",
 		"",
-		"Upgrade to unlock full TP ladder, smart scaling and advanced execution.",
-		"VIP and Premium users are entering this trade right now.",
-		"Don't miss the move.",
+		"Educational preview only — do not trade without a validated entry, stop, and fresh quote.",
+		"Premium adds complete risk context, paper tools, lifecycle updates, and deeper analytics.",
+		"Every tier remains subject to the same safety checks.",
 		"",
-		f"[ 🔓 Unlock Signal Now /upgrade ]",
+		f"[ Compare Plans /upgrade — no guaranteed returns ]",
 	]
 
 	return "\n".join(lines)

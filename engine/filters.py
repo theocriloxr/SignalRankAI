@@ -6,6 +6,7 @@ Smart Filters Module
 - Spread/slippage control
 - Correlation checking
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 import os
@@ -195,7 +196,7 @@ class SignalFilter:
     
     def check_trading_hours(self, symbol: str) -> bool:
         """Avoid trading during low liquidity hours."""
-        current_hour = datetime.utcnow().hour
+        current_hour = now_utc_naive().hour
         
         # Crypto: 24/7 trading OK
         if 'USD' in symbol and 'T' not in symbol:  # Binance pairs

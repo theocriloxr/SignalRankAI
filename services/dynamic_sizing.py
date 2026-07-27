@@ -23,7 +23,6 @@ Usage:
 
 import logging
 from typing import Any, Dict, Optional
-from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
@@ -66,31 +65,9 @@ class DynamicSizer:
     """
     
     def __init__(self):
+        # Sizing is pure and must not perform import-time network I/O.
         self._redis = None
-        self._redis_url = self._resolve_redis_url()
-        
-        if self._redis_url:
-            self._init_redis()
-    
-    def _resolve_redis_url(self) -> Optional[str]:
-        import os
-        return os.getenv("REDIS_URL") or os.getenv("REDIS_PRIVATE_URL") or None
-    
-    def _init_redis(self):
-        try:
-            import redis
-            self._redis = redis.from_url(
-                self._redis_url,
-                decode_responses=True,
-                socket_connect_timeout=3,
-                socket_timeout=3,
-            )
-            self._redis.ping()
-            logger.info("[dynamic_sizing] Connected to Redis")
-        except Exception as e:
-            logger.debug(f"[dynamic_sizing] Redis unavailable: {e}")
-            self._redis = None
-    
+
     async def calculate_size(
         self,
         user_id: int,
@@ -123,14 +100,32 @@ class DynamicSizer:
                 ledger = get_paper_ledger()
                 balance = await ledger.get_balance(user_id)
             except Exception:
-                balance = 10000.0  # Default
-        
-        # Use equity if provided, else balance
-        account_equity = equity or balance
-        
-        # Use ML probability as win rate if not provided
+                balance = None
+
+        # Unknown account equity blocks a size recommendation; never invent a
+        # $10,000 balance. Zero equity also remains zero instead of falling
+        # back to another value.
+        account_equity = equity if equity is not None else balance
+        try:
+            account_equity = float(account_equity)
+        except (TypeError, ValueError):
+            return 0.0
+        if account_equity <= 0:
+            return 0.0
+
+        # Missing probability is not evidence. Use no allocation rather than
+        # manufacturing a 50% forecast.
         if win_rate is None:
-            win_rate = ml_probability or 0.5
+            win_rate = ml_probability
+        if win_rate is None:
+            return 0.0
+        try:
+            win_rate = float(win_rate)
+            avg_rr = float(avg_rr)
+        except (TypeError, ValueError):
+            return 0.0
+        if not 0.0 <= win_rate <= 1.0 or avg_rr <= 0:
+            return 0.0
         
         # Calculate risk percentage based on probability
         risk_pct = self._get_risk_by_probability(win_rate)
@@ -149,20 +144,18 @@ class DynamicSizer:
         stop_loss = float(signal.get("stop_loss") or signal.get("stop", 0))
         
         if entry <= 0 or stop_loss <= 0:
-            # Default to 1% risk
-            risk_pct = 0.01
-            risk_amount = account_equity * risk_pct
-            unit_size = risk_amount / 0.01  # Assume 1% price move
-            return unit_size
+            return 0.0
         
         # Risk per unit
-        if signal.get("direction", "").lower() == "long":
+        direction = str(signal.get("direction") or "").lower()
+        if direction in {"long", "buy"}:
             risk_per_unit = entry - stop_loss
-        else:
+        elif direction in {"short", "sell"}:
             risk_per_unit = stop_loss - entry
-        
+        else:
+            return 0.0
         if risk_per_unit <= 0:
-            risk_per_unit = entry * 0.01  # 1% of entry
+            return 0.0
         
         # Position size
         risk_amount = account_equity * risk_pct
@@ -180,7 +173,7 @@ class DynamicSizer:
         for (low, high), risk in RISK_BY_PROBABILITY.items():
             if low <= probability < high:
                 return risk
-        return 0.01  # Default 1%
+        return 0.0
     
     def _calculate_kelly_risk(
         self,
@@ -228,7 +221,7 @@ class DynamicSizer:
             ledger = get_paper_ledger()
             balance = await ledger.get_balance(user_id)
         except Exception:
-            balance = 10000.0
+            balance = None
         
         # Calculate
         size = await self.calculate_size(
@@ -240,14 +233,9 @@ class DynamicSizer:
             balance=balance
         )
         
-        # Risk percentage
-        risk_pct = self._get_risk_by_probability(ml_probability or win_rate or 0.5)
-        
-        # Kelly
-        kelly = self._calculate_kelly_risk(
-            ml_probability or win_rate or 0.5,
-            avg_rr
-        )
+        probability = ml_probability if ml_probability is not None else win_rate
+        risk_pct = self._get_risk_by_probability(float(probability)) if probability is not None else 0.0
+        kelly = self._calculate_kelly_risk(float(probability), avg_rr) if probability is not None else None
         
         # Entry value
         entry = float(signal.get("entry", 0))
@@ -260,8 +248,9 @@ class DynamicSizer:
             "entry": entry,
             "stop_loss": signal.get("stop_loss"),
             "risk_pct": risk_pct,
-            "risk_amount": balance * risk_pct,
-            "probability": ml_probability or win_rate,
+            "risk_amount": (float(balance) * risk_pct) if balance is not None else 0.0,
+            "probability": probability,
+            "sizing_status": "ok" if size > 0 else "blocked_missing_or_invalid_inputs",
             "kelly_risk_pct": kelly,
             "avg_rr": avg_rr,
         }

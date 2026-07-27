@@ -98,7 +98,7 @@ def store_signal_compat(signal: Dict[str, Any]) -> str:
                 dedup_hours = 24
 
         wait_started = time.monotonic()
-        async with get_session(critical=True) as session:
+        async with get_session(priority="critical", label="db_pg_compat") as session:
             db_wait_ms = int((time.monotonic() - wait_started) * 1000)
             exec_started = time.monotonic()
             try:

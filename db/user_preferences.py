@@ -16,6 +16,7 @@ Usage:
     # Update preferences
     await update_user_preferences(user_id, {"trading_mode": "live", "auto_execute": True})
 """
+from utils.timeutils import now_utc_naive
 
 import logging
 from typing import Dict, Any, Optional, List
@@ -187,7 +188,7 @@ class UserPreferencesManager:
             
             # Merge updates
             prefs_dict.update(updates)
-            prefs_dict["updated_at"] = datetime.utcnow().isoformat()
+            prefs_dict["updated_at"] = now_utc_naive().isoformat()
             
             # Save to DB
             from db.session import get_session

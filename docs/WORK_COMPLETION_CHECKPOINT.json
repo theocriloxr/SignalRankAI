@@ -1,0 +1,80 @@
+{
+  "baseline_commit": "59ce18e1f74814f1ac1574f9be010ac1026a2e6e",
+  "coverage": {
+    "covered_branches": 3762,
+    "covered_lines": 18923,
+    "excluded_lines": 85,
+    "missing_branches": 14308,
+    "missing_lines": 41071,
+    "num_branches": 18070,
+    "num_partial_branches": 1972,
+    "num_statements": 59994,
+    "percent_branches_covered": 20.819037078029883,
+    "percent_branches_covered_display": "21",
+    "percent_covered": 29.059489649518344,
+    "percent_covered_display": "29",
+    "percent_statements_covered": 31.541487482081543,
+    "percent_statements_covered_display": "32"
+  },
+  "generated_at": "2026-07-26T17:08:26.466313+00:00",
+  "live_blockers": [
+    {
+      "env_vars": "GEMINI_API_KEY",
+      "name": "gemini",
+      "purpose": "AI review live call"
+    },
+    {
+      "env_vars": "PAYSTACK_SECRET_KEY,PAYSTACK_PUBLIC_KEY",
+      "name": "paystack_test",
+      "purpose": "test payment and webhook reconciliation"
+    },
+    {
+      "env_vars": "TV_WEBHOOK_SECRET",
+      "name": "tradingview",
+      "purpose": "signed alert ingress"
+    },
+    {
+      "env_vars": "META_API_TOKEN",
+      "name": "metaapi_demo",
+      "purpose": "demo account quote/order/reconciliation"
+    },
+    {
+      "env_vars": "TWELVEDATA_API_KEY",
+      "name": "provider_twelvedata",
+      "purpose": "forex/equity provider certification"
+    },
+    {
+      "env_vars": "POLYGON_API_KEY",
+      "name": "provider_polygon",
+      "purpose": "equity/index provider certification"
+    },
+    {
+      "env_vars": "FMP_API_KEY",
+      "name": "provider_fmp",
+      "purpose": "equity provider certification"
+    },
+    {
+      "env_vars": "OANDA_API_KEY,OANDA_ACCOUNT_ID",
+      "name": "provider_oanda",
+      "purpose": "forex practice certification"
+    },
+    {
+      "env_vars": "TELEGRAM_BOT_TOKEN",
+      "name": "Telegram staging bot",
+      "purpose": "getMe/getWebhookInfo and callback delivery proof"
+    }
+  ],
+  "next_task": "Deploy the packaged commit to isolated Railway staging and retrieve /diagnostics/deployment after readiness.",
+  "orchestrator_ok": true,
+  "resume_commands": [
+    "python -m alembic upgrade head",
+    "python scripts/deployment_diagnostics.py --phase runtime --base-url https://YOUR_DOMAIN --output /tmp/signalrank_deployment_diagnostics.json --live-providers",
+    "python scripts/run_complete_system_test.py --full --pytest-batches 1 --output-dir artifacts/complete-system-live --live-providers"
+  ],
+  "status": "CODE_FIXED_AND_HERMETICALLY_VERIFIED__LIVE_RAILWAY_PROOF_PENDING",
+  "tests": {
+    "failed": 0,
+    "passed": 733,
+    "skipped": 1
+  }
+}

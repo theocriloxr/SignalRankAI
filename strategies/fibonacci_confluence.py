@@ -1,4 +1,5 @@
 from __future__ import annotations
+from utils.timeutils import now_utc_naive
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -256,7 +257,7 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
                     "strength": 0.86 + (0.06 if rvol >= 1.5 else 0.0),
                     "market_open_confirmed": True,
                     "source": "fibonacci_confluence",
-                    "created_at": datetime.utcnow(),
+                    "created_at": now_utc_naive(),
                 }
                 out.append(sig)
 
@@ -293,7 +294,7 @@ def fibonacci_confluence_strategies(asset: str, market_data: dict[str, Any]) -> 
                     "strength": 0.86 + (0.06 if rvol >= 1.5 else 0.0),
                     "market_open_confirmed": True,
                     "source": "fibonacci_confluence",
-                    "created_at": datetime.utcnow(),
+                    "created_at": now_utc_naive(),
                 }
                 out.append(sig)
 

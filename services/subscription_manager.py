@@ -107,7 +107,7 @@ class SubscriptionManager:
                 # Calculate days remaining
                 days_remaining = 0
                 if sub.expires_at:
-                    delta = sub.expires_at - datetime.utcnow()
+                    delta = sub.expires_at - now_utc_naive()
                     days_remaining = max(0, delta.days)
                 
                 return {

@@ -104,11 +104,11 @@ def calculate_lot_size_vip(
     risk_pct = max(0.1, min(float(risk_pct), effective_max))
 
     if account_balance <= 0 or entry_price <= 0 or stop_loss <= 0:
-        return DEFAULT_FIXED_LOT
+        return 0.0
 
     sl_distance = abs(entry_price - stop_loss)
     if sl_distance <= 0:
-        return DEFAULT_FIXED_LOT
+        return 0.0
 
     sym = str(symbol).upper()
     pip_value = _PIP_VALUES.get(sym, _DEFAULT_PIP_VALUE)
@@ -125,7 +125,7 @@ def calculate_lot_size_vip(
 
     sl_distance_pips = sl_distance / pip_size
     if sl_distance_pips <= 0:
-        return DEFAULT_FIXED_LOT
+        return 0.0
 
     risk_amount = account_balance * (risk_pct / 100.0)
     lot = risk_amount / (sl_distance_pips * pip_value)
@@ -202,7 +202,7 @@ async def can_execute(user) -> Tuple[bool, str]:  # type: ignore[valid-type]
 async def _record_execution(
     db: AsyncSession,
     user_id: int,
-    signal_id: int,
+    signal_id: str,
     symbol: str,
     direction: str,
     lot_size: float,
@@ -226,7 +226,7 @@ async def _record_execution(
             lot_size=lot_size,
             entry_price=entry_price,
             stop_loss=stop_loss,
-            take_profit=take_profit,
+            take_profit=str(take_profit),
             tier_at_execution=tier,
             order_id=order_id,
             metaapi_account_id=account_id,
@@ -240,214 +240,142 @@ async def _record_execution(
         logger.error(f"[tiered_executor] Failed to record execution: {exc}")
 
 
+def _execution_signal_payload(signal, *, premium: bool) -> dict:
+    """Normalise ORM/dict signal shapes for the canonical execution router."""
+    from services.mt5_signal_router import MT5SignalRouter
+
+    def _get(*names, default=None):
+        for name in names:
+            if isinstance(signal, dict) and name in signal:
+                value = signal.get(name)
+            else:
+                value = getattr(signal, name, None)
+            if value is not None and value != "":
+                return value
+        return default
+
+    targets = MT5SignalRouter._parse_take_profit(
+        _get("take_profit", "targets", default=None)
+    )
+    for name in ("tp1", "take_profit1", "tp2", "take_profit2", "tp3", "take_profit3"):
+        value = _get(name, default=None)
+        if value is not None:
+            targets.extend(MT5SignalRouter._parse_take_profit(value))
+    # preserve order while removing duplicates
+    ordered: list[float] = []
+    for target in targets:
+        if target not in ordered:
+            ordered.append(float(target))
+    if premium and len(ordered) >= 2:
+        ordered = [ordered[1]]
+    elif ordered:
+        ordered = [ordered[0]]
+    return {
+        "signal_id": str(_get("signal_id", "id", default="") or ""),
+        "asset": str(_get("asset", "symbol", default="") or "").upper(),
+        "direction": str(_get("direction", "side", default="") or "").lower(),
+        "entry": float(_get("entry", "entry_price", default=0) or 0),
+        "stop_loss": float(_get("stop_loss", "stop", default=0) or 0),
+        "take_profit": ordered,
+    }
+
+
+async def _execute_via_canonical_router(user, signal, *, premium: bool) -> dict:
+    from services.mt5_signal_router import route_signal_to_mt5
+
+    payload = _execution_signal_payload(signal, premium=premium)
+    result = await route_signal_to_mt5(
+        payload,
+        int(user.telegram_user_id),
+        execution_mode="auto",
+    )
+    return {
+        "success": bool(result.success),
+        "order_id": result.order_id,
+        "message": result.message,
+        "error": result.error,
+        "payload": payload,
+    }
+
+
 async def execute_premium_signal(
-    user,  # type: ignore[valid-type]
-    signal,  # type: ignore[valid-type]
+    user,
+    signal,
     db: AsyncSession,
 ) -> dict:
-    """Execute a signal for a PREMIUM user.
-
-    - Uses ``user.fixed_lot_size``
-    - Only executes to TP2 (single target)
-    - Does NOT move SL automatically
-    - Increments ``daily_executions_today``
-
-    Returns a dict with ``{"success": bool, "order_id": str, "message": str}``.
-    """
+    """Route PREMIUM execution through the single canonical ExecutionGate."""
     allowed, reason = can_execute_premium(user)
     if not allowed:
         return {"success": False, "order_id": None, "message": reason}
-
-    lot = calculate_lot_size_premium(user)
-    symbol: str = getattr(signal, "symbol", "") or ""
-    direction: str = getattr(signal, "direction", "BUY") or "BUY"
-    entry: float = float(getattr(signal, "entry_price", 0) or 0)
-    sl: float = float(getattr(signal, "stop_loss", 0) or 0)
-    # PREMIUM: target only TP2
-    tp2 = getattr(signal, "tp2", None) or getattr(signal, "take_profit2", None)
-    tp1 = getattr(signal, "tp1", None) or getattr(signal, "take_profit1", None)
-    take_profit: float = float(tp2 or tp1 or 0)
-
-    if not entry or not sl or not take_profit:
+    routed = await _execute_via_canonical_router(user, signal, premium=True)
+    if not routed["success"]:
         return {
             "success": False,
             "order_id": None,
-            "message": "Signal missing entry/SL/TP values.",
+            "message": routed.get("message") or routed.get("error") or "Execution blocked",
         }
-
-    order_id: Optional[str] = None
-    account_id: Optional[str] = None
-    error_msg = ""
-
-    try:
-        from services.mt5_client import execute_trade, get_user_mt5_account_id
-
-        account_id = await get_user_mt5_account_id(user.telegram_user_id)
-        if not account_id:
-            return {
-                "success": False,
-                "order_id": None,
-                "message": "No MT5 account linked. Use /connect_broker.",
-            }
-
-        result = await execute_trade(
-            account_id=account_id,
-            symbol=symbol,
-            direction=direction.upper(),
-            volume=lot,
-            stop_loss=sl,
-            take_profit=take_profit,
-            signal_entry=entry,
-        )
-        order_id = str(result.get("order_id", "")) if isinstance(result, dict) else str(result)
-        success = bool(order_id)
-
-    except Exception as exc:
-        logger.error(f"[tiered_executor][PREMIUM] execute_trade failed: {exc}")
-        success = False
-        error_msg = str(exc)
-
-    if success:
-        # Increment counter
-        user.daily_executions_today = int(getattr(user, "daily_executions_today", 0) or 0) + 1
-        user.daily_executions_reset_at = datetime.now(tz=timezone.utc)
-        await _record_execution(
-            db=db,
-            user_id=user.telegram_user_id,
-            signal_id=getattr(signal, "id", 0),
-            symbol=symbol,
-            direction=direction,
-            lot_size=lot,
-            entry_price=entry,
-            stop_loss=sl,
-            take_profit=take_profit,
-            tier="PREMIUM",
-            order_id=order_id,
-            account_id=account_id,
-        )
-        remaining = max(0, PREMIUM_DAILY_LIMIT - int(user.daily_executions_today))
-        msg = (
-            f"✅ PREMIUM execution placed!\n"
-            f"  Symbol: {symbol}  {direction}  @ {entry}\n"
-            f"  Lot: {lot}  SL: {sl}  TP: {take_profit}\n"
-            f"  Order ID: {order_id}\n"
-            f"  Daily executions remaining: {remaining}/{PREMIUM_DAILY_LIMIT}"
-        )
-        return {"success": True, "order_id": order_id, "message": msg}
-    else:
-        msg = f"❌ Execution failed: {error_msg or 'MetaApi error'}"
-        return {"success": False, "order_id": None, "message": msg}
+    user.daily_executions_today = int(getattr(user, "daily_executions_today", 0) or 0) + 1
+    user.daily_executions_reset_at = datetime.now(tz=timezone.utc)
+    payload = routed["payload"]
+    await _record_execution(
+        db=db,
+        user_id=int(user.id),
+        signal_id=str(payload["signal_id"]),
+        symbol=str(payload["asset"]),
+        direction=str(payload["direction"]),
+        lot_size=0.0,  # canonical broker route records the authoritative fill size
+        entry_price=float(payload["entry"]),
+        stop_loss=float(payload["stop_loss"]),
+        take_profit=float(payload["take_profit"][0]),
+        tier="PREMIUM",
+        order_id=routed["order_id"],
+        account_id=None,
+    )
+    remaining = max(0, PREMIUM_DAILY_LIMIT - int(user.daily_executions_today))
+    return {
+        "success": True,
+        "order_id": routed["order_id"],
+        "message": f"PREMIUM execution submitted through the guarded broker route. Daily remaining: {remaining}.",
+    }
 
 
 async def execute_vip_signal(
-    user,  # type: ignore[valid-type]
-    signal,  # type: ignore[valid-type]
+    user,
+    signal,
     db: AsyncSession,
     account_balance: float = 0.0,
 ) -> dict:
-    """Execute a signal for a VIP user with multi-stage take-profits.
-
-    Stage structure:
-        - Execute full lot (risk-based)
-        - On TP1 hit (handled by realtime_outcome_tracker):
-            close 50 % → SL moves to entry (break-even)
-        - On TP2 hit: close 50 % of remainder → SL moves to TP1
-        - On TP3 hit: close rest
-
-    This function places the initial order to TP1. The RealtimeOutcomeTracker
-    handles subsequent stage management.
-
-    Args:
-        account_balance: MT5 account equity in USD.  If 0, fallback to default lot.
-
-    Returns a dict with ``{"success": bool, "order_id": str, "message": str}``.
-    """
+    """Route VIP execution through the canonical gate; never use caller balance."""
     allowed, reason = can_execute_vip(user)
     if not allowed:
         return {"success": False, "order_id": None, "message": reason}
-
-    symbol: str = getattr(signal, "symbol", "") or ""
-    direction: str = getattr(signal, "direction", "BUY") or "BUY"
-    entry: float = float(getattr(signal, "entry_price", 0) or 0)
-    sl: float = float(getattr(signal, "stop_loss", 0) or 0)
-
-    # VIP: place initial entry to TP1; tracker handles TP2/TP3
-    tp1 = getattr(signal, "tp1", None) or getattr(signal, "take_profit1", None)
-    tp2 = getattr(signal, "tp2", None) or getattr(signal, "take_profit2", None)
-    tp3 = getattr(signal, "tp3", None) or getattr(signal, "take_profit3", None)
-    first_tp: float = float(tp1 or tp2 or 0)
-
-    if not entry or not sl or not first_tp:
+    routed = await _execute_via_canonical_router(user, signal, premium=False)
+    if not routed["success"]:
         return {
             "success": False,
             "order_id": None,
-            "message": "Signal missing entry/SL/TP values.",
+            "message": routed.get("message") or routed.get("error") or "Execution blocked",
         }
-
-    lot = calculate_lot_size_vip(user, account_balance, entry, sl, symbol)
-    order_id: Optional[str] = None
-    account_id: Optional[str] = None
-    error_msg = ""
-
-    try:
-        from services.mt5_client import execute_trade, get_user_mt5_account_id
-
-        account_id = await get_user_mt5_account_id(user.telegram_user_id)
-        if not account_id:
-            return {
-                "success": False,
-                "order_id": None,
-                "message": "No MT5 account linked. Use /connect_broker.",
-            }
-
-        result = await execute_trade(
-            account_id=account_id,
-            symbol=symbol,
-            direction=direction.upper(),
-            volume=lot,
-            stop_loss=sl,
-            take_profit=first_tp,
-            signal_entry=entry,
-        )
-        order_id = str(result.get("order_id", "")) if isinstance(result, dict) else str(result)
-        success = bool(order_id)
-
-    except Exception as exc:
-        logger.error(f"[tiered_executor][VIP] execute_trade failed: {exc}")
-        success = False
-        error_msg = str(exc)
-
-    if success:
-        await _record_execution(
-            db=db,
-            user_id=user.telegram_user_id,
-            signal_id=getattr(signal, "id", 0),
-            symbol=symbol,
-            direction=direction,
-            lot_size=lot,
-            entry_price=entry,
-            stop_loss=sl,
-            take_profit=first_tp,
-            tier="VIP",
-            order_id=order_id,
-            account_id=account_id,
-        )
-        tp_summary = (
-            f"TP1: {tp1}  TP2: {tp2}" + (f"  TP3: {tp3}" if tp3 else "")
-            if tp2 else f"TP: {first_tp}"
-        )
-        msg = (
-            f"✅ VIP execution placed!\n"
-            f"  Symbol: {symbol}  {direction}  @ {entry}\n"
-            f"  Lot: {lot}  (risk {getattr(user, 'max_risk_percentage', DEFAULT_RISK_PCT):.1f}%)\n"
-            f"  SL: {sl}  {tp_summary}\n"
-            f"  Order ID: {order_id}\n"
-            f"  ⚡ Multi-stage TP management active"
-        )
-        return {"success": True, "order_id": order_id, "message": msg}
-    else:
-        msg = f"❌ Execution failed: {error_msg or 'MetaApi error'}"
-        return {"success": False, "order_id": None, "message": msg}
+    payload = routed["payload"]
+    await _record_execution(
+        db=db,
+        user_id=int(user.id),
+        signal_id=str(payload["signal_id"]),
+        symbol=str(payload["asset"]),
+        direction=str(payload["direction"]),
+        lot_size=0.0,
+        entry_price=float(payload["entry"]),
+        stop_loss=float(payload["stop_loss"]),
+        take_profit=float(payload["take_profit"][0]),
+        tier="VIP",
+        order_id=routed["order_id"],
+        account_id=None,
+    )
+    return {
+        "success": True,
+        "order_id": routed["order_id"],
+        "message": "VIP execution submitted through the guarded broker route.",
+    }
 
 
 async def execute_for_user(

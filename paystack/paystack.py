@@ -118,11 +118,19 @@ def match_amount_to_tier(amount) -> str | None:
 
 # --- Webhook signature verification ---
 def verify_webhook_signature(request_body, signature) -> bool:
-    secret: str | None = PAYSTACK_WEBHOOK_SECRET or PAYSTACK_SECRET_KEY
-    if not secret:
+    secret: str = (
+        os.getenv("PAYSTACK_WEBHOOK_SECRET")
+        or os.getenv("PAYSTACK_SECRET_KEY")
+        or PAYSTACK_WEBHOOK_SECRET
+        or PAYSTACK_SECRET_KEY
+        or ""
+    )
+    if not secret or not signature:
         return False
+    if isinstance(request_body, str):
+        request_body = request_body.encode("utf-8")
     computed: str = hmac.new(secret.encode(), request_body, hashlib.sha512).hexdigest()
-    return hmac.compare_digest(computed, signature)
+    return hmac.compare_digest(computed, str(signature).strip())
 
 # --- STUB FOR TELEGRAM BOT ---
 def generate_paystack_link(

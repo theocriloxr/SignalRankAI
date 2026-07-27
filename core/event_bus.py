@@ -8,6 +8,7 @@ Implements an event-driven architecture where:
 
 This ensures instant delivery and decouples signal generation from delivery.
 """
+from utils.timeutils import now_utc_naive
 
 import os
 import json
@@ -122,7 +123,7 @@ class EventBus:
             "type": event_type,
             "payload": payload,
             "priority": priority,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": now_utc_naive().isoformat(),
             "id": f"{event_type}:{time.time()}:{id(payload)}"
         }
         

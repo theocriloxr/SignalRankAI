@@ -6,6 +6,11 @@ Handles tier changes (demotion) by checking live tier on each access.
 
 import os
 from core.redis_state import state
+from core.tier_policy import (
+    COMMAND_MINIMUM_TIER,
+    evaluate_command_access,
+    tier_rank as policy_tier_rank,
+)
 
 # Map of command -> minimum tier required
 # NOTE: "unlock" is intentionally NOT listed in any help menu but IS in COMMAND_TIERS
@@ -99,6 +104,13 @@ COMMAND_TIERS = {
     "system":              "ADMIN",
     "db_health":           "ADMIN",
     "engine_debug":        "ADMIN",
+    "why_no_signal":       "ADMIN",
+    "ohlc_health":          "ADMIN",
+    "asset_capability":     "ADMIN",
+    "asset_class_test":     "ADMIN",
+    "all_asset_test_status":"ADMIN",
+    "delivery_eligibility": "FREE",
+    "owner_test_delivery":  "OWNER",
     "blast_terms":         "ADMIN",
     "assets":              "ADMIN",
 
@@ -115,13 +127,14 @@ COMMAND_TIERS = {
     "broadcast":           "OWNER",
 }
 
-# Tier ranking (higher = more access)
+# Compatibility exports delegate to the canonical server-side policy.
+COMMAND_TIERS = {
+    command: required.value
+    for command, required in COMMAND_MINIMUM_TIER.items()
+}
 TIER_RANKS = {
-    "FREE": 0,
-    "PREMIUM": 1,
-    "VIP": 2,
-    "ADMIN": 3,
-    "OWNER": 3,
+    tier: policy_tier_rank(tier)
+    for tier in ("FREE", "PREMIUM", "VIP", "ADMIN", "OWNER")
 }
 
 # Command descriptions and help text per tier
@@ -206,7 +219,7 @@ COMMAND_HELP = {
             ("apikey",               "API key for programmatic signal access"),
             ("mystats",              "MT5 execution stats"),
             ("setlot",               "Set fixed lot size for MT5 execution"),
-            ("setrisk",              "Set max risk % per trade (VIP auto-sizing)"),
+            ("setrisk",              "Set max risk % for VIP execution preflight"),
             ("mt5_link",             "Link your MT5/MetaApi account"),
             ("mt5_status",           "Check MT5 connection status"),
             ("connect_broker",       "Connect your broker account step-by-step"),
@@ -220,7 +233,7 @@ COMMAND_HELP = {
             "• AI Confluence scores (15-strategy engine)\n"
             "• TP/SL hit notifications\n"
             "• 30-day win rate & R-multiple tracking\n"
-            "• MT5 auto-execution (3 trades/day, fixed lot)\n"
+            "• MT5 connection and execution-readiness controls\n"
             "• Portfolio tracking with live P&L\n\n"
             "💡 /upgrade to VIP for elite high-conviction signals."
         ),
@@ -252,7 +265,7 @@ COMMAND_HELP = {
             ("myid",                 "Your ID and tier"),
             ("language",             "Language settings"),
             # ─ Premium commands ────────────────────────────────────────
-            ("performance",          "Full performance analytics (unlimited history)"),
+            ("performance",          "Full performance analytics (365-day history)"),
             ("stats",                "Win rate, net R, avg R/trade"),
             ("history",              "Complete signal history"),
             ("risk",                 "Advanced risk management"),
@@ -284,7 +297,7 @@ COMMAND_HELP = {
             "• Highest-confidence signals only (≥85 score)\n"
             "• ML probability scores on every signal\n"
             "• Early-access alerts before premium delivery\n"
-            "• MT5 auto-execution (unlimited, risk-based sizing)\n"
+            "• MT5 execution preflight with risk-based sizing\n"
             "• Monthly performance reports\n"
             "• Priority notification delivery\n"
             "• NO-TRADE zone alerts (high-impact news)\n\n"
@@ -568,40 +581,13 @@ def check_command_access(command: str, user_tier: str) -> tuple[bool, str]:
     Returns (can_access: bool, reason: str).
     If False, reason explains why they can't access it.
     """
-    command = str(command or "").strip().lower()
-    user_tier = str(user_tier or "FREE").strip().upper()
-    
-    # Admin and Owner can access everything
-    if user_tier in ("ADMIN", "OWNER"):
-        return True, ""
-    
-    # Default unknown tiers to FREE
-    if user_tier not in ("FREE", "PREMIUM", "VIP"):
-        user_tier = "FREE"
-    
-    # Get required tier for command
-    required_tier = COMMAND_TIERS.get(command, "FREE")
-    
-    # Check tier rank
-    user_rank = TIER_RANKS.get(user_tier, 0)
-    required_rank = TIER_RANKS.get(required_tier, 0)
-    
-    if user_rank >= required_rank:
-        return True, ""
-    
-    # Access denied
-    reason = (
-        f"🔒 Command not available on {user_tier} tier.\n"
-        f"This command requires {required_tier} tier or higher.\n"
-        "Use /upgrade to subscribe."
-    )
-    return False, reason
+    decision = evaluate_command_access(command, user_tier)
+    return decision.allowed, decision.reason
 
 
 def tier_rank(tier: str) -> int:
     """Get numeric tier rank (0 = FREE, 3 = OWNER)."""
-    tier = str(tier or "FREE").strip().upper()
-    return TIER_RANKS.get(tier, 0)
+    return policy_tier_rank(tier)
 
 
 __all__ = [

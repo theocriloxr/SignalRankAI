@@ -13,6 +13,7 @@ from sqlalchemy import select, func, and_, case
 from sqlalchemy.orm import Session
 
 from core.tier_constants import EXPECTANCY_MIN
+from utils.timeutils import now_utc_naive
 from db.session import get_session
 from db.models import SignalOutcome, Signal  # Assumes these exist or Phase 3 adds them
 
@@ -30,7 +31,7 @@ async def get_live_expectancy(
     """
     async with get_session() as session:
         try:
-            cutoff = datetime.utcnow() - timedelta(hours=lookback_hours)
+            cutoff = now_utc_naive() - timedelta(hours=lookback_hours)
             
             # Base query for outcomes
             query = select(

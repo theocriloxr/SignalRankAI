@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import inspect
 import os
 import random
+import re
 import socket as _socket
 import threading
+import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, TypeVar
 
@@ -13,10 +16,27 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
 from config import config, resolve_database_url as _config_resolve_database_url, prefer_ipv4_database_url
+from db.priority import DBAdmissionController, DBPriority
 
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+
+
+def _database_role() -> str:
+    raw = (
+        os.getenv("DB_ROLE")
+        or os.getenv("RUN_MODE")
+        or os.getenv("RAILWAY_SERVICE_NAME")
+        or "app"
+    )
+    role = re.sub(r"[^a-zA-Z0-9_.-]+", "-", str(raw).strip().lower()).strip("-.")
+    return (role or "app")[:48]
+
+
+def _database_application_name() -> str:
+    explicit = (os.getenv("DB_APP_NAME") or "").strip()
+    return explicit or f"signalrankai/{_database_role()}"
 
 
 def _engine_connect_args() -> dict[str, Any]:
@@ -28,7 +48,7 @@ def _engine_connect_args() -> dict[str, Any]:
         command_timeout = float((os.getenv("DB_COMMAND_TIMEOUT") or "45").strip())
     except Exception:
         command_timeout = 45.0
-    app_name = (os.getenv("DB_APP_NAME") or "signalrankai").strip() or "signalrankai"
+    app_name = _database_application_name()
     return {
         "timeout": connect_timeout,
         "command_timeout": command_timeout,
@@ -62,6 +82,13 @@ def _pool_int(name: str, default: int, minimum: int = 0) -> int:
         return max(minimum, int((os.getenv(name) or str(default)).strip()))
     except Exception:
         return default
+
+
+def _pool_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(float(minimum), float((os.getenv(name) or str(default)).strip()))
+    except Exception:
+        return float(default)
 
 
 def _pool_bool(name: str, default: bool = False) -> bool:
@@ -106,23 +133,57 @@ def _effective_pool_settings() -> tuple[int, int]:
         return 0, 0
 
     if _is_railway_runtime():
+        # PUBLIC_TESTING_MODE blocks any attempt to disable the Railway pool cap.
+        # The override env vars are completely ignored in public-testing mode.
+        _public_testing = _pool_bool("PUBLIC_TESTING_MODE", False)
+        
+        # Check for unsafe overrides and log them as errors (not warnings) so
+        # operators know the override was ignored.
         disable_requested = _pool_bool("DB_POOL_DISABLE_RAILWAY_CAP", False)
         allow_uncapped = _pool_bool("DB_POOL_ALLOW_UNCAPPED_RAILWAY", False)
-        if disable_requested and not allow_uncapped:
-            logger.warning(
-                "[db] DB_POOL_DISABLE_RAILWAY_CAP ignored on Railway; set "
-                "DB_POOL_ALLOW_UNCAPPED_RAILWAY=1 only when Postgres max_connections is proven sufficient"
-            )
-        if disable_requested and allow_uncapped:
-            logger.warning("[db] Railway DB pool cap disabled by explicit operator override")
-            return pool_size, max_overflow
+        
+        if disable_requested or allow_uncapped:
+            if _public_testing:
+                logger.warning(
+                    "[db_pool_safe] Railway pool override BLOCKED by PUBLIC_TESTING_MODE; "
+                    "DB_POOL_DISABLE_RAILWAY_CAP and DB_POOL_ALLOW_UNCAPPED_RAILWAY are ignored"
+                )
+            else:
+                logger.warning(
+                    "[db] Railway DB pool cap overrides detected but not applied; "
+                    "set PUBLIC_TESTING_MODE=0 and both flags only if Postgres max_connections is proven sufficient"
+                )
 
         # Fail-safe monolith limits. A stale Railway variable such as
         # DB_POOL_SIZE=200 or DB_POOL_SIZE_RAILWAY=20 must not reserve a large
-        # pool. Operators can still use the explicit two-flag override above
-        # after confirming the database connection budget.
-        railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
-        railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
+        # pool. The conservative defaults remain 2/0.
+        # An explicit DB_POOL_RAILWAY_ABSOLUTE_CAP is an operator-reviewed
+        # deployment contract and may be higher (staging/soak tests use 4/2).
+        # It is still a hard upper bound, never exceeding the approved max.
+        absolute_pool_raw = os.getenv("DB_POOL_RAILWAY_ABSOLUTE_CAP")
+        absolute_overflow_raw = os.getenv("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP")
+        
+        # In public-testing mode, enforce strictest defaults regardless of overrides.
+        if _public_testing:
+            railway_pool_cap = 2
+            railway_overflow_cap = 0
+            logger.info(
+                "[db_pool_safe] PUBLIC_TESTING_MODE enabled: forced pool_size=%s max_overflow=%s",
+                railway_pool_cap,
+                railway_overflow_cap,
+            )
+        elif absolute_pool_raw is not None:
+            railway_pool_cap = _pool_int("DB_POOL_RAILWAY_ABSOLUTE_CAP", 2, minimum=1)
+        else:
+            railway_pool_cap = min(_pool_int("DB_POOL_SIZE_RAILWAY", 2, minimum=1), 2)
+        
+        if _public_testing:
+            railway_overflow_cap = 0
+        elif absolute_overflow_raw is not None:
+            railway_overflow_cap = _pool_int("DB_MAX_OVERFLOW_RAILWAY_ABSOLUTE_CAP", 0, minimum=0)
+        else:
+            railway_overflow_cap = min(_pool_int("DB_MAX_OVERFLOW_RAILWAY", 0, minimum=0), 0)
+        
         original_pool_size = pool_size
         original_max_overflow = max_overflow
         pool_size = min(pool_size, railway_pool_cap)
@@ -158,6 +219,29 @@ def _default_session_gate_limit() -> int:
     return max(1, min(configured_capacity, default_cap))
 
 
+def _effective_session_gate_limit() -> int:
+    requested = max(
+        1,
+        _pool_int(
+            "DB_MAX_CONCURRENT_SESSIONS",
+            _default_session_gate_limit(),
+            minimum=1,
+        ),
+    )
+    pool_size, max_overflow = _effective_pool_settings()
+    if pool_size == 0 and max_overflow == 0:
+        return requested
+    physical_capacity = max(1, int(pool_size) + int(max_overflow))
+    effective = min(requested, physical_capacity)
+    if effective != requested:
+        logger.warning(
+            "[db] session gate capped to physical pool capacity requested=%s effective=%s",
+            requested,
+            effective,
+        )
+    return effective
+
+
 def create_engine() -> Optional[AsyncEngine]:
     url = get_database_url_or_none()
     if not url:
@@ -191,7 +275,7 @@ _engines_by_loop: dict[int, AsyncEngine] = {}
 _sessionmakers_by_loop: dict[int, async_sessionmaker[AsyncSession]] = {}
 _engine_lock = threading.Lock()
 _sync_thread_local = threading.local()
-_session_gate_limit = max(1, _pool_int("DB_MAX_CONCURRENT_SESSIONS", _default_session_gate_limit(), minimum=1))
+_session_gate_limit = _effective_session_gate_limit()
 _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 
 # Background/noncritical work gets its own small gate before it can even wait
@@ -200,6 +284,17 @@ _session_gate = threading.BoundedSemaphore(_session_gate_limit)
 # signal storage. The value is intentionally smaller than the main gate.
 _background_gate_limit = max(1, min(_session_gate_limit, _pool_int("DB_BACKGROUND_MAX_CONCURRENT_SESSIONS", max(1, min(2, _session_gate_limit // 2 or 1)), minimum=1)))
 _background_gate = threading.BoundedSemaphore(_background_gate_limit)
+_priority_admission = DBAdmissionController(
+    _session_gate_limit,
+    background_limit=min(_background_gate_limit, max(1, _session_gate_limit - 1)),
+    analytics_limit=max(1, min(_session_gate_limit - 1 if _session_gate_limit > 1 else 1, 1)),
+    analytics_enabled=bool(
+        _session_gate_limit > 2
+        or _database_role() == "analytics"
+        or _database_role().startswith("analytics-")
+        or _pool_bool("DB_ANALYTICS_ALLOW_SHARED_POOL", False)
+    ),
+)
 
 _session_metrics_lock = threading.Lock()
 _session_metrics: dict[str, int] = {
@@ -219,6 +314,36 @@ _session_metrics: dict[str, int] = {
 }
 _critical_db_lock = threading.Lock()
 _critical_db_inflight = 0
+_legacy_priority_warning_lock = threading.Lock()
+_legacy_priority_warnings: set[str] = set()
+_active_holder_lock = threading.Lock()
+_active_session_holders: dict[str, dict[str, Any]] = {}
+
+
+def _active_holder_snapshot() -> list[dict[str, Any]]:
+    now = time.monotonic()
+    with _active_holder_lock:
+        rows = []
+        for token, item in _active_session_holders.items():
+            row = dict(item)
+            row["token"] = token
+            row["held_seconds"] = round(max(0.0, now - float(item.get("started_mono", now))), 3)
+            row.pop("started_mono", None)
+            rows.append(row)
+        return sorted(rows, key=lambda row: float(row.get("held_seconds", 0.0)), reverse=True)
+
+
+def _log_admission_failure(*, label: str, priority: DBPriority, stage: str, timeout_s: float) -> None:
+    logger.error(
+        "[db_admission_timeout] label=%s priority=%s stage=%s timeout_s=%.2f admission=%s holders=%s session_metrics=%s",
+        label,
+        priority.value,
+        stage,
+        timeout_s,
+        _priority_admission.snapshot(),
+        _active_holder_snapshot(),
+        dict(_session_metrics),
+    )
 
 
 def _truthy_env(name: str, default: bool = False) -> bool:
@@ -243,6 +368,18 @@ def _mark_critical_db_end() -> None:
     global _critical_db_inflight
     with _critical_db_lock:
         _critical_db_inflight = max(0, _critical_db_inflight - 1)
+
+
+def _warn_legacy_priority_flag(flag: str) -> None:
+    with _legacy_priority_warning_lock:
+        if flag in _legacy_priority_warnings:
+            return
+        _legacy_priority_warnings.add(flag)
+    logger.warning(
+        "[db] get_session(%s=True) is deprecated; use get_session(priority=DBPriority.%s)",
+        flag,
+        "BACKGROUND" if flag == "noncritical" else flag.upper(),
+    )
 
 # Backward compatibility for legacy call-sites that still import
 # `_get_global_engine` / `_global_engine` from this module.
@@ -287,11 +424,22 @@ def _get_engine_for_loop(loop_id: int) -> Optional[AsyncEngine]:
                 or _pool_bool("DB_AUXILIARY_NULLPOOL", True)
             )
         )
-        if _is_railway_runtime() and pool_size > 5:
-            logger.warning(
-                "[db] unsafe Railway monolith pool configuration pool_size=%s; recommended DB_POOL_SIZE=2",
-                pool_size,
-            )
+        if _is_railway_runtime():
+            if pool_size > 2:
+                logger.warning(
+                    "[db_pool_effective_config] unsafe Railway monolith pool configuration "
+                    "pool_size=%s max_overflow=%s effective=%s+%s; recommended DB_POOL_SIZE=2 DB_MAX_OVERFLOW=0",
+                    pool_size,
+                    max_overflow,
+                    pool_size,
+                    max_overflow,
+                )
+            else:
+                logger.info(
+                    "[db_pool_effective_config] Railway safe pool: pool_size=%s max_overflow=%s",
+                    pool_size,
+                    max_overflow,
+                )
         if (pool_size == 0 and max_overflow == 0) or auxiliary_nullpool:
             engine = create_async_engine(
                 url,
@@ -354,6 +502,75 @@ def is_db_configured() -> bool:
     return get_database_url_or_none() is not None
 
 
+def get_session_api_contract() -> dict[str, Any]:
+    """Describe the canonical DB session API for startup/release diagnostics."""
+    import inspect
+
+    parameters = inspect.signature(get_session).parameters
+    return {
+        "signature_version": 3,
+        "supports_priority": "priority" in parameters,
+        "supports_label": "label" in parameters,
+        "supports_timeout": "timeout_seconds" in parameters,
+        "legacy_adapter": all(name in parameters for name in ("noncritical", "critical", "interactive")),
+    }
+
+
+def get_engine_inventory() -> list[dict[str, Any]]:
+    """Produce an engine inventory for the release guard and /db_health.
+
+    Returns:
+        A list of dicts, each with:
+        - loop_id
+        - pool_type ("NullPool" or "QueuePool" or "AsyncAdaptedQueuePool")
+        - pool_size
+        - max_overflow
+        - checked_out / checked_in (if accessible)
+        - owning_runtime ("main" or "auxiliary")
+    """
+    inventory: list[dict[str, Any]] = []
+    main_loop_id = _loop_identity()
+    for loop_id, engine in list(_engines_by_loop.items()):
+        pool_type = "unknown"
+        pool_size = 0
+        max_overflow = 0
+        checked_out = None
+        checked_in = None
+        try:
+            pool = engine.sync_engine.pool
+            pool_type = type(pool).__name__
+            try:
+                pool_size = int(getattr(pool, "size", lambda: 0)() if callable(getattr(pool, "size", None)) else getattr(pool, "size", 0) or 0)
+            except Exception:
+                pass
+            try:
+                max_overflow = int(getattr(pool, "overflow", lambda: 0)() if callable(getattr(pool, "overflow", None)) else getattr(pool, "overflow", 0) or 0)
+            except Exception:
+                pass
+            try:
+                checked_out = int(getattr(pool, "checkedout", lambda: 0)() if callable(getattr(pool, "checkedout", None)) else getattr(pool, "checkedout", None))
+            except Exception:
+                pass
+            try:
+                checked_in = int(getattr(pool, "checkedin", lambda: 0)() if callable(getattr(pool, "checkedin", None)) else getattr(pool, "checkedin", None))
+            except Exception:
+                pass
+        except Exception:
+            pass
+        owning = "main" if loop_id == main_loop_id else "auxiliary"
+        inventory.append({
+            "loop_id": loop_id,
+            "pool_type": pool_type,
+            "pool_size": pool_size,
+            "max_overflow": max_overflow,
+            "checked_out": checked_out,
+            "checked_in": checked_in,
+            "owning_runtime": owning,
+            "nullpool": pool_type == "NullPool" and pool_size == 0 and max_overflow == 0,
+        })
+    return inventory
+
+
 def get_pool_diagnostics() -> dict[str, Any]:
     """Return local SQLAlchemy pool diagnostics for admin health commands."""
     loop_id = _loop_identity()
@@ -365,14 +582,20 @@ def get_pool_diagnostics() -> dict[str, Any]:
         "configured": is_db_configured(),
         "loop_id": loop_id,
         "engine_count": len(_engines_by_loop),
+        "engine_inventory": get_engine_inventory(),
         "sessionmaker_count": len(_sessionmakers_by_loop),
         "effective_pool_size": pool_size,
         "effective_max_overflow": max_overflow,
         "railway_runtime": _is_railway_runtime(),
+        "public_testing_mode": _pool_bool("PUBLIC_TESTING_MODE", False),
+        "database_role": _database_role(),
+        "application_name": _database_application_name(),
         "nullpool": bool(pool_size == 0 and max_overflow == 0),
         "session_limit": int(_session_gate_limit),
         "background_session_limit": int(_background_gate_limit),
         "session_metrics": session_metrics,
+        "priority_admission": _priority_admission.snapshot(),
+        "active_session_holders": _active_holder_snapshot(),
     }
     if engine is None:
         info["engine_ready"] = False
@@ -407,7 +630,7 @@ async def collect_database_health() -> dict[str, Any]:
     try:
         from sqlalchemy import text
 
-        async with get_session(interactive=True) as session:
+        async with get_session(priority="interactive", label="db_session") as session:
             activity = await session.execute(
                 text(
                     """
@@ -477,130 +700,332 @@ async def run_with_db_retry(
             attempt += 1
 
 
-class NoncriticalWriteDropped(RuntimeError):
-    """Raised when best-effort telemetry is dropped to protect critical DB work."""
+class DatabaseWorkDeferred(RuntimeError):
+    """Raised when lower-priority DB work is intentionally deferred."""
+
+
+class NoncriticalWriteDropped(DatabaseWorkDeferred):
+    """Raised when best-effort background work is dropped for foreground work."""
+
+
+class AnalyticsWorkDeferred(DatabaseWorkDeferred):
+    """Raised when analytics must resume after foreground pressure subsides."""
+
+
+def resolve_db_priority(
+    priority: DBPriority | str | None = None,
+    *,
+    noncritical: bool = False,
+    critical: bool = False,
+    interactive: bool = False,
+) -> DBPriority:
+    """Resolve the explicit priority API and validate legacy boolean flags."""
+    selected_flags = [
+        name
+        for name, enabled in (
+            ("noncritical", noncritical),
+            ("critical", critical),
+            ("interactive", interactive),
+        )
+        if enabled
+    ]
+    if priority is not None and selected_flags:
+        raise ValueError("priority cannot be combined with legacy DB priority flags")
+    if len(selected_flags) > 1:
+        raise ValueError(
+            "conflicting legacy DB priority flags: " + ", ".join(selected_flags)
+        )
+    if priority is not None:
+        return DBAdmissionController.normalize(priority)
+    if interactive:
+        _warn_legacy_priority_flag("interactive")
+        return DBPriority.INTERACTIVE
+    if noncritical:
+        _warn_legacy_priority_flag("noncritical")
+        return DBPriority.BACKGROUND
+    if critical:
+        _warn_legacy_priority_flag("critical")
+    # Existing unannotated writes are conservatively treated as critical until
+    # their call sites are classified in the later ownership/migration pass.
+    return DBPriority.CRITICAL
+
+
+def priority_timeout_seconds(priority: DBPriority | str) -> float:
+    priority = DBAdmissionController.normalize(priority)
+    if priority is DBPriority.INTERACTIVE:
+        return _pool_float("DB_INTERACTIVE_SESSION_GATE_TIMEOUT_SECONDS", 0.75)
+    if priority is DBPriority.CRITICAL:
+        return _pool_float("DB_CRITICAL_SESSION_GATE_TIMEOUT_SECONDS", 5.0)
+    if priority is DBPriority.BACKGROUND:
+        return _pool_float("DB_BACKGROUND_SESSION_GATE_TIMEOUT_SECONDS", 2.0)
+    return _pool_float("DB_ANALYTICS_SESSION_GATE_TIMEOUT_SECONDS", 0.0)
+
+
+async def _acquire_priority_cancellation_safe(
+    priority: DBPriority,
+    *,
+    timeout_s: float,
+    nonblocking: bool,
+) -> bool:
+    cancel_event = threading.Event()
+    worker = asyncio.create_task(
+        asyncio.to_thread(
+            _priority_admission.acquire,
+            priority,
+            timeout_s=timeout_s,
+            nonblocking=nonblocking,
+            cancel_event=cancel_event,
+        )
+    )
+    try:
+        return bool(await asyncio.shield(worker))
+    except asyncio.CancelledError:
+        cancel_event.set()
+
+        def _release_late_acquire(task: asyncio.Task[bool]) -> None:
+            try:
+                if task.result():
+                    _priority_admission.release(priority)
+            except Exception:
+                pass
+
+        worker.add_done_callback(_release_late_acquire)
+        raise
+
+
+async def _acquire_semaphore_cancellation_safe(
+    gate: threading.BoundedSemaphore,
+    *,
+    timeout_s: float,
+    nonblocking: bool,
+) -> bool:
+    if nonblocking:
+        return bool(gate.acquire(blocking=False))
+    worker = asyncio.create_task(asyncio.to_thread(gate.acquire, True, max(0.0, timeout_s)))
+    try:
+        return bool(await asyncio.shield(worker))
+    except asyncio.CancelledError:
+        def _release_late_acquire(task: asyncio.Task[bool]) -> None:
+            try:
+                if task.result():
+                    gate.release()
+            except Exception:
+                pass
+
+        worker.add_done_callback(_release_late_acquire)
+        raise
 
 
 @asynccontextmanager
-async def get_session(*, noncritical: bool = False, critical: bool = False, interactive: bool = False) -> AsyncIterator[AsyncSession]:
-    """Yield an async DB session with a process-wide priority gate.
+async def get_session(
+    *,
+    priority: DBPriority | str | None = None,
+    label: str | None = None,
+    timeout_seconds: float | None = None,
+    noncritical: bool = False,
+    critical: bool = False,
+    interactive: bool = False,
+) -> AsyncIterator[AsyncSession]:
+    """Yield a DB session admitted by an explicit four-class priority policy.
 
-    Priority classes:
-    - critical=True: signal storage/delivery proof, must make progress.
-    - interactive=True: user commands/buttons, must stay responsive.
-    - noncritical=True: background/heavy jobs, outcome scans, analytics, pulses.
+    ``priority`` is the canonical API. The three boolean arguments remain for
+    compatibility, but conflicting combinations now fail instead of silently
+    changing the caller's requested durability class.
 
-    Noncritical callers pass through a separate small background gate before
-    they may wait for the real session gate. This lets heavy features keep
-    running, but prevents them from occupying every DB slot and making Telegram
-    feel dead.
+    ``label`` identifies the caller's operation for metrics, diagnostic logs
+    and deferred-decision tracing. Callers should provide a descriptive stable
+    label. When omitted, a bounded caller-derived label is generated; the
+    holder registry never records an ``unlabelled`` session.
+
+    ``timeout_seconds`` optionally narrows or extends the admission timeout for
+    one operation. The value is clamped to a safe non-negative duration and does
+    not alter the global priority policy.
     """
-    if critical and noncritical:
-        noncritical = False
-    if interactive:
-        noncritical = False
-
-    base_timeout = _pool_int(
-        "DB_SESSION_GATE_TIMEOUT_SECONDS",
-        _pool_int("DB_POOL_TIMEOUT_SECONDS", 30, minimum=1),
-        minimum=1,
+    _safe_label = re.sub(
+        r"[^a-zA-Z0-9_.-]+",
+        "_",
+        resolve_session_label(label),
+    )[:64] or "unknown_session_caller"
+    resolved = resolve_db_priority(
+        priority,
+        noncritical=noncritical,
+        critical=critical,
+        interactive=interactive,
     )
-    if critical:
-        timeout_s = float(_pool_int(
-            "DB_CRITICAL_SESSION_GATE_TIMEOUT_SECONDS",
-            _pool_int("SIGNAL_STORE_TIMEOUT_SECONDS", max(45, base_timeout), minimum=1),
-            minimum=1,
-        ))
-    elif interactive:
-        timeout_s = float(_pool_int("DB_INTERACTIVE_SESSION_GATE_TIMEOUT_SECONDS", min(8, base_timeout), minimum=1))
-    else:
-        timeout_s = float(base_timeout)
+    default_timeout_s = priority_timeout_seconds(resolved)
+    try:
+        timeout_s = default_timeout_s if timeout_seconds is None else max(0.0, float(timeout_seconds))
+    except (TypeError, ValueError):
+        raise ValueError("timeout_seconds must be a non-negative number or None") from None
+    deadline = time.monotonic() + timeout_s
+    is_background = resolved is DBPriority.BACKGROUND
+    is_analytics = resolved is DBPriority.ANALYTICS
+    is_interactive = resolved is DBPriority.INTERACTIVE
+    is_critical = resolved is DBPriority.CRITICAL
+    drop_background = bool(
+        is_background
+        and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
+        and _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
+    )
+    nonblocking = bool(is_analytics or drop_background)
 
     acquired = False
     bg_acquired = False
-    drop_noncritical = bool(
-        noncritical and _pool_bool("DB_NONCRITICAL_WRITE_DROP_ON_GATE_TIMEOUT", True)
+    priority_acquired = False
+    priority_started = 0.0
+    holder_token: str | None = None
+    foreground_waiting_recorded = False
+    foreground_scope = bool(
+        is_critical
+        or (is_interactive and _truthy_env("DB_INTERACTIVE_PAUSES_BACKGROUND", True))
     )
-
-    # Treat interactive waits as critical pressure so best-effort background
-    # jobs can pause/defer while a user is tapping buttons or running commands.
-    critical_scope = bool(critical or (interactive and _truthy_env("DB_INTERACTIVE_PAUSES_BACKGROUND", True)))
-    if critical_scope:
+    if foreground_scope:
         _mark_critical_db_start()
         with _session_metrics_lock:
-            if critical:
-                _session_metrics["critical_waiting"] = int(_session_metrics.get("critical_waiting", 0) or 0) + 1
-            if interactive:
-                _session_metrics["interactive_waiting"] = int(_session_metrics.get("interactive_waiting", 0) or 0) + 1
+            key = "interactive_waiting" if is_interactive else "critical_waiting"
+            _session_metrics[key] = int(_session_metrics.get(key, 0) or 0) + 1
+            foreground_waiting_recorded = True
 
     try:
-        if noncritical:
-            # Limit background concurrency before it can contend for main DB slots.
-            bg_timeout = float(_pool_int("DB_BACKGROUND_SESSION_GATE_TIMEOUT_SECONDS", 2, minimum=0))
-            bg_drop_busy = _pool_bool("DB_BACKGROUND_DROP_WHEN_BUSY", True)
+        if is_background and critical_db_work_active() and _truthy_env(
+            "DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False
+        ):
+            _priority_admission.record_deferred(resolved)
+            _priority_admission.record_dropped(resolved)
             with _session_metrics_lock:
-                _session_metrics["background_waiting"] = int(_session_metrics.get("background_waiting", 0) or 0) + 1
+                _session_metrics["noncritical_dropped"] += 1
+                raise NoncriticalWriteDropped(
+                    f"noncritical DB work deferred ({_safe_label}): critical/interactive DB work active"
+                )
+
+        priority_acquired = await _acquire_priority_cancellation_safe(
+            resolved,
+            timeout_s=max(0.0, deadline - time.monotonic()),
+            nonblocking=nonblocking,
+        )
+        if not priority_acquired:
+            with _session_metrics_lock:
+                if is_background:
+                    _session_metrics["background_dropped"] += 1
+                    _session_metrics["noncritical_dropped"] += 1
+                elif not is_analytics:
+                    _session_metrics["errors"] += 1
+            if is_background:
+                _priority_admission.record_dropped(resolved)
+                raise NoncriticalWriteDropped(
+                    f"background DB work deferred ({_safe_label}): foreground lane reserved"
+                )
+            if is_analytics:
+                raise AnalyticsWorkDeferred(
+                    "analytics DB work deferred: foreground or operational work is active"
+                )
+            _log_admission_failure(
+                label=_safe_label,
+                priority=resolved,
+                stage="priority_admission",
+                timeout_s=timeout_s,
+            )
+            raise TimeoutError(
+                f"Timed out waiting for {resolved.value} DB admission after {timeout_s:.2f}s label={_safe_label}"
+            )
+        priority_started = time.monotonic()
+
+        if is_background:
+            with _session_metrics_lock:
+                _session_metrics["background_waiting"] += 1
             try:
-                if bg_drop_busy:
-                    bg_acquired = _background_gate.acquire(blocking=False)
-                else:
-                    bg_acquired = await asyncio.to_thread(_background_gate.acquire, True, bg_timeout)
+                bg_acquired = await _acquire_semaphore_cancellation_safe(
+                    _background_gate,
+                    timeout_s=max(0.0, deadline - time.monotonic()),
+                    nonblocking=drop_background,
+                )
             finally:
                 with _session_metrics_lock:
-                    _session_metrics["background_waiting"] = max(0, int(_session_metrics.get("background_waiting", 0) or 0) - 1)
+                    _session_metrics["background_waiting"] = max(
+                        0, _session_metrics["background_waiting"] - 1
+                    )
             if not bg_acquired:
+                _priority_admission.record_deferred(resolved)
+                _priority_admission.record_dropped(resolved)
                 with _session_metrics_lock:
-                    _session_metrics["errors"] += 1
-                    _session_metrics["background_dropped"] = int(_session_metrics.get("background_dropped", 0) or 0) + 1
-                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
-                raise NoncriticalWriteDropped("noncritical DB work deferred: background DB gate busy")
+                    _session_metrics["background_dropped"] += 1
+                    _session_metrics["noncritical_dropped"] += 1
+                raise NoncriticalWriteDropped(
+                    f"background DB work deferred ({_safe_label}): background DB gate busy"
+                )
             with _session_metrics_lock:
-                _session_metrics["background_active"] = int(_session_metrics.get("background_active", 0) or 0) + 1
+                _session_metrics["background_active"] += 1
 
-            # Optional fast-defer when signal storage or interactive command work is active.
-            if critical_db_work_active() and _truthy_env("DB_NONCRITICAL_DROP_WHEN_CRITICAL_ACTIVE", False):
-                with _session_metrics_lock:
-                    _session_metrics["errors"] += 1
-                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
-                raise NoncriticalWriteDropped("noncritical DB work deferred: critical/interactive DB work active")
-
-        if drop_noncritical:
-            acquired = _session_gate.acquire(blocking=False)
-        else:
+        main_nonblocking = bool(is_background or is_analytics)
+        if not main_nonblocking:
             with _session_metrics_lock:
                 _session_metrics["waiting"] += 1
-            try:
-                acquired = await asyncio.to_thread(_session_gate.acquire, True, timeout_s)
-            finally:
+        try:
+            acquired = await _acquire_semaphore_cancellation_safe(
+                _session_gate,
+                timeout_s=max(0.0, deadline - time.monotonic()),
+                nonblocking=main_nonblocking,
+            )
+        finally:
+            if not main_nonblocking:
                 with _session_metrics_lock:
                     _session_metrics["waiting"] = max(0, _session_metrics["waiting"] - 1)
 
         if not acquired:
             with _session_metrics_lock:
-                _session_metrics["errors"] += 1
-                if drop_noncritical:
-                    _session_metrics["noncritical_dropped"] = int(_session_metrics.get("noncritical_dropped", 0) or 0) + 1
-            if drop_noncritical:
-                raise NoncriticalWriteDropped("noncritical DB work deferred: session gate busy")
+                if is_background:
+                    _session_metrics["noncritical_dropped"] += 1
+                elif not is_analytics:
+                    _session_metrics["errors"] += 1
+            if is_background:
+                _priority_admission.record_deferred(resolved)
+                _priority_admission.record_dropped(resolved)
+                raise NoncriticalWriteDropped(
+                    f"background DB work deferred ({_safe_label}): session gate busy"
+                )
+            if is_analytics:
+                _priority_admission.record_deferred(resolved)
+                raise AnalyticsWorkDeferred(
+                    "analytics DB work deferred: session gate busy"
+                )
+            _priority_admission.record_timeout(resolved)
+            _log_admission_failure(
+                label=_safe_label,
+                priority=resolved,
+                stage="session_gate",
+                timeout_s=timeout_s,
+            )
             raise TimeoutError(
-                f"Timed out waiting for DB session gate after {timeout_s:.0f}s; "
-                "reduce background DB concurrency or increase DB_MAX_CONCURRENT_SESSIONS only after Railway max_connections is proven sufficient"
+                f"Timed out waiting for {resolved.value} DB session after {timeout_s:.2f}s label={_safe_label}"
             )
 
         session_local = _get_sessionmaker_for_loop(_loop_identity())
         if session_local is None:
-            _session_gate.release()
-            acquired = False
             raise RuntimeError("DATABASE_URL is not configured")
         with _session_metrics_lock:
             _session_metrics["opened"] += 1
             _session_metrics["active"] += 1
-            if critical:
-                _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
-                _session_metrics["critical_active"] = int(_session_metrics.get("critical_active", 0) or 0) + 1
-            if interactive:
-                _session_metrics["interactive_waiting"] = max(0, int(_session_metrics.get("interactive_waiting", 0) or 0) - 1)
-                _session_metrics["interactive_active"] = int(_session_metrics.get("interactive_active", 0) or 0) + 1
+            if is_critical:
+                _session_metrics["critical_waiting"] = max(
+                    0, _session_metrics["critical_waiting"] - 1
+                )
+                _session_metrics["critical_active"] += 1
+                foreground_waiting_recorded = False
+            if is_interactive:
+                _session_metrics["interactive_waiting"] = max(
+                    0, _session_metrics["interactive_waiting"] - 1
+                )
+                _session_metrics["interactive_active"] += 1
+                foreground_waiting_recorded = False
+        holder_token = f"{threading.get_ident()}:{_loop_identity()}:{time.time_ns()}"
+        with _active_holder_lock:
+            _active_session_holders[holder_token] = {
+                "label": _safe_label,
+                "priority": resolved.value,
+                "thread_id": int(threading.get_ident()),
+                "loop_id": int(_loop_identity()),
+                "started_mono": time.monotonic(),
+            }
         try:
             async with session_local() as session:
                 try:
@@ -615,24 +1040,46 @@ async def get_session(*, noncritical: bool = False, critical: bool = False, inte
             with _session_metrics_lock:
                 _session_metrics["closed"] += 1
                 _session_metrics["active"] = max(0, _session_metrics["active"] - 1)
-                if critical:
-                    _session_metrics["critical_active"] = max(0, int(_session_metrics.get("critical_active", 0) or 0) - 1)
-                if interactive:
-                    _session_metrics["interactive_active"] = max(0, int(_session_metrics.get("interactive_active", 0) or 0) - 1)
-            if acquired:
-                _session_gate.release()
-                acquired = False
+                if is_critical:
+                    _session_metrics["critical_active"] = max(
+                        0, _session_metrics["critical_active"] - 1
+                    )
+                if is_interactive:
+                    _session_metrics["interactive_active"] = max(
+                        0, _session_metrics["interactive_active"] - 1
+                    )
     finally:
+        if holder_token is not None:
+            with _active_holder_lock:
+                holder = _active_session_holders.pop(holder_token, None)
+            if holder is not None:
+                held_seconds = max(0.0, time.monotonic() - float(holder.get("started_mono", time.monotonic())))
+                warn_after = max(0.0, float(os.getenv("DB_SESSION_HOLD_WARN_SECONDS", "10") or 10))
+                if warn_after and held_seconds >= warn_after:
+                    logger.warning(
+                        "[db_session_long_hold] label=%s priority=%s held_seconds=%.3f",
+                        holder.get("label"),
+                        holder.get("priority"),
+                        held_seconds,
+                    )
+        if acquired:
+            _session_gate.release()
         if bg_acquired:
             with _session_metrics_lock:
-                _session_metrics["background_active"] = max(0, int(_session_metrics.get("background_active", 0) or 0) - 1)
+                _session_metrics["background_active"] = max(
+                    0, _session_metrics["background_active"] - 1
+                )
             _background_gate.release()
-        if critical_scope:
+        if priority_acquired:
+            _priority_admission.release(
+                resolved,
+                held_seconds=max(0.0, time.monotonic() - priority_started),
+            )
+        if foreground_scope and foreground_waiting_recorded:
             with _session_metrics_lock:
-                if critical:
-                    _session_metrics["critical_waiting"] = max(0, int(_session_metrics.get("critical_waiting", 0) or 0) - 1)
-                if interactive:
-                    _session_metrics["interactive_waiting"] = max(0, int(_session_metrics.get("interactive_waiting", 0) or 0) - 1)
+                key = "interactive_waiting" if is_interactive else "critical_waiting"
+                _session_metrics[key] = max(0, _session_metrics[key] - 1)
+        if foreground_scope:
             _mark_critical_db_end()
 
 
@@ -728,6 +1175,34 @@ def get_sync_session():
     Session = sync_sessionmaker(bind=_sync_thread_local.sync_engine, expire_on_commit=False)
     return Session()
 
+def resolve_session_label(label: str | None) -> str:
+    """Return an explicit label or derive a stable caller label.
+
+    ``asynccontextmanager`` adds contextlib frames between a call site and the
+    generator body, so walk a small bounded stack and skip session/contextlib
+    internals instead of relying on a fragile fixed frame offset.
+    """
+    if label and str(label).strip():
+        return str(label).strip()
+
+    frame = inspect.currentframe()
+    try:
+        cursor = frame.f_back if frame is not None else None
+        for _ in range(12):
+            if cursor is None:
+                break
+            module = str(cursor.f_globals.get("__name__", "unknown_module"))
+            function = str(cursor.f_code.co_name)
+            if module != __name__ and module != "contextlib" and function not in {
+                "__aenter__",
+                "__anext__",
+            }:
+                return f"{module}.{function}:{int(cursor.f_lineno)}"
+            cursor = cursor.f_back
+    finally:
+        del frame
+
+    return "unknown_session_caller"
 
 async def init_db() -> None:
     """Create database tables from ORM metadata when an engine is configured."""

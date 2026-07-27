@@ -22,6 +22,7 @@ Usage:
     # Get DLQ status
     count = await dlq.get_count()
 """
+from utils.timeutils import now_utc_naive
 
 import asyncio
 import logging
@@ -95,9 +96,9 @@ class DeadLetterQueue:
         import json
         
         if retry_at is None:
-            retry_at = datetime.utcnow() + timedelta(hours=RETRY_INTERVAL_HOURS)
+            retry_at = now_utc_naive() + timedelta(hours=RETRY_INTERVAL_HOURS)
         
-        entry_id = f"dlq:{signal_id}:{user_id}:{int(datetime.utcnow().timestamp())}"
+        entry_id = f"dlq:{signal_id}:{user_id}:{int(now_utc_naive().timestamp())}"
         
         entry = {
             "signal_id": signal_id,
@@ -105,7 +106,7 @@ class DeadLetterQueue:
             "error": error,
             "payload": payload,
             "retry_at": retry_at.isoformat(),
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": now_utc_naive().isoformat(),
             "retry_count": 0,
         }
         
@@ -148,7 +149,7 @@ class DeadLetterQueue:
         import json
         
         entries = []
-        now = datetime.utcnow().timestamp()
+        now = now_utc_naive().timestamp()
         
         # Get from Redis
         if self._redis:
@@ -238,7 +239,7 @@ class DeadLetterQueue:
                 logger.warning(f"[dlq] Max retries reached for {entry_id}, will require manual intervention")
             else:
                 # Schedule next retry
-                next_retry = datetime.utcnow() + timedelta(hours=RETRY_INTERVAL_HOURS)
+                next_retry = now_utc_naive() + timedelta(hours=RETRY_INTERVAL_HOURS)
                 entry["retry_at"] = next_retry.isoformat()
                 
                 # Update in Redis

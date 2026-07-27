@@ -164,12 +164,16 @@ class MarketMonitor:
         """Broadcast NO TRADE alert to all active users."""
         try:
             from db.pg_features import list_all_user_telegram_ids
-            from db.session import get_session
+            from db.session import get_session, NoncriticalWriteDropped
             from telegram import Bot
             
             # Get user IDs asynchronously (we're already in an async context)
-            async with get_session(noncritical=True) as session:
-                user_ids = await list_all_user_telegram_ids(session)
+            try:
+                async with get_session(priority="background", label="worker_market_monitor") as session:
+                    user_ids = await list_all_user_telegram_ids(session)
+            except NoncriticalWriteDropped:
+                logger.info("[db_background_deferred] task=market_monitor reason=foreground_reserved")
+                return
             
             if not user_ids:
                 return

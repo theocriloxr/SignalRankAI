@@ -6,7 +6,7 @@ from engine.wfo import WalkForwardOptimizer
 
 
 def make_candle_df(start: datetime, periods: int):
-    rng = pd.date_range(start=start, periods=periods, freq='5T', tz='UTC')
+    rng = pd.date_range(start=start, periods=periods, freq='5min', tz='UTC')
     close = (100 + pd.Series(range(periods)) * 0.01).round(2)
     df = pd.DataFrame({'timestamp': rng, 'open': close.shift(1).fillna(close.iloc[0]), 'high': close + 0.5, 'low': close - 0.5, 'close': close, 'volume': 1.0})
     return df

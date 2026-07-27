@@ -15,7 +15,7 @@ from signalrank_telegram.formatter import (
     format_signal, format_signal_update_tp_hit,
     format_signal_no_trade_alert
 )
-from core.tier_constants import FREE_SIGNAL_DAILY_LIMIT
+from core.tier_policy import evaluate_feature_access, get_entitlements, normalize_tier
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +46,11 @@ class TierDeliveryManager:
         history so runtime memory usage stays low on constrained hosts.
         """
         import logging
-        from core.tier_constants import TIER_SCORE_THRESHOLDS
-
-        tier = str(user_tier or 'free').lower()
-
-        # Quality gates (MUST pass)
-        min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
+        policy = get_entitlements(user_tier)
+        min_score = policy.minimum_signal_score
         if score < min_score:
             if user_id is not None:
-                logging.debug(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
+                logging.debug(f"[delivery] User {user_id} ({policy.tier.value}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
@@ -62,15 +58,11 @@ class TierDeliveryManager:
     async def should_send_signal_async(self, user_tier: str, score: float, user_id: Optional[str | int] = None, session=None) -> bool:
         """Async variant of should_send_signal for async contexts."""
         import logging
-        from core.tier_constants import TIER_SCORE_THRESHOLDS
-
-        tier = str(user_tier or 'free').lower()
-
-        # Quality gates (MUST pass)
-        min_score = TIER_SCORE_THRESHOLDS.get(tier, 70)
+        policy = get_entitlements(user_tier)
+        min_score = policy.minimum_signal_score
         if score < min_score:
             if user_id is not None:
-                logging.debug(f"[delivery] User {user_id} ({tier}) score {score} < {min_score}, not eligible.")
+                logging.debug(f"[delivery] User {user_id} ({policy.tier.value}) score {score} < {min_score}, not eligible.")
             return False
         
         return True
@@ -153,8 +145,7 @@ class TierDeliveryManager:
         Returns:
             Formatted update message or None
         """
-        # Only send updates to PREMIUM+ (not FREE)
-        if user_tier == 'free':
+        if not evaluate_feature_access(user_tier, "lifecycle_updates").allowed:
             return None
         
         return format_signal_update_tp_hit(signal, tp_number)
@@ -168,14 +159,13 @@ class TierDeliveryManager:
         Returns:
             Formatted no-trade alert or None
         """
-        # Only send to VIP
-        if user_tier != 'vip':
+        if not evaluate_feature_access(user_tier, "advanced_provenance").allowed:
             return None
         
         return format_signal_no_trade_alert()
     
     def get_tier_features(self, tier: str) -> Dict:
-        """Get feature set for tier.
+        """Project legacy feature labels from the canonical tier policy.
         
         Args:
             tier: User tier (free, premium, vip, admin)
@@ -183,73 +173,25 @@ class TierDeliveryManager:
         Returns:
             Dict of features for this tier
         """
-        from core.tier_constants import TIER_SCORE_THRESHOLDS
-
-        features_by_tier = {
-            'free': {
-                'signals_per_day': '1-3',
-                'min_score': int(TIER_SCORE_THRESHOLDS.get('free', 80)),
-                'multiple_tps': False,
-                'confidence_percent': False,
-                'validity_window': False,
-                'updates': False,
-                'session_tag': False,
-                'market_regime': False,
-                'confluence_breakdown': False,
-                'invalidation_levels': False,
-                'no_trade_alerts': False,
-                'performance_stats': False,
-                'priority_delivery': False,
-            },
-            'premium': {
-                'signals_per_day': '5-10',
-                'min_score': int(TIER_SCORE_THRESHOLDS.get('premium', 75)),
-                'multiple_tps': True,      # 2-3 TP levels
-                'confidence_percent': True, # % format
-                'validity_window': True,
-                'updates': True,            # Basic updates
-                'session_tag': True,
-                'market_regime': True,
-                'confluence_breakdown': False,
-                'invalidation_levels': False,
-                'no_trade_alerts': False,
-                'performance_stats': False,
-                'priority_delivery': False,
-            },
-            'vip': {
-                'signals_per_day': 'Quality-based',
-                'min_score': int(TIER_SCORE_THRESHOLDS.get('vip', 75)),
-                'multiple_tps': True,       # 3+ TP levels
-                'confidence_percent': True, # Full score (0-100)
-                'validity_window': True,
-                'updates': True,            # Full updates
-                'session_tag': True,
-                'market_regime': True,
-                'confluence_breakdown': True,
-                'invalidation_levels': True,
-                'no_trade_alerts': True,
-                'performance_stats': True,  # Weekly
-                'priority_delivery': True,
-            },
-            'admin': {
-                'signals_per_day': 'All',
-                'min_score': 0,
-                'multiple_tps': True,
-                'confidence_percent': True,
-                'validity_window': True,
-                'updates': True,
-                'session_tag': True,
-                'market_regime': True,
-                'confluence_breakdown': True,
-                'invalidation_levels': True,
-                'no_trade_alerts': True,
-                'performance_stats': True,
-                'priority_delivery': True,
-                'admin_info': True,
-            },
+        policy = get_entitlements(tier)
+        return {
+            "signals_per_day": str(policy.daily_signal_limit),
+            "min_score": int(policy.minimum_signal_score),
+            "multiple_tps": policy.max_tp_levels > 1,
+            "confidence_percent": policy.has("exact_levels"),
+            "validity_window": policy.has("exact_levels"),
+            "updates": policy.has("lifecycle_updates"),
+            "session_tag": policy.has("detailed_provenance"),
+            "market_regime": policy.has("detailed_provenance"),
+            "confluence_breakdown": policy.has("advanced_provenance"),
+            "invalidation_levels": policy.has("advanced_provenance"),
+            "no_trade_alerts": policy.has("advanced_provenance"),
+            "performance_stats": policy.has("performance_analytics"),
+            "priority_delivery": policy.has("priority_delivery"),
+            "admin_info": policy.has("internal_operations"),
         }
-        return features_by_tier.get(tier.lower(), {})
-    
+
+
     def get_max_tp_level_for_tier(self, tier: str) -> int:
         """Get maximum TP level user should see per tier.
         
@@ -257,11 +199,9 @@ class TierDeliveryManager:
             tier: User tier (free, premium, vip, admin, owner)
         
         Returns:
-            Max TP level (2 for FREE/PREMIUM, 3 for VIP/ADMIN/OWNER)
+            Max TP level (1 for FREE, 2 for PREMIUM, 3 for VIP/ADMIN/OWNER)
         """
-        from core.tier_constants import TIER_SIGNAL_DEPTH
-        depth = TIER_SIGNAL_DEPTH.get(tier.lower(), {})
-        return depth.get('max_tp_level', 2)
+        return get_entitlements(tier).max_tp_levels
     
     def should_show_upgrade_prompt(self, user_tier: str, signal: Dict, signal_count_today: int) -> bool:
         """Determine if FREE user should see upgrade prompt.
@@ -278,7 +218,7 @@ class TierDeliveryManager:
         """
         from core.tier_constants import UPGRADE_PROMPT_FREQUENCY_INT
         
-        if user_tier != 'free':
+        if normalize_tier(user_tier).value != "FREE":
             return False
         
         score = float(signal.get('score', 0) or 0)
@@ -327,27 +267,17 @@ class TierDeliveryManager:
         """
         max_tp = self.get_max_tp_level_for_tier(user_tier)
         
-        # Suppress TP3 outcome for FREE/PREMIUM users
-        if outcome_type == 'tp3' and max_tp < 3:
-            return None
-        
         # Format based on tier
-        tier_lower = user_tier.lower()
+        tier_lower = normalize_tier(user_tier).value.lower()
         
         if outcome_type.startswith('tp'):
             tp_num = int(outcome_type[2])  # tp1 -> 1, tp2 -> 2, tp3 -> 3
+            if tp_num > max_tp:
+                return None
             progress = f"{tp_count}" if tp_count else "?"
-            
-            if tier_lower in ('free', 'premium'):
-                if tp_num > 2:
-                    return None  # Don't show TP3
-                msg = f"✅ Signal {signal_id[:8]}: TP{tp_num} hit ({progress}/2)"
-                if tier_lower == 'free':
-                    msg += "\n💡 Upgrade to Premium for full TP ladder"
-            elif tier_lower in ('vip', 'admin', 'owner'):
-                msg = f"✅ Signal {signal_id[:8]}: TP{tp_num} hit ({progress}/3)"
-            else:
-                msg = f"✅ TP{tp_num} hit"
+            msg = f"✅ Signal {signal_id[:8]}: TP{tp_num} hit ({progress}/{max_tp})"
+            if tier_lower == 'free':
+                msg += "\n💡 Premium adds the complete two-target workflow"
             
             return msg
         
@@ -412,21 +342,15 @@ class TierDeliveryManager:
         
         return stats
 
-# Upgrade 2: Daily Limit Enforcer for FREE Users
-# Returns True if user can receive signal, False if they hit daily limit
+# Daily quota enforcement for every tier.
 async def check_and_enforce_daily_limit(session, user_id: int, user_tier: str) -> bool:
     """
     Check if user has reached their daily signal limit.
     Returns True if allowed to receive signal.
-    Returns False if limit reached (FREE users get Paywall Upsell).
+    Returns False if the canonical tier quota is reached.
     """
-    tier = str(user_tier or 'free').lower()
+    policy = get_entitlements(user_tier)
     
-    # Premium/VIP/Admin/Owner have unlimited signals
-    if tier not in ('free',):
-        return True
-    
-    # FREE tier: enforce daily limit
     now = datetime.now(timezone.utc)
     start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     
@@ -444,7 +368,7 @@ async def check_and_enforce_daily_limit(session, user_id: int, user_tier: str) -
         logger.warning(f"[delivery] Failed to count signals for user {user_id}: {e}")
         signals_sent_today = 0
     
-    daily_limit = FREE_SIGNAL_DAILY_LIMIT
+    daily_limit = policy.daily_signal_limit
     
     if signals_sent_today >= daily_limit:
         logger.info(f"[delivery] User {user_id} hit daily limit ({signals_sent_today}/{daily_limit})")
@@ -457,14 +381,13 @@ def get_paywall_upsell_message() -> str:
     """Get the paywall upsell message for FREE users who hit their daily limit."""
     return (
         "🛑 <b>Daily Limit Reached</b>\n\n"
-        "You've received your 3 free signals for today. \n\n"
+        f"You've received your {get_entitlements('free').daily_signal_limit} free educational previews today.\n\n"
         "<b>Why upgrade to Premium?</b>\n"
-        "✅ Unlimited signals - never miss a setup\n"
-        "✅ Full Stop Loss data - trade safely\n"
-        "✅ TP2 & TP3 targets - maximize profits\n"
-        "✅ MT5 Auto-Execute - instant trade execution\n"
-        "✅ AI Confidence scores - know the probability\n\n"
-        "<i>Upgrade now: /premium</i>"
+        "✅ Higher, explicit daily quota\n"
+        "✅ Complete entry, stop-loss, and TP1/TP2 context\n"
+        "✅ Paper-trading, lifecycle updates, and deeper analytics\n"
+        "✅ The same freshness and risk gates on every tier\n\n"
+        "<i>Compare plans with /upgrade. No guaranteed returns.</i>"
     )
 
 

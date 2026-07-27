@@ -29,6 +29,18 @@ REQUIRED_FILES = (
     "web/app.py",
     "signalrank_telegram/bot.py",
     "signalrank_telegram/commands.py",
+    "scripts/architecture_smoke.py",
+    "scripts/schema_audit.py",
+    "scripts/release_guard.py",
+    "scripts/production_health.py",
+    "core/resource_governor.py",
+    "core/automaton.py",
+    "ml/evidence.py",
+    "payments/receipt_service.py",
+    "configs/env/railway-hobby-full-advisory.env.example",
+    "configs/env/railway-hobby-owner-beta.env.example",
+    "configs/env/railway-hobby-paper-demo.env.example",
+    "configs/env/railway-hobby-real-execution-gated.env.example",
 )
 
 REQUIRED_ENV_TEMPLATE_KEYS = (
@@ -37,6 +49,14 @@ REQUIRED_ENV_TEMPLATE_KEYS = (
     "OWNER_IDS",
     "PAYSTACK_SECRET_KEY",
     "GEMINI_API_KEY",
+    "PUBLIC_TESTING_MODE",
+    "AUTOMATON_STARTING_BALANCE_USD",
+    "FINAL_SEND_LIVE_PRICE_CHECK_ENABLED",
+    "STATE_REDIS_URL",
+    "DELIVERY_REDIS_URL",
+    "RESOURCE_GUARD_ENABLED",
+    "APP_MEMORY_SOFT_RATIO",
+    "APP_MEMORY_HARD_RATIO",
 )
 
 REQUIRED_WEB_MARKERS = (
@@ -96,6 +116,8 @@ def run_readiness_checks(root: Path = ROOT) -> Dict[str, Any]:
         + _read(root, "scripts/generate_railway_prefill_sheet.py")
         + "\n"
         + _read(root, "config.py")
+        + "\n"
+        + _read(root, "configs/env/railway-hobby-full-advisory.env.example")
     )
     missing_env = [key for key in REQUIRED_ENV_TEMPLATE_KEYS if key not in env_text]
     add("env_contracts", not missing_env, "missing=" + ",".join(missing_env) if missing_env else "required keys documented")

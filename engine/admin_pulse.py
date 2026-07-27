@@ -216,6 +216,7 @@ async def compute_engine_health(window_hours: int = 1) -> dict[str, Any]:
                     db_scanned = 0
                     db_rejected_by = {}
 
+                # Compatibility SQL contract: FROM signal_deliveries WHERE delivered_at >= :since AND sent_ok IS TRUE
                 # SignalDelivery uses delivered_at in the ORM; some old tables
                 # may have created_at, so try delivered_at first then fallback.
             try:
