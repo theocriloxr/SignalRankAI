@@ -297,6 +297,19 @@ async def persist_signal(signal_data: Dict[str, Any]) -> Optional[Signal]:
             
             session.add(signal)
             await session.flush()
+
+            # Persist structured adaptive evidence and canonical sequence references
+            # in the same short transaction. Unknown/legacy signals remain unaffected.
+            if signal_data.get("adaptive_evidence") or signal_data.get("adaptive_sequence_refs"):
+                try:
+                    from engine.adaptive.repository import persist_signal_adaptive_evidence
+                    await persist_signal_adaptive_evidence(session, signal, signal_data)
+                except Exception as adaptive_error:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "[adaptive] evidence persistence skipped signal=%s error=%s",
+                        getattr(signal, "signal_id", None), adaptive_error,
+                    )
             
             # FIX: Explicit commit for NullPool compatibility
             await session.commit()

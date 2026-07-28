@@ -5601,6 +5601,22 @@ def run_bot() -> None:
     application.add_handler(CommandHandler("assets", _audit_handler("assets", assets_command)))
     # Backward compatible alias
 
+    # Adaptive strategy intelligence owner controls (silent for non-owners)
+    from .adaptive_commands import (
+        adaptive_status_command,
+        adaptive_pause_command,
+        adaptive_resume_command,
+        adaptive_promote_command,
+        adaptive_suspend_command,
+        adaptive_rollback_command,
+    )
+    application.add_handler(CommandHandler("adaptive_status", _audit_handler("adaptive_status", adaptive_status_command)))
+    application.add_handler(CommandHandler("adaptive_pause", _audit_handler("adaptive_pause", adaptive_pause_command)))
+    application.add_handler(CommandHandler("adaptive_resume", _audit_handler("adaptive_resume", adaptive_resume_command)))
+    application.add_handler(CommandHandler("adaptive_promote", _audit_handler("adaptive_promote", adaptive_promote_command)))
+    application.add_handler(CommandHandler("adaptive_suspend", _audit_handler("adaptive_suspend", adaptive_suspend_command)))
+    application.add_handler(CommandHandler("adaptive_rollback", _audit_handler("adaptive_rollback", adaptive_rollback_command)))
+
     # Hidden owner-only commands (silent for non-owners)
     application.add_handler(CommandHandler("unlock", _audit_handler("unlock", unlock)))
     application.add_handler(CommandHandler("dev_pause", _audit_handler("dev_pause", dev_pause)))

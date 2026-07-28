@@ -33,10 +33,14 @@ def test_provider_outage_alerts_are_staged_and_emit_recovery(monkeypatch):
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "1")
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_SCHEDULE_MINUTES", "10,30,60")
     monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_INTERVAL_MINUTES", "60")
+    monkeypatch.setenv("PROVIDER_RECOVERY_REQUIRED_SUCCESSES", "1")
+    monkeypatch.setenv("PROVIDER_RECOVERY_STABLE_SECONDS", "0")
     fetcher._PROVIDER_OUTAGE_ALERTED.clear()
     fetcher._PROVIDER_OUTAGE_LAST_ALERT.clear()
     fetcher._PROVIDER_OUTAGE_ALERT_STAGE.clear()
     fetcher._PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
+    fetcher._PROVIDER_RECOVERY_SUCCESS_STREAK.clear()
+    fetcher._PROVIDER_RECOVERY_FIRST_SUCCESS.clear()
 
     assert fetcher.should_alert_provider_outage("polygon_connector", 10.0) is True
     assert fetcher.provider_outage_alert_label("polygon_connector", 10.0) == "initial"
@@ -51,6 +55,28 @@ def test_provider_outage_alerts_are_staged_and_emit_recovery(monkeypatch):
 
     assert alerts and alerts[0]["provider"] == "polygon_connector"
     assert fetcher.consume_provider_recovery_alerts() == []
+
+
+def test_provider_recovery_hysteresis_requires_configured_success_streak(monkeypatch):
+    import data.fetcher as fetcher
+
+    monkeypatch.setenv("PROVIDER_OUTAGE_ALERT_OPTIONAL", "1")
+    monkeypatch.setenv("PROVIDER_RECOVERY_REQUIRED_SUCCESSES", "3")
+    monkeypatch.setenv("PROVIDER_RECOVERY_STABLE_SECONDS", "0")
+    fetcher._PROVIDER_OUTAGE_ALERTED.clear()
+    fetcher._PROVIDER_OUTAGE_LAST_ALERT.clear()
+    fetcher._PROVIDER_OUTAGE_ALERT_STAGE.clear()
+    fetcher._PROVIDER_OUTAGE_RECOVERY_ALERTS.clear()
+    fetcher._PROVIDER_RECOVERY_SUCCESS_STREAK.clear()
+    fetcher._PROVIDER_RECOVERY_FIRST_SUCCESS.clear()
+
+    assert fetcher.should_alert_provider_outage("polygon_connector", 10.0) is True
+    fetcher.mark_provider_result("polygon_connector", True)
+    fetcher.mark_provider_result("polygon_connector", True)
+    assert fetcher.consume_provider_recovery_alerts() == []
+    fetcher.mark_provider_result("polygon_connector", True)
+    alerts = fetcher.consume_provider_recovery_alerts()
+    assert alerts and alerts[0]["success_streak"] == 3
 
 
 def test_quality_rejection_reasons_map_to_admin_pulse_buckets():

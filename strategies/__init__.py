@@ -162,6 +162,46 @@ def run_all_strategies(asset, market_data, regime, strategy_weights=None, regime
         if "tradingview" in groups and TRADINGVIEW_AVAILABLE:
             _run_group("tradingview", lambda: tradingview_strategies(asset, timeframe, data))
     
+    # Queue canonical candle snapshots for asynchronous sequence learning.
+    if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
+        try:
+            from engine.adaptive.candle_store import enqueue_market_snapshot
+            enqueue_market_snapshot(asset, market_data)
+        except Exception as exc:
+            logger.debug("[adaptive_candles] enqueue skipped asset=%s error=%s", asset, exc)
+
+    # === ADAPTIVE ASSET-SPECIFIC STRATEGY INTELLIGENCE ===
+    # Pure deterministic evaluation only. Research/shadow profiles are neutral;
+    # only explicitly approved/canary profiles may apply bounded weighting.
+    if _env_bool("ADAPTIVE_STRATEGY_ENGINE_ENABLED", True):
+        try:
+            from engine.adaptive.runtime import get_adaptive_strategy_service
+
+            adaptive_service = get_adaptive_strategy_service()
+            adaptive_assessment = adaptive_service.evaluate(asset, market_data, regime)
+            signals = adaptive_service.apply_to_signals(signals, adaptive_assessment)
+            adaptive_candidates = adaptive_service.signal_candidates(adaptive_assessment)
+            existing_fingerprints = {
+                str(sig.get("adaptive_evidence", [{}])[0].get("duplicate_fingerprint") or "")
+                for sig in signals
+                if isinstance(sig, dict) and sig.get("adaptive_evidence")
+            }
+            for candidate in adaptive_candidates:
+                candidate_fp = str((candidate.get("adaptive_evidence") or [{}])[0].get("duplicate_fingerprint") or "")
+                if candidate_fp and candidate_fp in existing_fingerprints:
+                    continue
+                signals.append(candidate)
+                if candidate_fp:
+                    existing_fingerprints.add(candidate_fp)
+            logger.info(
+                "[adaptive] asset=%s mode=%s profile=%s evidence=%s candidates=%s conflicts=%s quality=%.3f",
+                asset, adaptive_assessment.runtime_mode, adaptive_assessment.profile.profile_id,
+                len(adaptive_assessment.evidence), len(adaptive_candidates),
+                list(adaptive_assessment.conflicts), adaptive_assessment.data_quality_score,
+            )
+        except Exception as exc:
+            logger.warning("[adaptive] evaluation failed asset=%s error=%s", asset, exc, exc_info=True)
+
     # === FALLBACK STRATEGIES ===
     # If no signals generated from main strategies and fallback is enabled, try fallback strategies
     # This ensures the engine produces signals even when market conditions don't align with strict strategies

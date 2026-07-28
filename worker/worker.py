@@ -216,6 +216,25 @@ class Worker:
                 config.CRYPTO_WS_ENABLED,
             )
 
+        # Adaptive strategy learning is analytics-only and produces SHADOW candidates.
+        if (
+            _analytics_work_allowed_in_worker()
+            and _env_bool("ADAPTIVE_LEARNING_WORKER_ENABLED", True)
+        ):
+            try:
+                _register_task("adaptive_learning", lambda: self._adaptive_learning_loop(), restart_on_failure=True)
+                logger.info("[worker] AdaptiveStrategyLearning started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start adaptive learning loop: %s", e)
+
+        if _env_bool("ADAPTIVE_CANDLE_CAPTURE_ENABLED", True):
+            try:
+                from engine.adaptive.candle_store import candle_capture_loop
+                _register_task("adaptive_candle_capture", lambda: candle_capture_loop(self._stop), restart_on_failure=True)
+                logger.info("[worker] AdaptiveCandleCapture started")
+            except Exception as e:
+                logger.warning("[worker] Failed to start adaptive candle capture: %s", e)
+
         # ML daily retrain loop (optional) — uses BACKGROUND priority for DB work.
         if config.ML_TRAIN_ENABLED and _analytics_work_allowed_in_worker():
             try:
@@ -333,6 +352,35 @@ class Worker:
             except Exception:
                 logger.exception("[worker] subscription expiry loop iteration failed")
             await asyncio.sleep(3600)
+
+    async def _adaptive_learning_loop(self) -> None:
+        """Publish approved profiles and build bounded SHADOW challengers."""
+        from engine.adaptive.learning import AdaptiveLearningWorker
+
+        worker = AdaptiveLearningWorker()
+        interval = max(3600, int(os.getenv("ADAPTIVE_LEARNING_INTERVAL_SECONDS", "21600") or 21600))
+        initial_delay = _env_float(
+            "ADAPTIVE_LEARNING_STARTUP_DELAY_SECONDS",
+            300.0 if _is_railway_runtime() else 0.0,
+            minimum=0.0,
+        )
+        if initial_delay > 0:
+            logger.info("[worker] adaptive learning delayed %.1fs to avoid startup DB pressure", initial_delay)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=initial_delay)
+                return
+            except asyncio.TimeoutError:
+                pass
+        while not self._stop.is_set():
+            try:
+                result = await worker.run_once()
+                logger.info("[adaptive_learning] completed result=%s", result)
+            except Exception as exc:
+                logger.warning("[adaptive_learning] iteration failed: %s", exc, exc_info=True)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                continue
 
     async def _ml_train_loop(self) -> None:
         """Periodically retrain the ML model from Postgres outcomes."""

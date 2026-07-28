@@ -3052,6 +3052,12 @@ def main_loop(DRY_RUN: bool = False):
                                 score = float(score_signal(sig)) if score_signal else 0
                             except Exception:
                                 score = 0
+                            # Approved adaptive profiles may apply only a bounded multiplier.
+                            # Research/shadow profiles resolve to 1.0 and cannot affect delivery.
+                            _adaptive_multiplier = _safe_float(sig.get('adaptive_score_multiplier'), 1.0)
+                            _adaptive_multiplier = max(0.70, min(1.25, _adaptive_multiplier))
+                            sig['base_score_before_adaptive'] = score
+                            score = max(0.0, min(100.0, score * _adaptive_multiplier))
                             sig['score'] = score
                             sig.setdefault('confidence', min(1.0, score / 100.0))
 

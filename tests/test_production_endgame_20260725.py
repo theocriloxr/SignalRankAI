@@ -198,4 +198,4 @@ def test_canonical_migration_head_is_active_guard_reconcile():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["0024_ml_rejected_delivery"]
+    assert script.get_heads() == ["0025_adaptive_strategy"]

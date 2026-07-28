@@ -675,6 +675,144 @@ class MLPastTrainingData(Base):
     archived_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class AdaptiveStrategySpec(Base):
+    __tablename__ = "adaptive_strategy_specs"
+    __table_args__ = (UniqueConstraint("strategy_id", "version", name="uq_adaptive_strategy_spec"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    strategy_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    version: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_version: Mapped[Optional[str]] = mapped_column(String(64))
+    family: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    creation_source: Mapped[str] = mapped_column(String(32), default="deterministic")
+    state: Mapped[str] = mapped_column(String(32), index=True, default="DRAFT")
+    spec: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    dataset_version: Mapped[Optional[str]] = mapped_column(String(128))
+    feature_version: Mapped[Optional[str]] = mapped_column(String(128))
+    approved_by: Mapped[Optional[int]] = mapped_column(BigInteger)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    suspension_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveAssetProfile(Base):
+    __tablename__ = "adaptive_asset_profiles"
+    __table_args__ = (UniqueConstraint("asset", "version", name="uq_adaptive_asset_profile_version"),)
+
+    profile_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    asset_class: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), index=True, default="DRAFT")
+    source_scope: Mapped[str] = mapped_column(String(32), default="asset")
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    preferred_families: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    penalised_families: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    disabled_families: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    preferred_timeframes: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    preferred_sessions: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    avoided_sessions: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    regime_weights: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    family_weights: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    minimum_confidence: Mapped[float] = mapped_column(Float, default=0.70)
+    minimum_reward_risk: Mapped[float] = mapped_column(Float, default=1.5)
+    maximum_score_multiplier: Mapped[float] = mapped_column(Float, default=1.15)
+    minimum_score_multiplier: Mapped[float] = mapped_column(Float, default=0.85)
+    data_sufficiency_score: Mapped[float] = mapped_column(Float, default=0.0)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0)
+    parent_profile_id: Mapped[Optional[str]] = mapped_column(String(128))
+    rollback_profile_id: Mapped[Optional[str]] = mapped_column(String(128))
+    metadata_json: Mapped[Dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveSignalEvidence(Base):
+    __tablename__ = "adaptive_signal_evidence"
+    __table_args__ = (UniqueConstraint("signal_id", "duplicate_fingerprint", name="uq_adaptive_signal_evidence"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    strategy_id: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    strategy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    family: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    direction: Mapped[str] = mapped_column(String(16), nullable=False)
+    setup_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_score: Mapped[float] = mapped_column(Float, nullable=False)
+    evidence_quality: Mapped[str] = mapped_column(String(24), default="genuine")
+    profile_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    profile_version: Mapped[Optional[int]] = mapped_column(Integer)
+    regime: Mapped[Optional[str]] = mapped_column(String(32), index=True)
+    data_quality: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    evidence: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    conflicts: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    duplicate_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveSignalSequence(Base):
+    __tablename__ = "adaptive_signal_sequences"
+    __table_args__ = (UniqueConstraint("signal_id", "timeframe", "evidence_stage", "sequence_hash", name="uq_adaptive_signal_sequence"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    signal_id: Mapped[str] = mapped_column(String(36), ForeignKey("signals.signal_id"), index=True, nullable=False)
+    asset: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), index=True, nullable=False)
+    sequence_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    candle_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    start_time_ms: Mapped[Optional[int]] = mapped_column(BigInteger)
+    end_time_ms: Mapped[Optional[int]] = mapped_column(BigInteger)
+    provider: Mapped[Optional[str]] = mapped_column(String(64))
+    evidence_stage: Mapped[str] = mapped_column(String(24), default="pre_signal")
+    summary: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveDatasetVersion(Base):
+    __tablename__ = "adaptive_dataset_versions"
+
+    dataset_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    first_decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    evidence_categories: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    assets: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    sequence_coverage: Mapped[float] = mapped_column(Float, default=0.0)
+    manifest: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveFeatureVersion(Base):
+    __tablename__ = "adaptive_feature_versions"
+
+    feature_version: Mapped[str] = mapped_column(String(128), primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    component_versions: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    feature_schema: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AdaptiveWalkForwardRun(Base):
+    __tablename__ = "adaptive_walk_forward_runs"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    profile_id: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    dataset_version: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    feature_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    config: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    metrics: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    folds: Mapped[List[Any]] = mapped_column(JSON, default=list)
+    error: Mapped[Optional[str]] = mapped_column(Text)
+
+
 class Trade(Base):
     __tablename__ = "trades"
 

@@ -11,7 +11,7 @@ def _first(*names: str, default: str = "") -> str:
     return default
 
 
-APP_VERSION = _first("APP_VERSION", default="1.0.8")
+APP_VERSION = _first("APP_VERSION", default="1.1.0")
 BUILD_TIME_UTC = _first("BUILD_TIME_UTC", "SOURCE_BUILD_TIME", default="unknown")
 GIT_COMMIT_SHA = _first(
     "RAILWAY_GIT_COMMIT_SHA",
