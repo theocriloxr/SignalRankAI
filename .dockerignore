@@ -39,3 +39,9 @@ tmp_test_*.py
 # Ignore OS files
 .DS_Store
 Thumbs.db
+
+# Runtime deployment diagnostics require these proof inputs.  Re-include them
+# after the broad development-artifact exclusions above.
+!.env.example
+!docs/
+!docs/**

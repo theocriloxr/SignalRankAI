@@ -4639,67 +4639,268 @@ def distribute_random_signals_to_free_users_job():
 
 
 def refresh_active_signal_keyboards_once() -> None:
-    """One-shot migration: refresh keyboards for active unresolved signals.
+    """Refresh reply keyboards for unresolved active signal messages safely.
 
-    - Adds current callback schema to older messages
-    - Deactivates rows for resolved/expired/old signals
+    This is a best-effort maintenance task.  It must never hold a database
+    session while calling Telegram and must never block application startup.
+    Railway keeps it disabled by default; operators may opt in after the
+    service is healthy.
     """
-    try:
-        from datetime import datetime, timedelta, timezone
-        from sqlalchemy import select
-        from db.session import get_session
-        from db.models import ActiveSignalMessage, Signal, Outcome
+    enabled = _env_bool_any(
+        (
+            "ACTIVE_SIGNAL_KEYBOARD_REFRESH_ENABLED",
+            "TELEGRAM_ACTIVE_KEYBOARD_REFRESH_ENABLED",
+        ),
+        False,
+    )
+    if not enabled:
+        logger.info("[keyboard_refresh] disabled by env")
+        return
 
-        async def _run() -> None:
+    try:
+        import json
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import exists, func, select
+        from db.session import DatabaseWorkDeferred, get_session
+        from db.models import (
+            ActiveSignalMessage,
+            Outcome,
+            Signal,
+            SignalEngagement,
+        )
+
+        max_rows = max(
+            1,
+            min(
+                500,
+                int(os.getenv("ACTIVE_SIGNAL_KEYBOARD_REFRESH_LIMIT", "200") or 200),
+            ),
+        )
+        db_timeout = max(
+            0.25,
+            min(
+                10.0,
+                float(
+                    os.getenv(
+                        "ACTIVE_SIGNAL_KEYBOARD_REFRESH_DB_TIMEOUT_SECONDS",
+                        "2",
+                    )
+                    or 2
+                ),
+            ),
+        )
+        telegram_timeout = max(
+            2.0,
+            min(
+                30.0,
+                float(
+                    os.getenv(
+                        "ACTIVE_SIGNAL_KEYBOARD_REFRESH_TELEGRAM_TIMEOUT_SECONDS",
+                        "10",
+                    )
+                    or 10
+                ),
+            ),
+        )
+        concurrency = max(
+            1,
+            min(
+                8,
+                int(
+                    os.getenv(
+                        "ACTIVE_SIGNAL_KEYBOARD_REFRESH_CONCURRENCY",
+                        "4",
+                    )
+                    or 4
+                ),
+            ),
+        )
+
+        def _payload_from_signal(sig) -> dict:
+            take_profit = getattr(sig, "take_profit", None)
+            if isinstance(take_profit, str):
+                try:
+                    take_profit = json.loads(take_profit)
+                except Exception:
+                    pass
+            return {
+                "signal_id": str(getattr(sig, "signal_id", "") or ""),
+                "asset": getattr(sig, "asset", ""),
+                "timeframe": getattr(sig, "timeframe", ""),
+                "direction": getattr(sig, "direction", ""),
+                "entry": getattr(sig, "entry", None),
+                "stop_loss": getattr(sig, "stop_loss", None),
+                "take_profit": take_profit,
+                "score": getattr(sig, "score", None),
+                "rr_ratio": getattr(sig, "rr_estimate", None),
+                "regime": getattr(sig, "regime", None),
+                "ml_probability": getattr(sig, "ml_probability", None),
+                "strategy": getattr(sig, "strategy_name", None),
+                "expires_at": getattr(sig, "expires_at", None),
+                "created_at": getattr(sig, "created_at", None),
+                "expired": getattr(sig, "expired", False),
+            }
+
+        async def _collect_snapshots() -> list[dict]:
             cutoff = datetime.now(timezone.utc) - timedelta(days=1)
-            bot = Bot(token=_require_telegram_token())
-            async with bot:
-                async with get_session() as session:
-                    rows = (
+            outcome_exists = exists(
+                select(Outcome.id).where(Outcome.signal_id == Signal.signal_id)
+            )
+            async with get_session(
+                priority="background",
+                label="telegram.keyboard_refresh.snapshot",
+                timeout_seconds=db_timeout,
+            ) as session:
+                rows = (
+                    await session.execute(
+                        select(
+                            ActiveSignalMessage,
+                            Signal,
+                            outcome_exists.label("has_outcome"),
+                        )
+                        .join(
+                            Signal,
+                            Signal.signal_id == ActiveSignalMessage.signal_id,
+                        )
+                        .where(ActiveSignalMessage.is_active.is_(True))
+                        .order_by(ActiveSignalMessage.id.asc())
+                        .limit(max_rows)
+                    )
+                ).all()
+
+                signal_ids = [
+                    str(getattr(sig, "signal_id", "") or "")
+                    for _, sig, _ in rows
+                    if getattr(sig, "signal_id", None)
+                ]
+                counts_by_signal: dict[str, dict[str, int]] = {}
+                if signal_ids:
+                    engagement_rows = (
                         await session.execute(
-                            select(ActiveSignalMessage, Signal)
-                            .join(Signal, Signal.signal_id == ActiveSignalMessage.signal_id)
-                            .where(ActiveSignalMessage.is_active.is_(True))
-                            .limit(500)
+                            select(
+                                SignalEngagement.signal_id,
+                                SignalEngagement.reaction,
+                                func.count(SignalEngagement.id),
+                            )
+                            .where(SignalEngagement.signal_id.in_(signal_ids))
+                            .group_by(
+                                SignalEngagement.signal_id,
+                                SignalEngagement.reaction,
+                            )
                         )
                     ).all()
+                    for sid, reaction, count in engagement_rows:
+                        bucket = counts_by_signal.setdefault(
+                            str(sid),
+                            {"taking_it": 0, "watching": 0},
+                        )
+                        bucket[str(reaction)] = int(count or 0)
 
-                    for active_row, sig in rows:
-                        try:
-                            created = getattr(sig, "created_at", None)
-                            if created is None:
-                                active_row.is_active = False
-                                continue
-                            if getattr(created, "tzinfo", None) is None:
-                                created = created.replace(tzinfo=timezone.utc)
+                snapshots: list[dict] = []
+                deactivated = 0
+                for active_row, sig, has_outcome in rows:
+                    created = getattr(sig, "created_at", None)
+                    if created is not None and getattr(created, "tzinfo", None) is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    should_deactivate = (
+                        created is None
+                        or bool(getattr(sig, "expired", False))
+                        or bool(getattr(sig, "archived", False))
+                        or created < cutoff
+                        or bool(has_outcome)
+                    )
+                    if should_deactivate:
+                        active_row.is_active = False
+                        deactivated += 1
+                        continue
 
-                            outcome = (
-                                await session.execute(
-                                    select(Outcome).where(Outcome.signal_id == str(sig.signal_id)).limit(1)
-                                )
-                            ).scalar_one_or_none()
+                    sid = str(getattr(sig, "signal_id", "") or "")
+                    snapshots.append(
+                        {
+                            "signal_id": sid,
+                            "chat_id": int(active_row.chat_id),
+                            "message_id": int(active_row.message_id),
+                            "signal": _payload_from_signal(sig),
+                            "counts": counts_by_signal.get(
+                                sid,
+                                {"taking_it": 0, "watching": 0},
+                            ),
+                        }
+                    )
 
-                            if bool(getattr(sig, "expired", False)) or created < cutoff or outcome is not None:
-                                active_row.is_active = False
-                                continue
-
-                            signal_payload = await _load_signal_payload(str(sig.signal_id))
-                            counts = await _load_signal_engagement_counts(str(sig.signal_id))
-                            keyboard = _build_signal_keyboard(str(sig.signal_id), signal=signal_payload, counts=counts)
-                            await bot.edit_message_reply_markup(
-                                chat_id=int(active_row.chat_id),
-                                message_id=int(active_row.message_id),
-                                reply_markup=keyboard,
-                            )
-                        except Exception as exc:
-                            if "message is not modified" not in str(exc).lower():
-                                logger.debug(f"[backfill] keyboard refresh skipped: {exc}")
-
+                if deactivated:
                     await session.commit()
+                else:
+                    await session.rollback()
+
+                logger.info(
+                    "[keyboard_refresh] snapshot_complete rows=%s refreshable=%s deactivated=%s",
+                    len(rows),
+                    len(snapshots),
+                    deactivated,
+                )
+                return snapshots
+
+        async def _run() -> None:
+            try:
+                snapshots = await _collect_snapshots()
+            except DatabaseWorkDeferred as exc:
+                logger.info("[keyboard_refresh] deferred by DB admission controller: %s", exc)
+                return
+
+            if not snapshots:
+                logger.info("[keyboard_refresh] nothing to refresh")
+                return
+
+            bot = Bot(token=_require_telegram_token())
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def _refresh_one(item: dict) -> bool:
+                async with semaphore:
+                    try:
+                        keyboard = _build_signal_keyboard(
+                            item["signal_id"],
+                            signal=item["signal"],
+                            counts=item["counts"],
+                        )
+                        await asyncio.wait_for(
+                            bot.edit_message_reply_markup(
+                                chat_id=item["chat_id"],
+                                message_id=item["message_id"],
+                                reply_markup=keyboard,
+                            ),
+                            timeout=telegram_timeout,
+                        )
+                        return True
+                    except Exception as exc:
+                        if "message is not modified" in str(exc).lower():
+                            return True
+                        logger.debug(
+                            "[keyboard_refresh] message skipped signal=%s chat=%s message=%s err=%s",
+                            item["signal_id"],
+                            item["chat_id"],
+                            item["message_id"],
+                            exc,
+                        )
+                        return False
+
+            async with bot:
+                results = await asyncio.gather(
+                    *(_refresh_one(item) for item in snapshots),
+                    return_exceptions=False,
+                )
+            refreshed = sum(1 for result in results if result)
+            logger.info(
+                "[keyboard_refresh] complete attempted=%s refreshed=%s failed=%s concurrency=%s",
+                len(snapshots),
+                refreshed,
+                len(snapshots) - refreshed,
+                concurrency,
+            )
 
         run_sync(_run())
     except Exception as exc:
-        logger.debug(f"[backfill] active keyboard backfill failed: {exc}")
+        logger.warning("[keyboard_refresh] one-shot refresh failed: %s", exc)
 
 
 _bot_lock_conn = None
@@ -8457,11 +8658,46 @@ def run_bot() -> None:
     except Exception as _sched_err:
         logger.warning(f"[sched] _schedule_bot_jobs failed: {_sched_err}")
 
-    # One-shot startup migration: refresh keyboards on previously sent active messages.
-    try:
-        refresh_active_signal_keyboards_once()
-    except Exception as _kbd_backfill_err:
-        logger.debug(f"[backfill] startup keyboard refresh failed: {_kbd_backfill_err}")
+    # Optional one-shot maintenance: never run inline with webhook startup.
+    # The task is disabled by default on Railway and, when explicitly enabled,
+    # starts only after the service has had time to pass readiness.
+    _keyboard_refresh_enabled = _env_bool_any(
+        (
+            "ACTIVE_SIGNAL_KEYBOARD_REFRESH_ENABLED",
+            "TELEGRAM_ACTIVE_KEYBOARD_REFRESH_ENABLED",
+        ),
+        False,
+    )
+    if _keyboard_refresh_enabled and scheduler is not None:
+        _keyboard_refresh_delay = max(
+            60,
+            int(
+                os.getenv(
+                    "ACTIVE_SIGNAL_KEYBOARD_REFRESH_STARTUP_DELAY_SECONDS",
+                    "120",
+                )
+                or 120
+            ),
+        )
+        scheduler.add_job(
+            refresh_active_signal_keyboards_once,
+            "date",
+            id="refresh_active_signal_keyboards_once",
+            replace_existing=True,
+            run_date=now_utc_naive() + timedelta(seconds=_keyboard_refresh_delay),
+            misfire_grace_time=120,
+            jobstore=_sa,
+        )
+        logger.info(
+            "[keyboard_refresh] scheduled delayed one-shot delay_seconds=%s",
+            _keyboard_refresh_delay,
+        )
+    else:
+        logger.info(
+            "[keyboard_refresh] startup refresh disabled enabled=%s scheduler=%s",
+            _keyboard_refresh_enabled,
+            bool(scheduler),
+        )
 
     # \u2500\u2500 Webhook mode \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
     # When TELEGRAM_USE_WEBHOOK is set, railway_main.py owns the event loop and

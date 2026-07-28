@@ -1,6 +1,14 @@
 {
-  "count": 99,
+  "count": 100,
   "flags": [
+    {
+      "dangerous": false,
+      "name": "ACTIVE_SIGNAL_KEYBOARD_REFRESH_ENABLED",
+      "production_example_default": null,
+      "required_safe_default": null,
+      "rollback": "restore previous environment value and redeploy",
+      "safe_default_satisfied": null
+    },
     {
       "dangerous": false,
       "name": "ALLOW_DOTENV",

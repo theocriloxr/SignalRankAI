@@ -31,6 +31,7 @@ import os
 import asyncio
 import hmac
 import json
+import re
 import sys
 import logging
 import threading
@@ -857,39 +858,83 @@ async def _start_telegram_bot() -> "tuple[object, bool]":
     except Exception as exc:
         logger.warning("[webhook] queued replay after startup failed: %s", exc)
 
-    # Register webhook with Telegram
+    # Register webhook with Telegram. Avoid unnecessary setWebhook calls because
+    # Telegram rate-limits repeated registrations during rapid Railway deploys.
     webhook_url = _get_webhook_url()
     if webhook_url:
         webhook_endpoint = f"{webhook_url}/telegram/webhook"
+        webhook_kwargs = telegram_webhook_registration_kwargs()
+        webhook_info = None
         try:
-            webhook_kwargs = telegram_webhook_registration_kwargs()
-            await app_obj.bot.set_webhook(webhook_endpoint, **webhook_kwargs)
-            print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
-            logger.info("[bot] webhook registered: %s", webhook_endpoint)
-            try:
-                wh = await app_obj.bot.get_webhook_info()
-                logger.info(
-                    "[webhook] startup status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
-                    bool(getattr(wh, "url", "")),
-                    int(getattr(wh, "pending_update_count", 0) or 0),
-                    getattr(wh, "last_error_date", None),
-                    getattr(wh, "last_error_message", None),
-                )
-                print(
-                    "[webhook] startup status: "
-                    f"url_set={bool(getattr(wh, 'url', ''))} "
-                    f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
-                    f"last_error_date={getattr(wh, 'last_error_date', None)} "
-                    f"last_error_message={getattr(wh, 'last_error_message', None)}",
-                    flush=True,
-                )
-            except Exception as _wh_exc:
-                logger.warning("[webhook] get_webhook_info failed after set_webhook: %s", _wh_exc)
+            webhook_info = await app_obj.bot.get_webhook_info()
         except Exception as exc:
-            print(f"[bot] set_webhook failed: {exc}", flush=True)
-            logger.warning(
-                f"[bot] set_webhook failed: {exc} — bot initialized but Telegram may not route updates here"
+            logger.debug("[webhook] pre-registration status unavailable: %s", exc)
+
+        force_registration = _env_bool("TELEGRAM_FORCE_WEBHOOK_REREGISTER", False)
+        already_registered = bool(
+            webhook_info is not None
+            and str(getattr(webhook_info, "url", "") or "").rstrip("/")
+            == webhook_endpoint.rstrip("/")
+        )
+
+        if already_registered and not force_registration:
+            logger.info("[bot] webhook already registered: %s", webhook_endpoint)
+            print(f"[bot] webhook already registered: {webhook_endpoint}", flush=True)
+        else:
+            set_ok = False
+            max_attempts = max(1, min(3, int(os.getenv("TELEGRAM_WEBHOOK_SET_MAX_ATTEMPTS", "2") or 2)))
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    await app_obj.bot.set_webhook(webhook_endpoint, **webhook_kwargs)
+                    set_ok = True
+                    print(f"[bot] webhook registered: {webhook_endpoint}", flush=True)
+                    logger.info("[bot] webhook registered: %s attempt=%s", webhook_endpoint, attempt)
+                    break
+                except Exception as exc:
+                    retry_after = getattr(exc, "retry_after", None)
+                    if retry_after is None:
+                        match = re.search(r"Retry in (\d+)", str(exc), flags=re.IGNORECASE)
+                        retry_after = int(match.group(1)) if match else None
+                    if retry_after is not None and attempt < max_attempts:
+                        sleep_seconds = max(1.0, min(15.0, float(retry_after) + 0.25))
+                        logger.warning(
+                            "[bot] set_webhook rate-limited attempt=%s/%s retry_in=%.2fs",
+                            attempt,
+                            max_attempts,
+                            sleep_seconds,
+                        )
+                        await asyncio.sleep(sleep_seconds)
+                        continue
+                    print(f"[bot] set_webhook failed: {exc}", flush=True)
+                    logger.warning(
+                        "[bot] set_webhook failed attempt=%s/%s err=%s — preserving existing webhook",
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    break
+            if not set_ok and webhook_info is not None and already_registered:
+                logger.info("[bot] existing webhook remains active after registration failure")
+
+        try:
+            wh = await app_obj.bot.get_webhook_info()
+            logger.info(
+                "[webhook] startup status: url_set=%s pending=%s last_error_date=%s last_error_message=%s",
+                bool(getattr(wh, "url", "")),
+                int(getattr(wh, "pending_update_count", 0) or 0),
+                getattr(wh, "last_error_date", None),
+                getattr(wh, "last_error_message", None),
             )
+            print(
+                "[webhook] startup status: "
+                f"url_set={bool(getattr(wh, 'url', ''))} "
+                f"pending={int(getattr(wh, 'pending_update_count', 0) or 0)} "
+                f"last_error_date={getattr(wh, 'last_error_date', None)} "
+                f"last_error_message={getattr(wh, 'last_error_message', None)}",
+                flush=True,
+            )
+        except Exception as _wh_exc:
+            logger.warning("[webhook] get_webhook_info failed after registration: %s", _wh_exc)
     else:
         print("[bot] webhook NOT registered: RAILWAY_PUBLIC_DOMAIN/WEBHOOK_URL missing", flush=True)
         logger.warning(
@@ -1753,14 +1798,23 @@ async def lifespan(_: FastAPI):
     # Emit a single consolidated log line showing which subsystems are active so
     # operators can immediately verify the single-service deployment is healthy.
     _worker_outcome_enabled = str(os.getenv("WORKER_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
-    _engine_outcome_enabled = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+    _engine_outcome_requested = str(os.getenv("ENGINE_OUTCOME_TRACKER_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    # The monolith has one authoritative realtime outcome owner: the worker loop.
+    # ENGINE_OUTCOME_TRACKER_ENABLED is retained only as a compatibility input and
+    # does not start a second tracker.
+    _engine_outcome_state = "DISABLED(worker_owned)"
+    if _engine_outcome_requested:
+        logger.warning(
+            "[startup] ENGINE_OUTCOME_TRACKER_ENABLED requested but ignored; "
+            "worker loop is the sole realtime outcome owner"
+        )
     _bot_state = "DISABLED" if not _db_ready else ("ENABLED" if bot_started else "INITIALIZING")
     _subsystem_summary = (
         "[startup] subsystem summary | "
         f"signal_engine={'ENABLED' if engine_task else 'DISABLED'} | "
         f"outcome_worker={'ENABLED' if worker_task else 'DISABLED'} | "
         f"worker_outcome_tracker={'ENABLED' if (worker_task and _worker_outcome_enabled) else 'DISABLED'} | "
-        f"engine_outcome_tracker={'ENABLED' if _engine_outcome_enabled else 'DISABLED'} | "
+        f"engine_outcome_tracker={_engine_outcome_state} | "
         f"scheduler={'ENABLED' if scheduler else 'DISABLED'} | "
         f"bot={_bot_state}"
     )

@@ -481,6 +481,17 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
                 for s, o, lifecycle in rows
             ]
     except Exception as exc:
+        try:
+            from db.session import DatabaseWorkDeferred
+            if isinstance(exc, DatabaseWorkDeferred):
+                logger.info(
+                    "[outcome_tracker] fetch deferred by DB admission controller: %s",
+                    exc,
+                )
+                return []
+        except Exception:
+            pass
+
         diagnostics = None
         try:
             from db.session import get_pool_diagnostics

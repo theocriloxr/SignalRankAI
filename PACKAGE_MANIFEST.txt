@@ -1,20 +1,8 @@
-SignalRankAI v1.0.6 Delivery DB Hotfix
-Date: 2026-07-28
+SignalRankAI v1.0.7 Startup DB Deadlock Hotfix
 
-Primary corrections:
-- Alembic 0024 adds ml_rejected_signals.signal_id and index
-- Clean schema and auto-ops include the rejection telemetry field
-- Primary owner is delivered first; staging audience allowlist supported
-- Engine profile proof avoids a duplicate delivery-time DB lookup
-- Delivery reservation reuses its asset-lock DB session
-- Delivery phase/proof writes use the user-facing DB admission lane
-- Engine fanout lock uses a 600s token and safe compare-delete release
-- Resend job yields to active engine fanout
-- Outcome polling is deferrable background work
-- Failed deployment static checks include diagnostic output
-
-Key regression test:
-- tests/test_v106_delivery_db_hotfix.py
-
-Deployment guide:
-- docs/RAILWAY_DELIVERY_DB_HOTFIX_2026-07-28.md
+- Disables active-signal keyboard refresh by default.
+- Runs optional keyboard refresh as a delayed, snapshot-based background job.
+- Never holds a DB session during Telegram API calls.
+- Reports worker-only realtime outcome ownership accurately.
+- Treats expected outcome DB deferral as backpressure, not an exception.
+- Includes governance and environment proof inputs in the Railway image.
