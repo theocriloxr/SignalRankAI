@@ -370,6 +370,7 @@ def run_startup_ops(run_mode: str) -> None:
                     """
                     CREATE TABLE IF NOT EXISTS ml_rejected_signals (
                         id SERIAL PRIMARY KEY,
+                        signal_id VARCHAR(36),
                         asset VARCHAR(32) NOT NULL,
                         timeframe VARCHAR(8) NOT NULL,
                         direction VARCHAR(8) NOT NULL,
@@ -385,6 +386,8 @@ def run_startup_ops(run_mode: str) -> None:
                     )
                     """
                 )
+                cur.execute("ALTER TABLE ml_rejected_signals ADD COLUMN IF NOT EXISTS signal_id VARCHAR(36)")
+                cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_signal_id ON ml_rejected_signals(signal_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_asset ON ml_rejected_signals(asset)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_timeframe ON ml_rejected_signals(timeframe)")
                 cur.execute("CREATE INDEX IF NOT EXISTS ix_ml_rejected_signals_actual_outcome ON ml_rejected_signals(actual_outcome)")

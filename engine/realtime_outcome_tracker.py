@@ -422,9 +422,9 @@ async def _fetch_active_signals() -> List[Dict[str, Any]]:
         limit = max(50, int(os.getenv("OUTCOME_ACTIVE_SIGNAL_LIMIT", "1000") or 1000))
         async with _session_scope(
             get_session,
-            priority=DBPriority.CRITICAL,
+            priority=DBPriority.BACKGROUND,
             label="outcome_tracker.fetch_active_signals",
-            timeout_seconds=float(os.getenv("OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "15") or 15),
+            timeout_seconds=float(os.getenv("OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS", "1.0") or 1.0),
         ) as session:
             stmt = (
                 select(Signal, Outcome, SignalLifecycle)

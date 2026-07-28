@@ -284,6 +284,8 @@ def run_subprocess_check(
             timeout=timeout,
         )
         output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        if proc.returncode != 0 and output:
+            print(f"[deployment_diagnostics_failure_detail] {category}/{name}\n{output[-4000:]}")
         report.add(
             Check(
                 name=name,

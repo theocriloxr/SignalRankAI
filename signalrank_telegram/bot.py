@@ -75,6 +75,14 @@ def resend_unsent_signals_job():
 
     try:
         try:
+            if _env_bool("RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE", True):
+                fanout_lock = state.cache_get_sync("engine_delivery_fanout:active")
+                if fanout_lock:
+                    logger.info("[resend] skipped: engine delivery fanout active")
+                    return
+        except Exception:
+            pass
+        try:
             from db.session import critical_db_work_active
             if critical_db_work_active() and _env_bool("RESEND_SKIP_WHEN_CRITICAL_DB_ACTIVE", False):
                 logger.info("[resend] skipped: critical DB work active")
@@ -1325,6 +1333,7 @@ async def _is_asset_delivery_locked(
     lock_hours: int | None = None,
     *,
     current_signal_id: str | None = None,
+    session=None,
 ) -> bool:
     """Return whether this user should be blocked from another signal for `asset`.
 
@@ -1379,14 +1388,14 @@ async def _is_asset_delivery_locked(
         stale_cutoff = now_utc_naive() - timedelta(minutes=max(1, stale_minutes))
         current_signal_id = str(current_signal_id or "").strip() or None
 
-        async with get_session() as session:
+        async def _check_with_session(db_session) -> bool:
             user = (
-                await session.execute(
+                await db_session.execute(
                     select(User).where(User.telegram_user_id == int(telegram_user_id)).limit(1)
                 )
             ).scalar_one_or_none()
             if user is None:
-                await session.commit()
+                await db_session.commit()
                 return False
 
             try:
@@ -1395,14 +1404,14 @@ async def _is_asset_delivery_locked(
                 # positions can still block the first real Telegram send.
                 if not require_sent_ok:
                     state_row = await get_user_asset_position_state(
-                        session,
+                        db_session,
                         telegram_user_id=int(telegram_user_id),
                         asset=symbol,
                         cooldown_hours=float(hours),
                         unresolved_block_hours=float(os.getenv("DELIVERY_UNRESOLVED_BLOCK_HOURS", "168") or 168),
                     )
                     if state_row.is_locked:
-                        await session.commit()
+                        await db_session.commit()
                         return True
             except Exception:
                 pass
@@ -1422,7 +1431,7 @@ async def _is_asset_delivery_locked(
             filters.append(SignalDelivery.sent_ok.is_(True))
 
             locked_count = (
-                await session.execute(
+                await db_session.execute(
                     select(func.count(SignalDelivery.id))
                     .select_from(SignalDelivery)
                     .join(Signal, Signal.signal_id == SignalDelivery.signal_id)
@@ -1430,7 +1439,7 @@ async def _is_asset_delivery_locked(
                     .where(*filters)
                 )
             ).scalar_one()
-            await session.commit()
+            await db_session.commit()
             locked = int(locked_count or 0) > 0
             if locked:
                 logger.info(
@@ -1438,6 +1447,11 @@ async def _is_asset_delivery_locked(
                     f"require_sent_ok={require_sent_ok} ignore_unsent={ignore_unsent} signal={current_signal_id or ''}"
                 )
             return locked
+
+        if session is not None:
+            return await _check_with_session(session)
+        async with get_session(priority="interactive", label="delivery_asset_lock") as db_session:
+            return await _check_with_session(db_session)
     except Exception as exc:
         logger.debug(f"[asset_lock] check failed for user={telegram_user_id} asset={asset}: {exc}")
         return False
@@ -1597,7 +1611,7 @@ async def _find_editable_signal_message(telegram_user_id: int, incoming_signal: 
         if not asset or not direction:
             return None
 
-        async with get_session() as session:
+        async with get_session(priority="interactive", label="delivery_edit_lookup") as session:
             user = await get_or_create_user(session, telegram_user_id=int(telegram_user_id))
 
             base = (
@@ -1705,8 +1719,14 @@ async def _persist_delivery_phase(
         from db.priority import DBPriority
         from db.session import get_session
 
+        phase_timeout = max(3.0, _env_float_local("DELIVERY_PHASE_TIMEOUT_SECONDS", 15.0))
+
         async def _write() -> bool:
-            async with get_session(priority=DBPriority.CRITICAL) as session:
+            async with get_session(
+                priority=DBPriority.INTERACTIVE,
+                label=f"delivery_phase.{str(delivery_state).lower()}",
+                timeout_seconds=phase_timeout,
+            ) as session:
                 advanced = await mark_signal_delivery_state(
                     session,
                     telegram_user_id=int(telegram_user_id),
@@ -1723,7 +1743,7 @@ async def _persist_delivery_phase(
         return bool(
             await asyncio.wait_for(
                 _write(),
-                timeout=max(2.0, _env_float_local("DELIVERY_PHASE_TIMEOUT_SECONDS", 8.0)),
+                timeout=phase_timeout + 1.0,
             )
         )
     except Exception as exc:
@@ -1732,7 +1752,7 @@ async def _persist_delivery_phase(
             telegram_user_id,
             signal_id,
             delivery_state,
-            exc,
+            repr(exc),
         )
         return False
 
@@ -2198,7 +2218,12 @@ async def _mark_delivery_with_telegram_proof(
             proof_ok=bool(has_ack),
             error=error,
         )
-        async with get_session(priority=DBPriority.CRITICAL) as db_session:
+        proof_timeout = max(3.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 15.0))
+        async with get_session(
+            priority=DBPriority.INTERACTIVE,
+            label="delivery_proof_write",
+            timeout_seconds=proof_timeout,
+        ) as db_session:
             ok = await mark_signal_delivery_result(
                 db_session,
                 telegram_user_id=int(telegram_user_id),
@@ -2225,14 +2250,14 @@ async def _mark_delivery_with_telegram_proof(
     try:
         return bool(await asyncio.wait_for(
             _write_proof(),
-            timeout=max(2.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 10.0)),
+            timeout=max(3.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 15.0)) + 1.0,
         ))
     except asyncio.TimeoutError:
         logger.warning(
             "[delivery] proof write timeout user=%s signal=%s timeout=%.1fs",
             telegram_user_id,
             signal_id,
-            max(2.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 10.0)),
+            max(3.0, _env_float_local("DELIVERY_PROOF_TIMEOUT_SECONDS", 15.0)),
         )
         return False
     except Exception as exc:
@@ -3657,59 +3682,91 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
         _log_once('user_prefs_filter_error', f'[dispatch] User prefs filter error: {e}')
 
     # --- PERSONALIZED TRADING INTELLIGENCE FILTERING ---
+    # Engine-originated batches have already been filtered against this exact
+    # user's DB-backed profile. Re-reading the same profile during fanout added
+    # several seconds per user and allowed otherwise-fresh signals to expire.
+    # Resend/manual paths do not carry the proof flag and still load from DB.
+    _profile_preverified = bool(
+        signals_list
+        and all(bool(_sig.get("delivery_profile_verified")) for _sig in signals_list)
+    )
     try:
         from services.user_intelligence import get_user_trading_preferences, signal_matches_preferences
         from services.opportunity_engine import rank_opportunities
-        from db.session import get_session as _profile_get_session
-
-        async def _load_delivery_prefs():
-            async with _profile_get_session(priority="background", label="signalrank_telegram_bot") as _profile_session:
-                return await get_user_trading_preferences(_profile_session, int(user_id))
-
-        _prefs = await asyncio.wait_for(
-            _load_delivery_prefs(),
-            timeout=max(1.0, _env_float_local("DELIVERY_PREFS_TIMEOUT_SECONDS", 3.0)),
-        )
-        user_trade_profile = str(getattr(_prefs, "trade_profile", "all") or "all")
-        logger.info(
-            "[profile_apply] user=%s tier=%s trade_profile=%s risk=%s asset_classes=%s preferred=%s blocked=%s sessions=%s notification=%s execution=%s candidates_before=%s",
-            user_id, routing_tier, user_trade_profile, getattr(_prefs, "risk_profile", "unknown"),
-            ",".join(getattr(_prefs, "asset_classes", ()) or ()),
-            ",".join(getattr(_prefs, "preferred_assets", ()) or ()),
-            ",".join(getattr(_prefs, "blocked_assets", ()) or ()),
-            ",".join(getattr(_prefs, "sessions", ()) or ()),
-            getattr(_prefs, "notification_style", "unknown"), getattr(_prefs, "execution_mode", "unknown"),
-            len(signals_list),
-        )
-        before_profile_count = len(signals_list)
-        _filtered_signals = []
-        for sig in signals_list:
-            ok, reason = signal_matches_preferences(sig, _prefs)
-            if ok:
-                _filtered_signals.append(sig)
-            else:
-                logger.debug("[dispatch] user=%s personalized_filter_drop reason=%s asset=%s", user_id, reason, sig.get("asset"))
-        signals_list = rank_opportunities(_filtered_signals, _prefs)
-        for _sig in signals_list:
-            try:
-                _sig["delivery_user_profile"] = user_trade_profile
-                _sig["delivery_risk_profile"] = str(getattr(_prefs, "risk_profile", "balanced") or "balanced")
-                _sig["delivery_execution_mode"] = str(getattr(_prefs, "execution_mode", "manual") or "manual")
-            except Exception:
-                pass
-        dropped_profile_count = max(0, before_profile_count - len(signals_list))
-        logger.info(
-            "[profile_apply_result] user=%s profile=%s candidates_after=%s dropped=%s",
-            user_id, user_trade_profile, len(signals_list), dropped_profile_count,
-        )
-        if dropped_profile_count:
+        if _profile_preverified:
+            _prefs = None
+            user_trade_profile = str(signals_list[0].get("delivery_user_profile") or "all")
+            _risk_profile = str(signals_list[0].get("delivery_risk_profile") or "balanced")
+            _execution_mode = str(signals_list[0].get("delivery_execution_mode") or "manual")
             logger.info(
-                "[dispatch] user=%s profile=%s risk=%s dropped=%s nonmatching_signals",
-                user_id,
-                _prefs.trade_profile,
-                _prefs.risk_profile,
-                dropped_profile_count,
+                "[profile_apply] user=%s tier=%s trade_profile=%s risk=%s asset_classes=%s preferred=%s blocked=%s sessions=%s notification=%s execution=%s candidates_before=%s source=engine_verified",
+                user_id, routing_tier, user_trade_profile, _risk_profile,
+                ",".join(signals_list[0].get("delivery_asset_classes") or ()),
+                ",".join(signals_list[0].get("delivery_preferred_assets") or ()),
+                ",".join(signals_list[0].get("delivery_blocked_assets") or ()),
+                ",".join(signals_list[0].get("delivery_sessions") or ()),
+                str(signals_list[0].get("delivery_notification_style") or "normal"),
+                _execution_mode, len(signals_list),
             )
+            before_profile_count = len(signals_list)
+            # The engine applied signal_matches_preferences before attaching the
+            # proof marker. Do not repeat rank/filter DB work here.
+            dropped_profile_count = 0
+            logger.info(
+                "[profile_apply_result] user=%s profile=%s candidates_after=%s dropped=%s source=engine_verified",
+                user_id, user_trade_profile, len(signals_list), dropped_profile_count,
+            )
+        else:
+            from db.session import get_session as _profile_get_session
+
+            async def _load_delivery_prefs():
+                async with _profile_get_session(priority="background", label="delivery_profile_lookup") as _profile_session:
+                    return await get_user_trading_preferences(_profile_session, int(user_id))
+
+            _prefs = await asyncio.wait_for(
+                _load_delivery_prefs(),
+                timeout=max(1.0, _env_float_local("DELIVERY_PREFS_TIMEOUT_SECONDS", 3.0)),
+            )
+            user_trade_profile = str(getattr(_prefs, "trade_profile", "all") or "all")
+            logger.info(
+                "[profile_apply] user=%s tier=%s trade_profile=%s risk=%s asset_classes=%s preferred=%s blocked=%s sessions=%s notification=%s execution=%s candidates_before=%s",
+                user_id, routing_tier, user_trade_profile, getattr(_prefs, "risk_profile", "unknown"),
+                ",".join(getattr(_prefs, "asset_classes", ()) or ()),
+                ",".join(getattr(_prefs, "preferred_assets", ()) or ()),
+                ",".join(getattr(_prefs, "blocked_assets", ()) or ()),
+                ",".join(getattr(_prefs, "sessions", ()) or ()),
+                getattr(_prefs, "notification_style", "unknown"), getattr(_prefs, "execution_mode", "unknown"),
+                len(signals_list),
+            )
+            before_profile_count = len(signals_list)
+            _filtered_signals = []
+            for sig in signals_list:
+                ok, reason = signal_matches_preferences(sig, _prefs)
+                if ok:
+                    _filtered_signals.append(sig)
+                else:
+                    logger.debug("[dispatch] user=%s personalized_filter_drop reason=%s asset=%s", user_id, reason, sig.get("asset"))
+            signals_list = rank_opportunities(_filtered_signals, _prefs)
+            for _sig in signals_list:
+                try:
+                    _sig["delivery_user_profile"] = user_trade_profile
+                    _sig["delivery_risk_profile"] = str(getattr(_prefs, "risk_profile", "balanced") or "balanced")
+                    _sig["delivery_execution_mode"] = str(getattr(_prefs, "execution_mode", "manual") or "manual")
+                except Exception:
+                    pass
+            dropped_profile_count = max(0, before_profile_count - len(signals_list))
+            logger.info(
+                "[profile_apply_result] user=%s profile=%s candidates_after=%s dropped=%s",
+                user_id, user_trade_profile, len(signals_list), dropped_profile_count,
+            )
+            if dropped_profile_count:
+                logger.info(
+                    "[dispatch] user=%s profile=%s risk=%s dropped=%s nonmatching_signals",
+                    user_id,
+                    _prefs.trade_profile,
+                    _prefs.risk_profile,
+                    dropped_profile_count,
+                )
     except Exception as e:
         _log_once('trade_profile_filter_error', f'[dispatch] Trading preference filter error: {e}')
 
@@ -3872,7 +3929,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     from core.tier_constants import TIER_DAILY_LIMITS
 
                     to_send: list[dict] = []
-                    async with get_session(priority="critical", label="signalrank_telegram_bot") as session:
+                    async with get_session(
+                        priority="interactive",
+                        label="delivery_reserve",
+                        timeout_seconds=max(3.0, _env_float_local("DELIVERY_RESERVE_TIMEOUT_SECONDS", 15.0)),
+                    ) as session:
                         daily_limit = TIER_DAILY_LIMITS.get(
                             str(effective_tier),
                             TIER_DAILY_LIMITS.get("free", 3),
@@ -3897,6 +3958,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                                 int(user_id),
                                 str(signal.get('asset') or signal.get('symbol') or ''),
                                 current_signal_id=str(signal.get('signal_id') or signal.get('id') or ''),
+                                session=session,
                             ):
                                 logger.debug(
                                     f"[dispatch] asset lock skip user={user_id} "
@@ -3938,7 +4000,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                 try:
                     reserved = await asyncio.wait_for(
                         _reserve(),
-                        timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_TIMEOUT_SECONDS", 8.0)),
+                        timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_TIMEOUT_SECONDS", 15.0)),
                     )
                     reserve_failed = False
                 except Exception as e:
@@ -3960,7 +4022,11 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                     async def _reserve_one(_signal: dict) -> dict | None:
                         from db.pg_features import get_or_create_signal, record_signal_delivery
 
-                        async with get_session(priority="critical", label="signalrank_telegram_bot") as session:
+                        async with get_session(
+                            priority="interactive",
+                            label="delivery_reserve_one",
+                            timeout_seconds=max(3.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 15.0)),
+                        ) as session:
                             s = await get_or_create_signal(session, _signal)
                             ok = await record_signal_delivery(
                                 session,
@@ -3994,7 +4060,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                         try:
                             reserved_signal = await asyncio.wait_for(
                                 _reserve_one(signal),
-                                timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 8.0)),
+                                timeout=max(2.0, _env_float_local("DELIVERY_RESERVE_ONE_TIMEOUT_SECONDS", 15.0)),
                             )
                             if not reserved_signal:
                                 logger.debug(
@@ -4035,7 +4101,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             else:
                                 try:
                                     from db.pg_features import mark_signal_delivery_result
-                                    async with get_session() as session:
+                                    async with get_session(priority="interactive", label="delivery_failure_write") as session:
                                         await mark_signal_delivery_result(
                                             session,
                                             telegram_user_id=int(user_id),
@@ -4056,7 +4122,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                             try:
                                 if reserved_signal:
                                     from db.pg_features import mark_signal_delivery_result
-                                    async with get_session() as session:
+                                    async with get_session(priority="interactive", label="delivery_failure_write") as session:
                                         await mark_signal_delivery_result(
                                             session,
                                             telegram_user_id=int(user_id),
@@ -4105,7 +4171,7 @@ async def dispatch_signals_async(strategy_signals, user_id, regime=None):
                         else:
                             try:
                                 from db.pg_features import mark_signal_delivery_result
-                                async with get_session() as session:
+                                async with get_session(priority="interactive", label="delivery_failure_write") as session:
                                     await mark_signal_delivery_result(
                                         session,
                                         telegram_user_id=int(user_id),

@@ -53,9 +53,9 @@ def test_railway_profiles_publish_readiness_timeout() -> None:
         assert 'DB_READINESS_TIMEOUT_SECONDS=8' in text, profile.name
 
 
-def test_release_version_is_105() -> None:
+def test_release_version_is_current() -> None:
     text = (ROOT / "core" / "version.py").read_text(encoding="utf-8")
-    assert 'default="1.0.5"' in text
+    assert 'default="1.0.6"' in text
 
 import contextlib
 import pytest

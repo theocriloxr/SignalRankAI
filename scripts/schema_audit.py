@@ -99,11 +99,43 @@ def audit_signal_runtime_contract(root: Path = ROOT) -> dict[str, object]:
         "active_guard_sql": guard_sql_present,
     }
 
+
+def audit_ml_rejected_runtime_contract(root: Path = ROOT) -> dict[str, object]:
+    """Ensure the rendered chain contains every MLRejectedSignal ORM column."""
+    env = os.environ.copy()
+    env["DATABASE_MIGRATION_URL"] = "postgresql+psycopg2://audit:audit@localhost/audit"
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head", "--sql"],
+        cwd=root, env=env, text=True, capture_output=True, timeout=90, check=False,
+    )
+    if proc.returncode != 0:
+        return {"ok": False, "missing_columns": [], "error": f"alembic_offline_exit={proc.returncode}"}
+    from db.models import MLRejectedSignal
+    rendered = proc.stdout
+    migrated: set[str] = set()
+    create_match = re.search(r"CREATE TABLE(?: IF NOT EXISTS)? ml_rejected_signals \((.*?)\n\s*\);", rendered, re.S | re.I)
+    if create_match:
+        for raw_line in create_match.group(1).splitlines():
+            line = raw_line.strip().rstrip(",")
+            if line and not line.upper().startswith(("PRIMARY KEY", "CONSTRAINT", "FOREIGN KEY", "UNIQUE", "CHECK")):
+                migrated.add(line.split()[0].strip('"').lower())
+    for match in re.finditer(
+        r"ALTER TABLE ml_rejected_signals ADD COLUMN(?: IF NOT EXISTS)?\s+([A-Za-z_][A-Za-z0-9_]*)",
+        rendered, re.I,
+    ):
+        migrated.add(match.group(1).lower())
+    expected = {column.name.lower() for column in MLRejectedSignal.__table__.columns}
+    missing = sorted(expected - migrated)
+    return {"ok": not missing, "missing_columns": missing}
+
+
 def main() -> int:
     result = audit_versions()
     signal_contract = audit_signal_runtime_contract()
+    rejected_contract = audit_ml_rejected_runtime_contract()
     result["signal_runtime_contract"] = signal_contract
-    result["ok"] = bool(result["ok"] and signal_contract["ok"])
+    result["ml_rejected_runtime_contract"] = rejected_contract
+    result["ok"] = bool(result["ok"] and signal_contract["ok"] and rejected_contract["ok"])
     print(json.dumps(result, sort_keys=True))
     return 0 if result["ok"] else 1
 

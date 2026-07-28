@@ -31,7 +31,7 @@
     "path": "docs/specs/SIGNALRANKAI_V7_MASTER_BUILD_PROMPT_2026-07-27.md",
     "sha256": "9159ab260d78fe3c4884380104592dd882a20e3a1adc68dce3565c0cd3fef111"
   },
-  "variable_count": 813,
+  "variable_count": 822,
   "variables": [
     {
       "declared_defaults": {},
@@ -529,7 +529,7 @@
       "name": "ASSET_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1502"
+        "engine/core.py:1503"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -548,7 +548,7 @@
       "name": "ASSET_CLASSES_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1526"
+        "engine/core.py:1527"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -648,7 +648,7 @@
       "read_locations": [
         "db/pg_features.py:3020",
         "db/pg_features.py:3092",
-        "signalrank_telegram/bot.py:1368"
+        "signalrank_telegram/bot.py:1377"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -741,7 +741,7 @@
       "name": "AUTO_ANALYST_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:4554",
+        "engine/core.py:4630",
         "services/automated_analyst.py:25"
       ],
       "required_by_code": true,
@@ -941,7 +941,7 @@
       "name": "BOT_COMMAND_AUDIT_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:2993"
+        "signalrank_telegram/bot.py:3018"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -951,7 +951,7 @@
       "name": "BOT_INIT_STALE_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:4762"
+        "signalrank_telegram/bot.py:4828"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -961,7 +961,7 @@
       "name": "BOT_MINIMAL_SCHEDULER_MODE",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8076"
+        "signalrank_telegram/bot.py:8142"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -971,7 +971,7 @@
       "name": "BOT_SCHEDULER_PERSISTENT_JOBSTORE_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:7984"
+        "signalrank_telegram/bot.py:8050"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1002,7 +1002,7 @@
       "name": "BOT_WEBHOOK_READY_MIN_HANDLERS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:4863"
+        "signalrank_telegram/bot.py:4929"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1082,7 +1082,7 @@
       "name": "BROKER_RECONCILE_GRACE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6674"
+        "signalrank_telegram/bot.py:6740"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1092,7 +1092,7 @@
       "name": "BROKER_RECONCILE_STALE_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6675"
+        "signalrank_telegram/bot.py:6741"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1227,7 +1227,7 @@
       "name": "CHECK_OUTCOME_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:5812"
+        "signalrank_telegram/bot.py:5878"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1237,7 +1237,7 @@
       "name": "CHECK_OUTCOME_SNAPSHOT_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:5770"
+        "signalrank_telegram/bot.py:5836"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1324,9 +1324,9 @@
       "name": "COMMAND_HANDLER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:2918",
-        "signalrank_telegram/bot.py:544",
-        "signalrank_telegram/bot.py:546"
+        "signalrank_telegram/bot.py:2943",
+        "signalrank_telegram/bot.py:552",
+        "signalrank_telegram/bot.py:554"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -1356,7 +1356,7 @@
       "name": "CONFLUENCE_GATE_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2839",
+        "engine/core.py:2840",
         "engine/threshold_optimizer.py:99"
       ],
       "required_by_code": true,
@@ -1505,7 +1505,7 @@
       "production_example_default": null,
       "read_locations": [
         "config.py:171",
-        "engine/core.py:4203"
+        "engine/core.py:4250"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2320,7 +2320,7 @@
       "name": "DEFAULT_ACCOUNT_BALANCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3261"
+        "engine/core.py:3262"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2350,8 +2350,8 @@
       "name": "DEFAULT_RR",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1400",
-        "engine/core.py:3108"
+        "engine/core.py:1401",
+        "engine/core.py:3109"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2377,7 +2377,7 @@
       "production_example_default": "day",
       "read_locations": [
         "data/market_data.py:75",
-        "engine/core.py:1637"
+        "engine/core.py:1638"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2397,9 +2397,35 @@
       "name": "DELIVERY_ASSET_LOCK_IGNORE_STALE_MINUTES",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:1378"
+        "signalrank_telegram/bot.py:1387"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "",
+        "configs/env/railway-hobby-owner-beta.env.example": "",
+        "configs/env/railway-staging.env.example": ""
+      },
+      "name": "DELIVERY_AUDIENCE_ALLOWLIST",
+      "production_example_default": null,
+      "read_locations": [
+        "engine/core.py:4004"
+      ],
+      "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "12",
+        "configs/env/railway-hobby-owner-beta.env.example": "12",
+        "configs/env/railway-staging.env.example": "12"
+      },
+      "name": "DELIVERY_DAILY_LIMIT_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -2420,6 +2446,18 @@
         "db/pg_features.py:994"
       ],
       "required_by_code": true,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "12",
+        "configs/env/railway-hobby-owner-beta.env.example": "12",
+        "configs/env/railway-staging.env.example": "12"
+      },
+      "name": "DELIVERY_DEDUP_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
       "sensitive": false
     },
     {
@@ -2498,6 +2536,42 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "15",
+        "configs/env/railway-hobby-owner-beta.env.example": "15",
+        "configs/env/railway-staging.env.example": "15"
+      },
+      "name": "DELIVERY_PHASE_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "12",
+        "configs/env/railway-hobby-owner-beta.env.example": "12",
+        "configs/env/railway-staging.env.example": "12"
+      },
+      "name": "DELIVERY_PROFILE_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
+        ".env.example": "15",
+        "configs/env/railway-hobby-owner-beta.env.example": "15",
+        "configs/env/railway-staging.env.example": "15"
+      },
+      "name": "DELIVERY_PROOF_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         "RAILWAY_ENV_UPDATED.env.example": "100",
         "configs/env/hermetic-test.env.example": "100",
         "configs/env/production.env.example": "100",
@@ -2564,6 +2638,18 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "15",
+        "configs/env/railway-hobby-owner-beta.env.example": "15",
+        "configs/env/railway-staging.env.example": "15"
+      },
+      "name": "DELIVERY_RESERVE_TIMEOUT_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "4",
         "configs/env/hermetic-test.env.example": "4",
         "configs/env/production.env.example": "4",
@@ -2610,7 +2696,7 @@
       "production_example_default": null,
       "read_locations": [
         "db/pg_features.py:1057",
-        "signalrank_telegram/bot.py:1402"
+        "signalrank_telegram/bot.py:1411"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -2909,7 +2995,7 @@
       "name": "DRY_RUN",
       "production_example_default": "0",
       "read_locations": [
-        "signalrank_telegram/bot.py:615"
+        "signalrank_telegram/bot.py:623"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3040,7 +3126,7 @@
       "name": "ENGINE_ASSET_BLACKLIST",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1502"
+        "engine/core.py:1503"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3080,11 +3166,23 @@
       "sensitive": false
     },
     {
+      "declared_defaults": {
+        ".env.example": "600",
+        "configs/env/railway-hobby-owner-beta.env.example": "600",
+        "configs/env/railway-staging.env.example": "600"
+      },
+      "name": "ENGINE_DELIVERY_FANOUT_LOCK_SECONDS",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
       "declared_defaults": {},
       "name": "ENGINE_DIAGNOSTIC_DIR",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:351"
+        "engine/core.py:352"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3450,7 +3548,7 @@
       "name": "FREE_DIRECT_DISPATCH",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:4399"
+        "signalrank_telegram/bot.py:4465"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3460,7 +3558,7 @@
       "name": "FREE_DISTRIBUTION_STARTUP_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8345"
+        "signalrank_telegram/bot.py:8411"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3470,7 +3568,7 @@
       "name": "FREE_FOMO_DISPATCH_ONLY",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:3322"
+        "signalrank_telegram/bot.py:3347"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3575,7 +3673,7 @@
       "read_locations": [
         "core/evolution_agent.py:57",
         "engine/admin_pulse.py:613",
-        "engine/core.py:450",
+        "engine/core.py:451",
         "engine/signal_controller.py:181",
         "engine/signal_controller.py:204",
         "railway_main.py:436",
@@ -3613,7 +3711,7 @@
       "name": "GEMINI_DAILY_REVIEW_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:7930"
+        "signalrank_telegram/bot.py:7996"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3645,7 +3743,7 @@
       "name": "GEMINI_MODEL",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:456",
+        "engine/core.py:457",
         "services/gemini_ml.py:43"
       ],
       "required_by_code": true,
@@ -3668,8 +3766,8 @@
       "name": "GEMINI_REVIEW_ENABLED",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:7872",
-        "signalrank_telegram/bot.py:7927"
+        "signalrank_telegram/bot.py:7938",
+        "signalrank_telegram/bot.py:7993"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3713,7 +3811,7 @@
       "name": "GEMINI_SIGNAL_REVIEW_MODEL",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:456"
+        "engine/core.py:457"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -3727,7 +3825,7 @@
       "name": "GEMINI_SIGNAL_REVIEW_TIMEOUT_SEC",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:519"
+        "engine/core.py:520"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4043,7 +4141,7 @@
       "name": "MACRO_SNAPSHOT_REFRESH_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:297"
+        "engine/core.py:298"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4130,7 +4228,7 @@
       "name": "MARKET_CIRCUIT_BREAKER_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2023"
+        "engine/core.py:2024"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4566,7 +4664,7 @@
       "name": "ML_HARD_FILTER_MIN",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:2943"
+        "engine/core.py:2944"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4576,7 +4674,7 @@
       "name": "ML_HIGH_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3251"
+        "engine/core.py:3252"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4606,7 +4704,7 @@
       "name": "ML_MEDIUM_CONFIDENCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3253"
+        "engine/core.py:3254"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4682,11 +4780,11 @@
       "name": "ML_PROB_THRESHOLD",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:267",
+        "engine/core.py:268",
         "engine/dynamic_threshold.py:57",
         "engine/threshold_optimizer.py:85",
         "signalrank_telegram/admin_commands.py:111",
-        "signalrank_telegram/bot.py:7820",
+        "signalrank_telegram/bot.py:7886",
         "signalrank_telegram/commands.py:866",
         "worker/ai_feedback.py:92"
       ],
@@ -4718,7 +4816,7 @@
       "name": "ML_RISK_HIGH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3252"
+        "engine/core.py:3253"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4728,7 +4826,7 @@
       "name": "ML_RISK_LOW_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3256"
+        "engine/core.py:3257"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4738,7 +4836,7 @@
       "name": "ML_RISK_MEDIUM_PCT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3254"
+        "engine/core.py:3255"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -4892,7 +4990,7 @@
       "name": "MT5_EXECUTION_RETENTION_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6754"
+        "signalrank_telegram/bot.py:6820"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5509,7 +5607,7 @@
       "name": "OUTCOME_CATCHUP_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6904"
+        "signalrank_telegram/bot.py:6970"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5519,7 +5617,7 @@
       "name": "OUTCOME_CATCHUP_MAX_AGE_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6902"
+        "signalrank_telegram/bot.py:6968"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5529,7 +5627,7 @@
       "name": "OUTCOME_CATCHUP_MIN_AGE_HOURS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6903"
+        "signalrank_telegram/bot.py:6969"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5547,7 +5645,11 @@
       "sensitive": false
     },
     {
-      "declared_defaults": {},
+      "declared_defaults": {
+        ".env.example": "1",
+        "configs/env/railway-hobby-owner-beta.env.example": "1",
+        "configs/env/railway-staging.env.example": "1"
+      },
       "name": "OUTCOME_DB_ADMISSION_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
@@ -5633,7 +5735,7 @@
       "name": "OUTCOME_NOTIFICATION_STARTUP_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8083"
+        "signalrank_telegram/bot.py:8149"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5645,7 +5747,7 @@
       "name": "OUTCOME_NOTIFICATION_START_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8083"
+        "signalrank_telegram/bot.py:8149"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5675,7 +5777,7 @@
       "name": "OUTCOME_SCAN_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6898"
+        "signalrank_telegram/bot.py:6964"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5685,7 +5787,7 @@
       "name": "OUTCOME_SCAN_MAX_AGE_DAYS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6896"
+        "signalrank_telegram/bot.py:6962"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -5821,6 +5923,7 @@
       "name": "OWNER_TELEGRAM_ID",
       "production_example_default": null,
       "read_locations": [
+        "engine/core.py:4013",
         "railway_main.py:439"
       ],
       "required_by_code": true,
@@ -6320,7 +6423,7 @@
       "name": "PREMIUM_SCORE_THRESHOLD_FORCE",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1794",
+        "engine/core.py:1795",
         "engine/signal_deduplicator.py:1069"
       ],
       "required_by_code": true,
@@ -6365,7 +6468,7 @@
       "name": "PROFILE_DEBUG_DB_TIMEOUT_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:4678"
+        "signalrank_telegram/bot.py:4744"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6534,7 +6637,7 @@
       "name": "QUALITY_FX_ALLOWED_TIMEFRAMES",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:1024"
+        "engine/core.py:1025"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -6557,8 +6660,8 @@
         "config.py:88",
         "core/tier_constants.py:136",
         "data/pair_discovery.py:368",
-        "engine/core.py:1888",
-        "engine/core.py:2200",
+        "engine/core.py:1889",
+        "engine/core.py:2201",
         "railway_main.py:412",
         "signalrank_telegram/admin_commands.py:235",
         "signalrank_telegram/commands.py:2686"
@@ -6612,12 +6715,12 @@
         "core/tier_constants.py:136",
         "data/pair_discovery.py:368",
         "db/session.py:30",
-        "engine/core.py:1888",
-        "engine/core.py:2200",
+        "engine/core.py:1889",
+        "engine/core.py:2201",
         "railway_main.py:1142",
         "railway_main.py:1216",
         "signalrank_telegram/admin_commands.py:235",
-        "signalrank_telegram/bot.py:4748",
+        "signalrank_telegram/bot.py:4814",
         "signalrank_telegram/commands.py:2686"
       ],
       "required_by_code": true,
@@ -6835,7 +6938,7 @@
       "name": "REDIS_WEBHOOK_QUEUE_MAX_DEPTH",
       "production_example_default": "5000",
       "read_locations": [
-        "core/redis_state.py:875",
+        "core/redis_state.py:922",
         "railway_main.py:1382",
         "railway_main.py:2322",
         "railway_main.py:2501"
@@ -6868,7 +6971,7 @@
       "name": "REFRESH_ACTIVE_SIGNAL_LIMIT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:5073"
+        "signalrank_telegram/bot.py:5139"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7102,7 +7205,7 @@
       "name": "RESEND_INCLUDE_FREE",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:165"
+        "signalrank_telegram/bot.py:173"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7122,7 +7225,7 @@
       "name": "RESEND_MAX_SIGNALS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:192"
+        "signalrank_telegram/bot.py:200"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7132,7 +7235,7 @@
       "name": "RESEND_MIN_SCORE",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:191"
+        "signalrank_telegram/bot.py:199"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7151,12 +7254,24 @@
     },
     {
       "declared_defaults": {
+        ".env.example": "1",
+        "configs/env/railway-hobby-owner-beta.env.example": "1",
+        "configs/env/railway-staging.env.example": "1"
+      },
+      "name": "RESEND_SKIP_WHEN_ENGINE_FANOUT_ACTIVE",
+      "production_example_default": null,
+      "read_locations": [],
+      "required_by_code": false,
+      "sensitive": false
+    },
+    {
+      "declared_defaults": {
         ".env.example": "120"
       },
       "name": "RESEND_START_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8328"
+        "signalrank_telegram/bot.py:8394"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7168,7 +7283,7 @@
       "name": "RESEND_UNSENT_INTERVAL_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8324"
+        "signalrank_telegram/bot.py:8390"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -7178,7 +7293,7 @@
       "name": "RESEND_UNSENT_STARTUP_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:8328"
+        "signalrank_telegram/bot.py:8394"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8130,7 +8245,7 @@
       "name": "SIGNAL_UPDATE_MIN_ML_DELTA",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:1282"
+        "signalrank_telegram/bot.py:1290"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8140,7 +8255,7 @@
       "name": "SIGNAL_UPDATE_MIN_NEWS_DELTA",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:1283"
+        "signalrank_telegram/bot.py:1291"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8150,7 +8265,7 @@
       "name": "SIGNAL_UPDATE_MIN_ROI_DELTA",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:1280"
+        "signalrank_telegram/bot.py:1288"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8160,7 +8275,7 @@
       "name": "SIGNAL_UPDATE_MIN_RR_DELTA",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:1281"
+        "signalrank_telegram/bot.py:1289"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8190,7 +8305,7 @@
       "name": "SMART_EXIT_BTC_CRASH_PCT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6366"
+        "signalrank_telegram/bot.py:6432"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8200,7 +8315,7 @@
       "name": "SMART_EXIT_MAX_SL_SHARE",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6364"
+        "signalrank_telegram/bot.py:6430"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8210,7 +8325,7 @@
       "name": "SMART_EXIT_MIN_CONFLUENCE_VOTES",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6365"
+        "signalrank_telegram/bot.py:6431"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8220,7 +8335,7 @@
       "name": "SMART_EXIT_MIN_LOSS_PCT",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:6363"
+        "signalrank_telegram/bot.py:6429"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8538,7 +8653,7 @@
         "data/fetcher.py:1881",
         "engine/admin_pulse.py:488",
         "engine/admin_pulse.py:602",
-        "engine/core.py:1331",
+        "engine/core.py:1332",
         "engine/signal_deduplicator.py:1017",
         "railway_main.py:2184",
         "railway_main.py:440",
@@ -8559,7 +8674,7 @@
       "name": "TELEGRAM_BROADCAST_RPS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:998"
+        "signalrank_telegram/bot.py:1006"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8601,7 +8716,7 @@
       "name": "TELEGRAM_GLOBAL_SEND_DELAY_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:974"
+        "signalrank_telegram/bot.py:982"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8654,7 +8769,7 @@
       "name": "TELEGRAM_RETRY_AFTER_MAX_SECONDS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:978"
+        "signalrank_telegram/bot.py:986"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8679,7 +8794,7 @@
       "name": "TELEGRAM_SEND_MAX_ATTEMPTS",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:982"
+        "signalrank_telegram/bot.py:990"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8742,12 +8857,12 @@
       "production_example_default": null,
       "read_locations": [
         "railway_main.py:913",
-        "signalrank_telegram/bot.py:4748",
-        "signalrank_telegram/bot.py:4766",
-        "signalrank_telegram/bot.py:4782",
-        "signalrank_telegram/bot.py:4843",
-        "signalrank_telegram/bot.py:4847",
-        "signalrank_telegram/bot.py:8405"
+        "signalrank_telegram/bot.py:4814",
+        "signalrank_telegram/bot.py:4832",
+        "signalrank_telegram/bot.py:4848",
+        "signalrank_telegram/bot.py:4909",
+        "signalrank_telegram/bot.py:4913",
+        "signalrank_telegram/bot.py:8471"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8804,7 +8919,7 @@
       "name": "TERMS_BLAST_ON_DEPLOY",
       "production_example_default": null,
       "read_locations": [
-        "signalrank_telegram/bot.py:5016"
+        "signalrank_telegram/bot.py:5082"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -8935,8 +9050,8 @@
       "production_example_default": null,
       "read_locations": [
         "data/startup_selfcheck.py:53",
-        "engine/core.py:1849",
-        "engine/core.py:2053"
+        "engine/core.py:1850",
+        "engine/core.py:2054"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9369,7 +9484,7 @@
       "production_example_default": null,
       "read_locations": [
         "services/waitlist_jobs.py:50",
-        "signalrank_telegram/bot.py:7349",
+        "signalrank_telegram/bot.py:7415",
         "signalrank_telegram/commands.py:4860",
         "signalrank_telegram/commands.py:7461",
         "web/app.py:866"
@@ -9402,7 +9517,7 @@
       "name": "VOLATILITY_WIDEN_ATR_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3122"
+        "engine/core.py:3123"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9412,7 +9527,7 @@
       "name": "VOLATILITY_WIDEN_SL_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3124"
+        "engine/core.py:3125"
       ],
       "required_by_code": true,
       "sensitive": false
@@ -9422,7 +9537,7 @@
       "name": "VOLATILITY_WIDEN_TP_MULT",
       "production_example_default": null,
       "read_locations": [
-        "engine/core.py:3125"
+        "engine/core.py:3126"
       ],
       "required_by_code": true,
       "sensitive": false

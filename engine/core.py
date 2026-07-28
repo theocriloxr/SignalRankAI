@@ -19,6 +19,7 @@ import inspect
 import json
 import math
 import pathlib
+import uuid
 import urllib.error
 import urllib.request
 from collections import Counter
@@ -3985,7 +3986,49 @@ def main_loop(DRY_RUN: bool = False):
                     logger.debug(f"[engine] Failed to parse user ID from ADMIN_IDS: {e}")
                     pass
 
-            logger.info("[engine] delivery audience size=%s", len(user_ids))
+            # Deterministic delivery order is safety-critical. The primary owner
+            # must not sit behind arbitrary database row order while a fresh
+            # opportunity decays. A staging allowlist can restrict proof traffic
+            # to a known Telegram ID without changing tier/profile logic.
+            def _parse_delivery_ids(raw: str) -> list[int]:
+                parsed: list[int] = []
+                for part in str(raw or "").replace(";", ",").split(","):
+                    try:
+                        value = int(part.strip())
+                    except (TypeError, ValueError):
+                        continue
+                    if value > 0 and value not in parsed:
+                        parsed.append(value)
+                return parsed
+
+            _allowlist = _parse_delivery_ids(os.getenv("DELIVERY_AUDIENCE_ALLOWLIST", ""))
+            if _allowlist:
+                _allowed = set(_allowlist)
+                user_ids = [int(uid) for uid in user_ids if int(uid) in _allowed]
+                logger.info(
+                    "[engine] delivery audience allowlist active requested=%s matched=%s",
+                    len(_allowlist), len(user_ids),
+                )
+
+            _primary_ids = _parse_delivery_ids(os.getenv("OWNER_TELEGRAM_ID", ""))
+            _primary = _primary_ids[0] if _primary_ids else None
+            _deduped_ids: list[int] = []
+            for _uid in user_ids:
+                try:
+                    _uid_int = int(_uid)
+                except (TypeError, ValueError):
+                    continue
+                if _uid_int not in _deduped_ids:
+                    _deduped_ids.append(_uid_int)
+            if _primary in _deduped_ids:
+                _deduped_ids.remove(_primary)
+                _deduped_ids.insert(0, _primary)
+            user_ids = _deduped_ids
+
+            logger.info(
+                "[engine] delivery audience size=%s primary_owner_first=%s allowlist=%s",
+                len(user_ids), bool(_primary and user_ids and user_ids[0] == _primary), bool(_allowlist),
+            )
             if not user_ids:
                 logger.warning("[engine] delivery audience is empty; no users eligible for dispatch")
 
@@ -4022,7 +4065,11 @@ def main_loop(DRY_RUN: bool = False):
                     from db.models import SignalDelivery, User
                     from sqlalchemy import select
 
-                    async with get_session() as session:
+                    async with get_session(
+                        priority="interactive",
+                        label="delivery_duplicate_filter",
+                        timeout_seconds=max(3.0, _env_float("DELIVERY_DEDUP_TIMEOUT_SECONDS", 12.0)),
+                    ) as session:
                         user_row = (
                             await session.execute(
                                 select(User.id).where(User.telegram_user_id == int(user_id)).limit(1)
@@ -4229,7 +4276,11 @@ def main_loop(DRY_RUN: bool = False):
                         
                         signals_sent_today = 0
                         try:
-                            async with _get_limit_session() as _ls:
+                            async with _get_limit_session(
+                                priority="interactive",
+                                label="delivery_daily_limit",
+                                timeout_seconds=max(3.0, _env_float("DELIVERY_DAILY_LIMIT_TIMEOUT_SECONDS", 12.0)),
+                            ) as _ls:
                                 signals_sent_today = int(
                                     await count_signals_sent_today(_ls, int(user_id))
                                 )
@@ -4257,7 +4308,11 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             from services.user_intelligence import get_user_trading_preferences as _get_user_trading_preferences
 
-                            async with _get_limit_session() as _profile_session:
+                            async with _get_limit_session(
+                                priority="interactive",
+                                label="delivery_profile_load",
+                                timeout_seconds=max(3.0, _env_float("DELIVERY_PROFILE_TIMEOUT_SECONDS", 12.0)),
+                            ) as _profile_session:
                                 user_trade_prefs = await _get_user_trading_preferences(
                                     _profile_session,
                                     int(user_id),
@@ -4282,7 +4337,10 @@ def main_loop(DRY_RUN: bool = False):
                             )
 
                         user_signals = []
-                        for sig in _fresh_scored_signals:
+                        for _source_sig in _fresh_scored_signals:
+                            # Per-user copies prevent one user's profile metadata or
+                            # price adjustment from leaking into another user's batch.
+                            sig = dict(_source_sig or {})
                             if signals_sent_today + len(user_signals) >= daily_limit:
                                 break
 
@@ -4391,6 +4449,12 @@ def main_loop(DRY_RUN: bool = False):
                                             sig["delivery_user_profile"] = str(getattr(user_trade_prefs, "trade_profile", "all") or "all")
                                             sig["delivery_risk_profile"] = str(getattr(user_trade_prefs, "risk_profile", "balanced") or "balanced")
                                             sig["delivery_execution_mode"] = str(getattr(user_trade_prefs, "execution_mode", "manual") or "manual")
+                                            sig["delivery_asset_classes"] = tuple(getattr(user_trade_prefs, "asset_classes", ()) or ())
+                                            sig["delivery_preferred_assets"] = tuple(getattr(user_trade_prefs, "preferred_assets", ()) or ())
+                                            sig["delivery_blocked_assets"] = tuple(getattr(user_trade_prefs, "blocked_assets", ()) or ())
+                                            sig["delivery_sessions"] = tuple(getattr(user_trade_prefs, "sessions", ()) or ())
+                                            sig["delivery_notification_style"] = str(getattr(user_trade_prefs, "notification_style", "normal") or "normal")
+                                            sig["delivery_profile_verified"] = True
                                         except Exception:
                                             pass
                                     user_signals.append(sig)
@@ -4502,13 +4566,25 @@ def main_loop(DRY_RUN: bool = False):
                         try:
                             from core.redis_state import state as _delivery_state
                             _lock_key = "engine_delivery_fanout:active"
-                            _lock_ttl = max(15, int(_env_float("ENGINE_DELIVERY_FANOUT_LOCK_SECONDS", 90)))
+                            _lock_ttl = max(120, int(_env_float("ENGINE_DELIVERY_FANOUT_LOCK_SECONDS", 600)))
                             if _delivery_state.cache_get_sync(_lock_key):
                                 dispatched = 0
                                 logger.info("[engine] delivery fanout already active; skip scheduling candidates=%s", len(scored_signals_all or []))
                             else:
-                                _delivery_state.cache_set_sync(_lock_key, "1", ex=_lock_ttl)
-                                submit_background_coro(deliver_all(), label="engine_deliver_all")
+                                _lock_token = uuid.uuid4().hex
+                                _delivery_state.cache_set_sync(_lock_key, _lock_token, ex=_lock_ttl)
+
+                                async def _deliver_all_with_lock_release():
+                                    try:
+                                        return await deliver_all()
+                                    finally:
+                                        try:
+                                            released = await _delivery_state.cache_delete_if_value(_lock_key, _lock_token)
+                                            logger.info("[engine] delivery fanout lock released=%s", released)
+                                        except Exception as _release_err:
+                                            logger.warning("[engine] delivery fanout lock release failed: %s", _release_err)
+
+                                submit_background_coro(_deliver_all_with_lock_release(), label="engine_deliver_all")
                                 dispatched = 0
                                 try:
                                     _redis_diag = _delivery_state.redis_diagnostics_sync()

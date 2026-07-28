@@ -800,6 +800,53 @@ class RedisState:
         ttl = ex if ex is not None else int(os.getenv("CACHE_DEFAULT_TTL_SECONDS", "120") or 120)
         self.set_sync(f"cache:{str(key)}", str(value), ex=max(1, int(ttl)))
 
+    def cache_delete_if_value_sync(self, key: str, expected_value: str) -> bool:
+        """Delete a cache key only when it still contains our lock token.
+
+        The compare-and-delete operation prevents an expired delivery fanout from
+        deleting a newer worker's replacement lock. Redis uses a tiny Lua script
+        for atomicity; Postgres/memory fallbacks are best-effort but still token
+        checked.
+        """
+        full_key = f"cache:{str(key)}"
+        expected = str(expected_value)
+        r = self._get_redis_sync()
+        if r is not None:
+            try:
+                deleted = r.eval(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                    "return redis.call('del', KEYS[1]) else return 0 end",
+                    1,
+                    full_key,
+                    expected,
+                )
+                self._cache.pop(full_key, None)
+                return bool(int(deleted or 0))
+            except Exception:
+                return False
+
+        if self._pg_available():
+            try:
+                row = self._pg_exec_one(
+                    "DELETE FROM runtime_state WHERE key=%s "
+                    "AND COALESCE(value->>'value', value#>>'{}')=%s RETURNING key",
+                    (full_key, expected),
+                )
+                self._cache.pop(full_key, None)
+                return bool(row)
+            except Exception:
+                return False
+
+        current = self._memory.get(full_key)
+        if current is None:
+            current = self._memory.get(key)
+        if str(current) != expected:
+            return False
+        self._memory.pop(full_key, None)
+        self._memory.pop(key, None)
+        self._cache.pop(full_key, None)
+        return True
+
     def set_sync(self, key: str, value: str, ex: Optional[int] = None) -> None:
         """Set a value in the state store (Postgres or memory) with optional expiration."""
         self._cache_set(key, str(value), ex=ex)
@@ -1108,6 +1155,9 @@ class RedisState:
 
     async def cache_set(self, key: str, value: str, ex: Optional[int] = None) -> None:
         await asyncio.to_thread(self.cache_set_sync, key, value, ex)
+
+    async def cache_delete_if_value(self, key: str, expected_value: str) -> bool:
+        return await asyncio.to_thread(self.cache_delete_if_value_sync, key, expected_value)
 
     async def enqueue_webhook_update(self, payload: Dict[str, Any], max_depth: Optional[int] = None) -> bool:
         return await asyncio.to_thread(self.enqueue_webhook_update_sync, payload, max_depth)
